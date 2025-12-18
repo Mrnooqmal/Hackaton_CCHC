@@ -1,0 +1,37 @@
+service: HackatonBackend
+plugins:
+  - serverless-prune-plugin
+  - serverless-offline
+custom:
+  prune:
+    automatic: true
+    number: 5
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  httpApi:
+    cors: true
+
+package:
+  individually: false  
+  excludeDevDependencies: true  
+  patterns:
+    - "!node_modules/.prisma/**"
+    - "!node_modules/@prisma/**"
+    - "!node_modules/.bin/**"
+    - "!tests/**"
+    - "!**/__tests__/**"
+    - "node_modules/@faker-js/faker/**"
+    - "node_modules/dotenv/**"
+    - "node_modules/uuid/**"
+
+
+functions:
+  printHello:
+    handler: handlers/hola.printHello
+    events:
+      - httpApi:
+          path: /hello
+          method: GET
