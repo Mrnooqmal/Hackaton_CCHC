@@ -21,6 +21,7 @@ provider:
     WORKERS_TABLE: ${self:service}-workers-${self:provider.stage}
     DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
     ACTIVITIES_TABLE: ${self:service}-activities-${self:provider.stage}
+    SIGNATURES_TABLE: ${self:service}-signatures-${self:provider.stage}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
   httpApi:
     cors:
@@ -50,6 +51,7 @@ provider:
             - !GetAtt WorkersTable.Arn
             - !GetAtt DocumentsTable.Arn
             - !GetAtt ActivitiesTable.Arn
+            - !GetAtt SignaturesTable.Arn
 
 package:
   individually: false
@@ -103,6 +105,63 @@ functions:
     events:
       - httpApi:
           path: /workers/rut/{rut}
+          method: GET
+
+  setWorkerPin:
+    handler: handlers/workers.setPin
+    events:
+      - httpApi:
+          path: /workers/{id}/set-pin
+          method: POST
+
+  completeWorkerEnrollment:
+    handler: handlers/workers.completeEnrollment
+    events:
+      - httpApi:
+          path: /workers/{id}/complete-enrollment
+          method: POST
+
+  # Signatures (Firmas Digitales)
+  createSignature:
+    handler: handlers/signatures.create
+    events:
+      - httpApi:
+          path: /signatures
+          method: POST
+
+  getSignature:
+    handler: handlers/signatures.get
+    events:
+      - httpApi:
+          path: /signatures/{id}
+          method: GET
+
+  getSignaturesByWorker:
+    handler: handlers/signatures.getByWorker
+    events:
+      - httpApi:
+          path: /signatures/worker/{workerId}
+          method: GET
+
+  disputeSignature:
+    handler: handlers/signatures.dispute
+    events:
+      - httpApi:
+          path: /signatures/{id}/dispute
+          method: POST
+
+  resolveSignatureDispute:
+    handler: handlers/signatures.resolve
+    events:
+      - httpApi:
+          path: /signatures/{id}/resolve
+          method: PUT
+
+  listSignatureDisputes:
+    handler: handlers/signatures.listDisputes
+    events:
+      - httpApi:
+          path: /signatures/disputes
           method: GET
 
   # Documents (Documentos)
@@ -257,4 +316,16 @@ resources:
             AttributeType: S
         KeySchema:
           - AttributeName: activityId
+            KeyType: HASH
+
+    SignaturesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.SIGNATURES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: signatureId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: signatureId
             KeyType: HASH

@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
-import SignaturePad from '../components/SignaturePad';
-import { FiUser, FiMail, FiPhone, FiBriefcase, FiCheck, FiArrowRight, FiArrowLeft } from 'react-icons/fi';
+import PinInput from '../components/PinInput';
+import { FiUser, FiMail, FiPhone, FiBriefcase, FiCheck, FiArrowRight, FiArrowLeft, FiLock, FiShield } from 'react-icons/fi';
 import { workersApi, type CreateWorkerData } from '../api/client';
 
-type Step = 'data' | 'sign' | 'complete';
+type Step = 'data' | 'create-pin' | 'confirm-pin' | 'sign' | 'complete';
 
 export default function WorkerEnroll() {
     const navigate = useNavigate();
     const [step, setStep] = useState<Step>('data');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [pinError, setPinError] = useState('');
     const [workerId, setWorkerId] = useState<string | null>(null);
+    const [newPin, setNewPin] = useState('');
+    const [signatureToken, setSignatureToken] = useState('');
 
     const [formData, setFormData] = useState<CreateWorkerData>({
         rut: '',
@@ -26,7 +29,6 @@ export default function WorkerEnroll() {
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     const validateRut = (rut: string): boolean => {
-        // Formato básico: 12.345.678-9 o 12345678-9
         const cleanRut = rut.replace(/\./g, '').replace(/-/g, '');
         if (cleanRut.length < 8 || cleanRut.length > 9) return false;
         return true;
@@ -57,7 +59,6 @@ export default function WorkerEnroll() {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name]: value }));
 
-        // Limpiar error del campo cuando se modifica
         if (errors[name]) {
             setErrors((prev) => ({ ...prev, [name]: '' }));
         }
@@ -76,7 +77,7 @@ export default function WorkerEnroll() {
 
             if (response.success && response.data) {
                 setWorkerId(response.data.workerId);
-                setStep('sign');
+                setStep('create-pin');
             } else {
                 setError(response.error || 'Error al registrar trabajador');
             }
@@ -87,20 +88,55 @@ export default function WorkerEnroll() {
         }
     };
 
-    const handleSign = async (signatureData: string) => {
+    const handleCreatePin = async (pin: string) => {
+        if (!workerId) return;
+
+        setNewPin(pin);
+        setLoading(true);
+        setPinError('');
+
+        try {
+            const response = await workersApi.setPin(workerId, pin);
+
+            if (response.success) {
+                setStep('confirm-pin');
+            } else {
+                setPinError(response.error || 'Error al configurar PIN');
+            }
+        } catch (err) {
+            setPinError('Error de conexión con el servidor');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleConfirmPin = async (pin: string) => {
+        if (pin !== newPin) {
+            setPinError('Los PINs no coinciden. Intente nuevamente.');
+            return;
+        }
+
+        setPinError('');
+        setStep('sign');
+    };
+
+    const handleSign = async (pin: string) => {
         if (!workerId) return;
 
         setLoading(true);
-        try {
-            const response = await workersApi.sign(workerId, { tipo: 'enrolamiento' });
+        setPinError('');
 
-            if (response.success) {
+        try {
+            const response = await workersApi.completeEnrollment(workerId, pin);
+
+            if (response.success && response.data) {
+                setSignatureToken(response.data.firma.token);
                 setStep('complete');
             } else {
-                setError(response.error || 'Error al registrar firma');
+                setPinError(response.error || 'Error al completar enrolamiento');
             }
         } catch (err) {
-            setError('Error de conexión con el servidor');
+            setPinError('Error de conexión con el servidor');
         } finally {
             setLoading(false);
         }
@@ -120,6 +156,21 @@ export default function WorkerEnroll() {
         'Otro'
     ];
 
+    const getStepNumber = () => {
+        switch (step) {
+            case 'data': return 1;
+            case 'create-pin': return 2;
+            case 'confirm-pin': return 2;
+            case 'sign': return 3;
+            case 'complete': return 4;
+        }
+    };
+
+    const isStepComplete = (stepNum: number) => {
+        const current = getStepNumber();
+        return current > stepNum;
+    };
+
     return (
         <>
             <Header title="Enrolamiento de Trabajador" />
@@ -127,37 +178,62 @@ export default function WorkerEnroll() {
             <div className="main-content">
                 {/* Progress Steps */}
                 <div className="card mb-6">
-                    <div className="flex items-center justify-center gap-4">
+                    <div className="flex items-center justify-center gap-4" style={{ flexWrap: 'wrap' }}>
+                        {/* Step 1: Datos */}
                         <div className={`flex items-center gap-2 ${step === 'data' ? 'text-primary' : ''}`}>
                             <div
                                 className="avatar avatar-sm"
                                 style={{
                                     background: step === 'data' ? 'var(--primary-500)' :
-                                        step !== 'data' ? 'var(--success-500)' : 'var(--gray-600)'
+                                        isStepComplete(1) ? 'var(--success-500)' : 'var(--gray-600)'
                                 }}
                             >
-                                {step !== 'data' ? <FiCheck /> : '1'}
+                                {isStepComplete(1) ? <FiCheck /> : '1'}
                             </div>
-                            <span className="font-bold">Datos Personales</span>
+                            <span className={step === 'data' ? 'font-bold' : isStepComplete(1) ? '' : 'text-muted'}>
+                                Datos
+                            </span>
                         </div>
 
-                        <div style={{ width: '60px', height: '2px', background: 'var(--surface-border)' }} />
+                        <div style={{ width: '40px', height: '2px', background: 'var(--surface-border)' }} />
 
+                        {/* Step 2: PIN */}
+                        <div className={`flex items-center gap-2 ${step === 'create-pin' || step === 'confirm-pin' ? 'text-primary' : ''}`}>
+                            <div
+                                className="avatar avatar-sm"
+                                style={{
+                                    background: step === 'create-pin' || step === 'confirm-pin' ? 'var(--primary-500)' :
+                                        isStepComplete(2) ? 'var(--success-500)' : 'var(--gray-600)'
+                                }}
+                            >
+                                {isStepComplete(2) ? <FiCheck /> : <FiLock size={14} />}
+                            </div>
+                            <span className={step === 'create-pin' || step === 'confirm-pin' ? 'font-bold' : isStepComplete(2) ? '' : 'text-muted'}>
+                                Crear PIN
+                            </span>
+                        </div>
+
+                        <div style={{ width: '40px', height: '2px', background: 'var(--surface-border)' }} />
+
+                        {/* Step 3: Firma */}
                         <div className={`flex items-center gap-2 ${step === 'sign' ? 'text-primary' : ''}`}>
                             <div
                                 className="avatar avatar-sm"
                                 style={{
                                     background: step === 'sign' ? 'var(--primary-500)' :
-                                        step === 'complete' ? 'var(--success-500)' : 'var(--gray-600)'
+                                        isStepComplete(3) ? 'var(--success-500)' : 'var(--gray-600)'
                                 }}
                             >
-                                {step === 'complete' ? <FiCheck /> : '2'}
+                                {isStepComplete(3) ? <FiCheck /> : <FiShield size={14} />}
                             </div>
-                            <span className={step === 'data' ? 'text-muted' : 'font-bold'}>Firma Digital</span>
+                            <span className={step === 'sign' ? 'font-bold' : isStepComplete(3) ? '' : 'text-muted'}>
+                                Firma
+                            </span>
                         </div>
 
-                        <div style={{ width: '60px', height: '2px', background: 'var(--surface-border)' }} />
+                        <div style={{ width: '40px', height: '2px', background: 'var(--surface-border)' }} />
 
+                        {/* Step 4: Completado */}
                         <div className={`flex items-center gap-2 ${step === 'complete' ? 'text-primary' : ''}`}>
                             <div
                                 className="avatar avatar-sm"
@@ -165,9 +241,11 @@ export default function WorkerEnroll() {
                                     background: step === 'complete' ? 'var(--success-500)' : 'var(--gray-600)'
                                 }}
                             >
-                                {step === 'complete' ? <FiCheck /> : '3'}
+                                {step === 'complete' ? <FiCheck /> : '4'}
                             </div>
-                            <span className={step !== 'complete' ? 'text-muted' : 'font-bold'}>Completado</span>
+                            <span className={step === 'complete' ? 'font-bold' : 'text-muted'}>
+                                Listo
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -319,7 +397,75 @@ export default function WorkerEnroll() {
                     </div>
                 )}
 
-                {/* Step 2: Signature */}
+                {/* Step 2a: Create PIN */}
+                {step === 'create-pin' && (
+                    <div className="card" style={{ maxWidth: '500px', margin: '0 auto' }}>
+                        <h2 className="card-title mb-4">Crear PIN de Seguridad</h2>
+                        <p className="text-muted mb-6">
+                            El trabajador debe crear un PIN de 4 dígitos. Este PIN será utilizado
+                            para firmar documentos y validar su identidad en el sistema.
+                        </p>
+
+                        <div className="alert alert-info mb-4">
+                            <strong>Importante:</strong> El PIN es personal e intransferible.
+                            Se recomienda no usar secuencias obvias como 1234 o fechas de nacimiento.
+                        </div>
+
+                        <PinInput
+                            onComplete={handleCreatePin}
+                            mode="create"
+                            error={pinError}
+                            disabled={loading}
+                        />
+
+                        <div className="flex gap-3 mt-6">
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => setStep('data')}
+                                disabled={loading}
+                            >
+                                <FiArrowLeft />
+                                Volver
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 2b: Confirm PIN */}
+                {step === 'confirm-pin' && (
+                    <div className="card" style={{ maxWidth: '500px', margin: '0 auto' }}>
+                        <h2 className="card-title mb-4">Confirmar PIN</h2>
+                        <p className="text-muted mb-6">
+                            Ingrese nuevamente el PIN para confirmar que lo recuerda correctamente.
+                        </p>
+
+                        <PinInput
+                            onComplete={handleConfirmPin}
+                            mode="confirm"
+                            error={pinError}
+                            disabled={loading}
+                        />
+
+                        <div className="flex gap-3 mt-6">
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                    setNewPin('');
+                                    setPinError('');
+                                    setStep('create-pin');
+                                }}
+                                disabled={loading}
+                            >
+                                <FiArrowLeft />
+                                Crear otro PIN
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 3: Sign Enrollment */}
                 {step === 'sign' && (
                     <div className="card" style={{ maxWidth: '600px', margin: '0 auto' }}>
                         <h2 className="card-title mb-4">Firma de Enrolamiento</h2>
@@ -340,10 +486,26 @@ export default function WorkerEnroll() {
                             Hora: {new Date().toLocaleTimeString('es-CL')}
                         </div>
 
-                        <SignaturePad
-                            onSign={handleSign}
-                            workerName={`${formData.nombre} ${formData.apellido}`}
-                            workerRut={formData.rut}
+                        <div style={{
+                            background: 'rgba(245, 158, 11, 0.1)',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            borderRadius: 'var(--radius-md)',
+                            padding: 'var(--space-4)',
+                            marginBottom: 'var(--space-4)',
+                            fontSize: 'var(--text-sm)',
+                            color: 'var(--warning-600)'
+                        }}>
+                            Al ingresar su PIN, usted acepta que sus datos han sido verificados
+                            y autoriza el uso de firma digital para documentos laborales según
+                            la normativa vigente (DS 44).
+                        </div>
+
+                        <PinInput
+                            onComplete={handleSign}
+                            mode="verify"
+                            title="Ingrese su PIN para firmar"
+                            subtitle="Confirme su identidad con el PIN creado"
+                            error={pinError}
                             disabled={loading}
                         />
 
@@ -351,7 +513,7 @@ export default function WorkerEnroll() {
                             <button
                                 type="button"
                                 className="btn btn-secondary"
-                                onClick={() => setStep('data')}
+                                onClick={() => setStep('confirm-pin')}
                                 disabled={loading}
                             >
                                 <FiArrowLeft />
@@ -361,7 +523,7 @@ export default function WorkerEnroll() {
                     </div>
                 )}
 
-                {/* Step 3: Complete */}
+                {/* Step 4: Complete */}
                 {step === 'complete' && (
                     <div className="card" style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'center' }}>
                         <div
@@ -404,6 +566,25 @@ export default function WorkerEnroll() {
                                 <span className="text-muted">Fecha:</span>
                                 <span className="font-bold">{new Date().toLocaleDateString('es-CL')}</span>
                             </div>
+                            <div className="flex justify-between">
+                                <span className="text-muted">Token de Firma:</span>
+                                <span className="font-bold" style={{ fontSize: 'var(--text-xs)', fontFamily: 'monospace' }}>
+                                    {signatureToken}
+                                </span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-muted">Estado:</span>
+                                <span style={{
+                                    color: 'var(--success-500)',
+                                    fontWeight: 600,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                }}>
+                                    <FiShield size={14} />
+                                    Habilitado
+                                </span>
+                            </div>
                         </div>
 
                         <div className="flex gap-3">
@@ -420,6 +601,10 @@ export default function WorkerEnroll() {
                                         cargo: '',
                                     });
                                     setWorkerId(null);
+                                    setNewPin('');
+                                    setSignatureToken('');
+                                    setError('');
+                                    setPinError('');
                                 }}
                                 style={{ flex: 1 }}
                             >
