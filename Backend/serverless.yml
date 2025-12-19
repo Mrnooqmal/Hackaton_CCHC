@@ -1,37 +1,262 @@
 service: HackatonBackend
+
 plugins:
   - serverless-prune-plugin
   - serverless-offline
+
 custom:
   prune:
     automatic: true
     number: 5
+  serverless-offline:
+    httpPort: 3001
+    lambdaPort: 3002
 
 provider:
   name: aws
   runtime: nodejs18.x
   region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  environment:
+    WORKERS_TABLE: ${self:service}-workers-${self:provider.stage}
+    DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
+    ACTIVITIES_TABLE: ${self:service}-activities-${self:provider.stage}
+    IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
   httpApi:
-    cors: true
+    cors:
+      allowedOrigins:
+        - http://localhost:5173
+        - http://localhost:3000
+        - '*'
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+      allowedMethods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - !GetAtt WorkersTable.Arn
+            - !GetAtt DocumentsTable.Arn
+            - !GetAtt ActivitiesTable.Arn
 
 package:
-  individually: false  
-  excludeDevDependencies: true  
+  individually: false
+  excludeDevDependencies: true
   patterns:
-    - "!node_modules/.prisma/**"
-    - "!node_modules/@prisma/**"
-    - "!node_modules/.bin/**"
-    - "!tests/**"
-    - "!**/__tests__/**"
-    - "node_modules/@faker-js/faker/**"
-    - "node_modules/dotenv/**"
-    - "node_modules/uuid/**"
-
+    - '!node_modules/.prisma/**'
+    - '!node_modules/@prisma/**'
+    - '!node_modules/.bin/**'
+    - '!tests/**'
+    - '!**/__tests__/**'
 
 functions:
+  # Workers (Trabajadores/Enrolamiento)
+  createWorker:
+    handler: handlers/workers.create
+    events:
+      - httpApi:
+          path: /workers
+          method: POST
+
+  listWorkers:
+    handler: handlers/workers.list
+    events:
+      - httpApi:
+          path: /workers
+          method: GET
+
+  getWorker:
+    handler: handlers/workers.get
+    events:
+      - httpApi:
+          path: /workers/{id}
+          method: GET
+
+  updateWorker:
+    handler: handlers/workers.update
+    events:
+      - httpApi:
+          path: /workers/{id}
+          method: PUT
+
+  signWorker:
+    handler: handlers/workers.sign
+    events:
+      - httpApi:
+          path: /workers/{id}/sign
+          method: POST
+
+  getWorkerByRut:
+    handler: handlers/workers.getByRut
+    events:
+      - httpApi:
+          path: /workers/rut/{rut}
+          method: GET
+
+  # Documents (Documentos)
+  createDocument:
+    handler: handlers/documents.create
+    events:
+      - httpApi:
+          path: /documents
+          method: POST
+
+  listDocuments:
+    handler: handlers/documents.list
+    events:
+      - httpApi:
+          path: /documents
+          method: GET
+
+  getDocument:
+    handler: handlers/documents.get
+    events:
+      - httpApi:
+          path: /documents/{id}
+          method: GET
+
+  assignDocument:
+    handler: handlers/documents.assign
+    events:
+      - httpApi:
+          path: /documents/{id}/assign
+          method: POST
+
+  signDocument:
+    handler: handlers/documents.sign
+    events:
+      - httpApi:
+          path: /documents/{id}/sign
+          method: POST
+
+  signDocumentBulk:
+    handler: handlers/documents.signBulk
+    events:
+      - httpApi:
+          path: /documents/{id}/sign-bulk
+          method: POST
+
+  # Activities (Actividades)
+  createActivity:
+    handler: handlers/activities.create
+    events:
+      - httpApi:
+          path: /activities
+          method: POST
+
+  listActivities:
+    handler: handlers/activities.list
+    events:
+      - httpApi:
+          path: /activities
+          method: GET
+
+  getActivity:
+    handler: handlers/activities.get
+    events:
+      - httpApi:
+          path: /activities/{id}
+          method: GET
+
+  registerAttendance:
+    handler: handlers/activities.registerAttendance
+    events:
+      - httpApi:
+          path: /activities/{id}/attendance
+          method: POST
+
+  getActivityStats:
+    handler: handlers/activities.getStats
+    events:
+      - httpApi:
+          path: /activities/stats
+          method: GET
+
+  # AI Assistant (Asistente IA)
+  aiChat:
+    handler: handlers/ai-assistant.chat
+    events:
+      - httpApi:
+          path: /ai/chat
+          method: POST
+
+  aiRiskMatrix:
+    handler: handlers/ai-assistant.generateRiskMatrix
+    events:
+      - httpApi:
+          path: /ai/risk-matrix
+          method: POST
+
+  aiPreventionPlan:
+    handler: handlers/ai-assistant.generatePreventionPlan
+    events:
+      - httpApi:
+          path: /ai/prevention-plan
+          method: POST
+
+  aiDailyTalk:
+    handler: handlers/ai-assistant.generateDailyTalk
+    events:
+      - httpApi:
+          path: /ai/daily-talk
+          method: POST
+
+  # Hello (Test)
   printHello:
     handler: handlers/hola.printHello
     events:
       - httpApi:
           path: /hello
           method: GET
+
+resources:
+  Resources:
+    WorkersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.WORKERS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: workerId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: workerId
+            KeyType: HASH
+
+    DocumentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.DOCUMENTS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: documentId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: documentId
+            KeyType: HASH
+
+    ActivitiesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.ACTIVITIES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: activityId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: activityId
+            KeyType: HASH
