@@ -4,7 +4,7 @@ const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const isOffline = process.env.IS_OFFLINE === 'true';
 
 const client = new DynamoDBClient(
-    isOffline
+    (isOffline && process.env.DYNAMODB_LOCAL === 'true')
         ? {
             region: 'localhost',
             endpoint: 'http://localhost:8000',

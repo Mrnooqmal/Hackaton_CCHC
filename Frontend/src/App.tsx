@@ -1,20 +1,31 @@
-import { useEffect, useState } from 'react';
-import { getHello } from './api/hola';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Sidebar from './components/Sidebar';
+import Dashboard from './pages/Dashboard';
+import Workers from './pages/Workers';
+import WorkerEnroll from './pages/WorkerEnroll';
+import Documents from './pages/Documents';
+import Activities from './pages/Activities';
+import AIAssistant from './pages/AIAssistant';
+import './css/index.css';
+import './css/App.css';
 
 function App() {
-  const [mensaje, setMensaje] = useState("Cargando...");
-
-  useEffect(() => {
-    getHello()
-      .then(data => setMensaje(data.mensaje))
-      .catch(err => setMensaje("error: " + err.message));
-  }, []);
-
   return (
-    <div>
-      <h1>Mi Hackaton App</h1>
-      <p>Respuesta del backend: {mensaje}</p>
-    </div>
+    <BrowserRouter>
+      <div className="app-layout">
+        <Sidebar />
+        <main className="main-content">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/workers" element={<Workers />} />
+            <Route path="/workers/enroll" element={<WorkerEnroll />} />
+            <Route path="/documents" element={<Documents />} />
+            <Route path="/activities" element={<Activities />} />
+            <Route path="/ai-assistant" element={<AIAssistant />} />
+          </Routes>
+        </main>
+      </div>
+    </BrowserRouter>
   );
 }
 
