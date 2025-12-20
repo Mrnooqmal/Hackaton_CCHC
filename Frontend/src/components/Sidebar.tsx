@@ -10,7 +10,6 @@ import {
     FiMessageSquare,
     FiSettings,
     FiShield,
-    FiLogOut,
     FiUser,
     FiAlertTriangle,
     FiClipboard,
@@ -72,7 +71,7 @@ const navItems: NavSection[] = [
 
 export default function Sidebar() {
     const location = useLocation();
-    const { user, logout, hasPermission } = useAuth();
+    const { user, hasPermission } = useAuth();
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
     const [workerId, setWorkerId] = useState<string | null>(null);
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
@@ -201,12 +200,6 @@ export default function Sidebar() {
         };
     }, [workerId, canRespondSurveys]);
 
-    const handleLogout = () => {
-        if (confirm('¿Cerrar sesión?')) {
-            logout();
-        }
-    };
-
     return (
         <aside className="sidebar">
             <div className="sidebar-header">
@@ -269,33 +262,6 @@ export default function Sidebar() {
                     );
                 })}
             </nav>
-
-            {user && (
-                <div className="sidebar-footer">
-                    <div className="user-info">
-                        <div className="avatar avatar-sm bg-primary-500">
-                            {user.nombre[0]}{user.apellido?.[0] || ''}
-                        </div>
-                        <div className="user-details overflow-hidden">
-                            <div className="user-name truncate">{user.nombre} {user.apellido}</div>
-                            <div className={`user-role-badge role-${user.rol}`}>
-                                {user.rol === 'admin'}
-                                {user.rol === 'prevencionista'}
-                                {user.rol === 'trabajador'}
-                                {' '}{user.rol === 'admin' ? 'Administrador' : user.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}
-                            </div>
-                        </div>
-                        <button
-                            className="logout-btn"
-                            onClick={handleLogout}
-                            title="Cerrar sesión"
-                        >
-                            <FiLogOut />
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {/* Notification Popup - Bottom Right */}
             {showNotificationPopup && recentMessages.length > 0 && (
                 <div className="notification-popup">
@@ -340,65 +306,6 @@ export default function Sidebar() {
             )}
 
             <style>{`
-                .sidebar-footer {
-                    padding: var(--space-4);
-                    border-top: 1px solid var(--surface-border);
-                    margin-top: auto;
-                }
-                .user-info {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-3);
-                    padding: var(--space-3);
-                    background: var(--surface-elevated);
-                    border-radius: var(--radius-lg);
-                }
-                .user-details {
-                    flex: 1;
-                }
-                .user-name {
-                    font-size: var(--text-sm);
-                    font-weight: 600;
-                    color: var(--text-primary);
-                    margin-bottom: 4px;
-                }
-                .user-role-badge {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 4px;
-                    font-size: 11px;
-                    font-weight: 600;
-                    padding: 2px 8px;
-                    border-radius: 12px;
-                    text-transform: capitalize;
-                }
-                .role-admin {
-                    background: linear-gradient(135deg, var(--warning-500), var(--warning-600));
-                    color: white;
-                }
-                .role-prevencionista {
-                    background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
-                    color: white;
-                }
-                .role-trabajador {
-                    background: linear-gradient(135deg, var(--info-500), var(--info-600));
-                    color: white;
-                }
-                .logout-btn {
-                    background: none;
-                    border: none;
-                    color: var(--text-muted);
-                    cursor: pointer;
-                    padding: var(--space-2);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    transition: color 0.2s;
-                }
-                .logout-btn:hover {
-                    color: var(--danger-500);
-                }
-
                 /* Inbox badge styles */
                 .inbox-badge {
                     background: var(--danger-500) !important;

@@ -172,6 +172,102 @@
   gap: var(--space-3);
 }
 
+.header-user-wrapper {
+  position: relative;
+}
+
+.header-user-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+}
+
+.header-user-card:hover,
+.header-user-card:focus-visible {
+  background: var(--surface-hover);
+}
+
+.header-user-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.header-user-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: capitalize;
+  margin-top: 2px;
+}
+
+.role-admin {
+  background: linear-gradient(135deg, var(--warning-500), var(--warning-600));
+  color: white;
+}
+
+.role-prevencionista {
+  background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+  color: white;
+}
+
+.role-trabajador {
+  background: linear-gradient(135deg, var(--info-500), var(--info-600));
+  color: white;
+}
+
+.header-user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
+  min-width: 200px;
+  padding: var(--space-2);
+  z-index: 100;
+}
+
+.header-user-dropdown-item {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.header-user-dropdown-item:hover {
+  background: var(--surface-hover);
+  color: var(--danger-500);
+}
+
 /* Cards */
 .card {
   background: var(--surface-card);
