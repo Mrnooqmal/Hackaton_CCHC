@@ -250,6 +250,17 @@ export interface User {
     passwordTemporal?: boolean;
     ultimoAcceso?: string;
     creadoPor?: string;
+    workerId?: string;
+    empresaId?: string;
+}
+
+export interface LoginResponse {
+    token: string;
+    sessionId: string;
+    expiresAt: string;
+    user: User;
+    requiereCambioPassword: boolean;
+    requiereEnrolamiento: boolean;
 }
 
 export interface CreateUserData {
@@ -365,9 +376,10 @@ export interface DigitalSignature {
 export interface CreateSignatureData {
     workerId: string;
     pin: string;
-    tipoFirma: 'enrolamiento' | 'documento' | 'actividad' | 'capacitacion';
+    tipoFirma?: 'enrolamiento' | 'documento' | 'actividad' | 'capacitacion';
     referenciaId?: string;
     referenciaTipo?: string;
+    requestId?: string;
     metadata?: Record<string, unknown>;
 }
 
@@ -937,7 +949,11 @@ export const incidentsApi = {
         }),
 
     getStats: (params?: IncidentStatsParams) => {
+<<<<<<< HEAD
         const query = params ? new URLSearchParams(params as any).toString() : '';
+=======
+        const query = params ? new URLSearchParams(params as unknown as Record<string, string>).toString() : '';
+>>>>>>> 142da99 (Cambios varios a funcionalidades de firmas y handlers relacionados)
         return apiRequest<IncidentStats>(`/incidents/stats${query ? `?${query}` : ''}`);
     },
 
@@ -969,3 +985,292 @@ export const incidentsApi = {
             body: JSON.stringify(data),
         }),
 };
+
+// ========================================
+// SIGNATURE REQUESTS TYPES
+// ========================================
+
+export interface SignatureRequestType {
+    label: string;
+    icon: string;
+    requiresDoc: boolean;
+}
+
+export interface DocumentoAdjunto {
+    nombre: string;
+    url: string;  // S3 key
+    tipo: string; // MIME type
+    tamaño: number;
+    subidoEn?: string;
+}
+
+export interface TrabajadorEnSolicitud {
+    workerId: string;
+    nombre: string;
+    rut: string;
+    cargo: string;
+    firmado: boolean;
+    signatureId: string | null;
+    fechaFirma: string | null;
+}
+
+export interface SignatureRequest {
+    requestId: string;
+    tipo: string;
+    tipoInfo: SignatureRequestType;
+    titulo: string;
+    descripcion: string;
+    documentos: DocumentoAdjunto[];
+    tieneDocumentos: boolean;
+    solicitanteId: string;
+    solicitanteNombre: string;
+    solicitanteRut: string;
+    trabajadores: TrabajadorEnSolicitud[];
+    totalRequeridos: number;
+    totalFirmados: number;
+    fechaCreacion: string;
+    fechaLimite: string | null;
+    fechaCompletado: string | null;
+    ubicacion: string | null;
+    empresaId: string;
+    estado: 'pendiente' | 'en_proceso' | 'completada' | 'cancelada' | 'vencida';
+    motivoCancelacion?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface CreateSignatureRequestData {
+    tipo: string;
+    titulo: string;
+    descripcion?: string;
+    documentos?: DocumentoAdjunto[];
+    trabajadoresIds: string[];
+    solicitanteId: string;
+    fechaLimite?: string;
+    ubicacion?: string;
+    empresaId?: string;
+}
+
+// New Signature Types for Signature Requests
+export interface NewSignature {
+    signatureId: string;
+    token: string;
+    requestId: string | null;
+    requestTitulo: string;
+    requestTipo: string;
+    workerId: string;
+    workerRut: string;
+    workerNombre: string;
+    workerCargo: string;
+    solicitanteId: string | null;
+    solicitanteNombre: string;
+    fecha: string;
+    horario: string;
+    timestamp: string;
+    ipAddress: string;
+    userAgent: string;
+    metodoValidacion: string;
+    documentosFirmados: DocumentoAdjunto[];
+    estado: 'valida' | 'disputada' | 'revocada' | 'pendiente';
+    disputaInfo?: DisputeInfo;
+    empresaId: string;
+    createdAt: string;
+}
+
+export interface DisputeInfo {
+    motivo: string;
+    reportadoPor: string;
+    fechaReporte: string;
+    resolucion?: string;
+    resueltoPor?: string;
+    fechaResolucion?: string;
+}
+
+export interface CreateNewSignatureData {
+    workerId: string;
+    pin: string;
+    requestId: string;
+    metadata?: {
+        geolocation?: { lat: number; lng: number };
+        deviceId?: string;
+    };
+}
+
+// Upload Types
+export interface UploadUrlResponse {
+    uploadUrl: string;
+    fileKey: string;
+    expiresIn: number;
+    bucket: string;
+}
+
+export interface ConfirmUploadResponse {
+    confirmed: boolean;
+    documento: DocumentoAdjunto;
+    downloadUrl: string;
+}
+
+// Stats Types
+export interface SignatureRequestStats {
+    total: number;
+    pendientes: number;
+    enProceso: number;
+    completadas: number;
+    canceladas: number;
+    vencidas: number;
+    totalFirmasRequeridas: number;
+    totalFirmasObtenidas: number;
+    porTipo: Record<string, {
+        label: string;
+        icon: string;
+        total: number;
+        completadas: number;
+    }>;
+}
+
+// ========================================
+// API: SIGNATURE REQUESTS (Solicitudes de Firma)
+// ========================================
+export const signatureRequestsApi = {
+    create: (data: CreateSignatureRequestData) =>
+        apiRequest<SignatureRequest>('/signature-requests', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    list: (params?: { empresaId?: string; estado?: string; solicitanteId?: string; tipo?: string }) => {
+        const query = params ? new URLSearchParams(params as Record<string, string>).toString() : '';
+        return apiRequest<{ requests: SignatureRequest[]; total: number; types: Record<string, SignatureRequestType> }>(
+            `/signature-requests${query ? `?${query}` : ''}`
+        );
+    },
+
+    get: (id: string) =>
+        apiRequest<SignatureRequest & { firmasDetalle: NewSignature[] }>(`/signature-requests/${id}`),
+
+    getPendingByWorker: (workerId: string) =>
+        apiRequest<{ pendientes: SignatureRequest[]; total: number }>(`/signature-requests/pending/${workerId}`),
+
+    getHistoryByWorker: (workerId: string) =>
+        apiRequest<{ historial: { firma: NewSignature; solicitud: SignatureRequest | null }[]; totalFirmas: number }>(
+            `/signature-requests/history/${workerId}`
+        ),
+
+    cancel: (id: string, motivo?: string) =>
+        apiRequest<{ message: string }>(`/signature-requests/${id}/cancel`, {
+            method: 'POST',
+            body: JSON.stringify({ motivo }),
+        }),
+
+    getStats: (params?: { empresaId?: string; solicitanteId?: string }) => {
+        const query = params ? new URLSearchParams(params as Record<string, string>).toString() : '';
+        return apiRequest<SignatureRequestStats>(`/signature-requests/stats${query ? `?${query}` : ''}`);
+    },
+};
+
+// ========================================
+// API: UPLOADS (Subida de archivos a S3)
+// ========================================
+export const uploadsApi = {
+    getUploadUrl: (data: { fileName: string; fileType: string; fileSize: number; categoria?: string; empresaId?: string }) =>
+        apiRequest<UploadUrlResponse>('/uploads/presigned-url', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    getDownloadUrl: (fileKey: string) =>
+        apiRequest<{ downloadUrl: string; expiresIn: number }>('/uploads/download-url', {
+            method: 'POST',
+            body: JSON.stringify({ fileKey }),
+        }),
+
+    confirmUpload: (data: { fileKey: string; fileName: string; fileType: string; fileSize: number }) =>
+        apiRequest<ConfirmUploadResponse>('/uploads/confirm', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    deleteFile: (fileKey: string) =>
+        apiRequest<{ deleted: boolean; fileKey: string }>(`/uploads/${encodeURIComponent(fileKey)}`, {
+            method: 'DELETE',
+        }),
+
+    getBatchDownloadUrls: (fileKeys: string[]) =>
+        apiRequest<{ urls: { fileKey: string; downloadUrl: string | null; error: string | null }[]; expiresIn: number }>(
+            '/uploads/batch-download-urls',
+            {
+                method: 'POST',
+                body: JSON.stringify({ fileKeys }),
+            }
+        ),
+
+    // Helper para subir archivo completo
+    uploadFile: async (file: File, categoria?: string, empresaId?: string): Promise<ApiResponse<DocumentoAdjunto>> => {
+        try {
+            // 1. Obtener URL presigned
+            const urlResponse = await uploadsApi.getUploadUrl({
+                fileName: file.name,
+                fileType: file.type,
+                fileSize: file.size,
+                categoria,
+                empresaId,
+            });
+
+            if (!urlResponse.success || !urlResponse.data) {
+                return { success: false, error: urlResponse.error || 'Error al obtener URL de subida' };
+            }
+
+            // 2. Subir archivo a S3
+            const uploadResult = await fetch(urlResponse.data.uploadUrl, {
+                method: 'PUT',
+                body: file,
+                headers: {
+                    'Content-Type': file.type,
+                },
+            });
+
+            if (!uploadResult.ok) {
+                return { success: false, error: 'Error al subir archivo a S3' };
+            }
+
+            // 3. Confirmar subida
+            const confirmResponse = await uploadsApi.confirmUpload({
+                fileKey: urlResponse.data.fileKey,
+                fileName: file.name,
+                fileType: file.type,
+                fileSize: file.size,
+            });
+
+            if (!confirmResponse.success || !confirmResponse.data) {
+                return { success: false, error: confirmResponse.error || 'Error al confirmar subida' };
+            }
+
+            return {
+                success: true,
+                data: confirmResponse.data.documento,
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Error desconocido al subir archivo',
+            };
+        }
+    },
+};
+
+// ========================================
+// REQUEST TYPES (Constantes)
+// ========================================
+export const REQUEST_TYPES: Record<string, SignatureRequestType> = {
+    CHARLA_5MIN: { label: 'Charla de 5 Minutos', icon: '💬', requiresDoc: false },
+    CAPACITACION: { label: 'Capacitación', icon: '📚', requiresDoc: true },
+    INDUCCION: { label: 'Inducción', icon: '🎓', requiresDoc: true },
+    ENTREGA_EPP: { label: 'Entrega de EPP', icon: '🦺', requiresDoc: true },
+    ART: { label: 'Análisis de Riesgos en Terreno', icon: '⚠️', requiresDoc: true },
+    PROCEDIMIENTO: { label: 'Procedimiento de Trabajo', icon: '📋', requiresDoc: true },
+    INSPECCION: { label: 'Inspección de Seguridad', icon: '🔍', requiresDoc: false },
+    REGLAMENTO: { label: 'Reglamento Interno', icon: '📖', requiresDoc: true },
+    OTRO: { label: 'Otro', icon: '📝', requiresDoc: false },
+};
+
+

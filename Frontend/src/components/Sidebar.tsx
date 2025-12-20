@@ -4,12 +4,14 @@ import {
     FiUsers,
     FiFileText,
     FiCalendar,
-    FiAlertTriangle,
+    FiEdit3,
+    FiCheckSquare,
     FiMessageSquare,
     FiSettings,
     FiShield,
     FiLogOut,
     FiUser,
+    FiAlertTriangle,
     FiClipboard
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
@@ -34,6 +36,13 @@ const navItems: NavSection[] = [
             { path: '/', icon: FiHome, label: 'Dashboard' },
             { path: '/workers', icon: FiUsers, label: 'Trabajadores', permission: 'ver_trabajadores' },
             { path: '/workers/enroll', icon: FiShield, label: 'Enrolamiento', permission: 'ver_trabajadores' },
+        ]
+    },
+    {
+        section: 'Firmas',
+        items: [
+            { path: '/signature-requests', icon: FiEdit3, label: 'Solicitar Firmas', permission: 'crear_actividades' },
+            { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Firmas' },
         ]
     },
     {

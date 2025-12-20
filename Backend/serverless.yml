@@ -11,6 +11,7 @@ custom:
   serverless-offline:
     httpPort: 3001
     lambdaPort: 3002
+  bucketName: hackatonbackend-documents-${self:provider.stage}
 
 provider:
   name: aws
@@ -19,8 +20,7 @@ provider:
   stage: ${opt:stage, 'dev'}
   environment:
     WORKERS_TABLE: ${self:service}-workers-${self:provider.stage}
-    DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
-    ACTIVITIES_TABLE: ${self:service}-activities-${self:provider.stage}
+    SIGNATURE_REQUESTS_TABLE: ${self:service}-signature-requests-${self:provider.stage}
     SIGNATURES_TABLE: ${self:service}-signatures-${self:provider.stage}
     USERS_TABLE: ${self:service}-users-${self:provider.stage}
     SESSIONS_TABLE: ${self:service}-sessions-${self:provider.stage}
@@ -29,6 +29,7 @@ provider:
     INCIDENTS_TABLE: ${self:service}-incidents-${self:provider.stage}
     INCIDENT_EVIDENCE_BUCKET: hackatonbackend-incident-evidence-${self:provider.stage}-${aws:accountId}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
+    DOCUMENTS_BUCKET: ${self:custom.bucketName}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
   httpApi:
     cors:
@@ -56,9 +57,9 @@ provider:
             - dynamodb:DeleteItem
           Resource:
             - !GetAtt WorkersTable.Arn
-            - !GetAtt DocumentsTable.Arn
-            - !GetAtt ActivitiesTable.Arn
+            - !GetAtt SignatureRequestsTable.Arn
             - !GetAtt SignaturesTable.Arn
+            - !Sub ${SignaturesTable.Arn}/index/*
             - !GetAtt UsersTable.Arn
             - !GetAtt SessionsTable.Arn
             - !GetAtt SurveysTable.Arn
@@ -80,6 +81,7 @@ provider:
             - sns:Publish
           Resource:
             - !Ref IncidentNotificationTopic
+            - !Sub arn:aws:s3:::${self:custom.bucketName}/*
 
 package:
   individually: false
@@ -242,127 +244,161 @@ functions:
           path: /workers/{id}/complete-enrollment
           method: POST
 
-  # Signatures (Firmas Digitales)
+  # ========================================
+  # SIGNATURE REQUESTS (Solicitudes de Firma)
+  # ========================================
+  createSignatureRequest:
+    handler: handlers/signature-requests.create
+    events:
+      - httpApi:
+          path: /signature-requests
+          method: POST
+
+  listSignatureRequests:
+    handler: handlers/signature-requests.list
+    events:
+      - httpApi:
+          path: /signature-requests
+          method: GET
+
+  getSignatureRequest:
+    handler: handlers/signature-requests.get
+    events:
+      - httpApi:
+          path: /signature-requests/{id}
+          method: GET
+
+  getPendingByWorker:
+    handler: handlers/signature-requests.getPendingByWorker
+    events:
+      - httpApi:
+          path: /signature-requests/pending/{workerId}
+          method: GET
+
+  getHistoryByWorker:
+    handler: handlers/signature-requests.getHistoryByWorker
+    events:
+      - httpApi:
+          path: /signature-requests/history/{workerId}
+          method: GET
+
+  cancelSignatureRequest:
+    handler: handlers/signature-requests.cancel
+    events:
+      - httpApi:
+          path: /signature-requests/{id}/cancel
+          method: POST
+
+  getSignatureRequestStats:
+    handler: handlers/signature-requests.getStats
+    events:
+      - httpApi:
+          path: /signature-requests/stats
+          method: GET
+
+  # ========================================
+  # SIGNATURES (Firmas Digitales)
+  # ========================================
   createSignature:
-    handler: handlers/signatures.create
+    handler: handlers/signatures-new.create
     events:
       - httpApi:
           path: /signatures
           method: POST
 
+  createEnrollmentSignature:
+    handler: handlers/signatures-new.createEnrollment
+    events:
+      - httpApi:
+          path: /signatures/enroll
+          method: POST
+
   getSignature:
-    handler: handlers/signatures.get
+    handler: handlers/signatures-new.get
     events:
       - httpApi:
           path: /signatures/{id}
           method: GET
 
   getSignaturesByWorker:
-    handler: handlers/signatures.getByWorker
+    handler: handlers/signatures-new.getByWorker
     events:
       - httpApi:
           path: /signatures/worker/{workerId}
           method: GET
 
+  getSignaturesByRequest:
+    handler: handlers/signatures-new.getByRequest
+    events:
+      - httpApi:
+          path: /signatures/request/{requestId}
+          method: GET
+
+  verifySignatureByToken:
+    handler: handlers/signatures-new.verifyByToken
+    events:
+      - httpApi:
+          path: /signatures/verify/{token}
+          method: GET
+
   disputeSignature:
-    handler: handlers/signatures.dispute
+    handler: handlers/signatures-new.dispute
     events:
       - httpApi:
           path: /signatures/{id}/dispute
           method: POST
 
   resolveSignatureDispute:
-    handler: handlers/signatures.resolve
+    handler: handlers/signatures-new.resolve
     events:
       - httpApi:
           path: /signatures/{id}/resolve
           method: PUT
 
   listSignatureDisputes:
-    handler: handlers/signatures.listDisputes
+    handler: handlers/signatures-new.listDisputes
     events:
       - httpApi:
           path: /signatures/disputes
           method: GET
 
-  # Documents (Documentos)
-  createDocument:
-    handler: handlers/documents.create
+  # ========================================
+  # UPLOADS (Subida de archivos a S3)
+  # ========================================
+  getUploadUrl:
+    handler: handlers/uploads.getUploadUrl
     events:
       - httpApi:
-          path: /documents
+          path: /uploads/presigned-url
           method: POST
 
-  listDocuments:
-    handler: handlers/documents.list
+  getDownloadUrl:
+    handler: handlers/uploads.getDownloadUrl
     events:
       - httpApi:
-          path: /documents
-          method: GET
-
-  getDocument:
-    handler: handlers/documents.get
-    events:
-      - httpApi:
-          path: /documents/{id}
-          method: GET
-
-  assignDocument:
-    handler: handlers/documents.assign
-    events:
-      - httpApi:
-          path: /documents/{id}/assign
+          path: /uploads/download-url
           method: POST
 
-  signDocument:
-    handler: handlers/documents.sign
+  confirmUpload:
+    handler: handlers/uploads.confirmUpload
     events:
       - httpApi:
-          path: /documents/{id}/sign
+          path: /uploads/confirm
           method: POST
 
-  signDocumentBulk:
-    handler: handlers/documents.signBulk
+  deleteUpload:
+    handler: handlers/uploads.deleteFile
     events:
       - httpApi:
-          path: /documents/{id}/sign-bulk
+          path: /uploads/{fileKey}
+          method: DELETE
+
+  getBatchDownloadUrls:
+    handler: handlers/uploads.getBatchDownloadUrls
+    events:
+      - httpApi:
+          path: /uploads/batch-download-urls
           method: POST
-
-  # Activities (Actividades)
-  createActivity:
-    handler: handlers/activities.create
-    events:
-      - httpApi:
-          path: /activities
-          method: POST
-
-  listActivities:
-    handler: handlers/activities.list
-    events:
-      - httpApi:
-          path: /activities
-          method: GET
-
-  getActivity:
-    handler: handlers/activities.get
-    events:
-      - httpApi:
-          path: /activities/{id}
-          method: GET
-
-  registerAttendance:
-    handler: handlers/activities.registerAttendance
-    events:
-      - httpApi:
-          path: /activities/{id}/attendance
-          method: POST
-
-  getActivityStats:
-    handler: handlers/activities.getStats
-    events:
-      - httpApi:
-          path: /activities/stats
-          method: GET
 
   # AI Assistant (Asistente IA)
   aiChat:
@@ -483,6 +519,25 @@ functions:
 
 resources:
   Resources:
+    # S3 Bucket para documentos
+    DocumentsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.bucketName}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+              AllowedOrigins:
+                - '*'
+              MaxAge: 3000
+
+    # Workers Table
     WorkersTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -495,30 +550,20 @@ resources:
           - AttributeName: workerId
             KeyType: HASH
 
-    DocumentsTable:
+    # Signature Requests Table
+    SignatureRequestsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:provider.environment.DOCUMENTS_TABLE}
+        TableName: ${self:provider.environment.SIGNATURE_REQUESTS_TABLE}
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
-          - AttributeName: documentId
+          - AttributeName: requestId
             AttributeType: S
         KeySchema:
-          - AttributeName: documentId
+          - AttributeName: requestId
             KeyType: HASH
 
-    ActivitiesTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:provider.environment.ACTIVITIES_TABLE}
-        BillingMode: PAY_PER_REQUEST
-        AttributeDefinitions:
-          - AttributeName: activityId
-            AttributeType: S
-        KeySchema:
-          - AttributeName: activityId
-            KeyType: HASH
-
+    # Signatures Table con GSI para requestId
     SignaturesTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -527,10 +572,20 @@ resources:
         AttributeDefinitions:
           - AttributeName: signatureId
             AttributeType: S
+          - AttributeName: requestId
+            AttributeType: S
         KeySchema:
           - AttributeName: signatureId
             KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: requestId-index
+            KeySchema:
+              - AttributeName: requestId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
 
+    # Users Table
     UsersTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -543,6 +598,7 @@ resources:
           - AttributeName: userId
             KeyType: HASH
 
+    # Sessions Table
     SessionsTable:
       Type: AWS::DynamoDB::Table
       Properties:

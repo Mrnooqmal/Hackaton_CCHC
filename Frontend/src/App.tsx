@@ -14,6 +14,8 @@ import ChangePassword from './pages/ChangePassword';
 import EnrollMe from './pages/EnrollMe';
 import Unauthorized from './pages/Unauthorized';
 import RegisterAdmin from './pages/RegisterAdmin';
+import SignatureRequests from './pages/SignatureRequests';
+import MySignatures from './pages/MySignatures';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import './css/index.css';
@@ -67,15 +69,27 @@ function AppContent() {
             </ProtectedRoute>
           } />
 
+          <Route path="/incidents" element={
+            <ProtectedRoute>
+              <Incidents />
+            </ProtectedRoute>
+          } />
+
           <Route path="/activities" element={
             <ProtectedRoute>
               <Activities />
             </ProtectedRoute>
           } />
 
-          <Route path="/incidents" element={
+          <Route path="/signature-requests" element={
+            <ProtectedRoute requiredPermission="crear_actividades">
+              <SignatureRequests />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/my-signatures" element={
             <ProtectedRoute>
-              <Incidents />
+              <MySignatures />
             </ProtectedRoute>
           } />
 
