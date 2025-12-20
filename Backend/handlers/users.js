@@ -3,6 +3,7 @@ const { PutCommand, GetCommand, ScanCommand, UpdateCommand, DeleteCommand } = re
 const { docClient } = require('../lib/dynamodb');
 const { success, error, created } = require('../lib/response');
 const { validateRut, validateRequired, hashPin, verifyPin, validatePin, generateSignatureToken, hashPassword, generateTempPassword } = require('../lib/validation');
+const { assignWorkerToHealthSurvey } = require('../lib/healthSurvey');
 
 const USERS_TABLE = process.env.USERS_TABLE || 'Users';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
@@ -151,6 +152,12 @@ module.exports.create = async (event) => {
                     Item: worker,
                 })
             );
+
+            try {
+                await assignWorkerToHealthSurvey(worker);
+            } catch (healthSurveyError) {
+                console.error('No se pudo asignar encuesta de salud por defecto al crear usuario/worker:', healthSurveyError);
+            }
 
             workerCreated = {
                 workerId,

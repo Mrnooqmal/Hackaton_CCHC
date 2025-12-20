@@ -3,6 +3,7 @@ const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk
 const { docClient } = require('../lib/dynamodb');
 const { success, error, created } = require('../lib/response');
 const { validateRequired } = require('../lib/validation');
+const { ensureDefaultHealthSurvey } = require('../lib/healthSurvey');
 
 const TABLE_NAME = process.env.SURVEYS_TABLE || 'Surveys';
 const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
@@ -186,6 +187,8 @@ module.exports.create = async (event) => {
 module.exports.list = async (event) => {
     try {
         const { empresaId } = event.queryStringParameters || {};
+
+        await ensureDefaultHealthSurvey();
 
         const response = await docClient.send(new ScanCommand({
             TableName: TABLE_NAME,

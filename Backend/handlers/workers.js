@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../lib/dynamodb');
+const { assignWorkerToHealthSurvey } = require('../lib/healthSurvey');
 const { success, error, created } = require('../lib/response');
 const { validateRut, validateRequired, generateSignatureToken, hashPin, verifyPin, validatePin } = require('../lib/validation');
 
@@ -57,6 +58,12 @@ module.exports.create = async (event) => {
                 ConditionExpression: 'attribute_not_exists(workerId)',
             })
         );
+
+        try {
+            await assignWorkerToHealthSurvey(worker);
+        } catch (healthSurveyError) {
+            console.error('No se pudo asignar la encuesta de salud por defecto al crear worker:', healthSurveyError);
+        }
 
         return created(worker);
     } catch (err) {
