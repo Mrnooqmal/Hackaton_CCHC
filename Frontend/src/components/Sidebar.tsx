@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
     FiHome,
@@ -14,6 +15,7 @@ import {
     FiAlertTriangle,
     FiClipboard
 } from 'react-icons/fi';
+import { surveysApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 interface NavItem {
@@ -67,6 +69,94 @@ const navItems: NavSection[] = [
 export default function Sidebar() {
     const location = useLocation();
     const { user, logout, hasPermission } = useAuth();
+    const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
+    const [workerId, setWorkerId] = useState<string | null>(null);
+    const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
+    const pendingBadgeLabel = pendingSurveyCount > 99 ? '99+' : String(pendingSurveyCount);
+
+    useEffect(() => {
+        if (!canRespondSurveys) {
+            setWorkerId(null);
+            return;
+        }
+
+        if (user?.workerId) {
+            setWorkerId(user.workerId);
+            return;
+        }
+
+        const rut = user?.rut;
+        if (!rut) {
+            setWorkerId(null);
+            return;
+        }
+
+        let cancelled = false;
+
+        const resolveWorkerId = async () => {
+            try {
+                const response = await workersApi.getByRut(rut);
+                if (!cancelled) {
+                    if (response.success && response.data) {
+                        setWorkerId(response.data.workerId);
+                    } else {
+                        setWorkerId(null);
+                    }
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setWorkerId(null);
+                }
+            }
+        };
+
+        resolveWorkerId();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [canRespondSurveys, user?.workerId, user?.rut]);
+
+    useEffect(() => {
+        if (!canRespondSurveys || !workerId) {
+            setPendingSurveyCount(0);
+            return;
+        }
+
+        let cancelled = false;
+
+        const loadPendingSurveys = async () => {
+            try {
+                const response = await surveysApi.list();
+                if (!cancelled) {
+                    if (response.success && response.data?.surveys) {
+                        const pending = response.data.surveys.reduce((total, survey) => {
+                            const recipient = survey.recipients?.find((r) => r.workerId === workerId);
+                            if (recipient && recipient.estado !== 'respondida') {
+                                return total + 1;
+                            }
+                            return total;
+                        }, 0);
+                        setPendingSurveyCount(pending);
+                    } else {
+                        setPendingSurveyCount(0);
+                    }
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setPendingSurveyCount(0);
+                }
+            }
+        };
+
+        loadPendingSurveys();
+        const intervalId = window.setInterval(loadPendingSurveys, 60000);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(intervalId);
+        };
+    }, [workerId, canRespondSurveys]);
 
     const handleLogout = () => {
         if (confirm('¿Cerrar sesión?')) {
@@ -100,6 +190,8 @@ export default function Sidebar() {
                             {visibleItems.map((item) => {
                                 const Icon = item.icon;
                                 const isActive = location.pathname === item.path;
+                                const showSurveyBadge = item.path === '/surveys' && canRespondSurveys && pendingSurveyCount > 0;
+                                const showStaticBadge = !showSurveyBadge && typeof item.badge === 'number' && item.badge > 0;
 
                                 return (
                                     <Link
@@ -111,8 +203,10 @@ export default function Sidebar() {
                                             <Icon />
                                         </span>
                                         <span>{item.label}</span>
-                                        {item.badge && (
-                                            <span className="nav-item-badge">{item.badge}</span>
+                                        {(showSurveyBadge || showStaticBadge) && (
+                                            <span className="nav-item-badge">
+                                                {showSurveyBadge ? pendingBadgeLabel : item.badge}
+                                            </span>
                                         )}
                                     </Link>
                                 );

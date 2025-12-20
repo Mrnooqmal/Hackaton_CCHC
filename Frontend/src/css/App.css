@@ -565,6 +565,23 @@
   color: var(--danger-500);
 }
 
+.option-pill.selectable {
+  cursor: pointer;
+  border: 1px solid var(--surface-border);
+  transition: all var(--transition-fast);
+}
+
+.option-pill.selectable:hover {
+  border-color: var(--primary-500);
+  color: var(--text-primary);
+}
+
+.option-pill.selectable.active {
+  border-color: var(--primary-500);
+  background: rgba(76, 175, 80, 0.2);
+  color: var(--text-primary);
+}
+
 .survey-question-card {
   padding: var(--space-4);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
@@ -588,6 +605,83 @@
   color: var(--primary-50);
   font-size: var(--text-sm);
 }
+
+.assigned-section {
+  margin-bottom: var(--space-6);
+}
+
+.assigned-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.assigned-card {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  background: var(--surface-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.assigned-card.pendiente {
+  border-color: rgba(234, 179, 8, 0.4);
+}
+
+.assigned-card.respondida {
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+.assigned-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.assigned-card-header h4 {
+  margin-bottom: var(--space-1);
+}
+
+.assigned-card-meta {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.assigned-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+.response-question-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.response-question {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  background: var(--surface-elevated);
+}
+
+.response-question-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
 
 .survey-detail-hero {
   display: flex;
