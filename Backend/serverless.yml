@@ -7,7 +7,7 @@ plugins:
 custom:
   prune:
     automatic: true
-    number: 5
+    number: 2
   serverless-offline:
     httpPort: 3001
     lambdaPort: 3002

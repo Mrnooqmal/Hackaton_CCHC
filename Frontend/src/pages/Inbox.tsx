@@ -224,9 +224,9 @@ export default function Inbox() {
     };
 
     const filteredMessages = messages.filter(m =>
-        m.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.senderName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.content.toLowerCase().includes(searchTerm.toLowerCase())
+        (m.subject || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (m.senderName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (m.content || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
@@ -339,7 +339,7 @@ export default function Inbox() {
                                             </div>
                                             <div className="inbox-message-subject">{message.subject}</div>
                                             <div className="inbox-message-preview">
-                                                {message.content.substring(0, 80)}...
+                                                {(message.content || '').substring(0, 80)}...
                                             </div>
                                         </div>
                                         {message.priority !== 'normal' && (
@@ -374,7 +374,7 @@ export default function Inbox() {
                                 <h2 className="inbox-detail-subject">{selectedMessage.subject}</h2>
                                 <div className="inbox-detail-meta">
                                     <div className="inbox-detail-sender">
-                                        <div className="avatar avatar-sm">{selectedMessage.senderName.charAt(0)}</div>
+                                        <div className="avatar avatar-sm">{(selectedMessage.senderName || 'S').charAt(0)}</div>
                                         <div>
                                             <div className="font-semibold">{selectedMessage.senderName}</div>
                                             <div className="text-sm text-muted">{selectedMessage.senderRol}</div>
@@ -385,7 +385,7 @@ export default function Inbox() {
                                     </div>
                                 </div>
                                 <div className="inbox-detail-body">
-                                    {selectedMessage.content.split('\n').map((line, i) => (
+                                    {(selectedMessage.content || '').split('\n').map((line, i) => (
                                         <p key={i}>{line}</p>
                                     ))}
                                 </div>
@@ -420,7 +420,7 @@ export default function Inbox() {
                                                     checked={composeData.recipientIds.includes(r.userId)}
                                                     onChange={() => toggleRecipient(r.userId)}
                                                 />
-                                                <div className="avatar avatar-sm">{r.nombre.charAt(0)}</div>
+                                                <div className="avatar avatar-sm">{(r.nombre || 'U').charAt(0)}</div>
                                                 <div>
                                                     <div className="font-semibold">{r.nombreCompleto}</div>
                                                     <div className="text-xs text-muted">{r.rol} • {r.rut}</div>
