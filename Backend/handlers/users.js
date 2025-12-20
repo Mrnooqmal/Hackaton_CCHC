@@ -580,8 +580,9 @@ module.exports.completeEnrollment = async (event) => {
         const user = userResult.Item;
 
         if (user.habilitado) {
-            // Si ya está habilitado pero tiene un workerId que NO está habilitado, 
-            // permitimos continuar para forzar la sincronización de las tablas.
+            // Permitimos re-enrolar si el workerId falta o el worker no está habilitado
+            let needsWorkerSync = !user.workerId;
+
             if (user.workerId) {
                 const workerRes = await docClient.send(
                     new GetCommand({
@@ -589,13 +590,15 @@ module.exports.completeEnrollment = async (event) => {
                         Key: { workerId: user.workerId },
                     })
                 );
-                if (workerRes.Item && workerRes.Item.habilitado) {
-                    return error('El usuario y el trabajador ya están habilitados', 400);
+                if (!workerRes.Item || !workerRes.Item.habilitado) {
+                    needsWorkerSync = true;
                 }
-                console.log('User enabled but worker not. Allowing sync enrollment.');
-            } else {
-                return error('El usuario ya está habilitado', 400);
             }
+
+            if (!needsWorkerSync) {
+                return error('El usuario y su perfil de trabajador ya están habilitados', 400);
+            }
+            console.log('Inconsistencia detectada: Usuario habilitado pero trabajador no. Permitiendo enrolamiento de sincronización.');
         }
 
         if (user.pinTemporal) {
@@ -610,6 +613,44 @@ module.exports.completeEnrollment = async (event) => {
 
         const now = new Date();
         const token = generateSignatureToken();
+
+        // 1. Identificar el workerId correcto para la firma y sincronización
+        let effectiveWorkerId = user.workerId;
+
+        if (!effectiveWorkerId) {
+            console.log(`Searching worker by RUT for user ${user.userId}`);
+            const workerByRut = await docClient.send(
+                new ScanCommand({
+                    TableName: WORKERS_TABLE,
+                    FilterExpression: 'rut = :rut',
+                    ExpressionAttributeValues: { ':rut': user.rut },
+                })
+            );
+            if (workerByRut.Items && workerByRut.Items.length > 0) {
+                effectiveWorkerId = workerByRut.Items[0].workerId;
+                console.log(`Found worker ${effectiveWorkerId} by RUT`);
+            } else {
+                // Si no existe, crear el registro de worker para este usuario
+                console.log(`Worker not found for user ${user.userId}. Creating new worker record.`);
+                effectiveWorkerId = uuidv4();
+                const newWorker = {
+                    workerId: effectiveWorkerId,
+                    rut: user.rut,
+                    nombre: user.nombre,
+                    apellido: user.apellido || '',
+                    email: user.email || '',
+                    telefono: user.telefono || '',
+                    cargo: user.cargo || user.rol,
+                    empresaId: user.empresaId || 'default',
+                    estado: 'activo',
+                    habilitado: false, // Se habilitará en el paso de sincronización más adelante
+                    userId: id,
+                    createdAt: now.toISOString(),
+                    updatedAt: now.toISOString()
+                };
+                await docClient.send(new PutCommand({ TableName: WORKERS_TABLE, Item: newWorker }));
+            }
+        }
 
         // Datos de la firma de enrolamiento
         const firmaEnrolamiento = {
@@ -627,7 +668,7 @@ module.exports.completeEnrollment = async (event) => {
         const signature = {
             signatureId,
             token,
-            workerId: id, // Usamos el userId
+            workerId: effectiveWorkerId || id, // Priorizar workerId si existe
             workerRut: user.rut,
             workerNombre: `${user.nombre} ${user.apellido || ''}`.trim(),
             tipoFirma: 'enrolamiento',
@@ -654,39 +695,50 @@ module.exports.completeEnrollment = async (event) => {
         );
 
         // Actualizar usuario como habilitado
+        // Si encontramos un workerId nuevo, lo vinculamos también
+        const userUpdateExpression = 'SET habilitado = :habilitado, estado = :estado, firmaEnrolamiento = :firmaEnrolamiento, updatedAt = :updatedAt' + (effectiveWorkerId && !user.workerId ? ', workerId = :workerId' : '');
+        const userExpressionValues = {
+            ':habilitado': true,
+            ':estado': 'activo',
+            ':firmaEnrolamiento': firmaEnrolamiento,
+            ':updatedAt': now.toISOString(),
+        };
+        if (effectiveWorkerId && !user.workerId) {
+            userExpressionValues[':workerId'] = effectiveWorkerId;
+        }
+
         await docClient.send(
             new UpdateCommand({
                 TableName: USERS_TABLE,
                 Key: { userId: id },
-                UpdateExpression: 'SET habilitado = :habilitado, estado = :estado, firmaEnrolamiento = :firmaEnrolamiento, updatedAt = :updatedAt',
-                ExpressionAttributeValues: {
-                    ':habilitado': true,
-                    ':estado': 'activo',
-                    ':firmaEnrolamiento': firmaEnrolamiento,
-                    ':updatedAt': now.toISOString(),
-                },
+                UpdateExpression: userUpdateExpression,
+                ExpressionAttributeValues: userExpressionValues,
             })
         );
 
-        // Si el usuario tiene workerId vinculado, actualizar también la tabla Workers
-        if (user.workerId) {
+        // Sincronizar también la tabla Workers si tenemos el ID
+        if (effectiveWorkerId) {
             try {
+                console.log(`Syncing habilitado state for worker ${effectiveWorkerId}`);
+                // IMPORTANTE: En la tabla Workers se hashea con workerId
+                const pinHashForWorker = hashPin(pin, effectiveWorkerId);
+
                 await docClient.send(
                     new UpdateCommand({
                         TableName: WORKERS_TABLE,
-                        Key: { workerId: user.workerId },
-                        UpdateExpression: 'SET habilitado = :habilitado, firmaEnrolamiento = :firmaEnrolamiento, pinHash = :pinHash, updatedAt = :updatedAt',
+                        Key: { workerId: effectiveWorkerId },
+                        UpdateExpression: 'SET habilitado = :habilitado, firmaEnrolamiento = :firmaEnrolamiento, pinHash = :pinHash, updatedAt = :updatedAt, userId = :userId',
                         ExpressionAttributeValues: {
                             ':habilitado': true,
                             ':firmaEnrolamiento': firmaEnrolamiento,
-                            ':pinHash': user.pinHash,
+                            ':pinHash': pinHashForWorker,
                             ':updatedAt': now.toISOString(),
+                            ':userId': id
                         },
                     })
                 );
             } catch (workerErr) {
                 console.error('Error sincronizando worker:', workerErr);
-                // No falla el enrolamiento por esto
             }
         }
 
