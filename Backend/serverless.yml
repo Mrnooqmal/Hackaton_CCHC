@@ -27,7 +27,7 @@ provider:
     SURVEYS_TABLE: ${self:service}-surveys-${self:provider.stage}
     SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
     INCIDENTS_TABLE: ${self:service}-incidents-${self:provider.stage}
-    INCIDENT_EVIDENCE_BUCKET: hackatonbackend-incident-evidence-${self:provider.stage}
+    INCIDENT_EVIDENCE_BUCKET: hackatonbackend-incident-evidence-${self:provider.stage}-${aws:accountId}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
   httpApi:
@@ -62,12 +62,12 @@ provider:
             - !GetAtt UsersTable.Arn
             - !GetAtt SessionsTable.Arn
             - !GetAtt SurveysTable.Arn
+            - !GetAtt IncidentsTable.Arn
         - Effect: Allow
           Action:
             - ses:SendEmail
             - ses:SendRawEmail
           Resource: "*"
-            - !GetAtt IncidentsTable.Arn
         - Effect: Allow
           Action:
             - s3:PutObject
@@ -393,7 +393,6 @@ functions:
           path: /ai/daily-talk
           method: POST
 
-<<<<<<< HEAD
   # Surveys (Encuestas)
   createSurvey:
     handler: handlers/surveys.create
@@ -423,7 +422,6 @@ functions:
           path: /surveys/{id}/responses/{workerId}
           method: POST
 
-=======
   # Incidents (Incidentes y Accidentes)
   createIncident:
     handler: handlers/incidents.create
@@ -467,7 +465,6 @@ functions:
           path: /incidents/stats
           method: GET
 
->>>>>>> refs/remotes/origin/main
   # Hello (Test)
   printHello:
     handler: handlers/hola.printHello
@@ -558,7 +555,6 @@ resources:
           - AttributeName: sessionId
             KeyType: HASH
 
-<<<<<<< HEAD
     SurveysTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -570,7 +566,6 @@ resources:
         KeySchema:
           - AttributeName: surveyId
             KeyType: HASH
-=======
     IncidentsTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -617,4 +612,3 @@ resources:
       Properties:
         TopicName: ${self:provider.environment.INCIDENT_NOTIFICATION_TOPIC}
         DisplayName: Notificaciones de Incidentes y Accidentes
->>>>>>> refs/remotes/origin/main
