@@ -11,7 +11,7 @@ custom:
   serverless-offline:
     httpPort: 3001
     lambdaPort: 3002
-  bucketName: hackatonbackend-documents-v8-${self:provider.stage}
+  bucketName: hackatonbackend-documents-v2-${self:provider.stage}
 
 provider:
   name: aws
@@ -311,6 +311,13 @@ functions:
       - httpApi:
           path: /signature-requests/stats
           method: GET
+
+  processOfflineBatch:
+    handler: handlers/signature-requests.processOfflineBatch
+    events:
+      - httpApi:
+          path: /signature-requests/offline-batch
+          method: POST
 
   # ========================================
   # SIGNATURES (Firmas Digitales)

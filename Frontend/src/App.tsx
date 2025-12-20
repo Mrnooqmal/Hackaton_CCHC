@@ -17,6 +17,8 @@ import Unauthorized from './pages/Unauthorized';
 import RegisterAdmin from './pages/RegisterAdmin';
 import SignatureRequests from './pages/SignatureRequests';
 import MySignatures from './pages/MySignatures';
+import OfflineSignatures from './pages/OfflineSignatures';
+import OfflineBanner from './components/OfflineBanner';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import './css/index.css';
@@ -29,6 +31,7 @@ function AppContent() {
     <div className={`app-layout ${!user ? 'auth-mode' : ''}`}>
       {user && <Sidebar />}
       <main className={user ? 'main-content' : 'auth-content'}>
+        {user && <OfflineBanner />}
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register-admin" element={<RegisterAdmin />} />
@@ -91,6 +94,12 @@ function AppContent() {
           <Route path="/my-signatures" element={
             <ProtectedRoute>
               <MySignatures />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/offline-signatures" element={
+            <ProtectedRoute requiredPermission="crear_actividades">
+              <OfflineSignatures />
             </ProtectedRoute>
           } />
 
