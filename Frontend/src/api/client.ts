@@ -604,3 +604,157 @@ export interface ActivityStats {
     promedioAsistentesPorActividad: number;
     porcentajeCumplimiento: number;
 }
+
+// Incidents API Types
+export interface Incident {
+    incidentId: string;
+    tipo: 'accidente' | 'incidente' | 'condicion_subestandar';
+    centroTrabajo: string;
+    trabajador: {
+        nombre: string;
+        rut: string;
+        genero: string;
+        cargo: string;
+    };
+    fecha: string;
+    hora: string;
+    descripcion: string;
+    gravedad: 'leve' | 'grave' | 'fatal';
+    diasPerdidos?: number;
+    evidencias: string[]; // S3 keys
+    documentos?: {
+        diat?: string;
+        diep?: string;
+    };
+    investigaciones: {
+        prevencionista?: Investigation;
+        jefeDirecto?: Investigation;
+        comiteParitario?: Investigation;
+    };
+    estado: 'reportado' | 'en_investigacion' | 'cerrado';
+    reportadoPor: string;
+    empresaId: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface Investigation {
+    investigador: string;
+    fecha: string;
+    hallazgos: string;
+    recomendaciones: string;
+    medidas: string[];
+}
+
+export interface CreateIncidentData {
+    tipo: 'accidente' | 'incidente' | 'condicion_subestandar';
+    centroTrabajo: string;
+    trabajador: {
+        nombre: string;
+        rut: string;
+        genero: string;
+        cargo: string;
+    };
+    fecha?: string;
+    hora?: string;
+    descripcion: string;
+    gravedad?: 'leve' | 'grave' | 'fatal';
+    diasPerdidos?: number;
+    evidencias?: string[];
+    reportadoPor?: string;
+    empresaId?: string;
+}
+
+export interface UpdateIncidentData {
+    estado?: 'reportado' | 'en_investigacion' | 'cerrado';
+    investigacionPrevencionista?: Omit<Investigation, 'fecha'>;
+    investigacionJefeDirecto?: Omit<Investigation, 'fecha'>;
+    investigacionComiteParitario?: Omit<Investigation, 'fecha'>;
+    diasPerdidos?: number;
+    documentos?: {
+        diat?: string;
+        diep?: string;
+    };
+    evidencias?: string[];
+}
+
+export interface IncidentListParams {
+    empresaId?: string;
+    tipo?: string;
+    estado?: string;
+    fechaInicio?: string;
+    fechaFin?: string;
+}
+
+export interface UploadEvidenceData {
+    fileName: string;
+    fileType: string;
+    incidentId?: string;
+}
+
+export interface UploadEvidenceResponse {
+    uploadUrl: string;
+    s3Key: string;
+    fileUrl: string;
+}
+
+export interface IncidentStats {
+    mes: string;
+    masaLaboral: number;
+    numeroAccidentes: number;
+    diasPerdidos: number;
+    tasaAccidentabilidad: number;
+    siniestralidad: number;
+    tasaFrecuencia: number;
+    porTipo: {
+        accidentes: number;
+        incidentes: number;
+        condicionesSubestandar: number;
+    };
+    porGravedad: {
+        leve: number;
+        grave: number;
+        fatal: number;
+    };
+    totalIncidentes: number;
+}
+
+export interface StatsParams {
+    empresaId?: string;
+    mes?: string;
+    masaLaboral?: number;
+}
+
+// Incidents API
+export const incidentsApi = {
+    create: (data: CreateIncidentData) =>
+        apiRequest<Incident>('/incidents', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    list: (params?: IncidentListParams) => {
+        const query = new URLSearchParams(params as Record<string, string>).toString();
+        return apiRequest<Incident[]>(`/incidents${query ? `?${query}` : ''}`);
+    },
+
+    get: (id: string) =>
+        apiRequest<Incident>(`/incidents/${id}`),
+
+    update: (id: string, data: UpdateIncidentData) =>
+        apiRequest<Incident>(`/incidents/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+
+    uploadEvidence: (data: UploadEvidenceData) =>
+        apiRequest<UploadEvidenceResponse>('/incidents/upload-evidence', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    getStats: (params?: StatsParams) => {
+        const query = new URLSearchParams(params as Record<string, string>).toString();
+        return apiRequest<IncidentStats>(`/incidents/stats${query ? `?${query}` : ''}`);
+    },
+};

@@ -25,6 +25,9 @@ provider:
     USERS_TABLE: ${self:service}-users-${self:provider.stage}
     SESSIONS_TABLE: ${self:service}-sessions-${self:provider.stage}
     SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
+    INCIDENTS_TABLE: ${self:service}-incidents-${self:provider.stage}
+    INCIDENT_EVIDENCE_BUCKET: hackatonbackend-incident-evidence-${self:provider.stage}
+    INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
   httpApi:
     cors:
@@ -62,6 +65,19 @@ provider:
             - ses:SendEmail
             - ses:SendRawEmail
           Resource: "*"
+            - !GetAtt IncidentsTable.Arn
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+          Resource:
+            - !Sub '${IncidentEvidenceBucket.Arn}/*'
+        - Effect: Allow
+          Action:
+            - sns:Publish
+          Resource:
+            - !Ref IncidentNotificationTopic
 
 package:
   individually: false
@@ -375,6 +391,49 @@ functions:
           path: /ai/daily-talk
           method: POST
 
+  # Incidents (Incidentes y Accidentes)
+  createIncident:
+    handler: handlers/incidents.create
+    events:
+      - httpApi:
+          path: /incidents
+          method: POST
+
+  listIncidents:
+    handler: handlers/incidents.list
+    events:
+      - httpApi:
+          path: /incidents
+          method: GET
+
+  getIncident:
+    handler: handlers/incidents.get
+    events:
+      - httpApi:
+          path: /incidents/{id}
+          method: GET
+
+  updateIncident:
+    handler: handlers/incidents.update
+    events:
+      - httpApi:
+          path: /incidents/{id}
+          method: PUT
+
+  uploadIncidentEvidence:
+    handler: handlers/incidents.uploadEvidence
+    events:
+      - httpApi:
+          path: /incidents/upload-evidence
+          method: POST
+
+  getIncidentStats:
+    handler: handlers/incidents.getStats
+    events:
+      - httpApi:
+          path: /incidents/stats
+          method: GET
+
   # Hello (Test)
   printHello:
     handler: handlers/hola.printHello
@@ -464,3 +523,50 @@ resources:
         KeySchema:
           - AttributeName: sessionId
             KeyType: HASH
+
+    IncidentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.INCIDENTS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: incidentId
+            AttributeType: S
+          - AttributeName: empresaId
+            AttributeType: S
+          - AttributeName: fecha
+            AttributeType: S
+        KeySchema:
+          - AttributeName: incidentId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: empresaId-fecha-index
+            KeySchema:
+              - AttributeName: empresaId
+                KeyType: HASH
+              - AttributeName: fecha
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    IncidentEvidenceBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.INCIDENT_EVIDENCE_BUCKET}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedOrigins:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+              AllowedHeaders:
+                - '*'
+              MaxAge: 3000
+
+    IncidentNotificationTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:provider.environment.INCIDENT_NOTIFICATION_TOPIC}
+        DisplayName: Notificaciones de Incidentes y Accidentes
