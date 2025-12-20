@@ -160,11 +160,11 @@ export default function SignatureRequests() {
     };
 
     const selectAllWorkers = () => {
-        const habilitados = workers.filter(w => w.habilitado);
-        if (selectedWorkers.length === habilitados.length) {
+        // Seleccionar todos los workers (habilitados o no)
+        if (selectedWorkers.length === workers.length) {
             setSelectedWorkers([]);
         } else {
-            setSelectedWorkers(habilitados.map(w => w.workerId));
+            setSelectedWorkers(workers.map(w => w.workerId));
         }
     };
 
@@ -583,14 +583,14 @@ export default function SignatureRequests() {
                                             className="btn btn-ghost btn-sm"
                                             onClick={selectAllWorkers}
                                         >
-                                            {selectedWorkers.length === workers.filter(w => w.habilitado).length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                                            {selectedWorkers.length === workers.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
                                         </button>
                                     </div>
                                     <div
                                         className="grid grid-cols-2 gap-2"
                                         style={{ maxHeight: '200px', overflowY: 'auto', padding: 'var(--space-2)', background: 'var(--neutral-50)', borderRadius: 'var(--radius-md)' }}
                                     >
-                                        {workers.filter(w => w.habilitado).map((worker) => (
+                                        {workers.map((worker) => (
                                             <label
                                                 key={worker.workerId}
                                                 className="flex items-center gap-2 p-2 rounded cursor-pointer"
@@ -604,20 +604,30 @@ export default function SignatureRequests() {
                                                     checked={selectedWorkers.includes(worker.workerId)}
                                                     onChange={() => toggleWorkerSelection(worker.workerId)}
                                                 />
-                                                <div>
-                                                    <div className="text-sm font-medium">{worker.nombre} {worker.apellido}</div>
-                                                    <div className="text-xs text-muted">{worker.cargo} • {worker.rut}</div>
+                                                <div className="flex-1">
+                                                    <div className="text-sm font-medium flex items-center gap-2">
+                                                        {worker.nombre} {worker.apellido}
+                                                        {(worker as any).rol && (
+                                                            <span className="badge" style={{ fontSize: '10px', padding: '1px 6px', background: (worker as any).rol === 'prevencionista' ? 'var(--primary-100)' : 'var(--info-100)', color: (worker as any).rol === 'prevencionista' ? 'var(--primary-600)' : 'var(--info-600)' }}>
+                                                                {(worker as any).rol}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-xs text-muted">
+                                                        {worker.cargo} • {worker.rut}
+                                                        {!worker.habilitado && <span style={{ color: 'var(--warning-500)', marginLeft: '4px' }}>⚠️ Sin enrolar</span>}
+                                                    </div>
                                                 </div>
                                             </label>
                                         ))}
                                     </div>
                                     {workers.filter(w => !w.habilitado).length > 0 && (
                                         <p className="text-xs text-muted mt-2">
-                                            {workers.filter(w => !w.habilitado).length} trabajadores no habilitados (no han completado enrolamiento)
+                                            ⚠️ {workers.filter(w => !w.habilitado).length} persona(s) sin enrolar - pueden ser asignadas pero no podrán firmar hasta completar enrolamiento
                                         </p>
                                     )}
                                     <p className="text-sm mt-2" style={{ color: 'var(--primary-600)' }}>
-                                        {selectedWorkers.length} trabajadores seleccionados
+                                        {selectedWorkers.length} persona(s) seleccionada(s)
                                     </p>
                                 </div>
                             </div>
