@@ -47,7 +47,7 @@ export default function Workers() {
         <>
             <Header title="Trabajadores" />
 
-            <div className="main-content">
+            <div className="page-content">
                 {/* Actions bar */}
                 <div className="card mb-6">
                     <div className="flex items-center justify-between">

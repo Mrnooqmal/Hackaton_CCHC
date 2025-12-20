@@ -258,7 +258,7 @@ export default function AIAssistant() {
         <>
             <Header title="Asistente IA de Prevención" />
 
-            <div className="main-content" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--header-height) - var(--space-12))' }}>
+            <div className="page-content" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--header-height) - var(--space-12))' }}>
                 {/* Quick Actions */}
                 <div className="grid grid-cols-3 mb-4">
                     {QUICK_ACTIONS.map((action) => {

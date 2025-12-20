@@ -102,7 +102,7 @@ export default function Dashboard() {
         <>
             <Header title="Dashboard" />
 
-            <div className="main-content">
+            <div className="page-content">
                 {/* Stats Grid */}
                 <div className="grid grid-cols-4 mb-6">
                     {statCards.map((stat, index) => {

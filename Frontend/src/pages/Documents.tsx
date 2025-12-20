@@ -93,7 +93,7 @@ export default function Documents() {
         <>
             <Header title="Documentos" />
 
-            <div className="main-content">
+            <div className="page-content">
                 {/* Actions */}
                 <div className="card mb-6">
                     <div className="flex items-center justify-between gap-4">
