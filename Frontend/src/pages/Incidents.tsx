@@ -509,6 +509,43 @@ export default function Incidents() {
         }
     };
 
+    const getEvidenceDisplayName = (key: string | undefined | null, index: number) => {
+        if (key) {
+            const segments = key.split('/');
+            const filename = segments.pop();
+            if (filename && filename.trim().length > 0) {
+                return filename;
+            }
+        }
+        return `Evidencia ${index + 1}`;
+    };
+
+    const incidentEvidenceItems = selectedIncident
+        ? ((selectedIncident.evidencePreviews && selectedIncident.evidencePreviews.length > 0)
+            ? selectedIncident.evidencePreviews.map((preview, index) => {
+                const key = preview.key || `evidence-${index}`;
+                const url = preview.url || buildEvidenceUrl(preview.key || '');
+                const displayName = getEvidenceDisplayName(preview.key, index);
+                return {
+                    id: `${key}-${index}`,
+                    url,
+                    title: displayName,
+                    label: displayName
+                };
+            })
+            : (selectedIncident.evidencias || []).map((s3Key, index) => {
+                const key = s3Key || `evidence-${index}`;
+                const url = buildEvidenceUrl(s3Key);
+                const displayName = getEvidenceDisplayName(s3Key, index);
+                return {
+                    id: `${key}-${index}`,
+                    url,
+                    title: displayName,
+                    label: displayName
+                };
+            }))
+        : [];
+
     return (
         <>
             <Header title="Incidentes y Accidentes" />
@@ -973,7 +1010,7 @@ export default function Incidents() {
                                                     <td style={{ textAlign: 'right' }}>
                                                         <button
                                                             className="btn btn-sm btn-secondary"
-                                                            onClick={() => setSelectedIncident(incident)}
+                                                            onClick={() => openIncidentDetail(incident)}
                                                         >
                                                             Ver Detalle
                                                         </button>
@@ -1453,37 +1490,40 @@ export default function Incidents() {
                                     </div>
 
                                     {/* Evidencias */}
-                                    {selectedIncident.evidencias && selectedIncident.evidencias.length > 0 && (
+                                    {incidentEvidenceItems.length > 0 && (
                                         <div className="col-span-2">
                                             <h3 className="font-semibold mb-3 flex items-center gap-2 text-primary-400">
                                                 <FiImage size={18} />
-                                                Evidencias Fotográficas ({selectedIncident.evidencias.length})
+                                                Evidencias Fotográficas ({incidentEvidenceItems.length})
                                             </h3>
                                             <div className="grid grid-cols-4 gap-3">
-                                                {selectedIncident.evidencias.map((s3Key, index) => {
-                                                    const url = buildEvidenceUrl(s3Key);
-                                                    const title = `Evidencia ${index + 1}`;
-                                                    return (
-                                                        <div
-                                                            key={index}
-                                                            className="incident-evidence-card"
-                                                            onClick={() => setImagePreview({ url, title })}
-                                                            title="Ver imagen"
-                                                        >
-                                                            {url ? (
-                                                                <img src={url} alt={title} loading="lazy" />
-                                                            ) : (
-                                                                <div className="incident-evidence-placeholder">
-                                                                    <FiImage size={24} />
-                                                                </div>
-                                                            )}
-                                                            <div className="incident-evidence-meta">
-                                                                <FiImage size={10} />
-                                                                <span>{s3Key.split('/').pop()?.slice(-15)}</span>
+                                                {incidentEvidenceItems.map(item => (
+                                                    <div
+                                                        key={item.id}
+                                                        className="incident-evidence-card"
+                                                        onClick={() => item.url && setImagePreview({ url: item.url, title: item.title })}
+                                                        title={item.url ? 'Ver imagen' : 'Imagen no disponible'}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+                                                            if (event.key === 'Enter' && item.url) {
+                                                                setImagePreview({ url: item.url, title: item.title });
+                                                            }
+                                                        }}
+                                                    >
+                                                        {item.url ? (
+                                                            <img src={item.url} alt={item.title} loading="lazy" />
+                                                        ) : (
+                                                            <div className="incident-evidence-placeholder">
+                                                                <FiImage size={24} />
                                                             </div>
+                                                        )}
+                                                        <div className="incident-evidence-meta">
+                                                            <FiImage size={10} />
+                                                            <span>{item.label}</span>
                                                         </div>
-                                                    );
-                                                })}
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     )}

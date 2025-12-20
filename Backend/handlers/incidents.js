@@ -26,6 +26,39 @@ const response = (statusCode, body) => ({
     body: JSON.stringify(body),
 });
 
+const getAccountIdFromContext = (context) => {
+    if (process.env.AWS_ACCOUNT_ID) {
+        return process.env.AWS_ACCOUNT_ID;
+    }
+
+    const arn = context?.invokedFunctionArn || process.env.AWS_LAMBDA_FUNCTION_ARN;
+    if (arn) {
+        const parts = arn.split(':');
+        if (parts.length > 4) {
+            return parts[4];
+        }
+    }
+    return null;
+};
+
+const buildNotificationTopicArn = (context) => {
+    if (process.env.INCIDENT_NOTIFICATION_TOPIC_ARN) {
+        return process.env.INCIDENT_NOTIFICATION_TOPIC_ARN;
+    }
+
+    if (!INCIDENT_NOTIFICATION_TOPIC) {
+        return null;
+    }
+
+    const region = process.env.AWS_REGION || 'us-east-1';
+    const accountId = getAccountIdFromContext(context);
+    if (!accountId) {
+        return null;
+    }
+
+    return `arn:aws:sns:${region}:${accountId}:${INCIDENT_NOTIFICATION_TOPIC}`;
+};
+
 const buildEvidencePreviews = async (keys = []) => {
     if (!Array.isArray(keys) || keys.length === 0) return [];
 
@@ -149,7 +182,7 @@ Por favor, revise este incidente en el sistema.`;
 };
 
 // CREATE - Crear nuevo incidente
-exports.create = async (event) => {
+exports.create = async (event, context) => {
     try {
         const data = JSON.parse(event.body);
         const incidentId = uuidv4();
@@ -200,21 +233,27 @@ exports.create = async (event) => {
 
         // Enviar notificación SNS
         try {
-            const message = {
-                incidentId,
-                tipo: incident.tipo,
-                centroTrabajo: incident.centroTrabajo,
-                trabajador: incident.trabajador.nombre,
-                fecha: incident.fecha,
-                gravedad: incident.gravedad,
-                descripcion: incident.descripcion
-            };
+            const topicArn = buildNotificationTopicArn(context);
 
-            await snsClient.send(new PublishCommand({
-                TopicArn: `arn:aws:sns:${process.env.AWS_REGION || 'us-east-1'}:${process.env.AWS_ACCOUNT_ID || ''}:${INCIDENT_NOTIFICATION_TOPIC}`,
-                Subject: `Nuevo ${incident.tipo} reportado - ${incident.gravedad}`,
-                Message: JSON.stringify(message, null, 2)
-            }));
+            if (!topicArn) {
+                console.warn('No se pudo determinar el ARN del tópico SNS para notificaciones de incidentes.');
+            } else {
+                const message = {
+                    incidentId,
+                    tipo: incident.tipo,
+                    centroTrabajo: incident.centroTrabajo,
+                    trabajador: incident.trabajador.nombre,
+                    fecha: incident.fecha,
+                    gravedad: incident.gravedad,
+                    descripcion: incident.descripcion
+                };
+
+                await snsClient.send(new PublishCommand({
+                    TopicArn: topicArn,
+                    Subject: `Nuevo ${incident.tipo} reportado - ${incident.gravedad}`,
+                    Message: JSON.stringify(message, null, 2)
+                }));
+            }
         } catch (snsError) {
             console.error('Error enviando notificación SNS:', snsError);
             // No fallar la creación si SNS falla

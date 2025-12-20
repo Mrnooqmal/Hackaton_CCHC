@@ -11,7 +11,7 @@ custom:
   serverless-offline:
     httpPort: 3001
     lambdaPort: 3002
-  bucketName: hackatonbackend-documents-v3-${self:provider.stage}
+  bucketName: hackatonbackend-documents-v8-${self:provider.stage}
 
 provider:
   name: aws
