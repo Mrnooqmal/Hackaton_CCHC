@@ -119,8 +119,13 @@ export default function Sidebar() {
                             {user.nombre[0]}{user.apellido?.[0] || ''}
                         </div>
                         <div className="user-details overflow-hidden">
-                            <div className="user-name truncate">{user.nombre}</div>
-                            <div className="user-role uppercase truncate">{user.rol}</div>
+                            <div className="user-name truncate">{user.nombre} {user.apellido}</div>
+                            <div className={`user-role-badge role-${user.rol}`}>
+                                {user.rol === 'admin' && '👑'}
+                                {user.rol === 'prevencionista' && '🛡️'}
+                                {user.rol === 'trabajador' && '👷'}
+                                {' '}{user.rol === 'admin' ? 'Administrador' : user.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}
+                            </div>
                         </div>
                         <button
                             className="logout-btn"
@@ -143,9 +148,9 @@ export default function Sidebar() {
                     display: flex;
                     align-items: center;
                     gap: var(--space-3);
-                    padding: var(--space-2);
+                    padding: var(--space-3);
                     background: var(--surface-elevated);
-                    border-radius: var(--radius-md);
+                    border-radius: var(--radius-lg);
                 }
                 .user-details {
                     flex: 1;
@@ -154,11 +159,29 @@ export default function Sidebar() {
                     font-size: var(--text-sm);
                     font-weight: 600;
                     color: var(--text-primary);
+                    margin-bottom: 4px;
                 }
-                .user-role {
-                    font-size: 10px;
-                    color: var(--text-muted);
-                    letter-spacing: 0.05em;
+                .user-role-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    text-transform: capitalize;
+                }
+                .role-admin {
+                    background: linear-gradient(135deg, var(--warning-500), var(--warning-600));
+                    color: white;
+                }
+                .role-prevencionista {
+                    background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+                    color: white;
+                }
+                .role-trabajador {
+                    background: linear-gradient(135deg, var(--info-500), var(--info-600));
+                    color: white;
                 }
                 .logout-btn {
                     background: none;

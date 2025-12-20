@@ -1,0 +1,101 @@
+
+service: HackatonBackend
+
+stage: dev
+
+region: us-east-1
+
+stack: HackatonBackend-dev
+
+endpoints:
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/auth/login
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/auth/change-password
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/auth/logout
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/auth/me
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/auth/validate-token
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/users
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/users
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/users/{id}
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/users/rut/{rut}
+  PUT - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/users/{id}
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/users/{id}/reset-password
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/users/{id}/set-pin
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/users/{id}/complete-enrollment
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/workers
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/workers
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/workers/{id}
+  PUT - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/workers/{id}
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/workers/{id}/sign
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/workers/rut/{rut}
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/workers/{id}/set-pin
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/workers/{id}/complete-enrollment
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/signatures
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/signatures/{id}
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/signatures/worker/{workerId}
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/signatures/{id}/dispute
+  PUT - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/signatures/{id}/resolve
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/signatures/disputes
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/documents
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/documents
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/documents/{id}
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/documents/{id}/assign
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/documents/{id}/sign
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/documents/{id}/sign-bulk
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/activities
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/activities
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/activities/{id}
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/activities/{id}/attendance
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/activities/stats
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/ai/chat
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/ai/risk-matrix
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/ai/prevention-plan
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/ai/daily-talk
+  GET - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/hello
+  POST - https://jgyrwljpq8.execute-api.us-east-1.amazonaws.com/notifications/welcome
+
+functions:
+  authLogin: HackatonBackend-dev-authLogin
+  authChangePassword: HackatonBackend-dev-authChangePassword
+  authLogout: HackatonBackend-dev-authLogout
+  authMe: HackatonBackend-dev-authMe
+  authValidateToken: HackatonBackend-dev-authValidateToken
+  createUser: HackatonBackend-dev-createUser
+  listUsers: HackatonBackend-dev-listUsers
+  getUser: HackatonBackend-dev-getUser
+  getUserByRut: HackatonBackend-dev-getUserByRut
+  updateUser: HackatonBackend-dev-updateUser
+  resetUserPassword: HackatonBackend-dev-resetUserPassword
+  setUserPin: HackatonBackend-dev-setUserPin
+  completeUserEnrollment: HackatonBackend-dev-completeUserEnrollment
+  createWorker: HackatonBackend-dev-createWorker
+  listWorkers: HackatonBackend-dev-listWorkers
+  getWorker: HackatonBackend-dev-getWorker
+  updateWorker: HackatonBackend-dev-updateWorker
+  signWorker: HackatonBackend-dev-signWorker
+  getWorkerByRut: HackatonBackend-dev-getWorkerByRut
+  setWorkerPin: HackatonBackend-dev-setWorkerPin
+  completeWorkerEnrollment: HackatonBackend-dev-completeWorkerEnrollment
+  createSignature: HackatonBackend-dev-createSignature
+  getSignature: HackatonBackend-dev-getSignature
+  getSignaturesByWorker: HackatonBackend-dev-getSignaturesByWorker
+  disputeSignature: HackatonBackend-dev-disputeSignature
+  resolveSignatureDispute: HackatonBackend-dev-resolveSignatureDispute
+  listSignatureDisputes: HackatonBackend-dev-listSignatureDisputes
+  createDocument: HackatonBackend-dev-createDocument
+  listDocuments: HackatonBackend-dev-listDocuments
+  getDocument: HackatonBackend-dev-getDocument
+  assignDocument: HackatonBackend-dev-assignDocument
+  signDocument: HackatonBackend-dev-signDocument
+  signDocumentBulk: HackatonBackend-dev-signDocumentBulk
+  createActivity: HackatonBackend-dev-createActivity
+  listActivities: HackatonBackend-dev-listActivities
+  getActivity: HackatonBackend-dev-getActivity
+  registerAttendance: HackatonBackend-dev-registerAttendance
+  getActivityStats: HackatonBackend-dev-getActivityStats
+  aiChat: HackatonBackend-dev-aiChat
+  aiRiskMatrix: HackatonBackend-dev-aiRiskMatrix
+  aiPreventionPlan: HackatonBackend-dev-aiPreventionPlan
+  aiDailyTalk: HackatonBackend-dev-aiDailyTalk
+  printHello: HackatonBackend-dev-printHello
+  sendWelcomeEmail: HackatonBackend-dev-sendWelcomeEmail
+

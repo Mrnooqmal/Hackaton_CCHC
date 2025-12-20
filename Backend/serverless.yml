@@ -24,6 +24,7 @@ provider:
     SIGNATURES_TABLE: ${self:service}-signatures-${self:provider.stage}
     USERS_TABLE: ${self:service}-users-${self:provider.stage}
     SESSIONS_TABLE: ${self:service}-sessions-${self:provider.stage}
+    SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
   httpApi:
     cors:
@@ -56,6 +57,11 @@ provider:
             - !GetAtt SignaturesTable.Arn
             - !GetAtt UsersTable.Arn
             - !GetAtt SessionsTable.Arn
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+          Resource: "*"
 
 package:
   individually: false
@@ -376,6 +382,14 @@ functions:
       - httpApi:
           path: /hello
           method: GET
+
+  # Notifications
+  sendWelcomeEmail:
+    handler: handlers/notifications.sendWelcome
+    events:
+      - httpApi:
+          path: /test-email
+          method: POST
 
 resources:
   Resources:

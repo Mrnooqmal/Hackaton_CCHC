@@ -193,36 +193,48 @@ export default function UserManagement() {
                 </div>
             </div>
 
-            {/* Modal de Creación */}
+            {/* Modal de Creación Mejorado */}
             {showCreateModal && (
                 <div className="modal-overlay">
                     <div className="modal-content max-w-lg">
-                        <div className="p-6">
-                            <h2 className="text-xl font-bold mb-4">Crear Nuevo Usuario</h2>
-                            <form onSubmit={handleCreateUser} className="space-y-4">
+                        <div className="modal-header">
+                            <div className="modal-header-icon">
+                                <FiUserPlus size={24} />
+                            </div>
+                            <h2 className="modal-title">Nuevo Usuario</h2>
+                            <p className="modal-subtitle">Complete los datos para crear un nuevo usuario en el sistema</p>
+                        </div>
+
+                        <form onSubmit={handleCreateUser} className="modal-body">
+                            {/* Sección: Datos Personales */}
+                            <div className="form-section">
+                                <h3 className="form-section-title">Datos Personales</h3>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="form-group">
-                                        <label className="form-label">Nombre</label>
+                                        <label className="form-label">Nombre *</label>
                                         <input
                                             type="text"
                                             className="form-input"
+                                            placeholder="Juan"
                                             value={newUser.nombre}
                                             onChange={(e) => setNewUser({ ...newUser, nombre: e.target.value })}
                                             required
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Apellido</label>
+                                        <label className="form-label">Apellido *</label>
                                         <input
                                             type="text"
                                             className="form-input"
+                                            placeholder="Pérez"
                                             value={newUser.apellido}
                                             onChange={(e) => setNewUser({ ...newUser, apellido: e.target.value })}
+                                            required
                                         />
                                     </div>
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">RUT</label>
+                                    <label className="form-label">RUT *</label>
                                     <input
                                         type="text"
                                         className="form-input"
@@ -233,45 +245,84 @@ export default function UserManagement() {
                                     />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Rol</label>
-                                    <select
-                                        className="form-input form-select"
-                                        value={newUser.rol}
-                                        onChange={(e) => setNewUser({ ...newUser, rol: e.target.value as any })}
-                                    >
-                                        <option value="trabajador">Trabajador</option>
-                                        <option value="prevencionista">Prevencionista</option>
-                                        <option value="admin">Administrador</option>
-                                    </select>
-                                </div>
-                                <div className="form-group">
                                     <label className="form-label">Email</label>
                                     <input
                                         type="email"
                                         className="form-input"
+                                        placeholder="usuario@empresa.cl"
                                         value={newUser.email}
                                         onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                                     />
+                                    <span className="form-hint">Se notificará al usuario por email con sus credenciales</span>
                                 </div>
+                                <div className="form-group">
+                                    <label className="form-label">Cargo</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Ej: Operador de Maquinaria"
+                                        value={newUser.cargo}
+                                        onChange={(e) => setNewUser({ ...newUser, cargo: e.target.value })}
+                                    />
+                                </div>
+                            </div>
 
-                                <div className="flex gap-3 pt-4">
+                            {/* Sección: Rol */}
+                            <div className="form-section">
+                                <h3 className="form-section-title">Rol en el Sistema</h3>
+                                <div className="role-selector">
                                     <button
                                         type="button"
-                                        className="btn btn-secondary flex-1"
-                                        onClick={() => setShowCreateModal(false)}
+                                        className={`role-card ${newUser.rol === 'trabajador' ? 'selected' : ''}`}
+                                        onClick={() => setNewUser({ ...newUser, rol: 'trabajador' })}
                                     >
-                                        Cancelar
+                                        <span className="role-card-icon">👷</span>
+                                        <span className="role-card-title">Trabajador</span>
+                                        <span className="role-card-desc">Acceso básico para firmar documentos y actividades</span>
                                     </button>
                                     <button
-                                        type="submit"
-                                        className="btn btn-primary flex-1"
-                                        disabled={loading}
+                                        type="button"
+                                        className={`role-card ${newUser.rol === 'prevencionista' ? 'selected' : ''}`}
+                                        onClick={() => setNewUser({ ...newUser, rol: 'prevencionista' })}
                                     >
-                                        {loading ? <div className="spinner" /> : 'Crear Usuario'}
+                                        <span className="role-card-icon">🛡️</span>
+                                        <span className="role-card-title">Prevencionista</span>
+                                        <span className="role-card-desc">Gestión de documentos, actividades y prevención</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`role-card ${newUser.rol === 'admin' ? 'selected' : ''}`}
+                                        onClick={() => setNewUser({ ...newUser, rol: 'admin' })}
+                                    >
+                                        <span className="role-card-icon">👑</span>
+                                        <span className="role-card-title">Administrador</span>
+                                        <span className="role-card-desc">Acceso completo al sistema y gestión de usuarios</span>
                                     </button>
                                 </div>
-                            </form>
-                        </div>
+                            </div>
+
+                            <div className="modal-footer">
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => setShowCreateModal(false)}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="btn btn-primary"
+                                    disabled={loading || !newUser.nombre || !newUser.apellido || !newUser.rut}
+                                >
+                                    {loading ? <div className="spinner" /> : (
+                                        <>
+                                            <FiUserPlus className="mr-2" />
+                                            Crear Usuario
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
@@ -294,16 +345,154 @@ export default function UserManagement() {
                     left: 0;
                     right: 0;
                     bottom: 0;
-                    background: rgba(0,0,0,0.5);
+                    background: rgba(0,0,0,0.7);
+                    backdrop-filter: blur(4px);
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     z-index: 1000;
+                    animation: fadeIn 0.2s ease-out;
                 }
+                
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                
                 .modal-content {
                     background: var(--surface-base);
-                    border-radius: var(--radius-lg);
+                    border-radius: var(--radius-xl);
+                    border: 1px solid var(--surface-border);
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
                     width: 100%;
+                    max-height: 90vh;
+                    overflow-y: auto;
+                    animation: slideUp 0.3s ease-out;
+                }
+                
+                @keyframes slideUp {
+                    from { opacity: 0; transform: translateY(20px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                
+                .modal-header {
+                    text-align: center;
+                    padding: var(--space-6);
+                    border-bottom: 1px solid var(--surface-border);
+                    background: var(--surface-elevated);
+                }
+                
+                .modal-header-icon {
+                    width: 56px;
+                    height: 56px;
+                    background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+                    border-radius: 16px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0 auto var(--space-3);
+                    color: white;
+                }
+                
+                .modal-title {
+                    font-size: var(--text-xl);
+                    font-weight: 700;
+                    color: var(--text-primary);
+                    margin-bottom: var(--space-1);
+                }
+                
+                .modal-subtitle {
+                    font-size: var(--text-sm);
+                    color: var(--text-muted);
+                }
+                
+                .modal-body {
+                    padding: var(--space-6);
+                }
+                
+                .modal-footer {
+                    display: flex;
+                    gap: var(--space-3);
+                    justify-content: flex-end;
+                    padding-top: var(--space-4);
+                    border-top: 1px solid var(--surface-border);
+                    margin-top: var(--space-4);
+                }
+                
+                .form-section {
+                    margin-bottom: var(--space-6);
+                }
+                
+                .form-section-title {
+                    font-size: var(--text-sm);
+                    font-weight: 600;
+                    color: var(--text-secondary);
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    margin-bottom: var(--space-4);
+                    padding-bottom: var(--space-2);
+                    border-bottom: 1px solid var(--surface-border);
+                }
+                
+                .form-hint {
+                    font-size: 11px;
+                    color: var(--text-muted);
+                    margin-top: 4px;
+                    display: block;
+                }
+                
+                .role-selector {
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: var(--space-3);
+                }
+                
+                .role-card {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    text-align: center;
+                    padding: var(--space-4);
+                    background: var(--surface-elevated);
+                    border: 2px solid var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                }
+                
+                .role-card:hover {
+                    border-color: var(--primary-400);
+                    background: var(--surface-card);
+                }
+                
+                .role-card.selected {
+                    border-color: var(--primary-500);
+                    background: rgba(76, 175, 80, 0.1);
+                    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+                }
+                
+                .role-card-icon {
+                    font-size: 28px;
+                    margin-bottom: var(--space-2);
+                }
+                
+                .role-card-title {
+                    font-size: var(--text-sm);
+                    font-weight: 600;
+                    color: var(--text-primary);
+                    margin-bottom: var(--space-1);
+                }
+                
+                .role-card-desc {
+                    font-size: 10px;
+                    color: var(--text-muted);
+                    line-height: 1.4;
+                }
+                
+                @media (max-width: 640px) {
+                    .role-selector {
+                        grid-template-columns: 1fr;
+                    }
                 }
             `}</style>
         </>

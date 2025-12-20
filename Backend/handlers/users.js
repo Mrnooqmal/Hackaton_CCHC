@@ -120,6 +120,19 @@ module.exports.create = async (event) => {
             })
         );
 
+        // Enviar email de bienvenida si tiene email
+        let emailSent = false;
+        if (user.email) {
+            try {
+                const { sendWelcomeEmail } = require('./notifications');
+                const emailResult = await sendWelcomeEmail(user.email, user.nombre, user.rut, passwordTemporal);
+                emailSent = emailResult.sent;
+            } catch (emailErr) {
+                console.error('Error sending welcome email:', emailErr);
+                // No falla la creación por error de email
+            }
+        }
+
         // Retornar usuario con Contraseña temporal visible (solo en creación)
         return created({
             message: 'Usuario creado exitosamente',
@@ -133,7 +146,10 @@ module.exports.create = async (event) => {
                 estado: user.estado
             },
             passwordTemporal, // Solo visible en la respuesta de creación
-            instrucciones: 'El usuario debe cambiar esta contraseña en su primer acceso'
+            emailNotificado: emailSent,
+            instrucciones: emailSent
+                ? 'Se ha enviado un email con las credenciales al usuario'
+                : 'El usuario debe cambiar esta contraseña en su primer acceso'
         });
     } catch (err) {
         console.error('Error creating user:', err);
