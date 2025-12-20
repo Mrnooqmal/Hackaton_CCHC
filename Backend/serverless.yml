@@ -147,6 +147,13 @@ functions:
           path: /users/{id}/reset-password
           method: POST
 
+  setUserPin:
+    handler: handlers/users.setPin
+    events:
+      - httpApi:
+          path: /users/{id}/set-pin
+          method: POST
+
   completeUserEnrollment:
     handler: handlers/users.completeEnrollment
     events:

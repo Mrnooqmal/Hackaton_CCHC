@@ -358,6 +358,7 @@ module.exports.resetPassword = async (event) => {
             })
         );
 
+
         return success({
             message: 'Contraseña reseteada exitosamente',
             userId: id,
@@ -366,6 +367,78 @@ module.exports.resetPassword = async (event) => {
         });
     } catch (err) {
         console.error('Error resetting password:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * POST /users/{id}/set-pin - Configurar o cambiar PIN del usuario
+ */
+module.exports.setPin = async (event) => {
+    try {
+        const { id } = event.pathParameters || {};
+        const body = JSON.parse(event.body || '{}');
+
+        if (!id) {
+            return error('ID de usuario requerido');
+        }
+
+        const { pin, pinActual } = body;
+
+        // Validar formato del nuevo PIN
+        const pinValidation = validatePin(pin);
+        if (!pinValidation.valid) {
+            return error(pinValidation.error);
+        }
+
+        // Obtener usuario
+        const userResult = await docClient.send(
+            new GetCommand({
+                TableName: USERS_TABLE,
+                Key: { userId: id },
+            })
+        );
+
+        if (!userResult.Item) {
+            return error('Usuario no encontrado', 404);
+        }
+
+        const user = userResult.Item;
+
+        // Si ya tiene PIN Y el usuario está habilitado, requiere el PIN actual para cambiarlo
+        // Durante el enrolamiento (habilitado=false), se puede configurar sin PIN actual
+        if (user.pinHash && user.habilitado) {
+            if (!pinActual) {
+                return error('PIN actual es requerido para cambiar el PIN');
+            }
+            const pinActualValido = verifyPin(pinActual, user.pinHash, id);
+            if (!pinActualValido) {
+                return error('PIN actual incorrecto', 401);
+            }
+        }
+
+        const now = new Date().toISOString();
+        const newPinHash = hashPin(pin, id);
+
+        await docClient.send(
+            new UpdateCommand({
+                TableName: USERS_TABLE,
+                Key: { userId: id },
+                UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
+                ExpressionAttributeValues: {
+                    ':pinHash': newPinHash,
+                    ':pinCreatedAt': now,
+                    ':updatedAt': now,
+                },
+            })
+        );
+
+        return success({
+            message: user.pinHash ? 'PIN actualizado exitosamente' : 'PIN configurado exitosamente',
+            pinCreatedAt: now,
+        });
+    } catch (err) {
+        console.error('Error setting PIN:', err);
         return error(err.message, 500);
     }
 };

@@ -107,8 +107,8 @@ export const usersApi = {
             body: JSON.stringify({ pin }),
         }),
 
-    completeUserEnrollment: (id: string, pin: string) =>
-        apiRequest<EnrollmentResult>(`/users/${id}/complete-user-enrollment`, {
+    completeEnrollment: (id: string, pin: string) =>
+        apiRequest<EnrollmentResult>(`/users/${id}/complete-enrollment`, {
             method: 'POST',
             body: JSON.stringify({ pin }),
         }),
