@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { workersApi } from '../api/client';
+import { usersApi } from '../api/client';
 import PinInput from '../components/PinInput';
 import { FiCheckCircle, FiShield, FiLock, FiArrowRight, FiKey } from 'react-icons/fi';
 
@@ -42,14 +42,14 @@ export default function EnrollMe() {
             }
 
             // Paso 1: Configurar el PIN
-            const setPinResponse = await workersApi.setPin(user.userId, pin);
+            const setPinResponse = await usersApi.setPin(user.userId, pin);
 
             if (!setPinResponse.success) {
                 throw new Error(setPinResponse.error || 'Error al configurar el PIN');
             }
 
             // Paso 2: Completar enrolamiento (crea la firma digital)
-            const enrollResponse = await workersApi.completeEnrollment(user.userId, pin);
+            const enrollResponse = await usersApi.completeEnrollment(user.userId, pin);
 
             if (!enrollResponse.success || !enrollResponse.data) {
                 throw new Error(enrollResponse.error || 'Error al completar el enrolamiento');

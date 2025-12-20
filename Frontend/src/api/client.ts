@@ -101,6 +101,12 @@ export const usersApi = {
             method: 'POST',
         }),
 
+    setPin: (id: string, pin: string) =>
+        apiRequest<{ message: string; pinCreatedAt: string }>(`/users/${id}/set-pin`, {
+            method: 'POST',
+            body: JSON.stringify({ pin }),
+        }),
+
     completeUserEnrollment: (id: string, pin: string) =>
         apiRequest<EnrollmentResult>(`/users/${id}/complete-user-enrollment`, {
             method: 'POST',

@@ -40,9 +40,10 @@ export default function ChangePassword() {
 
             if (response.success) {
                 setSuccess(true);
-                // Esperar 2 segundos y redirigir
-                setTimeout(() => {
-                    navigate('/');
+                // Hacer logout y redirigir al login después de 2 segundos
+                setTimeout(async () => {
+                    await logout();
+                    navigate('/login', { replace: true });
                 }, 2000);
             } else {
                 setError(response.error || 'Error al cambiar la contraseña');
@@ -63,7 +64,7 @@ export default function ChangePassword() {
                     </div>
                     <h2 className="text-2xl font-bold mb-2">¡Contraseña Actualizada!</h2>
                     <p className="text-text-muted mb-6">
-                        Su contraseña ha sido cambiada exitosamente. Redirigiendo...
+                        Su contraseña ha sido cambiada exitosamente. Será redirigido al login para ingresar nuevamente con sus nuevas credenciales.
                     </p>
                 </div>
             </div>
