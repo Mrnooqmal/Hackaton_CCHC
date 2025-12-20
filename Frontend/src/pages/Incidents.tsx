@@ -111,7 +111,7 @@ export default function Incidents() {
         setLoading(true);
         try {
             const response = await incidentsApi.list({
-                empresaId: user?.userId,
+                empresaId: user?.empresaId,
                 ...filters
             });
             if (response.success && response.data) {
@@ -127,8 +127,8 @@ export default function Incidents() {
     const loadStats = async () => {
         try {
             const response = await incidentsApi.getStats({
-                empresaId: user?.userId,
-                masaLaboral: 100 // Default value since it's no longer relevant in UI
+                empresaId: user?.empresaId,
+                masaLaboral: 100 // TODO: Obtener de configuración
             });
             if (response.success && response.data) {
                 setStats(response.data);
@@ -202,7 +202,7 @@ export default function Incidents() {
             const response = await incidentsApi.create({
                 ...formData,
                 reportadoPor: user?.nombre || 'Usuario',
-                empresaId: user?.userId
+                empresaId: user?.empresaId
             });
 
             if (response.success && response.data) {

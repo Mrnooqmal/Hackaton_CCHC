@@ -13,6 +13,8 @@ const snsClient = new SNSClient({});
 const INCIDENTS_TABLE = process.env.INCIDENTS_TABLE;
 const INCIDENT_EVIDENCE_BUCKET = process.env.INCIDENT_EVIDENCE_BUCKET;
 const INCIDENT_NOTIFICATION_TOPIC = process.env.INCIDENT_NOTIFICATION_TOPIC;
+const USERS_TABLE = process.env.USERS_TABLE;
+const INBOX_TABLE = process.env.INBOX_TABLE;
 
 // Helper para respuestas
 const response = (statusCode, body) => ({
@@ -46,6 +48,104 @@ const buildEvidencePreviews = async (keys = []) => {
     );
 
     return previews.filter(Boolean);
+}
+// Helper para obtener prevencionistas
+const getPrevencionistas = async (empresaId) => {
+    try {
+        console.log('[DEBUG] Buscando prevencionistas para empresaId:', empresaId);
+        console.log('[DEBUG] USERS_TABLE:', USERS_TABLE);
+        console.log('[DEBUG] Filtro: empresaId =', empresaId, 'AND rol = prevencionista AND estado = activo');
+
+        const result = await docClient.send(new ScanCommand({
+            TableName: USERS_TABLE,
+            FilterExpression: 'empresaId = :empresaId AND rol = :rol AND estado = :estado',
+            ExpressionAttributeValues: {
+                ':empresaId': empresaId,
+                ':rol': 'prevencionista',
+                ':estado': 'activo'
+            },
+            ProjectionExpression: 'userId, nombre, apellido, rol, cargo, empresaId'
+        }));
+
+        console.log('[DEBUG] Prevencionistas encontrados:', result.Items?.length || 0);
+        console.log('[DEBUG] Prevencionistas:', JSON.stringify(result.Items, null, 2));
+
+        return result.Items || [];
+    } catch (error) {
+        console.error('[ERROR] Error obteniendo prevencionistas:', error);
+        return [];
+    }
+};
+
+// Helper para enviar notificaciones de incidente a prevencionistas
+const sendIncidentNotification = async (incident, prevencionistas) => {
+    console.log('[DEBUG] sendIncidentNotification llamado');
+    console.log('[DEBUG] INBOX_TABLE:', INBOX_TABLE);
+    console.log('[DEBUG] Número de prevencionistas:', prevencionistas?.length || 0);
+
+    if (!prevencionistas || prevencionistas.length === 0) {
+        console.log('[WARN] No hay prevencionistas para notificar');
+        return;
+    }
+
+    const now = new Date().toISOString();
+    const baseMessageId = uuidv4();
+
+    // Determinar prioridad basada en gravedad
+    let priority = 'normal';
+    if (incident.gravedad === 'fatal') {
+        priority = 'urgent';
+    } else if (incident.gravedad === 'grave') {
+        priority = 'high';
+    }
+
+    // Crear asunto y contenido del mensaje
+    const subject = `Nuevo ${incident.tipo} reportado - ${incident.gravedad}`;
+    const content = `Se ha reportado un nuevo ${incident.tipo} en ${incident.centroTrabajo}.
+
+Trabajador: ${incident.trabajador.nombre}
+Fecha: ${incident.fecha} ${incident.hora}
+Gravedad: ${incident.gravedad}
+Descripción: ${incident.descripcion}
+
+Por favor, revise este incidente en el sistema.`;
+
+    // Enviar mensaje a cada prevencionista
+    for (const prev of prevencionistas) {
+        try {
+            const messageId = `${baseMessageId}-${prev.userId.substring(0, 8)}`;
+            const message = {
+                recipientId: prev.userId,
+                messageId,
+                senderId: 'sistema',
+                senderName: 'Sistema de Incidentes',
+                senderRol: 'system',
+                type: 'alert',
+                priority,
+                subject,
+                content,
+                read: false,
+                readAt: null,
+                archivedByRecipient: false,
+                archivedBySender: false,
+                linkedEntity: {
+                    type: 'incident',
+                    id: incident.incidentId
+                },
+                createdAt: now,
+                updatedAt: now
+            };
+
+            await docClient.send(new PutCommand({
+                TableName: INBOX_TABLE,
+                Item: message
+            }));
+
+            console.log(`Notificación enviada a prevencionista: ${prev.nombre} ${prev.apellido || ''}`);
+        } catch (error) {
+            console.error(`Error enviando notificación a ${prev.userId}:`, error);
+        }
+    }
 };
 
 // CREATE - Crear nuevo incidente
@@ -118,6 +218,22 @@ exports.create = async (event) => {
         } catch (snsError) {
             console.error('Error enviando notificación SNS:', snsError);
             // No fallar la creación si SNS falla
+        }
+
+        // Enviar notificaciones a prevencionistas vía inbox
+        try {
+            console.log('[DEBUG] Iniciando envío de notificaciones para incidentId:', incidentId);
+            console.log('[DEBUG] empresaId del incidente:', incident.empresaId);
+
+            const prevencionistas = await getPrevencionistas(incident.empresaId);
+            console.log('[DEBUG] Prevencionistas obtenidos:', prevencionistas.length);
+
+            await sendIncidentNotification(incident, prevencionistas);
+            console.log(`[SUCCESS] Notificaciones enviadas a ${prevencionistas.length} prevencionista(s)`);
+        } catch (notifError) {
+            console.error('[ERROR] Error enviando notificaciones inbox:', notifError);
+            console.error('[ERROR] Stack trace:', notifError.stack);
+            // No fallar la creación si las notificaciones fallan
         }
 
         return response(201, {
@@ -782,6 +898,16 @@ exports.quickReport = async (event) => {
             }));
         } catch (snsError) {
             console.error('Error enviando notificación SNS:', snsError);
+        }
+
+        // Enviar notificaciones a prevencionistas vía inbox
+        try {
+            const prevencionistas = await getPrevencionistas(incident.empresaId);
+            await sendIncidentNotification(incident, prevencionistas);
+            console.log(`Notificaciones enviadas a ${prevencionistas.length} prevencionista(s)`);
+        } catch (notifError) {
+            console.error('Error enviando notificaciones inbox:', notifError);
+            // No fallar la creación si las notificaciones fallan
         }
 
         return response(201, {
