@@ -16,7 +16,8 @@ import {
     FiBell,
     FiX,
     FiMoon,
-    FiSun
+    FiSun,
+    FiWifiOff
 } from 'react-icons/fi';
 import { surveysApi, workersApi, inboxApi, type InboxMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -48,6 +49,7 @@ const navItems: NavSection[] = [
         items: [
             { path: '/signature-requests', icon: FiEdit3, label: 'Solicitar Firmas', permission: 'crear_actividades' },
             { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Firmas' },
+            { path: '/offline-signatures', icon: FiWifiOff, label: 'Firmas Offline', permission: 'crear_actividades' },
         ]
     },
     {

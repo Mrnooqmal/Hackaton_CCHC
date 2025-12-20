@@ -557,3 +557,286 @@ module.exports.updateOnSignature = async (requestId, workerId, signatureId) => {
         return { success: false, error: err.message };
     }
 };
+
+/**
+ * POST /signature-requests/offline-batch - Procesar firmas recolectadas offline
+ * 
+ * Body: {
+ *   tipo: string,
+ *   titulo: string,
+ *   descripcion?: string,
+ *   ubicacion?: string,
+ *   solicitanteId: string,
+ *   firmasOffline: [{
+ *     rut: string,
+ *     pin: string,
+ *     nombre?: string,
+ *     timestampLocal: string
+ *   }],
+ *   fechaCreacionOffline: string
+ * }
+ */
+module.exports.processOfflineBatch = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+
+        const validation = validateRequired(body, ['tipo', 'titulo', 'solicitanteId', 'firmasOffline']);
+        if (!validation.valid) {
+            return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
+        }
+
+        if (!Array.isArray(body.firmasOffline) || body.firmasOffline.length === 0) {
+            return error('Se requiere al menos una firma offline');
+        }
+
+        // Obtener información del solicitante
+        const solicitanteResult = await docClient.send(
+            new GetCommand({
+                TableName: USERS_TABLE,
+                Key: { userId: body.solicitanteId },
+            })
+        );
+
+        const solicitante = solicitanteResult.Item || {
+            nombre: 'Usuario',
+            apellido: 'Offline',
+            rut: 'N/A',
+            empresaId: 'default',
+        };
+
+        const now = new Date().toISOString();
+        const requestId = uuidv4();
+
+        // Procesar cada firma offline
+        const resultadosFirmas = [];
+        const trabajadoresInfo = [];
+        let firmasValidas = 0;
+
+        // Helper para normalizar RUT (quitar puntos, guiones y espacios)
+        const normalizeRut = (rut) => {
+            if (!rut) return '';
+            return rut.replace(/[\.\-\s]/g, '').toUpperCase();
+        };
+
+        for (const firmaOffline of body.firmasOffline) {
+            const { rut, pin, nombre, timestampLocal } = firmaOffline;
+
+            // Normalizar RUT de entrada
+            const rutNormalizado = normalizeRut(rut);
+            console.log(`[Offline Sync] Buscando trabajador con RUT: ${rut} (normalizado: ${rutNormalizado})`);
+
+            // Buscar trabajador por RUT - scan completo para comparar normalizados
+            const workerSearch = await docClient.send(
+                new ScanCommand({
+                    TableName: WORKERS_TABLE,
+                })
+            );
+
+            let worker = null;
+            if (workerSearch.Items && workerSearch.Items.length > 0) {
+                // Buscar coincidencia exacta normalizando ambos
+                worker = workerSearch.Items.find(w => 
+                    normalizeRut(w.rut) === rutNormalizado
+                );
+                console.log(`[Offline Sync] Workers encontrados: ${workerSearch.Items.length}, Match: ${worker ? 'SI' : 'NO'}`);
+            }
+
+            if (!worker) {
+                // Buscar en tabla Users
+                console.log(`[Offline Sync] No encontrado en Workers, buscando en Users...`);
+                const userSearch = await docClient.send(
+                    new ScanCommand({
+                        TableName: USERS_TABLE,
+                    })
+                );
+
+                if (userSearch.Items && userSearch.Items.length > 0) {
+                    const user = userSearch.Items.find(u => 
+                        normalizeRut(u.rut) === rutNormalizado
+                    );
+                    console.log(`[Offline Sync] Users encontrados: ${userSearch.Items.length}, Match: ${user ? 'SI' : 'NO'}`);
+                    
+                    if (user && user.workerId) {
+                        // Obtener el worker asociado
+                        const workerResult = await docClient.send(
+                            new GetCommand({
+                                TableName: WORKERS_TABLE,
+                                Key: { workerId: user.workerId },
+                            })
+                        );
+                        worker = workerResult.Item;
+                        console.log(`[Offline Sync] Worker asociado al User: ${worker ? 'SI' : 'NO'}`);
+                    } else if (user && !user.workerId) {
+                        // El usuario existe pero no tiene workerId - usar sus datos directamente
+                        // Esto puede pasar con prevencionistas que también firman
+                        console.log(`[Offline Sync] Usuario encontrado sin workerId, verificando si tiene PIN...`);
+                        if (user.pinHash) {
+                            worker = {
+                                workerId: user.userId,
+                                rut: user.rut,
+                                nombre: user.nombre,
+                                apellido: user.apellido,
+                                habilitado: user.habilitado,
+                                pinHash: user.pinHash,
+                                empresaId: user.empresaId,
+                                cargo: user.rol,
+                            };
+                        }
+                    }
+                }
+            }
+
+            // Si no encontramos el trabajador
+            if (!worker) {
+                console.log(`[Offline Sync] FALLO: Trabajador no encontrado para RUT ${rut}`);
+                resultadosFirmas.push({
+                    rut,
+                    success: false,
+                    error: 'Trabajador no encontrado',
+                });
+                continue;
+            }
+
+            console.log(`[Offline Sync] Trabajador encontrado: ${worker.nombre} ${worker.apellido || ''}, habilitado: ${worker.habilitado}, hasPin: ${!!worker.pinHash}`);
+
+            // Verificar que el trabajador esté habilitado
+            if (!worker.habilitado) {
+                console.log(`[Offline Sync] FALLO: Trabajador no habilitado`);
+                resultadosFirmas.push({
+                    rut,
+                    success: false,
+                    error: 'Trabajador no habilitado',
+                });
+                continue;
+            }
+
+            // Verificar PIN
+            if (!worker.pinHash) {
+                console.log(`[Offline Sync] FALLO: Trabajador sin PIN configurado`);
+                resultadosFirmas.push({
+                    rut,
+                    success: false,
+                    error: 'Trabajador sin PIN configurado',
+                });
+                continue;
+            }
+
+            // Importar función de verificación de PIN
+            const { verifyPin, generateSignatureToken } = require('../lib/validation');
+            
+            const pinValido = verifyPin(pin, worker.pinHash, worker.workerId);
+            console.log(`[Offline Sync] Verificación PIN: ${pinValido ? 'VALIDO' : 'INVALIDO'}`);
+            
+            if (!pinValido) {
+                resultadosFirmas.push({
+                    rut,
+                    success: false,
+                    error: 'PIN incorrecto',
+                });
+                continue;
+            }
+
+            // PIN válido - crear firma
+            const signatureId = uuidv4();
+            const token = generateSignatureToken();
+
+            const signature = {
+                signatureId,
+                token,
+                workerId: worker.workerId,
+                workerRut: worker.rut,
+                workerNombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
+                tipoFirma: body.tipo,
+                requestId,
+                requestTipo: body.tipo,
+                requestTitulo: body.titulo,
+                referenciaId: requestId,
+                referenciaTipo: 'signature-request',
+                fecha: timestampLocal ? timestampLocal.split('T')[0] : now.split('T')[0],
+                horario: timestampLocal ? new Date(timestampLocal).toTimeString().split(' ')[0] : new Date().toTimeString().split(' ')[0],
+                timestamp: timestampLocal || now,
+                timestampSync: now,
+                offlineSignature: true,
+                ipAddress: event.requestContext?.http?.sourceIp || 'offline',
+                userAgent: event.headers?.['user-agent'] || 'offline-sync',
+                metodoValidacion: 'PIN-OFFLINE',
+                estado: 'valida',
+                empresaId: worker.empresaId || 'default',
+                createdAt: now,
+            };
+
+            // Guardar firma
+            await docClient.send(
+                new PutCommand({
+                    TableName: SIGNATURES_TABLE,
+                    Item: signature,
+                })
+            );
+
+            // Agregar a lista de trabajadores
+            trabajadoresInfo.push({
+                workerId: worker.workerId,
+                nombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
+                rut: worker.rut,
+                cargo: worker.cargo,
+                firmado: true,
+                signatureId,
+                fechaFirma: timestampLocal || now,
+            });
+
+            resultadosFirmas.push({
+                rut,
+                success: true,
+                signatureId,
+                token,
+            });
+
+            firmasValidas++;
+        }
+
+        // Crear la solicitud con todas las firmas ya procesadas
+        const signatureRequest = {
+            requestId,
+            tipo: body.tipo,
+            tipoInfo: REQUEST_TYPES[body.tipo] || REQUEST_TYPES.OTRO,
+            titulo: body.titulo,
+            descripcion: body.descripcion || '',
+            documentos: [],
+            tieneDocumentos: false,
+            solicitanteId: body.solicitanteId,
+            solicitanteNombre: `${solicitante.nombre} ${solicitante.apellido || ''}`.trim(),
+            solicitanteRut: solicitante.rut,
+            trabajadores: trabajadoresInfo,
+            totalRequeridos: trabajadoresInfo.length,
+            totalFirmados: firmasValidas,
+            fechaCreacion: body.fechaCreacionOffline || now,
+            fechaLimite: null,
+            fechaCompletado: firmasValidas === trabajadoresInfo.length ? now : null,
+            ubicacion: body.ubicacion || null,
+            empresaId: solicitante.empresaId || 'default',
+            estado: firmasValidas === trabajadoresInfo.length ? 'completada' : (firmasValidas > 0 ? 'en_proceso' : 'pendiente'),
+            offlineRequest: true,
+            fechaSincronizacion: now,
+            createdAt: now,
+            updatedAt: now,
+        };
+
+        await docClient.send(
+            new PutCommand({
+                TableName: TABLE_NAME,
+                Item: signatureRequest,
+            })
+        );
+
+        return success({
+            message: `Solicitud sincronizada. ${firmasValidas}/${body.firmasOffline.length} firmas válidas.`,
+            requestId,
+            firmasValidas,
+            firmasInvalidas: body.firmasOffline.length - firmasValidas,
+            resultadosFirmas,
+        });
+    } catch (err) {
+        console.error('Error processing offline batch:', err);
+        return error(err.message, 500);
+    }
+};
