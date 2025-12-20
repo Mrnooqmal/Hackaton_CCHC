@@ -175,7 +175,7 @@ export default function WorkerEnroll() {
         <>
             <Header title="Enrolamiento de Trabajador" />
 
-            <div className="main-content">
+            <div className="page-content">
                 {/* Progress Steps */}
                 <div className="card mb-6">
                     <div className="flex items-center justify-center gap-4" style={{ flexWrap: 'wrap' }}>

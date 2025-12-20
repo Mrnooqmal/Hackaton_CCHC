@@ -76,7 +76,7 @@ export default function UserManagement() {
     return (
         <>
             <Header title="Gestión de Usuarios" />
-            <div className="main-content">
+            <div className="page-content">
                 <div className="mb-6 flex justify-between items-center">
                     <div>
                         <h2 className="text-xl font-bold">Usuarios del Sistema</h2>
@@ -113,83 +113,83 @@ export default function UserManagement() {
 
                 {error && <div className="alert alert-danger mb-6">{error}</div>}
 
-                <div className="card p-0 overflow-hidden">
-                    <table className="w-full text-left">
-                        <thead className="bg-surface-elevated border-b border-surface-border">
-                            <tr>
-                                <th className="px-6 py-4 font-semibold">Usuario</th>
-                                <th className="px-6 py-4 font-semibold">Rol</th>
-                                <th className="px-6 py-4 font-semibold">Estado</th>
-                                <th className="px-6 py-4 font-semibold">Acceso</th>
-                                <th className="px-6 py-4 text-right">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-surface-border">
-                            {loading && users.length === 0 ? (
+                <div className="card">
+                    <div className="table-container">
+                        <table className="table">
+                            <thead>
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-8 text-center">
-                                        <div className="spinner mx-auto" />
-                                    </td>
+                                    <th>Usuario</th>
+                                    <th>Rol</th>
+                                    <th>Estado</th>
+                                    <th>Acceso</th>
+                                    <th style={{ textAlign: 'right' }}>Acciones</th>
                                 </tr>
-                            ) : users.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} className="px-6 py-8 text-center text-muted">
-                                        No hay usuarios registrados
-                                    </td>
-                                </tr>
-                            ) : users.map((u) => (
-                                <tr key={u.userId} className="hover:bg-surface-elevated/50">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="avatar avatar-sm bg-primary-500/10 text-primary-500">
-                                                {u.nombre[0]}{u.apellido?.[0] || u.nombre[1]}
+                            </thead>
+                            <tbody>
+                                {loading && users.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="text-center">
+                                            <div className="spinner" style={{ margin: 'var(--space-4) auto' }} />
+                                        </td>
+                                    </tr>
+                                ) : users.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="text-center text-muted" style={{ padding: 'var(--space-8)' }}>
+                                            No hay usuarios registrados
+                                        </td>
+                                    </tr>
+                                ) : users.map((u) => (
+                                    <tr key={u.userId}>
+                                        <td>
+                                            <div className="flex items-center gap-3">
+                                                <div className="avatar avatar-sm" style={{ background: 'rgba(76, 175, 80, 0.15)', color: 'var(--primary-500)' }}>
+                                                    {u.nombre[0]}{u.apellido?.[0] || u.nombre[1]}
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontWeight: 600 }}>{u.nombre} {u.apellido}</div>
+                                                    <div className="text-muted" style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)' }}>{u.rut}</div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div className="font-medium">{u.nombre} {u.apellido}</div>
-                                                <div className="text-xs text-muted font-mono">{u.rut}</div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`badge ${u.rol === 'admin' ? 'badge-primary' :
-                                            u.rol === 'prevencionista' ? 'badge-warning' : 'badge-secondary'
-                                            }`}>
-                                            {u.rol}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-1">
-                                            {u.habilitado ? (
-                                                <FiShield className="text-success-500" />
-                                            ) : (
-                                                <FiAlertCircle className="text-warning-500" />
-                                            )}
-                                            <span className="text-sm">
-                                                {u.estado}
+                                        </td>
+                                        <td>
+                                            <span className={`badge ${u.rol === 'admin' ? 'badge-primary' :
+                                                u.rol === 'prevencionista' ? 'badge-warning' : 'badge-secondary'
+                                                }`}>
+                                                {u.rol}
                                             </span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-sm text-muted">
-                                        {u.ultimoAcceso ? new Date(u.ultimoAcceso).toLocaleDateString() : 'Nunca'}
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <button
-                                                className="btn btn-secondary btn-sm"
-                                                title="Reset Contraseña"
-                                                onClick={() => handleResetPassword(u.userId)}
-                                            >
-                                                <FiLock />
-                                            </button>
-                                            <button className="btn btn-secondary btn-sm" title="Editar">
-                                                <FiEdit2 />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                        </td>
+                                        <td>
+                                            <div className="flex items-center gap-2">
+                                                {u.habilitado ? (
+                                                    <FiShield style={{ color: 'var(--success-500)' }} />
+                                                ) : (
+                                                    <FiAlertCircle style={{ color: 'var(--warning-500)' }} />
+                                                )}
+                                                <span className="text-sm">{u.estado}</span>
+                                            </div>
+                                        </td>
+                                        <td className="text-muted text-sm">
+                                            {u.ultimoAcceso ? new Date(u.ultimoAcceso).toLocaleDateString() : 'Nunca'}
+                                        </td>
+                                        <td style={{ textAlign: 'right' }}>
+                                            <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
+                                                <button
+                                                    className="btn btn-secondary btn-sm"
+                                                    title="Reset Contraseña"
+                                                    onClick={() => handleResetPassword(u.userId)}
+                                                >
+                                                    <FiLock />
+                                                </button>
+                                                <button className="btn btn-secondary btn-sm" title="Editar">
+                                                    <FiEdit2 />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 

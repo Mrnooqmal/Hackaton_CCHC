@@ -131,7 +131,7 @@ export default function Activities() {
         <>
             <Header title="Actividades" />
 
-            <div className="main-content">
+            <div className="page-content">
                 {/* Quick Actions */}
                 <div className="grid grid-cols-4 mb-6">
                     {Object.entries(ACTIVITY_TYPES).slice(0, 4).map(([key, { label, color, icon }]) => (

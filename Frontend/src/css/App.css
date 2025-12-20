@@ -23,6 +23,13 @@
   width: 100%;
 }
 
+/* Contenedor interno para cada vista, evita duplicar el offset del sidebar */
+.page-content {
+  width: 100%;
+  max-width: var(--max-content-width);
+  margin: 0 auto;
+}
+
 /* Sidebar */
 .sidebar {
   position: fixed;
