@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { IconType } from 'react-icons';
 import Header from '../components/Header';
 import {
     surveysApi,
@@ -16,9 +17,12 @@ import {
     FiCheckCircle,
     FiAlertCircle,
     FiBarChart2,
-    FiTrash2,
     FiSend,
-    FiEye
+    FiEye,
+    FiUserCheck,
+    FiClipboard,
+    FiList,
+    FiX
 } from 'react-icons/fi';
 
 interface QuestionDraft {
@@ -26,9 +30,17 @@ interface QuestionDraft {
     titulo: string;
     descripcion: string;
     tipo: SurveyQuestionType;
-    opcionesText: string;
+    opciones: string[];
+    newOption: string;
     escalaMax: number;
     required: boolean;
+}
+
+interface AudienceOption {
+    value: SurveyAudienceType;
+    label: string;
+    description: string;
+    icon: IconType;
 }
 
 const makeId = () => Math.random().toString(36).substring(2, 10);
@@ -38,10 +50,32 @@ const defaultQuestion = (): QuestionDraft => ({
     titulo: '',
     descripcion: '',
     tipo: 'multiple',
-    opcionesText: 'Sí\nNo',
+    opciones: ['Sí', 'No'],
+    newOption: '',
     escalaMax: 5,
     required: true,
 });
+
+const audienceOptions: AudienceOption[] = [
+    {
+        value: 'todos',
+        label: 'Toda la organización',
+        description: 'Comunica el mensaje a cada trabajador activo',
+        icon: FiUsers,
+    },
+    {
+        value: 'cargo',
+        label: 'Por cargo',
+        description: 'Enfoca la encuesta en perfiles o mandos específicos',
+        icon: FiTarget,
+    },
+    {
+        value: 'personalizado',
+        label: 'Lista personalizada',
+        description: 'Selecciona manualmente quienes deben responder',
+        icon: FiUserCheck,
+    },
+];
 
 export default function Surveys() {
     const [surveys, setSurveys] = useState<Survey[]>([]);
@@ -138,6 +172,50 @@ export default function Surveys() {
         setQuestions((prev) => (prev.length > 1 ? prev.filter((q) => q.id !== id) : prev));
     };
 
+    const handleQuestionTypeChange = (id: string, tipo: SurveyQuestionType) => {
+        setQuestions((prev) => prev.map((question) => {
+            if (question.id !== id) return question;
+            const isMultiple = tipo === 'multiple';
+            return {
+                ...question,
+                tipo,
+                opciones: isMultiple
+                    ? (question.opciones.length > 0 ? question.opciones : ['Opción 1', 'Opción 2'])
+                    : [],
+                newOption: '',
+            };
+        }));
+    };
+
+    const updateNewOptionValue = (id: string, value: string) => {
+        setQuestions((prev) => prev.map((question) => (
+            question.id === id ? { ...question, newOption: value } : question
+        )));
+    };
+
+    const addOptionToQuestion = (id: string) => {
+        setQuestions((prev) => prev.map((question) => {
+            if (question.id !== id) return question;
+            const value = question.newOption.trim();
+            if (!value || question.opciones.includes(value)) {
+                return question;
+            }
+            return {
+                ...question,
+                opciones: [...question.opciones, value],
+                newOption: '',
+            };
+        }));
+    };
+
+    const removeOptionFromQuestion = (id: string, option: string) => {
+        setQuestions((prev) => prev.map((question) => (
+            question.id === id
+                ? { ...question, opciones: question.opciones.filter((opt) => opt !== option) }
+                : question
+        )));
+    };
+
     const resetForm = () => {
         setForm({
             titulo: '',
@@ -175,7 +253,7 @@ export default function Surveys() {
             descripcion: question.descripcion,
             tipo: question.tipo,
             opciones: question.tipo === 'multiple'
-                ? question.opcionesText.split('\n').map((opt) => opt.trim()).filter(Boolean)
+                ? question.opciones
                 : undefined,
             escalaMax: question.tipo === 'escala' ? Number(question.escalaMax || 5) : undefined,
             required: question.required,
@@ -186,8 +264,8 @@ export default function Surveys() {
         event.preventDefault();
         setError('');
 
+        const hasEmptyQuestion = questions.some((q) => !q.titulo.trim() || (q.tipo === 'multiple' && q.opciones.length < 2));
         const preguntas = buildQuestionsPayload();
-        const hasEmptyQuestion = preguntas.some((q) => !q.titulo || (q.tipo === 'multiple' && (!q.opciones || q.opciones.length < 2)));
         if (!form.titulo.trim()) {
             setError('El título es obligatorio');
             return;
@@ -260,7 +338,20 @@ export default function Surveys() {
         return { totalRecipients, respondedCount, pendingCount };
     };
 
+    const formatDateTime = (value?: string | null) => {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString('es-CL', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        });
+    };
+
     const detailStats = selectedSurvey ? getRecipientStats(selectedSurvey) : null;
+    const detailCompletion = detailStats && detailStats.totalRecipients > 0
+        ? Math.round((detailStats.respondedCount / detailStats.totalRecipients) * 100)
+        : 0;
 
     if (loading) {
         return (
@@ -414,8 +505,19 @@ export default function Surveys() {
                             </button>
                         </div>
 
-                        <form onSubmit={handleCreateSurvey}>
-                            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                        <form className="modal-form" onSubmit={handleCreateSurvey}>
+                            <div className="modal-body">
+                                <div className="survey-hero">
+                                    <div className="survey-hero-icon">
+                                        <FiClipboard size={24} />
+                                    </div>
+                                    <div>
+                                        <p className="survey-hero-eyebrow">Nueva encuesta</p>
+                                        <h3>Conecta con tus equipos</h3>
+                                        <p>Personaliza cada paso y haz que la experiencia de responder sea memorable.</p>
+                                    </div>
+                                </div>
+
                                 {error && (
                                     <div className="alert alert-danger">
                                         <FiAlertCircle size={20} />
@@ -423,100 +525,133 @@ export default function Surveys() {
                                     </div>
                                 )}
 
-                                <div className="form-group">
-                                    <label className="form-label">Título *</label>
-                                    <input
-                                        className="form-input"
-                                        value={form.titulo}
-                                        onChange={(e) => setForm({ ...form, titulo: e.target.value })}
-                                        placeholder="Ej: Encuesta de clima laboral"
-                                        required
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Descripción</label>
-                                    <textarea
-                                        className="form-input"
-                                        value={form.descripcion}
-                                        onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-                                        rows={3}
-                                        placeholder="Objetivo de la encuesta"
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Audiencia destino *</label>
-                                    <div className="flex gap-3" style={{ flexWrap: 'wrap' }}>
-                                        {(['todos', 'cargo', 'personalizado'] as SurveyAudienceType[]).map((option) => (
-                                            <label key={option} className="flex items-center gap-2" style={{ cursor: 'pointer' }}>
-                                                <input
-                                                    type="radio"
-                                                    name="audience"
-                                                    checked={form.audienceType === option}
-                                                    onChange={() => setForm({ ...form, audienceType: option })}
-                                                />
-                                                <span style={{ textTransform: 'capitalize' }}>{option}</span>
-                                            </label>
-                                        ))}
+                                <section className="survey-section">
+                                    <div className="survey-section-header">
+                                        <div>
+                                            <p className="survey-section-eyebrow">Paso 1</p>
+                                            <h3>Información general</h3>
+                                            <p className="survey-section-description">Define el propósito y el tono para que los colaboradores entiendan el contexto.</p>
+                                        </div>
                                     </div>
-                                </div>
-
-                                {form.audienceType === 'cargo' && (
-                                    <div className="form-group">
-                                        <label className="form-label">Cargo destino *</label>
-                                        <select
-                                            className="form-input form-select"
-                                            value={form.cargoDestino}
-                                            onChange={(e) => setForm({ ...form, cargoDestino: e.target.value })}
-                                            required
-                                        >
-                                            <option value="">Seleccione un cargo</option>
-                                            {cargoOptions.map((cargo) => (
-                                                <option key={cargo} value={cargo}>{cargo}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-
-                                {form.audienceType === 'personalizado' && (
-                                    <div className="form-group">
-                                        <label className="form-label">Seleccionar por RUT *</label>
-                                        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                                            <select
+                                    <div className="survey-field-grid">
+                                        <div className="form-group">
+                                            <label className="form-label">Título *</label>
+                                            <input
                                                 className="form-input"
-                                                value={form.selectedWorkerId}
-                                                onChange={(e) => setForm({ ...form, selectedWorkerId: e.target.value })}
-                                                style={{ minWidth: '260px' }}
+                                                value={form.titulo}
+                                                onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+                                                placeholder="Ej: Encuesta de clima laboral"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Descripción</label>
+                                            <textarea
+                                                className="form-input"
+                                                value={form.descripcion}
+                                                onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+                                                rows={3}
+                                                placeholder="Comparte el objetivo, duración estimada o beneficios."
+                                            />
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className="survey-section">
+                                    <div className="survey-section-header">
+                                        <div>
+                                            <p className="survey-section-eyebrow">Paso 2</p>
+                                            <h3>Audiencia destino</h3>
+                                            <p className="survey-section-description">Selecciona quiénes recibirán la encuesta para mantenerla relevante.</p>
+                                        </div>
+                                    </div>
+                                    <div className="audience-options">
+                                        {audienceOptions.map((option) => {
+                                            const Icon = option.icon;
+                                            const isActive = form.audienceType === option.value;
+                                            return (
+                                                <label key={option.value} className={`audience-card ${isActive ? 'active' : ''}`}>
+                                                    <input
+                                                        type="radio"
+                                                        name="audience"
+                                                        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
+                                                        checked={isActive}
+                                                        onChange={() => setForm({ ...form, audienceType: option.value })}
+                                                    />
+                                                    <span className="audience-icon">
+                                                        <Icon />
+                                                    </span>
+                                                    <div>
+                                                        <p className="audience-label">{option.label}</p>
+                                                        <p className="audience-description">{option.description}</p>
+                                                    </div>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {form.audienceType === 'cargo' && (
+                                        <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+                                            <label className="form-label">Cargo destino *</label>
+                                            <select
+                                                className="form-input form-select"
+                                                value={form.cargoDestino}
+                                                onChange={(e) => setForm({ ...form, cargoDestino: e.target.value })}
+                                                required
                                             >
-                                                <option value="">Seleccionar trabajador</option>
-                                                {workers.map((worker) => (
-                                                    <option key={worker.workerId} value={worker.workerId}>
-                                                        {worker.nombre} {worker.apellido} - {worker.rut}
-                                                    </option>
+                                                <option value="">Seleccione un cargo</option>
+                                                {cargoOptions.map((cargo) => (
+                                                    <option key={cargo} value={cargo}>{cargo}</option>
                                                 ))}
                                             </select>
-                                            <button type="button" className="btn btn-secondary" onClick={handleAddRut}>
-                                                <FiPlus />
-                                                Agregar
-                                            </button>
                                         </div>
-                                        <div className="flex gap-2" style={{ flexWrap: 'wrap', marginTop: 'var(--space-3)' }}>
-                                            {form.selectedRuts.map((rut) => (
-                                                <span key={rut} className="badge badge-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                                    {rut}
-                                                    <button type="button" className="btn btn-ghost btn-icon" onClick={() => handleRemoveRut(rut)}>
-                                                        <FiTrash2 />
-                                                    </button>
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
+                                    )}
 
-                                <div className="form-group">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <label className="form-label">Preguntas *</label>
+                                    {form.audienceType === 'personalizado' && (
+                                        <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+                                            <label className="form-label">Seleccionar por RUT *</label>
+                                            <div className="option-input-row">
+                                                <select
+                                                    className="form-input"
+                                                    value={form.selectedWorkerId}
+                                                    onChange={(e) => setForm({ ...form, selectedWorkerId: e.target.value })}
+                                                    style={{ minWidth: '240px' }}
+                                                >
+                                                    <option value="">Seleccionar trabajador</option>
+                                                    {workers.map((worker) => (
+                                                        <option key={worker.workerId} value={worker.workerId}>
+                                                            {worker.nombre} {worker.apellido} - {worker.rut}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <button type="button" className="btn btn-secondary" onClick={handleAddRut}>
+                                                    <FiPlus />
+                                                    Agregar
+                                                </button>
+                                            </div>
+                                            {form.selectedRuts.length > 0 && (
+                                                <div className="option-pill-group">
+                                                    {form.selectedRuts.map((rut) => (
+                                                        <span key={rut} className="option-pill">
+                                                            {rut}
+                                                            <button type="button" onClick={() => handleRemoveRut(rut)}>
+                                                                <FiX />
+                                                            </button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </section>
+
+                                <section className="survey-section">
+                                    <div className="survey-section-header">
+                                        <div>
+                                            <p className="survey-section-eyebrow">Paso 3</p>
+                                            <h3>Diseña las preguntas</h3>
+                                            <p className="survey-section-description">Alterna tipos de pregunta y define si cada una será obligatoria.</p>
+                                        </div>
                                         <button type="button" className="btn btn-secondary btn-sm" onClick={addQuestion}>
                                             <FiPlus />
                                             Agregar pregunta
@@ -525,9 +660,12 @@ export default function Surveys() {
 
                                     <div className="flex flex-col gap-4">
                                         {questions.map((question, index) => (
-                                            <div key={question.id} className="card" style={{ padding: 'var(--space-4)' }}>
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <h4 className="font-bold">Pregunta {index + 1}</h4>
+                                            <div key={question.id} className="card survey-question-card">
+                                                <div className="survey-question-header">
+                                                    <span className="survey-question-badge">
+                                                        <FiList size={16} />
+                                                        Pregunta {index + 1}
+                                                    </span>
                                                     {questions.length > 1 && (
                                                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeQuestion(question.id)}>
                                                             Eliminar
@@ -548,14 +686,14 @@ export default function Surveys() {
                                                     value={question.descripcion}
                                                     onChange={(e) => updateQuestion(question.id, { descripcion: e.target.value })}
                                                     rows={2}
-                                                    placeholder="Descripción u orientación (opcional)"
+                                                    placeholder="Agrega contexto, instrucciones o ejemplos (opcional)"
                                                 />
 
                                                 <div className="flex gap-3 mb-3" style={{ flexWrap: 'wrap' }}>
                                                     <select
                                                         className="form-input form-select"
                                                         value={question.tipo}
-                                                        onChange={(e) => updateQuestion(question.id, { tipo: e.target.value as SurveyQuestionType })}
+                                                        onChange={(e) => handleQuestionTypeChange(question.id, e.target.value as SurveyQuestionType)}
                                                         style={{ minWidth: '220px' }}
                                                     >
                                                         <option value="multiple">Selección múltiple</option>
@@ -569,19 +707,42 @@ export default function Surveys() {
                                                             checked={question.required}
                                                             onChange={(e) => updateQuestion(question.id, { required: e.target.checked })}
                                                         />
-                                                        Requerida
+                                                        Pregunta obligatoria
                                                     </label>
                                                 </div>
 
                                                 {question.tipo === 'multiple' && (
-                                                    <div className="form-group">
-                                                        <label className="form-label">Opciones (una por línea)</label>
-                                                        <textarea
-                                                            className="form-input"
-                                                            value={question.opcionesText}
-                                                            onChange={(e) => updateQuestion(question.id, { opcionesText: e.target.value })}
-                                                            rows={3}
-                                                        />
+                                                    <div className="option-builder">
+                                                        <label className="form-label">Opciones de respuesta</label>
+                                                        <div className="option-input-row">
+                                                            <input
+                                                                className="form-input"
+                                                                value={question.newOption}
+                                                                onChange={(e) => updateNewOptionValue(question.id, e.target.value)}
+                                                                placeholder="Ej: Siempre"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-secondary"
+                                                                onClick={() => addOptionToQuestion(question.id)}
+                                                                disabled={!question.newOption.trim()}
+                                                            >
+                                                                <FiPlus />
+                                                                Agregar opción
+                                                            </button>
+                                                        </div>
+                                                        {question.opciones.length > 0 && (
+                                                            <div className="option-pill-group">
+                                                                {question.opciones.map((option) => (
+                                                                    <span key={option} className="option-pill">
+                                                                        {option}
+                                                                        <button type="button" onClick={() => removeOptionFromQuestion(question.id, option)}>
+                                                                            <FiX />
+                                                                        </button>
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -595,12 +756,13 @@ export default function Surveys() {
                                                             value={question.escalaMax}
                                                             onChange={(e) => updateQuestion(question.id, { escalaMax: Number(e.target.value) })}
                                                         />
+                                                        <p className="form-hint">Los colaboradores evaluarán en un rango de 1 a este valor.</p>
                                                     </div>
                                                 )}
                                             </div>
                                         ))}
                                     </div>
-                                </div>
+                                </section>
                             </div>
 
                             <div className="modal-footer">
@@ -636,31 +798,93 @@ export default function Surveys() {
                             </button>
                         </div>
 
-                        <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-                            <section className="mb-6">
-                                <h3 className="text-lg font-semibold mb-3">Preguntas</h3>
+                        <div className="modal-body">
+                            <div className="survey-detail-hero">
+                                <div>
+                                    <p className="survey-section-eyebrow">Encuesta {selectedSurvey.estado}</p>
+                                    <h3>{selectedSurvey.titulo}</h3>
+                                    <p className="survey-section-description">
+                                        {selectedSurvey.descripcion || 'Sin descripción disponible'}
+                                    </p>
+                                </div>
+                                <div className="survey-detail-meta">
+                                    <span className="badge badge-neutral">{formatAudience(selectedSurvey)}</span>
+                                    <span className="badge badge-neutral">Creada: {formatDateTime(selectedSurvey.createdAt)}</span>
+                                </div>
+                            </div>
+
+                            <div className="survey-stats-grid">
+                                <div className="survey-stat-card">
+                                    <div className="survey-stat-icon">
+                                        <FiUsers />
+                                    </div>
+                                    <div>
+                                        <p className="survey-stat-label">Destinatarios</p>
+                                        <p className="survey-stat-value">{detailStats?.totalRecipients ?? 0}</p>
+                                    </div>
+                                </div>
+                                <div className="survey-stat-card">
+                                    <div className="survey-stat-icon" style={{ background: 'rgba(34, 197, 94, 0.15)', color: 'var(--success-500)' }}>
+                                        <FiCheckCircle />
+                                    </div>
+                                    <div>
+                                        <p className="survey-stat-label">Respondidas</p>
+                                        <p className="survey-stat-value">{detailStats?.respondedCount ?? 0}</p>
+                                    </div>
+                                </div>
+                                <div className="survey-stat-card">
+                                    <div className="survey-stat-icon" style={{ background: 'rgba(234, 179, 8, 0.15)', color: 'var(--warning-500)' }}>
+                                        <FiAlertCircle />
+                                    </div>
+                                    <div>
+                                        <p className="survey-stat-label">Pendientes</p>
+                                        <p className="survey-stat-value">{detailStats?.pendingCount ?? 0}</p>
+                                    </div>
+                                </div>
+                                <div className="survey-stat-card">
+                                    <div className="survey-stat-icon" style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--info-500)' }}>
+                                        <FiBarChart2 />
+                                    </div>
+                                    <div>
+                                        <p className="survey-stat-label">Progreso</p>
+                                        <p className="survey-stat-value">{detailCompletion}%</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <section className="survey-section">
+                                <div className="survey-section-header">
+                                    <div>
+                                        <p className="survey-section-eyebrow">Bloque de preguntas</p>
+                                        <h3>Preguntas enviadas</h3>
+                                        <p className="survey-section-description">Visualiza el detalle de cada ítem tal como lo recibió el colaborador.</p>
+                                    </div>
+                                </div>
                                 {selectedSurvey.preguntas?.length ? (
-                                    <div className="space-y-4">
+                                    <div className="survey-question-list">
                                         {selectedSurvey.preguntas.map((question, index) => (
-                                            <div key={question.questionId || `${question.titulo}-${index}`} className="card">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div>
-                                                        <p className="text-sm text-muted">Pregunta {index + 1}</p>
-                                                        <h4 className="font-semibold">{question.titulo}</h4>
-                                                    </div>
+                                            <div key={question.questionId || `${question.titulo}-${index}`} className="card survey-question-card">
+                                                <div className="survey-question-header">
+                                                    <span className="survey-question-badge">
+                                                        <FiList size={16} />
+                                                        Pregunta {index + 1}
+                                                    </span>
                                                     <span className="badge badge-neutral">{formatQuestionType(question.tipo)}</span>
                                                 </div>
+                                                <h4 className="font-semibold mb-2">{question.titulo}</h4>
                                                 {question.descripcion && (
                                                     <p className="text-sm text-muted mb-3">{question.descripcion}</p>
                                                 )}
                                                 {question.tipo === 'multiple' && question.opciones && (
                                                     <div>
-                                                        <p className="text-sm font-semibold mb-1">Opciones</p>
-                                                        <ul className="list-disc pl-5 text-sm text-muted">
+                                                        <p className="text-sm font-semibold mb-2">Opciones</p>
+                                                        <div className="option-pill-group">
                                                             {question.opciones.map((opcion) => (
-                                                                <li key={opcion}>{opcion}</li>
+                                                                <span key={opcion} className="option-pill">
+                                                                    {opcion}
+                                                                </span>
                                                             ))}
-                                                        </ul>
+                                                        </div>
                                                     </div>
                                                 )}
                                                 {question.tipo === 'escala' && (
@@ -674,13 +898,16 @@ export default function Surveys() {
                                 )}
                             </section>
 
-                            <section>
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-lg font-semibold">Destinatarios</h3>
-                                    <div className="text-sm text-muted">
-                                        {detailStats
-                                            ? `${detailStats.respondedCount} respondidas · ${detailStats.pendingCount} pendientes`
-                                            : 'Sin destinatarios'}
+                            <section className="survey-section">
+                                <div className="survey-section-header">
+                                    <div>
+                                        <p className="survey-section-eyebrow">Destinatarios</p>
+                                        <h3>Estado de respuestas</h3>
+                                        <p className="survey-section-description">
+                                            {detailStats
+                                                ? `${detailStats.respondedCount} respondieron · ${detailStats.pendingCount} pendientes`
+                                                : 'Sin destinatarios registrados'}
+                                        </p>
                                     </div>
                                 </div>
 
@@ -707,7 +934,7 @@ export default function Surveys() {
                                                                 {recipient.estado}
                                                             </span>
                                                         </td>
-                                                        <td>{recipient.respondedAt ? new Date(recipient.respondedAt).toLocaleString() : '—'}</td>
+                                                        <td>{formatDateTime(recipient.respondedAt)}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>

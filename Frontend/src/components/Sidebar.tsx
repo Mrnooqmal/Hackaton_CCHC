@@ -69,10 +69,9 @@ export default function Sidebar() {
         <aside className="sidebar">
             <div className="sidebar-header">
                 <div className="sidebar-logo">
-                    <div className="sidebar-logo-icon">🛡️</div>
+                    <div className="sidebar-logo-icon">🌳</div>
                     <div>
-                        <div className="sidebar-logo-text">PrevencionApp</div>
-                        <div className="sidebar-logo-subtitle">Sistema DS 44</div>
+                        <div className="sidebar-logo-text">Yggdrasil</div>
                     </div>
                 </div>
             </div>
@@ -123,9 +122,9 @@ export default function Sidebar() {
                         <div className="user-details overflow-hidden">
                             <div className="user-name truncate">{user.nombre} {user.apellido}</div>
                             <div className={`user-role-badge role-${user.rol}`}>
-                                {user.rol === 'admin' && '👑'}
-                                {user.rol === 'prevencionista' && '🛡️'}
-                                {user.rol === 'trabajador' && '👷'}
+                                {user.rol === 'admin'}
+                                {user.rol === 'prevencionista'}
+                                {user.rol === 'trabajador'}
                                 {' '}{user.rol === 'admin' ? 'Administrador' : user.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}
                             </div>
                         </div>
