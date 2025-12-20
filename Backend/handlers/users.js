@@ -92,6 +92,9 @@ module.exports.create = async (event) => {
             // Cargo (para trabajadores principalmente)
             cargo: body.cargo || ROLES[body.rol].nombre,
 
+            // Estado inicial
+            estado: 'pendiente', // pendiente, activo, suspendido
+
             // Personalización
             preferencias: {
                 tema: 'dark',
