@@ -706,6 +706,26 @@ export default function SignatureRequests() {
                                                                     {t.nombre}
                                                                 </div>
                                                                 <div className="text-xs text-muted">{t.rut}</div>
+                                                                {/* Mostrar fecha/hora de firma si existe */}
+                                                                {t.firmado && t.fechaFirma && (
+                                                                    <div 
+                                                                        className="text-xs mt-1"
+                                                                        style={{ 
+                                                                            color: 'var(--success-600)',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '4px',
+                                                                        }}
+                                                                    >
+                                                                        <FiCheck size={10} />
+                                                                        Firmó: {new Date(t.fechaFirma).toLocaleString('es-CL', {
+                                                                            day: '2-digit',
+                                                                            month: 'short',
+                                                                            hour: '2-digit',
+                                                                            minute: '2-digit',
+                                                                        })}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                             {t.firmado && (
                                                                 <span 

@@ -67,7 +67,9 @@ export default function Workers() {
 
         try {
             // Obtener historial de firmas
-            const signaturesRes = await signaturesApi.getByWorker(worker.userId);
+            // Usar workerId si existe, sino usar userId
+            const idParaFirmas = worker.workerId || worker.userId;
+            const signaturesRes = await signaturesApi.getByWorker(idParaFirmas);
             if (signaturesRes.success && signaturesRes.data) {
                 const firmas = signaturesRes.data.firmas || [];
                 setWorkerSignatures(firmas);
@@ -381,36 +383,125 @@ Generado por PrevencionApp
                                         </div>
                                     )}
 
-                                    {/* Historial de firmas recientes */}
+                                    {/* Historial de firmas completo */}
                                     <div style={{ padding: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)' }}>
-                                        <h4 className="text-sm font-bold mb-3" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <FiFileText /> Firmas Recientes
-                                        </h4>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h4 className="text-sm font-bold" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                                                <FiFileText /> Historial de Firmas
+                                            </h4>
+                                            {workerSignatures.length > 0 && (
+                                                <span 
+                                                    className="badge"
+                                                    style={{ 
+                                                        background: 'var(--primary-100)', 
+                                                        color: 'var(--primary-700)',
+                                                        fontSize: '11px',
+                                                    }}
+                                                >
+                                                    {workerSignatures.length} firma{workerSignatures.length !== 1 ? 's' : ''}
+                                                </span>
+                                            )}
+                                        </div>
                                         {workerSignatures.length === 0 ? (
-                                            <p className="text-muted text-sm">Sin firmas registradas</p>
+                                            <div style={{ 
+                                                textAlign: 'center', 
+                                                padding: 'var(--space-6)',
+                                                background: 'var(--surface-elevated)',
+                                                borderRadius: 'var(--radius-md)',
+                                            }}>
+                                                <div style={{ fontSize: '2rem', marginBottom: 'var(--space-2)' }}>📝</div>
+                                                <p className="text-muted text-sm" style={{ margin: 0 }}>
+                                                    Este trabajador aún no tiene firmas registradas
+                                                </p>
+                                            </div>
                                         ) : (
-                                            <div className="flex flex-col gap-2">
-                                                {workerSignatures.slice(0, 5).map((sig, index) => (
-                                                    <div key={index} className="signature-item">
-
-                                                        <div className="flex items-center gap-2">
-                                                            <span style={{ fontSize: '1.1rem' }}>
+                                            <div 
+                                                className="flex flex-col gap-2"
+                                                style={{ 
+                                                    maxHeight: '320px', 
+                                                    overflowY: 'auto',
+                                                    paddingRight: 'var(--space-1)',
+                                                }}
+                                            >
+                                                {workerSignatures.map((sig, index) => (
+                                                    <div 
+                                                        key={index} 
+                                                        className="signature-item-expanded"
+                                                        style={{
+                                                            padding: 'var(--space-3)',
+                                                            background: 'var(--surface-elevated)',
+                                                            borderRadius: 'var(--radius-md)',
+                                                            border: '1px solid var(--surface-border)',
+                                                            transition: 'all var(--transition-fast)',
+                                                        }}
+                                                    >
+                                                        <div className="flex items-start gap-3">
+                                                            <div 
+                                                                className="avatar avatar-sm"
+                                                                style={{ 
+                                                                    background: sig.tipoFirma === 'enrolamiento' 
+                                                                        ? 'var(--success-100)' 
+                                                                        : 'var(--primary-100)',
+                                                                    color: sig.tipoFirma === 'enrolamiento' 
+                                                                        ? 'var(--success-600)' 
+                                                                        : 'var(--primary-600)',
+                                                                    fontSize: '1rem',
+                                                                    flexShrink: 0,
+                                                                }}
+                                                            >
                                                                 {REQUEST_TYPES[(sig as any).requestTipo]?.icon || (sig.tipoFirma === 'enrolamiento' ? '🔑' : '📝')}
-                                                            </span>
-                                                            <span className="text-sm font-medium">
-                                                                {(sig as any).requestTitulo || (sig.metadata as any)?.titulo || (sig.metadata as any)?.documentoNombre || (sig.tipoFirma === 'enrolamiento' ? 'Enrolamiento Digital' : sig.tipoFirma?.replace('_', ' ') || 'Documento sin título')}
-                                                            </span>
-                                                        </div>
-                                                        <div className="text-xs text-muted">
-                                                            {sig.fecha} {sig.horario}
+                                                            </div>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div 
+                                                                    className="text-sm font-medium"
+                                                                    style={{ 
+                                                                        marginBottom: '2px',
+                                                                        whiteSpace: 'nowrap',
+                                                                        overflow: 'hidden',
+                                                                        textOverflow: 'ellipsis',
+                                                                    }}
+                                                                >
+                                                                    {(sig as any).requestTitulo || (sig.metadata as any)?.titulo || (sig.metadata as any)?.documentoNombre || (sig.tipoFirma === 'enrolamiento' ? 'Enrolamiento Digital' : sig.tipoFirma?.replace('_', ' ') || 'Documento sin título')}
+                                                                </div>
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <span 
+                                                                        className="badge"
+                                                                        style={{ 
+                                                                            background: 'var(--surface-hover)',
+                                                                            color: 'var(--text-secondary)',
+                                                                            fontSize: '10px',
+                                                                            padding: '2px 6px',
+                                                                        }}
+                                                                    >
+                                                                        {REQUEST_TYPES[(sig as any).requestTipo]?.label || sig.tipoFirma || 'Firma'}
+                                                                    </span>
+                                                                    <span className="text-xs text-muted">
+                                                                        {sig.fecha} • {sig.horario}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div 
+                                                                style={{ 
+                                                                    flexShrink: 0,
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px',
+                                                                }}
+                                                            >
+                                                                <span 
+                                                                    className="badge"
+                                                                    style={{ 
+                                                                        background: sig.estado === 'valida' ? 'var(--success-100)' : 'var(--warning-100)',
+                                                                        color: sig.estado === 'valida' ? 'var(--success-700)' : 'var(--warning-700)',
+                                                                        fontSize: '10px',
+                                                                    }}
+                                                                >
+                                                                    {sig.estado === 'valida' ? '✓ Válida' : sig.estado}
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 ))}
-                                                {workerSignatures.length > 5 && (
-                                                    <p className="text-muted text-xs text-center">
-                                                        +{workerSignatures.length - 5} firmas más
-                                                    </p>
-                                                )}
                                             </div>
                                         )}
                                     </div>
