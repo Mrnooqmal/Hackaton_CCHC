@@ -15,7 +15,6 @@ export default function EnrollMe() {
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
     const [enrollmentData, setEnrollmentData] = useState<any>(null);
-    const [processing, setProcessing] = useState(false);
 
     const handlePinCreate = (newPin: string) => {
         setPin(newPin);
@@ -34,7 +33,6 @@ export default function EnrollMe() {
 
         setError('');
         setCurrentStep('processing');
-        setProcessing(true);
 
         try {
             if (!user?.userId) {
@@ -71,8 +69,6 @@ export default function EnrollMe() {
             console.error('Error en enrolamiento:', err);
             setError(err instanceof Error ? err.message : 'Error desconocido');
             setCurrentStep('confirm-pin');
-        } finally {
-            setProcessing(false);
         }
     };
 

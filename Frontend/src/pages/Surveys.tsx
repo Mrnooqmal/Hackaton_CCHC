@@ -355,12 +355,13 @@ export default function Surveys() {
         const response = await surveysApi.create(payload);
         setCreating(false);
 
-        if (!response.success || !response.data) {
+        const createdSurvey = response.data;
+        if (!response.success || !createdSurvey) {
             setError(response.error || 'No fue posible crear la encuesta');
             return;
         }
 
-        setSurveys((prev) => [response.data, ...prev]);
+        setSurveys((prev) => [createdSurvey, ...prev]);
         setShowModal(false);
         resetForm();
     };
@@ -465,32 +466,40 @@ export default function Surveys() {
         setResponding(true);
         setResponseError('');
 
-        const responsesPayload: SurveyAnswer[] = survey.preguntas
-            .map((question) => {
-                const value = responseValues[question.questionId];
-                if (value === undefined || value === null) {
-                    return null;
-                }
+        const responsesPayload = survey.preguntas.reduce<SurveyAnswer[]>((acc, question) => {
+            const rawValue = responseValues[question.questionId];
+            if (rawValue === undefined || rawValue === null) {
+                return acc;
+            }
 
-                if (question.tipo === 'escala') {
-                    const numericValue = typeof value === 'number' ? value : Number(value);
-                    if (Number.isNaN(numericValue)) return null;
-                    return {
+            if (question.tipo === 'escala') {
+                const numericValue = typeof rawValue === 'number' ? rawValue : Number(rawValue);
+                if (!Number.isNaN(numericValue)) {
+                    acc.push({
                         questionId: question.questionId,
                         value: numericValue,
-                    };
+                    });
                 }
+                return acc;
+            }
 
-                if (typeof value === 'string' && value.trim() === '') {
-                    return null;
+            if (typeof rawValue === 'string') {
+                const trimmedValue = rawValue.trim();
+                if (trimmedValue) {
+                    acc.push({
+                        questionId: question.questionId,
+                        value: trimmedValue,
+                    });
                 }
+                return acc;
+            }
 
-                return {
-                    questionId: question.questionId,
-                    value,
-                };
-            })
-            .filter((answer): answer is SurveyAnswer => Boolean(answer));
+            acc.push({
+                questionId: question.questionId,
+                value: rawValue,
+            });
+            return acc;
+        }, []);
 
         try {
             const response = await surveysApi.updateResponseStatus(

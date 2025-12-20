@@ -58,13 +58,19 @@ export default function Login() {
 
             <div className="login-content">
                 <div className="login-header">
-                    <div className="login-logo">
-                        <div className="login-logo-icon">
-                            <FiShield size={40} />
+                    <div className="login-brand">
+                        <div className="login-logo">
+                            <div className="login-logo-icon">
+                                <FiShield size={40} />
+                            </div>
+                            <div className="login-logo-shine"></div>
                         </div>
-                        <div className="login-logo-shine"></div>
+                        <div className="login-wordmark sidebar-logo-text" aria-label="Build and Serve">
+                            <span className="sidebar-logo-primary">Build</span>
+                            <span className="sidebar-logo-amp">&</span>
+                            <span className="sidebar-logo-secondary">Serve</span>
+                        </div>
                     </div>
-                    <h1 className="login-title">PrevenciónApp</h1>
                     <p className="login-subtitle">Sistema de Firma Digital y Gestión Preventiva</p>
                 </div>
 
@@ -254,6 +260,30 @@ export default function Login() {
                 .login-header {
                     text-align: center;
                     margin-bottom: var(--space-8);
+                }
+
+                .login-brand {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: var(--space-4);
+                    margin-bottom: var(--space-4);
+                }
+
+                .login-brand .login-logo {
+                    margin-bottom: 0;
+                }
+
+                .login-wordmark {
+                    font-size: clamp(2.25rem, 4vw, 3rem);
+                    letter-spacing: 0.12em;
+                    text-shadow: 0 15px 40px rgba(0, 0, 0, 0.45);
+                }
+
+                .login-wordmark .sidebar-logo-secondary {
+                    background: var(--gradient-accent);
+                    -webkit-background-clip: text;
+                    background-clip: text;
                 }
 
                 .login-logo {

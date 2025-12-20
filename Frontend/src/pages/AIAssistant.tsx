@@ -72,14 +72,6 @@ const EXAMPLE_PROMPTS = [
     'Genera charla sobre orden y limpieza',
 ];
 
-// Mapeo de nivel de riesgo a colores
-const RISK_LEVEL_COLORS: Record<string, { bg: string; text: string }> = {
-    'Crítico': { bg: 'var(--danger-100)', text: 'var(--danger-700)' },
-    'Alto': { bg: 'var(--warning-100)', text: 'var(--warning-700)' },
-    'Medio': { bg: 'var(--info-100)', text: 'var(--info-700)' },
-    'Bajo': { bg: 'var(--success-100)', text: 'var(--success-700)' },
-};
-
 export default function AIAssistant() {
     const [messages, setMessages] = useState<Message[]>([
         {

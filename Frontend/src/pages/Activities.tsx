@@ -1,12 +1,9 @@
 import { useState, useEffect } from 'react';
 import Header from '../components/Header';
-import SignaturePad from '../components/SignaturePad';
 import {
     FiPlus,
-    FiCalendar,
     FiUsers,
     FiCheck,
-    FiClock,
     FiMessageSquare
 } from 'react-icons/fi';
 import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';

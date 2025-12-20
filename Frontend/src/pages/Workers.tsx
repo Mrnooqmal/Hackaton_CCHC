@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '../components/Header';
 import {
-    FiPlus, FiSearch, FiEye, FiX, FiFileText, FiActivity,
-    FiCheckCircle, FiClock, FiDownload, FiUser, FiCalendar,
+    FiPlus, FiSearch, FiEye, FiX, FiFileText,
+    FiCheckCircle, FiClock, FiDownload, FiUser,
     FiTrendingUp
 } from 'react-icons/fi';
 import { usersApi, signaturesApi, type User, type DigitalSignature } from '../api/client';

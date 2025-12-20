@@ -1,0 +1,7 @@
+{
+  "Name": "hackaton-cchc-frontend-oac",
+  "Description": "Origin Access Control for Hackaton CCHC frontend bucket",
+  "OriginAccessControlOriginType": "s3",
+  "SigningBehavior": "always",
+  "SigningProtocol": "sigv4"
+}

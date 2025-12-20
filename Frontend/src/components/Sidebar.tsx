@@ -221,9 +221,10 @@ export default function Sidebar() {
         <aside className="sidebar">
             <div className="sidebar-header">
                 <div className="sidebar-logo">
-                    <div className="sidebar-logo-icon">🌳</div>
-                    <div>
-                        <div className="sidebar-logo-text">Yggdrasil</div>
+                    <div className="sidebar-logo-text" aria-label="Build and Serve">
+                        <span className="sidebar-logo-primary">Build</span>
+                        <span className="sidebar-logo-amp">&</span>
+                        <span className="sidebar-logo-secondary">Serve</span>
                     </div>
                 </div>
             </div>
