@@ -7,6 +7,7 @@ const { validateRut, validateRequired, generateSignatureToken, hashPin, verifyPi
 
 const TABLE_NAME = process.env.WORKERS_TABLE || 'Workers';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
+const USERS_TABLE = process.env.USERS_TABLE || 'Users';
 
 /**
  * POST /workers - Registrar nuevo trabajador (Enrolamiento)
@@ -422,6 +423,29 @@ module.exports.setPin = async (event) => {
             })
         );
 
+        // Sincronizar con la tabla Users si tiene userId
+        if (worker.userId) {
+            console.log(`Syncing PIN change for user ${worker.userId}`);
+            // En Users se hashea con userId
+            const pinHashForUser = hashPin(pin, worker.userId);
+            try {
+                await docClient.send(
+                    new UpdateCommand({
+                        TableName: USERS_TABLE,
+                        Key: { userId: worker.userId },
+                        UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
+                        ExpressionAttributeValues: {
+                            ':pinHash': pinHashForUser,
+                            ':pinCreatedAt': now,
+                            ':updatedAt': now,
+                        },
+                    })
+                );
+            } catch (syncError) {
+                console.error('Error syncing PIN change with users table:', syncError);
+            }
+        }
+
         return success({
             message: worker.pinHash ? 'PIN actualizado exitosamente' : 'PIN configurado exitosamente',
             pinCreatedAt: now,
@@ -537,6 +561,44 @@ module.exports.completeEnrollment = async (event) => {
                 },
             })
         );
+
+        // Sincronizar con la tabla de Usuarios si existe una cuenta vinculada
+        if (worker.userId || worker.rut) {
+            try {
+                let userToUpdate = null;
+                if (worker.userId) {
+                    const userRes = await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: worker.userId } }));
+                    userToUpdate = userRes.Item;
+                } else {
+                    const userRes = await docClient.send(new ScanCommand({ TableName: USERS_TABLE, FilterExpression: 'rut = :rut', ExpressionAttributeValues: { ':rut': worker.rut } }));
+                    userToUpdate = userRes.Items && userRes.Items[0];
+                }
+
+                if (userToUpdate) {
+                    console.log(`Syncing habilitado state for user ${userToUpdate.userId}`);
+                    // IMPORTANTE: Para el usuario, el PIN se hashea con su userId
+                    const pinHashForUser = hashPin(pin, userToUpdate.userId);
+
+                    await docClient.send(
+                        new UpdateCommand({
+                            TableName: USERS_TABLE,
+                            Key: { userId: userToUpdate.userId },
+                            UpdateExpression: 'SET habilitado = :habilitado, pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, workerId = :workerId, updatedAt = :updatedAt',
+                            ExpressionAttributeValues: {
+                                ':habilitado': true,
+                                ':pinHash': pinHashForUser,
+                                ':pinCreatedAt': now.toISOString(),
+                                ':workerId': id,
+                                ':updatedAt': now.toISOString(),
+                            },
+                        })
+                    );
+                }
+            } catch (syncError) {
+                console.error('Error syncing enablement with users table:', syncError);
+                // No bloqueamos el éxito del trabajador por un error en usuarios
+            }
+        }
 
         return success({
             message: 'Enrolamiento completado exitosamente. El trabajador está ahora habilitado.',

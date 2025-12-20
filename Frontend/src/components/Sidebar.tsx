@@ -9,7 +9,6 @@ import {
     FiCheckSquare,
     FiMessageSquare,
     FiSettings,
-    FiShield,
     FiUser,
     FiAlertTriangle,
     FiClipboard,
@@ -42,7 +41,6 @@ const navItems: NavSection[] = [
             { path: '/', icon: FiHome, label: 'Dashboard' },
             { path: '/inbox', icon: FiMail, label: 'Bandeja de Entrada' },
             { path: '/workers', icon: FiUsers, label: 'Trabajadores', permission: 'ver_trabajadores' },
-            { path: '/workers/enroll', icon: FiShield, label: 'Enrolamiento', permission: 'ver_trabajadores' },
         ]
     },
     {

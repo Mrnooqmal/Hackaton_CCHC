@@ -518,6 +518,25 @@ module.exports.setPin = async (event) => {
             })
         );
 
+        // Sincronizar con la tabla Workers si tiene workerId
+        if (user.workerId) {
+            console.log(`Syncing PIN change for worker ${user.workerId}`);
+            // IMPORTANTE: En la tabla Workers se hashea con workerId
+            const pinHashForWorker = hashPin(pin, user.workerId);
+            await docClient.send(
+                new UpdateCommand({
+                    TableName: WORKERS_TABLE,
+                    Key: { workerId: user.workerId },
+                    UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
+                    ExpressionAttributeValues: {
+                        ':pinHash': pinHashForWorker,
+                        ':pinCreatedAt': now,
+                        ':updatedAt': now,
+                    },
+                })
+            );
+        }
+
         return success({
             message: user.pinHash ? 'PIN actualizado exitosamente' : 'PIN configurado exitosamente',
             pinCreatedAt: now,
