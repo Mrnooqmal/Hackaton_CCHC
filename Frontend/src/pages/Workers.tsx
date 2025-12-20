@@ -34,6 +34,18 @@ export default function Workers() {
         loadWorkers();
     }, []);
 
+    useEffect(() => {
+        if (selectedWorker) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [selectedWorker]);
+
     const loadWorkers = async () => {
         try {
             // Cargar usuarios con rol trabajador Y prevencionista (ambos son trabajadores)
@@ -211,318 +223,277 @@ Generado por PrevencionApp
                     </div>
                 </div>
 
-                <div className="grid" style={{ gridTemplateColumns: selectedWorker ? '1fr 400px' : '1fr', gap: 'var(--space-6)' }}>
-                    {/* Workers list */}
-                    <div className="card">
-                        {filteredWorkers.length === 0 ? (
-                            <div className="empty-state">
-                                <div className="empty-state-icon">👷</div>
-                                <h3 className="empty-state-title">
-                                    {searchTerm ? 'Sin resultados' : 'Sin trabajadores'}
-                                </h3>
-                                <p className="empty-state-description">
-                                    {searchTerm
-                                        ? 'No se encontraron trabajadores con esos criterios de búsqueda.'
-                                        : 'No hay usuarios con rol trabajador registrados.'}
-                                </p>
+                <div className="card">
+                    {filteredWorkers.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-state-icon">👷</div>
+                            <h3 className="empty-state-title">
+                                {searchTerm ? 'Sin resultados' : 'Sin trabajadores'}
+                            </h3>
+                            <p className="empty-state-description">
+                                {searchTerm
+                                    ? 'No se encontraron trabajadores con esos criterios de búsqueda.'
+                                    : 'No hay usuarios con rol trabajador registrados.'}
+                            </p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="card-header">
+                                <div>
+                                    <h2 className="card-title">Lista de Trabajadores</h2>
+                                    <p className="card-subtitle">{filteredWorkers.length} trabajadores registrados</p>
+                                </div>
+                            </div>
+
+                            <div className="table-container">
+                                <table className="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Trabajador</th>
+                                            <th>RUT</th>
+                                            <th>Rol</th>
+                                            <th>Email</th>
+                                            <th>Estado</th>
+                                            <th>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredWorkers.map((worker) => (
+                                            <tr
+                                                key={worker.userId}
+                                                style={{
+                                                    cursor: 'pointer',
+                                                    background: selectedWorker?.userId === worker.userId
+                                                        ? 'var(--surface-elevated)'
+                                                        : undefined
+                                                }}
+                                                onClick={() => openWorkerDetails(worker)}
+                                            >
+                                                <td>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="avatar avatar-sm">
+                                                            {worker.nombre.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-bold">{worker.nombre} {worker.apellido}</div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <code style={{
+                                                        background: 'var(--surface-elevated)',
+                                                        padding: '2px 8px',
+                                                        borderRadius: 'var(--radius-sm)',
+                                                        fontSize: 'var(--text-sm)'
+                                                    }}>
+                                                        {worker.rut}
+                                                    </code>
+                                                </td>
+                                                <td>
+                                                    <span className={`badge badge-${worker.rol === 'prevencionista' ? 'info' : 'secondary'}`}>
+                                                        {worker.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    {worker.email || <span className="text-muted">-</span>}
+                                                </td>
+                                                <td>
+                                                    <span className={`badge badge-${worker.habilitado ? 'success' : 'warning'}`}>
+                                                        {worker.habilitado ? 'Habilitado' : 'Pendiente'}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <button
+                                                        className="btn btn-ghost btn-sm"
+                                                        title="Ver detalles"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            openWorkerDetails(worker);
+                                                        }}
+                                                    >
+                                                        <FiEye />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {selectedWorker && (
+                <div
+                    className="worker-details-overlay"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Detalles del trabajador"
+                    onClick={() => setSelectedWorker(null)}
+                >
+                    <div
+                        className="worker-details-panel"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="worker-details-header">
+                            <div className="flex items-center gap-3">
+                                <div className="avatar" style={{ width: 56, height: 56, fontSize: '1.5rem' }}>
+                                    {selectedWorker.nombre.charAt(0)}
+                                </div>
+                                <div>
+                                    <h3 className="card-title mb-1">{selectedWorker.nombre} {selectedWorker.apellido}</h3>
+                                    <p className="text-muted text-sm">{selectedWorker.rut}</p>
+                                </div>
+                            </div>
+                            <button
+                                className="btn btn-ghost btn-sm"
+                                aria-label="Cerrar detalles"
+                                onClick={() => setSelectedWorker(null)}
+                            >
+                                <FiX />
+                            </button>
+                        </div>
+
+                        {loadingDetails ? (
+                            <div className="worker-details-loading">
+                                <div className="spinner" />
                             </div>
                         ) : (
                             <>
-                                <div className="card-header">
-                                    <div>
-                                        <h2 className="card-title">Lista de Trabajadores</h2>
-                                        <p className="card-subtitle">{filteredWorkers.length} trabajadores registrados</p>
+                                <section className="worker-details-section">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <FiUser size={14} className="text-muted" />
+                                        <span className="text-sm">Estado:</span>
+                                        <span className={`badge badge-sm badge-${selectedWorker.habilitado ? 'success' : 'warning'}`}>
+                                            {selectedWorker.habilitado ? 'Habilitado' : 'Pendiente Enrolamiento'}
+                                        </span>
                                     </div>
-                                </div>
+                                    {selectedWorker.email && (
+                                        <div className="text-sm text-muted">
+                                            📧 {selectedWorker.email}
+                                        </div>
+                                    )}
+                                </section>
 
-                                <div className="table-container">
-                                    <table className="table">
-                                        <thead>
-                                            <tr>
-                                                <th>Trabajador</th>
-                                                <th>RUT</th>
-                                                <th>Rol</th>
-                                                <th>Email</th>
-                                                <th>Estado</th>
-                                                <th>Acciones</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {filteredWorkers.map((worker) => (
-                                                <tr
-                                                    key={worker.userId}
-                                                    style={{
-                                                        cursor: 'pointer',
-                                                        background: selectedWorker?.userId === worker.userId
-                                                            ? 'var(--surface-elevated)'
-                                                            : undefined
-                                                    }}
-                                                    onClick={() => openWorkerDetails(worker)}
-                                                >
-                                                    <td>
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="avatar avatar-sm">
-                                                                {worker.nombre.charAt(0)}
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold">{worker.nombre} {worker.apellido}</div>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <code style={{
-                                                            background: 'var(--surface-elevated)',
-                                                            padding: '2px 8px',
-                                                            borderRadius: 'var(--radius-sm)',
-                                                            fontSize: 'var(--text-sm)'
-                                                        }}>
-                                                            {worker.rut}
-                                                        </code>
-                                                    </td>
-                                                    <td>
-                                                        <span className={`badge badge-${worker.rol === 'prevencionista' ? 'info' : 'secondary'}`}>
-                                                            {worker.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        {worker.email || <span className="text-muted">-</span>}
-                                                    </td>
-                                                    <td>
-                                                        <span className={`badge badge-${worker.habilitado ? 'success' : 'warning'}`}>
-                                                            {worker.habilitado ? 'Habilitado' : 'Pendiente'}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <button
-                                                            className="btn btn-ghost btn-sm"
-                                                            title="Ver detalles"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                openWorkerDetails(worker);
+                                {workerStats && (
+                                    <section className="worker-details-section">
+                                        <h4 className="section-title">
+                                            <FiTrendingUp /> Estadísticas
+                                        </h4>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="stat-box">
+                                                <div className="stat-value">{workerStats.totalFirmas}</div>
+                                                <div className="stat-label">Total Firmas</div>
+                                            </div>
+                                            <div className="stat-box">
+                                                <div className="stat-value">{workerStats.firmasUltimos30Dias}</div>
+                                                <div className="stat-label">Últimos 30 días</div>
+                                            </div>
+                                            <div className="stat-box">
+                                                <div className="stat-value">{workerStats.documentosFirmados}</div>
+                                                <div className="stat-label">Documentos</div>
+                                            </div>
+                                            <div className="stat-box">
+                                                <div className="stat-value">{workerStats.actividadesAsistidas}</div>
+                                                <div className="stat-label">Actividades</div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                )}
+
+                                <section className="worker-details-section">
+                                    <div className="worker-details-section-header">
+                                        <h4 className="section-title">
+                                            <FiFileText /> Historial de Firmas
+                                        </h4>
+                                        {workerSignatures.length > 0 && (
+                                            <span
+                                                className="badge"
+                                                style={{
+                                                    background: 'var(--primary-100)',
+                                                    color: 'var(--primary-700)',
+                                                    fontSize: '11px'
+                                                }}
+                                            >
+                                                {workerSignatures.length} firma{workerSignatures.length !== 1 ? 's' : ''}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {workerSignatures.length === 0 ? (
+                                        <div className="worker-details-empty">
+                                            <div className="worker-details-empty-icon">📝</div>
+                                            <p className="text-muted text-sm">
+                                                Este trabajador aún no tiene firmas registradas
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="worker-signatures-list">
+                                            {workerSignatures.map((sig, index) => (
+                                                <div key={index} className="signature-item-expanded">
+                                                    <div className="flex items-start gap-3">
+                                                        <div
+                                                            className="avatar avatar-sm"
+                                                            style={{
+                                                                background: sig.tipoFirma === 'enrolamiento'
+                                                                    ? 'var(--success-100)'
+                                                                    : 'var(--primary-100)',
+                                                                color: sig.tipoFirma === 'enrolamiento'
+                                                                    ? 'var(--success-600)'
+                                                                    : 'var(--primary-600)',
+                                                                fontSize: '1rem',
+                                                                flexShrink: 0
                                                             }}
                                                         >
-                                                            <FiEye />
-                                                        </button>
-                                                    </td>
-                                                </tr>
+                                                            {REQUEST_TYPES[(sig as any).requestTipo]?.icon || (sig.tipoFirma === 'enrolamiento' ? '🔑' : '📝')}
+                                                        </div>
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div className="text-sm font-medium signature-title">
+                                                                {(sig as any).requestTitulo || (sig.metadata as any)?.titulo || (sig.metadata as any)?.documentoNombre || (sig.tipoFirma === 'enrolamiento' ? 'Enrolamiento Digital' : sig.tipoFirma?.replace('_', ' ') || 'Documento sin título')}
+                                                            </div>
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="badge signature-type">
+                                                                    {REQUEST_TYPES[(sig as any).requestTipo]?.label || sig.tipoFirma || 'Firma'}
+                                                                </span>
+                                                                <span className="text-xs text-muted">
+                                                                    {sig.fecha} • {sig.horario}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ flexShrink: 0 }}>
+                                                            <span
+                                                                className="badge"
+                                                                style={{
+                                                                    background: sig.estado === 'valida' ? 'var(--success-100)' : 'var(--warning-100)',
+                                                                    color: sig.estado === 'valida' ? 'var(--success-700)' : 'var(--warning-700)',
+                                                                    fontSize: '10px'
+                                                                }}
+                                                            >
+                                                                {sig.estado === 'valida' ? '✓ Válida' : sig.estado}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             ))}
-                                        </tbody>
-                                    </table>
+                                        </div>
+                                    )}
+                                </section>
+
+                                <div className="worker-details-actions">
+                                    <button
+                                        className="btn btn-secondary btn-sm w-full"
+                                        onClick={downloadWorkerReport}
+                                        disabled={!workerStats}
+                                    >
+                                        <FiDownload />
+                                        Descargar Reporte
+                                    </button>
                                 </div>
                             </>
                         )}
                     </div>
-
-                    {/* Panel de detalles */}
-                    {selectedWorker && (
-                        <div className="card" style={{ position: 'sticky', top: 'var(--space-4)', alignSelf: 'start' }}>
-                            <div className="card-header">
-                                <div className="flex items-center gap-3">
-                                    <div className="avatar" style={{ width: 48, height: 48, fontSize: '1.2rem' }}>
-                                        {selectedWorker.nombre.charAt(0)}
-                                    </div>
-                                    <div>
-                                        <h3 className="card-title">{selectedWorker.nombre} {selectedWorker.apellido}</h3>
-                                        <p className="text-muted text-sm">{selectedWorker.rut}</p>
-                                    </div>
-                                </div>
-                                <button
-                                    className="btn btn-ghost btn-sm"
-                                    onClick={() => setSelectedWorker(null)}
-                                >
-                                    <FiX />
-                                </button>
-                            </div>
-
-                            {loadingDetails ? (
-                                <div className="flex items-center justify-center" style={{ padding: 'var(--space-8)' }}>
-                                    <div className="spinner" />
-                                </div>
-                            ) : (
-                                <>
-                                    {/* Info básica */}
-                                    <div style={{ padding: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)' }}>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <FiUser size={14} className="text-muted" />
-                                            <span className="text-sm">Estado: </span>
-                                            <span className={`badge badge-sm badge-${selectedWorker.habilitado ? 'success' : 'warning'}`}>
-                                                {selectedWorker.habilitado ? 'Habilitado' : 'Pendiente Enrolamiento'}
-                                            </span>
-                                        </div>
-                                        {selectedWorker.email && (
-                                            <div className="text-sm text-muted">
-                                                📧 {selectedWorker.email}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Estadísticas */}
-                                    {workerStats && (
-                                        <div style={{ padding: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)' }}>
-                                            <h4 className="text-sm font-bold mb-3" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <FiTrendingUp /> Estadísticas
-                                            </h4>
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div className="stat-box">
-                                                    <div className="stat-value">{workerStats.totalFirmas}</div>
-                                                    <div className="stat-label">Total Firmas</div>
-                                                </div>
-                                                <div className="stat-box">
-                                                    <div className="stat-value">{workerStats.firmasUltimos30Dias}</div>
-                                                    <div className="stat-label">Últimos 30 días</div>
-                                                </div>
-                                                <div className="stat-box">
-                                                    <div className="stat-value">{workerStats.documentosFirmados}</div>
-                                                    <div className="stat-label">Documentos</div>
-                                                </div>
-                                                <div className="stat-box">
-                                                    <div className="stat-value">{workerStats.actividadesAsistidas}</div>
-                                                    <div className="stat-label">Actividades</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Historial de firmas completo */}
-                                    <div style={{ padding: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)' }}>
-                                        <div className="flex items-center justify-between mb-3">
-                                            <h4 className="text-sm font-bold" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                                                <FiFileText /> Historial de Firmas
-                                            </h4>
-                                            {workerSignatures.length > 0 && (
-                                                <span 
-                                                    className="badge"
-                                                    style={{ 
-                                                        background: 'var(--primary-100)', 
-                                                        color: 'var(--primary-700)',
-                                                        fontSize: '11px',
-                                                    }}
-                                                >
-                                                    {workerSignatures.length} firma{workerSignatures.length !== 1 ? 's' : ''}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {workerSignatures.length === 0 ? (
-                                            <div style={{ 
-                                                textAlign: 'center', 
-                                                padding: 'var(--space-6)',
-                                                background: 'var(--surface-elevated)',
-                                                borderRadius: 'var(--radius-md)',
-                                            }}>
-                                                <div style={{ fontSize: '2rem', marginBottom: 'var(--space-2)' }}>📝</div>
-                                                <p className="text-muted text-sm" style={{ margin: 0 }}>
-                                                    Este trabajador aún no tiene firmas registradas
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <div 
-                                                className="flex flex-col gap-2"
-                                                style={{ 
-                                                    maxHeight: '320px', 
-                                                    overflowY: 'auto',
-                                                    paddingRight: 'var(--space-1)',
-                                                }}
-                                            >
-                                                {workerSignatures.map((sig, index) => (
-                                                    <div 
-                                                        key={index} 
-                                                        className="signature-item-expanded"
-                                                        style={{
-                                                            padding: 'var(--space-3)',
-                                                            background: 'var(--surface-elevated)',
-                                                            borderRadius: 'var(--radius-md)',
-                                                            border: '1px solid var(--surface-border)',
-                                                            transition: 'all var(--transition-fast)',
-                                                        }}
-                                                    >
-                                                        <div className="flex items-start gap-3">
-                                                            <div 
-                                                                className="avatar avatar-sm"
-                                                                style={{ 
-                                                                    background: sig.tipoFirma === 'enrolamiento' 
-                                                                        ? 'var(--success-100)' 
-                                                                        : 'var(--primary-100)',
-                                                                    color: sig.tipoFirma === 'enrolamiento' 
-                                                                        ? 'var(--success-600)' 
-                                                                        : 'var(--primary-600)',
-                                                                    fontSize: '1rem',
-                                                                    flexShrink: 0,
-                                                                }}
-                                                            >
-                                                                {REQUEST_TYPES[(sig as any).requestTipo]?.icon || (sig.tipoFirma === 'enrolamiento' ? '🔑' : '📝')}
-                                                            </div>
-                                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                                <div 
-                                                                    className="text-sm font-medium"
-                                                                    style={{ 
-                                                                        marginBottom: '2px',
-                                                                        whiteSpace: 'nowrap',
-                                                                        overflow: 'hidden',
-                                                                        textOverflow: 'ellipsis',
-                                                                    }}
-                                                                >
-                                                                    {(sig as any).requestTitulo || (sig.metadata as any)?.titulo || (sig.metadata as any)?.documentoNombre || (sig.tipoFirma === 'enrolamiento' ? 'Enrolamiento Digital' : sig.tipoFirma?.replace('_', ' ') || 'Documento sin título')}
-                                                                </div>
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                                                    <span 
-                                                                        className="badge"
-                                                                        style={{ 
-                                                                            background: 'var(--surface-hover)',
-                                                                            color: 'var(--text-secondary)',
-                                                                            fontSize: '10px',
-                                                                            padding: '2px 6px',
-                                                                        }}
-                                                                    >
-                                                                        {REQUEST_TYPES[(sig as any).requestTipo]?.label || sig.tipoFirma || 'Firma'}
-                                                                    </span>
-                                                                    <span className="text-xs text-muted">
-                                                                        {sig.fecha} • {sig.horario}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                            <div 
-                                                                style={{ 
-                                                                    flexShrink: 0,
-                                                                    display: 'flex',
-                                                                    alignItems: 'center',
-                                                                    gap: '4px',
-                                                                }}
-                                                            >
-                                                                <span 
-                                                                    className="badge"
-                                                                    style={{ 
-                                                                        background: sig.estado === 'valida' ? 'var(--success-100)' : 'var(--warning-100)',
-                                                                        color: sig.estado === 'valida' ? 'var(--success-700)' : 'var(--warning-700)',
-                                                                        fontSize: '10px',
-                                                                    }}
-                                                                >
-                                                                    {sig.estado === 'valida' ? '✓ Válida' : sig.estado}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Acciones */}
-                                    <div style={{ padding: 'var(--space-4)' }}>
-                                        <button
-                                            className="btn btn-secondary btn-sm w-full"
-                                            onClick={downloadWorkerReport}
-                                            disabled={!workerStats}
-                                        >
-                                            <FiDownload />
-                                            Descargar Reporte
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    )}
                 </div>
-            </div>
+            )}
 
             <style>{`
                 .stat-box {
@@ -552,6 +523,109 @@ Generado por PrevencionApp
                 .badge-sm {
                     font-size: 10px;
                     padding: 1px 6px;
+                }
+                .worker-details-overlay {
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(8, 12, 20, 0.68);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: var(--space-6);
+                    z-index: 50;
+                    backdrop-filter: blur(6px);
+                }
+                .worker-details-panel {
+                    background: var(--surface-base);
+                    width: min(480px, 100%);
+                    max-height: 90vh;
+                    border-radius: var(--radius-lg);
+                    border: 1px solid var(--surface-border);
+                    box-shadow: 0 25px 60px rgba(4, 9, 20, 0.35);
+                    display: flex;
+                    flex-direction: column;
+                    overflow-y: auto;
+                }
+                .worker-details-header {
+                    padding: var(--space-5);
+                    border-bottom: 1px solid var(--surface-border);
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: var(--space-4);
+                }
+                .worker-details-loading {
+                    padding: var(--space-8);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .worker-details-section {
+                    padding: var(--space-4);
+                    border-bottom: 1px solid var(--surface-border);
+                }
+                .worker-details-section-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: var(--space-3);
+                    margin-bottom: var(--space-2);
+                }
+                .section-title {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-2);
+                    font-size: var(--text-sm);
+                    font-weight: 700;
+                    margin: 0;
+                }
+                .worker-details-empty {
+                    text-align: center;
+                    padding: var(--space-5);
+                    background: var(--surface-elevated);
+                    border-radius: var(--radius-md);
+                }
+                .worker-details-empty-icon {
+                    font-size: 2rem;
+                    margin-bottom: var(--space-2);
+                }
+                .worker-signatures-list {
+                    max-height: 320px;
+                    overflow-y: auto;
+                    padding-right: var(--space-1);
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-2);
+                }
+                .signature-item-expanded {
+                    padding: var(--space-3);
+                    background: var(--surface-elevated);
+                    border-radius: var(--radius-md);
+                    border: 1px solid var(--surface-border);
+                }
+                .signature-title {
+                    margin-bottom: 2px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .signature-type {
+                    background: var(--surface-hover);
+                    color: var(--text-secondary);
+                    font-size: 10px;
+                    padding: 2px 6px;
+                }
+                .worker-details-actions {
+                    padding: var(--space-4);
+                }
+                @media (max-width: 768px) {
+                    .worker-details-overlay {
+                        padding: var(--space-4);
+                    }
+                    .worker-details-panel {
+                        width: 100%;
+                        max-height: 100vh;
+                    }
                 }
             `}</style>
         </>

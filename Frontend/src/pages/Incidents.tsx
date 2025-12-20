@@ -5,7 +5,7 @@ import {
     FiPlus, FiAlertTriangle, FiFilter, FiX, FiUpload, FiImage,
     FiUser, FiMapPin, FiCalendar, FiTrendingUp, FiActivity,
     FiAlertCircle, FiFileText, FiSave, FiChevronDown, FiChevronUp,
-    FiPieChart, FiList, FiUsers, FiBarChart2, FiCheck
+    FiPieChart, FiList, FiBarChart2, FiCheck
 } from 'react-icons/fi';
 import { incidentsApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData } from '../api/client';
@@ -92,7 +92,6 @@ export default function Incidents() {
 
     // Chart controls state
     const [chartMetric, setChartMetric] = useState<'total' | 'accidentes' | 'incidentes'>('total');
-    const [chartTimeRange, setChartTimeRange] = useState<'3m' | '6m' | '12m'>('6m');
     const [calendarMonth, setCalendarMonth] = useState(new Date());
 
 
@@ -281,11 +280,6 @@ export default function Incidents() {
         } finally {
             setDetailLoading(false);
         }
-    };
-
-    const openImagePreview = (url: string, title: string) => {
-        if (!url) return;
-        setImagePreview({ url, title });
     };
 
     const getEstadoBadge = (estado: string) => {
