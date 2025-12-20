@@ -12,6 +12,12 @@ import {
     FiChevronDown,
     FiChevronUp,
     FiAlertCircle,
+    FiSend,
+    FiTrendingUp,
+    FiRefreshCw,
+    FiFilter,
+    FiCalendar,
+    FiFileText,
 } from 'react-icons/fi';
 import {
     signatureRequestsApi,
@@ -217,84 +223,153 @@ export default function SignatureRequests() {
         <>
             <Header title="Solicitudes de Firma" />
 
-            <div className="main-content">
+            <div className="page-content">
+                {/* Hero Section */}
+                <div className="survey-hero mb-6">
+                    <div className="survey-hero-icon">
+                        <FiSend size={28} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <div className="survey-hero-eyebrow">Gestión de Solicitudes</div>
+                        <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
+                            Administra las solicitudes de firma
+                        </h2>
+                        <p className="text-sm text-muted">
+                            Crea, monitorea y gestiona solicitudes de firma para documentos, charlas y capacitaciones.
+                        </p>
+                    </div>
+                    <button className="btn btn-secondary" onClick={loadData} disabled={loading}>
+                        <FiRefreshCw className={loading ? 'spin' : ''} /> Actualizar
+                    </button>
+                </div>
+
                 {/* Stats Cards */}
                 <div className="grid grid-cols-4 mb-6">
-                    <div className="card">
-                        <div className="flex items-center gap-3">
-                            <div className="avatar" style={{ background: 'var(--warning-100)', color: 'var(--warning-600)' }}>
-                                <FiClock size={24} />
+                    <div className="card stat-card">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="avatar" style={{ background: 'var(--warning-500)' }}>
+                                <FiClock size={20} />
                             </div>
-                            <div>
-                                <div className="text-2xl font-bold">{requests.filter(r => r.estado === 'pendiente').length}</div>
-                                <div className="text-sm text-muted">Pendientes</div>
-                            </div>
+                            <span className="text-sm text-muted">Pendientes</span>
+                        </div>
+                        <div className="stat-value">{requests.filter(r => r.estado === 'pendiente').length}</div>
+                        <div className="stat-change" style={{ color: 'var(--warning-500)' }}>
+                            <FiAlertCircle size={14} />
+                            Esperando firmas
                         </div>
                     </div>
-                    <div className="card">
-                        <div className="flex items-center gap-3">
-                            <div className="avatar" style={{ background: 'var(--info-100)', color: 'var(--info-600)' }}>
-                                <FiUsers size={24} />
+                    <div className="card stat-card">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="avatar" style={{ background: 'var(--info-500)' }}>
+                                <FiUsers size={20} />
                             </div>
-                            <div>
-                                <div className="text-2xl font-bold">{requests.filter(r => r.estado === 'en_proceso').length}</div>
-                                <div className="text-sm text-muted">En Proceso</div>
-                            </div>
+                            <span className="text-sm text-muted">En Proceso</span>
+                        </div>
+                        <div className="stat-value">{requests.filter(r => r.estado === 'en_proceso').length}</div>
+                        <div className="stat-change" style={{ color: 'var(--info-500)' }}>
+                            <FiTrendingUp size={14} />
+                            Firmas parciales
                         </div>
                     </div>
-                    <div className="card">
-                        <div className="flex items-center gap-3">
-                            <div className="avatar" style={{ background: 'var(--success-100)', color: 'var(--success-600)' }}>
-                                <FiCheck size={24} />
+                    <div className="card stat-card">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="avatar" style={{ background: 'var(--success-500)' }}>
+                                <FiCheck size={20} />
                             </div>
-                            <div>
-                                <div className="text-2xl font-bold">{requests.filter(r => r.estado === 'completada').length}</div>
-                                <div className="text-sm text-muted">Completadas</div>
-                            </div>
+                            <span className="text-sm text-muted">Completadas</span>
+                        </div>
+                        <div className="stat-value">{requests.filter(r => r.estado === 'completada').length}</div>
+                        <div className="stat-change positive">
+                            <FiCheck size={14} />
+                            100% firmadas
                         </div>
                     </div>
-                    <div className="card">
-                        <div className="flex items-center gap-3">
-                            <div className="avatar" style={{ background: 'var(--primary-100)', color: 'var(--primary-600)' }}>
-                                📝
+                    <div className="card stat-card">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="avatar" style={{ background: 'var(--primary-500)' }}>
+                                <FiFileText size={20} />
                             </div>
-                            <div>
-                                <div className="text-2xl font-bold">{requests.length}</div>
-                                <div className="text-sm text-muted">Total</div>
-                            </div>
+                            <span className="text-sm text-muted">Total</span>
+                        </div>
+                        <div className="stat-value">{requests.length}</div>
+                        <div className="stat-change positive">
+                            <FiSend size={14} />
+                            Solicitudes creadas
                         </div>
                     </div>
                 </div>
 
                 {/* Filters and Actions */}
-                <div className="card mb-6">
+                <div 
+                    className="card mb-6"
+                    style={{
+                        background: 'var(--surface-elevated)',
+                        border: '1px solid var(--surface-border)',
+                    }}
+                >
                     <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-4 flex-1">
-                            <div className="input-group" style={{ maxWidth: '300px' }}>
-                                <FiSearch className="input-icon" />
+                            <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
                                 <input
                                     type="text"
-                                    placeholder="Buscar solicitudes..."
+                                    placeholder="Buscar por título o solicitante..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="input"
+                                    className="form-input"
+                                    style={{ paddingLeft: '44px' }}
+                                />
+                                <FiSearch
+                                    size={18}
+                                    style={{
+                                        position: 'absolute',
+                                        left: '14px',
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                        color: 'var(--text-muted)'
+                                    }}
                                 />
                             </div>
-                            <select
-                                value={filterStatus}
-                                onChange={(e) => setFilterStatus(e.target.value)}
-                                className="input"
-                                style={{ width: 'auto' }}
-                            >
-                                <option value="">Todos los estados</option>
-                                <option value="pendiente">Pendiente</option>
-                                <option value="en_proceso">En Proceso</option>
-                                <option value="completada">Completada</option>
-                                <option value="cancelada">Cancelada</option>
-                            </select>
+                            <div style={{ position: 'relative' }}>
+                                <select
+                                    value={filterStatus}
+                                    onChange={(e) => setFilterStatus(e.target.value)}
+                                    className="form-input"
+                                    style={{ paddingLeft: '44px', minWidth: '180px', cursor: 'pointer' }}
+                                >
+                                    <option value="">Todos los estados</option>
+                                    <option value="pendiente">⏳ Pendiente</option>
+                                    <option value="en_proceso">👥 En Proceso</option>
+                                    <option value="completada">✅ Completada</option>
+                                    <option value="cancelada">❌ Cancelada</option>
+                                </select>
+                                <FiFilter
+                                    size={18}
+                                    style={{
+                                        position: 'absolute',
+                                        left: '14px',
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                        color: 'var(--text-muted)',
+                                        pointerEvents: 'none'
+                                    }}
+                                />
+                            </div>
+                            {(searchTerm || filterStatus) && (
+                                <button 
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => { setSearchTerm(''); setFilterStatus(''); }}
+                                    style={{ color: 'var(--text-muted)' }}
+                                >
+                                    <FiX size={16} /> Limpiar
+                                </button>
+                            )}
                         </div>
-                        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-                            <FiPlus />
+                        <button 
+                            className="btn btn-primary"
+                            onClick={() => setShowModal(true)}
+                            style={{ boxShadow: 'var(--shadow-glow-primary)' }}
+                        >
+                            <FiPlus size={18} />
                             Nueva Solicitud
                         </button>
                     </div>
@@ -303,73 +378,227 @@ export default function SignatureRequests() {
                 {/* Requests List */}
                 <div className="card">
                     <div className="card-header">
-                        <h2 className="card-title">Solicitudes de Firma</h2>
+                        <div>
+                            <h2 className="card-title">Solicitudes de Firma</h2>
+                            <p className="card-subtitle">Haz clic en una solicitud para ver los detalles</p>
+                        </div>
+                        {filteredRequests.length > 0 && (
+                            <span className="badge" style={{ background: 'var(--primary-100)', color: 'var(--primary-700)' }}>
+                                {filteredRequests.length} solicitud{filteredRequests.length !== 1 ? 'es' : ''}
+                            </span>
+                        )}
                     </div>
 
                     {filteredRequests.length === 0 ? (
-                        <div className="empty-state">
-                            <div className="empty-state-icon">📋</div>
+                        <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+                            <div className="empty-state-icon" style={{ fontSize: '3rem', marginBottom: 'var(--space-4)' }}>📋</div>
                             <h3 className="empty-state-title">No hay solicitudes</h3>
                             <p className="empty-state-description">
-                                Crea tu primera solicitud de firma para comenzar.
+                                {searchTerm || filterStatus 
+                                    ? 'No se encontraron solicitudes con los filtros aplicados.'
+                                    : 'Crea tu primera solicitud de firma para comenzar.'
+                                }
                             </p>
-                            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-                                <FiPlus />
-                                Nueva Solicitud
-                            </button>
+                            {!searchTerm && !filterStatus && (
+                                <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                                    <FiPlus />
+                                    Nueva Solicitud
+                                </button>
+                            )}
                         </div>
                     ) : (
-                        <div className="flex flex-col gap-3">
-                            {filteredRequests.map((request) => (
-                                <div
-                                    key={request.requestId}
-                                    className="card"
-                                    style={{ cursor: 'pointer', border: selectedRequest?.requestId === request.requestId ? '2px solid var(--primary-500)' : undefined }}
-                                    onClick={() => setSelectedRequest(selectedRequest?.requestId === request.requestId ? null : request)}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <div className="avatar" style={{ fontSize: '1.5rem' }}>
-                                                {REQUEST_TYPES[request.tipo]?.icon || '📝'}
-                                            </div>
-                                            <div>
-                                                <div className="font-bold">{request.titulo}</div>
-                                                <div className="text-sm text-muted">
-                                                    {REQUEST_TYPES[request.tipo]?.label} • {new Date(request.fechaCreacion).toLocaleDateString('es-CL')}
+                        <div className="flex flex-col gap-4">
+                            {filteredRequests.map((request) => {
+                                const isExpanded = selectedRequest?.requestId === request.requestId;
+                                const progressPercent = (request.totalFirmados / request.totalRequeridos) * 100;
+                                const statusColors: Record<string, string> = {
+                                    pendiente: 'var(--warning-400)',
+                                    en_proceso: 'var(--info-400)',
+                                    completada: 'var(--success-400)',
+                                    cancelada: 'var(--error-400)',
+                                    vencida: 'var(--neutral-400)',
+                                };
+                                
+                                return (
+                                    <div
+                                        key={request.requestId}
+                                        style={{ 
+                                            padding: 'var(--space-5)',
+                                            borderRadius: 'var(--radius-xl)',
+                                            border: isExpanded ? '2px solid var(--primary-400)' : '1px solid var(--surface-border)',
+                                            background: isExpanded 
+                                                ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.06), rgba(76, 175, 80, 0.02))'
+                                                : 'var(--surface-elevated)',
+                                            cursor: 'pointer',
+                                            transition: 'all var(--transition-normal)',
+                                            position: 'relative',
+                                            overflow: 'hidden',
+                                        }}
+                                        onClick={() => setSelectedRequest(isExpanded ? null : request)}
+                                    >
+                                        {/* Status indicator line */}
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            width: '4px',
+                                            height: '100%',
+                                            background: statusColors[request.estado] || 'var(--neutral-400)',
+                                            borderRadius: 'var(--radius-xl) 0 0 var(--radius-xl)',
+                                        }} />
+
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-start gap-4" style={{ flex: 1 }}>
+                                                <div 
+                                                    className="avatar"
+                                                    style={{ 
+                                                        fontSize: '1.75rem',
+                                                        background: 'var(--surface-card)',
+                                                        width: '56px',
+                                                        height: '56px',
+                                                        boxShadow: 'var(--shadow-sm)',
+                                                        border: '1px solid var(--surface-border)',
+                                                    }}
+                                                >
+                                                    {REQUEST_TYPES[request.tipo]?.icon || '📝'}
                                                 </div>
-                                                <div className="text-sm text-muted">
-                                                    Solicitado por: {request.solicitanteNombre}
+                                                <div style={{ flex: 1 }}>
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span 
+                                                            className="badge" 
+                                                            style={{ 
+                                                                background: 'var(--surface-hover)', 
+                                                                color: 'var(--text-secondary)',
+                                                                fontSize: '11px',
+                                                            }}
+                                                        >
+                                                            {REQUEST_TYPES[request.tipo]?.label}
+                                                        </span>
+                                                        {getStatusBadge(request.estado)}
+                                                    </div>
+                                                    <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
+                                                        {request.titulo}
+                                                    </h3>
+                                                    <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
+                                                        <div className="flex items-center gap-1">
+                                                            <FiUsers size={14} style={{ color: 'var(--primary-500)' }} />
+                                                            <span>{request.solicitanteNombre}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <FiCalendar size={14} style={{ color: 'var(--info-500)' }} />
+                                                            <span>{new Date(request.fechaCreacion).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                                        </div>
+                                                        {request.documentos.length > 0 && (
+                                                            <div className="flex items-center gap-1">
+                                                                <FiFile size={14} style={{ color: 'var(--text-muted)' }} />
+                                                                <span>{request.documentos.length} doc{request.documentos.length !== 1 ? 's' : ''}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-5">
+                                                {/* Progress indicator */}
+                                                <div style={{ textAlign: 'center', minWidth: '80px' }}>
+                                                    <div 
+                                                        style={{ 
+                                                            position: 'relative',
+                                                            width: '56px',
+                                                            height: '56px',
+                                                            margin: '0 auto',
+                                                        }}
+                                                    >
+                                                        <svg width="56" height="56" style={{ transform: 'rotate(-90deg)' }}>
+                                                            <circle
+                                                                cx="28"
+                                                                cy="28"
+                                                                r="24"
+                                                                fill="none"
+                                                                stroke="var(--surface-border)"
+                                                                strokeWidth="4"
+                                                            />
+                                                            <circle
+                                                                cx="28"
+                                                                cy="28"
+                                                                r="24"
+                                                                fill="none"
+                                                                stroke={progressPercent === 100 ? 'var(--success-500)' : 'var(--primary-500)'}
+                                                                strokeWidth="4"
+                                                                strokeDasharray={`${(progressPercent / 100) * 150.8} 150.8`}
+                                                                strokeLinecap="round"
+                                                            />
+                                                        </svg>
+                                                        <div style={{
+                                                            position: 'absolute',
+                                                            top: '50%',
+                                                            left: '50%',
+                                                            transform: 'translate(-50%, -50%)',
+                                                            fontSize: 'var(--text-xs)',
+                                                            fontWeight: 700,
+                                                            color: progressPercent === 100 ? 'var(--success-600)' : 'var(--primary-600)',
+                                                        }}>
+                                                            {request.totalFirmados}/{request.totalRequeridos}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-xs text-muted mt-1">Firmas</div>
+                                                </div>
+                                                
+                                                <div 
+                                                    className="avatar avatar-sm"
+                                                    style={{ 
+                                                        background: isExpanded ? 'var(--primary-500)' : 'var(--surface-hover)',
+                                                        color: isExpanded ? 'white' : 'var(--text-muted)',
+                                                        transition: 'all var(--transition-fast)',
+                                                    }}
+                                                >
+                                                    {isExpanded ? <FiChevronUp size={16} /> : <FiChevronDown size={16} />}
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="text-center">
-                                                <div className="text-xl font-bold" style={{ color: 'var(--primary-600)' }}>
-                                                    {request.totalFirmados}/{request.totalRequeridos}
-                                                </div>
-                                                <div className="text-xs text-muted">Firmados</div>
-                                            </div>
-                                            {getStatusBadge(request.estado)}
-                                            {selectedRequest?.requestId === request.requestId ? <FiChevronUp /> : <FiChevronDown />}
-                                        </div>
-                                    </div>
 
                                     {/* Expanded Details */}
                                     {selectedRequest?.requestId === request.requestId && (
-                                        <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--neutral-200)' }}>
+                                        <div 
+                                            className="mt-5 pt-5" 
+                                            style={{ borderTop: '1px dashed var(--surface-border)' }}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
                                             {request.descripcion && (
-                                                <p className="text-sm mb-4">{request.descripcion}</p>
+                                                <div 
+                                                    className="mb-4 p-4"
+                                                    style={{ 
+                                                        background: 'rgba(255,255,255,0.5)',
+                                                        borderRadius: 'var(--radius-lg)',
+                                                        borderLeft: '3px solid var(--primary-400)',
+                                                    }}
+                                                >
+                                                    <p className="text-sm\" style={{ margin: 0 }}>{request.descripcion}</p>
+                                                </div>
                                             )}
 
                                             {/* Documents */}
                                             {request.documentos.length > 0 && (
-                                                <div className="mb-4">
-                                                    <h4 className="text-sm font-bold mb-2">Documentos Adjuntos:</h4>
+                                                <div 
+                                                    className="mb-4 p-4"
+                                                    style={{ 
+                                                        background: 'var(--surface-card)',
+                                                        borderRadius: 'var(--radius-lg)',
+                                                        border: '1px solid var(--surface-border)',
+                                                    }}
+                                                >
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                        <FiFile size={16} style={{ color: 'var(--primary-500)' }} />
+                                                        <h4 className="font-medium\" style={{ margin: 0 }}>Documentos Adjuntos</h4>
+                                                        <span className="badge\" style={{ background: 'var(--primary-100)', color: 'var(--primary-700)', fontSize: '11px' }}>
+                                                            {request.documentos.length}
+                                                        </span>
+                                                    </div>
                                                     <div className="flex gap-2 flex-wrap">
                                                         {request.documentos.map((doc, idx) => (
-                                                            <a
+                                                            <button
                                                                 key={idx}
-                                                                href="#"
+                                                                className="btn btn-secondary btn-sm"
                                                                 onClick={async (e) => {
                                                                     e.preventDefault();
                                                                     e.stopPropagation();
@@ -378,44 +607,118 @@ export default function SignatureRequests() {
                                                                         window.open(res.data.downloadUrl, '_blank');
                                                                     }
                                                                 }}
-                                                                className="badge"
-                                                                style={{ background: 'var(--neutral-100)', cursor: 'pointer' }}
+                                                                style={{ background: 'white' }}
                                                             >
                                                                 <FiFile size={14} /> {doc.nombre}
-                                                            </a>
+                                                            </button>
                                                         ))}
                                                     </div>
                                                 </div>
                                             )}
 
                                             {/* Workers Progress */}
-                                            <div className="mb-4">
-                                                <h4 className="text-sm font-bold mb-2">Progreso de Firmas:</h4>
-                                                <div className="progress-bar mb-2">
+                                            <div 
+                                                className="mb-4 p-4"
+                                                style={{ 
+                                                    background: 'var(--surface-card)',
+                                                    borderRadius: 'var(--radius-lg)',
+                                                    border: '1px solid var(--surface-border)',
+                                                }}
+                                            >
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <FiUsers size={16} style={{ color: 'var(--primary-500)' }} />
+                                                        <h4 className="font-medium\" style={{ margin: 0 }}>Progreso de Firmas</h4>
+                                                    </div>
+                                                    <span 
+                                                        className="badge"
+                                                        style={{ 
+                                                            background: request.totalFirmados === request.totalRequeridos 
+                                                                ? 'var(--success-500)' 
+                                                                : 'var(--primary-500)',
+                                                            color: 'white',
+                                                        }}
+                                                    >
+                                                        {request.totalFirmados}/{request.totalRequeridos} firmados
+                                                    </span>
+                                                </div>
+                                                
+                                                {/* Progress bar */}
+                                                <div 
+                                                    style={{ 
+                                                        height: '8px',
+                                                        background: 'var(--surface-hover)',
+                                                        borderRadius: 'var(--radius-full)',
+                                                        overflow: 'hidden',
+                                                        marginBottom: 'var(--space-4)',
+                                                    }}
+                                                >
                                                     <div
-                                                        className="progress-fill"
                                                         style={{
+                                                            height: '100%',
                                                             width: `${(request.totalFirmados / request.totalRequeridos) * 100}%`,
-                                                            background: request.totalFirmados === request.totalRequeridos ? 'var(--success-500)' : 'var(--primary-500)',
+                                                            background: request.totalFirmados === request.totalRequeridos 
+                                                                ? 'linear-gradient(90deg, var(--success-500), var(--success-400))' 
+                                                                : 'linear-gradient(90deg, var(--primary-500), var(--primary-400))',
+                                                            borderRadius: 'var(--radius-full)',
+                                                            transition: 'width 0.3s ease',
                                                         }}
                                                     />
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                                
+                                                <div 
+                                                    className="grid gap-2" 
+                                                    style={{ 
+                                                        gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                                                        maxHeight: '240px', 
+                                                        overflowY: 'auto',
+                                                        padding: 'var(--space-1)',
+                                                    }}
+                                                >
                                                     {request.trabajadores.map((t) => (
                                                         <div
                                                             key={t.workerId}
-                                                            className="flex items-center gap-2 p-2 rounded"
-                                                            style={{ background: t.firmado ? 'var(--success-50)' : 'var(--neutral-50)' }}
+                                                            className="flex items-center gap-3 p-3"
+                                                            style={{ 
+                                                                background: t.firmado ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(76, 175, 80, 0.05))' : 'var(--surface-elevated)',
+                                                                borderRadius: 'var(--radius-md)',
+                                                                border: t.firmado ? '1px solid var(--success-300)' : '1px solid var(--surface-border)',
+                                                            }}
                                                         >
-                                                            {t.firmado ? (
-                                                                <FiCheck style={{ color: 'var(--success-500)' }} />
-                                                            ) : (
-                                                                <FiClock style={{ color: 'var(--warning-500)' }} />
-                                                            )}
-                                                            <div>
-                                                                <div className="text-sm font-medium">{t.nombre}</div>
+                                                            <div 
+                                                                className="avatar avatar-sm"
+                                                                style={{ 
+                                                                    background: t.firmado ? 'var(--success-500)' : 'var(--surface-hover)',
+                                                                    color: t.firmado ? 'white' : 'var(--warning-500)',
+                                                                }}
+                                                            >
+                                                                {t.firmado ? <FiCheck size={14} /> : <FiClock size={14} />}
+                                                            </div>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div 
+                                                                    className="font-medium text-sm" 
+                                                                    style={{ 
+                                                                        whiteSpace: 'nowrap',
+                                                                        overflow: 'hidden',
+                                                                        textOverflow: 'ellipsis',
+                                                                    }}
+                                                                >
+                                                                    {t.nombre}
+                                                                </div>
                                                                 <div className="text-xs text-muted">{t.rut}</div>
                                                             </div>
+                                                            {t.firmado && (
+                                                                <span 
+                                                                    className="badge"
+                                                                    style={{ 
+                                                                        background: 'var(--success-100)', 
+                                                                        color: 'var(--success-700)',
+                                                                        fontSize: '10px',
+                                                                    }}
+                                                                >
+                                                                    ✓ Firmado
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -423,22 +726,24 @@ export default function SignatureRequests() {
 
                                             {/* Actions */}
                                             {request.estado !== 'completada' && request.estado !== 'cancelada' && (
-                                                <div className="flex gap-2">
+                                                <div className="flex gap-3">
                                                     <button
-                                                        className="btn btn-secondary"
+                                                        className="btn btn-danger"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             handleCancelRequest(request.requestId);
                                                         }}
+                                                        style={{ boxShadow: 'var(--shadow-sm)' }}
                                                     >
-                                                        <FiX /> Cancelar
+                                                        <FiX size={16} /> Cancelar Solicitud
                                                     </button>
                                                 </div>
                                             )}
                                         </div>
                                     )}
                                 </div>
-                            ))}
+                            );
+                        })}
                         </div>
                     )}
                 </div>
@@ -458,25 +763,61 @@ export default function SignatureRequests() {
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="modal-header" style={{ flexShrink: 0 }}>
-                            <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                📝 Nueva Solicitud de Firma
-                            </h2>
-                            <button className="btn btn-ghost" onClick={() => { resetForm(); setShowModal(false); }}>
-                                <FiX />
+                        <div 
+                            className="modal-header" 
+                            style={{ 
+                                flexShrink: 0,
+                                borderBottom: '1px solid var(--surface-border)',
+                                paddingBottom: 'var(--space-4)',
+                            }}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div 
+                                    className="avatar"
+                                    style={{ 
+                                        background: 'var(--gradient-primary)',
+                                        boxShadow: 'var(--shadow-glow-primary)',
+                                    }}
+                                >
+                                    <FiSend size={20} />
+                                </div>
+                                <div>
+                                    <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 600 }}>Nueva Solicitud de Firma</h2>
+                                    <p className="text-sm text-muted">Completa los pasos para crear la solicitud</p>
+                                </div>
+                            </div>
+                            <button className="btn btn-ghost btn-icon" onClick={() => { resetForm(); setShowModal(false); }}>
+                                <FiX size={20} />
                             </button>
                         </div>
 
                         <form onSubmit={handleCreateRequest} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                            <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-4)' }}>
+                            <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-5)' }}>
+                                
                                 {/* Step 1: Type Selection */}
-                                <div className="mb-5">
-                                    <label className="label" style={{ fontSize: 'var(--text-sm)', fontWeight: '600' }}>
-                                        📋 Tipo de Solicitud
-                                    </label>
+                                <div 
+                                    className="survey-section mb-5"
+                                    style={{ 
+                                        background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.08), rgba(76, 175, 80, 0.02))',
+                                        border: '1px solid rgba(76, 175, 80, 0.2)',
+                                        padding: 'var(--space-4)',
+                                        marginBottom: 'var(--space-5)',
+                                    }}
+                                >
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div 
+                                            className="avatar avatar-sm"
+                                            style={{ background: 'var(--primary-500)' }}
+                                        >
+                                            <span style={{ fontSize: '12px', fontWeight: 700 }}>1</span>
+                                        </div>
+                                        <label className="font-medium" style={{ margin: 0 }}>
+                                            Tipo de Solicitud
+                                        </label>
+                                    </div>
                                     <div style={{
                                         display: 'grid',
-                                        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                                         gap: 'var(--space-2)'
                                     }}>
                                         {Object.entries(REQUEST_TYPES).map(([key, value]) => (
@@ -485,72 +826,123 @@ export default function SignatureRequests() {
                                                 style={{
                                                     cursor: 'pointer',
                                                     padding: 'var(--space-3)',
-                                                    borderRadius: 'var(--radius-md)',
+                                                    borderRadius: 'var(--radius-lg)',
                                                     border: newRequest.tipo === key ? '2px solid var(--primary-500)' : '1px solid var(--surface-border)',
-                                                    background: newRequest.tipo === key ? 'var(--primary-500)' : 'var(--surface-elevated)',
+                                                    background: newRequest.tipo === key 
+                                                        ? 'linear-gradient(135deg, var(--primary-500), var(--primary-600))' 
+                                                        : 'var(--surface-card)',
                                                     color: newRequest.tipo === key ? 'white' : 'var(--text-primary)',
                                                     transition: 'all 0.2s',
                                                     display: 'flex',
                                                     alignItems: 'center',
-                                                    gap: 'var(--space-2)'
+                                                    gap: 'var(--space-2)',
+                                                    boxShadow: newRequest.tipo === key ? 'var(--shadow-glow-primary)' : 'var(--shadow-sm)',
                                                 }}
                                                 onClick={() => setNewRequest({ ...newRequest, tipo: key, titulo: '' })}
                                             >
-                                                <span style={{ fontSize: '1.3rem' }}>{value.icon}</span>
-                                                <span style={{ fontSize: 'var(--text-sm)', fontWeight: '500' }}>{value.label}</span>
+                                                <span style={{ fontSize: '1.4rem' }}>{value.icon}</span>
+                                                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>{value.label}</span>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
 
                                 {/* Step 2: Details */}
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                                    gap: 'var(--space-3)',
-                                    marginBottom: 'var(--space-4)'
-                                }}>
-                                    <div>
-                                        <label className="label" style={{ fontSize: 'var(--text-sm)' }}>Título (opcional)</label>
-                                        <input
-                                            type="text"
-                                            className="form-input"
-                                            placeholder={REQUEST_TYPES[newRequest.tipo].label}
-                                            value={newRequest.titulo}
-                                            onChange={(e) => setNewRequest({ ...newRequest, titulo: e.target.value })}
-                                        />
+                                <div 
+                                    className="mb-5 p-4"
+                                    style={{ 
+                                        background: 'var(--surface-elevated)',
+                                        borderRadius: 'var(--radius-xl)',
+                                        border: '1px solid var(--surface-border)',
+                                    }}
+                                >
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <div 
+                                            className="avatar avatar-sm"
+                                            style={{ background: 'var(--info-500)' }}
+                                        >
+                                            <span style={{ fontSize: '12px', fontWeight: 700 }}>2</span>
+                                        </div>
+                                        <label className="font-medium" style={{ margin: 0 }}>
+                                            Detalles de la Solicitud
+                                        </label>
                                     </div>
-                                    <div>
-                                        <label className="label" style={{ fontSize: 'var(--text-sm)' }}>Fecha Límite (opcional)</label>
-                                        <input
-                                            type="date"
-                                            className="form-input"
-                                            value={newRequest.fechaLimite}
-                                            onChange={(e) => setNewRequest({ ...newRequest, fechaLimite: e.target.value })}
-                                        />
+                                    
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                                        gap: 'var(--space-4)',
+                                        marginBottom: 'var(--space-4)'
+                                    }}>
+                                        <div className="form-group" style={{ marginBottom: 0 }}>
+                                            <label className="form-label">Título (opcional)</label>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                placeholder={REQUEST_TYPES[newRequest.tipo].label}
+                                                value={newRequest.titulo}
+                                                onChange={(e) => setNewRequest({ ...newRequest, titulo: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="form-group" style={{ marginBottom: 0 }}>
+                                            <label className="form-label">Fecha Límite (opcional)</label>
+                                            <input
+                                                type="date"
+                                                className="form-input"
+                                                value={newRequest.fechaLimite}
+                                                onChange={(e) => setNewRequest({ ...newRequest, fechaLimite: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
-                                </div>
 
-                                <div className="mb-4">
-                                    <label className="label" style={{ fontSize: 'var(--text-sm)' }}>Descripción (opcional)</label>
-                                    <textarea
-                                        className="form-input"
-                                        rows={2}
-                                        placeholder="Descripción de la solicitud..."
-                                        value={newRequest.descripcion}
-                                        onChange={(e) => setNewRequest({ ...newRequest, descripcion: e.target.value })}
-                                        style={{ resize: 'vertical', minHeight: '60px' }}
-                                    />
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label className="form-label">Descripción (opcional)</label>
+                                        <textarea
+                                            className="form-input"
+                                            rows={2}
+                                            placeholder="Agrega una descripción para dar contexto a los firmantes..."
+                                            value={newRequest.descripcion}
+                                            onChange={(e) => setNewRequest({ ...newRequest, descripcion: e.target.value })}
+                                            style={{ resize: 'vertical', minHeight: '70px' }}
+                                        />
+                                    </div>
                                 </div>
 
                                 {/* Step 3: Documents */}
-                                <div className="mb-4">
-                                    <label className="label" style={{ fontSize: 'var(--text-sm)' }}>
-                                        📎 Documentos Adjuntos
-                                        {REQUEST_TYPES[newRequest.tipo].requiresDoc && (
-                                            <span style={{ color: 'var(--danger-500)' }}> *</span>
+                                <div 
+                                    className="mb-5 p-4"
+                                    style={{ 
+                                        background: 'var(--surface-elevated)',
+                                        borderRadius: 'var(--radius-xl)',
+                                        border: '1px solid var(--surface-border)',
+                                    }}
+                                >
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div 
+                                            className="avatar avatar-sm"
+                                            style={{ background: 'var(--warning-500)' }}
+                                        >
+                                            <span style={{ fontSize: '12px', fontWeight: 700 }}>3</span>
+                                        </div>
+                                        <label className="font-medium" style={{ margin: 0 }}>
+                                            Documentos Adjuntos
+                                            {REQUEST_TYPES[newRequest.tipo].requiresDoc && (
+                                                <span style={{ color: 'var(--danger-500)', marginLeft: '4px' }}>*</span>
+                                            )}
+                                        </label>
+                                        {uploadedDocs.length > 0 && (
+                                            <span 
+                                                className="badge"
+                                                style={{ 
+                                                    background: 'var(--success-500)', 
+                                                    color: 'white',
+                                                    marginLeft: 'auto',
+                                                }}
+                                            >
+                                                {uploadedDocs.length} archivo{uploadedDocs.length !== 1 ? 's' : ''}
+                                            </span>
                                         )}
-                                    </label>
+                                    </div>
                                     <input
                                         ref={fileInputRef}
                                         type="file"
@@ -560,38 +952,65 @@ export default function SignatureRequests() {
                                         style={{ display: 'none' }}
                                     />
                                     <div
+                                        className="upload-zone"
                                         style={{
                                             border: '2px dashed var(--surface-border)',
                                             borderRadius: 'var(--radius-lg)',
-                                            padding: 'var(--space-4)',
+                                            padding: 'var(--space-5)',
                                             textAlign: 'center',
                                             cursor: 'pointer',
-                                            background: 'var(--surface-base)',
+                                            background: 'var(--surface-card)',
                                             transition: 'all 0.2s'
                                         }}
                                         onClick={() => fileInputRef.current?.click()}
                                     >
                                         {uploading ? (
-                                            <div className="spinner" />
+                                            <div className="flex items-center justify-center gap-3">
+                                                <div className="spinner" />
+                                                <span className="text-muted">Subiendo archivo...</span>
+                                            </div>
                                         ) : (
                                             <>
-                                                <FiUpload size={28} style={{ color: 'var(--text-muted)', marginBottom: '4px' }} />
-                                                <p className="text-muted" style={{ fontSize: 'var(--text-sm)', marginBottom: '2px' }}>Click para subir archivos</p>
-                                                <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>PDF, Word, Excel, Imágenes (máx 10MB)</p>
+                                                <div 
+                                                    className="avatar mb-3"
+                                                    style={{ 
+                                                        background: 'var(--surface-hover)',
+                                                        margin: '0 auto',
+                                                    }}
+                                                >
+                                                    <FiUpload size={24} style={{ color: 'var(--text-muted)' }} />
+                                                </div>
+                                                <p className="font-medium" style={{ marginBottom: '4px' }}>Click para subir archivos</p>
+                                                <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>PDF, Word, Excel, Imágenes (máx 10MB)</p>
                                             </>
                                         )}
                                     </div>
                                     {uploadedDocs.length > 0 && (
-                                        <div className="flex gap-2 flex-wrap mt-2">
+                                        <div className="flex gap-2 flex-wrap mt-3">
                                             {uploadedDocs.map((doc, idx) => (
-                                                <div key={idx} className="badge" style={{ background: 'var(--success-100)', color: 'var(--success-700)', padding: '4px 8px' }}>
-                                                    <FiFile size={12} /> {doc.nombre}
+                                                <div 
+                                                    key={idx} 
+                                                    className="flex items-center gap-2 p-2 pr-3"
+                                                    style={{ 
+                                                        background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(76, 175, 80, 0.05))',
+                                                        border: '1px solid var(--success-300)',
+                                                        borderRadius: 'var(--radius-md)',
+                                                    }}
+                                                >
+                                                    <div 
+                                                        className="avatar avatar-sm"
+                                                        style={{ background: 'var(--success-500)', width: '28px', height: '28px' }}
+                                                    >
+                                                        <FiFile size={12} />
+                                                    </div>
+                                                    <span className="text-sm font-medium">{doc.nombre}</span>
                                                     <button
                                                         type="button"
                                                         onClick={() => removeDocument(idx)}
-                                                        style={{ marginLeft: '4px', cursor: 'pointer', background: 'none', border: 'none', color: 'inherit' }}
+                                                        className="btn btn-ghost btn-sm"
+                                                        style={{ padding: '4px', marginLeft: '4px' }}
                                                     >
-                                                        <FiX size={12} />
+                                                        <FiX size={14} />
                                                     </button>
                                                 </div>
                                             ))}
@@ -600,128 +1019,213 @@ export default function SignatureRequests() {
                                 </div>
 
                                 {/* Step 4: Select Workers */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <label className="label" style={{ marginBottom: 0, fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            👥 Asignar Firmantes <span style={{ color: 'var(--danger-500)' }}>*</span>
-                                            <span className="badge" style={{
-                                                background: selectedWorkers.length > 0 ? 'var(--primary-500)' : 'var(--surface-border)',
-                                                color: selectedWorkers.length > 0 ? 'white' : 'var(--text-muted)',
-                                                fontSize: '11px',
-                                                padding: '2px 8px'
-                                            }}>
+                                <div 
+                                    className="p-4"
+                                    style={{ 
+                                        background: 'var(--surface-elevated)',
+                                        borderRadius: 'var(--radius-xl)',
+                                        border: '1px solid var(--surface-border)',
+                                    }}
+                                >
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <div 
+                                                className="avatar avatar-sm"
+                                                style={{ background: 'var(--success-500)' }}
+                                            >
+                                                <span style={{ fontSize: '12px', fontWeight: 700 }}>4</span>
+                                            </div>
+                                            <label className="font-medium" style={{ margin: 0 }}>
+                                                Asignar Firmantes
+                                                <span style={{ color: 'var(--danger-500)', marginLeft: '4px' }}>*</span>
+                                            </label>
+                                            <span 
+                                                className="badge"
+                                                style={{
+                                                    background: selectedWorkers.length > 0 ? 'var(--primary-500)' : 'var(--surface-hover)',
+                                                    color: selectedWorkers.length > 0 ? 'white' : 'var(--text-muted)',
+                                                }}
+                                            >
                                                 {selectedWorkers.length} de {workers.length}
                                             </span>
-                                        </label>
+                                        </div>
                                         <button
                                             type="button"
-                                            className="btn btn-ghost btn-sm"
+                                            className="btn btn-secondary btn-sm"
                                             onClick={selectAllWorkers}
-                                            style={{ fontSize: '12px', padding: '4px 8px' }}
                                         >
-                                            {selectedWorkers.length === workers.length ? '✓ Deseleccionar todos' : '☐ Seleccionar todos'}
+                                            {selectedWorkers.length === workers.length ? (
+                                                <><FiX size={14} /> Deseleccionar</>
+                                            ) : (
+                                                <><FiCheck size={14} /> Seleccionar todos</>
+                                            )}
                                         </button>
                                     </div>
                                     <div
                                         style={{
-                                            maxHeight: '250px',
+                                            maxHeight: '280px',
                                             overflowY: 'auto',
                                             padding: 'var(--space-2)',
-                                            background: 'var(--surface-base)',
-                                            borderRadius: 'var(--radius-md)',
+                                            background: 'var(--surface-card)',
+                                            borderRadius: 'var(--radius-lg)',
                                             border: '1px solid var(--surface-border)',
                                             display: 'grid',
-                                            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                                            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
                                             gap: 'var(--space-2)'
                                         }}
                                     >
-                                        {workers.map((worker) => (
-                                            <label
-                                                key={worker.workerId}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: 'var(--space-2)',
-                                                    padding: 'var(--space-2) var(--space-3)',
-                                                    borderRadius: 'var(--radius-md)',
-                                                    cursor: 'pointer',
-                                                    background: selectedWorkers.includes(worker.workerId) ? 'var(--primary-100)' : 'var(--surface-elevated)',
-                                                    border: selectedWorkers.includes(worker.workerId) ? '1px solid var(--primary-400)' : '1px solid var(--surface-border)',
-                                                    transition: 'all 0.15s'
-                                                }}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedWorkers.includes(worker.workerId)}
-                                                    onChange={() => toggleWorkerSelection(worker.workerId)}
-                                                    style={{ width: '16px', height: '16px', accentColor: 'var(--primary-500)' }}
-                                                />
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{
-                                                        fontSize: 'var(--text-sm)',
-                                                        fontWeight: '500',
+                                        {workers.map((worker) => {
+                                            const isSelected = selectedWorkers.includes(worker.workerId);
+                                            return (
+                                                <label
+                                                    key={worker.workerId}
+                                                    style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
-                                                        gap: '6px',
-                                                        flexWrap: 'wrap'
-                                                    }}>
-                                                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                            {worker.nombre} {worker.apellido}
-                                                        </span>
-                                                        {(worker as any).rol && (
-                                                            <span style={{
-                                                                fontSize: '9px',
-                                                                padding: '1px 5px',
-                                                                borderRadius: '8px',
-                                                                background: (worker as any).rol === 'prevencionista' ? 'var(--primary-500)' : 'var(--info-500)',
-                                                                color: 'white',
-                                                                textTransform: 'capitalize'
-                                                            }}>
-                                                                {(worker as any).rol}
-                                                            </span>
-                                                        )}
-                                                        {!worker.habilitado && (
-                                                            <span style={{
-                                                                fontSize: '9px',
-                                                                padding: '1px 5px',
-                                                                borderRadius: '8px',
-                                                                background: 'var(--warning-100)',
-                                                                color: 'var(--warning-700)'
-                                                            }}>
-                                                                Sin enrolar
-                                                            </span>
-                                                        )}
+                                                        gap: 'var(--space-3)',
+                                                        padding: 'var(--space-3)',
+                                                        borderRadius: 'var(--radius-md)',
+                                                        cursor: 'pointer',
+                                                        background: isSelected 
+                                                            ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.12), rgba(76, 175, 80, 0.06))' 
+                                                            : 'var(--surface-elevated)',
+                                                        border: isSelected 
+                                                            ? '1px solid var(--primary-400)' 
+                                                            : '1px solid var(--surface-border)',
+                                                        transition: 'all 0.15s',
+                                                        boxShadow: isSelected ? 'var(--shadow-sm)' : 'none',
+                                                    }}
+                                                >
+                                                    <div 
+                                                        className="avatar avatar-sm"
+                                                        style={{ 
+                                                            background: isSelected ? 'var(--primary-500)' : 'var(--surface-hover)',
+                                                            color: isSelected ? 'white' : 'var(--text-muted)',
+                                                            transition: 'all 0.15s',
+                                                        }}
+                                                    >
+                                                        {isSelected ? <FiCheck size={14} /> : <FiUsers size={14} />}
                                                     </div>
-                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>
-                                                        {worker.cargo} • {worker.rut}
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => toggleWorkerSelection(worker.workerId)}
+                                                        style={{ display: 'none' }}
+                                                    />
+                                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                                        <div style={{
+                                                            fontSize: 'var(--text-sm)',
+                                                            fontWeight: 500,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            flexWrap: 'wrap'
+                                                        }}>
+                                                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                {worker.nombre} {worker.apellido}
+                                                            </span>
+                                                            {(worker as any).rol && (
+                                                                <span style={{
+                                                                    fontSize: '9px',
+                                                                    padding: '2px 6px',
+                                                                    borderRadius: '10px',
+                                                                    background: (worker as any).rol === 'prevencionista' ? 'var(--primary-500)' : 'var(--info-500)',
+                                                                    color: 'white',
+                                                                    textTransform: 'capitalize'
+                                                                }}>
+                                                                    {(worker as any).rol}
+                                                                </span>
+                                                            )}
+                                                            {!worker.habilitado && (
+                                                                <span style={{
+                                                                    fontSize: '9px',
+                                                                    padding: '2px 6px',
+                                                                    borderRadius: '10px',
+                                                                    background: 'var(--warning-100)',
+                                                                    color: 'var(--warning-700)'
+                                                                }}>
+                                                                    Sin enrolar
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                                            {worker.cargo} • {worker.rut}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </label>
-                                        ))}
+                                                </label>
+                                            );
+                                        })}
                                     </div>
                                     {workers.filter(w => !w.habilitado).length > 0 && (
-                                        <p style={{ fontSize: '11px', color: 'var(--warning-600)', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                            ⚠️ Las personas sin enrolar pueden ser asignadas pero no podrán firmar hasta completar su enrolamiento
-                                        </p>
+                                        <div 
+                                            className="flex items-center gap-2 mt-3 p-3"
+                                            style={{ 
+                                                background: 'var(--warning-50)',
+                                                borderRadius: 'var(--radius-md)',
+                                                border: '1px solid var(--warning-200)',
+                                            }}
+                                        >
+                                            <FiAlertCircle style={{ color: 'var(--warning-600)', flexShrink: 0 }} />
+                                            <p className="text-sm" style={{ margin: 0, color: 'var(--warning-700)' }}>
+                                                Las personas sin enrolar pueden ser asignadas pero no podrán firmar hasta completar su enrolamiento
+                                            </p>
+                                        </div>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="modal-footer" style={{ flexShrink: 0, borderTop: '1px solid var(--surface-border)', padding: 'var(--space-4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
-                                    {selectedWorkers.length === 0 ? '⚠️ Selecciona al menos un firmante' : `✓ ${selectedWorkers.length} firmante(s)`}
-                                </span>
-                                <div className="flex gap-2">
-                                    <button type="button" className="btn btn-ghost" onClick={() => { resetForm(); setShowModal(false); }}>
-                                        Cancelar
+                            <div 
+                                className="modal-footer" 
+                                style={{ 
+                                    flexShrink: 0, 
+                                    borderTop: '1px solid var(--surface-border)', 
+                                    padding: 'var(--space-4) var(--space-5)', 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center',
+                                    background: 'var(--surface-elevated)',
+                                }}
+                            >
+                                <div className="flex items-center gap-2">
+                                    {selectedWorkers.length === 0 ? (
+                                        <>
+                                            <FiAlertCircle style={{ color: 'var(--warning-500)' }} />
+                                            <span className="text-sm text-muted">Selecciona al menos un firmante</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FiCheck style={{ color: 'var(--success-500)' }} />
+                                            <span className="text-sm\" style={{ color: 'var(--success-600)' }}>{selectedWorkers.length} firmante{selectedWorkers.length !== 1 ? 's' : ''} seleccionado{selectedWorkers.length !== 1 ? 's' : ''}</span>
+                                        </>
+                                    )}
+                                </div>
+                                <div className="flex gap-3">
+                                    <button 
+                                        type="button" 
+                                        className="btn btn-secondary" 
+                                        onClick={() => { resetForm(); setShowModal(false); }}
+                                    >
+                                        <FiX size={16} /> Cancelar
                                     </button>
                                     <button
                                         type="submit"
                                         className="btn btn-primary"
                                         disabled={submitting || selectedWorkers.length === 0 || (REQUEST_TYPES[newRequest.tipo].requiresDoc && uploadedDocs.length === 0)}
+                                        style={{ 
+                                            boxShadow: selectedWorkers.length > 0 ? 'var(--shadow-glow-primary)' : 'none',
+                                        }}
                                     >
-                                        {submitting ? <div className="spinner" style={{ width: '16px', height: '16px' }} /> : <FiCheck />}
-                                        Crear Solicitud
+                                        {submitting ? (
+                                            <>
+                                                <div className="spinner" style={{ width: '16px', height: '16px' }} />
+                                                Creando...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <FiSend size={16} />
+                                                Crear Solicitud
+                                            </>
+                                        )}
                                     </button>
                                 </div>
                             </div>

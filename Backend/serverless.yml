@@ -81,10 +81,16 @@ provider:
             - !Sub '${IncidentEvidenceBucket.Arn}/*'
         - Effect: Allow
           Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+          Resource:
+            - !Sub 'arn:aws:s3:::${self:custom.bucketName}/*'
+        - Effect: Allow
+          Action:
             - sns:Publish
           Resource:
             - !Ref IncidentNotificationTopic
-            - !Sub arn:aws:s3:::${self:custom.bucketName}/*
         - Effect: Allow
           Action:
             - bedrock:InvokeModel
