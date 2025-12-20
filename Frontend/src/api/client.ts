@@ -949,11 +949,7 @@ export const incidentsApi = {
         }),
 
     getStats: (params?: IncidentStatsParams) => {
-<<<<<<< HEAD
         const query = params ? new URLSearchParams(params as any).toString() : '';
-=======
-        const query = params ? new URLSearchParams(params as unknown as Record<string, string>).toString() : '';
->>>>>>> 142da99 (Cambios varios a funcionalidades de firmas y handlers relacionados)
         return apiRequest<IncidentStats>(`/incidents/stats${query ? `?${query}` : ''}`);
     },
 
