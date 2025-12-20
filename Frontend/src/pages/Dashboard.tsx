@@ -11,13 +11,11 @@ import {
     FiClock,
     FiPlus
 } from 'react-icons/fi';
-import { workersApi, activitiesApi, documentsApi } from '../api/client';
-import type { Worker, ActivityStats } from '../api/client';
+import { workersApi } from '../api/client';
+import type { Worker } from '../api/client';
 
 export default function Dashboard() {
     const [workers, setWorkers] = useState<Worker[]>([]);
-    const [stats, setStats] = useState<ActivityStats | null>(null);
-    const [documentCount, setDocumentCount] = useState(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -26,21 +24,13 @@ export default function Dashboard() {
 
     const loadData = async () => {
         try {
-            const [workersRes, statsRes, docsRes] = await Promise.all([
-                workersApi.list(),
-                activitiesApi.getStats(),
-                documentsApi.list()
-            ]);
-
+            // Solo llamamos a endpoints que sí existen
+            const workersRes = await workersApi.list();
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
             }
-            if (statsRes.success && statsRes.data) {
-                setStats(statsRes.data);
-            }
-            if (docsRes.success && docsRes.data) {
-                setDocumentCount(docsRes.data.documents.length);
-            }
+            // Los endpoints activities/stats y documents no existen en el backend
+            // Por ahora mostramos valores por defecto
         } catch (error) {
             console.error('Error loading dashboard data:', error);
         } finally {
@@ -60,25 +50,25 @@ export default function Dashboard() {
         {
             icon: FiFileText,
             label: 'Documentos',
-            value: documentCount,
+            value: 0,
             color: 'var(--info-500)',
-            change: '+12%',
+            change: '-',
             positive: true
         },
         {
             icon: FiCalendar,
             label: 'Actividades Completadas',
-            value: stats?.completadas || 0,
+            value: 0,
             color: 'var(--success-500)',
-            change: `${stats?.porcentajeCumplimiento || 0}%`,
+            change: '0%',
             positive: true
         },
         {
             icon: FiAlertTriangle,
             label: 'Incidentes Pendientes',
-            value: 2,
+            value: 0,
             color: 'var(--danger-500)',
-            change: '-3',
+            change: '-',
             positive: true
         }
     ];
@@ -180,7 +170,7 @@ export default function Dashboard() {
                                             </span>
                                         )}
                                         <span className={`badge badge-${activity.status === 'completed' ? 'success' :
-                                                activity.status === 'pending' ? 'warning' : 'neutral'
+                                            activity.status === 'pending' ? 'warning' : 'neutral'
                                             }`}>
                                             {activity.status === 'completed' ? 'Completada' :
                                                 activity.status === 'pending' ? 'Pendiente' : 'Programada'}
@@ -218,12 +208,12 @@ export default function Dashboard() {
                         <div className="mt-6">
                             <div className="flex justify-between mb-2">
                                 <span className="text-sm">Cumplimiento Mensual</span>
-                                <span className="text-sm font-bold">{stats?.porcentajeCumplimiento || 0}%</span>
+                                <span className="text-sm font-bold">0%</span>
                             </div>
                             <div className="progress">
                                 <div
                                     className="progress-bar"
-                                    style={{ width: `${stats?.porcentajeCumplimiento || 0}%` }}
+                                    style={{ width: '0%' }}
                                 />
                             </div>
                         </div>

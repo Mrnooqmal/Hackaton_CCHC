@@ -8,6 +8,7 @@ import Activities from './pages/Activities';
 import AIAssistant from './pages/AIAssistant';
 import Surveys from './pages/Surveys';
 import Incidents from './pages/Incidents';
+import Inbox from './pages/Inbox';
 import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
 import ChangePassword from './pages/ChangePassword';
@@ -96,6 +97,12 @@ function AppContent() {
           <Route path="/ai-assistant" element={
             <ProtectedRoute>
               <AIAssistant />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/inbox" element={
+            <ProtectedRoute>
+              <Inbox />
             </ProtectedRoute>
           } />
 

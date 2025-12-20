@@ -13,7 +13,8 @@ import {
     FiLogOut,
     FiUser,
     FiAlertTriangle,
-    FiClipboard
+    FiClipboard,
+    FiMail
 } from 'react-icons/fi';
 import { surveysApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -36,6 +37,7 @@ const navItems: NavSection[] = [
         section: 'Principal',
         items: [
             { path: '/', icon: FiHome, label: 'Dashboard' },
+            { path: '/inbox', icon: FiMail, label: 'Bandeja de Entrada' },
             { path: '/workers', icon: FiUsers, label: 'Trabajadores', permission: 'ver_trabajadores' },
             { path: '/workers/enroll', icon: FiShield, label: 'Enrolamiento', permission: 'ver_trabajadores' },
         ]
