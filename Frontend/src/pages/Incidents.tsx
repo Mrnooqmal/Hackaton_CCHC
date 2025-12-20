@@ -3,7 +3,7 @@ import Header from '../components/Header';
 import {
     FiPlus, FiAlertTriangle, FiFilter, FiX, FiUpload, FiImage,
     FiUser, FiMapPin, FiCalendar, FiTrendingUp, FiActivity,
-    FiAlertCircle, FiFileText, FiSave
+    FiAlertCircle, FiFileText, FiSave, FiChevronDown, FiChevronUp
 } from 'react-icons/fi';
 import { incidentsApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats } from '../api/client';
@@ -17,6 +17,7 @@ export default function Incidents() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+    const [showFilters, setShowFilters] = useState(false);
     const [filters, setFilters] = useState({
         tipo: '',
         estado: '',
@@ -246,8 +247,8 @@ export default function Incidents() {
 
                 {/* Stats Cards */}
                 {stats && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                        <div className="stat-card">
+                    <div className="flex gap-4 mb-6 flex-wrap">
+                        <div className="stat-card flex-1 min-w-[200px]">
                             <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-600))' }}>
                                 <FiFileText size={24} />
                             </div>
@@ -257,7 +258,7 @@ export default function Incidents() {
                             </div>
                         </div>
 
-                        <div className="stat-card">
+                        <div className="stat-card flex-1 min-w-[200px]">
                             <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))' }}>
                                 <FiTrendingUp size={24} />
                             </div>
@@ -267,23 +268,13 @@ export default function Incidents() {
                             </div>
                         </div>
 
-                        <div className="stat-card">
+                        <div className="stat-card flex-1 min-w-[200px]">
                             <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--danger-500), var(--danger-600))' }}>
                                 <FiCalendar size={24} />
                             </div>
                             <div className="stat-card-content">
                                 <div className="stat-card-label">Días Perdidos</div>
                                 <div className="stat-card-value">{stats.diasPerdidos}</div>
-                            </div>
-                        </div>
-
-                        <div className="stat-card">
-                            <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--info-500), var(--info-600))' }}>
-                                <FiActivity size={24} />
-                            </div>
-                            <div className="stat-card-content">
-                                <div className="stat-card-label">Siniestralidad</div>
-                                <div className="stat-card-value">{stats.siniestralidad.toFixed(2)}%</div>
                             </div>
                         </div>
                     </div>
@@ -296,18 +287,26 @@ export default function Incidents() {
                             <FiFilter />
                             <h3 className="font-semibold">Filtros</h3>
                         </div>
-                        {(filters.tipo || filters.estado || filters.fechaInicio || filters.fechaFin) && (
+                        <div className="flex gap-2">
+                            {(filters.tipo || filters.estado || filters.fechaInicio || filters.fechaFin) && (
+                                <button
+                                    className="btn btn-sm btn-secondary"
+                                    onClick={clearFilters}
+                                >
+                                    Limpiar Filtros
+                                </button>
+                            )}
                             <button
-                                className="btn btn-sm btn-secondary"
-                                onClick={clearFilters}
+                                className="btn btn-sm btn-secondary incidents-filter-toggle"
+                                onClick={() => setShowFilters(!showFilters)}
                             >
-                                Limpiar Filtros
+                                {showFilters ? <FiChevronUp /> : <FiChevronDown />}
                             </button>
-                        )}
+                        </div>
                     </div>
-                    <div className="p-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div className="form-group">
+                    <div className={`p-4 incidents-filters ${showFilters ? 'show' : ''}`}>
+                        <div className="flex gap-4 flex-wrap">
+                            <div className="form-group flex-1 min-w-[180px]">
                                 <label className="form-label">Tipo</label>
                                 <select
                                     className="form-input"
@@ -320,7 +319,7 @@ export default function Incidents() {
                                     <option value="condicion_subestandar">Condición Subestándar</option>
                                 </select>
                             </div>
-                            <div className="form-group">
+                            <div className="form-group flex-1 min-w-[180px]">
                                 <label className="form-label">Estado</label>
                                 <select
                                     className="form-input"
@@ -333,7 +332,7 @@ export default function Incidents() {
                                     <option value="cerrado">Cerrado</option>
                                 </select>
                             </div>
-                            <div className="form-group">
+                            <div className="form-group flex-1 min-w-[180px]">
                                 <label className="form-label">Fecha Inicio</label>
                                 <input
                                     type="date"
@@ -342,7 +341,7 @@ export default function Incidents() {
                                     onChange={(e) => setFilters({ ...filters, fechaInicio: e.target.value })}
                                 />
                             </div>
-                            <div className="form-group">
+                            <div className="form-group flex-1 min-w-[180px]">
                                 <label className="form-label">Fecha Fin</label>
                                 <input
                                     type="date"
