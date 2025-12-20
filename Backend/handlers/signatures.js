@@ -137,6 +137,7 @@ module.exports.create = async (event) => {
 
 /**
  * GET /signatures/worker/{workerId} - Obtener historial de firmas de un trabajador
+ * También busca por signerId para compatibilidad con userId
  */
 module.exports.getByWorker = async (event) => {
     try {
@@ -146,10 +147,11 @@ module.exports.getByWorker = async (event) => {
             return error('ID de trabajador requerido');
         }
 
+        // Buscar por workerId O por signerId (para compatibilidad con userId)
         const result = await docClient.send(
             new ScanCommand({
                 TableName: SIGNATURES_TABLE,
-                FilterExpression: 'workerId = :workerId',
+                FilterExpression: 'workerId = :workerId OR signerId = :workerId',
                 ExpressionAttributeValues: {
                     ':workerId': workerId,
                 },
