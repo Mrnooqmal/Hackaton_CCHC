@@ -401,7 +401,7 @@ export default function Sidebar() {
 
                 /* Inbox badge styles */
                 .inbox-badge {
-                    background: var(--primary-500) !important;
+                    background: var(--danger-500) !important;
                     animation: pulse-badge 2s infinite;
                 }
                 @keyframes pulse-badge {
