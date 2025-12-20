@@ -301,22 +301,47 @@ module.exports.getPendingByWorker = async (event) => {
 
 /**
  * GET /signature-requests/history/{workerId} - Historial de firmas de un trabajador
+ * Resuelve tanto workerId como userId para asegurar historial completo
  */
 module.exports.getHistoryByWorker = async (event) => {
     try {
-        const { workerId } = event.pathParameters || {};
+        const { workerId: inputId } = event.pathParameters || {};
 
-        if (!workerId) {
+        if (!inputId) {
             return error('ID de trabajador requerido');
         }
 
-        // Obtener todas las firmas del trabajador
+        // 1. Resolver ambos IDs (workerId <-> userId)
+        let workerId = inputId;
+        let userId = inputId;
+
+        // Buscar en tabla Workers
+        const workerRes = await docClient.send(new GetCommand({
+            TableName: WORKERS_TABLE,
+            Key: { workerId: inputId }
+        }));
+
+        if (workerRes.Item) {
+            userId = workerRes.Item.userId || userId;
+        } else {
+            // Buscar en tabla Users
+            const userRes = await docClient.send(new GetCommand({
+                TableName: USERS_TABLE,
+                Key: { userId: inputId }
+            }));
+            if (userRes.Item) {
+                workerId = userRes.Item.workerId || workerId;
+            }
+        }
+
+        // 2. Obtener todas las firmas asociadas a cualquiera de los IDs
         const signaturesResult = await docClient.send(
             new ScanCommand({
                 TableName: SIGNATURES_TABLE,
-                FilterExpression: 'workerId = :workerId',
+                FilterExpression: 'workerId = :wId OR userId = :uId OR referenciaId = :wId OR referenciaId = :uId',
                 ExpressionAttributeValues: {
-                    ':workerId': workerId,
+                    ':wId': workerId,
+                    ':uId': userId,
                 },
             })
         );
@@ -325,7 +350,7 @@ module.exports.getHistoryByWorker = async (event) => {
             new Date(b.timestamp) - new Date(a.timestamp)
         );
 
-        // Obtener información de las solicitudes asociadas
+        // 3. Obtener información de las solicitudes asociadas
         const historial = [];
         for (const firma of firmas) {
             if (firma.requestId) {
@@ -347,6 +372,7 @@ module.exports.getHistoryByWorker = async (event) => {
         return success({
             historial,
             totalFirmas: firmas.length,
+            resolvedIds: { workerId, userId }
         });
     } catch (err) {
         console.error('Error getting worker history:', err);

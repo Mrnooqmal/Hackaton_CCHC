@@ -723,6 +723,11 @@ export const surveysApi = {
 };
 
 // Incidents API Types
+export interface IncidentEvidencePreview {
+    key: string;
+    url?: string;
+}
+
 export interface Incident {
     incidentId: string;
     tipo: 'accidente' | 'incidente' | 'condicion_subestandar';
@@ -753,6 +758,7 @@ export interface Incident {
     empresaId: string;
     createdAt: string;
     updatedAt: string;
+    evidencePreviews?: IncidentEvidencePreview[];
 }
 
 export interface Investigation {
