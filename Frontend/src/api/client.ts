@@ -71,6 +71,76 @@ export const workersApi = {
         }),
 };
 
+// Users API
+export const usersApi = {
+    create: (user: CreateUserData) =>
+        apiRequest<User>('/users', {
+            method: 'POST',
+            body: JSON.stringify(user),
+        }),
+
+    list: (params?: UserListParams) => {
+        const query = new URLSearchParams(params as Record<string, string>).toString();
+        return apiRequest<{ total: number; users: User[]; roles: Record<string, any> }>(`/users${query ? `?${query}` : ''}`);
+    },
+
+    get: (id: string) =>
+        apiRequest<User>(`/users/${id}`),
+
+    getByRut: (rut: string) =>
+        apiRequest<User>(`/users/rut/${encodeURIComponent(rut)}`),
+
+    update: (id: string, data: Partial<User>) =>
+        apiRequest<User>(`/users/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+
+    resetPassword: (id: string) =>
+        apiRequest<{ message: string; passwordTemporal: string }>(`/users/${id}/reset-password`, {
+            method: 'POST',
+        }),
+
+    completeUserEnrollment: (id: string, pin: string) =>
+        apiRequest<EnrollmentResult>(`/users/${id}/complete-user-enrollment`, {
+            method: 'POST',
+            body: JSON.stringify({ pin }),
+        }),
+};
+
+// Auth API
+export const authApi = {
+    login: (rut: string, password: string) =>
+        apiRequest<LoginResponse>('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ rut, password }),
+        }),
+
+    changePassword: (data: ChangePasswordData) =>
+        apiRequest<{ message: string }>('/auth/change-password', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    logout: (sessionId: string) =>
+        apiRequest<{ message: string }>('/auth/logout', {
+            method: 'POST',
+            body: JSON.stringify({ sessionId }),
+        }),
+
+    me: (token: string) =>
+        apiRequest<{ user: User; session: SessionInfo }>('/auth/me', {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` },
+        }),
+
+    validateToken: (token: string) =>
+        apiRequest<{ valid: boolean; userId?: string; expiresAt?: string }>('/auth/validate-token', {
+            method: 'POST',
+            body: JSON.stringify({ token }),
+        }),
+};
+
 // Documents API
 export const documentsApi = {
     list: (params?: DocumentListParams) => {
@@ -159,6 +229,59 @@ export interface Worker {
     firmas?: Signature[];
     createdAt: string;
     updatedAt: string;
+}
+
+// User & Auth Types
+export interface User {
+    userId: string;
+    rut: string;
+    nombre: string;
+    apellido: string;
+    rol: 'admin' | 'prevencionista' | 'trabajador';
+    email?: string;
+    estado: 'pendiente' | 'activo' | 'suspendido';
+    habilitado: boolean;
+    passwordTemporal?: boolean;
+    ultimoAcceso?: string;
+    creadoPor?: string;
+}
+
+export interface CreateUserData {
+    rut: string;
+    nombre: string;
+    apellido: string;
+    rol: string;
+    email?: string;
+    cargo?: string;
+    empresaId?: string;
+}
+
+export interface UserListParams {
+    empresaId?: string;
+    rol?: string;
+    estado?: string;
+}
+
+export interface LoginResponse {
+    token: string;
+    sessionId: string;
+    expiresAt: string;
+    user: User;
+    requiereCambioPassword: boolean;
+    requiereEnrolamiento: boolean;
+}
+
+export interface ChangePasswordData {
+    userId: string;
+    passwordActual: string;
+    passwordNuevo: string;
+    confirmarPassword: string;
+}
+
+export interface SessionInfo {
+    sessionId: string;
+    expiresAt: string;
+    lastActivity: string;
 }
 
 export interface CreateWorkerData {

@@ -7,16 +7,32 @@ import {
     FiAlertTriangle,
     FiMessageSquare,
     FiSettings,
-    FiShield
+    FiShield,
+    FiLogOut,
+    FiUser
 } from 'react-icons/fi';
+import { useAuth } from '../context/AuthContext';
 
-const navItems = [
+interface NavItem {
+    path: string;
+    icon: any;
+    label: string;
+    permission?: string;
+    badge?: number;
+}
+
+interface NavSection {
+    section: string;
+    items: NavItem[];
+}
+
+const navItems: NavSection[] = [
     {
         section: 'Principal',
         items: [
             { path: '/', icon: FiHome, label: 'Dashboard' },
-            { path: '/workers', icon: FiUsers, label: 'Trabajadores' },
-            { path: '/workers/enroll', icon: FiShield, label: 'Enrolamiento' },
+            { path: '/workers', icon: FiUsers, label: 'Trabajadores', permission: 'ver_trabajadores' },
+            { path: '/workers/enroll', icon: FiShield, label: 'Enrolamiento', permission: 'ver_trabajadores' },
         ]
     },
     {
@@ -30,6 +46,7 @@ const navItems = [
     {
         section: 'Herramientas',
         items: [
+            { path: '/users', icon: FiUser, label: 'Usuarios', permission: 'crear_usuarios' },
             { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
             { path: '/settings', icon: FiSettings, label: 'Configuración' },
         ]
@@ -38,6 +55,13 @@ const navItems = [
 
 export default function Sidebar() {
     const location = useLocation();
+    const { user, logout, hasPermission } = useAuth();
+
+    const handleLogout = () => {
+        if (confirm('¿Cerrar sesión?')) {
+            logout();
+        }
+    };
 
     return (
         <aside className="sidebar">
@@ -52,32 +76,105 @@ export default function Sidebar() {
             </div>
 
             <nav className="sidebar-nav">
-                {navItems.map((section) => (
-                    <div key={section.section} className="nav-section">
-                        <div className="nav-section-title">{section.section}</div>
-                        {section.items.map((item) => {
-                            const Icon = item.icon;
-                            const isActive = location.pathname === item.path;
+                {navItems.map((section) => {
+                    // Filtrar items según permisos
+                    const visibleItems = section.items.filter(item =>
+                        !item.permission || hasPermission(item.permission)
+                    );
 
-                            return (
-                                <Link
-                                    key={item.path}
-                                    to={item.path}
-                                    className={`nav-item ${isActive ? 'active' : ''}`}
-                                >
-                                    <span className="nav-item-icon">
-                                        <Icon />
-                                    </span>
-                                    <span>{item.label}</span>
-                                    {item.badge && (
-                                        <span className="nav-item-badge">{item.badge}</span>
-                                    )}
-                                </Link>
-                            );
-                        })}
-                    </div>
-                ))}
+                    if (visibleItems.length === 0) return null;
+
+                    return (
+                        <div key={section.section} className="nav-section">
+                            <div className="nav-section-title">{section.section}</div>
+                            {visibleItems.map((item) => {
+                                const Icon = item.icon;
+                                const isActive = location.pathname === item.path;
+
+                                return (
+                                    <Link
+                                        key={item.path}
+                                        to={item.path}
+                                        className={`nav-item ${isActive ? 'active' : ''}`}
+                                    >
+                                        <span className="nav-item-icon">
+                                            <Icon />
+                                        </span>
+                                        <span>{item.label}</span>
+                                        {item.badge && (
+                                            <span className="nav-item-badge">{item.badge}</span>
+                                        )}
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    );
+                })}
             </nav>
+
+            {user && (
+                <div className="sidebar-footer">
+                    <div className="user-info">
+                        <div className="avatar avatar-sm bg-primary-500">
+                            {user.nombre[0]}{user.apellido?.[0] || ''}
+                        </div>
+                        <div className="user-details overflow-hidden">
+                            <div className="user-name truncate">{user.nombre}</div>
+                            <div className="user-role uppercase truncate">{user.rol}</div>
+                        </div>
+                        <button
+                            className="logout-btn"
+                            onClick={handleLogout}
+                            title="Cerrar sesión"
+                        >
+                            <FiLogOut />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <style>{`
+                .sidebar-footer {
+                    padding: var(--space-4);
+                    border-top: 1px solid var(--surface-border);
+                    margin-top: auto;
+                }
+                .user-info {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-3);
+                    padding: var(--space-2);
+                    background: var(--surface-elevated);
+                    border-radius: var(--radius-md);
+                }
+                .user-details {
+                    flex: 1;
+                }
+                .user-name {
+                    font-size: var(--text-sm);
+                    font-weight: 600;
+                    color: var(--text-primary);
+                }
+                .user-role {
+                    font-size: 10px;
+                    color: var(--text-muted);
+                    letter-spacing: 0.05em;
+                }
+                .logout-btn {
+                    background: none;
+                    border: none;
+                    color: var(--text-muted);
+                    cursor: pointer;
+                    padding: var(--space-2);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: color 0.2s;
+                }
+                .logout-btn:hover {
+                    color: var(--danger-500);
+                }
+            `}</style>
         </aside>
     );
 }

@@ -3,7 +3,6 @@ import { FiLock, FiEye, FiEyeOff, FiAlertCircle, FiCheck } from 'react-icons/fi'
 
 interface PinInputProps {
     onComplete: (pin: string) => void;
-    onError?: () => void;
     mode?: 'create' | 'verify' | 'confirm';
     title?: string;
     subtitle?: string;
@@ -14,7 +13,6 @@ interface PinInputProps {
 
 export default function PinInput({
     onComplete,
-    onError,
     mode = 'verify',
     title,
     subtitle,
@@ -150,7 +148,7 @@ export default function PinInput({
                 {pin.map((digit, index) => (
                     <input
                         key={index}
-                        ref={(el) => (inputRefs.current[index] = el)}
+                        ref={(el) => { inputRefs.current[index] = el; }}
                         type={showPin ? 'text' : 'password'}
                         inputMode="numeric"
                         pattern="[0-9]*"

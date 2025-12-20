@@ -114,11 +114,67 @@ const validatePin = (pin) => {
     return { valid: true };
 };
 
+/**
+ * Hashea una contraseña alfanumérica
+ * @param {string} password - Contraseña
+ * @param {string} userId - ID del usuario
+ * @returns {string} Hash de la contraseña
+ */
+const hashPassword = (password, userId) => {
+    if (!password || password.length < 4) {
+        throw new Error('La contraseña debe tener al menos 4 caracteres');
+    }
+
+    return crypto
+        .createHash('sha256')
+        .update(`${password}-${userId}-${PIN_SALT}`)
+        .digest('hex');
+};
+
+/**
+ * Verifica si una contraseña coincide con el hash almacenado
+ * @param {string} password - Contraseña ingresada
+ * @param {string} storedHash - Hash almacenado
+ * @param {string} userId - ID del usuario
+ * @returns {boolean}
+ */
+const verifyPassword = (password, storedHash, userId) => {
+    if (!password || !storedHash || !userId) return false;
+
+    try {
+        const inputHash = hashPassword(password, userId);
+        return crypto.timingSafeEqual(
+            Buffer.from(inputHash, 'hex'),
+            Buffer.from(storedHash, 'hex')
+        );
+    } catch {
+        return false;
+    }
+};
+
+/**
+ * Genera una contraseña temporal robusta
+ * @param {number} length - Longitud de la contraseña
+ * @returns {string}
+ */
+const generateTempPassword = (length = 10) => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    let result = '';
+    const randomBytes = crypto.randomBytes(length);
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(randomBytes[i] % chars.length);
+    }
+    return result;
+};
+
 module.exports = {
     validateRut,
     validateRequired,
     generateSignatureToken,
     hashPin,
     verifyPin,
-    validatePin
+    validatePin,
+    hashPassword,
+    verifyPassword,
+    generateTempPassword
 };

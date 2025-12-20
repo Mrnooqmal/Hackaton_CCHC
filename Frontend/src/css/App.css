@@ -12,6 +12,17 @@
   max-width: calc(100vw - var(--sidebar-width));
 }
 
+.auth-mode {
+  justify-content: center;
+  align-items: center;
+  background: var(--surface-base);
+}
+
+.auth-content {
+  flex: 1;
+  width: 100%;
+}
+
 /* Sidebar */
 .sidebar {
   position: fixed;

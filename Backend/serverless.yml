@@ -22,6 +22,8 @@ provider:
     DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
     ACTIVITIES_TABLE: ${self:service}-activities-${self:provider.stage}
     SIGNATURES_TABLE: ${self:service}-signatures-${self:provider.stage}
+    USERS_TABLE: ${self:service}-users-${self:provider.stage}
+    SESSIONS_TABLE: ${self:service}-sessions-${self:provider.stage}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
   httpApi:
     cors:
@@ -52,6 +54,8 @@ provider:
             - !GetAtt DocumentsTable.Arn
             - !GetAtt ActivitiesTable.Arn
             - !GetAtt SignaturesTable.Arn
+            - !GetAtt UsersTable.Arn
+            - !GetAtt SessionsTable.Arn
 
 package:
   individually: false
@@ -64,6 +68,92 @@ package:
     - '!**/__tests__/**'
 
 functions:
+  # Auth (Autenticación)
+  authLogin:
+    handler: handlers/auth.login
+    events:
+      - httpApi:
+          path: /auth/login
+          method: POST
+
+  authChangePassword:
+    handler: handlers/auth.changePassword
+    events:
+      - httpApi:
+          path: /auth/change-password
+          method: POST
+
+  authLogout:
+    handler: handlers/auth.logout
+    events:
+      - httpApi:
+          path: /auth/logout
+          method: POST
+
+  authMe:
+    handler: handlers/auth.me
+    events:
+      - httpApi:
+          path: /auth/me
+          method: GET
+
+  authValidateToken:
+    handler: handlers/auth.validateToken
+    events:
+      - httpApi:
+          path: /auth/validate-token
+          method: POST
+
+  # Users (Usuarios)
+  createUser:
+    handler: handlers/users.create
+    events:
+      - httpApi:
+          path: /users
+          method: POST
+
+  listUsers:
+    handler: handlers/users.list
+    events:
+      - httpApi:
+          path: /users
+          method: GET
+
+  getUser:
+    handler: handlers/users.get
+    events:
+      - httpApi:
+          path: /users/{id}
+          method: GET
+
+  getUserByRut:
+    handler: handlers/users.getByRut
+    events:
+      - httpApi:
+          path: /users/rut/{rut}
+          method: GET
+
+  updateUser:
+    handler: handlers/users.update
+    events:
+      - httpApi:
+          path: /users/{id}
+          method: PUT
+
+  resetUserPassword:
+    handler: handlers/users.resetPassword
+    events:
+      - httpApi:
+          path: /users/{id}/reset-password
+          method: POST
+
+  completeUserEnrollment:
+    handler: handlers/users.completeEnrollment
+    events:
+      - httpApi:
+          path: /users/{id}/complete-enrollment
+          method: POST
+
   # Workers (Trabajadores/Enrolamiento)
   createWorker:
     handler: handlers/workers.create
@@ -328,4 +418,28 @@ resources:
             AttributeType: S
         KeySchema:
           - AttributeName: signatureId
+            KeyType: HASH
+
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.USERS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+
+    SessionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.SESSIONS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: sessionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: sessionId
             KeyType: HASH
