@@ -41,18 +41,11 @@ export default function ChangePassword() {
             if (response.success) {
                 setSuccess(true);
 
-                // Si el usuario no está habilitado, redirigir al enrolamiento (sin logout)
-                if (!user?.habilitado) {
-                    setTimeout(() => {
-                        navigate('/enroll-me', { replace: true });
-                    }, 1500);
-                } else {
-                    // Si ya está habilitado, hacer logout para que inicie con la nueva contraseña
-                    setTimeout(async () => {
-                        await logout();
-                        navigate('/login', { replace: true });
-                    }, 2000);
-                }
+                // Siempre hacer logout y redirigir al login para asegurar limpieza de estado
+                setTimeout(async () => {
+                    await logout();
+                    navigate('/login', { replace: true });
+                }, 2000);
             } else {
                 setError(response.error || 'Error al cambiar la contraseña');
             }
@@ -72,9 +65,7 @@ export default function ChangePassword() {
                     </div>
                     <h2 className="text-2xl font-bold mb-2">¡Contraseña Actualizada!</h2>
                     <p className="text-text-muted mb-6">
-                        {user?.habilitado
-                            ? 'Su contraseña ha sido cambiada exitosamente. Será redirigido al login para ingresar nuevamente.'
-                            : 'Su contraseña ha sido cambiada exitosamente. Ahora procederemos con su enrolamiento de firma digital.'}
+                        Su contraseña ha sido cambiada exitosamente. Será redirigido al login para iniciar sesión con sus nuevas credenciales.
                     </p>
                 </div>
             </div>

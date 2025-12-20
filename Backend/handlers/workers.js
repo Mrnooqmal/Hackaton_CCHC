@@ -490,7 +490,21 @@ module.exports.completeEnrollment = async (event) => {
         const worker = workerResult.Item;
 
         if (worker.habilitado) {
-            return error('El trabajador ya está habilitado', 400);
+            // Si el trabajador ya está habilitado, verificar si el usuario vinculado también lo está
+            if (worker.userId) {
+                const userRes = await docClient.send(
+                    new GetCommand({
+                        TableName: USERS_TABLE,
+                        Key: { userId: worker.userId },
+                    })
+                );
+                if (userRes.Item && userRes.Item.habilitado) {
+                    return error('El trabajador y el usuario ya están habilitados', 400);
+                }
+                console.log('Worker enabled but user not. Allowing sync enrollment.');
+            } else {
+                return error('El trabajador ya está habilitado', 400);
+            }
         }
 
         if (!worker.pinHash) {

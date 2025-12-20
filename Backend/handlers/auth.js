@@ -113,6 +113,32 @@ module.exports.login = async (event) => {
         // Preparar respuesta (sin exponer hashes)
         const { passwordHash, pinHash, ...safeUser } = user;
 
+        // Verificar enrolamiento de forma más robusta sincronizando con Workers
+        let requiereEnrolamiento = !user.habilitado;
+
+        // Si el usuario tiene un workerId, verificar también en la tabla de Workers
+        if (user.workerId) {
+            try {
+                const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
+                const workerResult = await docClient.send(
+                    new GetCommand({
+                        TableName: WORKERS_TABLE,
+                        Key: { workerId: user.workerId },
+                    })
+                );
+
+                if (workerResult.Item) {
+                    const worker = workerResult.Item;
+                    // Si el trabajador no está habilitado, forzar enrolamiento
+                    if (!worker.habilitado) {
+                        requiereEnrolamiento = true;
+                    }
+                }
+            } catch (workerError) {
+                console.error('Error checking worker status during login:', workerError);
+            }
+        }
+
         return success({
             message: 'Inicio de sesión exitoso',
             token,
@@ -120,7 +146,7 @@ module.exports.login = async (event) => {
             expiresAt: expiresAt.toISOString(),
             user: safeUser,
             requiereCambioPassword: user.passwordTemporal,
-            requiereEnrolamiento: !user.habilitado
+            requiereEnrolamiento: requiereEnrolamiento
         });
     } catch (err) {
         console.error('Error in login:', err);
