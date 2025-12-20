@@ -15,7 +15,9 @@ import {
     FiClipboard,
     FiMail,
     FiBell,
-    FiX
+    FiX,
+    FiMoon,
+    FiSun
 } from 'react-icons/fi';
 import { surveysApi, workersApi, inboxApi, type InboxMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -72,6 +74,12 @@ const navItems: NavSection[] = [
 export default function Sidebar() {
     const location = useLocation();
     const { user, hasPermission } = useAuth();
+    const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+        if (typeof window !== 'undefined') {
+            return window.localStorage.getItem('theme') === 'light' ? 'light' : 'dark';
+        }
+        return 'dark';
+    });
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
     const [workerId, setWorkerId] = useState<string | null>(null);
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
@@ -200,6 +208,17 @@ export default function Sidebar() {
         };
     }, [workerId, canRespondSurveys]);
 
+    useEffect(() => {
+        if (typeof document === 'undefined') return;
+        const root = document.documentElement;
+        root.classList.toggle('theme-light', theme === 'light');
+        localStorage.setItem('theme', theme);
+    }, [theme]);
+
+    const toggleTheme = () => {
+        setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    };
+
     return (
         <aside className="sidebar">
             <div className="sidebar-header">
@@ -241,7 +260,7 @@ export default function Sidebar() {
                                         </span>
                                         <span>{item.label}</span>
                                         {showSurveyBadge && (
-                                            <span className="nav-item-badge">
+                                            <span className="nav-item-badge survey-badge">
                                                 {pendingBadgeLabel}
                                             </span>
                                         )}
@@ -305,9 +324,26 @@ export default function Sidebar() {
                 </button>
             )}
 
+            <div className="sidebar-theme-toggle">
+                <button className="btn btn-ghost" onClick={toggleTheme}>
+                    {theme === 'dark' ? (
+                        <>
+                            <FiSun />
+                            Modo claro
+                        </>
+                    ) : (
+                        <>
+                            <FiMoon />
+                            Modo oscuro
+                        </>
+                    )}
+                </button>
+            </div>
+
             <style>{`
-                /* Inbox badge styles */
-                .inbox-badge {
+                /* Attention badge styles */
+                .inbox-badge,
+                .survey-badge {
                     background: var(--danger-500) !important;
                     animation: pulse-badge 2s infinite;
                 }
@@ -459,6 +495,17 @@ export default function Sidebar() {
                     .notification-popup {
                         display: none;
                     }
+                }
+
+                .sidebar-theme-toggle {
+                    margin: var(--space-4);
+                }
+                .sidebar-theme-toggle .btn {
+                    width: 100%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: var(--space-2);
                 }
             `}</style>
         </aside>
