@@ -268,7 +268,7 @@ export interface UserListParams {
     estado?: string;
 }
 
-export interface LoginResponse {
+export interface IncidentStatsParams {
     token: string;
     sessionId: string;
     expiresAt: string;
@@ -605,7 +605,6 @@ export interface ActivityStats {
     porcentajeCumplimiento: number;
 }
 
-<<<<<<< HEAD
 export type SurveyAudienceType = 'todos' | 'cargo' | 'personalizado';
 export type SurveyQuestionType = 'multiple' | 'escala' | 'abierta';
 
@@ -666,42 +665,10 @@ export interface Survey {
     preguntas: SurveyQuestion[];
     recipients: SurveyRecipient[];
     stats?: SurveyStats;
-=======
-// Incidents API Types
-export interface Incident {
-    incidentId: string;
-    tipo: 'accidente' | 'incidente' | 'condicion_subestandar';
-    centroTrabajo: string;
-    trabajador: {
-        nombre: string;
-        rut: string;
-        genero: string;
-        cargo: string;
-    };
-    fecha: string;
-    hora: string;
-    descripcion: string;
-    gravedad: 'leve' | 'grave' | 'fatal';
-    diasPerdidos?: number;
-    evidencias: string[]; // S3 keys
-    documentos?: {
-        diat?: string;
-        diep?: string;
-    };
-    investigaciones: {
-        prevencionista?: Investigation;
-        jefeDirecto?: Investigation;
-        comiteParitario?: Investigation;
-    };
-    estado: 'reportado' | 'en_investigacion' | 'cerrado';
-    reportadoPor: string;
-    empresaId: string;
->>>>>>> refs/remotes/origin/main
-    createdAt: string;
-    updatedAt: string;
+    createdAt?: string;
+    updatedAt?: string;
 }
 
-<<<<<<< HEAD
 export interface CreateSurveyPayload {
     titulo: string;
     descripcion?: string;
@@ -741,7 +708,41 @@ export const surveysApi = {
                 body: JSON.stringify(data),
             }
         ),
-=======
+};
+
+// Incidents API Types
+export interface Incident {
+    incidentId: string;
+    tipo: 'accidente' | 'incidente' | 'condicion_subestandar';
+    centroTrabajo: string;
+    trabajador: {
+        nombre: string;
+        rut: string;
+        genero: string;
+        cargo: string;
+    };
+    fecha: string;
+    hora: string;
+    descripcion: string;
+    gravedad: 'leve' | 'grave' | 'fatal';
+    diasPerdidos?: number;
+    evidencias: string[];
+    documentos?: {
+        diat?: string;
+        diep?: string;
+    };
+    investigaciones: {
+        prevencionista?: Investigation;
+        jefeDirecto?: Investigation;
+        comiteParitario?: Investigation;
+    };
+    estado: 'reportado' | 'en_investigacion' | 'cerrado';
+    reportadoPor: string;
+    empresaId: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface Investigation {
     investigador: string;
     fecha: string;
@@ -823,7 +824,7 @@ export interface IncidentStats {
     totalIncidentes: number;
 }
 
-export interface StatsParams {
+export interface IncidentStatsParams {
     empresaId?: string;
     mes?: string;
     masaLaboral?: number;
@@ -857,9 +858,8 @@ export const incidentsApi = {
             body: JSON.stringify(data),
         }),
 
-    getStats: (params?: StatsParams) => {
+    getStats: (params?: IncidentStatsParams) => {
         const query = new URLSearchParams(params as Record<string, string>).toString();
         return apiRequest<IncidentStats>(`/incidents/stats${query ? `?${query}` : ''}`);
     },
->>>>>>> refs/remotes/origin/main
 };
