@@ -134,11 +134,11 @@
 }
 
 :root.theme-light {
-  --surface-bg: #f7fafc;
-  --surface-card: #ffffff;
-  --surface-elevated: #f8fafc;
-  --surface-hover: #edf2f7;
-  --surface-border: #e2e8f0;
+  --surface-bg: #edf2f7;
+  --surface-card: #fefefe;
+  --surface-elevated: #f1f5f9;
+  --surface-hover: #e2e8f0;
+  --surface-border: #cbd5f5;
   --header-bg: rgba(255, 255, 255, 0.9);
   --header-border: #e2e8f0;
 
