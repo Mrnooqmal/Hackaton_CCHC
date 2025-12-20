@@ -51,7 +51,7 @@ const navItems: NavSection[] = [
             { path: '/documents', icon: FiFileText, label: 'Documentos' },
             { path: '/activities', icon: FiCalendar, label: 'Actividades' },
             { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
-            { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes', badge: 2 },
+            { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
         ]
     },
     {

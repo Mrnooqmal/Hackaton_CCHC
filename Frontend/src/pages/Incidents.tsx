@@ -247,8 +247,8 @@ export default function Incidents() {
 
                 {/* Stats Cards */}
                 {stats && (
-                    <div className="flex gap-4 mb-6 flex-wrap">
-                        <div className="stat-card flex-1 min-w-[200px]">
+                    <div className="stats-grid mb-6">
+                        <div className="stat-card">
                             <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-600))' }}>
                                 <FiFileText size={24} />
                             </div>
@@ -258,7 +258,7 @@ export default function Incidents() {
                             </div>
                         </div>
 
-                        <div className="stat-card flex-1 min-w-[200px]">
+                        <div className="stat-card">
                             <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))' }}>
                                 <FiTrendingUp size={24} />
                             </div>
@@ -268,7 +268,7 @@ export default function Incidents() {
                             </div>
                         </div>
 
-                        <div className="stat-card flex-1 min-w-[200px]">
+                        <div className="stat-card">
                             <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--danger-500), var(--danger-600))' }}>
                                 <FiCalendar size={24} />
                             </div>
