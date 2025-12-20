@@ -300,21 +300,49 @@ module.exports.get = async (event) => {
 
 /**
  * GET /signatures/worker/{workerId} - Historial de firmas de un trabajador
+ * Soporta buscar tanto por workerId como por userId resolviendo la relación entre ambos
  */
 module.exports.getByWorker = async (event) => {
     try {
-        const { workerId } = event.pathParameters || {};
+        const { workerId: inputId } = event.pathParameters || {};
 
-        if (!workerId) {
-            return error('ID de trabajador requerido');
+        if (!inputId) {
+            return error('ID requerido');
         }
 
+        // 1. Intentar encontrar los IDs vinculados (workerId <-> userId)
+        let workerId = inputId;
+        let userId = inputId;
+
+        // Buscar en tabla Workers
+        const workerRes = await docClient.send(new GetCommand({
+            TableName: WORKERS_TABLE,
+            Key: { workerId: inputId }
+        }));
+
+        if (workerRes.Item) {
+            userId = workerRes.Item.userId || userId;
+        } else {
+            // Si no está en Workers, buscar en tabla Users
+            const userRes = await docClient.send(new GetCommand({
+                TableName: USERS_TABLE,
+                Key: { userId: inputId }
+            }));
+            if (userRes.Item) {
+                workerId = userRes.Item.workerId || workerId;
+            }
+        }
+
+        console.log(`Searching signatures for workerId: ${workerId} and userId: ${userId}`);
+
+        // 2. Buscar firmas usando ambos identificadores
         const result = await docClient.send(
             new ScanCommand({
                 TableName: SIGNATURES_TABLE,
-                FilterExpression: 'workerId = :workerId',
+                FilterExpression: 'workerId = :wId OR userId = :uId OR referenciaId = :wId OR referenciaId = :uId',
                 ExpressionAttributeValues: {
-                    ':workerId': workerId,
+                    ':wId': workerId,
+                    ':uId': userId,
                 },
             })
         );
@@ -325,7 +353,9 @@ module.exports.getByWorker = async (event) => {
         );
 
         return success({
-            workerId,
+            workerId: inputId,
+            resolvedWorkerId: workerId,
+            resolvedUserId: userId,
             totalFirmas: signatures.length,
             firmas: signatures,
         });

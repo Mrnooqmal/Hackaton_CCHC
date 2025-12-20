@@ -537,6 +537,7 @@ module.exports.completeEnrollment = async (event) => {
             signatureId,
             token,
             workerId: id,
+            userId: worker.userId || null,
             workerRut: worker.rut,
             workerNombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
             tipoFirma: 'enrolamiento',
@@ -548,7 +549,10 @@ module.exports.completeEnrollment = async (event) => {
             ipAddress: firmaEnrolamiento.ipAddress,
             userAgent: event.headers?.['user-agent'] || 'unknown',
             metodoValidacion: 'PIN',
-            metadata: null,
+            metadata: {
+                titulo: 'Enrolamiento Digital',
+                documentoNombre: 'Enrolamiento Digital'
+            },
             estado: 'valida',
             disputaInfo: null,
             empresaId: worker.empresaId || 'default',

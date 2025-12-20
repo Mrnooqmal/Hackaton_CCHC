@@ -113,11 +113,13 @@ module.exports.login = async (event) => {
         // Preparar respuesta (sin exponer hashes)
         const { passwordHash, pinHash, ...safeUser } = user;
 
-        // Verificar enrolamiento de forma más robusta sincronizando con Workers
+        // Verificar enrolamiento: Priorizar el estado del usuario
         let requiereEnrolamiento = !user.habilitado;
 
-        // Si el usuario tiene un workerId, verificar también en la tabla de Workers
-        if (user.workerId) {
+        // Solo si el usuario NO está habilitado, o si es un trabajador y queremos asegurar consistencia,
+        // revisamos el perfil en la tabla Workers. Pero si el usuario YA está habilitado, 
+        // no debemos bloquearlo con el bucle de enrolamiento.
+        if (user.workerId && !user.habilitado) {
             try {
                 const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
                 const workerResult = await docClient.send(
@@ -129,7 +131,7 @@ module.exports.login = async (event) => {
 
                 if (workerResult.Item) {
                     const worker = workerResult.Item;
-                    // Si el trabajador no está habilitado, forzar enrolamiento
+                    // Solo forzamos si el trabajador explícitamente no está habilitado
                     if (!worker.habilitado) {
                         requiereEnrolamiento = true;
                     }
@@ -138,6 +140,8 @@ module.exports.login = async (event) => {
                 console.error('Error checking worker status during login:', workerError);
             }
         }
+
+        console.log(`Login check: user.habilitado=${user.habilitado}, requiereEnrolamiento=${requiereEnrolamiento}`);
 
         return success({
             message: 'Inicio de sesión exitoso',
