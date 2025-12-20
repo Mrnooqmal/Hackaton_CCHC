@@ -1,6 +1,6 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
@@ -23,6 +23,30 @@ const response = (statusCode, body) => ({
     },
     body: JSON.stringify(body),
 });
+
+const buildEvidencePreviews = async (keys = []) => {
+    if (!Array.isArray(keys) || keys.length === 0) return [];
+
+    const previews = await Promise.all(
+        keys.map(async (key) => {
+            if (!key) return null;
+
+            try {
+                const command = new GetObjectCommand({
+                    Bucket: INCIDENT_EVIDENCE_BUCKET,
+                    Key: key
+                });
+                const url = await getSignedUrl(s3Client, command, { expiresIn: 900 });
+                return { key, url };
+            } catch (error) {
+                console.error('Error generando URL de evidencia:', key, error);
+                return { key };
+            }
+        })
+    );
+
+    return previews.filter(Boolean);
+};
 
 // CREATE - Crear nuevo incidente
 exports.create = async (event) => {
@@ -180,9 +204,15 @@ exports.get = async (event) => {
             });
         }
 
+        const incident = result.Item;
+        const evidencePreviews = await buildEvidencePreviews(incident.evidencias || []);
+
         return response(200, {
             success: true,
-            data: result.Item
+            data: {
+                ...incident,
+                evidencePreviews
+            }
         });
 
     } catch (error) {

@@ -9,6 +9,27 @@ import { incidentsApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
+const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
+
+const buildEvidenceUrl = (s3Key: string) => {
+    if (!s3Key) return '';
+    if (/^https?:\/\//i.test(s3Key)) {
+        return s3Key;
+    }
+    if (s3Key.startsWith('s3://')) {
+        const withoutScheme = s3Key.replace('s3://', '');
+        const [bucket, ...keyParts] = withoutScheme.split('/');
+        return keyParts.length > 0
+            ? `https://${bucket}.s3.amazonaws.com/${keyParts.join('/')}`
+            : '';
+    }
+    if (INCIDENT_EVIDENCE_BASE_URL) {
+        const sanitizedKey = s3Key.replace(/^\/+/, '');
+        return `${INCIDENT_EVIDENCE_BASE_URL}/${sanitizedKey}`;
+    }
+    return '';
+};
+
 
 export default function Incidents() {
     const { user } = useAuth();
@@ -17,6 +38,8 @@ export default function Incidents() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+    const [detailLoading, setDetailLoading] = useState(false);
+    const [detailError, setDetailError] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [filters, setFilters] = useState({
         tipo: '',
@@ -185,6 +208,26 @@ export default function Incidents() {
             fechaInicio: '',
             fechaFin: ''
         });
+    };
+
+    const openIncidentDetail = async (incident: Incident) => {
+        setDetailError('');
+        setSelectedIncident(incident);
+        setDetailLoading(true);
+
+        try {
+            const response = await incidentsApi.get(incident.incidentId);
+            if (response.success && response.data) {
+                setSelectedIncident(response.data);
+            } else {
+                setDetailError(response.error || 'No fue posible cargar el detalle del incidente.');
+            }
+        } catch (error) {
+            console.error('Error cargando detalle del incidente:', error);
+            setDetailError('Ocurrió un error al cargar el detalle del incidente.');
+        } finally {
+            setDetailLoading(false);
+        }
     };
 
     const getEstadoBadge = (estado: string) => {
@@ -433,7 +476,7 @@ export default function Incidents() {
                                             <td style={{ textAlign: 'right' }}>
                                                 <button
                                                     className="btn btn-sm btn-secondary"
-                                                    onClick={() => setSelectedIncident(incident)}
+                                                    onClick={() => openIncidentDetail(incident)}
                                                 >
                                                     Ver Detalle
                                                 </button>
@@ -698,6 +741,18 @@ export default function Incidents() {
                         </div>
 
                         <div className="modal-body">
+                            {detailLoading && (
+                                <div className="incident-detail-loading">
+                                    <div className="spinner" />
+                                    <span>Cargando información actualizada...</span>
+                                </div>
+                            )}
+                            {detailError && (
+                                <div className="incident-detail-error">
+                                    {detailError}
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-6">
                                 {/* Columna Izquierda */}
                                 <div className="space-y-6">
@@ -814,31 +869,63 @@ export default function Incidents() {
                                 </div>
 
                                 {/* Evidencias */}
-                                {selectedIncident.evidencias && selectedIncident.evidencias.length > 0 && (
-                                    <div className="col-span-2">
-                                        <h3 className="font-semibold mb-3 flex items-center gap-2 text-primary-400">
-                                            <FiImage size={18} />
-                                            Evidencias Fotográficas ({selectedIncident.evidencias.length})
-                                        </h3>
-                                        <div className="grid grid-cols-4 gap-3">
-                                            {selectedIncident.evidencias.map((s3Key, index) => (
-                                                <div key={index} className="aspect-square bg-surface-elevated rounded-lg p-3 flex items-center justify-center border border-surface-border">
-                                                    <div className="text-center">
-                                                        <FiImage size={24} className="text-muted mx-auto mb-2" />
-                                                        <p className="text-xs text-muted truncate">{s3Key.split('/').pop()}</p>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                {(() => {
+                                    const evidenceItems = selectedIncident.evidencePreviews?.length
+                                        ? selectedIncident.evidencePreviews
+                                        : (selectedIncident.evidencias || []).map((key) => ({
+                                              key,
+                                              url: buildEvidenceUrl(key)
+                                          }));
+
+                                    if (!evidenceItems || evidenceItems.length === 0) {
+                                        return null;
+                                    }
+
+                                    return (
+                                        <div className="col-span-2">
+                                            <h3 className="font-semibold mb-3 flex items-center gap-2 text-primary-400">
+                                                <FiImage size={18} />
+                                                Evidencias Fotográficas ({evidenceItems.length})
+                                            </h3>
+                                            <div className="grid grid-cols-4 gap-3 incident-evidence-grid">
+                                                {evidenceItems.map((item, index) => {
+                                                    const fileName = item.key.split('/').pop() || `Evidencia ${index + 1}`;
+
+                                                    return (
+                                                        <div key={`${item.key}-${index}`} className="incident-evidence-card">
+                                                            {item.url ? (
+                                                                <img
+                                                                    src={item.url}
+                                                                    alt={`Evidencia ${fileName}`}
+                                                                    loading="lazy"
+                                                                />
+                                                            ) : (
+                                                                <div className="incident-evidence-placeholder">
+                                                                    <FiImage size={32} />
+                                                                </div>
+                                                            )}
+                                                            <div className="incident-evidence-meta">
+                                                                <FiImage size={14} />
+                                                                <span>{fileName}</span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
                             </div>
                         </div>
 
                         <div className="modal-footer">
                             <button
                                 className="btn btn-secondary"
-                                onClick={() => setSelectedIncident(null)}
+                                onClick={() => {
+                                    setSelectedIncident(null);
+                                    setDetailError('');
+                                    setDetailLoading(false);
+                                }}
                             >
                                 <FiX className="mr-2" />
                                 Cerrar
@@ -976,6 +1063,71 @@ export default function Incidents() {
                 .badge-danger { background: var(--danger-500); color: white; }
                 .badge-info { background: var(--info-500); color: white; }
                 .badge-secondary { background: var(--gray-600); color: white; }
+
+                .incident-evidence-card {
+                    position: relative;
+                    border-radius: var(--radius-lg);
+                    overflow: hidden;
+                    border: 1px solid var(--surface-border);
+                    background: var(--surface-elevated);
+                    min-height: 140px;
+                }
+
+                .incident-evidence-card img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                    transition: transform var(--transition-normal);
+                }
+
+                .incident-evidence-card:hover img {
+                    transform: scale(1.05);
+                }
+
+                .incident-evidence-meta {
+                    position: absolute;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 6px 10px;
+                    font-size: var(--text-xs);
+                    background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.75) 100%);
+                    color: white;
+                }
+
+                .incident-evidence-placeholder {
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: var(--text-muted);
+                }
+
+                .incident-detail-loading {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: var(--space-2);
+                    padding: var(--space-3);
+                    border: 1px dashed var(--surface-border);
+                    border-radius: var(--radius-md);
+                    color: var(--text-muted);
+                    margin-bottom: var(--space-4);
+                }
+
+                .incident-detail-error {
+                    margin-bottom: var(--space-4);
+                    padding: var(--space-3);
+                    border-radius: var(--radius-md);
+                    background: rgba(244, 67, 54, 0.15);
+                    color: var(--danger-500);
+                    font-size: var(--text-sm);
+                }
 
                 @media (max-width: 768px) {
                     .grid-cols-2,
