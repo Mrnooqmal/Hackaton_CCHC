@@ -9,7 +9,8 @@ import {
     FiSettings,
     FiShield,
     FiLogOut,
-    FiUser
+    FiUser,
+    FiClipboard
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 
@@ -40,6 +41,7 @@ const navItems: NavSection[] = [
         items: [
             { path: '/documents', icon: FiFileText, label: 'Documentos' },
             { path: '/activities', icon: FiCalendar, label: 'Actividades' },
+            { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
             { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes', badge: 2 },
         ]
     },

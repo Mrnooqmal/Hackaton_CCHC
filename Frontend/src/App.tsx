@@ -6,6 +6,7 @@ import WorkerEnroll from './pages/WorkerEnroll';
 import Documents from './pages/Documents';
 import Activities from './pages/Activities';
 import AIAssistant from './pages/AIAssistant';
+import Surveys from './pages/Surveys';
 import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
 import ChangePassword from './pages/ChangePassword';
@@ -56,6 +57,12 @@ function AppContent() {
           <Route path="/documents" element={
             <ProtectedRoute>
               <Documents />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/surveys" element={
+            <ProtectedRoute>
+              <Surveys />
             </ProtectedRoute>
           } />
 

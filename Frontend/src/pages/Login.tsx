@@ -154,7 +154,7 @@ export default function Login() {
 
                 <div className="login-footer">
                     <p className="login-footer-text">
-                        Powered by <span className="text-primary-400">CCHC</span>
+                        Powered by <span className="text-primary-400">The Code Cookers</span>
                     </p>
                     <p className="login-footer-link">
                         <a href="/register-admin" className="login-admin-link">

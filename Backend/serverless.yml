@@ -24,6 +24,7 @@ provider:
     SIGNATURES_TABLE: ${self:service}-signatures-${self:provider.stage}
     USERS_TABLE: ${self:service}-users-${self:provider.stage}
     SESSIONS_TABLE: ${self:service}-sessions-${self:provider.stage}
+    SURVEYS_TABLE: ${self:service}-surveys-${self:provider.stage}
     SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
   httpApi:
@@ -57,6 +58,7 @@ provider:
             - !GetAtt SignaturesTable.Arn
             - !GetAtt UsersTable.Arn
             - !GetAtt SessionsTable.Arn
+            - !GetAtt SurveysTable.Arn
         - Effect: Allow
           Action:
             - ses:SendEmail
@@ -375,6 +377,35 @@ functions:
           path: /ai/daily-talk
           method: POST
 
+  # Surveys (Encuestas)
+  createSurvey:
+    handler: handlers/surveys.create
+    events:
+      - httpApi:
+          path: /surveys
+          method: POST
+
+  listSurveys:
+    handler: handlers/surveys.list
+    events:
+      - httpApi:
+          path: /surveys
+          method: GET
+
+  getSurvey:
+    handler: handlers/surveys.get
+    events:
+      - httpApi:
+          path: /surveys/{id}
+          method: GET
+
+  updateSurveyResponse:
+    handler: handlers/surveys.updateResponseStatus
+    events:
+      - httpApi:
+          path: /surveys/{id}/responses/{workerId}
+          method: POST
+
   # Hello (Test)
   printHello:
     handler: handlers/hola.printHello
@@ -463,4 +494,16 @@ resources:
             AttributeType: S
         KeySchema:
           - AttributeName: sessionId
+            KeyType: HASH
+
+    SurveysTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.SURVEYS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: surveyId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: surveyId
             KeyType: HASH
