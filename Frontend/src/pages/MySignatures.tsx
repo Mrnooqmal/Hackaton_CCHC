@@ -9,9 +9,12 @@ import {
     FiCalendar,
     FiUser,
     FiAlertCircle,
-    FiChevronRight,
     FiX,
     FiDownload,
+    FiEdit3,
+    FiShield,
+    FiTrendingUp,
+    FiRefreshCw,
 } from 'react-icons/fi';
 import {
     signatureRequestsApi,
@@ -150,59 +153,216 @@ export default function MySignatures() {
         <>
             <Header title="Mis Firmas" />
 
-            <div className="main-content">
-                {/* Stats */}
+            <div className="page-content">
+                {/* Hero Section */}
+                <div className="survey-hero mb-6">
+                    <div className="survey-hero-icon">
+                        <FiEdit3 size={28} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <div className="survey-hero-eyebrow">Centro de Firmas</div>
+                        <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
+                            Bienvenido a tu panel de firmas digitales
+                        </h2>
+                        <p className="text-sm text-muted">
+                            Revisa y firma documentos de manera segura. Todas tus firmas quedan registradas con validación criptográfica.
+                        </p>
+                    </div>
+                    <button className="btn btn-secondary" onClick={loadData} disabled={loading}>
+                        <FiRefreshCw className={loading ? 'spin' : ''} /> Actualizar
+                    </button>
+                </div>
+
+                {/* Stats Cards */}
                 <div className="grid grid-cols-3 mb-6">
-                    <div className="card">
-                        <div className="flex items-center gap-3">
-                            <div className="avatar" style={{ background: 'var(--warning-100)', color: 'var(--warning-600)' }}>
-                                <FiClock size={24} />
+                    <div className="card stat-card">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="avatar" style={{ background: 'var(--warning-500)' }}>
+                                <FiClock size={20} />
                             </div>
-                            <div>
-                                <div className="text-2xl font-bold">{pendingRequests.length}</div>
-                                <div className="text-sm text-muted">Pendientes</div>
+                            <span className="text-sm text-muted">Pendientes de Firma</span>
+                        </div>
+                        <div className="stat-value">{pendingRequests.length}</div>
+                        {pendingRequests.length > 0 && (
+                            <div className="stat-change" style={{ color: 'var(--warning-500)' }}>
+                                <FiAlertCircle size={14} />
+                                Requieren tu atención
                             </div>
+                        )}
+                    </div>
+                    <div className="card stat-card">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="avatar" style={{ background: 'var(--success-500)' }}>
+                                <FiCheck size={20} />
+                            </div>
+                            <span className="text-sm text-muted">Documentos Firmados</span>
+                        </div>
+                        <div className="stat-value">{signatureHistory.length}</div>
+                        <div className="stat-change positive">
+                            <FiTrendingUp size={14} />
+                            Completados exitosamente
                         </div>
                     </div>
-                    <div className="card">
-                        <div className="flex items-center gap-3">
-                            <div className="avatar" style={{ background: 'var(--success-100)', color: 'var(--success-600)' }}>
-                                <FiCheck size={24} />
+                    <div className="card stat-card">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="avatar" style={{ background: 'var(--primary-500)' }}>
+                                <FiShield size={20} />
                             </div>
-                            <div>
-                                <div className="text-2xl font-bold">{signatureHistory.length}</div>
-                                <div className="text-sm text-muted">Firmados</div>
-                            </div>
+                            <span className="text-sm text-muted">Total de Solicitudes</span>
                         </div>
-                    </div>
-                    <div className="card">
-                        <div className="flex items-center gap-3">
-                            <div className="avatar" style={{ background: 'var(--primary-100)', color: 'var(--primary-600)' }}>
-                                <FiFileText size={24} />
-                            </div>
-                            <div>
-                                <div className="text-2xl font-bold">{pendingRequests.length + signatureHistory.length}</div>
-                                <div className="text-sm text-muted">Total</div>
-                            </div>
+                        <div className="stat-value">{pendingRequests.length + signatureHistory.length}</div>
+                        <div className="stat-change positive">
+                            <FiFileText size={14} />
+                            Documentos gestionados
                         </div>
                     </div>
                 </div>
 
                 {/* Tabs */}
-                <div className="tabs mb-6">
+                <div 
+                    className="flex gap-3 mb-6"
+                    style={{
+                        background: 'var(--surface-elevated)',
+                        padding: 'var(--space-2)',
+                        borderRadius: 'var(--radius-xl)',
+                        border: '1px solid var(--surface-border)',
+                    }}
+                >
                     <button
-                        className={`tab ${activeTab === 'pendientes' ? 'active' : ''}`}
+                        className="flex items-center gap-3"
                         onClick={() => setActiveTab('pendientes')}
+                        style={{
+                            flex: 1,
+                            padding: 'var(--space-4)',
+                            borderRadius: 'var(--radius-lg)',
+                            border: activeTab === 'pendientes' ? '1px solid var(--warning-400)' : '1px solid transparent',
+                            background: activeTab === 'pendientes' 
+                                ? 'linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 193, 7, 0.05))' 
+                                : 'transparent',
+                            cursor: 'pointer',
+                            transition: 'all var(--transition-fast)',
+                            boxShadow: activeTab === 'pendientes' ? 'var(--shadow-md)' : 'none',
+                        }}
                     >
-                        <FiClock />
-                        Pendientes ({pendingRequests.length})
+                        <div 
+                            className="avatar"
+                            style={{ 
+                                background: activeTab === 'pendientes' ? 'var(--warning-500)' : 'var(--surface-hover)',
+                                color: activeTab === 'pendientes' ? 'white' : 'var(--text-muted)',
+                                width: '44px',
+                                height: '44px',
+                                transition: 'all var(--transition-fast)',
+                            }}
+                        >
+                            <FiClock size={20} />
+                        </div>
+                        <div style={{ textAlign: 'left' }}>
+                            <div 
+                                style={{ 
+                                    fontWeight: 600, 
+                                    color: activeTab === 'pendientes' ? 'var(--warning-700)' : 'var(--text-secondary)',
+                                    fontSize: 'var(--text-base)',
+                                }}
+                            >
+                                Pendientes
+                            </div>
+                            <div 
+                                style={{ 
+                                    fontSize: 'var(--text-sm)', 
+                                    color: activeTab === 'pendientes' ? 'var(--warning-600)' : 'var(--text-muted)',
+                                }}
+                            >
+                                {pendingRequests.length} solicitud{pendingRequests.length !== 1 ? 'es' : ''}
+                            </div>
+                        </div>
+                        {pendingRequests.length > 0 && (
+                            <span 
+                                className="badge"
+                                style={{ 
+                                    marginLeft: 'auto',
+                                    background: 'var(--warning-500)',
+                                    color: 'white',
+                                    fontWeight: 600,
+                                    minWidth: '28px',
+                                    height: '28px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: 'var(--radius-full)',
+                                }}
+                            >
+                                {pendingRequests.length}
+                            </span>
+                        )}
                     </button>
+
                     <button
-                        className={`tab ${activeTab === 'historial' ? 'active' : ''}`}
+                        className="flex items-center gap-3"
                         onClick={() => setActiveTab('historial')}
+                        style={{
+                            flex: 1,
+                            padding: 'var(--space-4)',
+                            borderRadius: 'var(--radius-lg)',
+                            border: activeTab === 'historial' ? '1px solid var(--success-400)' : '1px solid transparent',
+                            background: activeTab === 'historial' 
+                                ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05))' 
+                                : 'transparent',
+                            cursor: 'pointer',
+                            transition: 'all var(--transition-fast)',
+                            boxShadow: activeTab === 'historial' ? 'var(--shadow-md)' : 'none',
+                        }}
                     >
-                        <FiCheck />
-                        Historial ({signatureHistory.length})
+                        <div 
+                            className="avatar"
+                            style={{ 
+                                background: activeTab === 'historial' ? 'var(--success-500)' : 'var(--surface-hover)',
+                                color: activeTab === 'historial' ? 'white' : 'var(--text-muted)',
+                                width: '44px',
+                                height: '44px',
+                                transition: 'all var(--transition-fast)',
+                            }}
+                        >
+                            <FiCheck size={20} />
+                        </div>
+                        <div style={{ textAlign: 'left' }}>
+                            <div 
+                                style={{ 
+                                    fontWeight: 600, 
+                                    color: activeTab === 'historial' ? 'var(--success-700)' : 'var(--text-secondary)',
+                                    fontSize: 'var(--text-base)',
+                                }}
+                            >
+                                Historial
+                            </div>
+                            <div 
+                                style={{ 
+                                    fontSize: 'var(--text-sm)', 
+                                    color: activeTab === 'historial' ? 'var(--success-600)' : 'var(--text-muted)',
+                                }}
+                            >
+                                {signatureHistory.length} firma{signatureHistory.length !== 1 ? 's' : ''} registrada{signatureHistory.length !== 1 ? 's' : ''}
+                            </div>
+                        </div>
+                        {signatureHistory.length > 0 && (
+                            <span 
+                                className="badge"
+                                style={{ 
+                                    marginLeft: 'auto',
+                                    background: activeTab === 'historial' ? 'var(--success-500)' : 'var(--surface-hover)',
+                                    color: activeTab === 'historial' ? 'white' : 'var(--text-muted)',
+                                    fontWeight: 600,
+                                    minWidth: '28px',
+                                    height: '28px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: 'var(--radius-full)',
+                                    transition: 'all var(--transition-fast)',
+                                }}
+                            >
+                                {signatureHistory.length}
+                            </span>
+                        )}
                     </button>
                 </div>
 
@@ -210,82 +370,149 @@ export default function MySignatures() {
                 {activeTab === 'pendientes' && (
                     <div className="card">
                         <div className="card-header">
-                            <h2 className="card-title">Solicitudes Pendientes de Firma</h2>
+                            <div>
+                                <h2 className="card-title">Solicitudes Pendientes de Firma</h2>
+                                <p className="card-subtitle">Documentos que requieren tu firma digital</p>
+                            </div>
+                            {pendingRequests.length > 0 && (
+                                <span className="badge" style={{ background: 'var(--warning-500)', color: 'white' }}>
+                                    {pendingRequests.length} pendiente{pendingRequests.length !== 1 ? 's' : ''}
+                                </span>
+                            )}
                         </div>
 
                         {pendingRequests.length === 0 ? (
-                            <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
-                                <div className="empty-state-icon">✅</div>
+                            <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+                                <div className="empty-state-icon" style={{ fontSize: '3rem', marginBottom: 'var(--space-4)' }}>🎉</div>
                                 <h3 className="empty-state-title">¡Todo al día!</h3>
                                 <p className="empty-state-description">
-                                    No tienes solicitudes pendientes de firma.
+                                    No tienes solicitudes pendientes de firma. <br />
+                                    Te notificaremos cuando haya nuevos documentos para firmar.
                                 </p>
                             </div>
                         ) : (
-                            <div className="flex flex-col gap-3">
-                                {pendingRequests.map((request) => (
+                            <div className="flex flex-col gap-4">
+                                {pendingRequests.map((request, index) => (
                                     <div
                                         key={request.requestId}
-                                        className="card"
+                                        className="signature-request-card"
                                         style={{
-                                            border: '1px solid var(--warning-200)',
-                                            background: 'var(--warning-50)',
+                                            padding: 'var(--space-5)',
+                                            borderRadius: 'var(--radius-xl)',
+                                            border: '1px solid var(--warning-300)',
+                                            background: 'linear-gradient(135deg, rgba(255, 193, 7, 0.08), rgba(255, 193, 7, 0.02))',
+                                            transition: 'all var(--transition-normal)',
+                                            position: 'relative',
+                                            overflow: 'hidden',
                                         }}
                                     >
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-4">
-                                                <div className="avatar" style={{ fontSize: '1.5rem', background: 'white' }}>
+                                        {/* Priority indicator */}
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            width: '4px',
+                                            height: '100%',
+                                            background: 'var(--warning-500)',
+                                            borderRadius: 'var(--radius-xl) 0 0 var(--radius-xl)',
+                                        }} />
+
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex items-start gap-4" style={{ flex: 1 }}>
+                                                <div 
+                                                    className="avatar"
+                                                    style={{ 
+                                                        fontSize: '1.75rem', 
+                                                        background: 'white',
+                                                        width: '56px',
+                                                        height: '56px',
+                                                        boxShadow: 'var(--shadow-md)',
+                                                        border: '2px solid var(--warning-200)',
+                                                    }}
+                                                >
                                                     {REQUEST_TYPES[request.tipo]?.icon || '📝'}
                                                 </div>
-                                                <div>
-                                                    <div className="font-bold">{request.titulo}</div>
-                                                    <div className="text-sm text-muted">
-                                                        {REQUEST_TYPES[request.tipo]?.label}
+                                                <div style={{ flex: 1 }}>
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="badge" style={{ background: 'var(--warning-100)', color: 'var(--warning-700)', fontSize: '11px' }}>
+                                                            #{index + 1} • {REQUEST_TYPES[request.tipo]?.label}
+                                                        </span>
                                                     </div>
-                                                    <div className="flex items-center gap-2 mt-1 text-sm text-muted">
-                                                        <FiUser size={14} />
-                                                        Solicitado por: {request.solicitanteNombre}
+                                                    <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>
+                                                        {request.titulo}
+                                                    </h3>
+                                                    <div className="flex flex-wrap items-center gap-4 text-sm text-muted">
+                                                        <div className="flex items-center gap-2">
+                                                            <FiUser size={14} style={{ color: 'var(--primary-500)' }} />
+                                                            <span>Solicitado por: <strong>{request.solicitanteNombre}</strong></span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <FiCalendar size={14} style={{ color: 'var(--info-500)' }} />
+                                                            <span>
+                                                                {new Date(request.fechaCreacion).toLocaleDateString('es-CL', {
+                                                                    weekday: 'short',
+                                                                    day: 'numeric',
+                                                                    month: 'short',
+                                                                    year: 'numeric',
+                                                                })}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2 text-sm text-muted">
-                                                        <FiCalendar size={14} />
-                                                        {new Date(request.fechaCreacion).toLocaleDateString('es-CL', {
-                                                            weekday: 'long',
-                                                            year: 'numeric',
-                                                            month: 'long',
-                                                            day: 'numeric',
-                                                        })}
-                                                    </div>
+
+                                                    {request.descripcion && (
+                                                        <div 
+                                                            className="mt-3 p-3 rounded-lg text-sm"
+                                                            style={{ 
+                                                                background: 'rgba(255, 255, 255, 0.7)',
+                                                                border: '1px solid var(--warning-200)',
+                                                            }}
+                                                        >
+                                                            {request.descripcion}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
+                                            
                                             <button
-                                                className="btn btn-primary"
+                                                className="btn btn-primary btn-lg"
                                                 onClick={() => openSignModal(request)}
+                                                style={{ 
+                                                    minWidth: '140px',
+                                                    boxShadow: 'var(--shadow-glow-primary)',
+                                                }}
                                             >
-                                                Firmar <FiChevronRight />
+                                                <FiEdit3 size={18} />
+                                                Firmar
                                             </button>
                                         </div>
 
                                         {/* Documents preview */}
                                         {request.documentos.length > 0 && (
-                                            <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--warning-200)' }}>
-                                                <div className="text-sm font-medium mb-2">Documentos a revisar:</div>
+                                            <div 
+                                                className="mt-4 pt-4" 
+                                                style={{ 
+                                                    borderTop: '1px dashed var(--warning-300)',
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <FiFile size={14} style={{ color: 'var(--warning-600)' }} />
+                                                    <span className="text-sm font-medium">Documentos adjuntos ({request.documentos.length})</span>
+                                                </div>
                                                 <div className="flex gap-2 flex-wrap">
                                                     {request.documentos.map((doc, idx) => (
                                                         <button
                                                             key={idx}
                                                             className="btn btn-secondary btn-sm"
                                                             onClick={() => downloadDocument(doc.url, doc.nombre)}
+                                                            style={{
+                                                                background: 'white',
+                                                                borderColor: 'var(--warning-200)',
+                                                            }}
                                                         >
-                                                            <FiFile size={14} /> {doc.nombre}
+                                                            <FiDownload size={14} /> {doc.nombre}
                                                         </button>
                                                     ))}
                                                 </div>
-                                            </div>
-                                        )}
-
-                                        {request.descripcion && (
-                                            <div className="mt-3 p-3 rounded" style={{ background: 'white' }}>
-                                                <div className="text-sm">{request.descripcion}</div>
                                             </div>
                                         )}
                                     </div>
@@ -298,74 +525,155 @@ export default function MySignatures() {
                 {activeTab === 'historial' && (
                     <div className="card">
                         <div className="card-header">
-                            <h2 className="card-title">Historial de Firmas</h2>
+                            <div>
+                                <h2 className="card-title">Historial de Firmas</h2>
+                                <p className="card-subtitle">Registro completo de tus firmas digitales</p>
+                            </div>
+                            {signatureHistory.length > 0 && (
+                                <span className="badge badge-success" style={{ background: 'var(--success-100)', color: 'var(--success-700)' }}>
+                                    <FiShield size={12} /> {signatureHistory.length} firma{signatureHistory.length !== 1 ? 's' : ''} registrada{signatureHistory.length !== 1 ? 's' : ''}
+                                </span>
+                            )}
                         </div>
 
                         {signatureHistory.length === 0 ? (
-                            <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
-                                <div className="empty-state-icon">📋</div>
+                            <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
+                                <div className="empty-state-icon" style={{ fontSize: '3rem', marginBottom: 'var(--space-4)' }}>📋</div>
                                 <h3 className="empty-state-title">Sin historial</h3>
                                 <p className="empty-state-description">
-                                    Aún no has firmado ningún documento.
+                                    Aún no has firmado ningún documento. <br />
+                                    Cuando firmes documentos, aparecerán aquí con su información de validación.
                                 </p>
                             </div>
                         ) : (
-                            <div className="table-container">
+                            <div className="table-container" style={{ borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
                                 <table className="table">
                                     <thead>
                                         <tr>
-                                            <th>Documento</th>
+                                            <th style={{ width: '30%' }}>Documento</th>
                                             <th>Tipo</th>
                                             <th>Solicitante</th>
                                             <th>Fecha de Firma</th>
-                                            <th>Token</th>
+                                            <th>Token de Verificación</th>
                                             <th>Estado</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {signatureHistory.map(({ firma, solicitud }) => (
-                                            <tr key={firma.signatureId}>
+                                            <tr 
+                                                key={firma.signatureId}
+                                                style={{
+                                                    transition: 'background var(--transition-fast)',
+                                                }}
+                                            >
                                                 <td>
-                                                    <div className="flex items-center gap-2">
-                                                        <span style={{ fontSize: '1.2rem' }}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div 
+                                                            className="avatar avatar-sm"
+                                                            style={{ 
+                                                                fontSize: '1.25rem',
+                                                                background: 'var(--surface-elevated)',
+                                                                border: '1px solid var(--surface-border)',
+                                                            }}
+                                                        >
                                                             {REQUEST_TYPES[firma.requestTipo]?.icon || '📝'}
-                                                        </span>
+                                                        </div>
                                                         <div>
-                                                            <div className="font-medium">{firma.requestTitulo}</div>
+                                                            <div className="font-medium" style={{ marginBottom: '2px' }}>
+                                                                {firma.requestTitulo}
+                                                            </div>
                                                             {solicitud?.documentos && solicitud.documentos.length > 0 && (
-                                                                <div className="text-xs text-muted">
-                                                                    {solicitud.documentos.length} documento(s) adjunto(s)
+                                                                <div className="flex items-center gap-1 text-xs text-muted">
+                                                                    <FiFile size={10} />
+                                                                    {solicitud.documentos.length} documento{solicitud.documentos.length !== 1 ? 's' : ''}
                                                                 </div>
                                                             )}
                                                         </div>
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <span className="badge" style={{ background: 'var(--neutral-100)' }}>
+                                                    <span 
+                                                        className="badge" 
+                                                        style={{ 
+                                                            background: 'var(--primary-100)', 
+                                                            color: 'var(--primary-700)',
+                                                            fontWeight: 500,
+                                                        }}
+                                                    >
                                                         {REQUEST_TYPES[firma.requestTipo]?.label || firma.requestTipo}
                                                     </span>
                                                 </td>
-                                                <td>{firma.solicitanteNombre}</td>
                                                 <td>
-                                                    <div>{firma.fecha}</div>
-                                                    <div className="text-xs text-muted">{firma.horario}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <FiUser size={14} className="text-muted" />
+                                                        <span>{firma.solicitanteNombre}</span>
+                                                    </div>
                                                 </td>
                                                 <td>
-                                                    <code className="text-xs" style={{ background: 'var(--neutral-100)', padding: '2px 6px', borderRadius: '4px' }}>
-                                                        {firma.token.slice(0, 8)}...
-                                                    </code>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-medium">{firma.fecha}</span>
+                                                        <span className="text-xs text-muted flex items-center gap-1">
+                                                            <FiClock size={10} />
+                                                            {firma.horario}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <div 
+                                                        className="flex items-center gap-2"
+                                                        style={{
+                                                            fontFamily: 'monospace',
+                                                            fontSize: 'var(--text-xs)',
+                                                            background: 'var(--surface-elevated)',
+                                                            padding: '6px 10px',
+                                                            borderRadius: 'var(--radius-md)',
+                                                            border: '1px solid var(--surface-border)',
+                                                            width: 'fit-content',
+                                                        }}
+                                                    >
+                                                        <FiShield size={12} style={{ color: 'var(--success-500)' }} />
+                                                        <span>{firma.token.slice(0, 12)}...</span>
+                                                    </div>
                                                 </td>
                                                 <td>
                                                     {firma.estado === 'valida' ? (
-                                                        <span className="badge" style={{ background: 'var(--success-500)', color: 'white' }}>
+                                                        <span 
+                                                            className="badge" 
+                                                            style={{ 
+                                                                background: 'linear-gradient(135deg, var(--success-500), var(--success-600))', 
+                                                                color: 'white',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px',
+                                                                boxShadow: '0 2px 4px rgba(76, 175, 80, 0.3)',
+                                                            }}
+                                                        >
                                                             <FiCheck size={14} /> Válida
                                                         </span>
                                                     ) : firma.estado === 'disputada' ? (
-                                                        <span className="badge" style={{ background: 'var(--warning-500)', color: 'white' }}>
+                                                        <span 
+                                                            className="badge" 
+                                                            style={{ 
+                                                                background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))', 
+                                                                color: 'white',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px',
+                                                            }}
+                                                        >
                                                             <FiAlertCircle size={14} /> Disputada
                                                         </span>
                                                     ) : (
-                                                        <span className="badge" style={{ background: 'var(--error-500)', color: 'white' }}>
+                                                        <span 
+                                                            className="badge" 
+                                                            style={{ 
+                                                                background: 'var(--error-500)', 
+                                                                color: 'white',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px',
+                                                            }}
+                                                        >
                                                             <FiX size={14} /> {firma.estado}
                                                         </span>
                                                     )}
@@ -383,111 +691,244 @@ export default function MySignatures() {
             {/* Sign Modal */}
             {showSignModal && selectedRequest && (
                 <div className="modal-overlay" onClick={() => setShowSignModal(false)}>
-                    <div className="modal" style={{ maxWidth: '500px' }} onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>Confirmar Firma</h2>
-                            <button className="btn btn-ghost" onClick={() => setShowSignModal(false)}>
-                                <FiX />
+                    <div 
+                        className="modal" 
+                        style={{ maxWidth: '520px' }} 
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="modal-header" style={{ borderBottom: '1px solid var(--surface-border)', paddingBottom: 'var(--space-4)' }}>
+                            <div className="flex items-center gap-3">
+                                <div 
+                                    className="avatar"
+                                    style={{ 
+                                        background: 'var(--gradient-primary)',
+                                        boxShadow: 'var(--shadow-glow-primary)',
+                                    }}
+                                >
+                                    <FiEdit3 size={20} />
+                                </div>
+                                <div>
+                                    <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 600 }}>Confirmar Firma Digital</h2>
+                                    <p className="text-sm text-muted">Revisa los detalles antes de firmar</p>
+                                </div>
+                            </div>
+                            <button className="btn btn-ghost btn-icon" onClick={() => setShowSignModal(false)}>
+                                <FiX size={20} />
                             </button>
                         </div>
 
-                        <div className="modal-body">
+                        <div className="modal-body" style={{ padding: 'var(--space-5)' }}>
                             {/* Request Details */}
-                            <div className="card mb-4" style={{ background: 'var(--neutral-50)' }}>
-                                <div className="flex items-center gap-3 mb-3">
-                                    <span style={{ fontSize: '2rem' }}>
+                            <div 
+                                className="survey-section mb-4"
+                                style={{ 
+                                    background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.08), rgba(76, 175, 80, 0.02))',
+                                    border: '1px solid rgba(76, 175, 80, 0.2)',
+                                    marginBottom: 'var(--space-4)',
+                                    padding: 'var(--space-4)',
+                                }}
+                            >
+                                <div className="flex items-start gap-4">
+                                    <div 
+                                        className="avatar"
+                                        style={{ 
+                                            fontSize: '2rem',
+                                            background: 'white',
+                                            width: '64px',
+                                            height: '64px',
+                                            boxShadow: 'var(--shadow-md)',
+                                            border: '2px solid var(--primary-200)',
+                                        }}
+                                    >
                                         {REQUEST_TYPES[selectedRequest.tipo]?.icon || '📝'}
-                                    </span>
-                                    <div>
-                                        <div className="font-bold text-lg">{selectedRequest.titulo}</div>
-                                        <div className="text-sm text-muted">
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div className="survey-section-eyebrow" style={{ marginBottom: '4px' }}>
                                             {REQUEST_TYPES[selectedRequest.tipo]?.label}
+                                        </div>
+                                        <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>
+                                            {selectedRequest.titulo}
+                                        </h3>
+                                        <div className="flex flex-wrap items-center gap-3 text-sm">
+                                            <div className="flex items-center gap-2 text-muted">
+                                                <FiUser size={14} style={{ color: 'var(--primary-500)' }} />
+                                                <strong>{selectedRequest.solicitanteNombre}</strong>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-muted">
+                                                <FiCalendar size={14} style={{ color: 'var(--info-500)' }} />
+                                                {new Date(selectedRequest.fechaCreacion).toLocaleDateString('es-CL', {
+                                                    day: 'numeric',
+                                                    month: 'short',
+                                                    year: 'numeric'
+                                                })}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 {selectedRequest.descripcion && (
-                                    <p className="text-sm mb-3">{selectedRequest.descripcion}</p>
-                                )}
-
-                                <div className="text-sm">
-                                    <div className="flex items-center gap-2 text-muted">
-                                        <FiUser size={14} />
-                                        Solicitado por: <strong>{selectedRequest.solicitanteNombre}</strong>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-muted mt-1">
-                                        <FiCalendar size={14} />
-                                        {new Date(selectedRequest.fechaCreacion).toLocaleDateString('es-CL')}
-                                    </div>
-                                </div>
-
-                                {/* Documents to sign */}
-                                {selectedRequest.documentos.length > 0 && (
-                                    <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--neutral-200)' }}>
-                                        <div className="text-sm font-medium mb-2">
-                                            Documentos que estás firmando:
-                                        </div>
-                                        <div className="flex flex-col gap-2">
-                                            {selectedRequest.documentos.map((doc, idx) => (
-                                                <div
-                                                    key={idx}
-                                                    className="flex items-center justify-between p-2 rounded"
-                                                    style={{ background: 'white' }}
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <FiFile size={16} />
-                                                        <span className="text-sm">{doc.nombre}</span>
-                                                    </div>
-                                                    <button
-                                                        className="btn btn-ghost btn-sm"
-                                                        onClick={() => downloadDocument(doc.url, doc.nombre)}
-                                                    >
-                                                        <FiDownload size={14} />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
+                                    <p 
+                                        className="text-sm mt-4 p-3"
+                                        style={{ 
+                                            background: 'rgba(255,255,255,0.6)',
+                                            borderRadius: 'var(--radius-md)',
+                                            borderLeft: '3px solid var(--primary-400)',
+                                        }}
+                                    >
+                                        {selectedRequest.descripcion}
+                                    </p>
                                 )}
                             </div>
 
+                            {/* Documents to sign */}
+                            {selectedRequest.documentos.length > 0 && (
+                                <div 
+                                    className="mb-4 p-4"
+                                    style={{ 
+                                        background: 'var(--surface-elevated)',
+                                        borderRadius: 'var(--radius-lg)',
+                                        border: '1px solid var(--surface-border)',
+                                    }}
+                                >
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <FiFileText size={16} style={{ color: 'var(--primary-500)' }} />
+                                        <span className="font-medium">Documentos a firmar</span>
+                                        <span className="badge badge-neutral" style={{ marginLeft: 'auto' }}>
+                                            {selectedRequest.documentos.length}
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        {selectedRequest.documentos.map((doc, idx) => (
+                                            <div
+                                                key={idx}
+                                                className="flex items-center justify-between p-3"
+                                                style={{ 
+                                                    background: 'white',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    border: '1px solid var(--surface-border)',
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div 
+                                                        className="avatar avatar-sm"
+                                                        style={{ 
+                                                            background: 'var(--info-100)',
+                                                            color: 'var(--info-600)',
+                                                        }}
+                                                    >
+                                                        <FiFile size={16} />
+                                                    </div>
+                                                    <span className="text-sm font-medium">{doc.nombre}</span>
+                                                </div>
+                                                <button
+                                                    className="btn btn-ghost btn-sm"
+                                                    onClick={() => downloadDocument(doc.url, doc.nombre)}
+                                                    title="Descargar documento"
+                                                >
+                                                    <FiDownload size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Warning */}
-                            <div className="alert alert-warning mb-4" style={{ background: 'var(--warning-50)', border: '1px solid var(--warning-200)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)' }}>
+                            <div 
+                                className="mb-5"
+                                style={{ 
+                                    background: 'linear-gradient(135deg, rgba(255, 193, 7, 0.12), rgba(255, 193, 7, 0.04))',
+                                    border: '1px solid var(--warning-300)', 
+                                    borderRadius: 'var(--radius-lg)', 
+                                    padding: 'var(--space-4)',
+                                }}
+                            >
                                 <div className="flex items-start gap-3">
-                                    <FiAlertCircle style={{ color: 'var(--warning-600)', flexShrink: 0, marginTop: '2px' }} />
+                                    <div 
+                                        className="avatar avatar-sm"
+                                        style={{ 
+                                            background: 'var(--warning-500)',
+                                            flexShrink: 0,
+                                        }}
+                                    >
+                                        <FiAlertCircle size={16} />
+                                    </div>
                                     <div className="text-sm">
-                                        <strong>Declaración de conformidad:</strong> Al ingresar tu PIN confirmas que has leído y comprendido los documentos adjuntos, y aceptas los términos establecidos.
+                                        <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--warning-700)' }}>
+                                            Declaración de conformidad
+                                        </strong>
+                                        <span className="text-muted">
+                                            Al ingresar tu PIN confirmas que has leído y comprendido los documentos adjuntos, y aceptas los términos establecidos.
+                                        </span>
                                     </div>
                                 </div>
                             </div>
 
                             {/* PIN Input */}
-                            <div className="text-center">
-                                <label className="label">Ingresa tu PIN de 4 dígitos</label>
+                            <div 
+                                className="text-center p-5"
+                                style={{ 
+                                    background: 'var(--surface-elevated)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    border: '1px solid var(--surface-border)',
+                                }}
+                            >
+                                <div className="flex items-center justify-center gap-2 mb-3">
+                                    <FiShield size={18} style={{ color: 'var(--primary-500)' }} />
+                                    <label className="font-medium">Ingresa tu PIN de 4 dígitos</label>
+                                </div>
                                 <PinInput
                                     onComplete={(completedPin) => setPin(completedPin)}
                                     disabled={signing}
                                     mode="verify"
                                     error={error}
                                 />
+                                {error && (
+                                    <div className="mt-3 text-sm" style={{ color: 'var(--error-500)' }}>
+                                        <FiAlertCircle style={{ display: 'inline', marginRight: '4px' }} />
+                                        {error}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        <div className="modal-footer">
+                        <div 
+                            className="modal-footer" 
+                            style={{ 
+                                borderTop: '1px solid var(--surface-border)',
+                                paddingTop: 'var(--space-4)',
+                                gap: 'var(--space-3)',
+                            }}
+                        >
                             <button
                                 className="btn btn-secondary"
                                 onClick={() => setShowSignModal(false)}
                                 disabled={signing}
+                                style={{ flex: 1 }}
                             >
+                                <FiX size={16} />
                                 Cancelar
                             </button>
                             <button
                                 className="btn btn-primary"
                                 onClick={handleSign}
                                 disabled={signing || pin.length !== 4}
+                                style={{ 
+                                    flex: 2,
+                                    boxShadow: pin.length === 4 ? 'var(--shadow-glow-primary)' : 'none',
+                                }}
                             >
-                                {signing ? <div className="spinner" /> : <FiCheck />}
-                                Confirmar Firma
+                                {signing ? (
+                                    <>
+                                        <div className="spinner" style={{ width: '16px', height: '16px' }} />
+                                        Firmando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FiCheck size={18} />
+                                        Confirmar Firma
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>
