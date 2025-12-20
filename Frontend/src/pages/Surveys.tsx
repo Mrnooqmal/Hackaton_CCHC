@@ -17,7 +17,8 @@ import {
     FiAlertCircle,
     FiBarChart2,
     FiTrash2,
-    FiSend
+    FiSend,
+    FiEye
 } from 'react-icons/fi';
 
 interface QuestionDraft {
@@ -49,6 +50,7 @@ export default function Surveys() {
     const [error, setError] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [creating, setCreating] = useState(false);
+    const [selectedSurvey, setSelectedSurvey] = useState<Survey | null>(null);
 
     const [form, setForm] = useState({
         titulo: '',
@@ -236,6 +238,30 @@ export default function Surveys() {
         return 'Todos los trabajadores';
     };
 
+    const formatQuestionType = (tipo: SurveyQuestionType) => {
+        switch (tipo) {
+            case 'multiple':
+                return 'Selección múltiple';
+            case 'escala':
+                return 'Escala';
+            case 'abierta':
+                return 'Respuesta abierta';
+            default:
+                return tipo;
+        }
+    };
+
+    const getRecipientStats = (survey: Survey) => {
+        const totalRecipients = survey.stats?.totalRecipients ?? survey.recipients?.length ?? 0;
+        const respondedFromStats = survey.stats?.responded;
+        const respondedFallback = survey.recipients?.filter((recipient) => recipient.estado === 'respondida').length ?? 0;
+        const respondedCount = respondedFromStats ?? respondedFallback;
+        const pendingCount = Math.max(totalRecipients - respondedCount, 0);
+        return { totalRecipients, respondedCount, pendingCount };
+    };
+
+    const detailStats = selectedSurvey ? getRecipientStats(selectedSurvey) : null;
+
     if (loading) {
         return (
             <div className="flex items-center justify-center" style={{ height: '100vh' }}>
@@ -361,6 +387,16 @@ export default function Surveys() {
                                     {(survey.recipients || []).length > 6 && (
                                         <span className="text-sm text-muted">+{(survey.recipients || []).length - 6} más</span>
                                     )}
+                                </div>
+
+                                <div className="flex justify-end mt-4">
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={() => setSelectedSurvey(survey)}
+                                    >
+                                        <FiEye />
+                                        Ver detalles
+                                    </button>
                                 </div>
                             </div>
                         ))}
@@ -583,6 +619,111 @@ export default function Surveys() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {selectedSurvey && (
+                <div className="modal-overlay">
+                    <div className="modal" style={{ maxWidth: '900px' }}>
+                        <div className="modal-header">
+                            <div>
+                                <h2 className="modal-title">Detalles de la encuesta</h2>
+                                <p className="text-muted text-sm">{selectedSurvey.titulo}</p>
+                            </div>
+                            <button className="btn btn-ghost btn-icon" onClick={() => setSelectedSurvey(null)}>
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                            <section className="mb-6">
+                                <h3 className="text-lg font-semibold mb-3">Preguntas</h3>
+                                {selectedSurvey.preguntas?.length ? (
+                                    <div className="space-y-4">
+                                        {selectedSurvey.preguntas.map((question, index) => (
+                                            <div key={question.questionId || `${question.titulo}-${index}`} className="card">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div>
+                                                        <p className="text-sm text-muted">Pregunta {index + 1}</p>
+                                                        <h4 className="font-semibold">{question.titulo}</h4>
+                                                    </div>
+                                                    <span className="badge badge-neutral">{formatQuestionType(question.tipo)}</span>
+                                                </div>
+                                                {question.descripcion && (
+                                                    <p className="text-sm text-muted mb-3">{question.descripcion}</p>
+                                                )}
+                                                {question.tipo === 'multiple' && question.opciones && (
+                                                    <div>
+                                                        <p className="text-sm font-semibold mb-1">Opciones</p>
+                                                        <ul className="list-disc pl-5 text-sm text-muted">
+                                                            {question.opciones.map((opcion) => (
+                                                                <li key={opcion}>{opcion}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                                {question.tipo === 'escala' && (
+                                                    <p className="text-sm text-muted">Escala máxima: {question.escalaMax || 5}</p>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-muted text-sm">No hay preguntas registradas.</p>
+                                )}
+                            </section>
+
+                            <section>
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-lg font-semibold">Destinatarios</h3>
+                                    <div className="text-sm text-muted">
+                                        {detailStats
+                                            ? `${detailStats.respondedCount} respondidas · ${detailStats.pendingCount} pendientes`
+                                            : 'Sin destinatarios'}
+                                    </div>
+                                </div>
+
+                                {selectedSurvey.recipients?.length ? (
+                                    <div className="table-container" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                        <table className="table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Trabajador</th>
+                                                    <th>RUT</th>
+                                                    <th>Cargo</th>
+                                                    <th>Estado</th>
+                                                    <th>Respondió</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {selectedSurvey.recipients.map((recipient) => (
+                                                    <tr key={recipient.workerId}>
+                                                        <td>{recipient.nombre}</td>
+                                                        <td>{recipient.rut}</td>
+                                                        <td>{recipient.cargo || 'Sin cargo'}</td>
+                                                        <td>
+                                                            <span className={`badge ${recipient.estado === 'respondida' ? 'badge-success' : 'badge-neutral'}`}>
+                                                                {recipient.estado}
+                                                            </span>
+                                                        </td>
+                                                        <td>{recipient.respondedAt ? new Date(recipient.respondedAt).toLocaleString() : '—'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <p className="text-muted text-sm">No hay trabajadores asignados.</p>
+                                )}
+                            </section>
+                        </div>
+
+                        <div className="modal-footer">
+                            <button className="btn" onClick={() => setSelectedSurvey(null)}>
+                                Cerrar
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
