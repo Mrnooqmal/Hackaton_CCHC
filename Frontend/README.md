@@ -73,7 +73,6 @@ VITE_API_URL=https://tu-api-gateway.execute-api.us-east-1.amazonaws.com/dev
 VITE_INCIDENT_EVIDENCE_BASE_URL=https://tu-bucket.s3.amazonaws.com
 ```
 
-
 ## Características Principales
 
 - **Módulo de Firmas Offline**: Captura de firmas en terreno sin conexión con sincronización automática
