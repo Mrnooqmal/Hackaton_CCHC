@@ -268,7 +268,7 @@ export interface UserListParams {
     estado?: string;
 }
 
-export interface IncidentStatsParams {
+export interface LoginResponse {
     token: string;
     sessionId: string;
     expiresAt: string;
@@ -745,10 +745,12 @@ export interface Incident {
 
 export interface Investigation {
     investigador: string;
+    rolInvestigador: 'prevencionista' | 'jefe_directo' | 'comite_paritario';
     fecha: string;
     hallazgos: string;
     recomendaciones: string;
     medidas: string[];
+    estado: 'pendiente' | 'completada';
 }
 
 export interface CreateIncidentData {
@@ -768,6 +770,10 @@ export interface CreateIncidentData {
     evidencias?: string[];
     reportadoPor?: string;
     empresaId?: string;
+    // Campos adicionales para reportes QR
+    clasificacion?: 'hallazgo' | 'incidente';
+    tipoHallazgo?: 'accion' | 'condicion';
+    etapaConstructiva?: string;
 }
 
 export interface UpdateIncidentData {
@@ -781,6 +787,78 @@ export interface UpdateIncidentData {
         diep?: string;
     };
     evidencias?: string[];
+}
+
+// Nuevas interfaces para Fase 4
+
+export interface AddInvestigationData {
+    tipo: 'prevencionista' | 'jefe_directo' | 'comite_paritario';
+    hallazgos: string;
+    recomendaciones: string;
+    medidas: string[];
+}
+
+export interface UploadDocumentData {
+    fileName: string;
+    fileType: string;
+    documentType: 'diat' | 'diep';
+}
+
+export interface DocumentReference {
+    documentType: 'diat' | 'diep';
+    s3Key: string;
+    fileName: string;
+    uploadedBy: string;
+    uploadedAt: string;
+    url?: string;
+}
+
+export interface QuickReportData {
+    qrToken: string;
+    tipo: 'accidente' | 'incidente' | 'condicion_subestandar';
+    clasificacion: 'hallazgo' | 'incidente';
+    tipoHallazgo: 'accion' | 'condicion';
+    etapaConstructiva: string;
+    centroTrabajo: string;
+    descripcion: string;
+    reportadoPor: string;
+    evidencias?: File[];
+    firmaConfirmacion: {
+        nombre: string;
+        timestamp: string;
+    };
+}
+
+export interface QRReportResponse {
+    success: boolean;
+    incidentId?: string;
+    message?: string;
+    error?: string;
+}
+
+export interface AnalyticsData {
+    periodo: string;
+    distribucionPorTipo: {
+        accidentes: number;
+        incidentes: number;
+        condicionesSubestandar: number;
+    };
+    distribucionPorGravedad: {
+        leve: number;
+        grave: number;
+        fatal: number;
+    };
+    tendencias: Array<{
+        mes: string;
+        total: number;
+        accidentes: number;
+        incidentes: number;
+    }>;
+    porCentroTrabajo: Array<{
+        centro: string;
+        total: number;
+        tasa: number;
+    }>;
 }
 
 export interface IncidentListParams {
@@ -859,7 +937,35 @@ export const incidentsApi = {
         }),
 
     getStats: (params?: IncidentStatsParams) => {
-        const query = new URLSearchParams(params as Record<string, string>).toString();
+        const query = params ? new URLSearchParams(params as any).toString() : '';
         return apiRequest<IncidentStats>(`/incidents/stats${query ? `?${query}` : ''}`);
     },
+
+    // Nuevos endpoints para Fase 4
+
+    addInvestigation: (incidentId: string, data: AddInvestigationData) =>
+        apiRequest<{ message: string; investigation: Investigation }>(`/incidents/${incidentId}/investigations`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    uploadDocument: (incidentId: string, data: UploadDocumentData) =>
+        apiRequest<{ uploadUrl: string; s3Key: string }>(`/incidents/${incidentId}/documents`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    getDocuments: (incidentId: string) =>
+        apiRequest<{ documents: DocumentReference[] }>(`/incidents/${incidentId}/documents`),
+
+    getAnalytics: (params?: { empresaId?: string; fechaInicio?: string; fechaFin?: string }) => {
+        const query = new URLSearchParams(params as Record<string, string>).toString();
+        return apiRequest<AnalyticsData>(`/incidents/analytics${query ? `?${query}` : ''}`);
+    },
+
+    quickReport: (data: QuickReportData) =>
+        apiRequest<QRReportResponse>('/incidents/quick-report', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
 };
