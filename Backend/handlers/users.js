@@ -374,12 +374,27 @@ module.exports.resetPassword = async (event) => {
             })
         );
 
+        // Enviar email con nueva contraseña temporal
+        const user = userResult.Item;
+        let emailSent = false;
+        if (user.email) {
+            try {
+                const { sendWelcomeEmail } = require('./notifications');
+                const emailResult = await sendWelcomeEmail(user.email, user.nombre, user.rut, passwordTemporal);
+                emailSent = emailResult.sent;
+            } catch (emailErr) {
+                console.error('Error sending reset password email:', emailErr);
+            }
+        }
 
         return success({
             message: 'Contraseña reseteada exitosamente',
             userId: id,
             passwordTemporal,
-            instrucciones: 'El usuario debe cambiar esta contraseña en su próximo acceso'
+            emailNotificado: emailSent,
+            instrucciones: emailSent
+                ? 'Se ha enviado un email con la nueva contraseña al usuario'
+                : 'El usuario debe cambiar esta contraseña en su próximo acceso'
         });
     } catch (err) {
         console.error('Error resetting password:', err);

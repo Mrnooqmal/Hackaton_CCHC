@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { usersApi, type User } from '../api/client';
-import { FiUserPlus, FiShield, FiLock, FiEdit2, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
+import { FiUserPlus, FiShield, FiLock, FiEdit2, FiCheckCircle, FiAlertCircle, FiX, FiSave } from 'react-icons/fi';
 
 export default function UserManagement() {
     const [users, setUsers] = useState<User[]>([]);
@@ -17,6 +17,15 @@ export default function UserManagement() {
         cargo: ''
     });
     const [creadoResult, setCreadoResult] = useState<{ password?: string; user: any } | null>(null);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
+    const [editForm, setEditForm] = useState({
+        nombre: '',
+        apellido: '',
+        email: '',
+        cargo: '',
+        estado: '' as 'pendiente' | 'activo' | 'suspendido'
+    });
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -66,10 +75,46 @@ export default function UserManagement() {
         try {
             const response = await usersApi.resetPassword(userId);
             if (response.success && response.data) {
-                alert(`Contraseña reseteada. Nueva contraseña temporal: ${response.data.passwordTemporal}`);
+                const emailInfo = (response.data as any).emailNotificado
+                    ? '\nSe ha enviado un email con la nueva contraseña.'
+                    : '';
+                alert(`Contraseña reseteada. Nueva contraseña temporal: ${response.data.passwordTemporal}${emailInfo}`);
             }
         } catch (err) {
             alert('Error al resetear contraseña');
+        }
+    };
+
+    const openEditModal = (user: User) => {
+        setEditingUser(user);
+        setEditForm({
+            nombre: user.nombre,
+            apellido: user.apellido || '',
+            email: user.email || '',
+            cargo: (user as any).cargo || '',
+            estado: user.estado
+        });
+        setShowEditModal(true);
+    };
+
+    const handleUpdateUser = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingUser) return;
+
+        setLoading(true);
+        try {
+            const response = await usersApi.update(editingUser.userId, editForm);
+            if (response.success) {
+                setShowEditModal(false);
+                setEditingUser(null);
+                fetchUsers();
+            } else {
+                setError(response.error || 'Error al actualizar usuario');
+            }
+        } catch (err) {
+            setError('Error de conexión');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -180,7 +225,11 @@ export default function UserManagement() {
                                                 >
                                                     <FiLock />
                                                 </button>
-                                                <button className="btn btn-secondary btn-sm" title="Editar">
+                                                <button
+                                                    className="btn btn-secondary btn-sm"
+                                                    title="Editar"
+                                                    onClick={() => openEditModal(u)}
+                                                >
                                                     <FiEdit2 />
                                                 </button>
                                             </div>
@@ -318,6 +367,100 @@ export default function UserManagement() {
                                         <>
                                             <FiUserPlus className="mr-2" />
                                             Crear Usuario
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Edición */}
+            {showEditModal && editingUser && (
+                <div className="modal-overlay">
+                    <div className="modal-content max-w-md">
+                        <div className="modal-header">
+                            <div className="modal-header-icon" style={{ background: 'linear-gradient(135deg, var(--info-500), var(--info-600))' }}>
+                                <FiEdit2 size={24} />
+                            </div>
+                            <h2 className="modal-title">Editar Usuario</h2>
+                            <p className="modal-subtitle">{editingUser.nombre} {editingUser.apellido}</p>
+                        </div>
+
+                        <form onSubmit={handleUpdateUser} className="modal-body">
+                            <div className="form-section">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="form-group">
+                                        <label className="form-label">Nombre</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            value={editForm.nombre}
+                                            onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Apellido</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            value={editForm.apellido}
+                                            onChange={(e) => setEditForm({ ...editForm, apellido: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Email</label>
+                                    <input
+                                        type="email"
+                                        className="form-input"
+                                        value={editForm.email}
+                                        onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Cargo</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        value={editForm.cargo}
+                                        onChange={(e) => setEditForm({ ...editForm, cargo: e.target.value })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Estado</label>
+                                    <select
+                                        className="form-input"
+                                        value={editForm.estado}
+                                        onChange={(e) => setEditForm({ ...editForm, estado: e.target.value as any })}
+                                    >
+                                        <option value="pendiente">Pendiente</option>
+                                        <option value="activo">Activo</option>
+                                        <option value="suspendido">Suspendido</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="modal-footer">
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => { setShowEditModal(false); setEditingUser(null); }}
+                                >
+                                    <FiX className="mr-2" />
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="btn btn-primary"
+                                    disabled={loading}
+                                >
+                                    {loading ? <div className="spinner" /> : (
+                                        <>
+                                            <FiSave className="mr-2" />
+                                            Guardar Cambios
                                         </>
                                     )}
                                 </button>
