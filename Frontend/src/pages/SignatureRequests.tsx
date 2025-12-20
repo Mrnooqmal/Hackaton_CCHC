@@ -447,81 +447,108 @@ export default function SignatureRequests() {
             {/* Create Modal */}
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                    <div className="modal" style={{ maxWidth: '800px' }} onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2>Nueva Solicitud de Firma</h2>
+                    <div
+                        className="modal"
+                        style={{
+                            maxWidth: '900px',
+                            width: '95vw',
+                            maxHeight: '90vh',
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="modal-header" style={{ flexShrink: 0 }}>
+                            <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                📝 Nueva Solicitud de Firma
+                            </h2>
                             <button className="btn btn-ghost" onClick={() => { resetForm(); setShowModal(false); }}>
                                 <FiX />
                             </button>
                         </div>
 
-                        <form onSubmit={handleCreateRequest}>
-                            <div className="modal-body">
+                        <form onSubmit={handleCreateRequest} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                            <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-4)' }}>
                                 {/* Step 1: Type Selection */}
-                                <div className="mb-6">
-                                    <label className="label">Tipo de Solicitud</label>
-                                    <div className="grid grid-cols-3 gap-2">
+                                <div className="mb-5">
+                                    <label className="label" style={{ fontSize: 'var(--text-sm)', fontWeight: '600' }}>
+                                        📋 Tipo de Solicitud
+                                    </label>
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                                        gap: 'var(--space-2)'
+                                    }}>
                                         {Object.entries(REQUEST_TYPES).map(([key, value]) => (
                                             <div
                                                 key={key}
-                                                className={`card ${newRequest.tipo === key ? 'selected' : ''}`}
                                                 style={{
                                                     cursor: 'pointer',
                                                     padding: 'var(--space-3)',
-                                                    border: newRequest.tipo === key ? '2px solid var(--primary-500)' : '1px solid var(--neutral-200)',
-                                                    background: newRequest.tipo === key ? 'var(--primary-50)' : 'white',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    border: newRequest.tipo === key ? '2px solid var(--primary-500)' : '1px solid var(--surface-border)',
+                                                    background: newRequest.tipo === key ? 'var(--primary-500)' : 'var(--surface-elevated)',
+                                                    color: newRequest.tipo === key ? 'white' : 'var(--text-primary)',
+                                                    transition: 'all 0.2s',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 'var(--space-2)'
                                                 }}
                                                 onClick={() => setNewRequest({ ...newRequest, tipo: key, titulo: '' })}
                                             >
-                                                <div className="flex items-center gap-2">
-                                                    <span style={{ fontSize: '1.2rem' }}>{value.icon}</span>
-                                                    <span className="text-sm font-medium">{value.label}</span>
-                                                </div>
+                                                <span style={{ fontSize: '1.3rem' }}>{value.icon}</span>
+                                                <span style={{ fontSize: 'var(--text-sm)', fontWeight: '500' }}>{value.label}</span>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
 
                                 {/* Step 2: Details */}
-                                <div className="grid grid-cols-2 gap-4 mb-6">
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                                    gap: 'var(--space-3)',
+                                    marginBottom: 'var(--space-4)'
+                                }}>
                                     <div>
-                                        <label className="label">Título (opcional)</label>
+                                        <label className="label" style={{ fontSize: 'var(--text-sm)' }}>Título (opcional)</label>
                                         <input
                                             type="text"
-                                            className="input"
+                                            className="form-input"
                                             placeholder={REQUEST_TYPES[newRequest.tipo].label}
                                             value={newRequest.titulo}
                                             onChange={(e) => setNewRequest({ ...newRequest, titulo: e.target.value })}
                                         />
                                     </div>
                                     <div>
-                                        <label className="label">Fecha Límite (opcional)</label>
+                                        <label className="label" style={{ fontSize: 'var(--text-sm)' }}>Fecha Límite (opcional)</label>
                                         <input
                                             type="date"
-                                            className="input"
+                                            className="form-input"
                                             value={newRequest.fechaLimite}
                                             onChange={(e) => setNewRequest({ ...newRequest, fechaLimite: e.target.value })}
                                         />
                                     </div>
                                 </div>
 
-                                <div className="mb-6">
-                                    <label className="label">Descripción (opcional)</label>
+                                <div className="mb-4">
+                                    <label className="label" style={{ fontSize: 'var(--text-sm)' }}>Descripción (opcional)</label>
                                     <textarea
-                                        className="input"
+                                        className="form-input"
                                         rows={2}
                                         placeholder="Descripción de la solicitud..."
                                         value={newRequest.descripcion}
                                         onChange={(e) => setNewRequest({ ...newRequest, descripcion: e.target.value })}
+                                        style={{ resize: 'vertical', minHeight: '60px' }}
                                     />
                                 </div>
 
                                 {/* Step 3: Documents */}
-                                <div className="mb-6">
-                                    <label className="label">
-                                        Documentos Adjuntos
+                                <div className="mb-4">
+                                    <label className="label" style={{ fontSize: 'var(--text-sm)' }}>
+                                        📎 Documentos Adjuntos
                                         {REQUEST_TYPES[newRequest.tipo].requiresDoc && (
-                                            <span style={{ color: 'var(--error-500)' }}> *</span>
+                                            <span style={{ color: 'var(--danger-500)' }}> *</span>
                                         )}
                                     </label>
                                     <input
@@ -533,14 +560,14 @@ export default function SignatureRequests() {
                                         style={{ display: 'none' }}
                                     />
                                     <div
-                                        className="upload-zone"
                                         style={{
-                                            border: '2px dashed var(--neutral-300)',
+                                            border: '2px dashed var(--surface-border)',
                                             borderRadius: 'var(--radius-lg)',
-                                            padding: 'var(--space-6)',
+                                            padding: 'var(--space-4)',
                                             textAlign: 'center',
                                             cursor: 'pointer',
-                                            background: 'var(--neutral-50)',
+                                            background: 'var(--surface-base)',
+                                            transition: 'all 0.2s'
                                         }}
                                         onClick={() => fileInputRef.current?.click()}
                                     >
@@ -548,23 +575,23 @@ export default function SignatureRequests() {
                                             <div className="spinner" />
                                         ) : (
                                             <>
-                                                <FiUpload size={32} style={{ color: 'var(--neutral-400)', marginBottom: '8px' }} />
-                                                <p className="text-muted">Click para subir archivos</p>
-                                                <p className="text-xs text-muted">PDF, Word, Excel, Imágenes (máx 10MB)</p>
+                                                <FiUpload size={28} style={{ color: 'var(--text-muted)', marginBottom: '4px' }} />
+                                                <p className="text-muted" style={{ fontSize: 'var(--text-sm)', marginBottom: '2px' }}>Click para subir archivos</p>
+                                                <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>PDF, Word, Excel, Imágenes (máx 10MB)</p>
                                             </>
                                         )}
                                     </div>
                                     {uploadedDocs.length > 0 && (
-                                        <div className="flex gap-2 flex-wrap mt-3">
+                                        <div className="flex gap-2 flex-wrap mt-2">
                                             {uploadedDocs.map((doc, idx) => (
-                                                <div key={idx} className="badge" style={{ background: 'var(--success-100)', color: 'var(--success-700)' }}>
-                                                    <FiFile size={14} /> {doc.nombre}
+                                                <div key={idx} className="badge" style={{ background: 'var(--success-100)', color: 'var(--success-700)', padding: '4px 8px' }}>
+                                                    <FiFile size={12} /> {doc.nombre}
                                                     <button
                                                         type="button"
                                                         onClick={() => removeDocument(idx)}
                                                         style={{ marginLeft: '4px', cursor: 'pointer', background: 'none', border: 'none', color: 'inherit' }}
                                                     >
-                                                        <FiX size={14} />
+                                                        <FiX size={12} />
                                                     </button>
                                                 </div>
                                             ))}
@@ -575,75 +602,128 @@ export default function SignatureRequests() {
                                 {/* Step 4: Select Workers */}
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
-                                        <label className="label" style={{ marginBottom: 0 }}>
-                                            Trabajadores a Firmar <span style={{ color: 'var(--error-500)' }}>*</span>
+                                        <label className="label" style={{ marginBottom: 0, fontSize: 'var(--text-sm)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            👥 Asignar Firmantes <span style={{ color: 'var(--danger-500)' }}>*</span>
+                                            <span className="badge" style={{
+                                                background: selectedWorkers.length > 0 ? 'var(--primary-500)' : 'var(--surface-border)',
+                                                color: selectedWorkers.length > 0 ? 'white' : 'var(--text-muted)',
+                                                fontSize: '11px',
+                                                padding: '2px 8px'
+                                            }}>
+                                                {selectedWorkers.length} de {workers.length}
+                                            </span>
                                         </label>
                                         <button
                                             type="button"
                                             className="btn btn-ghost btn-sm"
                                             onClick={selectAllWorkers}
+                                            style={{ fontSize: '12px', padding: '4px 8px' }}
                                         >
-                                            {selectedWorkers.length === workers.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                                            {selectedWorkers.length === workers.length ? '✓ Deseleccionar todos' : '☐ Seleccionar todos'}
                                         </button>
                                     </div>
                                     <div
-                                        className="grid grid-cols-2 gap-2"
-                                        style={{ maxHeight: '200px', overflowY: 'auto', padding: 'var(--space-2)', background: 'var(--neutral-50)', borderRadius: 'var(--radius-md)' }}
+                                        style={{
+                                            maxHeight: '250px',
+                                            overflowY: 'auto',
+                                            padding: 'var(--space-2)',
+                                            background: 'var(--surface-base)',
+                                            borderRadius: 'var(--radius-md)',
+                                            border: '1px solid var(--surface-border)',
+                                            display: 'grid',
+                                            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                                            gap: 'var(--space-2)'
+                                        }}
                                     >
                                         {workers.map((worker) => (
                                             <label
                                                 key={worker.workerId}
-                                                className="flex items-center gap-2 p-2 rounded cursor-pointer"
                                                 style={{
-                                                    background: selectedWorkers.includes(worker.workerId) ? 'var(--primary-50)' : 'white',
-                                                    border: selectedWorkers.includes(worker.workerId) ? '1px solid var(--primary-300)' : '1px solid var(--neutral-200)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 'var(--space-2)',
+                                                    padding: 'var(--space-2) var(--space-3)',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    cursor: 'pointer',
+                                                    background: selectedWorkers.includes(worker.workerId) ? 'var(--primary-100)' : 'var(--surface-elevated)',
+                                                    border: selectedWorkers.includes(worker.workerId) ? '1px solid var(--primary-400)' : '1px solid var(--surface-border)',
+                                                    transition: 'all 0.15s'
                                                 }}
                                             >
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedWorkers.includes(worker.workerId)}
                                                     onChange={() => toggleWorkerSelection(worker.workerId)}
+                                                    style={{ width: '16px', height: '16px', accentColor: 'var(--primary-500)' }}
                                                 />
-                                                <div className="flex-1">
-                                                    <div className="text-sm font-medium flex items-center gap-2">
-                                                        {worker.nombre} {worker.apellido}
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{
+                                                        fontSize: 'var(--text-sm)',
+                                                        fontWeight: '500',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '6px',
+                                                        flexWrap: 'wrap'
+                                                    }}>
+                                                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                            {worker.nombre} {worker.apellido}
+                                                        </span>
                                                         {(worker as any).rol && (
-                                                            <span className="badge" style={{ fontSize: '10px', padding: '1px 6px', background: (worker as any).rol === 'prevencionista' ? 'var(--primary-100)' : 'var(--info-100)', color: (worker as any).rol === 'prevencionista' ? 'var(--primary-600)' : 'var(--info-600)' }}>
+                                                            <span style={{
+                                                                fontSize: '9px',
+                                                                padding: '1px 5px',
+                                                                borderRadius: '8px',
+                                                                background: (worker as any).rol === 'prevencionista' ? 'var(--primary-500)' : 'var(--info-500)',
+                                                                color: 'white',
+                                                                textTransform: 'capitalize'
+                                                            }}>
                                                                 {(worker as any).rol}
                                                             </span>
                                                         )}
+                                                        {!worker.habilitado && (
+                                                            <span style={{
+                                                                fontSize: '9px',
+                                                                padding: '1px 5px',
+                                                                borderRadius: '8px',
+                                                                background: 'var(--warning-100)',
+                                                                color: 'var(--warning-700)'
+                                                            }}>
+                                                                Sin enrolar
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    <div className="text-xs text-muted">
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>
                                                         {worker.cargo} • {worker.rut}
-                                                        {!worker.habilitado && <span style={{ color: 'var(--warning-500)', marginLeft: '4px' }}>⚠️ Sin enrolar</span>}
                                                     </div>
                                                 </div>
                                             </label>
                                         ))}
                                     </div>
                                     {workers.filter(w => !w.habilitado).length > 0 && (
-                                        <p className="text-xs text-muted mt-2">
-                                            ⚠️ {workers.filter(w => !w.habilitado).length} persona(s) sin enrolar - pueden ser asignadas pero no podrán firmar hasta completar enrolamiento
+                                        <p style={{ fontSize: '11px', color: 'var(--warning-600)', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            ⚠️ Las personas sin enrolar pueden ser asignadas pero no podrán firmar hasta completar su enrolamiento
                                         </p>
                                     )}
-                                    <p className="text-sm mt-2" style={{ color: 'var(--primary-600)' }}>
-                                        {selectedWorkers.length} persona(s) seleccionada(s)
-                                    </p>
                                 </div>
                             </div>
 
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => { resetForm(); setShowModal(false); }}>
-                                    Cancelar
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="btn btn-primary"
-                                    disabled={submitting || selectedWorkers.length === 0 || (REQUEST_TYPES[newRequest.tipo].requiresDoc && uploadedDocs.length === 0)}
-                                >
-                                    {submitting ? <div className="spinner" /> : <FiCheck />}
-                                    Crear Solicitud
-                                </button>
+                            <div className="modal-footer" style={{ flexShrink: 0, borderTop: '1px solid var(--surface-border)', padding: 'var(--space-4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
+                                    {selectedWorkers.length === 0 ? '⚠️ Selecciona al menos un firmante' : `✓ ${selectedWorkers.length} firmante(s)`}
+                                </span>
+                                <div className="flex gap-2">
+                                    <button type="button" className="btn btn-ghost" onClick={() => { resetForm(); setShowModal(false); }}>
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="btn btn-primary"
+                                        disabled={submitting || selectedWorkers.length === 0 || (REQUEST_TYPES[newRequest.tipo].requiresDoc && uploadedDocs.length === 0)}
+                                    >
+                                        {submitting ? <div className="spinner" style={{ width: '16px', height: '16px' }} /> : <FiCheck />}
+                                        Crear Solicitud
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>

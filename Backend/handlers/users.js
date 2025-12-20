@@ -634,9 +634,32 @@ module.exports.completeEnrollment = async (event) => {
             })
         );
 
+        // Si el usuario tiene workerId vinculado, actualizar también la tabla Workers
+        if (user.workerId) {
+            try {
+                await docClient.send(
+                    new UpdateCommand({
+                        TableName: WORKERS_TABLE,
+                        Key: { workerId: user.workerId },
+                        UpdateExpression: 'SET habilitado = :habilitado, firmaEnrolamiento = :firmaEnrolamiento, pinHash = :pinHash, updatedAt = :updatedAt',
+                        ExpressionAttributeValues: {
+                            ':habilitado': true,
+                            ':firmaEnrolamiento': firmaEnrolamiento,
+                            ':pinHash': user.pinHash,
+                            ':updatedAt': now.toISOString(),
+                        },
+                    })
+                );
+            } catch (workerErr) {
+                console.error('Error sincronizando worker:', workerErr);
+                // No falla el enrolamiento por esto
+            }
+        }
+
         return success({
             message: 'Enrolamiento completado exitosamente. El usuario está ahora habilitado.',
             userId: id,
+            workerId: user.workerId || null,
             habilitado: true,
             firma: {
                 token: firmaEnrolamiento.token,
