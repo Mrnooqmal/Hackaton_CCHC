@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { KeyboardEvent } from 'react';
 import Header from '../components/Header';
 import {
     FiPlus, FiAlertTriangle, FiFilter, FiX, FiUpload, FiImage,
@@ -40,6 +41,7 @@ export default function Incidents() {
     const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailError, setDetailError] = useState('');
+    const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
     const [showFilters, setShowFilters] = useState(false);
     const [filters, setFilters] = useState({
         tipo: '',
@@ -228,6 +230,11 @@ export default function Incidents() {
         } finally {
             setDetailLoading(false);
         }
+    };
+
+    const openImagePreview = (url: string, title: string) => {
+        if (!url) return;
+        setImagePreview({ url, title });
     };
 
     const getEstadoBadge = (estado: string) => {
@@ -890,9 +897,25 @@ export default function Incidents() {
                                             <div className="grid grid-cols-4 gap-3 incident-evidence-grid">
                                                 {evidenceItems.map((item, index) => {
                                                     const fileName = item.key.split('/').pop() || `Evidencia ${index + 1}`;
+                                                    const isClickable = Boolean(item.url);
+
+                                                    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+                                                        if (!isClickable) return;
+                                                        if (event.key === 'Enter' || event.key === ' ') {
+                                                            event.preventDefault();
+                                                            openImagePreview(item.url as string, fileName);
+                                                        }
+                                                    };
 
                                                     return (
-                                                        <div key={`${item.key}-${index}`} className="incident-evidence-card">
+                                                        <div
+                                                            key={`${item.key}-${index}`}
+                                                            className={`incident-evidence-card ${isClickable ? 'is-clickable' : ''}`}
+                                                            onClick={() => isClickable && openImagePreview(item.url as string, fileName)}
+                                                            role={isClickable ? 'button' : undefined}
+                                                            tabIndex={isClickable ? 0 : undefined}
+                                                            onKeyDown={handleKeyDown}
+                                                        >
                                                             {item.url ? (
                                                                 <img
                                                                     src={item.url}
@@ -925,12 +948,30 @@ export default function Incidents() {
                                     setSelectedIncident(null);
                                     setDetailError('');
                                     setDetailLoading(false);
+                                    setImagePreview(null);
                                 }}
                             >
                                 <FiX className="mr-2" />
                                 Cerrar
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {imagePreview && (
+                <div className="incident-evidence-lightbox" onClick={() => setImagePreview(null)}>
+                    <div className="incident-evidence-lightbox-content" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            type="button"
+                            className="incident-evidence-lightbox-close"
+                            onClick={() => setImagePreview(null)}
+                            aria-label="Cerrar imagen"
+                        >
+                            <FiX size={20} />
+                        </button>
+                        <img src={imagePreview.url} alt={imagePreview.title} />
+                        <p>{imagePreview.title}</p>
                     </div>
                 </div>
             )}
@@ -1081,6 +1122,15 @@ export default function Incidents() {
                     transition: transform var(--transition-normal);
                 }
 
+                .incident-evidence-card.is-clickable {
+                    cursor: zoom-in;
+                }
+
+                .incident-evidence-card.is-clickable:focus-visible {
+                    outline: 2px solid var(--primary-400);
+                    outline-offset: 2px;
+                }
+
                 .incident-evidence-card:hover img {
                     transform: scale(1.05);
                 }
@@ -1106,6 +1156,57 @@ export default function Incidents() {
                     align-items: center;
                     justify-content: center;
                     color: var(--text-muted);
+                }
+
+                .incident-evidence-lightbox {
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(0, 0, 0, 0.85);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 1100;
+                    padding: var(--space-6);
+                }
+
+                .incident-evidence-lightbox-content {
+                    position: relative;
+                    max-width: min(1200px, 90vw);
+                    max-height: 90vh;
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-3);
+                    align-items: center;
+                }
+
+                .incident-evidence-lightbox-content img {
+                    max-width: 100%;
+                    max-height: 80vh;
+                    border-radius: var(--radius-md);
+                    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+                }
+
+                .incident-evidence-lightbox-content p {
+                    color: white;
+                    font-size: var(--text-sm);
+                    text-align: center;
+                }
+
+                .incident-evidence-lightbox-close {
+                    position: absolute;
+                    top: 0;
+                    right: 0;
+                    transform: translate(50%, -50%);
+                    background: rgba(0,0,0,0.7);
+                    border: none;
+                    border-radius: var(--radius-full);
+                    color: white;
+                    width: 36px;
+                    height: 36px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
                 }
 
                 .incident-detail-loading {

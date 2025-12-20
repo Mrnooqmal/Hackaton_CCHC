@@ -222,9 +222,9 @@ export default function Sidebar() {
             <div className="sidebar-header">
                 <div className="sidebar-logo">
                     <div className="sidebar-logo-text" aria-label="Build and Serve">
-                        <span className="sidebar-logo-primary">Build</span>
+                        <span className="sidebar-logo-primary">B</span>
                         <span className="sidebar-logo-amp">&</span>
-                        <span className="sidebar-logo-secondary">Serve</span>
+                        <span className="sidebar-logo-secondary">S</span>
                     </div>
                 </div>
             </div>
