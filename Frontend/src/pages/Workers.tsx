@@ -3,10 +3,9 @@ import { Link } from 'react-router-dom';
 import Header from '../components/Header';
 import {
     FiPlus, FiSearch, FiEye, FiX, FiFileText,
-    FiCheckCircle, FiClock, FiDownload, FiUser,
-    FiTrendingUp
+    FiDownload, FiUser, FiTrendingUp
 } from 'react-icons/fi';
-import { usersApi, signaturesApi, type User, type DigitalSignature } from '../api/client';
+import { usersApi, signaturesApi, type User, type DigitalSignature, REQUEST_TYPES } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 interface WorkerStats {
@@ -80,8 +79,11 @@ export default function Workers() {
                 setWorkerStats({
                     totalFirmas: firmas.length,
                     firmasUltimos30Dias: firmas.filter(f => new Date(f.timestamp) > thirtyDaysAgo).length,
-                    documentosFirmados: firmas.filter(f => f.tipoFirma === 'documento').length,
-                    actividadesAsistidas: firmas.filter(f => f.tipoFirma === 'actividad' || f.tipoFirma === 'capacitacion').length
+                    documentosFirmados: firmas.filter(f => (f as any).requestTipo === 'documento' || f.tipoFirma === 'documento').length,
+                    actividadesAsistidas: firmas.filter(f =>
+                        ['actividad', 'capacitacion', 'CHARLA_5MIN', 'INDUCCION', 'ENTREGA_EPP', 'ART', 'PROCEDIMIENTO', 'INSPECCION', 'REGLAMENTO']
+                            .includes((f as any).requestTipo || f.tipoFirma || '')
+                    ).length
                 });
             }
         } catch (error) {
@@ -118,7 +120,7 @@ Actividades asistidas: ${workerStats.actividadesAsistidas}
 HISTORIAL DE FIRMAS
 -------------------
 ${workerSignatures.map(f =>
-            `- ${f.fecha} ${f.horario}: ${f.tipoFirma} (Token: ${f.token.substring(0, 8)}...)`
+            `- ${f.fecha} ${f.horario}: ${(f.metadata as any)?.titulo || (f.metadata as any)?.documentoNombre || f.tipoFirma} (Token: ${f.token.substring(0, 8)}...)`
         ).join('\n')}
 
 ---
@@ -390,13 +392,14 @@ Generado por PrevencionApp
                                             <div className="flex flex-col gap-2">
                                                 {workerSignatures.slice(0, 5).map((sig, index) => (
                                                     <div key={index} className="signature-item">
+
                                                         <div className="flex items-center gap-2">
-                                                            {sig.estado === 'valida' ? (
-                                                                <FiCheckCircle style={{ color: 'var(--success-500)' }} />
-                                                            ) : (
-                                                                <FiClock style={{ color: 'var(--warning-500)' }} />
-                                                            )}
-                                                            <span className="text-sm capitalize">{sig.tipoFirma}</span>
+                                                            <span style={{ fontSize: '1.1rem' }}>
+                                                                {REQUEST_TYPES[(sig as any).requestTipo]?.icon || (sig.tipoFirma === 'enrolamiento' ? '🔑' : '📝')}
+                                                            </span>
+                                                            <span className="text-sm font-medium">
+                                                                {(sig as any).requestTitulo || (sig.metadata as any)?.titulo || (sig.metadata as any)?.documentoNombre || (sig.tipoFirma === 'enrolamiento' ? 'Enrolamiento Digital' : sig.tipoFirma?.replace('_', ' ') || 'Documento sin título')}
+                                                            </span>
                                                         </div>
                                                         <div className="text-xs text-muted">
                                                             {sig.fecha} {sig.horario}
