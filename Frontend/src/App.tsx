@@ -6,7 +6,11 @@ import WorkerEnroll from './pages/WorkerEnroll';
 import Documents from './pages/Documents';
 import Activities from './pages/Activities';
 import AIAssistant from './pages/AIAssistant';
+<<<<<<< HEAD
 import Surveys from './pages/Surveys';
+=======
+import Incidents from './pages/Incidents';
+>>>>>>> refs/remotes/origin/main
 import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
 import ChangePassword from './pages/ChangePassword';
@@ -69,6 +73,12 @@ function AppContent() {
           <Route path="/activities" element={
             <ProtectedRoute>
               <Activities />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/incidents" element={
+            <ProtectedRoute>
+              <Incidents />
             </ProtectedRoute>
           } />
 
