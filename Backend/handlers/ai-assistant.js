@@ -139,11 +139,15 @@ module.exports.generateMIPER = async (event) => {
         }
 
         try {
+            console.log('[AI] Calling Bedrock generateMIPER for cargo:', cargo);
             const result = await bedrock.generateMIPER(cargo, actividades, contexto);
-            return success(result);
+            console.log('[AI] Bedrock generateMIPER SUCCESS');
+            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
         } catch (bedrockError) {
-            console.error('Bedrock error, using fallback:', bedrockError.message);
-            return success(FALLBACK_RESPONSES.miper(cargo));
+            console.error('[AI] Bedrock generateMIPER FAILED:', bedrockError.name, bedrockError.message);
+            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
+            const fallbackResult = FALLBACK_RESPONSES.miper(cargo);
+            return success({ ...fallbackResult, _source: 'fallback', _error: bedrockError.message });
         }
     } catch (err) {
         console.error('Error generating MIPER:', err);
@@ -164,11 +168,15 @@ module.exports.generateRiskMatrix = async (event) => {
         }
 
         try {
+            console.log('[AI] Calling Bedrock generateRiskMatrix for actividad:', actividad);
             const result = await bedrock.generateRiskMatrix(actividad, descripcion, ubicacion);
-            return success(result);
+            console.log('[AI] Bedrock generateRiskMatrix SUCCESS');
+            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
         } catch (bedrockError) {
-            console.error('Bedrock error, using fallback:', bedrockError.message);
-            return success(FALLBACK_RESPONSES.riskMatrix(actividad));
+            console.error('[AI] Bedrock generateRiskMatrix FAILED:', bedrockError.name, bedrockError.message);
+            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
+            const fallbackResult = FALLBACK_RESPONSES.riskMatrix(actividad);
+            return success({ ...fallbackResult, _source: 'fallback', _error: bedrockError.message });
         }
     } catch (err) {
         console.error('Error generating risk matrix:', err);
@@ -189,11 +197,13 @@ module.exports.generatePreventionPlan = async (event) => {
         }
 
         try {
+            console.log('[AI] Calling Bedrock generateMitigationPlan for obra:', obra);
             const result = await bedrock.generateMitigationPlan(obra, riesgos, duracion);
-            return success(result);
+            console.log('[AI] Bedrock generateMitigationPlan SUCCESS');
+            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
         } catch (bedrockError) {
-            console.error('Bedrock error, using fallback:', bedrockError.message);
-            // Fallback similar structure
+            console.error('[AI] Bedrock generateMitigationPlan FAILED:', bedrockError.name, bedrockError.message);
+            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
             return success({
                 titulo: `Plan de Prevención - ${obra}`,
                 periodo: duracion,
@@ -211,7 +221,8 @@ module.exports.generatePreventionPlan = async (event) => {
                 indicadores: [
                     { nombre: 'Tasa de accidentabilidad', meta: '< 2%', formula: 'Accidentes x 100 / Trabajadores' }
                 ],
-                _fallback: true
+                _source: 'fallback',
+                _error: bedrockError.message
             });
         }
     } catch (err) {
@@ -233,11 +244,15 @@ module.exports.generateDailyTalk = async (event) => {
         }
 
         try {
+            console.log('[AI] Calling Bedrock generateDailyTalk for tema:', tema);
             const result = await bedrock.generateDailyTalk(tema, contexto);
-            return success(result);
+            console.log('[AI] Bedrock generateDailyTalk SUCCESS');
+            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
         } catch (bedrockError) {
-            console.error('Bedrock error, using fallback:', bedrockError.message);
-            return success(FALLBACK_RESPONSES.dailyTalk(tema));
+            console.error('[AI] Bedrock generateDailyTalk FAILED:', bedrockError.name, bedrockError.message);
+            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
+            const fallbackResult = FALLBACK_RESPONSES.dailyTalk(tema);
+            return success({ ...fallbackResult, _source: 'fallback', _error: bedrockError.message });
         }
     } catch (err) {
         console.error('Error generating daily talk:', err);
@@ -258,10 +273,13 @@ module.exports.analyzeIncident = async (event) => {
         }
 
         try {
+            console.log('[AI] Calling Bedrock analyzeIncident');
             const result = await bedrock.analyzeIncident(descripcion, { tipo, gravedad, area });
-            return success(result);
+            console.log('[AI] Bedrock analyzeIncident SUCCESS');
+            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
         } catch (bedrockError) {
-            console.error('Bedrock error, using fallback:', bedrockError.message);
+            console.error('[AI] Bedrock analyzeIncident FAILED:', bedrockError.name, bedrockError.message);
+            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
             return success({
                 resumenIncidente: descripcion.substring(0, 100) + '...',
                 arbolDeCausas: {
@@ -289,7 +307,8 @@ module.exports.analyzeIncident = async (event) => {
                 ],
                 leccionesAprendidas: ['Pendiente de conclusiones de investigación'],
                 capacitacionRequerida: ['Reforzamiento de procedimientos'],
-                _fallback: true
+                _source: 'fallback',
+                _error: bedrockError.message
             });
         }
     } catch (err) {
@@ -311,19 +330,23 @@ module.exports.chat = async (event) => {
         }
 
         try {
+            console.log('[AI] Calling Bedrock chat');
             const respuesta = await bedrock.chat(mensaje);
+            console.log('[AI] Bedrock chat SUCCESS');
             return success({
                 respuesta,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                _source: 'bedrock'
             });
         } catch (bedrockError) {
-            console.error('Bedrock error, using fallback chat:', bedrockError.message);
-            // Fallback con respuestas predefinidas
+            console.error('[AI] Bedrock chat FAILED:', bedrockError.name, bedrockError.message);
+            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
             const respuestaFallback = generarRespuestaFallback(mensaje);
             return success({
                 respuesta: respuestaFallback,
                 timestamp: new Date().toISOString(),
-                _fallback: true
+                _source: 'fallback',
+                _error: bedrockError.message
             });
         }
     } catch (err) {
