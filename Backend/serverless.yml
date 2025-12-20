@@ -85,6 +85,13 @@ provider:
           Resource:
             - !Ref IncidentNotificationTopic
             - !Sub arn:aws:s3:::${self:custom.bucketName}/*
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+            - bedrock:InvokeModelWithResponseStream
+          Resource:
+            - "arn:aws:bedrock:*::foundation-model/anthropic.*"
+            - "arn:aws:bedrock:*::foundation-model/amazon.*"
 
 package:
   individually: false
@@ -430,6 +437,20 @@ functions:
     events:
       - httpApi:
           path: /ai/daily-talk
+          method: POST
+
+  aiMIPER:
+    handler: handlers/ai-assistant.generateMIPER
+    events:
+      - httpApi:
+          path: /ai/miper
+          method: POST
+
+  aiAnalyzeIncident:
+    handler: handlers/ai-assistant.analyzeIncident
+    events:
+      - httpApi:
+          path: /ai/analyze-incident
           method: POST
 
   # Surveys (Encuestas)

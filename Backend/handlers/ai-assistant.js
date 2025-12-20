@@ -1,332 +1,152 @@
-const { success, error } = require('../lib/response');
+const { success, error, created } = require('../lib/response');
+const bedrock = require('../lib/bedrock');
 
 /**
- * Prompts preconfigurados para el dominio de prevención de riesgos
+ * Respuestas de fallback en caso de que Bedrock falle
  */
-const PREVENTION_PROMPTS = {
-    riskMatrix: `Eres un experto en prevención de riesgos laborales en Chile, especializado en el DS 44.
-Genera una matriz de riesgos profesional y completa para la actividad indicada.
-
-La matriz debe incluir:
-1. Identificación del peligro
-2. Descripción del riesgo
-3. Probabilidad (Alta/Media/Baja)
-4. Consecuencia (Grave/Moderada/Leve)
-5. Nivel de riesgo (Crítico/Alto/Medio/Bajo)
-6. Medidas de control existentes
-7. Medidas de control adicionales recomendadas
-8. Responsable de implementación
-9. Plazo sugerido
-
-Formato tu respuesta como un JSON estructurado.`,
-
-    preventionPlan: `Eres un experto en prevención de riesgos laborales en Chile.
-Genera un plan de prevención detallado para la obra o actividad indicada.
-
-El plan debe incluir:
-1. Objetivos del plan
-2. Alcance
-3. Actividades preventivas programadas (con frecuencia)
-4. Capacitaciones requeridas
-5. Inspecciones y controles
-6. EPP requeridos
-7. Procedimientos de emergencia
-8. Indicadores de gestión
-9. Responsabilidades
-
-Formato tu respuesta de manera estructurada y profesional.`,
-
-    incidentAnalysis: `Eres un experto en investigación de accidentes laborales en Chile.
-Analiza el incidente descrito y proporciona:
-
-1. Análisis de causas (método árbol de causas según DS 44)
-2. Causas inmediatas identificadas
-3. Causas básicas/raíz
-4. Factores contribuyentes
-5. Acciones correctivas recomendadas
-6. Acciones preventivas para evitar recurrencia
-7. Lecciones aprendidas
-8. Recomendaciones de capacitación
-
-Sé específico y práctico en tus recomendaciones.`,
-
-    dailyTalk: `Eres un experto en prevención de riesgos laborales.
-Genera contenido para una charla de 5 minutos sobre el tema indicado.
-
-La charla debe incluir:
-1. Introducción al tema (30 segundos)
-2. Puntos clave (3-4 puntos principales)
-3. Ejemplos prácticos de la construcción
-4. Buenas prácticas
-5. Conclusión y llamado a la acción
-6. Preguntas de verificación (2-3 preguntas)
-
-El contenido debe ser conciso, práctico y fácil de comunicar verbalmente.`,
-
-    assistant: `Eres un asistente experto en prevención de riesgos laborales en Chile.
-Conoces profundamente:
-- Decreto Supremo 44 (DS 44)
-- Ley 16.744 sobre accidentes del trabajo
-- Normativas de seguridad en construcción
-- Gestión de EPP
-- Procedimientos de trabajo seguro
-- Investigación de accidentes
-- Matrices de riesgo
-- Planes de prevención
-
-Responde de manera clara, práctica y profesional.
-Si es relevante, cita la normativa aplicable.
-Ofrece ejemplos concretos cuando sea útil.`
-};
-
-/**
- * Simulador de respuestas de IA (para demo sin API key)
- * En producción, esto se conectaría a Bedrock, OpenAI o Gemini
- */
-const simulateAIResponse = async (prompt, context, type) => {
-    // Simulación de delay de API
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const responses = {
-        riskMatrix: {
-            titulo: `Matriz de Riesgos - ${context.actividad || 'Actividad General'}`,
-            fecha: new Date().toISOString().split('T')[0],
-            riesgos: [
-                {
-                    id: 1,
-                    peligro: 'Trabajo en altura',
-                    riesgo: 'Caída a distinto nivel',
-                    probabilidad: 'Media',
-                    consecuencia: 'Grave',
-                    nivelRiesgo: 'Alto',
-                    medidasExistentes: ['Uso de arnés', 'Línea de vida'],
-                    medidasAdicionales: ['Capacitación específica', 'Inspección diaria de equipos'],
-                    responsable: 'Supervisor de obra',
-                    plazo: '7 días'
-                },
-                {
-                    id: 2,
-                    peligro: 'Materiales en suspensión',
-                    riesgo: 'Golpe por caída de objetos',
-                    probabilidad: 'Media',
-                    consecuencia: 'Moderada',
-                    nivelRiesgo: 'Medio',
-                    medidasExistentes: ['Casco de seguridad', 'Delimitación de área'],
-                    medidasAdicionales: ['Redes de contención', 'Señalización'],
-                    responsable: 'Jefe de cuadrilla',
-                    plazo: '3 días'
-                },
-                {
-                    id: 3,
-                    peligro: 'Exposición a ruido',
-                    riesgo: 'Pérdida auditiva',
-                    probabilidad: 'Alta',
-                    consecuencia: 'Moderada',
-                    nivelRiesgo: 'Medio',
-                    medidasExistentes: ['Protección auditiva'],
-                    medidasAdicionales: ['Rotación de personal', 'Medición de ruido'],
-                    responsable: 'Prevencionista',
-                    plazo: '15 días'
-                }
-            ],
-            recomendaciones: [
-                'Implementar programa de inspecciones semanales',
-                'Reforzar capacitación en trabajos de alto riesgo',
-                'Documentar todas las medidas en registro digital'
-            ]
-        },
-
-        preventionPlan: {
-            titulo: `Plan de Prevención - ${context.obra || 'Obra General'}`,
-            periodo: 'Mensual',
-            objetivos: [
-                'Reducir tasa de accidentabilidad en 20%',
-                'Lograr 100% de cumplimiento en capacitaciones',
-                'Mantener cero accidentes fatales'
-            ],
-            actividades: [
-                { actividad: 'Charla diaria 5 minutos', frecuencia: 'Diaria', responsable: 'Supervisor' },
-                { actividad: 'Inspección de EPP', frecuencia: 'Diaria', responsable: 'Jefe cuadrilla' },
-                { actividad: 'ART por cuadrilla', frecuencia: 'Diaria', responsable: 'Supervisor' },
-                { actividad: 'Inspección de andamios', frecuencia: 'Semanal', responsable: 'Prevencionista' },
-                { actividad: 'Reunión comité paritario', frecuencia: 'Mensual', responsable: 'Prevencionista' },
-                { actividad: 'Simulacro de emergencia', frecuencia: 'Trimestral', responsable: 'Prevencionista' }
-            ],
-            capacitaciones: [
-                'Inducción general (8 horas)',
-                'Trabajo en altura (4 horas)',
-                'Manejo de sustancias peligrosas (2 horas)',
-                'Primeros auxilios (4 horas)'
-            ],
-            indicadores: [
-                { nombre: 'Tasa de accidentabilidad', meta: '< 2%', formula: 'Accidentes x 100 / Trabajadores' },
-                { nombre: 'Cumplimiento capacitaciones', meta: '100%', formula: 'Capacitados / Total x 100' },
-                { nombre: 'Cumplimiento inspecciones', meta: '> 95%', formula: 'Realizadas / Programadas x 100' }
-            ]
-        },
-
-        dailyTalk: {
-            titulo: context.tema || 'Uso correcto del casco de seguridad',
-            duracion: '5 minutos',
-            contenido: {
-                introduccion: 'Buenos días equipo. Hoy hablaremos sobre la importancia del uso correcto del casco de seguridad, un elemento fundamental que nos protege de lesiones graves en la cabeza.',
-                puntosClaves: [
-                    'El casco debe usarse siempre que estemos en obra, sin excepción',
-                    'Revisar el casco antes de cada uso: buscar grietas, deformaciones o daños',
-                    'Ajustar correctamente el barbiquejo para que el casco no se caiga',
-                    'Reemplazar el casco después de cualquier impacto, aunque no se vea dañado'
-                ],
-                ejemplos: [
-                    'Un compañero evitó una lesión grave cuando le cayó una herramienta desde altura',
-                    'El casco también protege del sol y la lluvia, manteniéndonos cómodos'
-                ],
-                conclusion: 'Recuerden: el casco es nuestra primera línea de defensa. Úsenlo siempre y correctamente.',
-                preguntas: [
-                    '¿Cada cuánto tiempo debemos revisar nuestro casco?',
-                    '¿Qué debemos hacer si el casco sufre un impacto?',
-                    '¿Por qué es importante el barbiquejo?'
-                ]
+const FALLBACK_RESPONSES = {
+    miper: (cargo) => ({
+        cargo,
+        fecha: new Date().toISOString().split('T')[0],
+        actividades: ['Actividades generales del cargo'],
+        peligros: [
+            {
+                id: 1,
+                peligro: 'Caída a distinto nivel',
+                riesgo: 'Lesiones graves por caída',
+                actividad: 'Trabajo en altura',
+                probabilidad: 'M',
+                consecuencia: '3',
+                nivelRiesgo: 'Alto',
+                medidasControl: ['Uso de arnés de seguridad', 'Líneas de vida'],
+                epp: ['Arnés', 'Casco', 'Zapatos de seguridad'],
+                responsable: 'Supervisor',
+                verificacion: 'Inspección diaria'
+            },
+            {
+                id: 2,
+                peligro: 'Atrapamiento por máquinas',
+                riesgo: 'Lesiones en extremidades',
+                actividad: 'Operación de maquinaria',
+                probabilidad: 'B',
+                consecuencia: '3',
+                nivelRiesgo: 'Medio',
+                medidasControl: ['Guardas de protección', 'Bloqueo/etiquetado'],
+                epp: ['Guantes', 'Ropa ajustada'],
+                responsable: 'Operador',
+                verificacion: 'Check list pre-operacional'
+            },
+            {
+                id: 3,
+                peligro: 'Exposición a ruido',
+                riesgo: 'Pérdida auditiva',
+                actividad: 'Trabajo cerca de equipos',
+                probabilidad: 'A',
+                consecuencia: '2',
+                nivelRiesgo: 'Medio',
+                medidasControl: ['Protección auditiva', 'Rotación de personal'],
+                epp: ['Tapones auditivos', 'Orejeras'],
+                responsable: 'Prevencionista',
+                verificacion: 'Medición de ruido'
             }
+        ],
+        resumen: { totalPeligros: 3, criticos: 0, altos: 1, medios: 2, bajos: 0 },
+        recomendacionesPrioritarias: [
+            'Implementar programa de capacitación específico',
+            'Realizar inspecciones semanales de EPP'
+        ],
+        _fallback: true
+    }),
+
+    riskMatrix: (actividad) => ({
+        titulo: `Matriz de Riesgos - ${actividad}`,
+        fecha: new Date().toISOString().split('T')[0],
+        riesgos: [
+            {
+                id: 1,
+                peligro: 'Trabajo en altura',
+                riesgo: 'Caída a distinto nivel',
+                probabilidad: 'Media',
+                consecuencia: 'Grave',
+                nivelRiesgo: 'Alto',
+                medidasExistentes: ['Uso de arnés', 'Línea de vida'],
+                medidasAdicionales: ['Capacitación específica', 'Inspección diaria de equipos'],
+                responsable: 'Supervisor de obra',
+                plazo: '7 días'
+            },
+            {
+                id: 2,
+                peligro: 'Materiales en suspensión',
+                riesgo: 'Golpe por caída de objetos',
+                probabilidad: 'Media',
+                consecuencia: 'Moderada',
+                nivelRiesgo: 'Medio',
+                medidasExistentes: ['Casco de seguridad', 'Delimitación de área'],
+                medidasAdicionales: ['Redes de contención', 'Señalización'],
+                responsable: 'Jefe de cuadrilla',
+                plazo: '3 días'
+            }
+        ],
+        recomendaciones: [
+            'Implementar programa de inspecciones semanales',
+            'Documentar todas las medidas en registro digital'
+        ],
+        _fallback: true
+    }),
+
+    dailyTalk: (tema) => ({
+        titulo: tema || 'Charla de Seguridad',
+        duracion: '5 minutos',
+        contenido: {
+            introduccion: 'Buenos días equipo. Hoy hablaremos sobre un tema importante para nuestra seguridad.',
+            puntosClaves: [
+                'La seguridad es responsabilidad de todos',
+                'Siempre usar el EPP adecuado',
+                'Reportar cualquier condición insegura',
+                'Seguir los procedimientos establecidos'
+            ],
+            ejemplos: [
+                'Un compañero evitó un accidente por usar correctamente su EPP',
+                'La comunicación oportuna permitió corregir una condición peligrosa'
+            ],
+            buenasPracticas: [
+                'Revisar el área antes de comenzar',
+                'Mantener orden y limpieza'
+            ],
+            conclusion: 'Recuerden: todos merecemos volver sanos a casa. La seguridad empieza por cada uno de nosotros.',
+            preguntas: [
+                '¿Cuál es el EPP básico para esta tarea?',
+                '¿A quién reportamos una condición insegura?',
+                '¿Por qué es importante el orden y limpieza?'
+            ]
         },
-
-        chat: {
-            respuesta: generarRespuestaChat(context.mensaje || '')
-        }
-    };
-
-    return responses[type] || responses.chat;
+        materialesApoyo: ['Afiches de seguridad', 'Checklist de revisión'],
+        normativaRelacionada: ['DS 44', 'Ley 16.744'],
+        _fallback: true
+    })
 };
 
-function generarRespuestaChat(mensaje) {
-    const mensajeLower = mensaje.toLowerCase();
-
-    if (mensajeLower.includes('ds 44') || mensajeLower.includes('decreto')) {
-        return `El Decreto Supremo 44 (DS 44) entró en vigencia en febrero de 2024 y moderniza la gestión preventiva en Chile. 
-
-**Puntos clave:**
-
-1. **Gestión Preventiva Obligatoria**: Todas las empresas deben tener una matriz de riesgos y programas de trabajo preventivo.
-
-2. **Capacitación**: Mínimo 8 horas anuales por trabajador.
-
-3. **Departamento de Prevención**: Obligatorio para empresas con 100+ trabajadores.
-
-4. **Comités Paritarios**: Con mayores facultades de investigación.
-
-5. **Registro Digital**: Toda la gestión preventiva debe quedar documentada.
-
-¿Necesitas más información sobre algún aspecto específico del DS 44?`;
-    }
-
-    if (mensajeLower.includes('epp') || mensajeLower.includes('equipo de protección')) {
-        return `Los Equipos de Protección Personal (EPP) básicos en construcción incluyen:
-
-**Obligatorios:**
-- 🪖 Casco de seguridad
-- 👓 Lentes de seguridad
-- 🦺 Chaleco reflectante
-- 🥾 Zapatos de seguridad con punta de acero
-- 🧤 Guantes según la tarea
-
-**Según actividad:**
-- Arnés y línea de vida (trabajo en altura)
-- Protección auditiva (zonas ruidosas)
-- Mascarilla (exposición a polvo/químicos)
-- Protección facial (soldadura)
-
-**Importante:** La entrega de EPP debe quedar registrada con firma del trabajador según DS 44.`;
-    }
-
-    if (mensajeLower.includes('charla') || mensajeLower.includes('5 minutos')) {
-        return `La charla diaria de 5 minutos es una herramienta fundamental de prevención.
-
-**Requisitos según DS 44:**
-- Debe realizarse al inicio de cada jornada
-- Temas relacionados con los riesgos del día
-- Registro de asistencia con firma de todos
-- Firma del relator (supervisor)
-
-**Temas sugeridos para esta semana:**
-1. Orden y limpieza en el área de trabajo
-2. Uso correcto de escaleras
-3. Hidratación y protección solar
-4. Comunicación de peligros
-5. Manejo manual de cargas
-
-¿Quieres que genere el contenido para alguna charla específica?`;
-    }
-
-    if (mensajeLower.includes('accidente') || mensajeLower.includes('incidente')) {
-        return `Ante un accidente laboral, sigue estos pasos:
-
-**Inmediatamente:**
-1. Asegurar la escena y evitar más lesiones
-2. Prestar primeros auxilios si es necesario
-3. Llamar a emergencias si es grave
-4. Notificar al supervisor y prevencionista
-
-**Documentación (DS 44):**
-1. Declaración Individual de Accidente (DIAT)
-2. Investigación con metodología árbol de causas
-3. Investigación del jefe directo
-4. Acta del comité paritario (si aplica)
-
-**Plazos:**
-- Denuncia a la mutual: 24 horas
-- Investigación: 48 horas máximo
-
-¿Necesitas ayuda con la investigación de un accidente específico?`;
-    }
-
-    return `Entiendo tu consulta. Como asistente de prevención de riesgos, puedo ayudarte con:
-
-📋 **Documentación DS 44**
-- Matrices de riesgo
-- Planes de prevención
-- Procedimientos de trabajo seguro
-
-📚 **Capacitación**
-- Contenido para charlas de 5 minutos
-- Material de inducción
-- Evaluaciones
-
-🔍 **Investigación**
-- Análisis de accidentes
-- Identificación de causas
-- Acciones correctivas
-
-💡 **Consultas Generales**
-- Normativa vigente
-- EPP requeridos
-- Buenas prácticas
-
-¿En qué te puedo ayudar específicamente?`;
-}
-
 /**
- * POST /ai/chat - Chat con el asistente de IA
+ * POST /ai/miper - Generar matriz MIPER para un cargo
  */
-module.exports.chat = async (event) => {
+module.exports.generateMIPER = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
-        const { mensaje, contexto } = body;
+        const { cargo, actividades = [], contexto = '' } = body;
 
-        if (!mensaje) {
-            return error('Se requiere un mensaje');
+        if (!cargo) {
+            return error('Se requiere especificar el cargo');
         }
 
-        const response = await simulateAIResponse(
-            PREVENTION_PROMPTS.assistant,
-            { mensaje, ...contexto },
-            'chat'
-        );
-
-        return success({
-            respuesta: response.respuesta,
-            timestamp: new Date().toISOString()
-        });
+        try {
+            const result = await bedrock.generateMIPER(cargo, actividades, contexto);
+            return success(result);
+        } catch (bedrockError) {
+            console.error('Bedrock error, using fallback:', bedrockError.message);
+            return success(FALLBACK_RESPONSES.miper(cargo));
+        }
     } catch (err) {
-        console.error('Error in AI chat:', err);
+        console.error('Error generating MIPER:', err);
         return error(err.message, 500);
     }
 };
@@ -343,13 +163,13 @@ module.exports.generateRiskMatrix = async (event) => {
             return error('Se requiere especificar la actividad');
         }
 
-        const response = await simulateAIResponse(
-            PREVENTION_PROMPTS.riskMatrix,
-            { actividad, descripcion, ubicacion },
-            'riskMatrix'
-        );
-
-        return success(response);
+        try {
+            const result = await bedrock.generateRiskMatrix(actividad, descripcion, ubicacion);
+            return success(result);
+        } catch (bedrockError) {
+            console.error('Bedrock error, using fallback:', bedrockError.message);
+            return success(FALLBACK_RESPONSES.riskMatrix(actividad));
+        }
     } catch (err) {
         console.error('Error generating risk matrix:', err);
         return error(err.message, 500);
@@ -362,19 +182,38 @@ module.exports.generateRiskMatrix = async (event) => {
 module.exports.generatePreventionPlan = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
-        const { obra, tipo, duracion } = body;
+        const { obra, riesgos = [], duracion = 'mensual' } = body;
 
         if (!obra) {
             return error('Se requiere especificar la obra');
         }
 
-        const response = await simulateAIResponse(
-            PREVENTION_PROMPTS.preventionPlan,
-            { obra, tipo, duracion },
-            'preventionPlan'
-        );
-
-        return success(response);
+        try {
+            const result = await bedrock.generateMitigationPlan(obra, riesgos, duracion);
+            return success(result);
+        } catch (bedrockError) {
+            console.error('Bedrock error, using fallback:', bedrockError.message);
+            // Fallback similar structure
+            return success({
+                titulo: `Plan de Prevención - ${obra}`,
+                periodo: duracion,
+                objetivos: [
+                    'Reducir tasa de accidentabilidad',
+                    'Lograr 100% de cumplimiento en capacitaciones',
+                    'Mantener cero accidentes'
+                ],
+                actividades: [
+                    { actividad: 'Charla diaria 5 minutos', frecuencia: 'Diaria', responsable: 'Supervisor' },
+                    { actividad: 'Inspección de EPP', frecuencia: 'Diaria', responsable: 'Jefe cuadrilla' },
+                    { actividad: 'ART por cuadrilla', frecuencia: 'Diaria', responsable: 'Supervisor' }
+                ],
+                capacitaciones: ['Inducción general', 'Trabajo en altura', 'Primeros auxilios'],
+                indicadores: [
+                    { nombre: 'Tasa de accidentabilidad', meta: '< 2%', formula: 'Accidentes x 100 / Trabajadores' }
+                ],
+                _fallback: true
+            });
+        }
     } catch (err) {
         console.error('Error generating prevention plan:', err);
         return error(err.message, 500);
@@ -387,21 +226,166 @@ module.exports.generatePreventionPlan = async (event) => {
 module.exports.generateDailyTalk = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
-        const { tema } = body;
+        const { tema, contexto = '' } = body;
 
         if (!tema) {
             return error('Se requiere especificar el tema');
         }
 
-        const response = await simulateAIResponse(
-            PREVENTION_PROMPTS.dailyTalk,
-            { tema },
-            'dailyTalk'
-        );
-
-        return success(response);
+        try {
+            const result = await bedrock.generateDailyTalk(tema, contexto);
+            return success(result);
+        } catch (bedrockError) {
+            console.error('Bedrock error, using fallback:', bedrockError.message);
+            return success(FALLBACK_RESPONSES.dailyTalk(tema));
+        }
     } catch (err) {
         console.error('Error generating daily talk:', err);
         return error(err.message, 500);
     }
 };
+
+/**
+ * POST /ai/analyze-incident - Analizar incidente con árbol de causas
+ */
+module.exports.analyzeIncident = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+        const { descripcion, tipo, gravedad, area } = body;
+
+        if (!descripcion) {
+            return error('Se requiere la descripción del incidente');
+        }
+
+        try {
+            const result = await bedrock.analyzeIncident(descripcion, { tipo, gravedad, area });
+            return success(result);
+        } catch (bedrockError) {
+            console.error('Bedrock error, using fallback:', bedrockError.message);
+            return success({
+                resumenIncidente: descripcion.substring(0, 100) + '...',
+                arbolDeCausas: {
+                    hecho: descripcion,
+                    causasInmediatas: {
+                        actosSubestandar: ['Acto inseguro identificado'],
+                        condicionesSubestandar: ['Condición insegura identificada']
+                    },
+                    causasBasicas: {
+                        factoresPersonales: ['Factor personal a investigar'],
+                        factoresTrabajo: ['Factor del trabajo a investigar']
+                    },
+                    faltaControl: ['Falla en el sistema de gestión']
+                },
+                clasificacion: {
+                    tipo: tipo || 'Incidente',
+                    gravedad: gravedad || 'Por evaluar',
+                    potencial: 'Requiere evaluación detallada'
+                },
+                accionesCorrectivas: [
+                    { accion: 'Investigación detallada requerida', responsable: 'Prevencionista', plazo: '48 horas', prioridad: 'Alta' }
+                ],
+                accionesPreventivas: [
+                    { accion: 'Revisión de procedimientos', responsable: 'Supervisión', plazo: '7 días' }
+                ],
+                leccionesAprendidas: ['Pendiente de conclusiones de investigación'],
+                capacitacionRequerida: ['Reforzamiento de procedimientos'],
+                _fallback: true
+            });
+        }
+    } catch (err) {
+        console.error('Error analyzing incident:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * POST /ai/chat - Chat con el asistente de IA
+ */
+module.exports.chat = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+        const { mensaje, contexto } = body;
+
+        if (!mensaje) {
+            return error('Se requiere un mensaje');
+        }
+
+        try {
+            const respuesta = await bedrock.chat(mensaje);
+            return success({
+                respuesta,
+                timestamp: new Date().toISOString()
+            });
+        } catch (bedrockError) {
+            console.error('Bedrock error, using fallback chat:', bedrockError.message);
+            // Fallback con respuestas predefinidas
+            const respuestaFallback = generarRespuestaFallback(mensaje);
+            return success({
+                respuesta: respuestaFallback,
+                timestamp: new Date().toISOString(),
+                _fallback: true
+            });
+        }
+    } catch (err) {
+        console.error('Error in AI chat:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * Genera respuesta fallback basada en palabras clave
+ */
+function generarRespuestaFallback(mensaje) {
+    const mensajeLower = mensaje.toLowerCase();
+
+    if (mensajeLower.includes('ds 44') || mensajeLower.includes('decreto')) {
+        return `El **Decreto Supremo 44** entró en vigencia en febrero de 2024 y moderniza la gestión preventiva en Chile.
+
+📋 **Puntos clave:**
+1. Gestión Preventiva Obligatoria
+2. Mínimo 8 horas capacitación anual por trabajador
+3. Departamento de Prevención obligatorio (100+ trabajadores)
+4. Comités Paritarios con mayores facultades
+5. Registro Digital obligatorio
+
+¿Necesitas más información sobre algún aspecto específico?`;
+    }
+
+    if (mensajeLower.includes('miper') || mensajeLower.includes('matriz')) {
+        return `La **Matriz MIPER** (Matriz de Identificación de Peligros y Evaluación de Riesgos) es una herramienta fundamental del DS 44.
+
+📊 **Componentes:**
+- Identificación de peligros
+- Evaluación de riesgos (probabilidad x consecuencia)
+- Medidas de control
+- Responsables y plazos
+
+💡 Puedo generarte una matriz MIPER completa para cualquier cargo. Solo indica el cargo y las actividades principales.`;
+    }
+
+    if (mensajeLower.includes('epp') || mensajeLower.includes('protección')) {
+        return `🦺 **EPP Básico en Construcción:**
+- Casco de seguridad
+- Lentes de seguridad
+- Chaleco reflectante
+- Zapatos de seguridad
+- Guantes según tarea
+
+⚠️ **Según actividad:**
+- Arnés (trabajo en altura)
+- Protección auditiva
+- Mascarilla (polvo/químicos)
+
+La entrega de EPP debe registrarse con firma según DS 44.`;
+    }
+
+    return `Soy tu asistente de prevención de riesgos. Puedo ayudarte con:
+
+📋 **Matrices de riesgo y MIPER**
+📝 **Planes de prevención**
+🔍 **Análisis de incidentes**
+💬 **Charlas de 5 minutos**
+📚 **Consultas sobre DS 44**
+
+¿En qué te puedo ayudar?`;
+}
