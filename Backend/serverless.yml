@@ -11,7 +11,7 @@ custom:
   serverless-offline:
     httpPort: 3001
     lambdaPort: 3002
-  bucketName: hackatonbackend-documents-${self:provider.stage}
+  bucketName: hackatonbackend-documents-v2-${self:provider.stage}
 
 provider:
   name: aws
@@ -500,6 +500,42 @@ functions:
       - httpApi:
           path: /incidents/stats
           method: GET
+
+  # Nuevos endpoints de incidentes (Fase 4)
+  addIncidentInvestigation:
+    handler: handlers/incidents.addInvestigation
+    events:
+      - httpApi:
+          path: /incidents/{id}/investigations
+          method: POST
+
+  uploadIncidentDocument:
+    handler: handlers/incidents.uploadDocument
+    events:
+      - httpApi:
+          path: /incidents/{id}/documents
+          method: POST
+
+  getIncidentDocuments:
+    handler: handlers/incidents.getDocuments
+    events:
+      - httpApi:
+          path: /incidents/{id}/documents
+          method: GET
+
+  getIncidentAnalytics:
+    handler: handlers/incidents.getAnalytics
+    events:
+      - httpApi:
+          path: /incidents/analytics
+          method: GET
+
+  quickReportIncident:
+    handler: handlers/incidents.quickReport
+    events:
+      - httpApi:
+          path: /incidents/quick-report
+          method: POST
 
   # Hello (Test)
   printHello:

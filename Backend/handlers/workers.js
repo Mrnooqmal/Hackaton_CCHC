@@ -67,27 +67,98 @@ module.exports.create = async (event) => {
 
 /**
  * GET /workers - Listar todos los trabajadores
+ * Incluye workers tradicionales Y usuarios con rol prevencionista/trabajador
  */
 module.exports.list = async (event) => {
     try {
-        const empresaId = event.queryStringParameters?.empresaId || 'default';
+        const empresaId = event.queryStringParameters?.empresaId;
+        const includeUsers = event.queryStringParameters?.includeUsers !== 'false';
 
-        const result = await docClient.send(
-            new ScanCommand({
-                TableName: TABLE_NAME,
-                FilterExpression: 'empresaId = :empresaId AND estado = :estado',
+        // 1. Obtener workers tradicionales
+        const workersParams = {
+            TableName: TABLE_NAME,
+        };
+
+        if (empresaId) {
+            workersParams.FilterExpression = 'empresaId = :empresaId AND estado = :estado';
+            workersParams.ExpressionAttributeValues = {
+                ':empresaId': empresaId,
+                ':estado': 'activo',
+            };
+        } else {
+            workersParams.FilterExpression = 'estado = :estado';
+            workersParams.ExpressionAttributeValues = {
+                ':estado': 'activo',
+            };
+        }
+
+        const workersResult = await docClient.send(new ScanCommand(workersParams));
+        let allWorkers = workersResult.Items || [];
+
+        // 2. También obtener usuarios con rol prevencionista o trabajador
+        if (includeUsers) {
+            const USERS_TABLE = process.env.USERS_TABLE || 'Users';
+
+            const usersParams = {
+                TableName: USERS_TABLE,
+                FilterExpression: '(rol = :rolTrabajador OR rol = :rolPrevencionista)',
                 ExpressionAttributeValues: {
-                    ':empresaId': empresaId,
-                    ':estado': 'activo',
+                    ':rolTrabajador': 'trabajador',
+                    ':rolPrevencionista': 'prevencionista',
                 },
-            })
-        );
+            };
 
-        return success(result.Items || []);
+            if (empresaId) {
+                usersParams.FilterExpression += ' AND empresaId = :empresaId';
+                usersParams.ExpressionAttributeValues[':empresaId'] = empresaId;
+            }
+
+            const usersResult = await docClient.send(new ScanCommand(usersParams));
+            const users = usersResult.Items || [];
+
+            // Mapear usuarios a formato de worker para compatibilidad
+            const usersAsWorkers = users
+                .filter(user => !user.workerId) // Solo usuarios sin workerId (legacy)
+                .map(user => ({
+                    workerId: user.userId, // Usar userId como workerId temporal
+                    rut: user.rut,
+                    nombre: user.nombre,
+                    apellido: user.apellido || '',
+                    email: user.email || '',
+                    telefono: user.telefono || '',
+                    cargo: user.cargo || user.rol,
+                    empresaId: user.empresaId || 'default',
+                    fechaEnrolamiento: user.createdAt,
+                    estado: user.estado === 'activo' ? 'activo' : 'activo',
+                    habilitado: user.habilitado || false,
+                    pinHash: user.pinHash,
+                    pinCreatedAt: user.pinCreatedAt,
+                    firmaEnrolamiento: user.firmaEnrolamiento,
+                    createdAt: user.createdAt,
+                    updatedAt: user.updatedAt,
+                    // Marcar que viene de tabla Users
+                    _sourceTable: 'users',
+                    userId: user.userId,
+                    rol: user.rol,
+                }));
+
+            // Combinar, evitando duplicados por RUT
+            const existingRuts = new Set(allWorkers.map(w => w.rut));
+            usersAsWorkers.forEach(userWorker => {
+                if (!existingRuts.has(userWorker.rut)) {
+                    allWorkers.push(userWorker);
+                }
+            });
+        }
+
+        // Ordenar por nombre
+        allWorkers.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
+        return success(allWorkers);
     } catch (err) {
         console.error('Error listing workers:', err);
         return error(err.message, 500);
-    }
+    };
 };
 
 /**

@@ -395,3 +395,376 @@ exports.getStats = async (event) => {
         });
     }
 };
+
+// ADD INVESTIGATION - Agregar investigación a un incidente
+exports.addInvestigation = async (event) => {
+    try {
+        const { id } = event.pathParameters;
+        const data = JSON.parse(event.body);
+        const now = new Date().toISOString();
+
+        // Validar campos requeridos
+        if (!data.tipo || !data.hallazgos || !data.recomendaciones || !data.medidas) {
+            return response(400, {
+                success: false,
+                error: 'Campos requeridos: tipo, hallazgos, recomendaciones, medidas'
+            });
+        }
+
+        // Validar tipo de investigación
+        const tiposValidos = ['prevencionista', 'jefe_directo', 'comite_paritario'];
+        if (!tiposValidos.includes(data.tipo)) {
+            return response(400, {
+                success: false,
+                error: `Tipo de investigación inválido. Valores válidos: ${tiposValidos.join(', ')}`
+            });
+        }
+
+        // Mapear tipo a campo de DynamoDB
+        const campoInvestigacion = {
+            'prevencionista': 'prevencionista',
+            'jefe_directo': 'jefeDirecto',
+            'comite_paritario': 'comiteParitario'
+        }[data.tipo];
+
+        const investigation = {
+            investigador: data.investigador || 'sistema',
+            rolInvestigador: data.tipo,
+            fecha: now,
+            hallazgos: data.hallazgos,
+            recomendaciones: data.recomendaciones,
+            medidas: data.medidas,
+            estado: 'completada'
+        };
+
+        // Actualizar incidente con la nueva investigación
+        const updateExpression = `SET investigaciones.${campoInvestigacion} = :investigation, estado = :estado, updatedAt = :updatedAt`;
+
+        const result = await docClient.send(new UpdateCommand({
+            TableName: INCIDENTS_TABLE,
+            Key: { incidentId: id },
+            UpdateExpression: updateExpression,
+            ExpressionAttributeValues: {
+                ':investigation': investigation,
+                ':estado': 'en_investigacion',
+                ':updatedAt': now
+            },
+            ReturnValues: 'ALL_NEW'
+        }));
+
+        return response(200, {
+            success: true,
+            data: result.Attributes,
+            message: 'Investigación agregada exitosamente',
+            investigation
+        });
+
+    } catch (error) {
+        console.error('Error agregando investigación:', error);
+        return response(500, {
+            success: false,
+            error: error.message
+        });
+    }
+};
+
+// UPLOAD DOCUMENT - Generar URL presignada para subir documentos DIAT/DIEP
+exports.uploadDocument = async (event) => {
+    try {
+        const { id } = event.pathParameters;
+        const data = JSON.parse(event.body);
+        const { fileName, fileType, documentType } = data;
+
+        if (!fileName || !fileType || !documentType) {
+            return response(400, {
+                success: false,
+                error: 'fileName, fileType y documentType son requeridos'
+            });
+        }
+
+        // Validar tipo de documento
+        const tiposValidos = ['diat', 'diep'];
+        if (!tiposValidos.includes(documentType)) {
+            return response(400, {
+                success: false,
+                error: `Tipo de documento inválido. Valores válidos: ${tiposValidos.join(', ')}`
+            });
+        }
+
+        // Generar key único para S3
+        const fileExtension = fileName.split('.').pop();
+        const s3Key = `${id}/documents/${documentType}-${uuidv4()}.${fileExtension}`;
+
+        // Generar URL presignada
+        const command = new PutObjectCommand({
+            Bucket: INCIDENT_EVIDENCE_BUCKET,
+            Key: s3Key,
+            ContentType: fileType
+        });
+
+        const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+
+        // Actualizar incidente con referencia al documento
+        const now = new Date().toISOString();
+        await docClient.send(new UpdateCommand({
+            TableName: INCIDENTS_TABLE,
+            Key: { incidentId: id },
+            UpdateExpression: `SET documentos.${documentType} = :docInfo, updatedAt = :updatedAt`,
+            ExpressionAttributeValues: {
+                ':docInfo': {
+                    s3Key,
+                    fileName,
+                    fileType,
+                    uploadedAt: now
+                },
+                ':updatedAt': now
+            }
+        }));
+
+        return response(200, {
+            success: true,
+            data: {
+                uploadUrl,
+                s3Key,
+                documentType
+            }
+        });
+
+    } catch (error) {
+        console.error('Error generando URL de documento:', error);
+        return response(500, {
+            success: false,
+            error: error.message
+        });
+    }
+};
+
+// GET DOCUMENTS - Obtener documentos del incidente
+exports.getDocuments = async (event) => {
+    try {
+        const { id } = event.pathParameters;
+
+        const result = await docClient.send(new GetCommand({
+            TableName: INCIDENTS_TABLE,
+            Key: { incidentId: id }
+        }));
+
+        if (!result.Item) {
+            return response(404, {
+                success: false,
+                error: 'Incidente no encontrado'
+            });
+        }
+
+        const documents = [];
+        const incident = result.Item;
+
+        // Generar URLs de descarga para documentos existentes
+        if (incident.documentos) {
+            for (const [docType, docInfo] of Object.entries(incident.documentos)) {
+                if (docInfo && docInfo.s3Key) {
+                    documents.push({
+                        documentType: docType,
+                        ...docInfo,
+                        url: `https://${INCIDENT_EVIDENCE_BUCKET}.s3.amazonaws.com/${docInfo.s3Key}`
+                    });
+                }
+            }
+        }
+
+        return response(200, {
+            success: true,
+            data: { documents }
+        });
+
+    } catch (error) {
+        console.error('Error obteniendo documentos:', error);
+        return response(500, {
+            success: false,
+            error: error.message
+        });
+    }
+};
+
+// GET ANALYTICS - Obtener analíticas avanzadas
+exports.getAnalytics = async (event) => {
+    try {
+        const params = event.queryStringParameters || {};
+        const empresaId = params.empresaId;
+        const fechaInicio = params.fechaInicio;
+        const fechaFin = params.fechaFin || new Date().toISOString().split('T')[0];
+
+        // Obtener todos los incidentes
+        const result = await docClient.send(new ScanCommand({
+            TableName: INCIDENTS_TABLE
+        }));
+        let items = result.Items || [];
+
+        // Filtros
+        if (empresaId) {
+            items = items.filter(item => item.empresaId === empresaId);
+        }
+        if (fechaInicio) {
+            items = items.filter(item => item.fecha >= fechaInicio);
+        }
+        if (fechaFin) {
+            items = items.filter(item => item.fecha <= fechaFin);
+        }
+
+        // Distribución por tipo
+        const distribucionPorTipo = {
+            accidentes: items.filter(i => i.tipo === 'accidente').length,
+            incidentes: items.filter(i => i.tipo === 'incidente').length,
+            condicionesSubestandar: items.filter(i => i.tipo === 'condicion_subestandar').length
+        };
+
+        // Distribución por gravedad (solo accidentes)
+        const accidentes = items.filter(i => i.tipo === 'accidente');
+        const distribucionPorGravedad = {
+            leve: accidentes.filter(a => a.gravedad === 'leve').length,
+            grave: accidentes.filter(a => a.gravedad === 'grave').length,
+            fatal: accidentes.filter(a => a.gravedad === 'fatal').length
+        };
+
+        // Tendencias por mes (últimos 6 meses)
+        const tendencias = [];
+        const ahora = new Date();
+        for (let i = 5; i >= 0; i--) {
+            const mes = new Date(ahora.getFullYear(), ahora.getMonth() - i, 1);
+            const mesStr = mes.toISOString().slice(0, 7); // YYYY-MM
+            const itemsMes = items.filter(item => item.fecha && item.fecha.startsWith(mesStr));
+
+            tendencias.push({
+                mes: mesStr,
+                total: itemsMes.length,
+                accidentes: itemsMes.filter(i => i.tipo === 'accidente').length,
+                incidentes: itemsMes.filter(i => i.tipo === 'incidente').length
+            });
+        }
+
+        // Por centro de trabajo
+        const centrosMap = {};
+        items.forEach(item => {
+            const centro = item.centroTrabajo || 'Sin especificar';
+            if (!centrosMap[centro]) {
+                centrosMap[centro] = { total: 0 };
+            }
+            centrosMap[centro].total++;
+        });
+
+        const porCentroTrabajo = Object.entries(centrosMap).map(([centro, data]) => ({
+            centro,
+            total: data.total,
+            tasa: items.length > 0 ? ((data.total / items.length) * 100).toFixed(2) : 0
+        }));
+
+        return response(200, {
+            success: true,
+            data: {
+                periodo: `${fechaInicio || 'inicio'} - ${fechaFin}`,
+                distribucionPorTipo,
+                distribucionPorGravedad,
+                tendencias,
+                porCentroTrabajo,
+                totalIncidentes: items.length
+            }
+        });
+
+    } catch (error) {
+        console.error('Error calculando analíticas:', error);
+        return response(500, {
+            success: false,
+            error: error.message
+        });
+    }
+};
+
+// QUICK REPORT - Reporte rápido desde QR público
+exports.quickReport = async (event) => {
+    try {
+        const data = JSON.parse(event.body);
+        const incidentId = uuidv4();
+        const now = new Date().toISOString();
+
+        // Validar campos requeridos
+        if (!data.tipo || !data.centroTrabajo || !data.descripcion) {
+            return response(400, {
+                success: false,
+                error: 'Campos requeridos: tipo, centroTrabajo, descripcion'
+            });
+        }
+
+        const incident = {
+            incidentId,
+            tipo: data.tipo,
+            clasificacion: data.clasificacion || 'hallazgo',
+            tipoHallazgo: data.tipoHallazgo || 'condicion',
+            etapaConstructiva: data.etapaConstructiva || '',
+            centroTrabajo: data.centroTrabajo,
+            trabajador: {
+                nombre: data.reportadoPor || 'Reporte Anónimo',
+                rut: '',
+                genero: '',
+                cargo: ''
+            },
+            fecha: now.split('T')[0],
+            hora: now.split('T')[1].split('.')[0],
+            descripcion: data.descripcion,
+            gravedad: data.gravedad || 'leve',
+            diasPerdidos: 0,
+            evidencias: data.evidencias || [],
+            documentos: {},
+            investigaciones: {
+                prevencionista: null,
+                jefeDirecto: null,
+                comiteParitario: null
+            },
+            estado: 'reportado',
+            reportadoPor: data.reportadoPor || 'QR-Publico',
+            qrToken: data.qrToken || null,
+            firmaConfirmacion: data.firmaConfirmacion || null,
+            empresaId: data.empresaId || 'default',
+            origenReporte: 'qr_publico',
+            createdAt: now,
+            updatedAt: now
+        };
+
+        // Guardar en DynamoDB
+        await docClient.send(new PutCommand({
+            TableName: INCIDENTS_TABLE,
+            Item: incident
+        }));
+
+        // Intentar notificación SNS
+        try {
+            const message = {
+                incidentId,
+                tipo: incident.tipo,
+                centroTrabajo: incident.centroTrabajo,
+                descripcion: incident.descripcion,
+                origenReporte: 'qr_publico'
+            };
+
+            await snsClient.send(new PublishCommand({
+                TopicArn: `arn:aws:sns:${process.env.AWS_REGION || 'us-east-1'}:${process.env.AWS_ACCOUNT_ID || ''}:${INCIDENT_NOTIFICATION_TOPIC}`,
+                Subject: `Nuevo reporte QR: ${incident.tipo}`,
+                Message: JSON.stringify(message, null, 2)
+            }));
+        } catch (snsError) {
+            console.error('Error enviando notificación SNS:', snsError);
+        }
+
+        return response(201, {
+            success: true,
+            incidentId,
+            message: 'Reporte creado exitosamente'
+        });
+
+    } catch (error) {
+        console.error('Error creando reporte rápido:', error);
+        return response(500, {
+            success: false,
+            error: error.message
+        });
+    }
+};

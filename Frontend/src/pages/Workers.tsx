@@ -37,11 +37,24 @@ export default function Workers() {
 
     const loadWorkers = async () => {
         try {
-            // Cargar usuarios con rol trabajador
-            const response = await usersApi.list({ rol: 'trabajador' });
-            if (response.success && response.data) {
-                setWorkers(response.data.users);
+            // Cargar usuarios con rol trabajador Y prevencionista (ambos son trabajadores)
+            const [trabajadoresRes, prevencionistasRes] = await Promise.all([
+                usersApi.list({ rol: 'trabajador' }),
+                usersApi.list({ rol: 'prevencionista' })
+            ]);
+
+            const allWorkers: User[] = [];
+
+            if (trabajadoresRes.success && trabajadoresRes.data) {
+                allWorkers.push(...trabajadoresRes.data.users);
             }
+            if (prevencionistasRes.success && prevencionistasRes.data) {
+                allWorkers.push(...prevencionistasRes.data.users);
+            }
+
+            // Ordenar por nombre
+            allWorkers.sort((a, b) => a.nombre.localeCompare(b.nombre));
+            setWorkers(allWorkers);
         } catch (error) {
             console.error('Error loading workers:', error);
         } finally {
@@ -224,6 +237,7 @@ Generado por PrevencionApp
                                             <tr>
                                                 <th>Trabajador</th>
                                                 <th>RUT</th>
+                                                <th>Rol</th>
                                                 <th>Email</th>
                                                 <th>Estado</th>
                                                 <th>Acciones</th>
@@ -260,6 +274,11 @@ Generado por PrevencionApp
                                                         }}>
                                                             {worker.rut}
                                                         </code>
+                                                    </td>
+                                                    <td>
+                                                        <span className={`badge badge-${worker.rol === 'prevencionista' ? 'info' : 'secondary'}`}>
+                                                            {worker.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}
+                                                        </span>
                                                     </td>
                                                     <td>
                                                         {worker.email || <span className="text-muted">-</span>}

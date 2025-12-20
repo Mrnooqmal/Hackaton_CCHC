@@ -6,6 +6,7 @@ const { validateRut, validateRequired, hashPin, verifyPin, validatePin, generate
 
 const USERS_TABLE = process.env.USERS_TABLE || 'Users';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
+const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
 
 // Roles válidos del sistema
 const ROLES = {
@@ -106,12 +107,56 @@ module.exports.create = async (event) => {
             // Empresa
             empresaId: body.empresaId || 'default',
 
+            // Vinculación con Workers (para no-admins)
+            workerId: null,
+
             // Metadata
             creadoPor: body.creadoPor || 'system',
             createdAt: now,
             updatedAt: now,
             ultimoAcceso: null
         };
+
+        // Si no es admin, crear también registro en Workers para vinculación
+        let workerCreated = null;
+        if (body.rol !== 'admin') {
+            const workerId = uuidv4();
+            user.workerId = workerId;
+
+            const worker = {
+                workerId,
+                rut: rutValidation.formatted,
+                nombre: body.nombre,
+                apellido: body.apellido || '',
+                email: body.email || '',
+                telefono: body.telefono || '',
+                cargo: body.cargo || ROLES[body.rol].nombre,
+                empresaId: body.empresaId || 'default',
+                fechaEnrolamiento: now,
+                signatureToken: generateSignatureToken(),
+                estado: 'activo',
+                habilitado: false,
+                pinHash: null,
+                pinCreatedAt: null,
+                firmaEnrolamiento: null,
+                // Referencia al usuario
+                userId: userId,
+                createdAt: now,
+                updatedAt: now,
+            };
+
+            await docClient.send(
+                new PutCommand({
+                    TableName: WORKERS_TABLE,
+                    Item: worker,
+                })
+            );
+
+            workerCreated = {
+                workerId,
+                message: 'Worker creado y vinculado automáticamente'
+            };
+        }
 
         await docClient.send(
             new PutCommand({
@@ -143,8 +188,10 @@ module.exports.create = async (event) => {
                 apellido: user.apellido,
                 rol: user.rol,
                 cargo: user.cargo,
-                estado: user.estado
+                estado: user.estado,
+                workerId: user.workerId
             },
+            workerCreated,
             passwordTemporal, // Solo visible en la respuesta de creación
             emailNotificado: emailSent,
             instrucciones: emailSent
