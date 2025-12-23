@@ -28,12 +28,15 @@ export default function RegisterAdmin() {
                 cargo: 'Administrador General'
             });
 
+            console.log('API Response:', response);
             if (response.success && response.data) {
+                console.log('Success condition met. Data:', response.data);
                 setSuccessData({
                     password: (response.data as any).passwordTemporal,
                     rut: formData.rut
                 });
             } else {
+                console.error('Success condition failed:', response);
                 setError(response.error || 'Error al crear el administrador inicial');
             }
         } catch (err) {
