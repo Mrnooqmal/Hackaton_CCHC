@@ -11,15 +11,15 @@ const bedrockClient = new BedrockRuntimeClient({
   region: process.env.AWS_REGION || 'us-east-1'
 });
 
-// Modelo por defecto - Amazon Titan (no requiere aprobación especial)
-const DEFAULT_MODEL_ID = process.env.BEDROCK_MODEL_ID || 'amazon.titan-text-express-v1';
+// Modelo por defecto - Claude Haiku (mejor para seguir instrucciones JSON)
+const DEFAULT_MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0';
 
 // Modelos alternativos para fallback
 const FALLBACK_MODELS = [
-  'amazon.titan-text-express-v1',
-  'amazon.titan-tg1-large',
   'anthropic.claude-3-haiku-20240307-v1:0',
-  'anthropic.claude-3-sonnet-20240229-v1:0'
+  'anthropic.claude-3-sonnet-20240229-v1:0',
+  'amazon.titan-text-express-v1',
+  'amazon.titan-tg1-large'
 ];
 
 /**

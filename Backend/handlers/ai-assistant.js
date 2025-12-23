@@ -2,6 +2,140 @@ const { success, error, created } = require('../lib/response');
 const bedrock = require('../lib/bedrock');
 
 /**
+ * Normaliza la respuesta de Bedrock Risk Matrix al formato esperado por el frontend
+ */
+function normalizeRiskMatrixResponse(result, actividad) {
+    // Si Bedrock devolvió rawText (no pudo parsear JSON), lanzar error para usar fallback
+    if (result.rawText) {
+        console.warn('[AI] Bedrock returned rawText instead of parsed JSON');
+        throw new Error('Invalid JSON response from Bedrock');
+    }
+    
+    // Si ya tiene la estructura correcta, retornar tal cual
+    if (result.riesgos && result.riesgos[0]?.medidasExistentes) {
+        return result;
+    }
+    
+    // Normalizar la respuesta de Bedrock al formato del frontend
+    const normalized = {
+        titulo: result.titulo || `Matriz de Riesgos - ${actividad}`,
+        fecha: result.fecha || new Date().toISOString().split('T')[0],
+        riesgos: [],
+        recomendaciones: result.recomendaciones || result.recomendacionesPrioritarias || []
+    };
+    
+    // Normalizar cada riesgo
+    if (result.riesgos && Array.isArray(result.riesgos)) {
+        normalized.riesgos = result.riesgos.map((r, idx) => ({
+            id: r.id || idx + 1,
+            peligro: r.peligro || 'Peligro identificado',
+            riesgo: r.riesgo || 'Riesgo asociado',
+            probabilidad: r.probabilidadTexto || (typeof r.probabilidad === 'number' ? ['Raro', 'Improbable', 'Posible', 'Probable', 'Casi Seguro'][r.probabilidad - 1] : r.probabilidad) || 'Media',
+            consecuencia: r.consecuenciaTexto || (typeof r.consecuencia === 'number' ? ['Leve', 'Menor', 'Moderada', 'Mayor', 'Grave'][r.consecuencia - 1] : r.consecuencia) || 'Moderada',
+            nivelRiesgo: r.nivelRiesgo || 'Medio',
+            medidasExistentes: r.medidasExistentes || r.controlesExistentes || [],
+            medidasAdicionales: r.medidasAdicionales || r.controlesAdicionales || [],
+            responsable: r.responsable || 'Supervisor',
+            plazo: r.plazo || r.plazoImplementacion || '7 días'
+        }));
+    }
+    
+    // Validar que hay riesgos, si no, lanzar error para fallback
+    if (normalized.riesgos.length === 0) {
+        throw new Error('No risks found in Bedrock response');
+    }
+    
+    return normalized;
+}
+
+/**
+ * Normaliza la respuesta de Bedrock MIPER al formato esperado por el frontend
+ */
+function normalizeMIPERResponse(result, cargo) {
+    // Si Bedrock devolvió rawText (no pudo parsear JSON), lanzar error para usar fallback
+    if (result.rawText) {
+        console.warn('[AI] Bedrock returned rawText instead of parsed JSON');
+        throw new Error('Invalid JSON response from Bedrock');
+    }
+    
+    // Si ya tiene la estructura correcta, retornar tal cual
+    if (result.peligros && result.peligros[0]?.medidasControl && Array.isArray(result.peligros[0].medidasControl)) {
+        return result;
+    }
+    
+    const normalized = {
+        cargo: result.cargo || cargo,
+        fecha: result.fecha || new Date().toISOString().split('T')[0],
+        actividades: result.actividades || [],
+        peligros: [],
+        resumen: result.resumen || { totalPeligros: 0, criticos: 0, altos: 0, medios: 0, bajos: 0 },
+        recomendacionesPrioritarias: result.recomendacionesPrioritarias || result.planAccion?.map(a => a.accion) || []
+    };
+    
+    // Normalizar cada peligro
+    if (result.peligros && Array.isArray(result.peligros)) {
+        normalized.peligros = result.peligros.map((p, idx) => {
+            // Extraer medidas de control si vienen como objeto
+            let medidasControl = [];
+            let epp = [];
+            
+            if (p.medidasControl) {
+                if (Array.isArray(p.medidasControl)) {
+                    medidasControl = p.medidasControl;
+                } else if (typeof p.medidasControl === 'object') {
+                    // Si es un objeto con categorías
+                    if (p.medidasControl.administrativas) {
+                        medidasControl = [...(p.medidasControl.administrativas || [])];
+                    }
+                    if (p.medidasControl.ingenieria && p.medidasControl.ingenieria !== 'N/A') {
+                        medidasControl.unshift(p.medidasControl.ingenieria);
+                    }
+                    if (p.medidasControl.sustitucion && p.medidasControl.sustitucion !== 'N/A') {
+                        medidasControl.unshift(p.medidasControl.sustitucion);
+                    }
+                    if (p.medidasControl.eliminacion && p.medidasControl.eliminacion !== 'N/A') {
+                        medidasControl.unshift(p.medidasControl.eliminacion);
+                    }
+                    epp = p.medidasControl.epp || [];
+                }
+            }
+            
+            return {
+                id: p.id || idx + 1,
+                peligro: p.peligro || 'Peligro identificado',
+                riesgo: p.riesgo || 'Riesgo asociado',
+                actividad: p.actividad || 'Actividad general',
+                probabilidad: p.probabilidad || 'M',
+                consecuencia: String(p.consecuencia) || '2',
+                nivelRiesgo: p.nivelRiesgo || 'Medio',
+                medidasControl: medidasControl.length > 0 ? medidasControl : ['Medida de control estándar'],
+                epp: epp.length > 0 ? epp : (p.epp || ['EPP básico']),
+                responsable: p.responsable || 'Supervisor',
+                verificacion: p.verificacion || p.frecuenciaVerificacion || 'Verificación periódica'
+            };
+        });
+        
+        // Recalcular resumen si no viene
+        if (!result.resumen || result.resumen.totalPeligros === 0) {
+            normalized.resumen = {
+                totalPeligros: normalized.peligros.length,
+                criticos: normalized.peligros.filter(p => p.nivelRiesgo === 'Crítico').length,
+                altos: normalized.peligros.filter(p => p.nivelRiesgo === 'Alto').length,
+                medios: normalized.peligros.filter(p => p.nivelRiesgo === 'Medio').length,
+                bajos: normalized.peligros.filter(p => p.nivelRiesgo === 'Bajo').length
+            };
+        }
+    }
+    
+    // Validar que hay peligros, si no, lanzar error para fallback
+    if (normalized.peligros.length === 0) {
+        throw new Error('No hazards found in Bedrock response');
+    }
+    
+    return normalized;
+}
+
+/**
  * Respuestas de fallback en caso de que Bedrock falle
  */
 const FALLBACK_RESPONSES = {
@@ -142,7 +276,8 @@ module.exports.generateMIPER = async (event) => {
             console.log('[AI] Calling Bedrock generateMIPER for cargo:', cargo);
             const result = await bedrock.generateMIPER(cargo, actividades, contexto);
             console.log('[AI] Bedrock generateMIPER SUCCESS');
-            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
+            const normalized = normalizeMIPERResponse(result, cargo);
+            return success({ ...normalized, _source: 'bedrock', _generatedAt: new Date().toISOString() });
         } catch (bedrockError) {
             console.error('[AI] Bedrock generateMIPER FAILED:', bedrockError.name, bedrockError.message);
             console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
@@ -171,7 +306,8 @@ module.exports.generateRiskMatrix = async (event) => {
             console.log('[AI] Calling Bedrock generateRiskMatrix for actividad:', actividad);
             const result = await bedrock.generateRiskMatrix(actividad, descripcion, ubicacion);
             console.log('[AI] Bedrock generateRiskMatrix SUCCESS');
-            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
+            const normalized = normalizeRiskMatrixResponse(result, actividad);
+            return success({ ...normalized, _source: 'bedrock', _generatedAt: new Date().toISOString() });
         } catch (bedrockError) {
             console.error('[AI] Bedrock generateRiskMatrix FAILED:', bedrockError.name, bedrockError.message);
             console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
