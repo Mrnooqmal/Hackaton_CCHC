@@ -5,7 +5,7 @@ import {
     FiPlus, FiSearch, FiEye, FiX, FiFileText,
     FiDownload, FiUser, FiTrendingUp
 } from 'react-icons/fi';
-import { usersApi, signaturesApi, type User, type DigitalSignature, REQUEST_TYPES } from '../api/client';
+import { workersApi, signaturesApi, type Worker, type DigitalSignature, REQUEST_TYPES } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 interface WorkerStats {
@@ -15,14 +15,19 @@ interface WorkerStats {
     actividadesAsistidas: number;
 }
 
+// Extender la interfaz Worker para incluir rol (que viene del backend para usuarios legacy)
+interface WorkerWithRole extends Worker {
+    rol?: 'admin' | 'prevencionista' | 'trabajador';
+}
+
 export default function Workers() {
     const { user: currentUser } = useAuth();
-    const [workers, setWorkers] = useState<User[]>([]);
+    const [workers, setWorkers] = useState<WorkerWithRole[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
 
     // Panel de detalles
-    const [selectedWorker, setSelectedWorker] = useState<User | null>(null);
+    const [selectedWorker, setSelectedWorker] = useState<WorkerWithRole | null>(null);
     const [workerSignatures, setWorkerSignatures] = useState<DigitalSignature[]>([]);
     const [loadingDetails, setLoadingDetails] = useState(false);
     const [workerStats, setWorkerStats] = useState<WorkerStats | null>(null);
@@ -48,24 +53,15 @@ export default function Workers() {
 
     const loadWorkers = async () => {
         try {
-            // Cargar usuarios con rol trabajador Y prevencionista (ambos son trabajadores)
-            const [trabajadoresRes, prevencionistasRes] = await Promise.all([
-                usersApi.list({ rol: 'trabajador' }),
-                usersApi.list({ rol: 'prevencionista' })
-            ]);
+            // Usar workersApi.list que consolida workers nuevos y usuarios legacy
+            const response = await workersApi.list();
 
-            const allWorkers: User[] = [];
-
-            if (trabajadoresRes.success && trabajadoresRes.data) {
-                allWorkers.push(...trabajadoresRes.data.users);
+            if (response.success && response.data) {
+                const allWorkers = response.data as WorkerWithRole[];
+                // Ordenar por nombre
+                allWorkers.sort((a, b) => a.nombre.localeCompare(b.nombre));
+                setWorkers(allWorkers);
             }
-            if (prevencionistasRes.success && prevencionistasRes.data) {
-                allWorkers.push(...prevencionistasRes.data.users);
-            }
-
-            // Ordenar por nombre
-            allWorkers.sort((a, b) => a.nombre.localeCompare(b.nombre));
-            setWorkers(allWorkers);
         } catch (error) {
             console.error('Error loading workers:', error);
         } finally {
@@ -73,15 +69,14 @@ export default function Workers() {
         }
     };
 
-    const openWorkerDetails = async (worker: User) => {
+    const openWorkerDetails = async (worker: WorkerWithRole) => {
         setSelectedWorker(worker);
         setLoadingDetails(true);
 
         try {
             // Obtener historial de firmas
-            // Usar workerId si existe, sino usar userId
-            const idParaFirmas = worker.workerId || worker.userId;
-            const signaturesRes = await signaturesApi.getByWorker(idParaFirmas);
+            // workersApi devuelve siempre workerId
+            const signaturesRes = await signaturesApi.getByWorker(worker.workerId);
             if (signaturesRes.success && signaturesRes.data) {
                 const firmas = signaturesRes.data.firmas || [];
                 setWorkerSignatures(firmas);
@@ -251,6 +246,7 @@ Generado por PrevencionApp
                                         <tr>
                                             <th>Trabajador</th>
                                             <th>RUT</th>
+                                            <th>Cargo</th>
                                             <th>Rol</th>
                                             <th>Email</th>
                                             <th>Estado</th>
@@ -260,10 +256,10 @@ Generado por PrevencionApp
                                     <tbody>
                                         {filteredWorkers.map((worker) => (
                                             <tr
-                                                key={worker.userId}
+                                                key={worker.workerId}
                                                 style={{
                                                     cursor: 'pointer',
-                                                    background: selectedWorker?.userId === worker.userId
+                                                    background: selectedWorker?.workerId === worker.workerId
                                                         ? 'var(--surface-elevated)'
                                                         : undefined
                                                 }}
@@ -290,8 +286,11 @@ Generado por PrevencionApp
                                                     </code>
                                                 </td>
                                                 <td>
+                                                    <div className="font-medium text-sm">{worker.cargo}</div>
+                                                </td>
+                                                <td>
                                                     <span className={`badge badge-${worker.rol === 'prevencionista' ? 'info' : 'secondary'}`}>
-                                                        {worker.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}
+                                                        {worker.rol === 'prevencionista' ? 'Prevencionista' : (worker.rol === 'admin' ? 'Admin' : 'Trabajador')}
                                                     </span>
                                                 </td>
                                                 <td>

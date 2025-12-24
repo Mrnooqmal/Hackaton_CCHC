@@ -544,76 +544,15 @@ functions:
           path: /test-email
           method: POST
 
-  # Inbox (Mensajería Interna)
-  inboxSendMessage:
-    handler: handlers/inbox.sendMessage
-    events:
-      - httpApi:
-          path: /inbox/send
-          method: POST
-
-  inboxGetInbox:
-    handler: handlers/inbox.getInbox
+  inboxModule:
+    handler: handlers/inbox-module/handler.inboxHandler
     events:
       - httpApi:
           path: /inbox
-          method: GET
-
-  inboxGetSent:
-    handler: handlers/inbox.getSent
-    events:
+          method: any
       - httpApi:
-          path: /inbox/sent
-          method: GET
-
-  inboxGetMessage:
-    handler: handlers/inbox.getMessage
-    events:
-      - httpApi:
-          path: /inbox/{messageId}
-          method: GET
-
-  inboxMarkAsRead:
-    handler: handlers/inbox.markAsRead
-    events:
-      - httpApi:
-          path: /inbox/{messageId}/read
-          method: PUT
-
-  inboxMarkAllAsRead:
-    handler: handlers/inbox.markAllAsRead
-    events:
-      - httpApi:
-          path: /inbox/read-all
-          method: PUT
-
-  inboxArchiveMessage:
-    handler: handlers/inbox.archiveMessage
-    events:
-      - httpApi:
-          path: /inbox/{messageId}/archive
-          method: PUT
-
-  inboxDeleteMessage:
-    handler: handlers/inbox.deleteMessage
-    events:
-      - httpApi:
-          path: /inbox/{messageId}
-          method: DELETE
-
-  inboxGetUnreadCount:
-    handler: handlers/inbox.getUnreadCount
-    events:
-      - httpApi:
-          path: /inbox/unread-count
-          method: GET
-
-  inboxGetRecipients:
-    handler: handlers/inbox.getRecipients
-    events:
-      - httpApi:
-          path: /inbox/recipients
-          method: GET
+          path: /inbox/{proxy+}
+          method: any
 
 resources:
   Resources:
