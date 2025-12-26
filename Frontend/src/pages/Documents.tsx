@@ -93,10 +93,20 @@ export default function Documents() {
             <Header title="Documentos" />
 
             <div className="page-content">
+                <div className="page-header">
+                    <div className="page-header-info">
+                        <h2 className="page-header-title">
+                            <FiFileText className="text-primary-500" />
+                            Gestión de Documentos
+                        </h2>
+                        <p className="page-header-description">Administre certificados, contratos y documentación legal de seguridad.</p>
+                    </div>
+                </div>
+
                 {/* Actions */}
                 <div className="card mb-6">
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="flex gap-4" style={{ flex: 1 }}>
+                    <div className="documents-actions-bar">
+                        <div className="documents-filters">
                             <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
                                 <input
                                     type="text"
@@ -211,7 +221,7 @@ export default function Documents() {
                 {filteredDocuments.length === 0 ? (
                     <div className="card">
                         <div className="empty-state">
-                            <div className="empty-state-icon">📄</div>
+                            <div className="empty-state-icon"><FiFileText size={48} style={{ color: 'var(--text-muted)' }} /></div>
                             <h3 className="empty-state-title">Sin documentos</h3>
                             <p className="empty-state-description">
                                 Crea tu primer documento para comenzar a gestionar firmas y asignaciones.

@@ -234,83 +234,415 @@ export default function Inbox() {
             <Header title="Bandeja de Entrada" />
 
             <div className="page-content">
-                <div className="inbox-container">
-                    {/* Sidebar */}
-                    <div className="inbox-sidebar">
-                        <button className="btn btn-primary w-full mb-4" onClick={handleCompose}>
-                            <FiPlus /> Nuevo Mensaje
-                        </button>
-
-                        <nav className="inbox-nav">
-                            <button
-                                className={`inbox-nav-item ${activeTab === 'inbox' ? 'active' : ''}`}
-                                onClick={() => { setActiveTab('inbox'); setFilter('all'); }}
-                            >
-                                <FiInbox />
-                                <span>Bandeja de Entrada</span>
-                                {unreadCount > 0 && (
-                                    <span className="inbox-badge">{unreadCount}</span>
-                                )}
-                            </button>
-                            <button
-                                className={`inbox-nav-item ${activeTab === 'sent' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('sent')}
-                            >
-                                <FiSend />
-                                <span>Enviados</span>
-                            </button>
-                            <button
-                                className={`inbox-nav-item ${activeTab === 'archived' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('archived')}
-                            >
-                                <FiArchive />
-                                <span>Archivados</span>
-                            </button>
-                        </nav>
-
-                        {activeTab === 'inbox' && (
-                            <div className="inbox-filters">
-                                <h4>Filtrar</h4>
-                                <label className="inbox-filter-item">
-                                    <input
-                                        type="radio"
-                                        checked={filter === 'all'}
-                                        onChange={() => setFilter('all')}
-                                    />
-                                    Todos
-                                </label>
-                                <label className="inbox-filter-item">
-                                    <input
-                                        type="radio"
-                                        checked={filter === 'unread'}
-                                        onChange={() => setFilter('unread')}
-                                    />
-                                    No leídos
-                                </label>
-                            </div>
-                        )}
+                <div className="page-header">
+                    <div className="page-header-info">
+                        <h2 className="page-header-title">
+                            <FiInbox className="text-primary-500" />
+                            Mensajería Interna
+                        </h2>
+                        <p className="page-header-description">Comunicación directa con tu equipo y supervisores.</p>
                     </div>
+                    <div className="page-header-actions">
+                        <button className="btn btn-primary" onClick={handleCompose}>
+                            <FiPlus className="mr-2" />
+                            <span className="hide-mobile">Nuevo Mensaje</span>
+                            <span className="show-mobile-only">Nuevo</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div className={`inbox-container ${selectedMessage ? 'has-selection' : ''}`}>
 
                     {/* Message List */}
                     <div className="inbox-list">
                         <div className="inbox-list-header">
+                            {/* Search bar */}
                             <div className="inbox-search">
                                 <FiSearch />
                                 <input
                                     type="text"
-                                    placeholder="Buscar mensajes..."
+                                    placeholder="Buscar..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
                             </div>
-                            {activeTab === 'inbox' && unreadCount > 0 && (
-                                <button className="btn btn-sm btn-secondary" onClick={handleMarkAllAsRead}>
-                                    <FiCheck /> Marcar todos leídos
+
+                            {/* Desktop actions */}
+                            <div className="flex gap-2 desktop-only">
+                                {activeTab === 'inbox' && unreadCount > 0 && (
+                                    <button className="btn btn-sm btn-secondary" onClick={handleMarkAllAsRead}>
+                                        <FiCheck /> Marcar todos leídos
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* DESKTOP TABS */}
+                        <div className="desktop-only" style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '12px',
+                            padding: '16px 16px 12px 16px',
+                            borderBottom: '1px solid var(--surface-border)'
+                        }}>
+                            {/* Tabs horizontales para desktop */}
+                            <div style={{
+                                display: 'flex',
+                                gap: '4px',
+                                background: 'var(--surface-elevated)',
+                                padding: '4px',
+                                borderRadius: 'var(--radius-lg)',
+                                border: '1px solid var(--surface-border)'
+                            }}>
+                                <button
+                                    className={`desktop-nav-item ${activeTab === 'inbox' ? 'active' : ''}`}
+                                    onClick={() => { setActiveTab('inbox'); setFilter('all'); }}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px 16px',
+                                        fontSize: '14px',
+                                        whiteSpace: 'nowrap',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                        background: activeTab === 'inbox' ? 'var(--primary-500)' : 'transparent',
+                                        color: activeTab === 'inbox' ? 'white' : 'var(--text-muted)',
+                                        border: 'none',
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: 'pointer',
+                                        fontWeight: '500'
+                                    }}
+                                >
+                                    <FiInbox size={16} />
+                                    <span>Recibidos</span>
+                                    {unreadCount > 0 && (
+                                        <span style={{
+                                            width: '8px',
+                                            height: '8px',
+                                            background: activeTab === 'inbox' ? 'white' : 'var(--danger-500)',
+                                            borderRadius: '50%'
+                                        }} />
+                                    )}
                                 </button>
+                                <button
+                                    className={`desktop-nav-item ${activeTab === 'sent' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('sent')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px 16px',
+                                        fontSize: '14px',
+                                        whiteSpace: 'nowrap',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                        background: activeTab === 'sent' ? 'var(--primary-500)' : 'transparent',
+                                        color: activeTab === 'sent' ? 'white' : 'var(--text-muted)',
+                                        border: 'none',
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: 'pointer',
+                                        fontWeight: '500'
+                                    }}
+                                >
+                                    <FiSend size={16} />
+                                    <span>Enviados</span>
+                                </button>
+                                <button
+                                    className={`desktop-nav-item ${activeTab === 'archived' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('archived')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px 16px',
+                                        fontSize: '14px',
+                                        whiteSpace: 'nowrap',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                        background: activeTab === 'archived' ? 'var(--primary-500)' : 'transparent',
+                                        color: activeTab === 'archived' ? 'white' : 'var(--text-muted)',
+                                        border: 'none',
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: 'pointer',
+                                        fontWeight: '500'
+                                    }}
+                                >
+                                    <FiArchive size={16} />
+                                    <span>Archivados</span>
+                                </button>
+                            </div>
+
+                            {/* Filtros para inbox - SOLO CUANDO ESTÁ EN RECIBIDOS - DESKTOP */}
+                            {activeTab === 'inbox' && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    background: 'var(--surface-elevated)',
+                                    padding: '8px',
+                                    borderRadius: 'var(--radius-lg)',
+                                    border: '1px solid var(--surface-border)'
+                                }}>
+                                    <span style={{
+                                        fontSize: '14px',
+                                        fontWeight: '500',
+                                        color: 'var(--text-secondary)',
+                                        padding: '0 16px'
+                                    }}>
+                                        Mostrar:
+                                    </span>
+                                    <div style={{
+                                        display: 'flex',
+                                        flex: 1,
+                                        gap: '6px',
+                                        maxWidth: '250px'
+                                    }}>
+                                        <button
+                                            onClick={() => setFilter('all')}
+                                            style={{
+                                                flex: 1,
+                                                padding: '10px 16px',
+                                                fontSize: '14px',
+                                                fontWeight: '600',
+                                                whiteSpace: 'nowrap',
+                                                background: filter === 'all' ? 'var(--primary-500)' : 'transparent',
+                                                color: filter === 'all' ? 'white' : 'var(--text-secondary)',
+                                                border: 'none',
+                                                borderRadius: 'var(--radius-md)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '8px'
+                                            }}
+                                        >
+                                            <FiInbox size={16} />
+                                            <span>TODOS</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setFilter('unread')}
+                                            style={{
+                                                flex: 1,
+                                                padding: '10px 16px',
+                                                fontSize: '14px',
+                                                fontWeight: '600',
+                                                whiteSpace: 'nowrap',
+                                                background: filter === 'unread' ? 'var(--primary-500)' : 'transparent',
+                                                color: filter === 'unread' ? 'white' : 'var(--text-secondary)',
+                                                border: 'none',
+                                                borderRadius: 'var(--radius-md)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '8px'
+                                            }}
+                                        >
+                                            <FiBell size={16} />
+                                            <span>NO LEÍDOS</span>
+                                            {unreadCount > 0 && filter !== 'unread' && (
+                                                <span style={{
+                                                    fontSize: '12px',
+                                                    background: 'var(--danger-500)',
+                                                    color: 'white',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '12px',
+                                                    minWidth: '20px'
+                                                }}>
+                                                    {unreadCount}
+                                                </span>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
                             )}
                         </div>
 
-                        <div className="inbox-messages">
+                        {/* MOBILE TABS */}
+                        <div className="show-mobile" style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            padding: '12px 12px 8px 12px'
+                        }}>
+                            {/* Tabs horizontales para móvil */}
+                            <div style={{
+                                display: 'flex',
+                                gap: '4px',
+                                background: 'var(--surface-elevated)',
+                                padding: '4px',
+                                borderRadius: 'var(--radius-lg)',
+                                border: '1px solid var(--surface-border)'
+                            }}>
+                                <button
+                                    className={`mobile-nav-item ${activeTab === 'inbox' ? 'active' : ''}`}
+                                    onClick={() => { setActiveTab('inbox'); setFilter('all'); }}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px 12px',
+                                        fontSize: '13px',
+                                        whiteSpace: 'nowrap',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '6px',
+                                        background: activeTab === 'inbox' ? 'var(--primary-500)' : 'transparent',
+                                        color: activeTab === 'inbox' ? 'white' : 'var(--text-muted)',
+                                        border: 'none',
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <FiInbox size={14} />
+                                    <span>Recibidos</span>
+                                    {unreadCount > 0 && (
+                                        <span style={{
+                                            width: '6px',
+                                            height: '6px',
+                                            background: activeTab === 'inbox' ? 'white' : 'var(--danger-500)',
+                                            borderRadius: '50%'
+                                        }} />
+                                    )}
+                                </button>
+                                <button
+                                    className={`mobile-nav-item ${activeTab === 'sent' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('sent')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px 12px',
+                                        fontSize: '13px',
+                                        whiteSpace: 'nowrap',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '6px',
+                                        background: activeTab === 'sent' ? 'var(--primary-500)' : 'transparent',
+                                        color: activeTab === 'sent' ? 'white' : 'var(--text-muted)',
+                                        border: 'none',
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <FiSend size={14} />
+                                    <span>Enviados</span>
+                                </button>
+                                <button
+                                    className={`mobile-nav-item ${activeTab === 'archived' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('archived')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px 12px',
+                                        fontSize: '13px',
+                                        whiteSpace: 'nowrap',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '6px',
+                                        background: activeTab === 'archived' ? 'var(--primary-500)' : 'transparent',
+                                        color: activeTab === 'archived' ? 'white' : 'var(--text-muted)',
+                                        border: 'none',
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <FiArchive size={14} />
+                                    <span>Archivados</span>
+                                </button>
+                            </div>
+
+                            {/* Filtros para inbox - SOLO CUANDO ESTÁ EN RECIBIDOS - MÓVIL */}
+                            {activeTab === 'inbox' && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    background: 'var(--surface-elevated)',
+                                    padding: '6px',
+                                    borderRadius: 'var(--radius-lg)',
+                                    border: '1px solid var(--surface-border)'
+                                }}>
+                                    <span style={{
+                                        fontSize: '13px',
+                                        fontWeight: '500',
+                                        color: 'var(--text-secondary)',
+                                        padding: '0 12px'
+                                    }}>
+                                        Mostrar:
+                                    </span>
+                                    <div style={{
+                                        display: 'flex',
+                                        flex: 1,
+                                        gap: '4px',
+                                        maxWidth: '200px'
+                                    }}>
+                                        <button
+                                            onClick={() => setFilter('all')}
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px 12px',
+                                                fontSize: '13px',
+                                                fontWeight: '600',
+                                                whiteSpace: 'nowrap',
+                                                background: filter === 'all' ? 'var(--primary-500)' : 'transparent',
+                                                color: filter === 'all' ? 'white' : 'var(--text-secondary)',
+                                                border: 'none',
+                                                borderRadius: 'var(--radius-md)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            <FiInbox size={14} />
+                                            <span>TODOS</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setFilter('unread')}
+                                            style={{
+                                                flex: 1,
+                                                padding: '8px 12px',
+                                                fontSize: '13px',
+                                                fontWeight: '600',
+                                                whiteSpace: 'nowrap',
+                                                background: filter === 'unread' ? 'var(--primary-500)' : 'transparent',
+                                                color: filter === 'unread' ? 'white' : 'var(--text-secondary)',
+                                                border: 'none',
+                                                borderRadius: 'var(--radius-md)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            <FiBell size={14} />
+                                            <span>NO LEÍDOS</span>
+                                            {unreadCount > 0 && filter !== 'unread' && (
+                                                <span style={{
+                                                    fontSize: '11px',
+                                                    background: 'var(--danger-500)',
+                                                    color: 'white',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '10px',
+                                                    minWidth: '18px'
+                                                }}>
+                                                    {unreadCount}
+                                                </span>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Messages List */}
+                        <div className="inbox-messages" style={{ paddingTop: '0' }}>
                             {loading ? (
                                 <div className="inbox-empty">
                                     <div className="spinner" />
@@ -355,7 +687,7 @@ export default function Inbox() {
 
                     {/* Message Detail */}
                     {selectedMessage && (
-                        <div className="inbox-detail">
+                        <div className="inbox-detail desktop-only">
                             <div className="inbox-detail-header">
                                 <button className="btn btn-ghost btn-sm" onClick={() => setSelectedMessage(null)}>
                                     <FiChevronLeft />
@@ -497,7 +829,7 @@ export default function Inbox() {
             <style>{`
                 .inbox-container {
                     display: grid;
-                    grid-template-columns: 240px 1fr 400px;
+                    grid-template-columns: 1fr;
                     gap: var(--space-4);
                     height: calc(100vh - var(--header-height) - var(--space-12));
                     background: var(--surface-card);
@@ -579,6 +911,7 @@ export default function Inbox() {
                     display: flex;
                     flex-direction: column;
                     overflow: hidden;
+                    width: 100%;
                 }
 
                 .inbox-list-header {
@@ -610,6 +943,7 @@ export default function Inbox() {
                 .inbox-messages {
                     flex: 1;
                     overflow-y: auto;
+                    width: 100%;
                 }
 
                 .inbox-empty {
@@ -691,9 +1025,11 @@ export default function Inbox() {
                 }
 
                 .inbox-detail {
-                    border-left: 1px solid var(--surface-border);
-                    display: flex;
+                    display: none;
                     flex-direction: column;
+                    border-left: 1px solid var(--surface-border);
+                    width: 100%;
+                    height: 100%;
                 }
 
                 .inbox-detail-header {
@@ -774,28 +1110,96 @@ export default function Inbox() {
                     margin-right: var(--space-2);
                 }
 
-                @media (max-width: 1200px) {
-                    .inbox-container {
-                        grid-template-columns: 200px 1fr;
+                .show-mobile { display: none !important; }
+                .desktop-only { display: flex !important; }
+                .inbox-sidebar.desktop-only { display: flex !important; }
+                .show-mobile-only { display: none !important; }
+
+                /* DESKTOP: Cuando hay mensaje seleccionado, mostramos 2 columnas */
+                @media (min-width: 1025px) {
+                    .inbox-container.has-selection {
+                        grid-template-columns: 1fr 400px;
                     }
-                    .inbox-detail {
-                        position: fixed;
-                        top: var(--header-height);
-                        right: 0;
-                        bottom: 0;
-                        width: 400px;
-                        background: var(--surface-card);
-                        z-index: 100;
-                        box-shadow: var(--shadow-xl);
+                    
+                    .inbox-detail.desktop-only {
+                        display: flex;
                     }
                 }
 
-                @media (max-width: 768px) {
+                @media (max-width: 1024px) {
+                    .show-mobile { display: flex !important; }
+                    .desktop-only { display: none !important; }
                     .inbox-container {
                         grid-template-columns: 1fr;
+                        height: calc(100vh - var(--header-height) - 140px);
+                        margin-bottom: var(--space-4);
                     }
+                    
                     .inbox-sidebar {
+                        display: none !important;
+                    }
+                    
+                    .inbox-container.has-selection .inbox-list {
                         display: none;
+                    }
+                    
+                    .inbox-container.has-selection .inbox-detail {
+                        display: flex;
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        z-index: 10;
+                        background: var(--surface-card);
+                        border-left: none;
+                    }
+
+                    .inbox-list-header {
+                        padding: var(--space-3);
+                        flex-direction: column !important;
+                        gap: var(--space-3) !important;
+                    }
+                    
+                    .inbox-search {
+                        width: 100% !important;
+                        order: 2;
+                    }
+                    
+                    .mobile-nav-container {
+                        order: 1;
+                        width: 100%;
+                    }
+                }
+
+                @media (max-width: 640px) {
+                    .hide-mobile { display: none !important; }
+                    .show-mobile-only { display: inline !important; }
+                    
+                    .inbox-list-header {
+                        padding: var(--space-2) !important;
+                    }
+                    
+                    .inbox-search {
+                        width: 100%;
+                    }
+                    
+                    .inbox-message-item {
+                        padding: var(--space-3);
+                    }
+                    
+                    .inbox-message-preview {
+                        width: 100%;
+                    }
+                    
+                    .page-header-actions {
+                        flex-direction: column;
+                        gap: var(--space-2);
+                    }
+                    
+                    .page-header-actions .btn {
+                        width: 100%;
+                        justify-content: center;
                     }
                 }
             `}</style>

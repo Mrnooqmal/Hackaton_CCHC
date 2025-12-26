@@ -1,7 +1,18 @@
 import { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { usersApi, type User } from '../api/client';
-import { FiUserPlus, FiShield, FiLock, FiEdit2, FiCheckCircle, FiAlertCircle, FiX, FiSave } from 'react-icons/fi';
+import {
+    FiUserPlus,
+    FiShield,
+    FiCheckCircle,
+    FiAlertCircle,
+    FiEdit2,
+    FiArrowRight,
+    FiUsers,
+    FiLock,
+    FiX,
+    FiSave
+} from 'react-icons/fi';
 
 export default function UserManagement() {
     const [users, setUsers] = useState<User[]>([]);
@@ -122,21 +133,26 @@ export default function UserManagement() {
         <>
             <Header title="Gestión de Usuarios" />
             <div className="page-content">
-                <div className="mb-6 flex justify-between items-center">
-                    <div>
-                        <h2 className="text-xl font-bold">Usuarios del Sistema</h2>
-                        <p className="text-muted">Administre el acceso y roles de su empresa</p>
+                <div className="page-header">
+                    <div className="page-header-info">
+                        <h2 className="page-header-title">
+                            <FiUsers className="text-primary-500" />
+                            Usuarios del Sistema
+                        </h2>
+                        <p className="page-header-description">Administre el acceso, roles y permisos de los usuarios de su empresa.</p>
                     </div>
-                    <button
-                        className="btn btn-primary"
-                        onClick={() => {
-                            setCreadoResult(null);
-                            setShowCreateModal(true);
-                        }}
-                    >
-                        <FiUserPlus className="mr-2" />
-                        Nuevo Usuario
-                    </button>
+                    <div className="page-header-actions">
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => {
+                                setCreadoResult(null);
+                                setShowCreateModal(true);
+                            }}
+                        >
+                            <FiUserPlus className="mr-2" />
+                            Nuevo Usuario
+                        </button>
+                    </div>
                 </div>
 
                 {creadoResult && (
@@ -159,6 +175,11 @@ export default function UserManagement() {
                 {error && <div className="alert alert-danger mb-6">{error}</div>}
 
                 <div className="card">
+                    <div className="scroll-hint">
+                        <FiArrowRight />
+                        <span>Desliza para ver más</span>
+                    </div>
+
                     <div className="table-container">
                         <table className="table">
                             <thead>

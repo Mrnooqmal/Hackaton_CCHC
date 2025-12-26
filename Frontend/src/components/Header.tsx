@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { FiLogOut, FiUser } from 'react-icons/fi';
+import { FiLogOut, FiUser, FiMenu } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import { useLayout } from '../context/LayoutContext';
 
 interface HeaderProps {
     title: string;
@@ -15,6 +16,7 @@ const getRoleLabel = (role?: string) => {
 
 export default function Header({ title }: HeaderProps) {
     const { user, logout } = useAuth();
+    const { toggleMobileMenu } = useLayout();
     const [menuOpen, setMenuOpen] = useState(false);
     const userCardRef = useRef<HTMLDivElement | null>(null);
 
@@ -48,6 +50,15 @@ export default function Header({ title }: HeaderProps) {
 
     return (
         <header className="header">
+            {/* Mobile Menu Button */}
+            <button
+                className="mobile-menu-button"
+                onClick={toggleMobileMenu}
+                aria-label="Abrir menú de navegación"
+            >
+                <FiMenu />
+            </button>
+
             <h1 className="header-title">{title}</h1>
 
             <div className="header-actions">

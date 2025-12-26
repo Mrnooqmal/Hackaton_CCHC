@@ -4,16 +4,22 @@ import {
     FiPlus,
     FiUsers,
     FiCheck,
-    FiMessageSquare
+    FiMessageSquare,
+    FiAlertTriangle,
+    FiBook,
+    FiAward,
+    FiSearch,
+    FiCalendar,
+    FiFileText
 } from 'react-icons/fi';
 import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';
 
-const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: string }> = {
-    CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: '💬' },
-    ART: { label: 'Análisis de Riesgos', color: 'var(--warning-500)', icon: '⚠️' },
-    CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)', icon: '📚' },
-    INDUCCION: { label: 'Inducción', color: 'var(--success-500)', icon: '🎓' },
-    INSPECCION: { label: 'Inspección', color: 'var(--accent-500)', icon: '🔍' },
+const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
+    CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: <FiMessageSquare /> },
+    ART: { label: 'Análisis de Riesgos', color: 'var(--warning-500)', icon: <FiAlertTriangle /> },
+    CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)', icon: <FiBook /> },
+    INDUCCION: { label: 'Inducción', color: 'var(--success-500)', icon: <FiAward /> },
+    INSPECCION: { label: 'Inspección', color: 'var(--accent-500)', icon: <FiSearch /> },
 };
 
 export default function Activities() {
@@ -129,6 +135,16 @@ export default function Activities() {
             <Header title="Actividades" />
 
             <div className="page-content">
+                <div className="page-header">
+                    <div className="page-header-info">
+                        <h2 className="page-header-title">
+                            <FiCalendar className="text-primary-500" />
+                            Programación de Actividades
+                        </h2>
+                        <p className="page-header-description">Seguimiento de capacitaciones, charlas y eventos de seguridad planeados.</p>
+                    </div>
+                </div>
+
                 {/* Quick Actions */}
                 <div className="grid grid-cols-4 mb-6">
                     {Object.entries(ACTIVITY_TYPES).slice(0, 4).map(([key, { label, color, icon }]) => (
@@ -176,7 +192,7 @@ export default function Activities() {
 
                     {todayActivities.length === 0 ? (
                         <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
-                            <div className="empty-state-icon">📅</div>
+                            <div className="empty-state-icon"><FiCalendar size={48} style={{ color: 'var(--text-muted)' }} /></div>
                             <h3 className="empty-state-title">Sin actividades hoy</h3>
                             <p className="empty-state-description">
                                 Registra la primera actividad del día, como la charla de 5 minutos.
@@ -198,7 +214,7 @@ export default function Activities() {
                                 const typeInfo = ACTIVITY_TYPES[activity.tipo] || {
                                     label: activity.tipo,
                                     color: 'var(--gray-500)',
-                                    icon: '📋'
+                                    icon: <FiFileText />
                                 };
 
                                 return (
@@ -235,7 +251,7 @@ export default function Activities() {
                                             </div>
 
                                             <span className={`badge badge-${activity.estado === 'completada' ? 'success' :
-                                                    activity.estado === 'programada' ? 'neutral' : 'warning'
+                                                activity.estado === 'programada' ? 'neutral' : 'warning'
                                                 }`}>
                                                 {activity.estado === 'completada' ? 'Completada' :
                                                     activity.estado === 'programada' ? 'Programada' : 'En curso'}
@@ -309,7 +325,7 @@ export default function Activities() {
                                             </td>
                                             <td>
                                                 <span className={`badge badge-${activity.estado === 'completada' ? 'success' :
-                                                        activity.estado === 'cancelada' ? 'danger' : 'warning'
+                                                    activity.estado === 'cancelada' ? 'danger' : 'warning'
                                                     }`}>
                                                     {activity.estado}
                                                 </span>
