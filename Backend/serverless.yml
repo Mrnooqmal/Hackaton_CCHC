@@ -148,7 +148,7 @@ functions:
 
   # Users (Usuarios)
   usersModule:
-    handler: handlers/users-module/users.handler.usersHandler
+    handler: handlers/users-module/handler.usersHandler
     events:
       - httpApi:
           path: /users
@@ -158,61 +158,15 @@ functions:
           method: any
 
   # Workers (Trabajadores/Enrolamiento)
-  createWorker:
-    handler: handlers/workers.create
+  workersModule:
+    handler: handlers/workers-module/handler.workersHandler
     events:
       - httpApi:
           path: /workers
-          method: POST
-
-  listWorkers:
-    handler: handlers/workers.list
-    events:
+          method: any
       - httpApi:
-          path: /workers
-          method: GET
-
-  getWorker:
-    handler: handlers/workers.get
-    events:
-      - httpApi:
-          path: /workers/{id}
-          method: GET
-
-  updateWorker:
-    handler: handlers/workers.update
-    events:
-      - httpApi:
-          path: /workers/{id}
-          method: PUT
-
-  signWorker:
-    handler: handlers/workers.sign
-    events:
-      - httpApi:
-          path: /workers/{id}/sign
-          method: POST
-
-  getWorkerByRut:
-    handler: handlers/workers.getByRut
-    events:
-      - httpApi:
-          path: /workers/rut/{rut}
-          method: GET
-
-  setWorkerPin:
-    handler: handlers/workers.setPin
-    events:
-      - httpApi:
-          path: /workers/{id}/set-pin
-          method: POST
-
-  completeWorkerEnrollment:
-    handler: handlers/workers.completeEnrollment
-    events:
-      - httpApi:
-          path: /workers/{id}/complete-enrollment
-          method: POST
+          path: /workers/{proxy+}
+          method: any
 
   # ========================================
   # SIGNATURE REQUESTS (Solicitudes de Firma)
@@ -449,92 +403,15 @@ functions:
           path: /surveys/{id}/responses/{workerId}
           method: POST
 
-  # Incidents (Incidentes y Accidentes)
-  createIncident:
-    handler: handlers/incidents.create
+  incidentsModule:
+    handler: handlers/incidents-module/handler.incidentsHandler
     events:
       - httpApi:
           path: /incidents
-          method: POST
-
-  listIncidents:
-    handler: handlers/incidents.list
-    events:
+          method: any
       - httpApi:
-          path: /incidents
-          method: GET
-
-  getIncident:
-    handler: handlers/incidents.get
-    events:
-      - httpApi:
-          path: /incidents/{id}
-          method: GET
-
-  updateIncident:
-    handler: handlers/incidents.update
-    events:
-      - httpApi:
-          path: /incidents/{id}
-          method: PUT
-
-  uploadIncidentEvidence:
-    handler: handlers/incidents.uploadEvidence
-    events:
-      - httpApi:
-          path: /incidents/upload-evidence
-          method: POST
-
-  getIncidentStats:
-    handler: handlers/incidents.getStats
-    events:
-      - httpApi:
-          path: /incidents/stats
-          method: GET
-
-  # Nuevos endpoints de incidentes (Fase 4)
-  addIncidentInvestigation:
-    handler: handlers/incidents.addInvestigation
-    events:
-      - httpApi:
-          path: /incidents/{id}/investigations
-          method: POST
-
-  uploadIncidentDocument:
-    handler: handlers/incidents.uploadDocument
-    events:
-      - httpApi:
-          path: /incidents/{id}/documents
-          method: POST
-
-  getIncidentDocuments:
-    handler: handlers/incidents.getDocuments
-    events:
-      - httpApi:
-          path: /incidents/{id}/documents
-          method: GET
-
-  getIncidentAnalytics:
-    handler: handlers/incidents.getAnalytics
-    events:
-      - httpApi:
-          path: /incidents/analytics
-          method: GET
-
-  quickReportIncident:
-    handler: handlers/incidents.quickReport
-    events:
-      - httpApi:
-          path: /incidents/quick-report
-          method: POST
-
-  # Hello (Test)
-  printHello:
-    handler: handlers/hola.printHello
-    events:
-      - httpApi:
-          path: /hello
-          method: GET
+          path: /incidents/{proxy+}
+          method: any
 
   # Notifications
   sendWelcomeEmail:
