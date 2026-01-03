@@ -22,6 +22,11 @@ import {
 import { surveysApi, workersApi, inboxApi, type InboxMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
+interface SidebarProps {
+    isOpen?: boolean;
+    onClose?: () => void;
+}
+
 interface NavItem {
     path: string;
     icon: any;
@@ -45,19 +50,19 @@ const navItems: NavSection[] = [
         ]
     },
     {
-        section: 'Firmas',
+        section: 'Cumplimiento',
         items: [
-            { path: '/signature-requests', icon: FiEdit3, label: 'Solicitar Firmas', permission: 'crear_actividades' },
-            { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Firmas' },
+            { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma', permission: 'crear_actividades' },
+            { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
             { path: '/offline-signatures', icon: FiWifiOff, label: 'Firmas Offline', permission: 'crear_actividades' },
         ]
     },
     {
-        section: 'Gestión',
+        section: 'Gestión Técnica',
         items: [
-            { path: '/documents', icon: FiFileText, label: 'Documentos' },
-            { path: '/activities', icon: FiCalendar, label: 'Actividades' },
-            { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
+            { path: '/documents', icon: FiFileText, label: 'Documentos Normativos' },
+            { path: '/activities', icon: FiCalendar, label: 'Actividades y Capacitación' },
+            { path: '/surveys', icon: FiClipboard, label: 'Auditorías y Encuestas' },
             { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
         ]
     },
@@ -71,7 +76,7 @@ const navItems: NavSection[] = [
     }
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) {
     const location = useLocation();
     const { user, hasPermission } = useAuth();
     const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -219,129 +224,156 @@ export default function Sidebar() {
         setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
     };
 
+    const handleLinkClick = () => {
+        if (onClose) {
+            onClose();
+        }
+    };
+
     return (
-        <aside className="sidebar">
-            <div className="sidebar-header">
-                <div className="sidebar-logo">
-                    <div className="sidebar-logo-text" aria-label="Build and Serve">
-                        <span className="sidebar-logo-primary">Build</span>
-                        <span className="sidebar-logo-amp">&</span>
-                        <span className="sidebar-logo-secondary">Serve</span>
-                    </div>
-                </div>
-            </div>
+        <>
+            {/* Overlay for mobile */}
+            {isOpen && onClose && (
+                <div
+                    className={`sidebar-overlay ${isOpen ? 'active' : ''}`}
+                    onClick={onClose}
+                />
+            )}
 
-            <nav className="sidebar-nav">
-                {navItems.map((section) => {
-                    // Filtrar items según permisos
-                    const visibleItems = section.items.filter(item =>
-                        !item.permission || hasPermission(item.permission)
-                    );
+            <aside className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
+                {/* Mobile close button */}
+                {onClose && (
+                    <button
+                        className="sidebar-mobile-close"
+                        onClick={onClose}
+                        aria-label="Cerrar menú"
+                    >
+                        <FiX />
+                    </button>
+                )}
 
-                    if (visibleItems.length === 0) return null;
-
-                    return (
-                        <div key={section.section} className="nav-section">
-                            <div className="nav-section-title">{section.section}</div>
-                            {visibleItems.map((item) => {
-                                const Icon = item.icon;
-                                const isActive = location.pathname === item.path;
-                                const showSurveyBadge = item.path === '/surveys' && canRespondSurveys && pendingSurveyCount > 0;
-                                const showInboxBadge = item.path === '/inbox' && unreadInboxCount > 0;
-                                const showStaticBadge = !showSurveyBadge && !showInboxBadge && typeof item.badge === 'number' && item.badge > 0;
-
-                                return (
-                                    <Link
-                                        key={item.path}
-                                        to={item.path}
-                                        className={`nav-item ${isActive ? 'active' : ''}`}
-                                    >
-                                        <span className="nav-item-icon">
-                                            <Icon />
-                                        </span>
-                                        <span>{item.label}</span>
-                                        {showSurveyBadge && (
-                                            <span className="nav-item-badge survey-badge">
-                                                {pendingBadgeLabel}
-                                            </span>
-                                        )}
-                                        {showInboxBadge && (
-                                            <span className="nav-item-badge inbox-badge">
-                                                {inboxBadgeLabel}
-                                            </span>
-                                        )}
-                                        {showStaticBadge && (
-                                            <span className="nav-item-badge">
-                                                {item.badge}
-                                            </span>
-                                        )}
-                                    </Link>
-                                );
-                            })}
+                <div className="sidebar-header">
+                    <div className="sidebar-logo">
+                        <div className="sidebar-logo-text" aria-label="Build and Serve">
+                            <span className="sidebar-logo-primary">Build</span>
+                            <span className="sidebar-logo-amp">&</span>
+                            <span className="sidebar-logo-secondary">Serve</span>
                         </div>
-                    );
-                })}
-            </nav>
-            {/* Notification Popup - Bottom Right */}
-            {showNotificationPopup && recentMessages.length > 0 && (
-                <div className="notification-popup">
-                    <div className="notification-popup-header">
-                        <span><FiBell /> Notificaciones</span>
-                        <button onClick={() => setShowNotificationPopup(false)}><FiX /></button>
                     </div>
-                    <div className="notification-popup-list">
-                        {recentMessages.slice(0, 5).map((msg) => (
-                            <Link
-                                key={msg.messageId}
-                                to="/inbox"
-                                className="notification-popup-item"
-                                onClick={() => setShowNotificationPopup(false)}
-                            >
-                                <div className="notification-popup-icon">
-                                    <FiMail />
-                                </div>
-                                <div className="notification-popup-content">
-                                    <div className="notification-popup-title">{msg.subject || 'Sin asunto'}</div>
-                                    <div className="notification-popup-meta">{msg.senderName || 'Sistema'}</div>
-                                </div>
-                            </Link>
-                        ))}
-                    </div>
-                    <Link to="/inbox" className="notification-popup-footer" onClick={() => setShowNotificationPopup(false)}>
-                        Ver todos los mensajes
-                    </Link>
                 </div>
-            )}
 
-            {/* Floating notification bell for large screens */}
-            {unreadInboxCount > 0 && !showNotificationPopup && (
-                <button
-                    className="notification-fab"
-                    onClick={() => setShowNotificationPopup(true)}
-                    title={`${unreadInboxCount} mensaje(s) sin leer`}
-                >
-                    <FiBell />
-                    <span className="notification-fab-badge">{inboxBadgeLabel}</span>
-                </button>
-            )}
+                <nav className="sidebar-nav">
+                    {navItems.map((section) => {
+                        // Filtrar items según permisos
+                        const visibleItems = section.items.filter(item =>
+                            !item.permission || hasPermission(item.permission)
+                        );
 
-            <div className="sidebar-theme-toggle">
-                <button className="btn btn-ghost" onClick={toggleTheme}>
-                    {theme === 'dark' ? (
-                        <>
-                            <FiSun />
-                            Modo claro
-                        </>
-                    ) : (
-                        <>
-                            <FiMoon />
-                            Modo oscuro
-                        </>
-                    )}
-                </button>
-            </div>
+                        if (visibleItems.length === 0) return null;
 
-            <style>{`
+                        return (
+                            <div key={section.section} className="nav-section">
+                                <div className="nav-section-title">{section.section}</div>
+                                {visibleItems.map((item) => {
+                                    const Icon = item.icon;
+                                    const isActive = location.pathname === item.path;
+                                    const showSurveyBadge = item.path === '/surveys' && canRespondSurveys && pendingSurveyCount > 0;
+                                    const showInboxBadge = item.path === '/inbox' && unreadInboxCount > 0;
+                                    const showStaticBadge = !showSurveyBadge && !showInboxBadge && typeof item.badge === 'number' && item.badge > 0;
+
+                                    return (
+                                        <Link
+                                            key={item.path}
+                                            to={item.path}
+                                            className={`nav-item ${isActive ? 'active' : ''}`}
+                                            onClick={handleLinkClick}
+                                        >
+                                            <span className="nav-item-icon">
+                                                <Icon />
+                                            </span>
+                                            <span>{item.label}</span>
+                                            {showSurveyBadge && (
+                                                <span className="nav-item-badge survey-badge">
+                                                    {pendingBadgeLabel}
+                                                </span>
+                                            )}
+                                            {showInboxBadge && (
+                                                <span className="nav-item-badge inbox-badge">
+                                                    {inboxBadgeLabel}
+                                                </span>
+                                            )}
+                                            {showStaticBadge && (
+                                                <span className="nav-item-badge">
+                                                    {item.badge}
+                                                </span>
+                                            )}
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        );
+                    })}
+                </nav>
+                {/* Notification Popup - Bottom Right */}
+                {showNotificationPopup && recentMessages.length > 0 && (
+                    <div className="notification-popup">
+                        <div className="notification-popup-header">
+                            <span><FiBell /> Notificaciones</span>
+                            <button onClick={() => setShowNotificationPopup(false)}><FiX /></button>
+                        </div>
+                        <div className="notification-popup-list">
+                            {recentMessages.slice(0, 5).map((msg) => (
+                                <Link
+                                    key={msg.messageId}
+                                    to="/inbox"
+                                    className="notification-popup-item"
+                                    onClick={() => setShowNotificationPopup(false)}
+                                >
+                                    <div className="notification-popup-icon">
+                                        <FiMail />
+                                    </div>
+                                    <div className="notification-popup-content">
+                                        <div className="notification-popup-title">{msg.subject || 'Sin asunto'}</div>
+                                        <div className="notification-popup-meta">{msg.senderName || 'Sistema'}</div>
+                                    </div>
+                                </Link>
+                            ))}
+                        </div>
+                        <Link to="/inbox" className="notification-popup-footer" onClick={() => setShowNotificationPopup(false)}>
+                            Ver todos los mensajes
+                        </Link>
+                    </div>
+                )}
+
+                {/* Floating notification bell for large screens */}
+                {unreadInboxCount > 0 && !showNotificationPopup && (
+                    <button
+                        className="notification-fab"
+                        onClick={() => setShowNotificationPopup(true)}
+                        title={`${unreadInboxCount} mensaje(s) sin leer`}
+                    >
+                        <FiBell />
+                        <span className="notification-fab-badge">{inboxBadgeLabel}</span>
+                    </button>
+                )}
+
+                <div className="sidebar-theme-toggle">
+                    <button className="btn btn-ghost" onClick={toggleTheme}>
+                        {theme === 'dark' ? (
+                            <>
+                                <FiSun />
+                                Modo claro
+                            </>
+                        ) : (
+                            <>
+                                <FiMoon />
+                                Modo oscuro
+                            </>
+                        )}
+                    </button>
+                </div>
+
+                <style>{`
                 /* Attention badge styles */
                 .inbox-badge,
                 .survey-badge {
@@ -509,6 +541,7 @@ export default function Sidebar() {
                     gap: var(--space-2);
                 }
             `}</style>
-        </aside>
+            </aside>
+        </>
     );
 }

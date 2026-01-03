@@ -4,16 +4,22 @@ import {
     FiPlus,
     FiUsers,
     FiCheck,
-    FiMessageSquare
+    FiMessageSquare,
+    FiAlertTriangle,
+    FiBook,
+    FiAward,
+    FiSearch,
+    FiCalendar,
+    FiFileText
 } from 'react-icons/fi';
 import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';
 
-const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: string }> = {
-    CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: '💬' },
-    ART: { label: 'Análisis de Riesgos', color: 'var(--warning-500)', icon: '⚠️' },
-    CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)', icon: '📚' },
-    INDUCCION: { label: 'Inducción', color: 'var(--success-500)', icon: '🎓' },
-    INSPECCION: { label: 'Inspección', color: 'var(--accent-500)', icon: '🔍' },
+const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
+    CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: <FiMessageSquare /> },
+    ART: { label: 'Análisis de Riesgos', color: 'var(--warning-500)', icon: <FiAlertTriangle /> },
+    CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)', icon: <FiBook /> },
+    INDUCCION: { label: 'Inducción', color: 'var(--success-500)', icon: <FiAward /> },
+    INSPECCION: { label: 'Inspección', color: 'var(--accent-500)', icon: <FiSearch /> },
 };
 
 export default function Activities() {
@@ -27,7 +33,7 @@ export default function Activities() {
 
     const [newActivity, setNewActivity] = useState({
         tipo: 'CHARLA_5MIN',
-        tema: '',
+        titulo: '',
         descripcion: '',
         relatorId: '',
     });
@@ -64,7 +70,7 @@ export default function Activities() {
             if (response.success && response.data) {
                 setActivities([response.data, ...activities]);
                 setShowModal(false);
-                setNewActivity({ tipo: 'CHARLA_5MIN', tema: '', descripcion: '', relatorId: '' });
+                setNewActivity({ tipo: 'CHARLA_5MIN', titulo: '', descripcion: '', relatorId: '' });
             }
         } catch (error) {
             console.error('Error creating activity:', error);
@@ -129,6 +135,18 @@ export default function Activities() {
             <Header title="Actividades" />
 
             <div className="page-content">
+                <div className="page-header">
+                    <div className="page-header-info">
+                        <h2 className="page-header-title">
+                            <FiCalendar className="text-primary-500" />
+                            Registro de Actividades y Capacitación
+                        </h2>
+                        <p className="page-header-description">
+                            Gestión de charlas de 5 minutos, inducciones, ART y capacitación técnica.
+                        </p>
+                    </div>
+                </div>
+
                 {/* Quick Actions */}
                 <div className="grid grid-cols-4 mb-6">
                     {Object.entries(ACTIVITY_TYPES).slice(0, 4).map(([key, { label, color, icon }]) => (
@@ -176,7 +194,7 @@ export default function Activities() {
 
                     {todayActivities.length === 0 ? (
                         <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
-                            <div className="empty-state-icon">📅</div>
+                            <div className="empty-state-icon"><FiCalendar size={48} style={{ color: 'var(--text-muted)' }} /></div>
                             <h3 className="empty-state-title">Sin actividades hoy</h3>
                             <p className="empty-state-description">
                                 Registra la primera actividad del día, como la charla de 5 minutos.
@@ -198,7 +216,7 @@ export default function Activities() {
                                 const typeInfo = ACTIVITY_TYPES[activity.tipo] || {
                                     label: activity.tipo,
                                     color: 'var(--gray-500)',
-                                    icon: '📋'
+                                    icon: <FiFileText />
                                 };
 
                                 return (
@@ -220,7 +238,7 @@ export default function Activities() {
                                                 {typeInfo.icon}
                                             </div>
                                             <div>
-                                                <div className="font-bold">{activity.tema}</div>
+                                                <div className="font-bold">{activity.titulo}</div>
                                                 <div className="text-sm text-muted">
                                                     {typeInfo.label} • {activity.horaInicio}
                                                     {activity.horaFin && ` - ${activity.horaFin}`}
@@ -235,7 +253,7 @@ export default function Activities() {
                                             </div>
 
                                             <span className={`badge badge-${activity.estado === 'completada' ? 'success' :
-                                                    activity.estado === 'programada' ? 'neutral' : 'warning'
+                                                activity.estado === 'programada' ? 'neutral' : 'warning'
                                                 }`}>
                                                 {activity.estado === 'completada' ? 'Completada' :
                                                     activity.estado === 'programada' ? 'Programada' : 'En curso'}
@@ -286,7 +304,7 @@ export default function Activities() {
                                     return (
                                         <tr key={activity.activityId}>
                                             <td>
-                                                <div className="font-bold">{activity.tema}</div>
+                                                <div className="font-bold">{activity.titulo}</div>
                                                 {activity.descripcion && (
                                                     <div className="text-sm text-muted">{activity.descripcion}</div>
                                                 )}
@@ -309,7 +327,7 @@ export default function Activities() {
                                             </td>
                                             <td>
                                                 <span className={`badge badge-${activity.estado === 'completada' ? 'success' :
-                                                        activity.estado === 'cancelada' ? 'danger' : 'warning'
+                                                    activity.estado === 'cancelada' ? 'danger' : 'warning'
                                                     }`}>
                                                     {activity.estado}
                                                 </span>
@@ -353,11 +371,11 @@ export default function Activities() {
                                     </div>
 
                                     <div className="form-group">
-                                        <label className="form-label">Tema *</label>
+                                        <label className="form-label">Título *</label>
                                         <input
                                             type="text"
-                                            value={newActivity.tema}
-                                            onChange={(e) => setNewActivity({ ...newActivity, tema: e.target.value })}
+                                            value={newActivity.titulo}
+                                            onChange={(e) => setNewActivity({ ...newActivity, titulo: e.target.value })}
                                             className="form-input"
                                             placeholder="Ej: Uso correcto de EPP"
                                             required
@@ -422,7 +440,7 @@ export default function Activities() {
                             <div className="modal-header">
                                 <div>
                                     <h2 className="modal-title">Registrar Asistencia</h2>
-                                    <p className="text-sm text-muted">{selectedActivity.tema}</p>
+                                    <p className="text-sm text-muted">{selectedActivity.titulo}</p>
                                 </div>
                                 <button
                                     className="btn btn-ghost btn-icon"

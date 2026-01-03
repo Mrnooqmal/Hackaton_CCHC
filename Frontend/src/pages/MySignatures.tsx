@@ -138,7 +138,7 @@ export default function MySignatures() {
                 <Header title="Mis Firmas" />
                 <div className="main-content">
                     <div className="empty-state">
-                        <div className="empty-state-icon">⚠️</div>
+                        <div className="empty-state-icon"><FiAlertCircle size={48} style={{ color: 'var(--warning-500)' }} /></div>
                         <h3 className="empty-state-title">No tienes acceso</h3>
                         <p className="empty-state-description">
                             Tu cuenta no está asociada a un perfil de trabajador.
@@ -176,11 +176,11 @@ export default function MySignatures() {
                 {/* Stats Cards */}
                 <div className="grid grid-cols-3 mb-6">
                     <div className="card stat-card">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="avatar" style={{ background: 'var(--warning-500)' }}>
-                                <FiClock size={20} />
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className="avatar avatar-sm" style={{ background: 'var(--warning-500)' }}>
+                                <FiClock />
                             </div>
-                            <span className="text-sm text-muted">Pendientes de Firma</span>
+                            <span className="text-xs text-muted">Pendientes de Firma</span>
                         </div>
                         <div className="stat-value">{pendingRequests.length}</div>
                         {pendingRequests.length > 0 && (
@@ -191,11 +191,11 @@ export default function MySignatures() {
                         )}
                     </div>
                     <div className="card stat-card">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="avatar" style={{ background: 'var(--success-500)' }}>
-                                <FiCheck size={20} />
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
+                                <FiCheck />
                             </div>
-                            <span className="text-sm text-muted">Documentos Firmados</span>
+                            <span className="text-xs text-muted">Documentos Firmados</span>
                         </div>
                         <div className="stat-value">{signatureHistory.length}</div>
                         <div className="stat-change positive">
@@ -204,11 +204,11 @@ export default function MySignatures() {
                         </div>
                     </div>
                     <div className="card stat-card">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="avatar" style={{ background: 'var(--primary-500)' }}>
-                                <FiShield size={20} />
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
+                                <FiShield />
                             </div>
-                            <span className="text-sm text-muted">Total de Solicitudes</span>
+                            <span className="text-xs text-muted">Total de Solicitudes</span>
                         </div>
                         <div className="stat-value">{pendingRequests.length + signatureHistory.length}</div>
                         <div className="stat-change positive">
@@ -219,7 +219,7 @@ export default function MySignatures() {
                 </div>
 
                 {/* Tabs */}
-                <div 
+                <div
                     className="flex gap-3 mb-6"
                     style={{
                         background: 'var(--surface-elevated)',
@@ -236,17 +236,17 @@ export default function MySignatures() {
                             padding: 'var(--space-4)',
                             borderRadius: 'var(--radius-lg)',
                             border: activeTab === 'pendientes' ? '1px solid var(--warning-400)' : '1px solid transparent',
-                            background: activeTab === 'pendientes' 
-                                ? 'linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 193, 7, 0.05))' 
+                            background: activeTab === 'pendientes'
+                                ? 'linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 193, 7, 0.05))'
                                 : 'transparent',
                             cursor: 'pointer',
                             transition: 'all var(--transition-fast)',
                             boxShadow: activeTab === 'pendientes' ? 'var(--shadow-md)' : 'none',
                         }}
                     >
-                        <div 
+                        <div
                             className="avatar"
-                            style={{ 
+                            style={{
                                 background: activeTab === 'pendientes' ? 'var(--warning-500)' : 'var(--surface-hover)',
                                 color: activeTab === 'pendientes' ? 'white' : 'var(--text-muted)',
                                 width: '44px',
@@ -257,18 +257,18 @@ export default function MySignatures() {
                             <FiClock size={20} />
                         </div>
                         <div style={{ textAlign: 'left' }}>
-                            <div 
-                                style={{ 
-                                    fontWeight: 600, 
+                            <div
+                                style={{
+                                    fontWeight: 600,
                                     color: activeTab === 'pendientes' ? 'var(--warning-700)' : 'var(--text-secondary)',
                                     fontSize: 'var(--text-base)',
                                 }}
                             >
                                 Pendientes
                             </div>
-                            <div 
-                                style={{ 
-                                    fontSize: 'var(--text-sm)', 
+                            <div
+                                style={{
+                                    fontSize: 'var(--text-sm)',
                                     color: activeTab === 'pendientes' ? 'var(--warning-600)' : 'var(--text-muted)',
                                 }}
                             >
@@ -276,9 +276,9 @@ export default function MySignatures() {
                             </div>
                         </div>
                         {pendingRequests.length > 0 && (
-                            <span 
+                            <span
                                 className="badge"
-                                style={{ 
+                                style={{
                                     marginLeft: 'auto',
                                     background: 'var(--warning-500)',
                                     color: 'white',
@@ -304,17 +304,17 @@ export default function MySignatures() {
                             padding: 'var(--space-4)',
                             borderRadius: 'var(--radius-lg)',
                             border: activeTab === 'historial' ? '1px solid var(--success-400)' : '1px solid transparent',
-                            background: activeTab === 'historial' 
-                                ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05))' 
+                            background: activeTab === 'historial'
+                                ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05))'
                                 : 'transparent',
                             cursor: 'pointer',
                             transition: 'all var(--transition-fast)',
                             boxShadow: activeTab === 'historial' ? 'var(--shadow-md)' : 'none',
                         }}
                     >
-                        <div 
+                        <div
                             className="avatar"
-                            style={{ 
+                            style={{
                                 background: activeTab === 'historial' ? 'var(--success-500)' : 'var(--surface-hover)',
                                 color: activeTab === 'historial' ? 'white' : 'var(--text-muted)',
                                 width: '44px',
@@ -325,18 +325,18 @@ export default function MySignatures() {
                             <FiCheck size={20} />
                         </div>
                         <div style={{ textAlign: 'left' }}>
-                            <div 
-                                style={{ 
-                                    fontWeight: 600, 
+                            <div
+                                style={{
+                                    fontWeight: 600,
                                     color: activeTab === 'historial' ? 'var(--success-700)' : 'var(--text-secondary)',
                                     fontSize: 'var(--text-base)',
                                 }}
                             >
                                 Historial
                             </div>
-                            <div 
-                                style={{ 
-                                    fontSize: 'var(--text-sm)', 
+                            <div
+                                style={{
+                                    fontSize: 'var(--text-sm)',
                                     color: activeTab === 'historial' ? 'var(--success-600)' : 'var(--text-muted)',
                                 }}
                             >
@@ -344,9 +344,9 @@ export default function MySignatures() {
                             </div>
                         </div>
                         {signatureHistory.length > 0 && (
-                            <span 
+                            <span
                                 className="badge"
-                                style={{ 
+                                style={{
                                     marginLeft: 'auto',
                                     background: activeTab === 'historial' ? 'var(--success-500)' : 'var(--surface-hover)',
                                     color: activeTab === 'historial' ? 'white' : 'var(--text-muted)',
@@ -383,7 +383,9 @@ export default function MySignatures() {
 
                         {pendingRequests.length === 0 ? (
                             <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
-                                <div className="empty-state-icon" style={{ fontSize: '3rem', marginBottom: 'var(--space-4)' }}>🎉</div>
+                                <div className="empty-state-icon" style={{ marginBottom: 'var(--space-4)' }}>
+                                    <FiCheck size={48} style={{ color: 'var(--success-500)' }} />
+                                </div>
                                 <h3 className="empty-state-title">¡Todo al día!</h3>
                                 <p className="empty-state-description">
                                     No tienes solicitudes pendientes de firma. <br />
@@ -419,10 +421,10 @@ export default function MySignatures() {
 
                                         <div className="flex items-start justify-between gap-4">
                                             <div className="flex items-start gap-4" style={{ flex: 1 }}>
-                                                <div 
+                                                <div
                                                     className="avatar"
-                                                    style={{ 
-                                                        fontSize: '1.75rem', 
+                                                    style={{
+                                                        fontSize: '1.75rem',
                                                         background: 'white',
                                                         width: '56px',
                                                         height: '56px',
@@ -430,7 +432,7 @@ export default function MySignatures() {
                                                         border: '2px solid var(--warning-200)',
                                                     }}
                                                 >
-                                                    {REQUEST_TYPES[request.tipo]?.icon || '📝'}
+                                                    {REQUEST_TYPES[request.tipo]?.icon || <FiFileText />}
                                                 </div>
                                                 <div style={{ flex: 1 }}>
                                                     <div className="flex items-center gap-2 mb-1">
@@ -460,9 +462,9 @@ export default function MySignatures() {
                                                     </div>
 
                                                     {request.descripcion && (
-                                                        <div 
+                                                        <div
                                                             className="mt-3 p-3 rounded-lg text-sm"
-                                                            style={{ 
+                                                            style={{
                                                                 background: 'rgba(255, 255, 255, 0.7)',
                                                                 border: '1px solid var(--warning-200)',
                                                             }}
@@ -472,11 +474,11 @@ export default function MySignatures() {
                                                     )}
                                                 </div>
                                             </div>
-                                            
+
                                             <button
                                                 className="btn btn-primary btn-lg"
                                                 onClick={() => openSignModal(request)}
-                                                style={{ 
+                                                style={{
                                                     minWidth: '140px',
                                                     boxShadow: 'var(--shadow-glow-primary)',
                                                 }}
@@ -488,9 +490,9 @@ export default function MySignatures() {
 
                                         {/* Documents preview */}
                                         {request.documentos.length > 0 && (
-                                            <div 
-                                                className="mt-4 pt-4" 
-                                                style={{ 
+                                            <div
+                                                className="mt-4 pt-4"
+                                                style={{
                                                     borderTop: '1px dashed var(--warning-300)',
                                                 }}
                                             >
@@ -538,7 +540,9 @@ export default function MySignatures() {
 
                         {signatureHistory.length === 0 ? (
                             <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
-                                <div className="empty-state-icon" style={{ fontSize: '3rem', marginBottom: 'var(--space-4)' }}>📋</div>
+                                <div className="empty-state-icon" style={{ marginBottom: 'var(--space-4)' }}>
+                                    <FiFileText size={48} style={{ color: 'var(--text-muted)' }} />
+                                </div>
                                 <h3 className="empty-state-title">Sin historial</h3>
                                 <p className="empty-state-description">
                                     Aún no has firmado ningún documento. <br />
@@ -560,7 +564,7 @@ export default function MySignatures() {
                                     </thead>
                                     <tbody>
                                         {signatureHistory.map(({ firma, solicitud }) => (
-                                            <tr 
+                                            <tr
                                                 key={firma.signatureId}
                                                 style={{
                                                     transition: 'background var(--transition-fast)',
@@ -568,15 +572,15 @@ export default function MySignatures() {
                                             >
                                                 <td>
                                                     <div className="flex items-center gap-3">
-                                                        <div 
+                                                        <div
                                                             className="avatar avatar-sm"
-                                                            style={{ 
+                                                            style={{
                                                                 fontSize: '1.25rem',
                                                                 background: 'var(--surface-elevated)',
                                                                 border: '1px solid var(--surface-border)',
                                                             }}
                                                         >
-                                                            {REQUEST_TYPES[firma.requestTipo]?.icon || '📝'}
+                                                            {REQUEST_TYPES[firma.requestTipo]?.icon || <FiFileText />}
                                                         </div>
                                                         <div>
                                                             <div className="font-medium" style={{ marginBottom: '2px' }}>
@@ -592,10 +596,10 @@ export default function MySignatures() {
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <span 
-                                                        className="badge" 
-                                                        style={{ 
-                                                            background: 'var(--primary-100)', 
+                                                    <span
+                                                        className="badge"
+                                                        style={{
+                                                            background: 'var(--primary-100)',
                                                             color: 'var(--primary-700)',
                                                             fontWeight: 500,
                                                         }}
@@ -619,7 +623,7 @@ export default function MySignatures() {
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <div 
+                                                    <div
                                                         className="flex items-center gap-2"
                                                         style={{
                                                             fontFamily: 'monospace',
@@ -637,10 +641,10 @@ export default function MySignatures() {
                                                 </td>
                                                 <td>
                                                     {firma.estado === 'valida' ? (
-                                                        <span 
-                                                            className="badge" 
-                                                            style={{ 
-                                                                background: 'linear-gradient(135deg, var(--success-500), var(--success-600))', 
+                                                        <span
+                                                            className="badge"
+                                                            style={{
+                                                                background: 'linear-gradient(135deg, var(--success-500), var(--success-600))',
                                                                 color: 'white',
                                                                 display: 'inline-flex',
                                                                 alignItems: 'center',
@@ -651,10 +655,10 @@ export default function MySignatures() {
                                                             <FiCheck size={14} /> Válida
                                                         </span>
                                                     ) : firma.estado === 'disputada' ? (
-                                                        <span 
-                                                            className="badge" 
-                                                            style={{ 
-                                                                background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))', 
+                                                        <span
+                                                            className="badge"
+                                                            style={{
+                                                                background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))',
                                                                 color: 'white',
                                                                 display: 'inline-flex',
                                                                 alignItems: 'center',
@@ -664,10 +668,10 @@ export default function MySignatures() {
                                                             <FiAlertCircle size={14} /> Disputada
                                                         </span>
                                                     ) : (
-                                                        <span 
-                                                            className="badge" 
-                                                            style={{ 
-                                                                background: 'var(--error-500)', 
+                                                        <span
+                                                            className="badge"
+                                                            style={{
+                                                                background: 'var(--error-500)',
                                                                 color: 'white',
                                                                 display: 'inline-flex',
                                                                 alignItems: 'center',
@@ -691,16 +695,16 @@ export default function MySignatures() {
             {/* Sign Modal */}
             {showSignModal && selectedRequest && (
                 <div className="modal-overlay" onClick={() => setShowSignModal(false)}>
-                    <div 
-                        className="modal" 
-                        style={{ maxWidth: '520px' }} 
+                    <div
+                        className="modal"
+                        style={{ maxWidth: '520px' }}
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="modal-header" style={{ borderBottom: '1px solid var(--surface-border)', paddingBottom: 'var(--space-4)' }}>
                             <div className="flex items-center gap-3">
-                                <div 
+                                <div
                                     className="avatar"
-                                    style={{ 
+                                    style={{
                                         background: 'var(--gradient-primary)',
                                         boxShadow: 'var(--shadow-glow-primary)',
                                     }}
@@ -719,9 +723,9 @@ export default function MySignatures() {
 
                         <div className="modal-body" style={{ padding: 'var(--space-5)' }}>
                             {/* Request Details */}
-                            <div 
+                            <div
                                 className="survey-section mb-4"
-                                style={{ 
+                                style={{
                                     background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.08), rgba(76, 175, 80, 0.02))',
                                     border: '1px solid rgba(76, 175, 80, 0.2)',
                                     marginBottom: 'var(--space-4)',
@@ -729,9 +733,9 @@ export default function MySignatures() {
                                 }}
                             >
                                 <div className="flex items-start gap-4">
-                                    <div 
+                                    <div
                                         className="avatar"
-                                        style={{ 
+                                        style={{
                                             fontSize: '2rem',
                                             background: 'white',
                                             width: '64px',
@@ -740,7 +744,7 @@ export default function MySignatures() {
                                             border: '2px solid var(--primary-200)',
                                         }}
                                     >
-                                        {REQUEST_TYPES[selectedRequest.tipo]?.icon || '📝'}
+                                        {REQUEST_TYPES[selectedRequest.tipo]?.icon || <FiFileText />}
                                     </div>
                                     <div style={{ flex: 1 }}>
                                         <div className="survey-section-eyebrow" style={{ marginBottom: '4px' }}>
@@ -767,9 +771,9 @@ export default function MySignatures() {
                                 </div>
 
                                 {selectedRequest.descripcion && (
-                                    <p 
+                                    <p
                                         className="text-sm mt-4 p-3"
-                                        style={{ 
+                                        style={{
                                             background: 'rgba(255,255,255,0.6)',
                                             borderRadius: 'var(--radius-md)',
                                             borderLeft: '3px solid var(--primary-400)',
@@ -782,9 +786,9 @@ export default function MySignatures() {
 
                             {/* Documents to sign */}
                             {selectedRequest.documentos.length > 0 && (
-                                <div 
+                                <div
                                     className="mb-4 p-4"
-                                    style={{ 
+                                    style={{
                                         background: 'var(--surface-elevated)',
                                         borderRadius: 'var(--radius-lg)',
                                         border: '1px solid var(--surface-border)',
@@ -802,16 +806,16 @@ export default function MySignatures() {
                                             <div
                                                 key={idx}
                                                 className="flex items-center justify-between p-3"
-                                                style={{ 
+                                                style={{
                                                     background: 'white',
                                                     borderRadius: 'var(--radius-md)',
                                                     border: '1px solid var(--surface-border)',
                                                 }}
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <div 
+                                                    <div
                                                         className="avatar avatar-sm"
-                                                        style={{ 
+                                                        style={{
                                                             background: 'var(--info-100)',
                                                             color: 'var(--info-600)',
                                                         }}
@@ -834,19 +838,19 @@ export default function MySignatures() {
                             )}
 
                             {/* Warning */}
-                            <div 
+                            <div
                                 className="mb-5"
-                                style={{ 
+                                style={{
                                     background: 'linear-gradient(135deg, rgba(255, 193, 7, 0.12), rgba(255, 193, 7, 0.04))',
-                                    border: '1px solid var(--warning-300)', 
-                                    borderRadius: 'var(--radius-lg)', 
+                                    border: '1px solid var(--warning-300)',
+                                    borderRadius: 'var(--radius-lg)',
                                     padding: 'var(--space-4)',
                                 }}
                             >
                                 <div className="flex items-start gap-3">
-                                    <div 
+                                    <div
                                         className="avatar avatar-sm"
-                                        style={{ 
+                                        style={{
                                             background: 'var(--warning-500)',
                                             flexShrink: 0,
                                         }}
@@ -865,9 +869,9 @@ export default function MySignatures() {
                             </div>
 
                             {/* PIN Input */}
-                            <div 
+                            <div
                                 className="text-center p-5"
-                                style={{ 
+                                style={{
                                     background: 'var(--surface-elevated)',
                                     borderRadius: 'var(--radius-lg)',
                                     border: '1px solid var(--surface-border)',
@@ -892,9 +896,9 @@ export default function MySignatures() {
                             </div>
                         </div>
 
-                        <div 
-                            className="modal-footer" 
-                            style={{ 
+                        <div
+                            className="modal-footer"
+                            style={{
                                 borderTop: '1px solid var(--surface-border)',
                                 paddingTop: 'var(--space-4)',
                                 gap: 'var(--space-3)',
@@ -913,7 +917,7 @@ export default function MySignatures() {
                                 className="btn btn-primary"
                                 onClick={handleSign}
                                 disabled={signing || pin.length !== 4}
-                                style={{ 
+                                style={{
                                     flex: 2,
                                     boxShadow: pin.length === 4 ? 'var(--shadow-glow-primary)' : 'none',
                                 }}

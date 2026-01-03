@@ -535,7 +535,7 @@ export interface Activity {
     activityId: string;
     tipo: string;
     tipoDescripcion: string;
-    tema: string;
+    titulo: string;
     descripcion?: string;
     fecha: string;
     horaInicio: string;
@@ -565,7 +565,7 @@ export interface Attendee {
 
 export interface CreateActivityData {
     tipo: string;
-    tema: string;
+    titulo: string;
     descripcion?: string;
     fecha?: string;
     horaInicio?: string;

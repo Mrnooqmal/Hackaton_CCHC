@@ -1,7 +1,22 @@
 import { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { usersApi, type User } from '../api/client';
-import { FiUserPlus, FiShield, FiLock, FiEdit2, FiCheckCircle, FiAlertCircle, FiX, FiSave } from 'react-icons/fi';
+import {
+    FiUserPlus,
+    FiShield,
+    FiCheckCircle,
+    FiAlertCircle,
+    FiEdit2,
+    FiArrowRight,
+    FiUsers,
+    FiLock,
+    FiX,
+    FiSave,
+    FiCheck,
+    FiBriefcase,
+    FiStar
+} from 'react-icons/fi';
+import ConfirmModal from '../components/ConfirmModal';
 
 export default function UserManagement() {
     const [users, setUsers] = useState<User[]>([]);
@@ -26,6 +41,25 @@ export default function UserManagement() {
         cargo: '',
         estado: '' as 'pendiente' | 'activo' | 'suspendido'
     });
+
+    // Confirmation Modal State
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        userId?: string;
+    }>({
+        isOpen: false,
+        title: '',
+        message: ''
+    });
+
+    // Success notification after password reset
+    const [resetResult, setResetResult] = useState<{
+        rut: string;
+        passwordTemporal: string;
+        emailNotificado: boolean;
+    } | null>(null);
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -69,19 +103,38 @@ export default function UserManagement() {
         }
     };
 
-    const handleResetPassword = async (userId: string) => {
-        if (!confirm('¿Está seguro de resetear la contraseña de este usuario?')) return;
+    const handleResetPassword = (userId: string) => {
+        const user = users.find(u => u.userId === userId);
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Resetear contraseña?',
+            message: `Se generará una nueva contraseña temporal para ${user?.nombre} ${user?.apellido}. El acceso actual será invalidado.`,
+            userId
+        });
+    };
 
+    const confirmResetPassword = async () => {
+        const userId = confirmModal.userId;
+        if (!userId) return;
+
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setLoading(true);
         try {
             const response = await usersApi.resetPassword(userId);
             if (response.success && response.data) {
-                const emailInfo = (response.data as any).emailNotificado
-                    ? '\nSe ha enviado un email con la nueva contraseña.'
-                    : '';
-                alert(`Contraseña reseteada. Nueva contraseña temporal: ${response.data.passwordTemporal}${emailInfo}`);
+                const user = users.find(u => u.userId === userId);
+                setResetResult({
+                    rut: user?.rut || '',
+                    passwordTemporal: response.data.passwordTemporal,
+                    emailNotificado: !!(response.data as any).emailNotificado
+                });
+            } else {
+                setError(response.error || 'Error al resetear contraseña');
             }
         } catch (err) {
-            alert('Error al resetear contraseña');
+            setError('Error de conexión al resetear contraseña');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -122,35 +175,91 @@ export default function UserManagement() {
         <>
             <Header title="Gestión de Usuarios" />
             <div className="page-content">
-                <div className="mb-6 flex justify-between items-center">
-                    <div>
-                        <h2 className="text-xl font-bold">Usuarios del Sistema</h2>
-                        <p className="text-muted">Administre el acceso y roles de su empresa</p>
+                <div className="page-header">
+                    <div className="page-header-info">
+                        <h2 className="page-header-title">
+                            <FiUsers className="text-primary-500" />
+                            Usuarios del Sistema
+                        </h2>
+                        <p className="page-header-description">Administre el acceso, roles y permisos de los usuarios de su empresa.</p>
                     </div>
-                    <button
-                        className="btn btn-primary"
-                        onClick={() => {
-                            setCreadoResult(null);
-                            setShowCreateModal(true);
-                        }}
-                    >
-                        <FiUserPlus className="mr-2" />
-                        Nuevo Usuario
-                    </button>
+                    <div className="page-header-actions">
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => {
+                                setCreadoResult(null);
+                                setShowCreateModal(true);
+                            }}
+                        >
+                            <FiUserPlus className="mr-2" />
+                            Nuevo Usuario
+                        </button>
+                    </div>
                 </div>
 
                 {creadoResult && (
-                    <div className="alert alert-success mb-6">
+                    <div className="alert alert-success mb-6 shadow-lg border-success-500/20">
                         <div className="flex items-start gap-3">
-                            <FiCheckCircle size={24} className="mt-1" />
-                            <div>
-                                <h3 className="font-bold">Usuario creado con éxito</h3>
-                                <p>Entregue estas credenciales al usuario para su primer acceso:</p>
-                                <div className="mt-2 bg-white/10 p-3 rounded font-mono">
-                                    RUT: {creadoResult.user.rut} <br />
-                                    CONTRASEÑA TEMPORAL: <strong className="text-xl text-primary-400">{creadoResult.password}</strong>
+                            <div className="bg-success-500/20 p-2 rounded-lg">
+                                <FiCheckCircle size={24} className="text-success-500" />
+                            </div>
+                            <div className="flex-1">
+                                <div className="flex justify-between items-start">
+                                    <h3 className="font-bold text-lg">Usuario creado con éxito</h3>
+                                    <button onClick={() => setCreadoResult(null)} className="text-text-muted hover:text-text-primary">
+                                        <FiX />
+                                    </button>
                                 </div>
-                                <p className="mt-2 text-sm italic">* El usuario deberá cambiar esta contraseña al iniciar sesión.</p>
+                                <p className="text-sm text-text-secondary mt-1">Entregue estas credenciales al usuario para su primer acceso:</p>
+                                <div className="mt-3 bg-surface-elevated border border-success-500/20 p-4 rounded-xl font-mono flex justify-between items-center">
+                                    <div>
+                                        <span className="text-[10px] uppercase text-text-muted block mb-1">RUT</span>
+                                        <span className="font-bold">{creadoResult.user.rut}</span>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="text-[10px] uppercase text-text-muted block mb-1">Pass Temporal</span>
+                                        <strong className="text-xl text-primary-500">{creadoResult.password}</strong>
+                                    </div>
+                                </div>
+                                <p className="mt-3 text-xs text-text-muted italic flex items-center gap-2">
+                                    <FiAlertCircle size={12} />
+                                    El usuario deberá cambiar esta contraseña al iniciar sesión.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {resetResult && (
+                    <div className="alert alert-warning mb-6 shadow-lg border-warning-500/20">
+                        <div className="flex items-start gap-3">
+                            <div className="bg-warning-500/20 p-2 rounded-lg">
+                                <FiLock size={24} className="text-warning-500" />
+                            </div>
+                            <div className="flex-1">
+                                <div className="flex justify-between items-start">
+                                    <h3 className="font-bold text-lg">Contraseña Reseteada</h3>
+                                    <button onClick={() => setResetResult(null)} className="text-text-muted hover:text-text-primary">
+                                        <FiX />
+                                    </button>
+                                </div>
+                                <p className="text-sm text-text-secondary mt-1">Se ha generado una nueva clave de acceso:</p>
+                                <div className="mt-3 bg-surface-elevated border border-warning-500/20 p-4 rounded-xl font-mono flex justify-between items-center">
+                                    <div>
+                                        <span className="text-[10px] uppercase text-text-muted block mb-1">RUT</span>
+                                        <span className="font-bold">{resetResult.rut}</span>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="text-[10px] uppercase text-text-muted block mb-1">Nueva Clave</span>
+                                        <strong className="text-xl text-warning-500">{resetResult.passwordTemporal}</strong>
+                                    </div>
+                                </div>
+                                {resetResult.emailNotificado && (
+                                    <p className="mt-3 text-xs text-success-500 flex items-center gap-2">
+                                        <FiCheck size={12} />
+                                        Se envió una notificación automática al email del usuario.
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -159,6 +268,11 @@ export default function UserManagement() {
                 {error && <div className="alert alert-danger mb-6">{error}</div>}
 
                 <div className="card">
+                    <div className="scroll-hint">
+                        <FiArrowRight />
+                        <span>Desliza para ver más</span>
+                    </div>
+
                     <div className="table-container">
                         <table className="table">
                             <thead>
@@ -305,7 +419,10 @@ export default function UserManagement() {
                                     <span className="form-hint">Se notificará al usuario por email con sus credenciales</span>
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Cargo</label>
+                                    <label className="form-label flex items-center gap-2">
+                                        <FiBriefcase size={14} className="text-text-muted" />
+                                        Cargo
+                                    </label>
                                     <input
                                         type="text"
                                         className="form-input"
@@ -313,6 +430,7 @@ export default function UserManagement() {
                                         value={newUser.cargo}
                                         onChange={(e) => setNewUser({ ...newUser, cargo: e.target.value })}
                                     />
+                                    <span className="form-hint">Si se deja vacío, se usará el nombre del rol</span>
                                 </div>
                             </div>
 
@@ -325,7 +443,9 @@ export default function UserManagement() {
                                         className={`role-card ${newUser.rol === 'trabajador' ? 'selected' : ''}`}
                                         onClick={() => setNewUser({ ...newUser, rol: 'trabajador' })}
                                     >
-                                        <span className="role-card-icon">👷</span>
+                                        <div className="role-card-icon">
+                                            <FiUsers size={24} />
+                                        </div>
                                         <span className="role-card-title">Trabajador</span>
                                         <span className="role-card-desc">Acceso básico para firmar documentos y actividades</span>
                                     </button>
@@ -334,7 +454,9 @@ export default function UserManagement() {
                                         className={`role-card ${newUser.rol === 'prevencionista' ? 'selected' : ''}`}
                                         onClick={() => setNewUser({ ...newUser, rol: 'prevencionista' })}
                                     >
-                                        <span className="role-card-icon">🛡️</span>
+                                        <div className="role-card-icon">
+                                            <FiShield size={24} />
+                                        </div>
                                         <span className="role-card-title">Prevencionista</span>
                                         <span className="role-card-desc">Gestión de documentos, actividades y prevención</span>
                                     </button>
@@ -343,7 +465,9 @@ export default function UserManagement() {
                                         className={`role-card ${newUser.rol === 'admin' ? 'selected' : ''}`}
                                         onClick={() => setNewUser({ ...newUser, rol: 'admin' })}
                                     >
-                                        <span className="role-card-icon">👑</span>
+                                        <div className="role-card-icon">
+                                            <FiStar size={24} />
+                                        </div>
                                         <span className="role-card-title">Administrador</span>
                                         <span className="role-card-desc">Acceso completo al sistema y gestión de usuarios</span>
                                     </button>
@@ -470,6 +594,16 @@ export default function UserManagement() {
                 </div>
             )}
 
+            <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmLabel="Resetear Contraseña"
+                variant="warning"
+                onConfirm={confirmResetPassword}
+                onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+            />
+
             <style>{`
                 .badge {
                     padding: 2px 8px;
@@ -503,7 +637,7 @@ export default function UserManagement() {
                 }
                 
                 .modal-content {
-                    background: var(--surface-base);
+                    background: var(--surface-card);
                     border-radius: var(--radius-xl);
                     border: 1px solid var(--surface-border);
                     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);

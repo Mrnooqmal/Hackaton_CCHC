@@ -30,8 +30,14 @@ provider:
     INCIDENT_EVIDENCE_BUCKET: hackatonbackend-incident-evidence-${self:provider.stage}-${aws:accountId}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     DOCUMENTS_BUCKET: ${self:custom.bucketName}
+    DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
+    ACTIVITIES_TABLE: ${self:service}-activities-${self:provider.stage}
     INBOX_TABLE: ${self:service}-inbox-${self:provider.stage}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
+    # NEW: Feature flag for unified PersonaService (User/Worker sync)
+    USE_PERSONA_SERVICE: 'true'
+    # NEW: Feature flag for unified CumplimientoService (Signatures management)
+    USE_CUMPLIMIENTO_SERVICE: 'true'
   httpApi:
     cors:
       allowedOrigins:
@@ -67,6 +73,8 @@ provider:
             - !GetAtt IncidentsTable.Arn
             - !GetAtt InboxTable.Arn
             - !Sub ${InboxTable.Arn}/index/*
+            - !GetAtt ActivitiesTable.Arn
+            - !GetAtt DocumentsTable.Arn
         - Effect: Allow
           Action:
             - ses:SendEmail
@@ -154,7 +162,7 @@ functions:
 
   # Users (Usuarios)
   usersModule:
-    handler: handlers/users-module/users.handler.usersHandler
+    handler: handlers/users-module/handler.usersHandler
     events:
       - httpApi:
           path: /users
@@ -164,61 +172,15 @@ functions:
           method: any
 
   # Workers (Trabajadores/Enrolamiento)
-  createWorker:
-    handler: handlers/workers.create
+  workersModule:
+    handler: handlers/workers-module/handler.workersHandler
     events:
       - httpApi:
           path: /workers
-          method: POST
-
-  listWorkers:
-    handler: handlers/workers.list
-    events:
+          method: any
       - httpApi:
-          path: /workers
-          method: GET
-
-  getWorker:
-    handler: handlers/workers.get
-    events:
-      - httpApi:
-          path: /workers/{id}
-          method: GET
-
-  updateWorker:
-    handler: handlers/workers.update
-    events:
-      - httpApi:
-          path: /workers/{id}
-          method: PUT
-
-  signWorker:
-    handler: handlers/workers.sign
-    events:
-      - httpApi:
-          path: /workers/{id}/sign
-          method: POST
-
-  getWorkerByRut:
-    handler: handlers/workers.getByRut
-    events:
-      - httpApi:
-          path: /workers/rut/{rut}
-          method: GET
-
-  setWorkerPin:
-    handler: handlers/workers.setPin
-    events:
-      - httpApi:
-          path: /workers/{id}/set-pin
-          method: POST
-
-  completeWorkerEnrollment:
-    handler: handlers/workers.completeEnrollment
-    events:
-      - httpApi:
-          path: /workers/{id}/complete-enrollment
-          method: POST
+          path: /workers/{proxy+}
+          method: any
 
   # ========================================
   # SIGNATURE REQUESTS (Solicitudes de Firma)
@@ -277,6 +239,85 @@ functions:
     events:
       - httpApi:
           path: /signature-requests/offline-batch
+          method: POST
+
+  # Activities (Actividades)
+  listActivities:
+    handler: handlers/activities.list
+    events:
+      - httpApi:
+          path: /activities
+          method: GET
+
+  createActivity:
+    handler: handlers/activities.create
+    events:
+      - httpApi:
+          path: /activities
+          method: POST
+
+  getActivity:
+    handler: handlers/activities.get
+    events:
+      - httpApi:
+          path: /activities/{id}
+          method: GET
+
+  registerActivityAttendance:
+    handler: handlers/activities.registerAttendance
+    events:
+      - httpApi:
+          path: /activities/{id}/attendance
+          method: POST
+
+  getActivityStats:
+    handler: handlers/activities.getStats
+    events:
+      - httpApi:
+          path: /activities/stats
+          method: GET
+
+  # Documents (Documentos)
+  listDocuments:
+    handler: handlers/documents.list
+    events:
+      - httpApi:
+          path: /documents
+          method: GET
+
+  createDocument:
+    handler: handlers/documents.create
+    events:
+      - httpApi:
+          path: /documents
+          method: POST
+
+  getDocument:
+    handler: handlers/documents.get
+    events:
+      - httpApi:
+          path: /documents/{id}
+          method: GET
+
+  assignDocument:
+    handler: handlers/documents.assign
+    events:
+      - httpApi:
+          path: /documents/{id}/assign
+          method: POST
+
+  signDocument:
+    handler: handlers/documents.sign
+    events:
+      - httpApi:
+          path: /documents/{id}/sign
+          method: POST
+
+  signBulkDocuments:
+    handler: handlers/documents.signBulk
+    events:
+      - httpApi:
+          path: /documents/{id}/sign-bulk
           method: POST
 
   # ========================================
@@ -461,92 +502,15 @@ functions:
           path: /surveys/{id}/responses/{workerId}
           method: POST
 
-  # Incidents (Incidentes y Accidentes)
-  createIncident:
-    handler: handlers/incidents.create
+  incidentsModule:
+    handler: handlers/incidents-module/handler.incidentsHandler
     events:
       - httpApi:
           path: /incidents
-          method: POST
-
-  listIncidents:
-    handler: handlers/incidents.list
-    events:
+          method: any
       - httpApi:
-          path: /incidents
-          method: GET
-
-  getIncident:
-    handler: handlers/incidents.get
-    events:
-      - httpApi:
-          path: /incidents/{id}
-          method: GET
-
-  updateIncident:
-    handler: handlers/incidents.update
-    events:
-      - httpApi:
-          path: /incidents/{id}
-          method: PUT
-
-  uploadIncidentEvidence:
-    handler: handlers/incidents.uploadEvidence
-    events:
-      - httpApi:
-          path: /incidents/upload-evidence
-          method: POST
-
-  getIncidentStats:
-    handler: handlers/incidents.getStats
-    events:
-      - httpApi:
-          path: /incidents/stats
-          method: GET
-
-  # Nuevos endpoints de incidentes (Fase 4)
-  addIncidentInvestigation:
-    handler: handlers/incidents.addInvestigation
-    events:
-      - httpApi:
-          path: /incidents/{id}/investigations
-          method: POST
-
-  uploadIncidentDocument:
-    handler: handlers/incidents.uploadDocument
-    events:
-      - httpApi:
-          path: /incidents/{id}/documents
-          method: POST
-
-  getIncidentDocuments:
-    handler: handlers/incidents.getDocuments
-    events:
-      - httpApi:
-          path: /incidents/{id}/documents
-          method: GET
-
-  getIncidentAnalytics:
-    handler: handlers/incidents.getAnalytics
-    events:
-      - httpApi:
-          path: /incidents/analytics
-          method: GET
-
-  quickReportIncident:
-    handler: handlers/incidents.quickReport
-    events:
-      - httpApi:
-          path: /incidents/quick-report
-          method: POST
-
-  # Hello (Test)
-  printHello:
-    handler: handlers/hola.printHello
-    events:
-      - httpApi:
-          path: /hello
-          method: GET
+          path: /incidents/{proxy+}
+          method: any
 
   # Notifications
   sendWelcomeEmail:
@@ -556,76 +520,15 @@ functions:
           path: /test-email
           method: POST
 
-  # Inbox (Mensajería Interna)
-  inboxSendMessage:
-    handler: handlers/inbox.sendMessage
-    events:
-      - httpApi:
-          path: /inbox/send
-          method: POST
-
-  inboxGetInbox:
-    handler: handlers/inbox.getInbox
+  inboxModule:
+    handler: handlers/inbox-module/handler.inboxHandler
     events:
       - httpApi:
           path: /inbox
-          method: GET
-
-  inboxGetSent:
-    handler: handlers/inbox.getSent
-    events:
+          method: any
       - httpApi:
-          path: /inbox/sent
-          method: GET
-
-  inboxGetMessage:
-    handler: handlers/inbox.getMessage
-    events:
-      - httpApi:
-          path: /inbox/{messageId}
-          method: GET
-
-  inboxMarkAsRead:
-    handler: handlers/inbox.markAsRead
-    events:
-      - httpApi:
-          path: /inbox/{messageId}/read
-          method: PUT
-
-  inboxMarkAllAsRead:
-    handler: handlers/inbox.markAllAsRead
-    events:
-      - httpApi:
-          path: /inbox/read-all
-          method: PUT
-
-  inboxArchiveMessage:
-    handler: handlers/inbox.archiveMessage
-    events:
-      - httpApi:
-          path: /inbox/{messageId}/archive
-          method: PUT
-
-  inboxDeleteMessage:
-    handler: handlers/inbox.deleteMessage
-    events:
-      - httpApi:
-          path: /inbox/{messageId}
-          method: DELETE
-
-  inboxGetUnreadCount:
-    handler: handlers/inbox.getUnreadCount
-    events:
-      - httpApi:
-          path: /inbox/unread-count
-          method: GET
-
-  inboxGetRecipients:
-    handler: handlers/inbox.getRecipients
-    events:
-      - httpApi:
-          path: /inbox/recipients
-          method: GET
+          path: /inbox/{proxy+}
+          method: any
 
 resources:
   Resources:
@@ -808,3 +711,29 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+
+    # Activities Table
+    ActivitiesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.ACTIVITIES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: activityId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: activityId
+            KeyType: HASH
+
+    # Documents Table
+    DocumentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.DOCUMENTS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: documentId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: documentId
+            KeyType: HASH

@@ -22,6 +22,7 @@ import type { OfflineRequest } from '../services/offlineStore';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { useAuth } from '../context/AuthContext';
 import { REQUEST_TYPES } from '../api/client';
+import ConfirmModal from '../components/ConfirmModal';
 
 type ViewMode = 'list' | 'create' | 'collect';
 
@@ -41,7 +42,7 @@ export default function OfflineSignatures() {
 
     const [viewMode, setViewMode] = useState<ViewMode>('list');
     const [activeRequest, setActiveRequest] = useState<OfflineRequest | null>(null);
-    
+
     // Form para nueva solicitud
     const [newRequest, setNewRequest] = useState({
         tipo: 'CHARLA_5MIN',
@@ -58,6 +59,19 @@ export default function OfflineSignatures() {
     });
     const [signatureError, setSignatureError] = useState('');
     const [signatureSuccess, setSignatureSuccess] = useState(false);
+    const [confirmAction, setConfirmAction] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        variant: 'danger' | 'warning' | 'primary';
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+        variant: 'primary'
+    });
 
     useEffect(() => {
         refreshPending();
@@ -93,16 +107,16 @@ export default function OfflineSignatures() {
     const formatRut = (value: string): string => {
         // Eliminar todo excepto números y k/K
         let rut = value.replace(/[^0-9kK]/g, '').toUpperCase();
-        
+
         if (rut.length > 1) {
             const dv = rut.slice(-1);
             let body = rut.slice(0, -1);
-            
+
             // Formatear con puntos
             body = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
             rut = `${body}-${dv}`;
         }
-        
+
         return rut;
     };
 
@@ -113,7 +127,7 @@ export default function OfflineSignatures() {
 
     const handleAddSignature = async () => {
         if (!activeRequest) return;
-        
+
         setSignatureError('');
         setSignatureSuccess(false);
 
@@ -164,34 +178,48 @@ export default function OfflineSignatures() {
 
     const handleRemoveSignature = async (signatureId: string) => {
         if (!activeRequest) return;
-        
-        if (!confirm('¿Eliminar esta firma?')) return;
 
-        try {
-            await offlineStore.removeSignatureFromRequest(activeRequest.id, signatureId);
-            const updated = await offlineStore.getOfflineRequest(activeRequest.id);
-            if (updated) {
-                setActiveRequest(updated);
+        setConfirmAction({
+            isOpen: true,
+            title: '¿Eliminar firma?',
+            message: 'Esta firma será eliminada permanentemente de la solicitud offline actual.',
+            variant: 'danger',
+            onConfirm: async () => {
+                try {
+                    await offlineStore.removeSignatureFromRequest(activeRequest.id, signatureId);
+                    const updated = await offlineStore.getOfflineRequest(activeRequest.id);
+                    if (updated) {
+                        setActiveRequest(updated);
+                    }
+                    await refreshPending();
+                } catch (error) {
+                    console.error('Error removing signature:', error);
+                }
+                setConfirmAction(prev => ({ ...prev, isOpen: false }));
             }
-            await refreshPending();
-        } catch (error) {
-            console.error('Error removing signature:', error);
-        }
+        });
     };
 
     const handleDeleteRequest = async (requestId: string) => {
-        if (!confirm('¿Eliminar esta solicitud y todas sus firmas? Esta acción no se puede deshacer.')) return;
-
-        try {
-            await offlineStore.deleteOfflineRequest(requestId);
-            if (activeRequest?.id === requestId) {
-                setActiveRequest(null);
-                setViewMode('list');
+        setConfirmAction({
+            isOpen: true,
+            title: '¿Eliminar solicitud offline?',
+            message: 'Esta acción eliminará la solicitud y todas sus firmas guardadas localmente. No se puede deshacer.',
+            variant: 'danger',
+            onConfirm: async () => {
+                try {
+                    await offlineStore.deleteOfflineRequest(requestId);
+                    if (activeRequest?.id === requestId) {
+                        setActiveRequest(null);
+                        setViewMode('list');
+                    }
+                    await refreshPending();
+                } catch (error) {
+                    console.error('Error deleting request:', error);
+                }
+                setConfirmAction(prev => ({ ...prev, isOpen: false }));
             }
-            await refreshPending();
-        } catch (error) {
-            console.error('Error deleting request:', error);
-        }
+        });
     };
 
     const openRequestForCollection = async (request: OfflineRequest) => {
@@ -225,10 +253,10 @@ export default function OfflineSignatures() {
 
             <div className="page-content">
                 {/* Status Banner */}
-                <div 
+                <div
                     className="card mb-6"
                     style={{
-                        background: isOnline 
+                        background: isOnline
                             ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05))'
                             : 'linear-gradient(135deg, rgba(255, 152, 0, 0.15), rgba(255, 152, 0, 0.05))',
                         border: `1px solid ${isOnline ? 'var(--success-300)' : 'var(--warning-300)'}`,
@@ -236,9 +264,9 @@ export default function OfflineSignatures() {
                 >
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                            <div 
+                            <div
                                 className="avatar"
-                                style={{ 
+                                style={{
                                     background: isOnline ? 'var(--success-500)' : 'var(--warning-500)',
                                     width: 48,
                                     height: 48,
@@ -251,7 +279,7 @@ export default function OfflineSignatures() {
                                     {isOnline ? 'Conectado' : 'Sin Conexión'}
                                 </h3>
                                 <p className="text-sm text-muted" style={{ margin: 0 }}>
-                                    {isOnline 
+                                    {isOnline
                                         ? 'Las firmas se sincronizarán automáticamente'
                                         : 'Las firmas se guardarán localmente hasta tener conexión'
                                     }
@@ -261,10 +289,10 @@ export default function OfflineSignatures() {
                         <div className="flex items-center gap-3">
                             {pendingCount > 0 && (
                                 <div className="text-center">
-                                    <div 
+                                    <div
                                         className="badge"
-                                        style={{ 
-                                            background: 'var(--warning-500)', 
+                                        style={{
+                                            background: 'var(--warning-500)',
                                             color: 'white',
                                             fontSize: 'var(--text-lg)',
                                             padding: 'var(--space-2) var(--space-4)',
@@ -276,7 +304,7 @@ export default function OfflineSignatures() {
                                 </div>
                             )}
                             {isOnline && pendingCount > 0 && (
-                                <button 
+                                <button
                                     className="btn btn-primary"
                                     onClick={syncAll}
                                     disabled={isSyncing}
@@ -288,9 +316,9 @@ export default function OfflineSignatures() {
                         </div>
                     </div>
                     {syncError && (
-                        <div 
+                        <div
                             className="mt-3 p-3"
-                            style={{ 
+                            style={{
                                 background: 'rgba(244, 67, 54, 0.1)',
                                 borderRadius: 'var(--radius-md)',
                                 color: 'var(--error-600)',
@@ -317,7 +345,7 @@ export default function OfflineSignatures() {
                                     <h2 className="card-title">Solicitudes Offline</h2>
                                     <p className="card-subtitle">Recolecta firmas sin necesidad de conexión a internet</p>
                                 </div>
-                                <button 
+                                <button
                                     className="btn btn-primary"
                                     onClick={() => setViewMode('create')}
                                     style={{ boxShadow: 'var(--shadow-glow-primary)' }}
@@ -358,7 +386,7 @@ export default function OfflineSignatures() {
                                         >
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-4">
-                                                    <div 
+                                                    <div
                                                         className="avatar"
                                                         style={{ fontSize: '1.5rem', background: 'var(--surface-card)' }}
                                                     >
@@ -369,9 +397,9 @@ export default function OfflineSignatures() {
                                                             <h3 className="font-bold" style={{ margin: 0 }}>
                                                                 {request.titulo}
                                                             </h3>
-                                                            <span 
+                                                            <span
                                                                 className="badge"
-                                                                style={{ 
+                                                                style={{
                                                                     background: getStatusColor(request.syncStatus),
                                                                     color: 'white',
                                                                 }}
@@ -441,7 +469,7 @@ export default function OfflineSignatures() {
                                 <h2 className="card-title">Nueva Solicitud Offline</h2>
                                 <p className="card-subtitle">Configura los detalles de la solicitud</p>
                             </div>
-                            <button 
+                            <button
                                 className="btn btn-ghost"
                                 onClick={() => setViewMode('list')}
                             >
@@ -455,8 +483,8 @@ export default function OfflineSignatures() {
                                 <select
                                     className="form-input"
                                     value={newRequest.tipo}
-                                    onChange={(e) => setNewRequest(prev => ({ 
-                                        ...prev, 
+                                    onChange={(e) => setNewRequest(prev => ({
+                                        ...prev,
                                         tipo: e.target.value,
                                         titulo: prev.titulo || REQUEST_TYPES[e.target.value]?.label || '',
                                     }))}
@@ -532,7 +560,7 @@ export default function OfflineSignatures() {
                                         Recolectando firmas • {activeRequest.firmas.length} firma{activeRequest.firmas.length !== 1 ? 's' : ''} registrada{activeRequest.firmas.length !== 1 ? 's' : ''}
                                     </p>
                                 </div>
-                                <button 
+                                <button
                                     className="btn btn-secondary"
                                     onClick={() => { setViewMode('list'); setActiveRequest(null); }}
                                 >
@@ -541,7 +569,7 @@ export default function OfflineSignatures() {
                             </div>
 
                             {/* Área de firma */}
-                            <div 
+                            <div
                                 className="p-6"
                                 style={{
                                     background: 'linear-gradient(135deg, var(--surface-elevated), var(--surface-card))',
@@ -555,7 +583,7 @@ export default function OfflineSignatures() {
                                 </h3>
 
                                 {signatureSuccess && (
-                                    <div 
+                                    <div
                                         className="mb-4 p-4 text-center"
                                         style={{
                                             background: 'rgba(76, 175, 80, 0.15)',
@@ -569,7 +597,7 @@ export default function OfflineSignatures() {
                                 )}
 
                                 {signatureError && (
-                                    <div 
+                                    <div
                                         className="mb-4 p-3"
                                         style={{
                                             background: 'rgba(244, 67, 54, 0.1)',
@@ -628,8 +656,8 @@ export default function OfflineSignatures() {
                                                 setSignatureForm(prev => ({ ...prev, pin: value }));
                                             }}
                                             maxLength={4}
-                                            style={{ 
-                                                fontSize: 'var(--text-xl)', 
+                                            style={{
+                                                fontSize: 'var(--text-xl)',
                                                 textAlign: 'center',
                                                 letterSpacing: '0.5em',
                                                 fontFamily: 'monospace',
@@ -641,7 +669,7 @@ export default function OfflineSignatures() {
                                         className="btn btn-primary btn-lg mt-4"
                                         onClick={handleAddSignature}
                                         disabled={signatureForm.rut.length < 9 || signatureForm.pin.length !== 4}
-                                        style={{ 
+                                        style={{
                                             padding: 'var(--space-4)',
                                             fontSize: 'var(--text-lg)',
                                         }}
@@ -668,7 +696,7 @@ export default function OfflineSignatures() {
                                     <p>Aún no hay firmas registradas</p>
                                 </div>
                             ) : (
-                                <div 
+                                <div
                                     className="flex flex-col gap-2"
                                     style={{ maxHeight: '400px', overflowY: 'auto' }}
                                 >
@@ -683,7 +711,7 @@ export default function OfflineSignatures() {
                                             }}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div 
+                                                <div
                                                     className="avatar avatar-sm"
                                                     style={{ background: 'var(--success-500)' }}
                                                 >
@@ -714,7 +742,7 @@ export default function OfflineSignatures() {
                             )}
 
                             {activeRequest.firmas.length > 0 && (
-                                <div 
+                                <div
                                     className="mt-4 p-3"
                                     style={{
                                         background: 'var(--surface-elevated)',
@@ -723,9 +751,9 @@ export default function OfflineSignatures() {
                                     }}
                                 >
                                     <div className="text-xs text-muted mb-1">Estado</div>
-                                    <div 
+                                    <div
                                         className="badge"
-                                        style={{ 
+                                        style={{
                                             background: 'var(--warning-500)',
                                             color: 'white',
                                         }}
@@ -754,6 +782,15 @@ export default function OfflineSignatures() {
                     to { transform: rotate(360deg); }
                 }
             `}</style>
+
+            <ConfirmModal
+                isOpen={confirmAction.isOpen}
+                title={confirmAction.title}
+                message={confirmAction.message}
+                variant={confirmAction.variant}
+                onConfirm={confirmAction.onConfirm}
+                onCancel={() => setConfirmAction(prev => ({ ...prev, isOpen: false }))}
+            />
         </>
     );
 }

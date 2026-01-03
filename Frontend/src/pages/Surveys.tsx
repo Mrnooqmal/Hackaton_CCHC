@@ -24,7 +24,8 @@ import {
     FiUserCheck,
     FiClipboard,
     FiList,
-    FiX
+    FiX,
+    FiFileText
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 
@@ -593,22 +594,39 @@ export default function Surveys() {
             <Header title="Encuestas" />
 
             <div className="page-content">
-                <div className="flex items-center justify-between mb-6">
-                    <div>
-                        <h2 className="text-xl font-bold">
+                <div className="page-header">
+                    <div className="page-header-info">
+                        <h2 className="page-header-title">
+                            <FiFileText className="text-primary-500" />
                             {canManageSurveys ? 'Diseña y distribuye encuestas' : 'Responde tus encuestas asignadas'}
                         </h2>
-                        <p className="text-muted">
+                        <p className="page-header-description">
                             {canManageSurveys
-                                ? 'Selecciona a quién va dirigida cada encuesta y monitorea la participación'
-                                : 'Aquí verás las encuestas pendientes para tu perfil. Completa cada una para compartir tu opinión.'}
+                                ? 'Crea encuestas personalizadas para recopilar información clave de tus equipos.'
+                                : 'Completa las encuestas pendientes para ayudarnos a mejorar los procesos.'}
                         </p>
                     </div>
                     {canManageSurveys && (
-                        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-                            <FiPlus />
-                            Nueva Encuesta
-                        </button>
+                        <div className="page-header-actions">
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => {
+                                    setForm({
+                                        titulo: '',
+                                        descripcion: '',
+                                        audienceType: 'todos',
+                                        cargoDestino: '',
+                                        selectedRuts: [],
+                                        selectedWorkerId: '',
+                                    });
+                                    setQuestions([defaultQuestion()]);
+                                    setShowModal(true);
+                                }}
+                            >
+                                <FiPlus className="mr-2" />
+                                Nueva Encuesta
+                            </button>
+                        </div>
                     )}
                 </div>
 
@@ -739,7 +757,7 @@ export default function Surveys() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-2">
+                            <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
                                 {surveys.map((survey) => (
                                     <div key={survey.surveyId} className="card">
                                         <div className="card-header">

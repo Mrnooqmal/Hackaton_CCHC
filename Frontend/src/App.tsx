@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Workers from './pages/Workers';
+import WorkerDetail from './pages/WorkerDetail';
 import WorkerEnroll from './pages/WorkerEnroll';
 import Documents from './pages/Documents';
 import Activities from './pages/Activities';
@@ -20,19 +21,22 @@ import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
 import OfflineBanner from './components/OfflineBanner';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import './css/index.css';
 import './css/App.css';
 
 function AppContent() {
   const { user } = useAuth();
+  const { isMobileMenuOpen, closeMobileMenu } = useLayout();
 
   return (
     <div className={`app-layout ${!user ? 'auth-mode' : ''}`}>
-      {user && <Sidebar />}
+      {user && <Sidebar isOpen={isMobileMenuOpen} onClose={closeMobileMenu} />}
       <main className={user ? 'main-content' : 'auth-content'}>
         {user && <OfflineBanner />}
         <Routes>
+
           <Route path="/login" element={<Login />} />
           <Route path="/register-admin" element={<RegisterAdmin />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
@@ -46,6 +50,12 @@ function AppContent() {
           <Route path="/workers" element={
             <ProtectedRoute requiredPermission="ver_trabajadores">
               <Workers />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/workers/:rut" element={
+            <ProtectedRoute requiredPermission="ver_trabajadores">
+              <WorkerDetail />
             </ProtectedRoute>
           } />
 
@@ -137,9 +147,11 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppContent />
-      </BrowserRouter>
+      <LayoutProvider>
+        <BrowserRouter>
+          <AppContent />
+        </BrowserRouter>
+      </LayoutProvider>
     </AuthProvider>
   );
 }

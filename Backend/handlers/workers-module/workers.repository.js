@@ -1,31 +1,39 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../lib/dynamodb');
-const { assignWorkerToHealthSurvey } = require('../lib/healthSurvey');
-const { success, error, created } = require('../lib/response');
-const { validateRut, validateRequired, generateSignatureToken, hashPin, verifyPin, validatePin } = require('../lib/validation');
+const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { docClient } = require('../../lib/dynamodb');
+const { assignWorkerToHealthSurvey } = require('../../lib/healthSurvey');
+const {
+    validateRut,
+    validateRequired,
+    generateSignatureToken,
+    hashPin,
+    verifyPin,
+    validatePin
+} = require('../../lib/validation');
 
-const TABLE_NAME = process.env.WORKERS_TABLE || 'Workers';
+const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 const USERS_TABLE = process.env.USERS_TABLE || 'Users';
 
-/**
- * POST /workers - Registrar nuevo trabajador (Enrolamiento)
- */
-module.exports.create = async (event) => {
-    try {
-        const body = JSON.parse(event.body || '{}');
+class WorkersRepository {
+    constructor() {
+        this.dynamo = docClient;
+        this.workersTable = WORKERS_TABLE;
+        this.signaturesTable = SIGNATURES_TABLE;
+        this.usersTable = USERS_TABLE;
+    }
 
+    async create(body) {
         // Validar campos requeridos
         const validation = validateRequired(body, ['rut', 'nombre', 'cargo']);
         if (!validation.valid) {
-            return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
+            throw new Error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
         // Validar RUT chileno
         const rutValidation = validateRut(body.rut);
         if (!rutValidation.valid) {
-            return error('RUT inválido');
+            throw new Error('RUT inválido');
         }
 
         const now = new Date().toISOString();
@@ -52,9 +60,9 @@ module.exports.create = async (event) => {
             updatedAt: now,
         };
 
-        await docClient.send(
+        await this.dynamo.send(
             new PutCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 Item: worker,
                 ConditionExpression: 'attribute_not_exists(workerId)',
             })
@@ -66,25 +74,13 @@ module.exports.create = async (event) => {
             console.error('No se pudo asignar la encuesta de salud por defecto al crear worker:', healthSurveyError);
         }
 
-        return created(worker);
-    } catch (err) {
-        console.error('Error creating worker:', err);
-        return error(err.message, 500);
+        return worker;
     }
-};
 
-/**
- * GET /workers - Listar todos los trabajadores
- * Incluye workers tradicionales Y usuarios con rol prevencionista/trabajador
- */
-module.exports.list = async (event) => {
-    try {
-        const empresaId = event.queryStringParameters?.empresaId;
-        const includeUsers = event.queryStringParameters?.includeUsers !== 'false';
-
+    async list({ empresaId, includeUsers = true }) {
         // 1. Obtener workers tradicionales
         const workersParams = {
-            TableName: TABLE_NAME,
+            TableName: this.workersTable,
         };
 
         if (empresaId) {
@@ -100,15 +96,13 @@ module.exports.list = async (event) => {
             };
         }
 
-        const workersResult = await docClient.send(new ScanCommand(workersParams));
+        const workersResult = await this.dynamo.send(new ScanCommand(workersParams));
         let allWorkers = workersResult.Items || [];
 
         // 2. También obtener usuarios con rol prevencionista o trabajador
         if (includeUsers) {
-            const USERS_TABLE = process.env.USERS_TABLE || 'Users';
-
             const usersParams = {
-                TableName: USERS_TABLE,
+                TableName: this.usersTable,
                 FilterExpression: '(rol = :rolTrabajador OR rol = :rolPrevencionista)',
                 ExpressionAttributeValues: {
                     ':rolTrabajador': 'trabajador',
@@ -121,7 +115,7 @@ module.exports.list = async (event) => {
                 usersParams.ExpressionAttributeValues[':empresaId'] = empresaId;
             }
 
-            const usersResult = await docClient.send(new ScanCommand(usersParams));
+            const usersResult = await this.dynamo.send(new ScanCommand(usersParams));
             const users = usersResult.Items || [];
 
             // Mapear usuarios a formato de worker para compatibilidad
@@ -162,59 +156,34 @@ module.exports.list = async (event) => {
         // Ordenar por nombre
         allWorkers.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
-        return success(allWorkers);
-    } catch (err) {
-        console.error('Error listing workers:', err);
-        return error(err.message, 500);
-    };
-};
+        return allWorkers;
+    }
 
-/**
- * GET /workers/{id} - Obtener trabajador por ID
- */
-module.exports.get = async (event) => {
-    try {
-        const { id } = event.pathParameters || {};
+    async get(id) {
+        if (!id) throw new Error('ID de trabajador requerido');
 
-        if (!id) {
-            return error('ID de trabajador requerido');
-        }
-
-        const result = await docClient.send(
+        const result = await this.dynamo.send(
             new GetCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 Key: { workerId: id },
             })
         );
 
         if (!result.Item) {
-            return error('Trabajador no encontrado', 404);
+            throw new Error('Trabajador no encontrado');
         }
 
-        return success(result.Item);
-    } catch (err) {
-        console.error('Error getting worker:', err);
-        return error(err.message, 500);
+        return result.Item;
     }
-};
 
-/**
- * PUT /workers/{id} - Actualizar trabajador
- */
-module.exports.update = async (event) => {
-    try {
-        const { id } = event.pathParameters || {};
-        const body = JSON.parse(event.body || '{}');
-
-        if (!id) {
-            return error('ID de trabajador requerido');
-        }
+    async update(id, body) {
+        if (!id) throw new Error('ID de trabajador requerido');
 
         // Si se actualiza el RUT, validarlo
         if (body.rut) {
             const rutValidation = validateRut(body.rut);
             if (!rutValidation.valid) {
-                return error('RUT inválido');
+                throw new Error('RUT inválido');
             }
             body.rut = rutValidation.formatted;
         }
@@ -234,16 +203,16 @@ module.exports.update = async (event) => {
         });
 
         if (updateExpressions.length === 0) {
-            return error('No hay campos para actualizar');
+            throw new Error('No hay campos para actualizar');
         }
 
         updateExpressions.push('#updatedAt = :updatedAt');
         expressionAttributeNames['#updatedAt'] = 'updatedAt';
         expressionAttributeValues[':updatedAt'] = new Date().toISOString();
 
-        const result = await docClient.send(
+        const result = await this.dynamo.send(
             new UpdateCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 Key: { workerId: id },
                 UpdateExpression: `SET ${updateExpressions.join(', ')}`,
                 ExpressionAttributeNames: expressionAttributeNames,
@@ -252,35 +221,22 @@ module.exports.update = async (event) => {
             })
         );
 
-        return success(result.Attributes);
-    } catch (err) {
-        console.error('Error updating worker:', err);
-        return error(err.message, 500);
+        return result.Attributes;
     }
-};
 
-/**
- * POST /workers/{id}/sign - Registrar firma digital del trabajador
- */
-module.exports.sign = async (event) => {
-    try {
-        const { id } = event.pathParameters || {};
-        const body = JSON.parse(event.body || '{}');
-
-        if (!id) {
-            return error('ID de trabajador requerido');
-        }
+    async sign(id, body, eventContext) {
+        if (!id) throw new Error('ID de trabajador requerido');
 
         // Obtener trabajador actual
-        const workerResult = await docClient.send(
+        const workerResult = await this.dynamo.send(
             new GetCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 Key: { workerId: id },
             })
         );
 
         if (!workerResult.Item) {
-            return error('Trabajador no encontrado', 404);
+            throw new Error('Trabajador no encontrado');
         }
 
         const worker = workerResult.Item;
@@ -295,7 +251,7 @@ module.exports.sign = async (event) => {
             horario: now.toTimeString().split(' ')[0],
             tipo: body.tipo || 'enrolamiento',
             documentoId: body.documentoId || null,
-            ip: event.requestContext?.identity?.sourceIp || 'unknown',
+            ip: eventContext?.requestContext?.identity?.sourceIp || 'unknown',
             timestamp: now.toISOString(),
         };
 
@@ -303,9 +259,9 @@ module.exports.sign = async (event) => {
         const firmas = worker.firmas || [];
         firmas.push(signatureRecord);
 
-        await docClient.send(
+        await this.dynamo.send(
             new UpdateCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 Key: { workerId: id },
                 UpdateExpression: 'SET firmas = :firmas, updatedAt = :updatedAt',
                 ExpressionAttributeValues: {
@@ -315,35 +271,23 @@ module.exports.sign = async (event) => {
             })
         );
 
-        return success({
+        return {
             message: 'Firma registrada exitosamente',
             signature: signatureRecord,
-        });
-    } catch (err) {
-        console.error('Error signing:', err);
-        return error(err.message, 500);
+        };
     }
-};
 
-/**
- * GET /workers/rut/{rut} - Buscar trabajador por RUT
- */
-module.exports.getByRut = async (event) => {
-    try {
-        const { rut } = event.pathParameters || {};
-
-        if (!rut) {
-            return error('RUT requerido');
-        }
+    async getByRut(rut) {
+        if (!rut) throw new Error('RUT requerido');
 
         const rutValidation = validateRut(rut);
         if (!rutValidation.valid) {
-            return error('RUT inválido');
+            throw new Error('RUT inválido');
         }
 
-        const result = await docClient.send(
+        const result = await this.dynamo.send(
             new ScanCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 FilterExpression: 'rut = :rut',
                 ExpressionAttributeValues: {
                     ':rut': rutValidation.formatted,
@@ -352,46 +296,33 @@ module.exports.getByRut = async (event) => {
         );
 
         if (!result.Items || result.Items.length === 0) {
-            return error('Trabajador no encontrado', 404);
+            throw new Error('Trabajador no encontrado');
         }
 
-        return success(result.Items[0]);
-    } catch (err) {
-        console.error('Error getting worker by RUT:', err);
-        return error(err.message, 500);
+        return result.Items[0];
     }
-};
 
-/**
- * POST /workers/{id}/set-pin - Configurar o cambiar PIN del trabajador
- */
-module.exports.setPin = async (event) => {
-    try {
-        const { id } = event.pathParameters || {};
-        const body = JSON.parse(event.body || '{}');
-
-        if (!id) {
-            return error('ID de trabajador requerido');
-        }
+    async setPin(id, body) {
+        if (!id) throw new Error('ID de trabajador requerido');
 
         const { pin, pinActual } = body;
 
         // Validar formato del nuevo PIN
         const pinValidation = validatePin(pin);
         if (!pinValidation.valid) {
-            return error(pinValidation.error);
+            throw new Error(pinValidation.error);
         }
 
         // Obtener trabajador
-        const workerResult = await docClient.send(
+        const workerResult = await this.dynamo.send(
             new GetCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 Key: { workerId: id },
             })
         );
 
         if (!workerResult.Item) {
-            return error('Trabajador no encontrado', 404);
+            throw new Error('Trabajador no encontrado');
         }
 
         const worker = workerResult.Item;
@@ -399,20 +330,23 @@ module.exports.setPin = async (event) => {
         // Si ya tiene PIN, requiere el PIN actual para cambiarlo
         if (worker.pinHash) {
             if (!pinActual) {
-                return error('PIN actual es requerido para cambiar el PIN');
+                throw new Error('PIN actual es requerido para cambiar el PIN');
             }
             const pinActualValido = verifyPin(pinActual, worker.pinHash, id);
             if (!pinActualValido) {
-                return error('PIN actual incorrecto', 401);
+                // To allow handler to set 401 status
+                const error = new Error('PIN actual incorrecto');
+                error.statusCode = 401;
+                throw error;
             }
         }
 
         const now = new Date().toISOString();
         const newPinHash = hashPin(pin, id);
 
-        await docClient.send(
+        await this.dynamo.send(
             new UpdateCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 Key: { workerId: id },
                 UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
                 ExpressionAttributeValues: {
@@ -429,9 +363,9 @@ module.exports.setPin = async (event) => {
             // En Users se hashea con userId
             const pinHashForUser = hashPin(pin, worker.userId);
             try {
-                await docClient.send(
+                await this.dynamo.send(
                     new UpdateCommand({
-                        TableName: USERS_TABLE,
+                        TableName: this.usersTable,
                         Key: { userId: worker.userId },
                         UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
                         ExpressionAttributeValues: {
@@ -446,45 +380,31 @@ module.exports.setPin = async (event) => {
             }
         }
 
-        return success({
+        return {
             message: worker.pinHash ? 'PIN actualizado exitosamente' : 'PIN configurado exitosamente',
             pinCreatedAt: now,
-        });
-    } catch (err) {
-        console.error('Error setting PIN:', err);
-        return error(err.message, 500);
+        };
     }
-};
 
-/**
- * POST /workers/{id}/complete-enrollment - Completar enrolamiento con firma
- * Este endpoint valida el PIN y marca al trabajador como habilitado
- */
-module.exports.completeEnrollment = async (event) => {
-    try {
-        const { id } = event.pathParameters || {};
-        const body = JSON.parse(event.body || '{}');
-
-        if (!id) {
-            return error('ID de trabajador requerido');
-        }
+    async completeEnrollment(id, body, eventContext) {
+        if (!id) throw new Error('ID de trabajador requerido');
 
         const { pin } = body;
 
         if (!pin) {
-            return error('PIN es requerido para completar el enrolamiento');
+            throw new Error('PIN es requerido para completar el enrolamiento');
         }
 
         // Obtener trabajador
-        const workerResult = await docClient.send(
+        const workerResult = await this.dynamo.send(
             new GetCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 Key: { workerId: id },
             })
         );
 
         if (!workerResult.Item) {
-            return error('Trabajador no encontrado', 404);
+            throw new Error('Trabajador no encontrado');
         }
 
         const worker = workerResult.Item;
@@ -492,29 +412,31 @@ module.exports.completeEnrollment = async (event) => {
         if (worker.habilitado) {
             // Si el trabajador ya está habilitado, verificar si el usuario vinculado también lo está
             if (worker.userId) {
-                const userRes = await docClient.send(
+                const userRes = await this.dynamo.send(
                     new GetCommand({
-                        TableName: USERS_TABLE,
+                        TableName: this.usersTable,
                         Key: { userId: worker.userId },
                     })
                 );
                 if (userRes.Item && userRes.Item.habilitado) {
-                    return error('El trabajador y el usuario ya están habilitados', 400);
+                    throw new Error('El trabajador y el usuario ya están habilitados');
                 }
                 console.log('Worker enabled but user not. Allowing sync enrollment.');
             } else {
-                return error('El trabajador ya está habilitado', 400);
+                throw new Error('El trabajador ya está habilitado');
             }
         }
 
         if (!worker.pinHash) {
-            return error('El trabajador debe configurar un PIN primero', 400);
+            throw new Error('El trabajador debe configurar un PIN primero');
         }
 
         // Verificar PIN
         const pinValido = verifyPin(pin, worker.pinHash, id);
         if (!pinValido) {
-            return error('PIN incorrecto', 401);
+            const error = new Error('PIN incorrecto');
+            error.statusCode = 401;
+            throw error;
         }
 
         const now = new Date();
@@ -527,8 +449,8 @@ module.exports.completeEnrollment = async (event) => {
             horario: now.toTimeString().split(' ')[0],
             timestamp: now.toISOString(),
             metodoValidacion: 'PIN',
-            ipAddress: event.requestContext?.http?.sourceIp ||
-                event.requestContext?.identity?.sourceIp || 'unknown',
+            ipAddress: eventContext?.requestContext?.http?.sourceIp ||
+                eventContext?.requestContext?.identity?.sourceIp || 'unknown',
         };
 
         // Crear registro en SignaturesTable
@@ -547,7 +469,7 @@ module.exports.completeEnrollment = async (event) => {
             horario: firmaEnrolamiento.horario,
             timestamp: firmaEnrolamiento.timestamp,
             ipAddress: firmaEnrolamiento.ipAddress,
-            userAgent: event.headers?.['user-agent'] || 'unknown',
+            userAgent: eventContext?.headers?.['user-agent'] || 'unknown',
             metodoValidacion: 'PIN',
             metadata: {
                 titulo: 'Enrolamiento Digital',
@@ -559,17 +481,17 @@ module.exports.completeEnrollment = async (event) => {
             createdAt: now.toISOString(),
         };
 
-        await docClient.send(
+        await this.dynamo.send(
             new PutCommand({
-                TableName: SIGNATURES_TABLE,
+                TableName: this.signaturesTable,
                 Item: signature,
             })
         );
 
         // Actualizar trabajador como habilitado
-        await docClient.send(
+        await this.dynamo.send(
             new UpdateCommand({
-                TableName: TABLE_NAME,
+                TableName: this.workersTable,
                 Key: { workerId: id },
                 UpdateExpression: 'SET habilitado = :habilitado, firmaEnrolamiento = :firmaEnrolamiento, updatedAt = :updatedAt',
                 ExpressionAttributeValues: {
@@ -585,10 +507,10 @@ module.exports.completeEnrollment = async (event) => {
             try {
                 let userToUpdate = null;
                 if (worker.userId) {
-                    const userRes = await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: worker.userId } }));
+                    const userRes = await this.dynamo.send(new GetCommand({ TableName: this.usersTable, Key: { userId: worker.userId } }));
                     userToUpdate = userRes.Item;
                 } else {
-                    const userRes = await docClient.send(new ScanCommand({ TableName: USERS_TABLE, FilterExpression: 'rut = :rut', ExpressionAttributeValues: { ':rut': worker.rut } }));
+                    const userRes = await this.dynamo.send(new ScanCommand({ TableName: this.usersTable, FilterExpression: 'rut = :rut', ExpressionAttributeValues: { ':rut': worker.rut } }));
                     userToUpdate = userRes.Items && userRes.Items[0];
                 }
 
@@ -597,9 +519,9 @@ module.exports.completeEnrollment = async (event) => {
                     // IMPORTANTE: Para el usuario, el PIN se hashea con su userId
                     const pinHashForUser = hashPin(pin, userToUpdate.userId);
 
-                    await docClient.send(
+                    await this.dynamo.send(
                         new UpdateCommand({
-                            TableName: USERS_TABLE,
+                            TableName: this.usersTable,
                             Key: { userId: userToUpdate.userId },
                             UpdateExpression: 'SET habilitado = :habilitado, pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, workerId = :workerId, updatedAt = :updatedAt',
                             ExpressionAttributeValues: {
@@ -618,7 +540,7 @@ module.exports.completeEnrollment = async (event) => {
             }
         }
 
-        return success({
+        return {
             message: 'Enrolamiento completado exitosamente. El trabajador está ahora habilitado.',
             workerId: id,
             habilitado: true,
@@ -627,9 +549,8 @@ module.exports.completeEnrollment = async (event) => {
                 fecha: firmaEnrolamiento.fecha,
                 horario: firmaEnrolamiento.horario,
             },
-        });
-    } catch (err) {
-        console.error('Error completing enrollment:', err);
-        return error(err.message, 500);
+        };
     }
-};
+}
+
+module.exports = { WorkersRepository };

@@ -5,7 +5,7 @@ import {
     FiPlus, FiAlertTriangle, FiFilter, FiX, FiUpload, FiImage,
     FiUser, FiMapPin, FiCalendar, FiTrendingUp, FiActivity,
     FiAlertCircle, FiFileText, FiSave, FiChevronDown, FiChevronUp,
-    FiPieChart, FiList, FiBarChart2, FiCheck
+    FiPieChart, FiList, FiBarChart2, FiCheck, FiArrowRight
 } from 'react-icons/fi';
 import { incidentsApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData } from '../api/client';
@@ -544,26 +544,27 @@ export default function Incidents() {
         <>
             <Header title="Incidentes y Accidentes" />
             <div className="page-content">
-                {/* Header Section */}
-                <div className="mb-6 flex justify-between items-center">
-                    <div>
-                        <h2 className="text-xl font-bold flex items-center gap-2">
+                <div className="page-header">
+                    <div className="page-header-info">
+                        <h2 className="page-header-title">
                             <FiAlertTriangle className="text-warning-500" />
                             Control de Incidentes
                         </h2>
-                        <p className="text-muted">Sistema de reporte, seguimiento y análisis estadístico</p>
+                        <p className="page-header-description">Sistema de reporte, seguimiento y análisis estadístico de seguridad.</p>
                     </div>
-                    <button
-                        className="btn btn-primary"
-                        onClick={() => setShowModal(true)}
-                    >
-                        <FiPlus className="mr-2" />
-                        Reportar Incidente
-                    </button>
+                    <div className="page-header-actions">
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => setShowModal(true)}
+                        >
+                            <FiPlus className="mr-2" />
+                            Reportar Incidente
+                        </button>
+                    </div>
                 </div>
 
                 {/* Tabs */}
-                <div className="incidents-tabs mb-6">
+                <div className="incidents-tabs mb-6" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
                     <button
                         className={`incidents-tab ${activeTab === 'listado' ? 'active' : ''}`}
                         onClick={() => setActiveTab('listado')}
@@ -784,25 +785,61 @@ export default function Incidents() {
                                         <button className="nav-btn" onClick={() => navigateMonth(1)}>&gt;</button>
                                     </div>
                                 </div>
-                                <div className="calendar-month-container" style={{ padding: '5px' }}>
-                                    <div className="calendar-weekdays" style={{ gap: '2px' }}>
+                                <div className="calendar-month-container" style={{ padding: '8px' }}>
+                                    <div className="calendar-weekdays" style={{ gap: '4px', marginBottom: '4px' }}>
                                         {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map(d => (
-                                            <span key={d} className="weekday-label" style={{ fontSize: '8px' }}>{d}</span>
+                                            <div key={d} className="weekday-cell" style={{
+                                                width: '42px',
+                                                height: '32px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '10px',
+                                                fontWeight: '600',
+                                                color: 'var(--text-muted)'
+                                            }}>
+                                                {d}
+                                            </div>
                                         ))}
                                     </div>
-                                    <div className="calendar-grid-month" style={{ gap: '2px' }}>
+                                    <div className="calendar-grid-month" style={{ gap: '4px' }}>
                                         {generateCalendarData().map((day: any, i: number) => (
                                             day.empty ? (
-                                                <div key={i} className="calendar-cell-empty" />
+                                                <div key={i} className="calendar-cell-empty" style={{
+                                                    width: '42px',
+                                                    height: '32px'
+                                                }} />
                                             ) : (
                                                 <div
                                                     key={i}
                                                     className={`calendar-cell-day ${day.hasIncident ? 'has-incident' : ''} ${day.severity || ''}`}
-                                                    style={{ minHeight: '20px' }}
-                                                    title={`${day.date}: ${day.count} evento(s)`}
-                                                    onClick={() => day.hasIncident && alert(`Fecha: ${day.date}\n\nIncidentes: ${day.count}\nGravedad: ${day.severity?.toUpperCase() || 'N/A'}`)}
+                                                    style={{
+                                                        width: '42px',
+                                                        height: '32px',
+                                                        minHeight: '32px',
+                                                        minWidth: '42px'
+                                                    }}
                                                 >
-                                                    <span className="day-num" style={{ fontSize: '8px' }}>{day.dayNum}</span>
+                                                    <span className="day-num" style={{ fontSize: '9px' }}>{day.dayNum}</span>
+                                                    <div className="calendar-tooltip">
+                                                        <div className="tooltip-header">{day.date}</div>
+                                                        {day.hasIncident ? (
+                                                            <div className="tooltip-body">
+                                                                <div className="tooltip-stat">
+                                                                    <span className="label">Eventos:</span>
+                                                                    <span className="value">{day.count}</span>
+                                                                </div>
+                                                                <div className="tooltip-stat">
+                                                                    <span className="label">Gravedad:</span>
+                                                                    <span className={`severity-badge ${day.severity}`}>
+                                                                        {day.severity?.toUpperCase()}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="tooltip-body no-events">Sin incidentes</div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )
                                         ))}
@@ -927,6 +964,11 @@ export default function Incidents() {
 
                         {/* Incidents Table */}
                         <div className="card">
+                            <div className="scroll-hint">
+                                <FiArrowRight />
+                                <span>Desliza para ver más</span>
+                            </div>
+
                             <div className="table-container">
                                 <table className="table">
                                     <thead>
@@ -1709,35 +1751,40 @@ export default function Incidents() {
                     min-height: auto;
                 }
 
+
                 .calendar-weekdays {
                     display: grid;
                     grid-template-columns: repeat(7, 1fr);
-                    gap: 8px;
-                    margin-bottom: var(--space-1);
+                    gap: 4px;
+                    margin-bottom: 4px;
                     width: 100%;
                 }
 
-                .weekday-label {
-                    text-align: center;
-                    font-size: 11px;
+                .weekday-cell {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 10px;
                     font-weight: 600;
                     color: var(--text-muted);
-                    padding: var(--space-1);
                     text-transform: uppercase;
-                    letter-spacing: 1px;
+                    width: 42px;
+                    height: 32px;
                 }
 
                 .calendar-grid-month {
                     display: grid;
                     grid-template-columns: repeat(7, 1fr);
-                    gap: 8px;
+                    gap: 4px;
                     width: 100%;
                 }
 
                 .calendar-cell-day {
+                    width: 42px;
+                    height: 32px;
+                    min-width: 42px;
                     min-height: 32px;
                     display: flex;
-                    flex-direction: column;
                     align-items: center;
                     justify-content: center;
                     background: var(--surface-elevated);
@@ -1745,9 +1792,16 @@ export default function Incidents() {
                     position: relative;
                     transition: all var(--transition-normal);
                     border: 1px solid var(--surface-border);
-                    padding: var(--space-1);
                 }
 
+                .calendar-cell-empty {
+                    width: 42px;
+                    height: 32px;
+                    min-width: 42px;
+                    min-height: 32px;
+                    visibility: hidden;
+                }
+                    
                 .calendar-cell-day:hover {
                     transform: translateY(-2px);
                     z-index: 2;
@@ -1759,6 +1813,86 @@ export default function Incidents() {
                 .calendar-cell-day.leve { background: linear-gradient(135deg, rgba(76, 175, 80, 0.35), rgba(76, 175, 80, 0.15)); border-color: rgba(76, 175, 80, 0.4); }
                 .calendar-cell-day.grave { background: linear-gradient(135deg, rgba(255, 152, 0, 0.35), rgba(255, 152, 0, 0.15)); border-color: rgba(255, 152, 0, 0.4); }
                 .calendar-cell-day.fatal { background: linear-gradient(135deg, rgba(244, 67, 54, 0.45), rgba(244, 67, 54, 0.25)); border-color: rgba(244, 67, 54, 0.4); }
+
+                /* Custom Tooltip Styling */
+                .calendar-tooltip {
+                    position: absolute;
+                    bottom: 110%;
+                    left: 50%;
+                    transform: translateX(-50%) translateY(10px);
+                    background: rgba(15, 23, 42, 0.95);
+                    backdrop-filter: blur(8px);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 8px;
+                    padding: 8px 12px;
+                    width: max-content;
+                    max-width: 200px;
+                    z-index: 100;
+                    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+                    opacity: 0;
+                    visibility: hidden;
+                    pointer-events: none;
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                }
+
+                .calendar-cell-day:hover .calendar-tooltip {
+                    opacity: 1;
+                    visibility: visible;
+                    transform: translateX(-50%) translateY(0);
+                }
+
+                .tooltip-header {
+                    font-size: 10px;
+                    font-weight: 700;
+                    color: var(--primary-400);
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    margin-bottom: 4px;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                    padding-bottom: 4px;
+                }
+
+                .tooltip-body {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                }
+
+                .tooltip-stat {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 12px;
+                    font-size: 11px;
+                }
+
+                .tooltip-stat .label {
+                    color: var(--text-muted);
+                }
+
+                .tooltip-stat .value {
+                    color: var(--text-primary);
+                    font-weight: 600;
+                }
+
+                .no-events {
+                    color: var(--text-muted);
+                    font-size: 10px;
+                    font-style: italic;
+                    text-align: center;
+                }
+
+                .severity-badge {
+                    font-size: 9px;
+                    font-weight: 700;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    background: rgba(255, 255, 255, 0.05);
+                }
+
+                .severity-badge.leve { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+                .severity-badge.grave { color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
+                .severity-badge.fatal { color: #f87171; background: rgba(248, 113, 113, 0.1); }
 
                 /* Incident Detail Modal */
                 .detail-row {

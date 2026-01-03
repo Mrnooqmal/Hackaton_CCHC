@@ -9,7 +9,8 @@ import {
     FiTrendingUp,
     FiCheck,
     FiClock,
-    FiPlus
+    FiPlus,
+    FiArrowRight
 } from 'react-icons/fi';
 import { workersApi } from '../api/client';
 import type { Worker } from '../api/client';
@@ -99,14 +100,14 @@ export default function Dashboard() {
                         const Icon = stat.icon;
                         return (
                             <div key={index} className="card stat-card">
-                                <div className="flex items-center gap-3 mb-4">
+                                <div className="flex items-center gap-3 mb-1">
                                     <div
-                                        className="avatar"
+                                        className="avatar avatar-sm"
                                         style={{ background: stat.color }}
                                     >
                                         <Icon />
                                     </div>
-                                    <span className="text-sm text-muted">{stat.label}</span>
+                                    <span className="text-xs text-muted">{stat.label}</span>
                                 </div>
                                 <div className="stat-value">{stat.value}</div>
                                 <div className={`stat-change ${stat.positive ? 'positive' : 'negative'}`}>
@@ -118,8 +119,8 @@ export default function Dashboard() {
                     })}
                 </div>
 
-                {/* Main content grid */}
-                <div className="grid grid-cols-3" style={{ gridTemplateColumns: '2fr 1fr' }}>
+                {/* Main content grid - Better responsive breakpoint */}
+                <div className="dashboard-main-grid">
                     {/* Recent Activities */}
                     <div className="card">
                         <div className="card-header">
@@ -157,9 +158,9 @@ export default function Dashboard() {
                                         >
                                             {activity.status === 'completed' ? <FiCheck /> : <FiClock />}
                                         </div>
-                                        <div>
-                                            <div className="font-bold">{activity.type}</div>
-                                            <div className="text-sm text-muted">{activity.date}</div>
+                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                            <div className="font-bold text-truncate">{activity.type}</div>
+                                            <div className="text-sm text-muted text-truncate">{activity.date}</div>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -185,22 +186,22 @@ export default function Dashboard() {
                     <div className="card">
                         <h2 className="card-title mb-4">Acciones Rápidas</h2>
 
-                        <div className="flex flex-col gap-3">
-                            <Link to="/workers/enroll" className="btn btn-primary" style={{ justifyContent: 'flex-start' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                            <Link to="/workers/enroll" className="btn btn-primary" style={{ width: '100%', justifyContent: 'flex-start' }}>
                                 <FiUsers />
-                                Enrolar Trabajador
+                                <span>Enrolar Trabajador</span>
                             </Link>
-                            <Link to="/activities" className="btn btn-secondary" style={{ justifyContent: 'flex-start' }}>
+                            <Link to="/activities" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
                                 <FiCalendar />
-                                Registrar Charla 5 min
+                                <span>Registrar Charla 5 min</span>
                             </Link>
-                            <Link to="/documents" className="btn btn-secondary" style={{ justifyContent: 'flex-start' }}>
+                            <Link to="/documents" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
                                 <FiFileText />
-                                Crear Documento
+                                <span>Crear Documento</span>
                             </Link>
-                            <Link to="/incidents" className="btn btn-secondary" style={{ justifyContent: 'flex-start' }}>
+                            <Link to="/incidents" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
                                 <FiAlertTriangle />
-                                Reportar Incidente
+                                <span>Reportar Incidente</span>
                             </Link>
                         </div>
 
@@ -245,41 +246,48 @@ export default function Dashboard() {
                             </Link>
                         </div>
                     ) : (
-                        <div className="table-container">
-                            <table className="table">
-                                <thead>
-                                    <tr>
-                                        <th>Trabajador</th>
-                                        <th>RUT</th>
-                                        <th>Cargo</th>
-                                        <th>Fecha Enrolamiento</th>
-                                        <th>Estado</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {workers.slice(0, 5).map((worker) => (
-                                        <tr key={worker.workerId}>
-                                            <td>
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm">
-                                                        {worker.nombre.charAt(0)}
-                                                    </div>
-                                                    <span className="font-bold">{worker.nombre} {worker.apellido}</span>
-                                                </div>
-                                            </td>
-                                            <td>{worker.rut}</td>
-                                            <td>{worker.cargo}</td>
-                                            <td>{new Date(worker.fechaEnrolamiento).toLocaleDateString('es-CL')}</td>
-                                            <td>
-                                                <span className={`badge badge-${worker.estado === 'activo' ? 'success' : 'neutral'}`}>
-                                                    {worker.estado}
-                                                </span>
-                                            </td>
+                        <>
+                            <div className="scroll-hint">
+                                <FiArrowRight />
+                                <span>Desliza para ver más</span>
+                            </div>
+
+                            <div className="table-container">
+                                <table className="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Trabajador</th>
+                                            <th>RUT</th>
+                                            <th>Cargo</th>
+                                            <th>Fecha Enrolamiento</th>
+                                            <th>Estado</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody>
+                                        {workers.slice(0, 5).map((worker) => (
+                                            <tr key={worker.workerId}>
+                                                <td>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="avatar avatar-sm">
+                                                            {worker.nombre.charAt(0)}
+                                                        </div>
+                                                        <span className="font-bold text-truncate" style={{ maxWidth: '200px' }}>{worker.nombre} {worker.apellido}</span>
+                                                    </div>
+                                                </td>
+                                                <td>{worker.rut}</td>
+                                                <td>{worker.cargo}</td>
+                                                <td>{new Date(worker.fechaEnrolamiento).toLocaleDateString('es-CL')}</td>
+                                                <td>
+                                                    <span className={`badge badge-${worker.estado === 'activo' ? 'success' : 'neutral'}`}>
+                                                        {worker.estado}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
                     )}
                 </div>
             </div>
