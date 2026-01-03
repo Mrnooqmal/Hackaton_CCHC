@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Header from '../components/Header';
+import RiskMatrixVisual from '../components/RiskMatrixVisual';
+import MIPERVisual from '../components/MIPERVisual';
 import {
     FiSend,
     FiFileText,
@@ -9,7 +11,9 @@ import {
     FiDownload,
     FiAlertTriangle,
     FiUsers,
-    FiShield
+    FiShield,
+    FiMaximize2,
+    FiX
 } from 'react-icons/fi';
 import { aiApi, type MIPERResult, type RiskMatrixResult, type IncidentAnalysisResult, type DailyTalkResult, type PreventionPlanResult } from '../api/client';
 
@@ -86,6 +90,7 @@ export default function AIAssistant() {
     const [loading, setLoading] = useState(false);
     const [activeAction, setActiveAction] = useState<string | null>(null);
     const [actionInput, setActionInput] = useState('');
+    const [visualDocument, setVisualDocument] = useState<{ type: string; data: any } | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -348,6 +353,7 @@ ${data.normativaRelacionada ? `**Normativa:** ${data.normativaRelacionada.join('
 
     const renderMessage = (message: Message) => {
         const isUser = message.role === 'user';
+        const isVisualType = message.type === 'miper' || message.type === 'matrix';
 
         return (
             <div
@@ -367,28 +373,83 @@ ${data.normativaRelacionada ? `**Normativa:** ${data.normativaRelacionada.join('
 
                 <div
                     style={{
-                        maxWidth: '85%',
-                        padding: 'var(--space-4)',
+                        maxWidth: isVisualType ? '100%' : '85%',
+                        width: isVisualType ? '100%' : 'auto',
+                        padding: isVisualType ? '0' : 'var(--space-4)',
                         borderRadius: 'var(--radius-lg)',
-                        background: isUser ? 'var(--primary-600)' : 'var(--surface-elevated)',
+                        background: isUser ? 'var(--primary-600)' : isVisualType ? 'transparent' : 'var(--surface-elevated)',
                         color: isUser ? 'white' : 'var(--text-primary)',
-                        boxShadow: 'var(--shadow-sm)'
+                        boxShadow: isVisualType ? 'none' : 'var(--shadow-sm)'
                     }}
                 >
-                    <div
-                        style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}
-                        dangerouslySetInnerHTML={{
-                            __html: message.content
-                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                                .replace(/## (.*?)(\n|$)/g, '<h3 style="margin: 12px 0 8px; font-size: 1.15rem; color: var(--primary-400);">$1</h3>')
-                                .replace(/### (.*?)(\n|$)/g, '<h4 style="margin: 10px 0 6px; font-size: 1rem; color: var(--text-secondary);">$1</h4>')
-                                .replace(/📌|🔍|📋|📝|💬|🎯|⚡|🛡️|🦺|👤|🌳|✅|💡|📢|❓|🔴|🟠|🟡|🟢|⚠️/g, '<span style="font-size: 1.1em;">$&</span>')
-                                .replace(/\n/g, '<br/>')
-                        }}
-                    />
+                    {/* Visual Document Preview for MIPER and Risk Matrix */}
+                    {isVisualType && message.data ? (
+                        <div style={{ marginBottom: 'var(--space-4)' }}>
+                            <div className="flex justify-between items-center mb-3">
+                                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
+                                    {message.type === 'miper' ? '🎯 Matriz MIPER generada' : '📋 Matriz de Riesgos generada'}
+                                </span>
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => setVisualDocument({ type: message.type!, data: message.data })}
+                                >
+                                    <FiMaximize2 /> Ver documento interactivo
+                                </button>
+                            </div>
+                            {/* Mini preview */}
+                            <div
+                                style={{
+                                    background: 'var(--surface-elevated)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    padding: 'var(--space-4)',
+                                    cursor: 'pointer'
+                                }}
+                                onClick={() => setVisualDocument({ type: message.type!, data: message.data })}
+                            >
+                                <div style={{ fontWeight: 600, marginBottom: '8px' }}>
+                                    {message.type === 'miper' ? message.data.cargo : message.data.titulo}
+                                </div>
+                                <div className="flex gap-2 mb-2">
+                                    {['Crítico', 'Alto', 'Medio', 'Bajo'].map(level => {
+                                        const count = message.type === 'miper'
+                                            ? message.data.resumen?.[level.toLowerCase() + 's'] || 0
+                                            : message.data.estadisticas?.[level.toLowerCase() + 's'] || 0;
+                                        const colors: Record<string, string> = { 'Crítico': '#ef4444', 'Alto': '#f97316', 'Medio': '#eab308', 'Bajo': '#22c55e' };
+                                        return (
+                                            <span key={level} style={{
+                                                background: colors[level],
+                                                color: level === 'Medio' || level === 'Bajo' ? '#1a1a1a' : 'white',
+                                                padding: '4px 12px',
+                                                borderRadius: '20px',
+                                                fontSize: 'var(--text-xs)',
+                                                fontWeight: 600
+                                            }}>
+                                                {count} {level}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
+                                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
+                                    Click para ver el documento completo →
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div
+                            style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}
+                            dangerouslySetInnerHTML={{
+                                __html: message.content
+                                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                                    .replace(/## (.*?)(\n|$)/g, '<h3 style="margin: 12px 0 8px; font-size: 1.15rem; color: var(--primary-400);">$1</h3>')
+                                    .replace(/### (.*?)(\n|$)/g, '<h4 style="margin: 10px 0 6px; font-size: 1rem; color: var(--text-secondary);">$1</h4>')
+                                    .replace(/📌|🔍|📋|📝|💬|🎯|⚡|🛡️|🦺|👤|🌳|✅|💡|📢|❓|🔴|🟠|🟡|🟢|⚠️/g, '<span style="font-size: 1.1em;">$&</span>')
+                                    .replace(/\n/g, '<br/>')
+                            }}
+                        />
+                    )}
 
-                    {message.data && (
+                    {message.data && !isVisualType && (
                         <div className="mt-4 flex gap-2">
                             <button className="btn btn-secondary btn-sm">
                                 <FiDownload />
@@ -401,16 +462,18 @@ ${data.normativaRelacionada ? `**Normativa:** ${data.normativaRelacionada.join('
                         </div>
                     )}
 
-                    <div
-                        className="text-sm mt-2"
-                        style={{ opacity: 0.6, fontSize: '0.75rem' }}
-                    >
-                        {message.timestamp.toLocaleTimeString('es-CL', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                        })}
-                        {message.data?._fallback && ' • Modo offline'}
-                    </div>
+                    {!isVisualType && (
+                        <div
+                            className="text-sm mt-2"
+                            style={{ opacity: 0.6, fontSize: '0.75rem' }}
+                        >
+                            {message.timestamp.toLocaleTimeString('es-CL', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            })}
+                            {message.data?._fallback && ' • Modo offline'}
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -571,6 +634,75 @@ ${data.normativaRelacionada ? `**Normativa:** ${data.normativaRelacionada.join('
                     </div>
                 </div>
             </div>
+
+            {/* Full-screen Visual Document Modal */}
+            {visualDocument && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0,0,0,0.85)',
+                        zIndex: 1100,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        backdropFilter: 'blur(8px)'
+                    }}
+                >
+                    {/* Modal Header */}
+                    <div
+                        style={{
+                            padding: 'var(--space-4) var(--space-6)',
+                            background: 'var(--surface-elevated)',
+                            borderBottom: '1px solid var(--surface-border)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}
+                    >
+                        <div>
+                            <h2 style={{ fontWeight: 700, fontSize: '1.25rem' }}>
+                                {visualDocument.type === 'miper' ? '🎯 Matriz MIPER' : '📋 Matriz de Riesgos'}
+                            </h2>
+                            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
+                                Documento interactivo - Revise, apruebe y exporte
+                            </p>
+                        </div>
+                        <button
+                            className="btn btn-ghost"
+                            onClick={() => setVisualDocument(null)}
+                            style={{ fontSize: '1.5rem' }}
+                        >
+                            <FiX />
+                        </button>
+                    </div>
+
+                    {/* Modal Content */}
+                    <div style={{ flex: 1, overflow: 'auto', padding: 'var(--space-6)' }}>
+                        {visualDocument.type === 'miper' ? (
+                            <MIPERVisual
+                                data={visualDocument.data}
+                                onApprove={(data) => {
+                                    console.log('MIPER aprobado:', data);
+                                    alert('✅ MIPER aprobado exitosamente. El documento ha sido guardado.');
+                                    setVisualDocument(null);
+                                }}
+                            />
+                        ) : (
+                            <RiskMatrixVisual
+                                data={visualDocument.data}
+                                onApprove={(data) => {
+                                    console.log('Matriz de riesgos aprobada:', data);
+                                    alert('✅ Matriz de riesgos aprobada exitosamente. El documento ha sido guardado.');
+                                    setVisualDocument(null);
+                                }}
+                            />
+                        )}
+                    </div>
+                </div>
+            )}
         </>
     );
 }
