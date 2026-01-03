@@ -30,9 +30,9 @@ import {
     type SignatureRequest,
     type Worker,
     type DocumentoAdjunto,
-    REQUEST_TYPES,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import ConfirmModal from '../components/ConfirmModal';
 
 export default function SignatureRequests() {
     const { user } = useAuth();
@@ -43,6 +43,11 @@ export default function SignatureRequests() {
     const [selectedRequest, setSelectedRequest] = useState<SignatureRequest | null>(null);
     const [filterStatus, setFilterStatus] = useState<string>('');
     const [searchTerm, setSearchTerm] = useState('');
+    const [error, setError] = useState('');
+    const [confirmCancel, setConfirmCancel] = useState<{
+        isOpen: boolean;
+        requestId?: string;
+    }>({ isOpen: false });
 
     const [newRequest, setNewRequest] = useState({
         tipo: 'CHARLA_5MIN',
@@ -92,7 +97,7 @@ export default function SignatureRequests() {
                 if (result.success && result.data) {
                     setUploadedDocs(prev => [...prev, result.data!]);
                 } else {
-                    alert(`Error al subir ${file.name}: ${result.error}`);
+                    setError(`Error al subir ${file.name}: ${result.error}`);
                 }
             }
         } finally {
@@ -138,11 +143,11 @@ export default function SignatureRequests() {
                 resetForm();
                 setShowModal(false);
             } else {
-                alert(response.error || 'Error al crear solicitud');
+                setError(response.error || 'Error al crear solicitud');
             }
         } catch (error) {
             console.error('Error creating request:', error);
-            alert('Error al crear solicitud');
+            setError('Error al crear solicitud');
         } finally {
             setSubmitting(false);
         }
@@ -176,16 +181,25 @@ export default function SignatureRequests() {
         }
     };
 
-    const handleCancelRequest = async (requestId: string) => {
-        if (!confirm('¿Está seguro de cancelar esta solicitud?')) return;
+    const handleCancelRequest = (requestId: string) => {
+        setConfirmCancel({ isOpen: true, requestId });
+    };
 
+    const confirmHandleCancel = async () => {
+        const requestId = confirmCancel.requestId;
+        if (!requestId) return;
+
+        setConfirmCancel({ isOpen: false });
         try {
             const response = await signatureRequestsApi.cancel(requestId, 'Cancelada por el solicitante');
             if (response.success) {
                 loadData();
+            } else {
+                setError(response.error || 'Error al cancelar solicitud');
             }
         } catch (error) {
             console.error('Error canceling request:', error);
+            setError('Error de conexión al cancelar solicitud');
         }
     };
 
@@ -262,6 +276,18 @@ export default function SignatureRequests() {
                     <div className="survey-hero-icon">
                         <FiSend size={28} />
                     </div>
+
+                    {error && (
+                        <div className="alert alert-danger mb-6 flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <FiAlertCircle />
+                                {error}
+                            </div>
+                            <button onClick={() => setError('')} className="btn-ghost btn-sm p-1">
+                                <FiX />
+                            </button>
+                        </div>
+                    )}
                     <div style={{ flex: 1 }}>
                         <div className="survey-hero-eyebrow">Gestión de Solicitudes</div>
                         <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, marginBottom: 'var(--space-2)' }}>
@@ -1238,6 +1264,16 @@ export default function SignatureRequests() {
                     </div>
                 </div>
             )}
+            <ConfirmModal
+                isOpen={confirmCancel.isOpen}
+                title="¿Cancelar solicitud?"
+                message="Esta acción detendrá el proceso de firma para todos los trabajadores pendientes. Los datos registrados hasta ahora se mantendrán pero no se podrán agregar más firmas."
+                confirmLabel="Sí, Cancelar Solicitud"
+                cancelLabel="No, Mantener Activa"
+                variant="danger"
+                onConfirm={confirmHandleCancel}
+                onCancel={() => setConfirmCancel({ isOpen: false })}
+            />
         </>
     );
 }

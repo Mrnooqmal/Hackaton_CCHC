@@ -4,15 +4,40 @@ const { docClient } = require('../lib/dynamodb');
 const { success, error, created } = require('../lib/response');
 const { validateRequired } = require('../lib/validation');
 const { ensureDefaultHealthSurvey } = require('../lib/healthSurvey');
+// NEW: Import PersonaService for unified worker access
+const { PersonaService } = require('../lib/services/PersonaService');
 
 const TABLE_NAME = process.env.SURVEYS_TABLE || 'Surveys';
 const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
+
+// Feature flag: set to true to use new PersonaService
+const USE_PERSONA_SERVICE = process.env.USE_PERSONA_SERVICE === 'true';
 
 const QUESTION_TYPES = ['multiple', 'escala', 'abierta'];
 
 const normalizeRut = (rut = '') => rut.replace(/[^0-9kK]/g, '').toUpperCase();
 
+/**
+ * Obtiene todos los trabajadores.
+ * Usa PersonaService si está habilitado, sino usa el método legacy.
+ */
 const scanAllWorkers = async () => {
+    if (USE_PERSONA_SERVICE) {
+        // NEW: Use PersonaService for unified worker listing
+        const personas = await PersonaService.listar({ includeUsers: true });
+        // Convert Persona to worker format for compatibility
+        return personas.map(p => ({
+            workerId: p.workerId || p.userId,
+            nombre: p.nombre,
+            apellido: p.apellido || '',
+            rut: p.rut,
+            cargo: p.cargo,
+            empresaId: p.empresaId,
+            habilitado: p.habilitado
+        }));
+    }
+
+    // LEGACY: Direct table scan
     const workers = [];
     let ExclusiveStartKey;
 

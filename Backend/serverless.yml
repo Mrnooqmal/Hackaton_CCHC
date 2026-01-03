@@ -30,8 +30,14 @@ provider:
     INCIDENT_EVIDENCE_BUCKET: hackatonbackend-incident-evidence-${self:provider.stage}-${aws:accountId}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     DOCUMENTS_BUCKET: ${self:custom.bucketName}
+    DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
+    ACTIVITIES_TABLE: ${self:service}-activities-${self:provider.stage}
     INBOX_TABLE: ${self:service}-inbox-${self:provider.stage}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
+    # NEW: Feature flag for unified PersonaService (User/Worker sync)
+    USE_PERSONA_SERVICE: 'true'
+    # NEW: Feature flag for unified CumplimientoService (Signatures management)
+    USE_CUMPLIMIENTO_SERVICE: 'true'
   httpApi:
     cors:
       allowedOrigins:
@@ -67,6 +73,8 @@ provider:
             - !GetAtt IncidentsTable.Arn
             - !GetAtt InboxTable.Arn
             - !Sub ${InboxTable.Arn}/index/*
+            - !GetAtt ActivitiesTable.Arn
+            - !GetAtt DocumentsTable.Arn
         - Effect: Allow
           Action:
             - ses:SendEmail
@@ -225,6 +233,85 @@ functions:
     events:
       - httpApi:
           path: /signature-requests/offline-batch
+          method: POST
+
+  # Activities (Actividades)
+  listActivities:
+    handler: handlers/activities.list
+    events:
+      - httpApi:
+          path: /activities
+          method: GET
+
+  createActivity:
+    handler: handlers/activities.create
+    events:
+      - httpApi:
+          path: /activities
+          method: POST
+
+  getActivity:
+    handler: handlers/activities.get
+    events:
+      - httpApi:
+          path: /activities/{id}
+          method: GET
+
+  registerActivityAttendance:
+    handler: handlers/activities.registerAttendance
+    events:
+      - httpApi:
+          path: /activities/{id}/attendance
+          method: POST
+
+  getActivityStats:
+    handler: handlers/activities.getStats
+    events:
+      - httpApi:
+          path: /activities/stats
+          method: GET
+
+  # Documents (Documentos)
+  listDocuments:
+    handler: handlers/documents.list
+    events:
+      - httpApi:
+          path: /documents
+          method: GET
+
+  createDocument:
+    handler: handlers/documents.create
+    events:
+      - httpApi:
+          path: /documents
+          method: POST
+
+  getDocument:
+    handler: handlers/documents.get
+    events:
+      - httpApi:
+          path: /documents/{id}
+          method: GET
+
+  assignDocument:
+    handler: handlers/documents.assign
+    events:
+      - httpApi:
+          path: /documents/{id}/assign
+          method: POST
+
+  signDocument:
+    handler: handlers/documents.sign
+    events:
+      - httpApi:
+          path: /documents/{id}/sign
+          method: POST
+
+  signBulkDocuments:
+    handler: handlers/documents.signBulk
+    events:
+      - httpApi:
+          path: /documents/{id}/sign-bulk
           method: POST
 
   # ========================================
@@ -612,3 +699,29 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+
+    # Activities Table
+    ActivitiesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.ACTIVITIES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: activityId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: activityId
+            KeyType: HASH
+
+    # Documents Table
+    DocumentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.DOCUMENTS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: documentId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: documentId
+            KeyType: HASH

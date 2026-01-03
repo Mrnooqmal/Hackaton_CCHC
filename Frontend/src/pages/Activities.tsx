@@ -33,7 +33,7 @@ export default function Activities() {
 
     const [newActivity, setNewActivity] = useState({
         tipo: 'CHARLA_5MIN',
-        tema: '',
+        titulo: '',
         descripcion: '',
         relatorId: '',
     });
@@ -70,7 +70,7 @@ export default function Activities() {
             if (response.success && response.data) {
                 setActivities([response.data, ...activities]);
                 setShowModal(false);
-                setNewActivity({ tipo: 'CHARLA_5MIN', tema: '', descripcion: '', relatorId: '' });
+                setNewActivity({ tipo: 'CHARLA_5MIN', titulo: '', descripcion: '', relatorId: '' });
             }
         } catch (error) {
             console.error('Error creating activity:', error);
@@ -139,9 +139,11 @@ export default function Activities() {
                     <div className="page-header-info">
                         <h2 className="page-header-title">
                             <FiCalendar className="text-primary-500" />
-                            Programación de Actividades
+                            Registro de Actividades y Capacitación
                         </h2>
-                        <p className="page-header-description">Seguimiento de capacitaciones, charlas y eventos de seguridad planeados.</p>
+                        <p className="page-header-description">
+                            Gestión de charlas de 5 minutos, inducciones, ART y capacitación técnica.
+                        </p>
                     </div>
                 </div>
 
@@ -236,7 +238,7 @@ export default function Activities() {
                                                 {typeInfo.icon}
                                             </div>
                                             <div>
-                                                <div className="font-bold">{activity.tema}</div>
+                                                <div className="font-bold">{activity.titulo}</div>
                                                 <div className="text-sm text-muted">
                                                     {typeInfo.label} • {activity.horaInicio}
                                                     {activity.horaFin && ` - ${activity.horaFin}`}
@@ -302,7 +304,7 @@ export default function Activities() {
                                     return (
                                         <tr key={activity.activityId}>
                                             <td>
-                                                <div className="font-bold">{activity.tema}</div>
+                                                <div className="font-bold">{activity.titulo}</div>
                                                 {activity.descripcion && (
                                                     <div className="text-sm text-muted">{activity.descripcion}</div>
                                                 )}
@@ -369,11 +371,11 @@ export default function Activities() {
                                     </div>
 
                                     <div className="form-group">
-                                        <label className="form-label">Tema *</label>
+                                        <label className="form-label">Título *</label>
                                         <input
                                             type="text"
-                                            value={newActivity.tema}
-                                            onChange={(e) => setNewActivity({ ...newActivity, tema: e.target.value })}
+                                            value={newActivity.titulo}
+                                            onChange={(e) => setNewActivity({ ...newActivity, titulo: e.target.value })}
                                             className="form-input"
                                             placeholder="Ej: Uso correcto de EPP"
                                             required
@@ -438,7 +440,7 @@ export default function Activities() {
                             <div className="modal-header">
                                 <div>
                                     <h2 className="modal-title">Registrar Asistencia</h2>
-                                    <p className="text-sm text-muted">{selectedActivity.tema}</p>
+                                    <p className="text-sm text-muted">{selectedActivity.titulo}</p>
                                 </div>
                                 <button
                                     className="btn btn-ghost btn-icon"

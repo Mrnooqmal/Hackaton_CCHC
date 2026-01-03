@@ -4,18 +4,14 @@ import Header from '../components/Header';
 import {
     LuPlus, LuSearch, LuEye, LuArrowRight, LuUsers, LuShield
 } from 'react-icons/lu';
-import { workersApi, signaturesApi, type Worker, type DigitalSignature, REQUEST_TYPES } from '../api/client';
+import {
+    workersApi,
+    type Worker as ApiWorker
+} from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
-interface WorkerStats {
-    totalFirmas: number;
-    firmasUltimos30Dias: number;
-    documentosFirmados: number;
-    actividadesAsistidas: number;
-}
-
 // Extender la interfaz Worker para incluir rol (que viene del backend para usuarios legacy)
-interface WorkerWithRole extends Worker {
+interface WorkerWithRole extends ApiWorker {
     rol?: 'admin' | 'prevencionista' | 'trabajador';
 }
 
@@ -39,7 +35,9 @@ export default function Workers() {
             const response = await workersApi.list();
 
             if (response.success && response.data) {
-                const allWorkers = response.data as WorkerWithRole[];
+                // Filtrar para no mostrar admins en la lista de trabajadores
+                const allWorkers = (response.data as WorkerWithRole[]).filter(w => w.rol !== 'admin');
+
                 // Ordenar por nombre
                 allWorkers.sort((a, b) => a.nombre.localeCompare(b.nombre));
                 setWorkers(allWorkers);

@@ -97,9 +97,11 @@ export default function Documents() {
                     <div className="page-header-info">
                         <h2 className="page-header-title">
                             <FiFileText className="text-primary-500" />
-                            Gestión de Documentos
+                            Gestión Documental Normativa
                         </h2>
-                        <p className="page-header-description">Administre certificados, contratos y documentación legal de seguridad.</p>
+                        <p className="page-header-description">
+                            Control de políticas, reglamentos, procedimientos y matrices de riesgo.
+                        </p>
                     </div>
                 </div>
 

@@ -3,9 +3,17 @@ const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk
 const { docClient } = require('../lib/dynamodb');
 const { success, error, created } = require('../lib/response');
 const { validateRequired, generateSignatureToken } = require('../lib/validation');
+// NEW: Import unified services and adapters
+const { CumplimientoService } = require('../lib/services/CumplimientoService');
+const { CumplimientoAdapter } = require('../lib/adapters/CumplimientoAdapter');
+const { Cumplimiento } = require('../lib/models/Cumplimiento');
 
 const TABLE_NAME = process.env.ACTIVITIES_TABLE || 'Activities';
 const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
+
+// Feature flags for gradual rollout
+const USE_CUMPLIMIENTO_SERVICE = process.env.USE_CUMPLIMIENTO_SERVICE === 'true';
+const USE_PERSONA_SERVICE = process.env.USE_PERSONA_SERVICE === 'true';
 
 // Tipos de actividades según el flujo de prevención
 const ACTIVITY_TYPES = {
@@ -25,7 +33,7 @@ module.exports.create = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
 
-        const validation = validateRequired(body, ['tipo', 'tema', 'relatorId']);
+        const validation = validateRequired(body, ['tipo', 'titulo', 'relatorId']);
         if (!validation.valid) {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
@@ -41,7 +49,7 @@ module.exports.create = async (event) => {
             activityId,
             tipo: body.tipo,
             tipoDescripcion: ACTIVITY_TYPES[body.tipo],
-            tema: body.tema,
+            titulo: body.titulo,
             descripcion: body.descripcion || '',
             fecha: body.fecha || now.split('T')[0],
             horaInicio: body.horaInicio || now.split('T')[1].substring(0, 5),
@@ -178,14 +186,14 @@ module.exports.registerAttendance = async (event) => {
         }
 
         // Puede ser firma individual o masiva
-        const { workerId, workerIds, incluirFirmaRelator } = body;
+        const { workerId, workerIds, incluirFirmaRelator, pin } = body;
         const trabajadores = workerIds || (workerId ? [workerId] : []);
 
         if (trabajadores.length === 0) {
             return error('Se requiere al menos un trabajador');
         }
 
-        // Obtener actividad
+        // Obtener actividad de la base de datos
         const actResult = await docClient.send(
             new GetCommand({
                 TableName: TABLE_NAME,
@@ -197,7 +205,74 @@ module.exports.registerAttendance = async (event) => {
             return error('Actividad no encontrada', 404);
         }
 
-        const activity = actResult.Item;
+        const activityData = actResult.Item;
+
+        // NEW: Integration with CumplimientoService
+        if (USE_CUMPLIMIENTO_SERVICE) {
+            try {
+                // 1. Adaptar activity de DB a modelo Cumplimiento
+                const cumplimiento = Cumplimiento.fromActivity(activityData);
+
+                // 2. Definir contexto de la firma
+                const contexto = {
+                    ipAddress: event.requestContext?.http?.sourceIp ||
+                        event.requestContext?.identity?.sourceIp || 'unknown',
+                    userAgent: event.headers?.['user-agent'] || 'unknown'
+                };
+
+                // 3. Registrar firmas usando el servicio (usa método PRESENCIAL si no hay PIN)
+                // Esto garantiza que se guarden en la tabla central Signatures
+                const metodo = pin ? 'PIN' : 'PRESENCIAL';
+                const resultado = await CumplimientoService.registrarFirmas(
+                    cumplimiento,
+                    trabajadores,
+                    pin || {}, // Opcional
+                    contexto,
+                    incluirFirmaRelator,
+                    metodo
+                );
+
+                // 4. Actualizar la actividad original en DynamoDB
+                // Obtenemos el formato legacy para no romper el esquema de la tabla Activities
+                const updatedActivity = cumplimiento.toActivityFormat();
+
+                await docClient.send(
+                    new UpdateCommand({
+                        TableName: TABLE_NAME,
+                        Key: { activityId: id },
+                        UpdateExpression: 'SET asistentes = :asistentes, firmaRelator = :firmaRelator, estado = :estado, horaFin = :horaFin, updatedAt = :updatedAt',
+                        ExpressionAttributeValues: {
+                            ':asistentes': updatedActivity.asistentes,
+                            ':firmaRelator': updatedActivity.firmaRelator,
+                            ':estado': updatedActivity.estado,
+                            ':horaFin': updatedActivity.horaFin,
+                            ':updatedAt': updatedActivity.updatedAt,
+                        },
+                    })
+                );
+
+                // 5. Responder con formato legacy usando el adaptador
+                const nuevosAsistentes = (resultado.nuevasFirmas || []).map(f => ({
+                    signatureId: f.signatureId,
+                    workerId: f.workerId,
+                    workerNombre: f.workerNombre,
+                    workerRut: f.workerRut,
+                    token: f.token,
+                    fecha: f.fecha,
+                    horario: f.horario,
+                    timestamp: f.timestamp
+                }));
+
+                return success(CumplimientoAdapter.toAttendanceResponse(cumplimiento, nuevosAsistentes));
+
+            } catch (err) {
+                console.error('Error in CumplimientoService integration:', err);
+                return error(err.message);
+            }
+        }
+
+        // LEGACY: Original implementation
+        const activity = activityData;
         const now = new Date();
         const nuevosAsistentes = [];
 

@@ -78,20 +78,18 @@ export default function WorkerDetail() {
         setLoading(true);
         setError('');
         try {
-            // First find the worker in the list to get full details
-            const workersRes = await workersApi.list();
-            const normalizedTargetRut = normalizeRut(rut);
-            const foundWorker = workersRes.data?.find(w => normalizeRut(w.rut) === normalizedTargetRut) as WorkerWithRole;
+            // OPTIMIZED: Use getByRut instead of listing all workers
+            const workerRes = await workersApi.getByRut(rut);
 
-            if (!foundWorker) {
+            if (!workerRes.success || !workerRes.data) {
                 setError('Trabajador no encontrado');
                 setLoading(false);
                 return;
             }
-            setWorker(foundWorker);
+            setWorker(workerRes.data as WorkerWithRole);
 
             // Load signatures and calculate stats
-            const signaturesRes = await signaturesApi.getByWorker(foundWorker.workerId);
+            const signaturesRes = await signaturesApi.getByWorker(workerRes.data.workerId);
 
             if (signaturesRes.success && signaturesRes.data) {
                 const firmas = signaturesRes.data.firmas || [];

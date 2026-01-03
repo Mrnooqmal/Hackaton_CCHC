@@ -50,19 +50,19 @@ const navItems: NavSection[] = [
         ]
     },
     {
-        section: 'Firmas',
+        section: 'Cumplimiento',
         items: [
-            { path: '/signature-requests', icon: FiEdit3, label: 'Solicitar Firmas', permission: 'crear_actividades' },
-            { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Firmas' },
+            { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma', permission: 'crear_actividades' },
+            { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
             { path: '/offline-signatures', icon: FiWifiOff, label: 'Firmas Offline', permission: 'crear_actividades' },
         ]
     },
     {
-        section: 'Gestión',
+        section: 'Gestión Técnica',
         items: [
-            { path: '/documents', icon: FiFileText, label: 'Documentos' },
-            { path: '/activities', icon: FiCalendar, label: 'Actividades' },
-            { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
+            { path: '/documents', icon: FiFileText, label: 'Documentos Normativos' },
+            { path: '/activities', icon: FiCalendar, label: 'Actividades y Capacitación' },
+            { path: '/surveys', icon: FiClipboard, label: 'Auditorías y Encuestas' },
             { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
         ]
     },
