@@ -81,10 +81,10 @@ class FirmaService {
             throw new Error(`Método de validación '${metodo}' no soportado`);
         }
 
-        // Obtener persona
-        const persona = await PersonaService.obtenerPorId(workerId, 'worker');
+        // Obtener persona (buscar en ambas tablas - puede ser worker o user)
+        const persona = await PersonaService.obtenerPorId(workerId, 'auto');
         if (!persona) {
-            throw new Error('Trabajador no encontrado');
+            throw new Error('Persona no encontrada (workerId/userId no existe)');
         }
 
         // Verificar que esté habilitado (excepto para enrolamiento)
@@ -93,7 +93,8 @@ class FirmaService {
         }
 
         // Validar credencial con la estrategia correspondiente
-        const idParaHash = persona.workerId || persona.userId;
+        // IMPORTANTE: PIN se hashea con userId (tabla Users), no workerId
+        const idParaHash = persona.userId || persona.workerId;
         const valido = await estrategia.validar(persona, credencial, idParaHash);
         if (!valido) {
             throw new Error(`Validación de ${metodo} fallida`);

@@ -591,6 +591,7 @@ export interface AttendanceData {
     workerId?: string;
     workerIds?: string[];
     incluirFirmaRelator?: boolean;
+    pin?: string; // PIN for digital signature
 }
 
 export interface AttendanceResult {
@@ -669,6 +670,7 @@ export interface Survey {
     descripcion: string;
     empresaId: string;
     estado: string;
+    createdBy?: string; // userId of the creator
     audience: {
         tipo: SurveyAudienceType;
         cargo?: string | null;
@@ -690,11 +692,13 @@ export interface CreateSurveyPayload {
     ruts?: string[];
     empresaId?: string;
     estado?: string;
+    createdBy?: string;
 }
 
 export interface UpdateSurveyResponsePayload {
     estado: 'pendiente' | 'respondida';
     responses?: SurveyAnswer[];
+    pin?: string; // PIN for digital signature (required when estado is 'respondida')
 }
 
 export const surveysApi = {

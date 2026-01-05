@@ -1,426 +1,322 @@
 import { useState } from 'react';
-import { FiX, FiFileText, FiUser, FiCalendar, FiClock, FiAlertTriangle } from 'react-icons/fi';
+import { createPortal } from 'react-dom';
 import PinInput from './PinInput';
+import { FiShield, FiX, FiFileText, FiCheckSquare, FiClipboard, FiCalendar } from 'react-icons/fi';
 
-interface SignatureData {
-    tipoFirma: 'enrolamiento' | 'documento' | 'actividad' | 'capacitacion';
-    titulo: string;
-    descripcion?: string;
-    referenciaId?: string;
-    referenciaTipo?: string;
-}
-
-interface WorkerData {
-    workerId: string;
-    nombre: string;
-    apellido?: string;
-    rut: string;
-}
+export type SignatureType = 'document' | 'survey' | 'activity' | 'signature-request' | 'generic';
 
 interface SignatureModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSign: (pin: string) => Promise<void>;
-    onDispute?: (motivo: string) => void;
-    signatureData: SignatureData;
-    workerData: WorkerData;
+    onConfirm: (pin: string) => Promise<void>;
+    type?: SignatureType;
+    title?: string;
+    itemName?: string;
+    description?: string;
     loading?: boolean;
     error?: string;
 }
 
+const typeConfig: Record<SignatureType, { icon: React.ReactNode; label: string; color: string }> = {
+    document: { icon: <FiFileText size={24} />, label: 'Documento', color: 'var(--info-500)' },
+    survey: { icon: <FiClipboard size={24} />, label: 'Encuesta', color: 'var(--success-500)' },
+    activity: { icon: <FiCalendar size={24} />, label: 'Actividad', color: 'var(--accent-500)' },
+    'signature-request': { icon: <FiCheckSquare size={24} />, label: 'Solicitud de Firma', color: 'var(--warning-500)' },
+    generic: { icon: <FiShield size={24} />, label: 'Cumplimiento', color: 'var(--primary-500)' },
+};
+
 export default function SignatureModal({
     isOpen,
     onClose,
-    onSign,
-    onDispute,
-    signatureData,
-    workerData,
+    onConfirm,
+    type = 'generic',
+    title,
+    itemName,
+    description,
     loading = false,
     error,
 }: SignatureModalProps) {
-    const [showDispute, setShowDispute] = useState(false);
-    const [disputeMotivo, setDisputeMotivo] = useState('');
-    const [pinError, setPinError] = useState<string | undefined>(error);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [pinError, setPinError] = useState('');
 
-    const now = new Date();
-    const fecha = now.toLocaleDateString('es-CL', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-    });
-    const hora = now.toLocaleTimeString('es-CL', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-    });
+    const config = typeConfig[type];
 
     const handlePinComplete = async (pin: string) => {
-        setPinError(undefined);
-        setIsSubmitting(true);
+        setIsProcessing(true);
+        setPinError('');
+
         try {
-            await onSign(pin);
-        } catch (err: any) {
-            setPinError(err.message || 'Error al procesar la firma');
+            await onConfirm(pin);
+        } catch (err) {
+            setPinError(err instanceof Error ? err.message : 'Error al validar PIN');
         } finally {
-            setIsSubmitting(false);
+            setIsProcessing(false);
         }
     };
 
-    const handleDispute = () => {
-        if (onDispute && disputeMotivo.trim()) {
-            onDispute(disputeMotivo.trim());
-            setShowDispute(false);
-            setDisputeMotivo('');
-        }
-    };
-
-    const getTipoFirmaLabel = () => {
-        switch (signatureData.tipoFirma) {
-            case 'enrolamiento':
-                return 'Firma de Enrolamiento';
-            case 'documento':
-                return 'Firma de Documento';
-            case 'actividad':
-                return 'Firma de Actividad';
-            case 'capacitacion':
-                return 'Firma de Capacitación';
-            default:
-                return 'Firma Digital';
+    const handleClose = () => {
+        if (!isProcessing && !loading) {
+            setPinError('');
+            onClose();
         }
     };
 
     if (!isOpen) return null;
 
-    return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content signature-modal" onClick={(e) => e.stopPropagation()}>
-                <button className="modal-close" onClick={onClose} disabled={loading || isSubmitting}>
+    const modalContent = (
+        <div className="signature-modal-overlay" onClick={handleClose}>
+            <div className="signature-modal" onClick={(e) => e.stopPropagation()}>
+                {/* Close button */}
+                <button className="signature-modal-close" onClick={handleClose} disabled={isProcessing || loading}>
                     <FiX size={20} />
                 </button>
 
-                <div className="modal-header">
-                    <div className="modal-icon">
-                        <FiFileText size={28} />
+                {/* Header with gradient background */}
+                <div className="signature-modal-header">
+                    <div className="signature-modal-bg-gradient"></div>
+                    <div className="signature-modal-icon" style={{ background: config.color }}>
+                        {config.icon}
                     </div>
-                    <h2 className="modal-title">{getTipoFirmaLabel()}</h2>
-                    <p className="modal-subtitle">{signatureData.titulo}</p>
+                    <h2 className="signature-modal-title">
+                        {title || `Firmar ${config.label}`}
+                    </h2>
+                    {itemName && (
+                        <p className="signature-modal-item-name">{itemName}</p>
+                    )}
                 </div>
 
-                {signatureData.descripcion && (
-                    <div className="signature-description">
-                        {signatureData.descripcion}
+                {/* Description */}
+                {description && (
+                    <div className="signature-modal-description">
+                        <p>{description}</p>
                     </div>
                 )}
 
-                {/* Datos de la firma según DS 44 */}
-                <div className="signature-details">
-                    <div className="signature-detail-row">
-                        <FiUser size={16} />
-                        <span className="detail-label">Firmante:</span>
-                        <span className="detail-value">
-                            {workerData.nombre} {workerData.apellido || ''}
-                        </span>
-                    </div>
-                    <div className="signature-detail-row">
-                        <FiUser size={16} />
-                        <span className="detail-label">RUT:</span>
-                        <span className="detail-value">{workerData.rut}</span>
-                    </div>
-                    <div className="signature-detail-row">
-                        <FiCalendar size={16} />
-                        <span className="detail-label">Fecha:</span>
-                        <span className="detail-value">{fecha}</span>
-                    </div>
-                    <div className="signature-detail-row">
-                        <FiClock size={16} />
-                        <span className="detail-label">Hora:</span>
-                        <span className="detail-value">{hora}</span>
+                {/* Info box */}
+                <div className="signature-modal-info">
+                    <FiShield className="signature-modal-info-icon" />
+                    <div>
+                        <strong>Firma Digital</strong>
+                        <p>Tu PIN valida legalmente que has revisado y aceptas este {config.label.toLowerCase()}</p>
                     </div>
                 </div>
 
-                {/* Disclaimer legal */}
-                <div className="signature-disclaimer">
-                    Al ingresar su PIN, usted declara que ha leído y comprendido el contenido
-                    del documento y acepta firmarlo digitalmente. Esta firma tiene validez
-                    legal según la normativa vigente.
+                {/* PIN Input */}
+                <div className="signature-modal-pin-wrapper">
+                    <PinInput
+                        mode="verify"
+                        title="Ingresa tu PIN de 4 dígitos"
+                        subtitle="Este PIN fue creado durante tu enrolamiento"
+                        onComplete={handlePinComplete}
+                        error={error || pinError}
+                        disabled={isProcessing || loading}
+                    />
                 </div>
 
-                {!showDispute ? (
-                    <>
-                        <PinInput
-                            onComplete={handlePinComplete}
-                            mode="verify"
-                            error={pinError || error}
-                            disabled={loading || isSubmitting}
-                            title="Ingrese su PIN para firmar"
-                            subtitle="PIN de 4 dígitos"
-                        />
-
-                        {onDispute && (
-                            <button
-                                type="button"
-                                className="btn-link dispute-link"
-                                onClick={() => setShowDispute(true)}
-                                disabled={loading || isSubmitting}
-                            >
-                                <FiAlertTriangle size={14} />
-                                Reportar un problema con esta firma
-                            </button>
-                        )}
-                    </>
-                ) : (
-                    <div className="dispute-form">
-                        <h3 className="dispute-title">
-                            <FiAlertTriangle size={18} />
-                            Reportar problema
-                        </h3>
-                        <p className="dispute-info">
-                            Si hay algún problema con esta firma o los datos mostrados no son
-                            correctos, puede reportarlo para revisión por un administrador.
-                        </p>
-                        <textarea
-                            className="form-input"
-                            placeholder="Describa el motivo del reporte..."
-                            value={disputeMotivo}
-                            onChange={(e) => setDisputeMotivo(e.target.value)}
-                            rows={3}
-                        />
-                        <div className="dispute-actions">
-                            <button
-                                type="button"
-                                className="btn btn-secondary"
-                                onClick={() => setShowDispute(false)}
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                type="button"
-                                className="btn btn-warning"
-                                onClick={handleDispute}
-                                disabled={!disputeMotivo.trim()}
-                            >
-                                Enviar Reporte
-                            </button>
-                        </div>
+                {/* Processing indicator */}
+                {(isProcessing || loading) && (
+                    <div className="signature-modal-processing">
+                        <div className="spinner"></div>
+                        <span>Procesando firma...</span>
                     </div>
                 )}
 
                 <style>{`
-                    .modal-overlay {
+                    .signature-modal-overlay {
                         position: fixed;
-                        top: 0;
-                        left: 0;
-                        right: 0;
-                        bottom: 0;
-                        background: rgba(0, 0, 0, 0.6);
+                        inset: 0;
+                        background: rgba(0, 0, 0, 0.7);
                         backdrop-filter: blur(4px);
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        z-index: 1000;
+                        z-index: 999999;
                         padding: var(--space-4);
                     }
 
-                    .modal-content {
-                        background: var(--surface-base);
-                        border-radius: var(--radius-xl);
-                        width: 100%;
-                        max-width: 480px;
-                        max-height: 90vh;
-                        overflow-y: auto;
+                    .signature-modal {
                         position: relative;
-                        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                        animation: modalSlideIn 0.3s ease;
+                        width: 100%;
+                        max-width: 420px;
+                        background: #1a1a2e;
+                        border-radius: var(--radius-xl);
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+                        overflow: hidden;
+                        animation: signatureModalSlideIn 0.3s ease;
                     }
 
-                    @keyframes modalSlideIn {
+                    @keyframes signatureModalSlideIn {
                         from {
                             opacity: 0;
-                            transform: translateY(-20px) scale(0.95);
+                            transform: scale(0.95) translateY(-20px);
                         }
                         to {
                             opacity: 1;
-                            transform: translateY(0) scale(1);
+                            transform: scale(1) translateY(0);
                         }
                     }
 
-                    .modal-close {
+                    .signature-modal-close {
                         position: absolute;
-                        top: var(--space-4);
-                        right: var(--space-4);
-                        background: var(--surface-elevated);
-                        border: 1px solid var(--surface-border);
-                        border-radius: var(--radius-full);
+                        top: var(--space-3);
+                        right: var(--space-3);
+                        background: rgba(255, 255, 255, 0.1);
+                        border: none;
+                        color: white;
                         width: 36px;
                         height: 36px;
+                        border-radius: var(--radius-full);
+                        cursor: pointer;
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        cursor: pointer;
-                        color: var(--text-muted);
-                        transition: all 0.2s ease;
+                        transition: all 0.2s;
+                        z-index: 10;
                     }
 
-                    .modal-close:hover {
-                        background: var(--surface-hover);
-                        color: var(--text-primary);
+                    .signature-modal-close:hover {
+                        background: rgba(255, 255, 255, 0.2);
                     }
 
-                    .modal-header {
+                    .signature-modal-close:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                    }
+
+                    .signature-modal-header {
+                        position: relative;
+                        padding: var(--space-8) var(--space-6) var(--space-6);
                         text-align: center;
-                        padding: var(--space-8) var(--space-6) var(--space-4);
+                        background: linear-gradient(135deg, var(--primary-600), var(--primary-700));
+                        overflow: hidden;
                     }
 
-                    .modal-icon {
+                    .signature-modal-bg-gradient {
+                        position: absolute;
+                        inset: 0;
+                        background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.1) 0%, transparent 50%),
+                                    radial-gradient(circle at 70% 80%, rgba(255,255,255,0.05) 0%, transparent 50%);
+                    }
+
+                    .signature-modal-icon {
+                        position: relative;
                         width: 64px;
                         height: 64px;
-                        background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
-                        border-radius: var(--radius-xl);
+                        border-radius: var(--radius-full);
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        margin: 0 auto var(--space-4);
                         color: white;
-                        box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+                        margin: 0 auto var(--space-4);
+                        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
                     }
 
-                    .modal-title {
+                    .signature-modal-title {
+                        position: relative;
+                        color: white;
                         font-size: var(--text-xl);
                         font-weight: 600;
-                        color: var(--text-primary);
                         margin: 0 0 var(--space-2);
                     }
 
-                    .modal-subtitle {
-                        font-size: var(--text-base);
-                        color: var(--text-muted);
+                    .signature-modal-item-name {
+                        position: relative;
+                        color: rgba(255, 255, 255, 0.85);
+                        font-size: var(--text-sm);
                         margin: 0;
+                        max-width: 300px;
+                        margin: 0 auto;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
                     }
 
-                    .signature-description {
-                        background: var(--surface-elevated);
-                        padding: var(--space-4);
-                        margin: 0 var(--space-6) var(--space-4);
-                        border-radius: var(--radius-md);
-                        font-size: var(--text-sm);
+                    .signature-modal-description {
+                        padding: var(--space-4) var(--space-6);
+                        background: #16162a;
+                        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+
+                    .signature-modal-description p {
+                        margin: 0;
                         color: var(--text-secondary);
-                        border-left: 3px solid var(--primary-500);
-                    }
-
-                    .signature-details {
-                        background: var(--surface-elevated);
-                        margin: 0 var(--space-6) var(--space-4);
-                        border-radius: var(--radius-md);
-                        padding: var(--space-4);
-                        display: flex;
-                        flex-direction: column;
-                        gap: var(--space-3);
-                    }
-
-                    .signature-detail-row {
-                        display: flex;
-                        align-items: center;
-                        gap: var(--space-3);
                         font-size: var(--text-sm);
+                        text-align: center;
                     }
 
-                    .signature-detail-row svg {
+                    .signature-modal-info {
+                        display: flex;
+                        align-items: flex-start;
+                        gap: var(--space-3);
+                        padding: var(--space-4) var(--space-6);
+                        background: #16162a;
+                        margin: var(--space-4) var(--space-6) 0;
+                        border-radius: var(--radius-lg);
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+
+                    .signature-modal-info-icon {
                         color: var(--primary-500);
                         flex-shrink: 0;
+                        margin-top: 2px;
                     }
 
-                    .detail-label {
-                        color: var(--text-muted);
-                        min-width: 80px;
-                    }
-
-                    .detail-value {
+                    .signature-modal-info strong {
                         color: var(--text-primary);
-                        font-weight: 500;
+                        font-size: var(--text-sm);
+                        display: block;
+                        margin-bottom: 2px;
                     }
 
-                    .signature-disclaimer {
-                        margin: 0 var(--space-6) var(--space-4);
-                        padding: var(--space-3);
-                        background: rgba(245, 158, 11, 0.1);
-                        border: 1px solid rgba(245, 158, 11, 0.3);
-                        border-radius: var(--radius-md);
+                    .signature-modal-info p {
+                        margin: 0;
+                        color: var(--text-muted);
                         font-size: var(--text-xs);
-                        color: var(--warning-600);
-                        line-height: 1.5;
                     }
 
-                    .signature-modal .pin-input-container {
-                        margin: 0 var(--space-6);
-                        border: none;
+                    .signature-modal-pin-wrapper {
+                        padding: var(--space-6);
+                    }
+
+                    .signature-modal-pin-wrapper .pin-input-container {
                         background: transparent;
-                        padding: var(--space-4) 0;
+                        border: none;
+                        padding: 0;
                     }
 
-                    .dispute-link {
+                    .signature-modal-pin-wrapper .pin-digit {
+                        background: #0f0f1a;
+                        border-color: rgba(255, 255, 255, 0.2);
+                    }
+
+                    .signature-modal-pin-wrapper .pin-digit:focus {
+                        border-color: var(--primary-500);
+                    }
+
+                    .signature-modal-pin-wrapper .pin-digit.filled {
+                        background: #16162a;
+                        border-color: var(--primary-400);
+                    }
+
+                    .signature-modal-processing {
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        gap: var(--space-2);
-                        color: var(--text-muted);
-                        font-size: var(--text-sm);
-                        padding: var(--space-4) var(--space-6) var(--space-6);
-                        background: none;
-                        border: none;
-                        cursor: pointer;
-                        transition: color 0.2s ease;
-                    }
-
-                    .dispute-link:hover {
-                        color: var(--warning-500);
-                    }
-
-                    .dispute-form {
-                        padding: var(--space-4) var(--space-6) var(--space-6);
-                    }
-
-                    .dispute-title {
-                        display: flex;
-                        align-items: center;
-                        gap: var(--space-2);
-                        color: var(--warning-500);
-                        font-size: var(--text-lg);
-                        margin: 0 0 var(--space-3);
-                    }
-
-                    .dispute-info {
-                        font-size: var(--text-sm);
-                        color: var(--text-muted);
-                        margin: 0 0 var(--space-4);
-                    }
-
-                    .dispute-form textarea {
-                        width: 100%;
-                        resize: none;
-                    }
-
-                    .dispute-actions {
-                        display: flex;
                         gap: var(--space-3);
-                        margin-top: var(--space-4);
+                        padding: var(--space-4) var(--space-6) var(--space-6);
+                        color: var(--text-muted);
+                        font-size: var(--text-sm);
                     }
 
-                    .dispute-actions .btn {
-                        flex: 1;
-                    }
-
-                    .btn-warning {
-                        background: var(--warning-500);
-                        color: white;
-                    }
-
-                    .btn-warning:hover {
-                        background: var(--warning-600);
+                    .signature-modal-processing .spinner {
+                        width: 20px;
+                        height: 20px;
                     }
                 `}</style>
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 }

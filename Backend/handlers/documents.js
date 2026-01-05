@@ -7,6 +7,8 @@ const { validateRequired, generateSignatureToken } = require('../lib/validation'
 const { CumplimientoService } = require('../lib/services/CumplimientoService');
 const { CumplimientoAdapter } = require('../lib/adapters/CumplimientoAdapter');
 const { Cumplimiento } = require('../lib/models/Cumplimiento');
+// NEW: Import EventBus for automatic notifications
+const { eventBus } = require('../lib/events/EventBus');
 
 const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
 const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
@@ -71,6 +73,22 @@ module.exports.create = async (event) => {
                 Item: document,
             })
         );
+
+        // NEW: Emit event for automatic notifications if document has workers assigned
+        try {
+            if (body.assignedTo && Array.isArray(body.assignedTo) && body.assignedTo.length > 0) {
+                await eventBus.emit('document.assigned', {
+                    documentId: document.documentId,
+                    workerIds: body.assignedTo,
+                    assignedBy: body.createdBy || 'system',
+                    documentName: document.titulo,
+                    dueDate: body.dueDate || null
+                });
+            }
+        } catch (eventError) {
+            console.error('Error emitting document.assigned event:', eventError);
+            // Continue even if notification fails
+        }
 
         return created(document);
     } catch (err) {

@@ -217,7 +217,7 @@ export default function UserManagement() {
                                         <span className="font-bold">{creadoResult.user.rut}</span>
                                     </div>
                                     <div className="text-right">
-                                        <span className="text-[10px] uppercase text-text-muted block mb-1">Pass Temporal</span>
+                                        <span className="text-[10px] uppercase text-text-muted block mb-1">Pass Temporal </span>
                                         <strong className="text-xl text-primary-500">{creadoResult.password}</strong>
                                     </div>
                                 </div>
@@ -360,12 +360,14 @@ export default function UserManagement() {
             {showCreateModal && (
                 <div className="modal-overlay">
                     <div className="modal-content max-w-lg">
-                        <div className="modal-header">
-                            <div className="modal-header-icon">
-                                <FiUserPlus size={24} />
+                        <div className="modal-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                                <div className="modal-header-icon" style={{ background: 'var(--primary-500)', marginBottom: 0 }}>
+                                    <FiUserPlus size={24} />
+                                </div>
+                                <h2 className="modal-title" style={{ marginBottom: 0 }}>Nuevo Usuario</h2>
                             </div>
-                            <h2 className="modal-title">Nuevo Usuario</h2>
-                            <p className="modal-subtitle">Complete los datos para crear un nuevo usuario en el sistema</p>
+                            <p className="modal-subtitle" style={{ marginTop: 0 }}>Complete los datos para crear un nuevo usuario en el sistema</p>
                         </div>
 
                         <form onSubmit={handleCreateUser} className="modal-body">

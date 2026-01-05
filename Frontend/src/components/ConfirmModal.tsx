@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { FiAlertTriangle } from 'react-icons/fi';
 
 interface ConfirmModalProps {
@@ -21,6 +23,18 @@ export default function ConfirmModal({
     onCancel,
     variant = 'primary'
 }: ConfirmModalProps) {
+    // Lock body scroll when modal is open
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [isOpen]);
+
     if (!isOpen) return null;
 
     const getVariantClass = () => {
@@ -39,9 +53,9 @@ export default function ConfirmModal({
         }
     };
 
-    return (
-        <div className="modal-overlay" onClick={onCancel}>
-            <div className="modal-content confirm-modal" onClick={(e) => e.stopPropagation()}>
+    const modalContent = (
+        <div className="confirm-modal-overlay" onClick={onCancel}>
+            <div className="confirm-modal-container" onClick={(e) => e.stopPropagation()}>
                 <div className="confirm-modal-body">
                     <div className={`confirm-modal-icon ${getIconColor()}`}>
                         <FiAlertTriangle size={32} />
@@ -59,9 +73,30 @@ export default function ConfirmModal({
                 </div>
 
                 <style>{`
-                    .confirm-modal {
+                    .confirm-modal-overlay {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        background: rgba(0, 0, 0, 0.7);
+                        backdrop-filter: blur(4px);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        z-index: 9999999;
+                        padding: var(--space-4);
+                    }
+                    .confirm-modal-container {
+                        background: var(--surface-card);
+                        border: 1px solid var(--surface-border);
+                        border-radius: var(--radius-xl);
                         max-width: 400px;
+                        width: 100%;
                         padding: var(--space-8) var(--space-6) var(--space-6);
+                        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                        position: relative;
+                        z-index: 10000000;
                     }
                     .confirm-modal-body {
                         text-align: center;
@@ -75,6 +110,7 @@ export default function ConfirmModal({
                         font-size: var(--text-2xl);
                         font-weight: 700;
                         margin-bottom: var(--space-2);
+                        color: var(--text-primary);
                     }
                     .confirm-modal-message {
                         color: var(--text-secondary);
@@ -92,4 +128,8 @@ export default function ConfirmModal({
             </div>
         </div>
     );
+
+    // Use Portal to render modal at document.body level
+    // This escapes the stacking context of the Header
+    return createPortal(modalContent, document.body);
 }

@@ -16,8 +16,7 @@ import {
     FiBell,
     FiX,
     FiMoon,
-    FiSun,
-    FiWifiOff
+    FiSun
 } from 'react-icons/fi';
 import { surveysApi, workersApi, inboxApi, type InboxMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -40,41 +39,102 @@ interface NavSection {
     items: NavItem[];
 }
 
-const navItems: NavSection[] = [
-    {
-        section: 'Principal',
-        items: [
-            { path: '/', icon: FiHome, label: 'Dashboard' },
-            { path: '/inbox', icon: FiMail, label: 'Bandeja de Entrada' },
-            { path: '/workers', icon: FiUsers, label: 'Trabajadores', permission: 'ver_trabajadores' },
-        ]
-    },
-    {
-        section: 'Cumplimiento',
-        items: [
-            { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma', permission: 'crear_actividades' },
-            { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
-            { path: '/offline-signatures', icon: FiWifiOff, label: 'Firmas Offline', permission: 'crear_actividades' },
-        ]
-    },
-    {
-        section: 'Gestión Técnica',
-        items: [
-            { path: '/documents', icon: FiFileText, label: 'Documentos Normativos' },
-            { path: '/activities', icon: FiCalendar, label: 'Actividades y Capacitación' },
-            { path: '/surveys', icon: FiClipboard, label: 'Auditorías y Encuestas' },
-            { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
-        ]
-    },
-    {
-        section: 'Herramientas',
-        items: [
-            { path: '/users', icon: FiUser, label: 'Usuarios', permission: 'crear_usuarios' },
-            { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
-            { path: '/settings', icon: FiSettings, label: 'Configuración' },
-        ]
+// Role-based navigation configuration
+const getNavItemsByRole = (role: string): NavSection[] => {
+    switch (role) {
+        case 'trabajador':
+            return [
+                {
+                    section: 'Mi Panel',
+                    items: [
+                        { path: '/', icon: FiHome, label: 'Dashboard' },
+                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
+                    ]
+                },
+                {
+                    section: 'Mis Asignaciones',
+                    items: [
+                        { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
+                        { path: '/activities', icon: FiCalendar, label: 'Capacitaciones' },
+                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
+                    ]
+                },
+                {
+                    section: 'Acciones',
+                    items: [
+                        { path: '/incidents', icon: FiAlertTriangle, label: 'Reportar Incidente' },
+                        { path: '/settings', icon: FiSettings, label: 'Configuración' },
+                    ]
+                }
+            ];
+
+        case 'prevencionista':
+            return [
+                {
+                    section: 'Panel',
+                    items: [
+                        { path: '/', icon: FiHome, label: 'Dashboard' },
+                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                    ]
+                },
+                {
+                    section: 'Cumplimiento',
+                    items: [
+                        { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma' },
+                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
+                        { path: '/surveys', icon: FiClipboard, label: 'Auditorías y Encuestas' },
+                    ]
+                },
+                {
+                    section: 'Gestión',
+                    items: [
+                        { path: '/workers', icon: FiUsers, label: 'Trabajadores' },
+                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
+                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
+                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
+                    ]
+                }
+            ];
+
+        case 'admin':
+            return [
+                {
+                    section: 'Panel',
+                    items: [
+                        { path: '/', icon: FiHome, label: 'Dashboard' },
+                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                    ]
+                },
+                {
+                    section: 'Administración',
+                    items: [
+                        { path: '/users', icon: FiUser, label: 'Usuarios' },
+                        { path: '/workers', icon: FiUsers, label: 'Trabajadores' },
+                    ]
+                },
+                {
+                    section: 'Sistema',
+                    items: [
+                        { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
+                        { path: '/settings', icon: FiSettings, label: 'Configuración' },
+                    ]
+                }
+            ];
+
+        default:
+            // Fallback para roles desconocidos
+            return [
+                {
+                    section: 'Principal',
+                    items: [
+                        { path: '/', icon: FiHome, label: 'Dashboard' },
+                        { path: '/settings', icon: FiSettings, label: 'Configuración' },
+                    ]
+                }
+            ];
     }
-];
+};
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) {
     const location = useLocation();
@@ -207,9 +267,16 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
         loadPendingSurveys();
         const intervalId = window.setInterval(loadPendingSurveys, 60000);
 
+        // Listen for survey response events to refresh immediately
+        const handleSurveyResponded = () => {
+            loadPendingSurveys();
+        };
+        window.addEventListener('surveyResponded', handleSurveyResponded);
+
         return () => {
             cancelled = true;
             window.clearInterval(intervalId);
+            window.removeEventListener('surveyResponded', handleSurveyResponded);
         };
     }, [workerId, canRespondSurveys]);
 
@@ -263,9 +330,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 </div>
 
                 <nav className="sidebar-nav">
-                    {navItems.map((section) => {
-                        // Filtrar items según permisos
-                        const visibleItems = section.items.filter(item =>
+                    {getNavItemsByRole(user?.rol || '').map((section: NavSection) => {
+                        // Permissions are already filtered by role, but keep this for double-checking
+                        const visibleItems = section.items.filter((item: NavItem) =>
                             !item.permission || hasPermission(item.permission)
                         );
 
@@ -274,7 +341,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                         return (
                             <div key={section.section} className="nav-section">
                                 <div className="nav-section-title">{section.section}</div>
-                                {visibleItems.map((item) => {
+                                {visibleItems.map((item: NavItem) => {
                                     const Icon = item.icon;
                                     const isActive = location.pathname === item.path;
                                     const showSurveyBadge = item.path === '/surveys' && canRespondSurveys && pendingSurveyCount > 0;

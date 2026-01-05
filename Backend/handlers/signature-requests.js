@@ -3,6 +3,8 @@ const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = req
 const { docClient } = require('../lib/dynamodb');
 const { success, error, created } = require('../lib/response');
 const { validateRequired } = require('../lib/validation');
+// NEW: Import EventBus for automatic notifications
+const { eventBus } = require('../lib/events/EventBus');
 
 const TABLE_NAME = process.env.SIGNATURE_REQUESTS_TABLE || 'SignatureRequests';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
@@ -147,6 +149,24 @@ module.exports.create = async (event) => {
                 Item: signatureRequest,
             })
         );
+
+        // NEW: Emit event for automatic notifications
+        try {
+            const workerIds = trabajadoresInfo.map(t => t.workerId);
+            const isUrgent = body.fechaLimite &&
+                new Date(body.fechaLimite) <= new Date(Date.now() + 48 * 60 * 60 * 1000); // <48hrs
+
+            await eventBus.emit('signature.requested', {
+                requestId: signatureRequest.requestId,
+                workerIds,
+                requestedBy: body.solicitanteId,
+                documentName: signatureRequest.titulo,
+                priority: isUrgent ? 'urgent' : 'normal'
+            });
+        } catch (eventError) {
+            console.error('Error emitting signature.requested event:', eventError);
+            // Continue even if notification fails
+        }
 
         return created(signatureRequest);
     } catch (err) {
@@ -635,7 +655,7 @@ module.exports.processOfflineBatch = async (event) => {
             let worker = null;
             if (workerSearch.Items && workerSearch.Items.length > 0) {
                 // Buscar coincidencia exacta normalizando ambos
-                worker = workerSearch.Items.find(w => 
+                worker = workerSearch.Items.find(w =>
                     normalizeRut(w.rut) === rutNormalizado
                 );
                 console.log(`[Offline Sync] Workers encontrados: ${workerSearch.Items.length}, Match: ${worker ? 'SI' : 'NO'}`);
@@ -651,11 +671,11 @@ module.exports.processOfflineBatch = async (event) => {
                 );
 
                 if (userSearch.Items && userSearch.Items.length > 0) {
-                    const user = userSearch.Items.find(u => 
+                    const user = userSearch.Items.find(u =>
                         normalizeRut(u.rut) === rutNormalizado
                     );
                     console.log(`[Offline Sync] Users encontrados: ${userSearch.Items.length}, Match: ${user ? 'SI' : 'NO'}`);
-                    
+
                     if (user && user.workerId) {
                         // Obtener el worker asociado
                         const workerResult = await docClient.send(
@@ -723,10 +743,10 @@ module.exports.processOfflineBatch = async (event) => {
 
             // Importar función de verificación de PIN
             const { verifyPin, generateSignatureToken } = require('../lib/validation');
-            
+
             const pinValido = verifyPin(pin, worker.pinHash, worker.workerId);
             console.log(`[Offline Sync] Verificación PIN: ${pinValido ? 'VALIDO' : 'INVALIDO'}`);
-            
+
             if (!pinValido) {
                 resultadosFirmas.push({
                     rut,

@@ -6,6 +6,10 @@ const { validateRequired } = require('../lib/validation');
 const { ensureDefaultHealthSurvey } = require('../lib/healthSurvey');
 // NEW: Import PersonaService for unified worker access
 const { PersonaService } = require('../lib/services/PersonaService');
+// NEW: Import EventBus for automatic notifications
+const { eventBus } = require('../lib/events/EventBus');
+// NEW: Import FirmaService for digital signature validation
+const { FirmaService } = require('../lib/services/FirmaService');
 
 const TABLE_NAME = process.env.SURVEYS_TABLE || 'Surveys';
 const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
@@ -182,6 +186,7 @@ module.exports.create = async (event) => {
             descripcion: body.descripcion || '',
             empresaId: body.empresaId || 'default',
             estado: body.estado || 'activa',
+            createdBy: body.createdBy || null, // Track which user created this survey
             audience: {
                 tipo: audienceType,
                 cargo: body.cargoDestino || null,
@@ -198,6 +203,21 @@ module.exports.create = async (event) => {
             TableName: TABLE_NAME,
             Item: survey,
         }));
+
+        // NEW: Emit event for automatic notifications
+        try {
+            const workerIds = recipients.map(r => r.workerId);
+            await eventBus.emit('survey.assigned', {
+                surveyId: survey.surveyId,
+                workerIds,
+                assignedBy: body.createdBy || 'system',
+                surveyName: survey.titulo,
+                dueDate: body.dueDate || null
+            });
+        } catch (eventError) {
+            console.error('Error emitting survey.assigned event:', eventError);
+            // Continue even if notification fails
+        }
 
         return created(survey);
     } catch (err) {
@@ -265,6 +285,7 @@ module.exports.get = async (event) => {
 
 /**
  * POST /surveys/{id}/responses/{workerId} - Actualizar estado/respuestas de un trabajador
+ * AHORA REQUIERE FIRMA DIGITAL (PIN) para cumplimiento según DS 44
  */
 module.exports.updateResponseStatus = async (event) => {
     try {
@@ -277,6 +298,12 @@ module.exports.updateResponseStatus = async (event) => {
         const status = body.estado || 'respondida';
         if (!['pendiente', 'respondida'].includes(status)) {
             return error('Estado inválido');
+        }
+
+        // NUEVO: Requerir PIN para marcar como respondida
+        const pin = body.pin;
+        if (status === 'respondida' && !pin) {
+            return error('Se requiere PIN para firmar la respuesta de la encuesta');
         }
 
         const surveyResult = await docClient.send(new GetCommand({
@@ -297,11 +324,54 @@ module.exports.updateResponseStatus = async (event) => {
         }
 
         const now = new Date().toISOString();
+        let signatureData = null;
+
+        // NUEVO: Validar PIN y crear firma digital
+        if (status === 'respondida') {
+            try {
+                // Obtener contexto de la request
+                const contexto = {
+                    ipAddress: event.requestContext?.http?.sourceIp ||
+                        event.requestContext?.identity?.sourceIp || 'unknown',
+                    userAgent: event.headers?.['user-agent'] || 'unknown'
+                };
+
+                // Crear firma digital usando FirmaService
+                signatureData = await FirmaService.crear({
+                    workerId,
+                    metodo: 'PIN',
+                    credencial: pin,
+                    tipoFirma: 'encuesta',
+                    referenciaId: id,
+                    referenciaTipo: 'survey',
+                    contexto,
+                    metadata: {
+                        surveyTitulo: survey.titulo,
+                        totalPreguntas: survey.preguntas?.length || 0,
+                        totalRespuestas: body.responses?.length || 0
+                    }
+                });
+
+                console.log(`✅ Firma digital creada para encuesta ${id}, trabajador ${workerId}`);
+            } catch (firmaError) {
+                console.error('Error validando firma:', firmaError);
+                return error(firmaError.message || 'Error al validar PIN', 401);
+            }
+        }
+
         const recipient = {
             ...recipients[index],
             estado: status,
             respondedAt: status === 'respondida' ? now : null,
             responses: Array.isArray(body.responses) ? body.responses : recipients[index].responses || [],
+            // NUEVO: Incluir datos de la firma digital
+            firma: signatureData ? {
+                signatureId: signatureData.signatureId,
+                token: signatureData.token,
+                fecha: signatureData.fecha,
+                timestamp: signatureData.timestamp,
+                metodo: 'PIN'
+            } : null
         };
 
         recipients[index] = recipient;
@@ -328,12 +398,17 @@ module.exports.updateResponseStatus = async (event) => {
         }));
 
         return success({
-            message: 'Estado actualizado',
+            message: 'Encuesta respondida y firmada exitosamente',
             recipient,
             survey: updatedSurvey,
+            firma: signatureData ? {
+                signatureId: signatureData.signatureId,
+                token: signatureData.token,
+                verificacionUrl: `/signatures/verify/${signatureData.token}`
+            } : null
         });
     } catch (err) {
         console.error('Error updating survey response:', err);
         return error(err.message || 'Error interno al actualizar respuesta', 500);
-    }
-};
+    };
+}

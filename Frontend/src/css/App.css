@@ -1500,10 +1500,15 @@
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  /* Changed from center to move down */
   justify-content: center;
-  z-index: 1000;
+  z-index: 999998;
+  /* Extremely high to be on top of everything */
   padding: var(--space-4);
+  overflow-y: auto;
+  padding-top: 100px;
+  /* Move modal down vertically */
 }
 
 .modal {
@@ -1517,6 +1522,9 @@
   flex-direction: column;
   overflow: hidden;
   box-shadow: var(--shadow-xl);
+  position: relative;
+  z-index: 999999;
+  /* Even higher than overlay */
 }
 
 .modal-header {

@@ -7,6 +7,8 @@ const { validateRequired, generateSignatureToken } = require('../lib/validation'
 const { CumplimientoService } = require('../lib/services/CumplimientoService');
 const { CumplimientoAdapter } = require('../lib/adapters/CumplimientoAdapter');
 const { Cumplimiento } = require('../lib/models/Cumplimiento');
+// NEW: Import EventBus for automatic notifications
+const { eventBus } = require('../lib/events/EventBus');
 
 const TABLE_NAME = process.env.ACTIVITIES_TABLE || 'Activities';
 const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
@@ -70,6 +72,23 @@ module.exports.create = async (event) => {
                 Item: activity,
             })
         );
+
+        // NEW: Emit event for automatic notifications
+        try {
+            if (body.attendees && body.attendees.length > 0) {
+                await eventBus.emit('activity.created', {
+                    activityId: activity.activityId,
+                    attendeeIds: body.attendees,
+                    createdBy: body.relatorId,
+                    activityName: activity.titulo,
+                    fecha: activity.fecha,
+                    tipo: activity.tipo
+                });
+            }
+        } catch (eventError) {
+            console.error('Error emitting activity.created event:', eventError);
+            // Continue even if notification fails
+        }
 
         return created(activity);
     } catch (err) {

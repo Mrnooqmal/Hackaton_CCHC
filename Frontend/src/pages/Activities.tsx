@@ -13,6 +13,7 @@ import {
     FiFileText
 } from 'react-icons/fi';
 import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';
+import SignatureModal from '../components/SignatureModal';
 
 const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
     CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: <FiMessageSquare /> },
@@ -30,6 +31,10 @@ export default function Activities() {
     const [showAttendanceModal, setShowAttendanceModal] = useState(false);
     const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
     const [selectedWorkers, setSelectedWorkers] = useState<string[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filterType, setFilterType] = useState('');
+    const [showSignatureModal, setShowSignatureModal] = useState(false);
+    const [signatureError, setSignatureError] = useState('');
 
     const [newActivity, setNewActivity] = useState({
         tipo: 'CHARLA_5MIN',
@@ -77,23 +82,29 @@ export default function Activities() {
         }
     };
 
-    const handleRegisterAttendance = async () => {
+    const handleRegisterAttendance = async (pin: string) => {
         if (!selectedActivity || selectedWorkers.length === 0) return;
+        setSignatureError('');
 
         try {
             const response = await activitiesApi.registerAttendance(selectedActivity.activityId, {
                 workerIds: selectedWorkers,
-                incluirFirmaRelator: true
+                incluirFirmaRelator: true,
+                pin: pin, // Include PIN for digital signature
             });
 
             if (response.success) {
+                setShowSignatureModal(false);
                 loadData();
                 setShowAttendanceModal(false);
                 setSelectedActivity(null);
                 setSelectedWorkers([]);
+            } else {
+                setSignatureError(response.error || 'Error al registrar asistencia');
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error registering attendance:', error);
+            setSignatureError(error.message || 'Error al registrar asistencia');
         }
     };
 
@@ -130,6 +141,15 @@ export default function Activities() {
         a.fecha === new Date().toISOString().split('T')[0]
     );
 
+    // Filter activities based on search and type
+    const filteredActivities = activities.filter(a => {
+        const matchesSearch = searchTerm.trim() === '' ||
+            a.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (a.descripcion && a.descripcion.toLowerCase().includes(searchTerm.toLowerCase()));
+        const matchesType = filterType === '' || a.tipo === filterType;
+        return matchesSearch && matchesType;
+    });
+
     return (
         <>
             <Header title="Actividades" />
@@ -145,6 +165,32 @@ export default function Activities() {
                             Gestión de charlas de 5 minutos, inducciones, ART y capacitación técnica.
                         </p>
                     </div>
+                </div>
+
+                {/* Search Bar */}
+                <div className="flex gap-3 mb-6" style={{ flexWrap: 'wrap' }}>
+                    <div className="flex items-center gap-2" style={{ flex: 1, minWidth: '200px', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-lg)', padding: '10px 16px' }}>
+                        <FiSearch style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        <input
+                            type="text"
+                            placeholder="Buscar actividades..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="form-control"
+                            style={{ border: 'none', background: 'transparent', padding: 0, boxShadow: 'none', color: 'var(--text-primary)' }}
+                        />
+                    </div>
+                    <select
+                        value={filterType}
+                        onChange={(e) => setFilterType(e.target.value)}
+                        className="form-control"
+                        style={{ width: 'auto', minWidth: '150px' }}
+                    >
+                        <option value="">Todos los tipos</option>
+                        {Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => (
+                            <option key={key} value={key}>{label}</option>
+                        ))}
+                    </select>
                 </div>
 
                 {/* Quick Actions */}
@@ -295,7 +341,7 @@ export default function Activities() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {activities.slice(0, 10).map((activity) => {
+                                {filteredActivities.slice(0, 10).map((activity) => {
                                     const typeInfo = ACTIVITY_TYPES[activity.tipo] || {
                                         label: activity.tipo,
                                         color: 'var(--gray-500)'
@@ -536,15 +582,27 @@ export default function Activities() {
                                 <button
                                     className="btn btn-primary"
                                     disabled={selectedWorkers.length === 0}
-                                    onClick={handleRegisterAttendance}
+                                    onClick={() => setShowSignatureModal(true)}
                                 >
                                     <FiCheck />
-                                    Registrar {selectedWorkers.length} Asistencia(s)
+                                    Firmar y Registrar {selectedWorkers.length} Asistencia(s)
                                 </button>
                             </div>
                         </div>
                     </div>
                 )}
+
+                {/* Signature Modal for Attendance Registration */}
+                <SignatureModal
+                    isOpen={showSignatureModal}
+                    onClose={() => setShowSignatureModal(false)}
+                    onConfirm={handleRegisterAttendance}
+                    type="activity"
+                    title="Firmar Asistencia"
+                    itemName={selectedActivity?.titulo}
+                    description={`Registrarás la asistencia de ${selectedWorkers.length} trabajador(es) a esta actividad.`}
+                    error={signatureError}
+                />
             </div>
         </>
     );
