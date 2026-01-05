@@ -760,6 +760,7 @@ export interface Incident {
     estado: 'reportado' | 'en_investigacion' | 'cerrado';
     reportadoPor: string;
     empresaId: string;
+    viewedBy?: string[];
     createdAt: string;
     updatedAt: string;
     evidencePreviews?: IncidentEvidencePreview[];
@@ -989,6 +990,12 @@ export const incidentsApi = {
         apiRequest<QRReportResponse>('/incidents/quick-report', {
             method: 'POST',
             body: JSON.stringify(data),
+        }),
+
+    markAsViewed: (id: string, userId: string) =>
+        apiRequest<{ success: true }>(`/incidents/${id}/viewed`, {
+            method: 'POST',
+            body: JSON.stringify({ userId }),
         }),
 };
 
@@ -1487,6 +1494,19 @@ export interface IncidentAnalysisResult {
     _fallback?: boolean;
 }
 
+export interface ExtractedIncident {
+    tipo: 'incidente' | 'accidente' | 'condicion_subestandar';
+    centroTrabajo: string;
+    trabajador: {
+        nombre: string;
+        rut: string;
+    };
+    descripcion: string;
+    gravedad: 'leve' | 'grave' | 'fatal';
+    medidasInmediatas: string[];
+    _source?: string;
+}
+
 export interface DailyTalkResult {
     titulo: string;
     duracion: string;
@@ -1547,5 +1567,11 @@ export const aiApi = {
         apiRequest<IncidentAnalysisResult>('/ai/analyze-incident', {
             method: 'POST',
             body: JSON.stringify({ descripcion, ...contexto }),
+        }),
+
+    extractIncident: (texto: string) =>
+        apiRequest<ExtractedIncident>('/ai/extract-incident', {
+            method: 'POST',
+            body: JSON.stringify({ texto }),
         }),
 };

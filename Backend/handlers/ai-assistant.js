@@ -10,12 +10,12 @@ function normalizeRiskMatrixResponse(result, actividad) {
         console.warn('[AI] Bedrock returned rawText instead of parsed JSON');
         throw new Error('Invalid JSON response from Bedrock');
     }
-    
+
     // Si ya tiene la estructura correcta, retornar tal cual
     if (result.riesgos && result.riesgos[0]?.medidasExistentes) {
         return result;
     }
-    
+
     // Normalizar la respuesta de Bedrock al formato del frontend
     const normalized = {
         titulo: result.titulo || `Matriz de Riesgos - ${actividad}`,
@@ -23,7 +23,7 @@ function normalizeRiskMatrixResponse(result, actividad) {
         riesgos: [],
         recomendaciones: result.recomendaciones || result.recomendacionesPrioritarias || []
     };
-    
+
     // Normalizar cada riesgo
     if (result.riesgos && Array.isArray(result.riesgos)) {
         normalized.riesgos = result.riesgos.map((r, idx) => ({
@@ -39,12 +39,12 @@ function normalizeRiskMatrixResponse(result, actividad) {
             plazo: r.plazo || r.plazoImplementacion || '7 días'
         }));
     }
-    
+
     // Validar que hay riesgos, si no, lanzar error para fallback
     if (normalized.riesgos.length === 0) {
         throw new Error('No risks found in Bedrock response');
     }
-    
+
     return normalized;
 }
 
@@ -57,12 +57,12 @@ function normalizeMIPERResponse(result, cargo) {
         console.warn('[AI] Bedrock returned rawText instead of parsed JSON');
         throw new Error('Invalid JSON response from Bedrock');
     }
-    
+
     // Si ya tiene la estructura correcta, retornar tal cual
     if (result.peligros && result.peligros[0]?.medidasControl && Array.isArray(result.peligros[0].medidasControl)) {
         return result;
     }
-    
+
     const normalized = {
         cargo: result.cargo || cargo,
         fecha: result.fecha || new Date().toISOString().split('T')[0],
@@ -71,14 +71,14 @@ function normalizeMIPERResponse(result, cargo) {
         resumen: result.resumen || { totalPeligros: 0, criticos: 0, altos: 0, medios: 0, bajos: 0 },
         recomendacionesPrioritarias: result.recomendacionesPrioritarias || result.planAccion?.map(a => a.accion) || []
     };
-    
+
     // Normalizar cada peligro
     if (result.peligros && Array.isArray(result.peligros)) {
         normalized.peligros = result.peligros.map((p, idx) => {
             // Extraer medidas de control si vienen como objeto
             let medidasControl = [];
             let epp = [];
-            
+
             if (p.medidasControl) {
                 if (Array.isArray(p.medidasControl)) {
                     medidasControl = p.medidasControl;
@@ -99,7 +99,7 @@ function normalizeMIPERResponse(result, cargo) {
                     epp = p.medidasControl.epp || [];
                 }
             }
-            
+
             return {
                 id: p.id || idx + 1,
                 peligro: p.peligro || 'Peligro identificado',
@@ -114,7 +114,7 @@ function normalizeMIPERResponse(result, cargo) {
                 verificacion: p.verificacion || p.frecuenciaVerificacion || 'Verificación periódica'
             };
         });
-        
+
         // Recalcular resumen si no viene
         if (!result.resumen || result.resumen.totalPeligros === 0) {
             normalized.resumen = {
@@ -126,12 +126,12 @@ function normalizeMIPERResponse(result, cargo) {
             };
         }
     }
-    
+
     // Validar que hay peligros, si no, lanzar error para fallback
     if (normalized.peligros.length === 0) {
         throw new Error('No hazards found in Bedrock response');
     }
-    
+
     return normalized;
 }
 
@@ -548,3 +548,36 @@ La entrega de EPP debe registrarse con firma según DS 44.`;
 
 ¿En qué te puedo ayudar?`;
 }
+
+/**
+ * POST /ai/extract-incident - Extraer datos de incidente de audio/texto
+ */
+module.exports.extractIncident = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+        const { texto } = body;
+
+        if (!texto) {
+            return error('Se requiere el texto para procesar');
+        }
+
+        try {
+            console.log('[AI] Calling Bedrock extractIncidentFromText');
+            const result = await bedrock.extractIncidentFromText(texto);
+            console.log('[AI] Bedrock extractIncidentFromText SUCCESS');
+            return success({ ...result, _generatedAt: new Date().toISOString() });
+        } catch (bedrockError) {
+            console.error('[AI] Bedrock extractIncidentFromText FAILED:', bedrockError.message);
+            // Fallback: Return raw text in description if AI fails
+            return success({
+                tipo: 'incidente',
+                descripcion: texto,
+                gravedad: 'leve',
+                _source: 'fallback'
+            });
+        }
+    } catch (err) {
+        console.error('Error extracting incident info:', err);
+        return error(err.message, 500);
+    }
+};

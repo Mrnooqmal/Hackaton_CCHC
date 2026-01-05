@@ -471,6 +471,37 @@ Ofrece ejemplos concretos cuando sea útil.`;
   return invokeModel(systemPrompt, mensaje, { temperature: 0.7 });
 }
 
+/**
+ * Extrae información estructurada de un reporte de incidente en lenguaje natural
+ */
+async function extractIncidentFromText(texto) {
+  const systemPrompt = `Eres un asistente inteligente para la entrada rápida de reportes de incidentes de seguridad.
+Tu tarea es extraer información estructurada de un texto dictado por un trabajador en una obra.
+
+REGLAS:
+1. Responde ÚNICAMENTE con un JSON válido.
+2. Identifica: tipo (incidente|accidente|condicion_subestandar), centroTrabajo, trabajador (nombre, rut si se menciona), descripcion, gravedad (leve|grave|fatal) y posibles medidas de control inmediatas.
+3. Si la gravedad no se menciona, infiérela del contexto.
+4. Si el centro de trabajo no se menciona, deja el campo vacío.`;
+
+  const userMessage = `Extrae los detalles de este reporte: "${texto}"
+
+Responde con este formato JSON:
+{
+  "tipo": "incidente|accidente|condicion_subestandar",
+  "centroTrabajo": "Nombre de la obra mencionado",
+  "trabajador": {
+    "nombre": "Nombre mencionado",
+    "rut": "RUT mencionado o vacío"
+  },
+  "descripcion": "Descripción detallada y limpia del incidente",
+  "gravedad": "leve|grave|fatal",
+  "medidasInmediatas": ["medida 1", "medida 2"]
+}`;
+
+  return invokeModel(systemPrompt, userMessage, { jsonOutput: true, temperature: 0.2 });
+}
+
 module.exports = {
   invokeModel,
   generateMIPER,
@@ -479,6 +510,7 @@ module.exports = {
   analyzeIncident,
   generateDailyTalk,
   chat,
+  extractIncidentFromText,
   calcularNivelRiesgo,
   DEFAULT_MODEL_ID
 };

@@ -28,6 +28,7 @@ router
     .post('/incidents/quick-report', quickReport)
     .get('/incidents/:id', get)
     .put('/incidents/:id', update)
+    .post('/incidents/:id/viewed', markViewed)
     .post('/incidents/:id/investigations', addInvestigation)
     .post('/incidents/:id/documents', uploadDocument)
     .get('/incidents/:id/documents', getDocuments);
@@ -123,6 +124,20 @@ async function get(request) {
     try {
         const result = await incidentsRepo.get(request.params.id);
         return jsonResponse(result);
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+async function markViewed(request) {
+    try {
+        const body = parseBody(request.event);
+        const { userId } = body;
+        if (!userId) {
+            return errorResponse(new Error('userId es requerido'));
+        }
+        await incidentsRepo.markAsViewed(request.params.id, userId);
+        return jsonResponse({ success: true });
     } catch (err) {
         return errorResponse(err);
     }

@@ -5,10 +5,12 @@ import {
     FiPlus, FiAlertTriangle, FiFilter, FiX, FiUpload, FiImage,
     FiUser, FiMapPin, FiCalendar, FiTrendingUp, FiActivity,
     FiAlertCircle, FiFileText, FiSave, FiChevronDown, FiChevronUp,
-    FiPieChart, FiList, FiBarChart2, FiCheck, FiArrowRight
+    FiPieChart, FiList, FiBarChart2, FiCheck, FiArrowRight,
+    FiMic, FiCamera, FiStopCircle, FiRefreshCw, FiPlay, FiZap
 } from 'react-icons/fi';
-import { incidentsApi } from '../api/client';
+import { incidentsApi, aiApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData } from '../api/client';
+import { useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
@@ -90,9 +92,10 @@ export default function Incidents() {
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [uploading, setUploading] = useState(false);
 
-    // Chart controls state
     const [chartMetric, setChartMetric] = useState<'total' | 'accidentes' | 'incidentes'>('total');
     const [calendarMonth, setCalendarMonth] = useState(new Date());
+    const [showSuccess, setShowSuccess] = useState(false);
+    const [formError, setFormError] = useState('');
 
 
     useEffect(() => {
@@ -163,6 +166,141 @@ export default function Incidents() {
         setUploadedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
+    // AI Quick Report States
+    const [step, setStep] = useState(0); // 0: Quick Capture, 1: Form Details
+    const [isRecording, setIsRecording] = useState(false);
+    const [transcript, setTranscript] = useState('');
+    const [isProcessingAI, setIsProcessingAI] = useState(false);
+    const [cameraActive, setCameraActive] = useState(false);
+    const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const recognitionRef = useRef<any>(null);
+
+    useEffect(() => {
+        if (!showModal) {
+            stopCamera();
+            setTranscript('');
+            setFormError('');
+        }
+    }, [showModal]);
+
+    const startCamera = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' }
+            });
+            setVideoStream(stream);
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+            }
+            setCameraActive(true);
+        } catch (err) {
+            console.error('Error accessing camera:', err);
+            setFormError('No se pudo acceder a la cámara. Por favor asegúrese de dar los permisos necesarios.');
+        }
+    };
+
+    const stopCamera = () => {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            setVideoStream(null);
+        }
+        setCameraActive(false);
+    };
+
+    const capturePhoto = () => {
+        if (videoRef.current) {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(videoRef.current, 0, 0);
+
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const file = new File([blob], `incidente_${Date.now()}.jpg`, { type: 'image/jpeg' });
+                    setUploadedFiles(prev => [...prev, file]);
+                    stopCamera();
+                }
+            }, 'image/jpeg', 0.8);
+        }
+    };
+
+    const handleCloseModal = () => {
+        setShowModal(false);
+        setShowSuccess(false);
+        setStep(0);
+        resetForm();
+    };
+
+    const startRecording = () => {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            setFormError('Su navegador no soporta reconocimiento de voz. Por favor escriba el reporte.');
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'es-CL';
+        recognition.interimResults = true;
+        recognition.continuous = true;
+
+        recognition.onresult = (event: any) => {
+            let currentTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                currentTranscript += event.results[i][0].transcript;
+            }
+            setTranscript(currentTranscript);
+        };
+
+        recognition.onstart = () => setIsRecording(true);
+        recognition.onend = () => setIsRecording(false);
+        recognition.onerror = (event: any) => {
+            console.error('Speech recognition error', event.error);
+            setIsRecording(false);
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+    };
+
+    const stopRecording = () => {
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+        }
+    };
+
+    const processWithAI = async () => {
+        if (!transcript) return;
+
+        setIsProcessingAI(true);
+        try {
+            const response = await aiApi.extractIncident(transcript);
+            if (response.success && response.data) {
+                const data = response.data;
+                setFormData(prev => ({
+                    ...prev,
+                    tipo: (data.tipo as any) || prev.tipo,
+                    centroTrabajo: data.centroTrabajo || prev.centroTrabajo,
+                    descripcion: data.descripcion || transcript,
+                    gravedad: (data.gravedad as any) || prev.gravedad,
+                    trabajador: {
+                        ...prev.trabajador,
+                        nombre: data.trabajador?.nombre || prev.trabajador.nombre,
+                        rut: data.trabajador?.rut || prev.trabajador.rut,
+                    }
+                }));
+            }
+            setStep(1); // Move to form details
+        } catch (err) {
+            console.error('Error processing with AI:', err);
+            setFormData(prev => ({ ...prev, descripcion: transcript }));
+            setStep(1);
+        } finally {
+            setIsProcessingAI(false);
+        }
+    };
+
     const uploadFiles = async (incidentId: string): Promise<string[]> => {
         const s3Keys: string[] = [];
 
@@ -215,17 +353,16 @@ export default function Incidents() {
                     }
                 }
 
-                alert('Incidente reportado exitosamente');
-                setShowModal(false);
                 resetForm();
                 loadIncidents();
                 loadStats();
+                setShowSuccess(true);
             } else {
-                alert('Error al reportar incidente: ' + response.error);
+                setFormError(response.error || 'Error al reportar incidente');
             }
         } catch (error) {
             console.error('Error:', error);
-            alert('Error al reportar incidente');
+            setFormError('Error de conexión con el servidor.');
         } finally {
             setUploading(false);
         }
@@ -268,6 +405,20 @@ export default function Incidents() {
         setDetailLoading(true);
 
         try {
+            // Mark as viewed in background if not already seen
+            if (user?.userId && (!incident.viewedBy || !incident.viewedBy.includes(user.userId))) {
+                incidentsApi.markAsViewed(incident.incidentId, user.userId).catch(err =>
+                    console.error('Error marking incident as viewed:', err)
+                );
+
+                // Update local list to hide "New" badge immediately
+                setIncidents(prev => prev.map(i =>
+                    i.incidentId === incident.incidentId
+                        ? { ...i, viewedBy: [...(i.viewedBy || []), user.userId!] }
+                        : i
+                ));
+            }
+
             const response = await incidentsApi.get(incident.incidentId);
             if (response.success && response.data) {
                 setSelectedIncident(response.data);
@@ -316,6 +467,12 @@ export default function Incidents() {
             condicion_subestandar: 'Condición Subestándar'
         };
         return labels[tipo] || tipo;
+    };
+
+    // Check if incident is new (unseen by current user)
+    const isNewIncident = (incident: Incident) => {
+        if (!user?.userId) return false;
+        return !incident.viewedBy || !incident.viewedBy.includes(user.userId);
     };
 
     // Generate calendar data for a specific month
@@ -439,7 +596,7 @@ export default function Incidents() {
                     </style>
                 </head>
                 <body>
-                    <h1>📊 Reporte de Incidentes y Accidentes</h1>
+                    <h1>Reporte de Incidentes y Accidentes</h1>
                     <p>Generado el ${new Date().toLocaleString('es-CL')}</p>
                     
                     <div class="stats">
@@ -890,26 +1047,34 @@ export default function Incidents() {
 
                         {/* Filters Card */}
                         <div className="card mb-6">
-                            <div className="card-header">
+                            <div
+                                className="card-header"
+                                onClick={() => setShowFilters(!showFilters)}
+                                style={{ cursor: 'pointer', transition: 'background 0.2s' }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-hover)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                            >
                                 <div className="flex items-center gap-2">
-                                    <FiFilter />
-                                    <h3 className="font-semibold">Filtros</h3>
+                                    <FiFilter className={showFilters ? 'text-primary-500' : ''} />
+                                    <h3 className="font-semibold" style={{ color: showFilters ? 'var(--primary-600)' : 'inherit' }}>
+                                        Filtros de Búsqueda
+                                    </h3>
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex items-center gap-2">
                                     {(filters.tipo || filters.estado || filters.fechaInicio || filters.fechaFin) && (
                                         <button
                                             className="btn btn-sm btn-secondary"
-                                            onClick={clearFilters}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                clearFilters();
+                                            }}
                                         >
                                             Limpiar Filtros
                                         </button>
                                     )}
-                                    <button
-                                        className="btn btn-sm btn-secondary incidents-filter-toggle"
-                                        onClick={() => setShowFilters(!showFilters)}
-                                    >
-                                        {showFilters ? <FiChevronUp /> : <FiChevronDown />}
-                                    </button>
+                                    <div className="incidents-filter-toggle" style={{ color: 'var(--text-muted)' }}>
+                                        {showFilters ? <FiChevronUp size={20} /> : <FiChevronDown size={20} />}
+                                    </div>
                                 </div>
                             </div>
                             <div className={`p-4 incidents-filters ${showFilters ? 'show' : ''}`}>
@@ -1004,6 +1169,18 @@ export default function Incidents() {
                                                         <div className="flex items-center gap-2">
                                                             {getTipoIcon(incident.tipo)}
                                                             <span>{getTipoLabel(incident.tipo)}</span>
+                                                            {isNewIncident(incident) && (
+                                                                <span
+                                                                    className="badge badge-info"
+                                                                    style={{
+                                                                        fontSize: '10px',
+                                                                        padding: '2px 6px',
+                                                                        animation: 'pulse 2s infinite'
+                                                                    }}
+                                                                >
+                                                                    Nuevo
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td>
@@ -1064,317 +1241,519 @@ export default function Incidents() {
                 {/* Create Modal */}
                 {showModal && (
                     <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                        <div className="modal-content max-w-3xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-content max-w-4xl" onClick={(e) => e.stopPropagation()}>
                             <div className="modal-header">
-                                <div className="modal-header-icon">
-                                    <FiAlertTriangle size={24} />
-                                </div>
-                                <h2 className="modal-title">Reportar Incidente/Accidente</h2>
-                                <p className="modal-subtitle">Complete el formulario con los detalles del incidente</p>
-                            </div>
-
-                            <form onSubmit={handleSubmit} className="modal-body">
-                                {/* Sección: Clasificación del Reporte */}
-                                <div className="form-section">
-                                    <h3 className="form-section-title">Clasificación del Reporte</h3>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="form-group">
-                                            <label className="form-label">Clasificación *</label>
-                                            <select
-                                                className="form-input"
-                                                value={formData.clasificacion}
-                                                onChange={(e) => setFormData({ ...formData, clasificacion: e.target.value as any })}
-                                                required
-                                            >
-                                                <option value="hallazgo">Hallazgo</option>
-                                                <option value="incidente">Incidente</option>
-                                            </select>
-                                            <span className="form-hint">Hallazgo: observación preventiva. Incidente: evento ocurrido.</span>
-                                        </div>
-
-                                        {formData.clasificacion === 'hallazgo' && (
-                                            <div className="form-group">
-                                                <label className="form-label">Tipo de Hallazgo *</label>
-                                                <select
-                                                    className="form-input"
-                                                    value={formData.tipoHallazgo}
-                                                    onChange={(e) => setFormData({ ...formData, tipoHallazgo: e.target.value as any })}
-                                                    required
-                                                >
-                                                    <option value="accion">Acción Subestándar</option>
-                                                    <option value="condicion">Condición Subestándar</option>
-                                                </select>
-                                                <span className="form-hint">Acción: comportamiento inseguro. Condición: estado físico peligroso.</span>
-                                            </div>
-                                        )}
-
-                                        <div className="form-group">
-                                            <label className="form-label">Etapa Constructiva</label>
-                                            <select
-                                                className="form-input"
-                                                value={formData.etapaConstructiva}
-                                                onChange={(e) => setFormData({ ...formData, etapaConstructiva: e.target.value })}
-                                            >
-                                                <option value="">Seleccionar etapa...</option>
-                                                {ETAPAS_CONSTRUCTIVAS.map((etapa) => (
-                                                    <option key={etapa} value={etapa}>{etapa}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label">Tipo de Evento *</label>
-                                            <select
-                                                className="form-input"
-                                                value={formData.tipo}
-                                                onChange={(e) => setFormData({ ...formData, tipo: e.target.value as any })}
-                                                required
-                                            >
-                                                <option value="incidente">Incidente</option>
-                                                <option value="accidente">Accidente</option>
-                                                <option value="condicion_subestandar">Condición Subestándar</option>
-                                            </select>
-                                        </div>
+                                <div className="flex items-center gap-4">
+                                    <div className="modal-header-icon">
+                                        <FiAlertTriangle size={24} />
                                     </div>
-                                </div>
-
-                                {/* Sección: Información General */}
-                                <div className="form-section">
-                                    <h3 className="form-section-title">Información General</h3>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="form-group">
-                                            <label className="form-label">Centro de Trabajo *</label>
-                                            <input
-                                                type="text"
-                                                className="form-input"
-                                                placeholder="Ej: Obra Los Pinos"
-                                                value={formData.centroTrabajo}
-                                                onChange={(e) => setFormData({ ...formData, centroTrabajo: e.target.value })}
-                                                required
-                                            />
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label">Gravedad</label>
-                                            <select
-                                                className="form-input"
-                                                value={formData.gravedad}
-                                                onChange={(e) => setFormData({ ...formData, gravedad: e.target.value as any })}
-                                            >
-                                                <option value="leve">Leve</option>
-                                                <option value="grave">Grave</option>
-                                                <option value="fatal">Fatal</option>
-                                            </select>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label">Días Perdidos</label>
-                                            <input
-                                                type="number"
-                                                className="form-input"
-                                                value={formData.diasPerdidos}
-                                                onChange={(e) => setFormData({ ...formData, diasPerdidos: parseInt(e.target.value) || 0 })}
-                                                min="0"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Sección: Trabajador Afectado */}
-                                <div className="form-section">
-                                    <h3 className="form-section-title">Trabajador Afectado</h3>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="form-group">
-                                            <label className="form-label">Nombre Completo *</label>
-                                            <input
-                                                type="text"
-                                                className="form-input"
-                                                placeholder="Juan Pérez González"
-                                                value={formData.trabajador.nombre}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    trabajador: { ...formData.trabajador, nombre: e.target.value }
-                                                })}
-                                                required
-                                            />
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label">RUT *</label>
-                                            <input
-                                                type="text"
-                                                className="form-input"
-                                                placeholder="12.345.678-9"
-                                                value={formData.trabajador.rut}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    trabajador: { ...formData.trabajador, rut: e.target.value }
-                                                })}
-                                                required
-                                            />
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label">Género</label>
-                                            <select
-                                                className="form-input"
-                                                value={formData.trabajador.genero}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    trabajador: { ...formData.trabajador, genero: e.target.value }
-                                                })}
-                                            >
-                                                <option value="">Seleccionar</option>
-                                                <option value="M">Masculino</option>
-                                                <option value="F">Femenino</option>
-                                                <option value="Otro">Otro</option>
-                                            </select>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label className="form-label">Cargo</label>
-                                            <input
-                                                type="text"
-                                                className="form-input"
-                                                placeholder="Ej: Operador de Grúa"
-                                                value={formData.trabajador.cargo}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    trabajador: { ...formData.trabajador, cargo: e.target.value }
-                                                })}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Sección: Descripción */}
-                                <div className="form-section">
-                                    <h3 className="form-section-title">Descripción del Incidente</h3>
-                                    <div className="form-group">
-                                        <label className="form-label">Detalle *</label>
-                                        <textarea
-                                            className="form-input"
-                                            rows={5}
-                                            placeholder="Describa con detalle lo ocurrido, incluyendo circunstancias, lugar exacto, hora aproximada y cualquier información relevante..."
-                                            value={formData.descripcion}
-                                            onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-                                            required
-                                        />
-                                        <span className="form-hint">Sea lo más específico posible para facilitar la investigación</span>
-                                    </div>
-                                </div>
-
-                                {/* Sección: Evidencias */}
-                                <div className="form-section">
-                                    <h3 className="form-section-title">Evidencias Fotográficas</h3>
-                                    <div className="form-group">
-                                        <div className="upload-zone">
-                                            <input
-                                                type="file"
-                                                id="file-upload"
-                                                className="hidden"
-                                                multiple
-                                                accept="image/*"
-                                                onChange={handleFileSelect}
-                                            />
-                                            <label htmlFor="file-upload" className="upload-label">
-                                                <FiUpload size={32} className="text-muted mb-2" />
-                                                <p className="font-semibold">Click para seleccionar fotos</p>
-                                                <p className="text-sm text-muted">o arrastra y suelta aquí</p>
-                                                <p className="text-xs text-muted mt-2">PNG, JPG hasta 10MB cada una</p>
-                                            </label>
-                                        </div>
-
-                                        {uploadedFiles.length > 0 && (
-                                            <div className="mt-4">
-                                                <p className="text-sm font-semibold mb-2">{uploadedFiles.length} archivo(s) seleccionado(s)</p>
-                                                <div className="grid grid-cols-4 gap-3">
-                                                    {uploadedFiles.map((file, index) => (
-                                                        <div key={index} className="relative group">
-                                                            <img
-                                                                src={URL.createObjectURL(file)}
-                                                                alt={file.name}
-                                                                className="w-full h-24 object-cover rounded border border-surface-border"
-                                                            />
-                                                            <button
-                                                                type="button"
-                                                                className="absolute top-1 right-1 bg-danger-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                onClick={() => removeFile(index)}
-                                                            >
-                                                                <FiX size={14} />
-                                                            </button>
-                                                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-1 text-xs text-white truncate rounded-b opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                {file.name}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Sección: Confirmación de Envío */}
-                                <div className="form-section confirmation-section">
-                                    <h3 className="form-section-title">
-                                        <FiCheck className="inline mr-2" />
-                                        Confirmación de Envío
-                                    </h3>
-                                    <div className="confirmation-box">
-                                        <div className="confirmation-info">
-                                            <div className="confirmation-row">
-                                                <span className="confirmation-label">Reportado por:</span>
-                                                <span className="confirmation-value">{user?.nombre || 'Usuario'}</span>
-                                            </div>
-                                            <div className="confirmation-row">
-                                                <span className="confirmation-label">Fecha y hora:</span>
-                                                <span className="confirmation-value">{new Date().toLocaleString('es-CL')}</span>
-                                            </div>
-                                        </div>
-                                        <label className="confirmation-checkbox">
-                                            <input
-                                                type="checkbox"
-                                                checked={confirmaEnvio}
-                                                onChange={(e) => setConfirmaEnvio(e.target.checked)}
-                                                required
-                                            />
-                                            <span>Confirmo que la información proporcionada es verídica y corresponde a los hechos ocurridos.</span>
-                                        </label>
-                                        <p className="form-hint" style={{ marginTop: 'var(--space-2)' }}>
-                                            Esta confirmación sirve como registro de autoría del reporte.
+                                    <div className="modal-header-text" style={{ marginBottom: '10px' }}> {/* Añade margen inferior */}
+                                        <h2 className="modal-title">
+                                            {showSuccess ? '¡Reporte Enviado!' : step === 0 ? 'Reporte Rápido de Incidente' : 'Detalles del Reporte'}
+                                        </h2>
+                                        <p className="modal-subtitle">
+                                            {showSuccess
+                                                ? 'El incidente ha sido registrado y notificado correctamente'
+                                                : step === 0
+                                                    ? 'Capture una foto y dicte el incidente para agilizar el registro'
+                                                    : 'Verifique y complete la información extraída por la IA'}
                                         </p>
                                     </div>
                                 </div>
+                                <button
+                                    className="modal-close-btn"
+                                    onClick={handleCloseModal}
+                                    aria-label="Cerrar modal"
+                                    style={{ position: 'absolute', top: '20px', right: '20px' }} /* Posiciona la X */
+                                >
+                                    <FiX size={20} />
+                                </button>
+                            </div>
 
-                                <div className="modal-footer">
-                                    <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        onClick={() => setShowModal(false)}
-                                        disabled={uploading}
-                                    >
-                                        <FiX className="mr-2" />
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="btn btn-primary"
-                                        disabled={uploading}
-                                    >
-                                        {uploading ? (
-                                            <>
-                                                <div className="spinner mr-2" />
-                                                Enviando...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <FiSave className="mr-2" />
-                                                Reportar Incidente
-                                            </>
+                            <div className="modal-body p-0">
+                                {showSuccess ? (
+                                    <div className="success-modal-body p-12 text-center">
+                                        <div className="success-animation-container mb-8">
+                                            <div className="success-pulse"></div>
+                                            <div className="success-icon-wrapper">
+                                                <FiCheck size={48} className="text-white" />
+                                            </div>
+                                        </div>
+                                        <h3 className="text-2xl font-bold mb-4">Registro Exitoso</h3>
+                                        <p className="text-muted mb-8 max-w-sm mx-auto" style={{ marginBottom: 'var(--space-12)' }}>
+                                            El reporte ha sido ingresado al sistema. El prevencionista a cargo recibirá una notificación inmediata para su revisión.
+                                        </p>
+                                        <button
+                                            className="btn btn-primary btn-lg px-12 mt-8"
+                                            onClick={handleCloseModal}
+                                            style={{ marginTop: 'var(--space-10)' }}
+                                        >
+                                            Entendido
+                                        </button>
+                                    </div>
+                                ) : step === 0 ? (
+                                    <div className="quick-report-container p-6">
+                                        {formError && (
+                                            <div className="bg-danger-500/10 border border-danger-500/20 text-danger-500 p-4 rounded-lg mb-6 flex items-center gap-3 animate-shake">
+                                                <FiAlertCircle size={20} />
+                                                <span className="text-sm font-medium">{formError}</span>
+                                            </div>
                                         )}
-                                    </button>
-                                </div>
-                            </form>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            {/* Camera Section */}
+                                            <div className="camera-section">
+                                                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                                    <FiCamera /> 1. Evidencia Visual
+                                                </h3>
+                                                <div className="camera-view bg-black rounded-xl overflow-hidden relative group">
+                                                    {cameraActive ? (
+                                                        <>
+                                                            <video
+                                                                ref={videoRef}
+                                                                autoPlay
+                                                                playsInline
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                            <div className="absolute inset-0 pointer-events-none border-[10px] border-black/10"></div>
+                                                            <div className="absolute inset-x-0 bottom-6 pointer-events-none flex justify-center" style={{ marginTop: '20px' }}> {/* Añade margen superior */}
+                                                                <div className="flex items-center gap-40 pointer-events-auto"> {/* Aumenta el gap */}
+                                                                    <button
+                                                                        className="btn-shutter group/shutter"
+                                                                        onClick={capturePhoto}
+                                                                        title="Tomar Foto"
+                                                                    >
+                                                                        <div className="btn-shutter-outer">
+                                                                            <div className="btn-shutter-inner" />
+                                                                        </div>
+                                                                    </button>
+                                                                    <button
+                                                                        className="btn btn-secondary btn-sm rounded-full w-12 h-12 flex items-center justify-center shadow-lg border-white/10 bg-black/40 backdrop-blur-md text-white hover:bg-black/60 transition-all"
+                                                                        onClick={stopCamera}
+                                                                        title="Cerrar Cámara"
+                                                                        style={{ marginRight: '-20px' }} /* Mueve más a la derecha */
+                                                                    >
+                                                                        <FiX size={20} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <div className="absolute top-6 left-6 bg-black/40 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full border border-white/10 uppercase tracking-widest font-bold">
+                                                                Live View
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <div className="camera-placeholder w-full h-full flex flex-col items-center justify-center text-white/50 p-4 text-center">
+                                                            {uploadedFiles.length > 0 ? (
+                                                                <div className="relative">
+                                                                    <img
+                                                                        src={URL.createObjectURL(uploadedFiles[uploadedFiles.length - 1])}
+                                                                        className="max-h-40 rounded-lg shadow-xl"
+                                                                    />
+                                                                    <div className="mt-2 text-primary-400 font-medium flex items-center justify-center gap-1">
+                                                                        <FiCheck size={14} /> Foto capturada
+                                                                    </div>
+                                                                    <button
+                                                                        className="mt-4 btn btn-sm btn-outline-white"
+                                                                        onClick={startCamera}
+                                                                    >
+                                                                        <FiRefreshCw className="mr-2" /> Tomar otra
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <FiCamera size={48} className="mb-4 opacity-20" />
+                                                                    <button
+                                                                        className="btn btn-primary"
+                                                                        onClick={startCamera}
+                                                                        style={{ marginTop: '20px' }} /* Empuja el botón hacia abajo */
+                                                                    >
+                                                                        <FiCamera className="mr-2" /> Activar Cámara
+                                                                    </button>
+                                                                    <p className="mt-4 text-xs">O sube archivos después en el formulario</p>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Audio Section */}
+                                            <div className="audio-section">
+                                                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                                    <FiMic /> 2. ¿Qué ocurrió?
+                                                </h3>
+                                                <div className={`audio-recorder p-6 rounded-xl border-2 border-dashed transition-all ${isRecording ? 'border-danger-500 bg-danger-50/5' : 'border-surface-border bg-surface-hover/30'}`}>
+                                                    <div className="flex flex-col items-center text-center">
+                                                        <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 transition-all ${isRecording ? 'bg-danger-500 scale-110 shadow-lg shadow-danger-200' : 'bg-primary-500'}`}>
+                                                            {isRecording ? (
+                                                                <div className="flex gap-1">
+                                                                    <div className="w-1.5 h-6 bg-white animate-bounce" style={{ animationDelay: '0s' }} />
+                                                                    <div className="w-1.5 h-10 bg-white animate-bounce" style={{ animationDelay: '0.1s' }} />
+                                                                    <div className="w-1.5 h-8 bg-white animate-bounce" style={{ animationDelay: '0.2s' }} />
+                                                                    <div className="w-1.5 h-6 bg-white animate-bounce" style={{ animationDelay: '0.3s' }} />
+                                                                </div>
+                                                            ) : (
+                                                                <FiMic size={32} className="text-white" />
+                                                            )}
+                                                        </div>
+
+                                                        <button
+                                                            className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'} mb-4`}
+                                                            onClick={isRecording ? stopRecording : startRecording}
+                                                        >
+                                                            {isRecording ? (
+                                                                <><FiStopCircle className="mr-2" /> Detener Grabación</>
+                                                            ) : (
+                                                                <><FiPlay className="mr-2" /> Dictar Reporte</>
+                                                            )}
+                                                        </button>
+
+                                                        <div className="w-full min-h-[100px] bg-surface-card rounded-lg p-3 border border-surface-border text-sm italic overflow-y-auto max-h-[150px]">
+                                                            {transcript || (isRecording ? 'Escuchando...' : 'Presione dictar y describa el incidente (ej: "Hay una tabla suelta en el andamio del sector B, riesgo de caída")')}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-10 flex flex-col items-center justify-center border-t border-surface-border pt-8 quick-report-actions">
+                                            {isProcessingAI ? (
+                                                <div className="flex flex-col items-center">
+                                                    <div className="loader-dots mb-4">
+                                                        <div /> <div /> <div /> <div />
+                                                    </div>
+                                                    <p className="text-sm font-medium animate-pulse">La IA está procesando su voz para llenar el reporte...</p>
+                                                </div>
+                                            ) : (
+                                                <div className="flex gap-4" style={{ marginTop: '15px' }}> {/* Añade margen superior */}
+                                                    <button
+                                                        className="btn btn-secondary btn-lg"
+                                                        onClick={() => setStep(1)}
+                                                    >
+                                                        Ir a Manual <FiArrowRight className="ml-2" />
+                                                    </button>
+                                                    <button
+                                                        className="btn btn-primary btn-lg px-10"
+                                                        onClick={processWithAI}
+                                                        disabled={!transcript}
+                                                    >
+                                                        <FiZap size={18} className="mr-2" /> Procesar con IA
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <form onSubmit={handleSubmit} className="p-6">
+                                        {/* Sección: Clasificación del Reporte */}
+                                        <div className="form-section">
+                                            <h3 className="form-section-title">Clasificación del Reporte</h3>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="form-group">
+                                                    <label className="form-label">Clasificación *</label>
+                                                    <select
+                                                        className="form-input"
+                                                        value={formData.clasificacion}
+                                                        onChange={(e) => setFormData({ ...formData, clasificacion: e.target.value as any })}
+                                                        required
+                                                    >
+                                                        <option value="hallazgo">Hallazgo</option>
+                                                        <option value="incidente">Incidente</option>
+                                                    </select>
+                                                    <span className="form-hint">Hallazgo: observación preventiva. Incidente: evento ocurrido.</span>
+                                                </div>
+
+                                                {formData.clasificacion === 'hallazgo' && (
+                                                    <div className="form-group">
+                                                        <label className="form-label">Tipo de Hallazgo *</label>
+                                                        <select
+                                                            className="form-input"
+                                                            value={formData.tipoHallazgo}
+                                                            onChange={(e) => setFormData({ ...formData, tipoHallazgo: e.target.value as any })}
+                                                            required
+                                                        >
+                                                            <option value="accion">Acción Subestándar</option>
+                                                            <option value="condicion">Condición Subestándar</option>
+                                                        </select>
+                                                        <span className="form-hint">Acción: comportamiento inseguro. Condición: estado físico peligroso.</span>
+                                                    </div>
+                                                )}
+
+                                                <div className="form-group">
+                                                    <label className="form-label">Etapa Constructiva</label>
+                                                    <select
+                                                        className="form-input"
+                                                        value={formData.etapaConstructiva}
+                                                        onChange={(e) => setFormData({ ...formData, etapaConstructiva: e.target.value })}
+                                                    >
+                                                        <option value="">Seleccionar etapa...</option>
+                                                        {ETAPAS_CONSTRUCTIVAS.map((etapa) => (
+                                                            <option key={etapa} value={etapa}>{etapa}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                <div className="form-group">
+                                                    <label className="form-label">Tipo de Evento *</label>
+                                                    <select
+                                                        className="form-input"
+                                                        value={formData.tipo}
+                                                        onChange={(e) => setFormData({ ...formData, tipo: e.target.value as any })}
+                                                        required
+                                                    >
+                                                        <option value="incidente">Incidente</option>
+                                                        <option value="accidente">Accidente</option>
+                                                        <option value="condicion_subestandar">Condición Subestándar</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Sección: Información General */}
+                                        <div className="form-section">
+                                            <h3 className="form-section-title">Información General</h3>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="form-group">
+                                                    <label className="form-label">Centro de Trabajo *</label>
+                                                    <input
+                                                        type="text"
+                                                        className="form-input"
+                                                        placeholder="Ej: Obra Los Pinos"
+                                                        value={formData.centroTrabajo}
+                                                        onChange={(e) => setFormData({ ...formData, centroTrabajo: e.target.value })}
+                                                        required
+                                                    />
+                                                </div>
+
+                                                <div className="form-group">
+                                                    <label className="form-label">Gravedad</label>
+                                                    <select
+                                                        className="form-input"
+                                                        value={formData.gravedad}
+                                                        onChange={(e) => setFormData({ ...formData, gravedad: e.target.value as any })}
+                                                    >
+                                                        <option value="leve">Leve</option>
+                                                        <option value="grave">Grave</option>
+                                                        <option value="fatal">Fatal</option>
+                                                    </select>
+                                                </div>
+
+                                                <div className="form-group">
+                                                    <label className="form-label">Días Perdidos</label>
+                                                    <input
+                                                        type="number"
+                                                        className="form-input"
+                                                        value={formData.diasPerdidos}
+                                                        onChange={(e) => setFormData({ ...formData, diasPerdidos: parseInt(e.target.value) || 0 })}
+                                                        min="0"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Sección: Trabajador Afectado */}
+                                        <div className="form-section">
+                                            <h3 className="form-section-title">Trabajador Afectado</h3>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="form-group">
+                                                    <label className="form-label">Nombre Completo *</label>
+                                                    <input
+                                                        type="text"
+                                                        className="form-input"
+                                                        placeholder="Juan Pérez González"
+                                                        value={formData.trabajador.nombre}
+                                                        onChange={(e) => setFormData({
+                                                            ...formData,
+                                                            trabajador: { ...formData.trabajador, nombre: e.target.value }
+                                                        })}
+                                                        required
+                                                    />
+                                                </div>
+
+                                                <div className="form-group">
+                                                    <label className="form-label">RUT *</label>
+                                                    <input
+                                                        type="text"
+                                                        className="form-input"
+                                                        placeholder="12.345.678-9"
+                                                        value={formData.trabajador.rut}
+                                                        onChange={(e) => setFormData({
+                                                            ...formData,
+                                                            trabajador: { ...formData.trabajador, rut: e.target.value }
+                                                        })}
+                                                        required
+                                                    />
+                                                </div>
+
+                                                <div className="form-group">
+                                                    <label className="form-label">Género</label>
+                                                    <select
+                                                        className="form-input"
+                                                        value={formData.trabajador.genero}
+                                                        onChange={(e) => setFormData({
+                                                            ...formData,
+                                                            trabajador: { ...formData.trabajador, genero: e.target.value }
+                                                        })}
+                                                    >
+                                                        <option value="">Seleccionar</option>
+                                                        <option value="M">Masculino</option>
+                                                        <option value="F">Femenino</option>
+                                                        <option value="Otro">Otro</option>
+                                                    </select>
+                                                </div>
+
+                                                <div className="form-group">
+                                                    <label className="form-label">Cargo</label>
+                                                    <input
+                                                        type="text"
+                                                        className="form-input"
+                                                        placeholder="Ej: Operador de Grúa"
+                                                        value={formData.trabajador.cargo}
+                                                        onChange={(e) => setFormData({
+                                                            ...formData,
+                                                            trabajador: { ...formData.trabajador, cargo: e.target.value }
+                                                        })}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Sección: Descripción */}
+                                        <div className="form-section">
+                                            <h3 className="form-section-title">Descripción del Incidente</h3>
+                                            <div className="form-group">
+                                                <label className="form-label">Detalle *</label>
+                                                <textarea
+                                                    className="form-input"
+                                                    rows={5}
+                                                    placeholder="Describa con detalle lo ocurrido, incluyendo circunstancias, lugar exacto, hora aproximada y cualquier información relevante..."
+                                                    value={formData.descripcion}
+                                                    onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+                                                    required
+                                                />
+                                                <span className="form-hint">Sea lo más específico posible para facilitar la investigación</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Sección: Evidencias */}
+                                        <div className="form-section">
+                                            <h3 className="form-section-title">Evidencias Fotográficas</h3>
+                                            <div className="form-group">
+                                                <div className="upload-zone">
+                                                    <input
+                                                        type="file"
+                                                        id="file-upload"
+                                                        className="hidden"
+                                                        multiple
+                                                        accept="image/*"
+                                                        onChange={handleFileSelect}
+                                                    />
+                                                    <label htmlFor="file-upload" className="upload-label">
+                                                        <FiUpload size={32} className="text-muted mb-2" />
+                                                        <p className="font-semibold">Click para seleccionar fotos</p>
+                                                        <p className="text-sm text-muted">o arrastra y suelta aquí</p>
+                                                        <p className="text-xs text-muted mt-2">PNG, JPG hasta 10MB cada una</p>
+                                                    </label>
+                                                </div>
+
+                                                {uploadedFiles.length > 0 && (
+                                                    <div className="mt-4">
+                                                        <p className="text-sm font-semibold mb-2">{uploadedFiles.length} archivo(s) seleccionado(s)</p>
+                                                        <div className="grid grid-cols-4 gap-3">
+                                                            {uploadedFiles.map((file, index) => (
+                                                                <div key={index} className="relative group">
+                                                                    <img
+                                                                        src={URL.createObjectURL(file)}
+                                                                        alt={file.name}
+                                                                        className="w-full h-24 object-cover rounded border border-surface-border"
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        className="absolute top-1 right-1 bg-danger-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                        onClick={() => removeFile(index)}
+                                                                    >
+                                                                        <FiX size={14} />
+                                                                    </button>
+                                                                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-1 text-xs text-white truncate rounded-b opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                        {file.name}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Sección: Confirmación de Envío */}
+                                        <div className="form-section confirmation-section">
+                                            <h3 className="form-section-title">
+                                                <FiCheck className="inline mr-2" />
+                                                Confirmación de Envío
+                                            </h3>
+                                            <div className="confirmation-box">
+                                                <div className="confirmation-info">
+                                                    <div className="confirmation-row">
+                                                        <span className="confirmation-label">Reportado por:</span>
+                                                        <span className="confirmation-value">{user?.nombre || 'Usuario'}</span>
+                                                    </div>
+                                                    <div className="confirmation-row">
+                                                        <span className="confirmation-label">Fecha y hora:</span>
+                                                        <span className="confirmation-value">{new Date().toLocaleString('es-CL')}</span>
+                                                    </div>
+                                                </div>
+                                                <label className="confirmation-checkbox">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={confirmaEnvio}
+                                                        onChange={(e) => setConfirmaEnvio(e.target.checked)}
+                                                        required
+                                                    />
+                                                    <span> Confirmo que la información proporcionada es verídica y corresponde a los hechos ocurridos.</span>
+                                                </label>
+                                                <p className="form-hint" style={{ marginTop: 'var(--space-2)' }}>
+                                                    Esta confirmación sirve como registro de autoría del reporte.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {formError && (
+                                            <div className="bg-danger-500/10 border border-danger-500/20 text-danger-500 p-4 rounded-lg mb-6 flex items-center gap-3 animate-shake">
+                                                <FiAlertCircle size={20} />
+                                                <span className="text-sm font-medium">{formError}</span>
+                                            </div>
+                                        )}
+
+                                        <div className="modal-footer">
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary"
+                                                onClick={() => setShowModal(false)}
+                                                disabled={uploading}
+                                            >
+                                                <FiX className="mr-2" />
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                className="btn btn-primary"
+                                                disabled={uploading}
+                                            >
+                                                {uploading ? (
+                                                    <>
+                                                        <div className="spinner mr-2" />
+                                                        Enviando...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <FiSave className="mr-2" />
+                                                        Reportar Incidente
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1999,6 +2378,194 @@ export default function Incidents() {
                     cursor: pointer;
                 }
 
+                /* AI Quick Report Styles */
+                .quick-report-container {
+                    background: var(--surface-card);
+                    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+                }
+
+                .camera-view {
+                    aspect-ratio: 4/3;
+                    border: 2px solid var(--surface-border);
+                    box-shadow: var(--shadow-inner);
+                    position: relative;
+                }
+
+                .camera-placeholder {
+                    padding-top: var(--space-8);
+                }
+
+                .audio-recorder {
+                    min-height: 250px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .modal-header-text {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                }
+
+                @media (max-width: 640px) {
+                    .modal-header {
+                        flex-direction: column;
+                        align-items: flex-start;
+                        gap: var(--space-2);
+                        padding: var(--space-4);
+                    }
+                    .modal-title {
+                        font-size: var(--text-lg);
+                        margin: 0;
+                    }
+                    .modal-subtitle {
+                        font-size: var(--text-xs);
+                        margin-top: var(--space-1);
+                    }
+                }
+
+                .loader-dots {
+                    display: flex;
+                    gap: 6px;
+                }
+
+                .loader-dots div {
+                    width: 10px;
+                    height: 10px;
+                    background: var(--primary-500);
+                    border-radius: 50%;
+                    animation: loader-dots 1.4s infinite ease-in-out both;
+                }
+
+                .loader-dots div:nth-child(2) { animation-delay: -0.16s; }
+
+                /* Shutter Button Styles */
+                .btn-shutter {
+                    background: transparent;
+                    border: none;
+                    cursor: pointer;
+                    padding: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                }
+
+                .btn-shutter:hover {
+                    transform: scale(1.1);
+                }
+
+                .btn-shutter:active {
+                    transform: scale(0.9);
+                }
+
+                .btn-shutter-outer {
+                    width: 58px;
+                    height: 58px;
+                    border-radius: 50%;
+                    border: 4px solid white;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: rgba(255, 255, 255, 0.1);
+                    backdrop-filter: blur(4px);
+                    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+                }
+
+                .btn-shutter-inner {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 50%;
+                    background: white;
+                    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1);
+                    transition: all 0.2s;
+                }
+
+                .btn-shutter:hover .btn-shutter-inner {
+                    background: var(--primary-500);
+                }
+
+                .modal-close-btn {
+                    background: transparent;
+                    border: none;
+                    color: var(--text-muted);
+                    padding: var(--space-2);
+                    border-radius: var(--radius-md);
+                    cursor: pointer;
+                    transition: all var(--transition-normal);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .modal-close-btn:hover {
+                    background: var(--surface-elevated);
+                    color: var(--text-primary);
+                }
+
+                /* Success View Styles */
+                .success-modal-body {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                }
+
+                .success-animation-container {
+                    position: relative;
+                    width: 100px;
+                    height: 100px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .success-pulse {
+                    position: absolute;
+                    width: 100%;
+                    height: 100%;
+                    background: var(--success-500);
+                    border-radius: 50%;
+                    opacity: 0.2;
+                    animation: pulse-success 2s infinite;
+                }
+
+                .success-icon-wrapper {
+                    position: relative;
+                    width: 80px;
+                    height: 80px;
+                    background: var(--success-500);
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 10px 25px rgba(34, 197, 94, 0.4);
+                }
+
+                @keyframes pulse-success {
+                    0% { transform: scale(1); opacity: 0.4; }
+                    100% { transform: scale(1.6); opacity: 0; }
+                }
+
+                @keyframes shake {
+                    0%, 100% { transform: translateX(0); }
+                    10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+                    20%, 40%, 60%, 80% { transform: translateX(4px); }
+                }
+
+                .animate-shake {
+                    animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+                }
+
+                @keyframes loader-dots {
+                    0%, 80%, 100% { transform: scale(0); }
+                    40% { transform: scale(1); }
+                }
+
+                @keyframes bounce {
+                    0%, 100% { transform: scaleY(1); }
+                    50% { transform: scaleY(0.4); }
+                }
             `}</style>
             </div >
         </>

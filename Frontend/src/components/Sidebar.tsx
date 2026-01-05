@@ -84,6 +84,7 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                         { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma' },
                         { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
                         { path: '/surveys', icon: FiClipboard, label: 'Auditorías y Encuestas' },
+                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
                     ]
                 },
                 {
@@ -91,7 +92,6 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                     items: [
                         { path: '/workers', icon: FiUsers, label: 'Trabajadores' },
                         { path: '/activities', icon: FiCalendar, label: 'Actividades' },
-                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
                         { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
                     ]
                 }

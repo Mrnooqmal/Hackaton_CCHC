@@ -50,10 +50,12 @@ class EventBus {
      * Send a notification to inbox for document assignment
      */
     async onDocumentAssigned(data) {
-        const { documentId, workerIds, assignedBy, documentName, dueDate } = data;
+        // Accept both userIds (new) and workerIds (legacy) for backwards compatibility
+        const { documentId, userIds, workerIds, assignedBy, creatorName, documentName, dueDate } = data;
+        const recipientIds = userIds || workerIds || [];
 
-        if (!workerIds || workerIds.length === 0) {
-            console.log('No workers to notify for document assignment');
+        if (!recipientIds || recipientIds.length === 0) {
+            console.log('No users to notify for document assignment');
             return;
         }
 
@@ -62,9 +64,9 @@ class EventBus {
 
             await this.inboxRepo.sendMessage({
                 senderId: assignedBy || 'system',
-                senderName: 'PrevencionApp',
+                senderName: creatorName || 'Gestor SST',
                 senderRol: 'system',
-                recipientIds: workerIds,
+                recipientIds: recipientIds,
                 type: 'task',
                 priority: 'normal',
                 subject: `Nuevo documento asignado: ${documentName}`,
@@ -72,7 +74,7 @@ class EventBus {
                 linkedEntity: { type: 'document', id: documentId }
             });
 
-            console.log(`✅ Notification sent for document ${documentId} to ${workerIds.length} workers`);
+            console.log(`✅ Notification sent for document ${documentId} to ${recipientIds.length} users`);
         } catch (error) {
             console.error('Error sending document notification:', error);
         }

@@ -59,6 +59,10 @@ module.exports.create = async (event) => {
             empresaId: body.empresaId || 'default',
             relatorId: body.relatorId || null,
             s3Key: body.s3Key || null,
+            archivoUrl: body.archivoUrl || null,    // File key in S3
+            archivoNombre: body.archivoNombre || null, // Original file name
+            createdBy: body.createdBy || null,
+            creatorName: body.creatorName || null,
             firmas: [],
             asignaciones: [],
             estado: 'activo',
@@ -184,7 +188,7 @@ module.exports.assign = async (event) => {
             return error('ID de documento requerido');
         }
 
-        const { workerIds, fechaLimite, notificar } = body;
+        const { workerIds, fechaLimite, notificar, assignedBy, assignerName } = body;
 
         if (!workerIds || !Array.isArray(workerIds) || workerIds.length === 0) {
             return error('Se requiere un array de IDs de trabajadores');
@@ -202,14 +206,28 @@ module.exports.assign = async (event) => {
             return error('Documento no encontrado', 404);
         }
 
+        // Get worker names for better assignment records
+        const workersResult = await docClient.send(
+            new ScanCommand({
+                TableName: WORKERS_TABLE,
+                FilterExpression: 'habilitado = :h',
+                ExpressionAttributeValues: { ':h': true }
+            })
+        );
+        const workersMap = new Map((workersResult.Items || []).map(w => [w.workerId, w]));
+
         const now = new Date().toISOString();
-        const nuevasAsignaciones = workerIds.map((workerId) => ({
-            workerId,
-            fechaAsignacion: now,
-            fechaLimite: fechaLimite || null,
-            estado: 'pendiente',
-            notificado: notificar || false,
-        }));
+        const nuevasAsignaciones = workerIds.map((workerId) => {
+            const worker = workersMap.get(workerId);
+            return {
+                workerId,
+                nombre: worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : workerId,
+                fechaAsignacion: now,
+                fechaLimite: fechaLimite || null,
+                estado: 'pendiente',
+                notificado: notificar || false,
+            };
+        });
 
         const asignaciones = [...(docResult.Item.asignaciones || []), ...nuevasAsignaciones];
 
@@ -224,6 +242,27 @@ module.exports.assign = async (event) => {
                 },
             })
         );
+
+        // NEW: Emit event for automatic notifications
+        try {
+            // Get userIds from workers for proper inbox delivery
+            const userIds = workerIds.map(wId => {
+                const worker = workersMap.get(wId);
+                return worker?.userId || wId; // Use userId if available, otherwise workerId
+            });
+
+            await eventBus.emit('document.assigned', {
+                documentId: id,
+                userIds,
+                assignedBy: assignedBy || 'system',
+                creatorName: assignerName || docResult.Item.creatorName || 'Gestor SST',
+                documentName: docResult.Item.titulo,
+                dueDate: fechaLimite || null
+            });
+        } catch (eventError) {
+            console.error('Error emitting document.assigned event:', eventError);
+            // Continue even if notification fails
+        }
 
         return success({
             message: `Documento asignado a ${workerIds.length} trabajador(es)`,

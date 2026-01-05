@@ -195,6 +195,7 @@ class IncidentsRepository {
             estado: 'reportado',
             reportadoPor: data.reportadoPor || 'sistema',
             empresaId: data.empresaId || 'default',
+            viewedBy: [], // Track who has seen the incident
             createdAt: now,
             updatedAt: now
         };
@@ -659,6 +660,26 @@ class IncidentsRepository {
             incidentId,
             message: 'Reporte creado exitosamente'
         };
+    }
+
+    // MARK AS VIEWED
+    async markAsViewed(id, userId) {
+        if (!id || !userId) return;
+
+        console.log(`[MARK_AS_VIEWED] Incident ${id} by user ${userId}`);
+
+        try {
+            await this.dynamo.send(new UpdateCommand({
+                TableName: this.incidentsTable,
+                Key: { incidentId: id },
+                UpdateExpression: 'ADD viewedBy :userId',
+                ExpressionAttributeValues: {
+                    ':userId': new Set([userId])
+                }
+            }));
+        } catch (error) {
+            console.error('[ERROR] markAsViewed failed:', error);
+        }
     }
 }
 
