@@ -112,10 +112,12 @@ class EventBus {
      * Send a notification to inbox for survey assignment
      */
     async onSurveyAssigned(data) {
-        const { surveyId, workerIds, assignedBy, surveyName, dueDate } = data;
+        // Accept both userIds (new) and workerIds (legacy) for backwards compatibility
+        const { surveyId, userIds, workerIds, assignedBy, creatorName, surveyName, dueDate } = data;
+        const recipientIds = userIds || workerIds || [];
 
-        if (!workerIds || workerIds.length === 0) {
-            console.log('No workers to notify for survey');
+        if (!recipientIds || recipientIds.length === 0) {
+            console.log('No users to notify for survey');
             return;
         }
 
@@ -124,9 +126,9 @@ class EventBus {
 
             await this.inboxRepo.sendMessage({
                 senderId: assignedBy || 'system',
-                senderName: 'PrevencionApp',
+                senderName: creatorName || 'Gestor SST', // Use creator's name
                 senderRol: 'system',
-                recipientIds: workerIds,
+                recipientIds: recipientIds,
                 type: 'task',
                 priority: 'normal',
                 subject: `Nueva encuesta asignada: ${surveyName}`,
@@ -134,7 +136,7 @@ class EventBus {
                 linkedEntity: { type: 'survey', id: surveyId }
             });
 
-            console.log(`✅ Notification sent for survey ${surveyId} to ${workerIds.length} workers`);
+            console.log(`✅ Notification sent for survey ${surveyId} to ${recipientIds.length} users`);
         } catch (error) {
             console.error('Error sending survey notification:', error);
         }

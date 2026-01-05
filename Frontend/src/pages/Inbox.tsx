@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import {
     FiMail, FiSend, FiInbox, FiArchive, FiSearch,
@@ -13,6 +14,7 @@ type FilterType = 'all' | 'unread' | 'archived';
 
 export default function Inbox() {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<TabType>('inbox');
     const [messages, setMessages] = useState<InboxMessage[]>([]);
     const [loading, setLoading] = useState(true);
@@ -197,6 +199,30 @@ export default function Inbox() {
         }
     };
 
+    // Get navigation route from linked entity
+    const getLinkedEntityRoute = (linkedEntity: { type: string; id: string } | null | undefined): string | null => {
+        if (!linkedEntity) return null;
+        switch (linkedEntity.type) {
+            case 'survey': return '/surveys';
+            case 'activity': return '/activities';
+            case 'document': return '/documents';
+            case 'incident': return '/incidents';
+            case 'signature_request': return '/my-signatures';
+            default: return null;
+        }
+    };
+
+    const getLinkedEntityLabel = (type: string): string => {
+        switch (type) {
+            case 'survey': return 'Ver Encuesta';
+            case 'activity': return 'Ver Actividad';
+            case 'document': return 'Ver Documento';
+            case 'incident': return 'Ver Incidente';
+            case 'signature_request': return 'Ver Firma';
+            default: return 'Ver Detalle';
+        }
+    };
+
     const getPriorityBadge = (priority: string) => {
         const badges: Record<string, string> = {
             urgent: 'badge-danger',
@@ -223,7 +249,43 @@ export default function Inbox() {
         }
     };
 
-    const filteredMessages = messages.filter(m =>
+    // Group sent messages by subject and approximate time (within 1 minute)
+    const groupedMessages = (() => {
+        if (activeTab !== 'sent') return messages;
+
+        const grouped = new Map<string, InboxMessage & { recipientCount?: number }>();
+        messages.forEach(msg => {
+            // Group key: subject + rounded timestamp (to nearest minute)
+            const timestamp = new Date(msg.createdAt || Date.now());
+            const timeValue = timestamp.getTime();
+            // Check if date is valid
+            if (isNaN(timeValue)) {
+                // Use a fallback key for invalid dates
+                const groupKey = `${msg.subject || 'unknown'}-unknown`;
+                if (!grouped.has(groupKey)) {
+                    grouped.set(groupKey, { ...msg, recipientCount: 1 });
+                } else {
+                    const existing = grouped.get(groupKey)!;
+                    existing.recipientCount = (existing.recipientCount || 1) + 1;
+                }
+                return;
+            }
+
+            const roundedTime = new Date(Math.floor(timeValue / 60000) * 60000);
+            const groupKey = `${msg.subject || 'unknown'}-${roundedTime.toISOString()}`;
+
+            if (!grouped.has(groupKey)) {
+                grouped.set(groupKey, { ...msg, recipientCount: 1 });
+            } else {
+                const existing = grouped.get(groupKey)!;
+                existing.recipientCount = (existing.recipientCount || 1) + 1;
+            }
+        });
+
+        return Array.from(grouped.values());
+    })();
+
+    const filteredMessages = groupedMessages.filter(m =>
         (m.subject || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (m.senderName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (m.content || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -665,7 +727,9 @@ export default function Inbox() {
                                         <div className="inbox-message-content">
                                             <div className="inbox-message-header">
                                                 <span className="inbox-message-sender">
-                                                    {activeTab === 'sent' ? 'Para: ' : ''}{message.senderName}
+                                                    {activeTab === 'sent' && (message as InboxMessage & { recipientCount?: number }).recipientCount && (message as InboxMessage & { recipientCount?: number }).recipientCount! > 1
+                                                        ? `Para: ${(message as InboxMessage & { recipientCount?: number }).recipientCount} destinatarios`
+                                                        : `De: ${message.senderName}`}
                                                 </span>
                                                 <span className="inbox-message-time">{formatDate(message.createdAt)}</span>
                                             </div>
@@ -721,6 +785,21 @@ export default function Inbox() {
                                         <p key={i}>{line}</p>
                                     ))}
                                 </div>
+
+                                {/* Navigation button if linked to an entity */}
+                                {selectedMessage.linkedEntity && getLinkedEntityRoute(selectedMessage.linkedEntity) && (
+                                    <div style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
+                                        <button
+                                            className="btn btn-primary"
+                                            onClick={() => {
+                                                const route = getLinkedEntityRoute(selectedMessage.linkedEntity);
+                                                if (route) navigate(route);
+                                            }}
+                                        >
+                                            {getLinkedEntityLabel(selectedMessage.linkedEntity.type)}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

@@ -392,6 +392,7 @@ export default function Surveys() {
             cargoDestino: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
             ruts: form.audienceType === 'personalizado' ? form.selectedRuts : undefined,
             createdBy: user?.userId, // Track who created this survey
+            creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined, // Full name for inbox display
         };
 
         const response = await surveysApi.create(payload);
@@ -1113,18 +1114,32 @@ export default function Surveys() {
                                                     </div>
                                                 </div>
 
-                                                <div className="flex flex-wrap gap-2">
-                                                    {(survey.recipients || []).slice(0, 6).map((recipient) => (
-                                                        <span
-                                                            key={recipient.workerId}
-                                                            className={`badge ${recipient.estado === 'respondida' ? 'badge-success' : 'badge-neutral'}`}
-                                                        >
-                                                            {recipient.nombre} - {recipient.estado}
+                                                <div className="recipients-summary">
+                                                    <div
+                                                        className="flex items-center gap-2 text-sm"
+                                                        style={{
+                                                            padding: 'var(--space-2) var(--space-3)',
+                                                            background: 'var(--surface-elevated)',
+                                                            borderRadius: 'var(--radius-md)',
+                                                            border: '1px solid var(--surface-border)'
+                                                        }}
+                                                    >
+                                                        <FiUsers size={16} style={{ color: 'var(--primary-500)' }} />
+                                                        <span style={{ color: 'var(--text-primary)' }}>
+                                                            {survey.audienceType === 'todos' ? (
+                                                                <>Todos los trabajadores ({survey.recipients?.length || 0})</>
+                                                            ) : (
+                                                                <>{survey.recipients?.length || 0} trabajadores asignados</>
+                                                            )}
                                                         </span>
-                                                    ))}
-                                                    {(survey.recipients || []).length > 6 && (
-                                                        <span className="text-sm text-muted">+{(survey.recipients || []).length - 6} más</span>
-                                                    )}
+                                                        <span style={{
+                                                            marginLeft: 'auto',
+                                                            color: 'var(--success-500)',
+                                                            fontWeight: 600
+                                                        }}>
+                                                            {survey.recipients?.filter(r => r.estado === 'respondida').length || 0} respondidas
+                                                        </span>
+                                                    </div>
                                                 </div>
 
                                                 <div className="flex justify-end mt-4">

@@ -30,8 +30,10 @@ const scanAllWorkers = async () => {
         // NEW: Use PersonaService for unified worker listing
         const personas = await PersonaService.listar({ includeUsers: true });
         // Convert Persona to worker format for compatibility
+        // Include both workerId and userId for inbox notifications
         return personas.map(p => ({
             workerId: p.workerId || p.userId,
+            userId: p.userId || p.workerId, // For inbox notifications
             nombre: p.nombre,
             apellido: p.apellido || '',
             rut: p.rut,
@@ -81,6 +83,7 @@ const buildRecipients = (workers, audience) => {
 
     return Array.from(uniqueWorkers.values()).map((worker) => ({
         workerId: worker.workerId,
+        userId: worker.userId || worker.workerId, // For inbox notifications
         nombre: worker.nombre,
         apellido: worker.apellido || '',
         rut: worker.rut,
@@ -206,13 +209,16 @@ module.exports.create = async (event) => {
 
         // NEW: Emit event for automatic notifications
         try {
-            const workerIds = recipients.map(r => r.workerId);
+            // Use userIds for inbox delivery (inbox queries by userId, not workerId)
+            const userIds = recipients.map(r => r.userId || r.workerId);
             await eventBus.emit('survey.assigned', {
                 surveyId: survey.surveyId,
-                workerIds,
+                userIds, // Use userIds for inbox
                 assignedBy: body.createdBy || 'system',
+                creatorName: body.creatorName || 'Gestor SST', // Name of user who created it
                 surveyName: survey.titulo,
-                dueDate: body.dueDate || null
+                dueDate: body.dueDate || null,
+                recipientCount: userIds.length // For display in sent folder
             });
         } catch (eventError) {
             console.error('Error emitting survey.assigned event:', eventError);

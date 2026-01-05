@@ -181,7 +181,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
         };
 
         loadInboxData();
-        const intervalId = window.setInterval(loadInboxData, 30000); // Refresh every 30 seconds
+        const intervalId = window.setInterval(loadInboxData, 10000); // Refresh every 10 seconds for real-time feel
 
         return () => {
             cancelled = true;
@@ -265,7 +265,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
         };
 
         loadPendingSurveys();
-        const intervalId = window.setInterval(loadPendingSurveys, 60000);
+        const intervalId = window.setInterval(loadPendingSurveys, 15000); // Refresh every 15 seconds
 
         // Listen for survey response events to refresh immediately
         const handleSurveyResponded = () => {
