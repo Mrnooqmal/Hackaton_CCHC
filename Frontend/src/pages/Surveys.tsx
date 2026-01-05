@@ -251,6 +251,17 @@ export default function Surveys() {
         return result;
     }, [showOnlyMine, mySurveys, surveys, searchQuery]);
 
+    // Filtered assigned surveys for "Mis Encuestas" tab search
+    const filteredAssignedSurveys = useMemo(() => {
+        if (!searchQuery.trim()) return assignedSurveys;
+
+        const query = searchQuery.toLowerCase();
+        return assignedSurveys.filter(({ survey }) =>
+            survey.titulo.toLowerCase().includes(query) ||
+            (survey.descripcion && survey.descripcion.toLowerCase().includes(query))
+        );
+    }, [assignedSurveys, searchQuery]);
+
     const updateQuestion = (id: string, changes: Partial<QuestionDraft>) => {
         setQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, ...changes } : q)));
     };
@@ -684,7 +695,7 @@ export default function Surveys() {
                                 <p className="survey-section-eyebrow">Mis encuestas</p>
                                 <h3>Seguimiento personal</h3>
                                 <p className="survey-section-description">
-                                    {assignedSurveys.length > 0
+                                    {filteredAssignedSurveys.length > 0
                                         ? 'Selecciona una encuesta para revisarla o responder.'
                                         : 'Aún no tienes encuestas asignadas.'}
                                 </p>
@@ -697,13 +708,13 @@ export default function Surveys() {
                             </p>
                         )}
 
-                        {currentWorker && assignedSurveys.length === 0 && (
+                        {currentWorker && filteredAssignedSurveys.length === 0 && (
                             <p className="text-muted text-sm">No tienes encuestas asignadas por ahora.</p>
                         )}
 
-                        {currentWorker && assignedSurveys.length > 0 && (
+                        {currentWorker && filteredAssignedSurveys.length > 0 && (
                             <div className="assigned-grid">
-                                {assignedSurveys.map(({ survey, recipient }) => (
+                                {filteredAssignedSurveys.map(({ survey, recipient }) => (
                                     <div key={survey.surveyId} className={`assigned-card ${recipient.estado}`}>
                                         <div className="assigned-card-header">
                                             <div>
@@ -805,7 +816,7 @@ export default function Surveys() {
                                     <div
                                         style={{
                                             fontWeight: 600,
-                                            color: activeTab === 'asignadas' ? 'var(--warning-700)' : 'var(--text-secondary)',
+                                            color: activeTab === 'asignadas' ? '#b45309' : 'var(--text-secondary)',
                                             fontSize: 'var(--text-base)',
                                         }}
                                     >
@@ -814,13 +825,13 @@ export default function Surveys() {
                                     <div
                                         style={{
                                             fontSize: 'var(--text-sm)',
-                                            color: activeTab === 'asignadas' ? 'var(--warning-600)' : 'var(--text-muted)',
+                                            color: activeTab === 'asignadas' ? '#d97706' : 'var(--text-muted)',
                                         }}
                                     >
                                         Seguimiento personal
                                     </div>
                                 </div>
-                                {assignedSurveys.filter(s => s.recipient.estado === 'pendiente').length > 0 && (
+                                {filteredAssignedSurveys.filter(s => s.recipient.estado === 'pendiente').length > 0 && (
                                     <span
                                         className="badge"
                                         style={{
@@ -916,7 +927,7 @@ export default function Surveys() {
                                         <p className="survey-section-eyebrow">Mis encuestas</p>
                                         <h3>Seguimiento personal</h3>
                                         <p className="survey-section-description">
-                                            {assignedSurveys.length > 0
+                                            {filteredAssignedSurveys.length > 0
                                                 ? 'Selecciona una encuesta para revisarla o responder.'
                                                 : 'Aún no tienes encuestas asignadas.'}
                                         </p>
@@ -929,13 +940,13 @@ export default function Surveys() {
                                     </p>
                                 )}
 
-                                {currentWorker && assignedSurveys.length === 0 && (
+                                {currentWorker && filteredAssignedSurveys.length === 0 && (
                                     <p className="text-muted text-sm">No tienes encuestas asignadas por ahora.</p>
                                 )}
 
-                                {currentWorker && assignedSurveys.length > 0 && (
+                                {currentWorker && filteredAssignedSurveys.length > 0 && (
                                     <div className="assigned-grid">
-                                        {assignedSurveys.map(({ survey, recipient }) => (
+                                        {filteredAssignedSurveys.map(({ survey, recipient }) => (
                                             <div key={survey.surveyId} className={`assigned-card ${recipient.estado}`}>
                                                 <div className="assigned-card-header">
                                                     <div>
