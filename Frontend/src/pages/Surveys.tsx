@@ -582,7 +582,7 @@ export default function Surveys() {
                 survey.surveyId,
                 survey.titulo,
                 recipient.workerId,
-                user.nombre || 'Trabajador',
+                user?.nombre || 'Trabajador',
                 responsesPayload,
                 pin
             );

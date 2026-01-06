@@ -18,7 +18,7 @@ import {
     FiMoon,
     FiSun
 } from 'react-icons/fi';
-import { surveysApi, workersApi, inboxApi, type InboxMessage } from '../api/client';
+import { surveysApi, workersApi, type InboxMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
@@ -152,8 +152,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     const pendingBadgeLabel = pendingSurveyCount > 99 ? '99+' : String(pendingSurveyCount);
 
     // Inbox notifications state
-    const [unreadInboxCount, setUnreadInboxCount] = useState(0);
-    const [recentMessages, setRecentMessages] = useState<InboxMessage[]>([]);
+    const [unreadInboxCount] = useState(0);
+    const [recentMessages] = useState<InboxMessage[]>([]);
     const [showNotificationPopup, setShowNotificationPopup] = useState(false);
     const inboxBadgeLabel = unreadInboxCount > 99 ? '99+' : String(unreadInboxCount);
 
@@ -161,34 +161,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     useEffect(() => {
         if (!user?.userId) return;
 
-        let cancelled = false;
-
-        const loadInboxData = async () => {
-            try {
-                // Get unread count
-                const countResponse = await inboxApi.getUnreadCount(user.userId);
-                if (!cancelled && countResponse.success && countResponse.data) {
-                    setUnreadInboxCount(countResponse.data.unreadCount);
-                }
-
-                // Get recent messages for popup
-                const inboxResponse = await inboxApi.getInbox(user.userId, 'unread', 5);
-                if (!cancelled && inboxResponse.success && inboxResponse.data) {
-                    setRecentMessages(inboxResponse.data.messages);
-                }
-            } catch (error) {
-                // Silently fail to avoid console spam during auto-refresh
-                // console.error('Error loading inbox data:', error);
-            }
-        };
-
-        // loadInboxData();
-        // const intervalId = window.setInterval(loadInboxData, 10000); // Temporary disable to clear console errors
-
-        return () => {
-            cancelled = true;
-            // window.clearInterval(intervalId);
-        };
+        // Inbox auto-refresh está deshabilitado por ahora
+        return () => {};
     }, [user?.userId]);
 
     useEffect(() => {

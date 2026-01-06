@@ -23,7 +23,6 @@ import {
     type DigitalSignature,
     REQUEST_TYPES
 } from '../api/client';
-import { useAuth } from '../context/AuthContext';
 
 interface WorkerStats {
     totalFirmas: number;
@@ -63,9 +62,6 @@ export default function WorkerDetail() {
     const [signatures, setSignatures] = useState<DigitalSignature[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-
-
-    const normalizeRut = (r: string) => r.replace(/[.-]/g, '').toLowerCase();
 
     useEffect(() => {
         if (rut) {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { FiCheck, FiAlertTriangle, FiShield, FiBookOpen, FiUser, FiCalendar, FiX, FiDownload } from 'react-icons/fi';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -293,7 +293,6 @@ export default function MIPERVisual({ data, onApprove, onEdit }: MIPERVisualProp
         const legendData: any[] = [];
         rows.forEach(row => {
             cols.forEach(col => {
-                const key = `${row}-${col}`;
                 const hazardsInCell = data.peligros.filter(p => p.probabilidad === row && p.consecuencia === col);
                 if (hazardsInCell.length > 0) {
                     legendData.push([

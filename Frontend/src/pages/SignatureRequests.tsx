@@ -469,14 +469,6 @@ export default function SignatureRequests() {
                                     {filteredRequests.map((request) => {
                                         const isExpanded = selectedRequest?.requestId === request.requestId;
                                         const progressPercent = (request.totalFirmados / request.totalRequeridos) * 100;
-                                        const statusColors: Record<string, string> = {
-                                            pendiente: 'var(--warning-400)',
-                                            en_proceso: 'var(--info-400)',
-                                            completada: 'var(--success-400)',
-                                            cancelada: 'var(--error-400)',
-                                            vencida: 'var(--neutral-400)',
-                                        };
-
                                         return (
                                             <div
                                                 key={request.requestId}
