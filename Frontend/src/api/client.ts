@@ -739,6 +739,14 @@ export const surveysApi = {
 };
 
 // Incidents API Types
+export interface IncidentLocation {
+    lat: number;
+    lng: number;
+    accuracy?: number;
+    source?: 'geolocalizacion' | 'manual';
+    timestamp?: number;
+}
+
 export interface IncidentEvidencePreview {
     key: string;
     url?: string;
@@ -776,6 +784,7 @@ export interface Incident {
     createdAt: string;
     updatedAt: string;
     evidencePreviews?: IncidentEvidencePreview[];
+    ubicacion?: IncidentLocation;
 }
 
 export interface Investigation {
@@ -809,6 +818,7 @@ export interface CreateIncidentData {
     clasificacion?: 'hallazgo' | 'incidente';
     tipoHallazgo?: 'accion' | 'condicion';
     etapaConstructiva?: string;
+    ubicacion?: IncidentLocation;
 }
 
 export interface UpdateIncidentData {
@@ -822,6 +832,7 @@ export interface UpdateIncidentData {
         diep?: string;
     };
     evidencias?: string[];
+    ubicacion?: IncidentLocation;
 }
 
 // Nuevas interfaces para Fase 4
@@ -862,6 +873,7 @@ export interface QuickReportData {
         nombre: string;
         timestamp: string;
     };
+    ubicacion?: IncidentLocation;
 }
 
 export interface QRReportResponse {

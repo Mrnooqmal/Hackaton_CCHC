@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { KeyboardEvent } from 'react';
 import Header from '../components/Header';
 import {
@@ -9,8 +9,7 @@ import {
     FiMic, FiCamera, FiStopCircle, FiRefreshCw, FiPlay, FiZap
 } from 'react-icons/fi';
 import { incidentsApi, aiApi } from '../api/client';
-import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData } from '../api/client';
-import { useRef } from 'react';
+import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData, IncidentLocation } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
@@ -91,6 +90,9 @@ export default function Incidents() {
     const [confirmaEnvio, setConfirmaEnvio] = useState(false);
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [uploading, setUploading] = useState(false);
+    const [location, setLocation] = useState<IncidentLocation | null>(null);
+    const [isGettingLocation, setIsGettingLocation] = useState(false);
+    const [locationError, setLocationError] = useState('');
 
     const [chartMetric, setChartMetric] = useState<'total' | 'accidentes' | 'incidentes'>('total');
     const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -177,6 +179,74 @@ export default function Incidents() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+
+    const buildMapsLink = (lat: number, lng: number) => `https://www.google.com/maps?q=${lat},${lng}&z=18`;
+
+    const buildEmbedUrl = (lat: number, lng: number) => {
+        const delta = 0.01;
+        const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
+        return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
+    };
+
+    const requestLocation = useCallback(async (options?: { force?: boolean }) => {
+        if (location && !options?.force) return location;
+        if (!navigator.geolocation) {
+            setLocationError('Tu navegador no permite obtener la ubicación automáticamente.');
+            return null;
+        }
+
+        setIsGettingLocation(true);
+        setLocationError('');
+
+        const getPosition = (opts: PositionOptions) => new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, opts);
+        });
+
+        try {
+            const baseOptions: PositionOptions = {
+                enableHighAccuracy: true,
+                timeout: 20000,
+                maximumAge: 0
+            };
+
+            const first = await getPosition(baseOptions);
+            let best = first;
+
+            // If accuracy is low (bigger number = worse), try once more to refine
+            if (typeof first.coords.accuracy === 'number' && first.coords.accuracy > 40) {
+                try {
+                    const second = await getPosition({ ...baseOptions, timeout: 25000 });
+                    if (second.coords.accuracy < first.coords.accuracy) {
+                        best = second;
+                    }
+                } catch (retryErr) {
+                    console.warn('No se pudo mejorar la precisión de GPS', retryErr);
+                }
+            }
+
+            const coords: IncidentLocation = {
+                lat: Number(best.coords.latitude.toFixed(6)),
+                lng: Number(best.coords.longitude.toFixed(6)),
+                accuracy: Math.round(best.coords.accuracy),
+                source: 'geolocalizacion',
+                timestamp: best.timestamp
+            };
+            setLocation(coords);
+            return coords;
+        } catch (err) {
+            console.error('Error obteniendo ubicación', err);
+            setLocationError('No se pudo obtener tu ubicación. Revisa permisos de GPS.');
+            return null;
+        } finally {
+            setIsGettingLocation(false);
+        }
+    }, [location]);
+
+    useEffect(() => {
+        if (showModal && step === 1 && !location && !isGettingLocation) {
+            requestLocation();
+        }
+    }, [showModal, step, location, isGettingLocation, requestLocation]);
 
     // Keep video element in sync with the active stream so the preview renders reliably
     useEffect(() => {
@@ -372,12 +442,16 @@ export default function Incidents() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setUploading(true);
+        setFormError('');
+
+        const currentLocation = await requestLocation({ force: true });
 
         try {
             const response = await incidentsApi.create({
                 ...formData,
                 reportadoPor: user?.nombre || 'Usuario',
-                empresaId: user?.empresaId
+                empresaId: user?.empresaId,
+                ubicacion: currentLocation || undefined
             });
 
             if (response.success && response.data) {
@@ -426,6 +500,9 @@ export default function Incidents() {
         });
         setUploadedFiles([]);
         setConfirmaEnvio(false);
+        setLocation(null);
+        setLocationError('');
+        setIsGettingLocation(false);
     };
 
     const clearFilters = () => {
@@ -734,6 +811,8 @@ export default function Incidents() {
                 };
             }))
         : [];
+
+    const selectedIncidentLocation = selectedIncident?.ubicacion || null;
 
     return (
         <>
@@ -1596,6 +1675,68 @@ export default function Incidents() {
                                             </div>
                                         </div>
 
+                                        {/* Sección: Ubicación */}
+                                        <div className="form-section">
+                                            <h3 className="form-section-title flex items-center gap-2">
+                                                <FiMapPin /> Ubicación del Reporte
+                                            </h3>
+                                            <div className="location-box">
+                                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-sm text-muted">Capturamos tu ubicación actual al enviar el incidente.</p>
+                                                        {location && (
+                                                            <p className="text-xs text-primary-600 font-semibold mt-1">
+                                                                Coordenadas listas ({location.lat.toFixed(5)}, {location.lng.toFixed(5)})
+                                                                {location.accuracy ? ` · ±${location.accuracy}m` : ''}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-secondary btn-sm"
+                                                        onClick={() => requestLocation({ force: true })}
+                                                        disabled={isGettingLocation}
+                                                    >
+                                                        {isGettingLocation ? <><FiRefreshCw className="mr-2 animate-spin" /> Buscando GPS...</> : <><FiMapPin className="mr-2" /> Usar mi ubicación</>}
+                                                    </button>
+                                                </div>
+
+                                                {locationError && (
+                                                    <div className="location-error">
+                                                        <FiAlertCircle size={14} />
+                                                        <span>{locationError}</span>
+                                                    </div>
+                                                )}
+
+                                                {isGettingLocation && !location && (
+                                                    <div className="location-loading">
+                                                        <div className="spinner" />
+                                                        <span className="text-sm">Intentando obtener tu posición...</span>
+                                                    </div>
+                                                )}
+
+                                                {location ? (
+                                                    <div className="map-preview-frame mt-3">
+                                                        <iframe
+                                                            src={buildEmbedUrl(location.lat, location.lng)}
+                                                            loading="lazy"
+                                                            aria-label="Mapa de ubicación actual"
+                                                        />
+                                                        <a
+                                                            className="map-preview-overlay"
+                                                            href={buildMapsLink(location.lat, location.lng)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                        >
+                                                            Abrir en Maps
+                                                        </a>
+                                                    </div>
+                                                ) : (!isGettingLocation && !locationError) && (
+                                                    <p className="text-xs text-muted mt-2">Aún no tenemos tu ubicación. Puedes intentar capturarla antes de enviar.</p>
+                                                )}
+                                            </div>
+                                        </div>
+
                                         {/* Sección: Trabajador Afectado */}
                                         <div className="form-section">
                                             <h3 className="form-section-title">Trabajador Afectado</h3>
@@ -1874,6 +2015,34 @@ export default function Incidents() {
                                                 <span className="detail-label">Centro de Trabajo:</span>
                                                 <span className="detail-value">{selectedIncident.centroTrabajo}</span>
                                             </div>
+                                            {selectedIncidentLocation &&
+                                                typeof selectedIncidentLocation.lat === 'number' &&
+                                                typeof selectedIncidentLocation.lng === 'number' && (
+                                                <div className="location-map-card mt-3">
+                                                    <div className="detail-row">
+                                                        <span className="detail-label">Coordenadas:</span>
+                                                        <span className="detail-value">
+                                                            {selectedIncidentLocation.lat.toFixed(5)}, {selectedIncidentLocation.lng.toFixed(5)}
+                                                            {selectedIncidentLocation.accuracy ? ` · ±${selectedIncidentLocation.accuracy}m` : ''}
+                                                        </span>
+                                                    </div>
+                                                    <div className="map-preview-frame">
+                                                        <iframe
+                                                            src={buildEmbedUrl(selectedIncidentLocation.lat, selectedIncidentLocation.lng)}
+                                                            loading="lazy"
+                                                            aria-label="Mapa de ubicación del incidente"
+                                                        />
+                                                        <a
+                                                            className="map-preview-overlay"
+                                                            href={buildMapsLink(selectedIncidentLocation.lat, selectedIncidentLocation.lng)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                        >
+                                                            Abrir en Maps
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -2555,6 +2724,72 @@ export default function Incidents() {
 
                 .btn-shutter:hover .btn-shutter-inner {
                     background: var(--primary-500);
+                }
+
+                /* Location preview */
+                .location-box {
+                    border: 1px dashed var(--surface-border);
+                    background: var(--surface-elevated);
+                    border-radius: var(--radius-md);
+                    padding: var(--space-3);
+                }
+
+                .location-error {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-2);
+                    color: var(--danger-500);
+                    font-size: var(--text-sm);
+                    margin-top: var(--space-2);
+                }
+
+                .location-loading {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-2);
+                    color: var(--text-muted);
+                    margin-top: var(--space-2);
+                }
+
+                .map-preview-frame {
+                    position: relative;
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    overflow: hidden;
+                    background: var(--surface-card);
+                    aspect-ratio: 16 / 9;
+                }
+
+                .map-preview-frame iframe {
+                    width: 100%;
+                    height: 100%;
+                    border: 0;
+                    pointer-events: none;
+                }
+
+                .map-preview-overlay {
+                    position: absolute;
+                    inset: 0;
+                    display: flex;
+                    align-items: flex-end;
+                    padding: var(--space-3);
+                    background: linear-gradient(180deg, transparent 60%, rgba(0, 0, 0, 0.55));
+                    color: white;
+                    font-weight: 700;
+                    text-decoration: none;
+                    opacity: 1;
+                    transition: opacity var(--transition-normal);
+                }
+
+                .map-preview-frame:hover .map-preview-overlay {
+                    opacity: 1;
+                }
+
+                .location-map-card {
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    padding: var(--space-3);
+                    background: var(--surface-card);
                 }
 
                 .modal-close-btn {
