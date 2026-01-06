@@ -178,6 +178,19 @@ export default function Incidents() {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
 
+    // Keep video element in sync with the active stream so the preview renders reliably
+    useEffect(() => {
+        if (!videoRef.current) return;
+
+        if (videoStream) {
+            videoRef.current.srcObject = videoStream;
+            const playPromise = videoRef.current.play();
+            playPromise?.catch(err => console.warn('No se pudo reproducir la vista previa de la cámara', err));
+        } else {
+            videoRef.current.srcObject = null;
+        }
+    }, [videoStream]);
+
     useEffect(() => {
         if (!showModal) {
             stopCamera();
@@ -1330,7 +1343,10 @@ export default function Incidents() {
                                                 <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                                                     <FiCamera /> 1. Evidencia Visual
                                                 </h3>
-                                                <div className="camera-view bg-black rounded-xl overflow-hidden relative group">
+                                                {cameraActive && (
+                                                    <div className="camera-live-label">Live View</div>
+                                                )}
+                                                <div className={`camera-view ${cameraActive ? 'is-active' : 'is-idle'} bg-black rounded-xl overflow-hidden relative group`}>
                                                     {cameraActive ? (
                                                         <>
                                                             <video
@@ -1340,7 +1356,7 @@ export default function Incidents() {
                                                                 className="w-full h-full object-cover"
                                                             />
                                                             <div className="absolute inset-0 pointer-events-none border-[10px] border-black/10"></div>
-                                                            <div className="absolute inset-x-0 bottom-6 pointer-events-none flex justify-center" style={{ marginTop: '20px' }}> {/* Añade margen superior */}
+                                                            <div className="absolute inset-x-0 bottom-8 pointer-events-none flex justify-center" style={{ marginTop: '20px' }}> {/* Añade margen superior y separa el botón de la vista */}
                                                                 <div className="flex items-center gap-40 pointer-events-auto"> {/* Aumenta el gap */}
                                                                     <button
                                                                         className="btn-shutter group/shutter"
@@ -1360,9 +1376,6 @@ export default function Incidents() {
                                                                         <FiX size={20} />
                                                                     </button>
                                                                 </div>
-                                                            </div>
-                                                            <div className="absolute top-6 left-6 bg-black/40 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full border border-white/10 uppercase tracking-widest font-bold">
-                                                                Live View
                                                             </div>
                                                         </>
                                                     ) : (
@@ -2422,12 +2435,35 @@ export default function Incidents() {
                     border: 2px solid var(--surface-border);
                     box-shadow: var(--shadow-inner);
                     position: relative;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .camera-live-label {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 6px 10px;
+                    font-size: 10px;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    color: white;
+                    background: rgba(0,0,0,0.6);
+                    border: 1px solid rgba(255,255,255,0.12);
+                    border-radius: 999px;
+                    margin-bottom: var(--space-2);
+                    width: fit-content;
+                }
+
+                .camera-view.is-idle {
+                    aspect-ratio: auto;
                 }
 
                 .camera-placeholder {
-                    padding-top: var(--space-3);
-                    min-height: 220px;
-                    justify-content: flex-start;
+                    padding: var(--space-3);
+                    min-height: 120px;
+                    justify-content: center;
                 }
 
                 .audio-recorder {
