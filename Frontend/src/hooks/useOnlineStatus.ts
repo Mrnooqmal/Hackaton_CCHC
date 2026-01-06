@@ -10,10 +10,7 @@ export function useOnlineStatus() {
     useEffect(() => {
         const handleOnline = () => {
             setIsOnline(true);
-            // Si estábamos offline, marcarlo para trigger de sync
-            if (!isOnline) {
-                setWasOffline(true);
-            }
+            setWasOffline(true); // Siempre marcar que estuvo offline para forzar sync
         };
 
         const handleOffline = () => {
@@ -27,7 +24,7 @@ export function useOnlineStatus() {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
-    }, [isOnline]);
+    }, []);
 
     const clearWasOffline = useCallback(() => {
         setWasOffline(false);
@@ -47,7 +44,7 @@ export function useRealConnectivity(apiUrl: string, checkInterval: number = 3000
 
     const checkConnectivity = useCallback(async () => {
         if (checking) return isConnected;
-        
+
         setChecking(true);
         try {
             const controller = new AbortController();
@@ -57,7 +54,7 @@ export function useRealConnectivity(apiUrl: string, checkInterval: number = 3000
                 method: 'GET',
                 signal: controller.signal,
             });
-            
+
             clearTimeout(timeoutId);
             const connected = response.ok;
             setIsConnected(connected);

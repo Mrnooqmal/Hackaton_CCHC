@@ -22,6 +22,7 @@ import {
 import { documentsApi, workersApi, uploadsApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
+import SignatureModal from '../components/SignatureModal';
 
 const DOCUMENT_TYPES: Record<string, { label: string; color: string }> = {
     IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)' },
@@ -44,7 +45,6 @@ export default function Documents() {
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
     const [showSignModal, setShowSignModal] = useState(false);
-    const [pin, setPin] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('');
     const [uploading, setUploading] = useState(false);
@@ -284,18 +284,11 @@ export default function Documents() {
 
     const handleOpenSignModal = (doc: Document) => {
         setSelectedDocument(doc);
-        setPin('');
         setShowSignModal(true);
     };
 
-    const handleSign = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSign = async (pin: string) => {
         if (!selectedDocument || !user?.workerId) return;
-
-        if (!pin || pin.length !== 4) {
-            showNotification('El PIN debe tener 4 dígitos', 'warning');
-            return;
-        }
 
         setSigning(true);
         try {
@@ -309,20 +302,20 @@ export default function Documents() {
 
             if (result.success) {
                 if (result.offline) {
-                    showNotification('📴 Firma guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
+                    showNotification('Firma guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
                 } else {
-                    showNotification('✅ Documento firmado exitosamente', 'success');
+                    showNotification('Documento firmado exitosamente', 'success');
                 }
                 setShowSignModal(false);
                 if (!result.offline) {
-                    loadData(); // Solo recargar si se envió al servidor
+                    loadData();
                 }
             } else {
-                showNotification(result.error || 'Error al firmar documento', 'error');
+                throw new Error(result.error || 'Error al firmar documento');
             }
         } catch (error) {
             console.error('Error signing document:', error);
-            showNotification('Error al firmar documento', 'error');
+            throw error; // Re-throw so SignatureModal shows the error
         } finally {
             setSigning(false);
         }
@@ -431,9 +424,9 @@ export default function Documents() {
                     <div
                         className="mb-4 p-3 rounded-lg flex items-center justify-between"
                         style={{
-                            background: !isOnline ? 'var(--warning-500/15)' : 'var(--info-500/15)',
-                            border: `1px solid ${!isOnline ? 'var(--warning-500)' : 'var(--info-500)'}`,
-                            color: !isOnline ? 'var(--warning-700)' : 'var(--info-700)'
+                            background: !isOnline ? 'rgba(245, 158, 11, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                            border: `1px solid ${!isOnline ? '#f59e0b' : '#3b82f6'}`,
+                            color: !isOnline ? '#b45309' : '#1d4ed8'
                         }}
                     >
                         <div className="flex items-center gap-2">
@@ -1116,74 +1109,16 @@ export default function Documents() {
                 }
 
                 {/* Sign Modal */}
-                {
-                    showSignModal && selectedDocument && (
-                        <div className="modal-overlay" onClick={() => setShowSignModal(false)}>
-                            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-                                <div className="modal-header">
-                                    <h2 className="modal-title">Firmar Documento</h2>
-                                    <button
-                                        className="btn btn-ghost btn-icon"
-                                        onClick={() => setShowSignModal(false)}
-                                    >
-                                        <FiX />
-                                    </button>
-                                </div>
-                                <form onSubmit={handleSign}>
-                                    <div className="modal-body">
-                                        <p className="mb-4">
-                                            Estás a punto de firmar: <strong>{selectedDocument.titulo}</strong>
-                                        </p>
-                                        <p className="text-sm text-muted mb-6">
-                                            Ingresa tu PIN de 4 dígitos para confirmar tu identidad y firmar digitalmente este documento.
-                                        </p>
-
-                                        <div className="form-group">
-                                            <label className="form-label center-text">Tu PIN de seguridad</label>
-                                            <div className="flex justify-center">
-                                                <input
-                                                    type="password"
-                                                    value={pin}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                                                        setPin(val);
-                                                    }}
-                                                    className="form-input text-center"
-                                                    style={{
-                                                        width: '150px',
-                                                        letterSpacing: '8px',
-                                                        fontSize: '24px',
-                                                        fontWeight: 'bold'
-                                                    }}
-                                                    placeholder="••••"
-                                                    autoFocus
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="modal-footer">
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary"
-                                            onClick={() => setShowSignModal(false)}
-                                            disabled={signing}
-                                        >
-                                            Cancelar
-                                        </button>
-                                        <button
-                                            type="submit"
-                                            className="btn btn-success"
-                                            disabled={signing || pin.length !== 4}
-                                            style={{ background: 'var(--success-600)', borderColor: 'var(--success-600)', color: 'white' }}
-                                        >
-                                            {signing ? 'Firmando...' : 'Confirmar Firma'}
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    )
-                }
+                <SignatureModal
+                    isOpen={showSignModal && !!selectedDocument}
+                    onClose={() => setShowSignModal(false)}
+                    onConfirm={handleSign}
+                    type="document"
+                    title="Firmar Documento"
+                    itemName={selectedDocument?.titulo}
+                    description="Al firmar, confirmas que has le\u00eddo y aceptas el contenido de este documento."
+                    loading={signing}
+                />
             </div >
             <style>{`
                 @keyframes slideIn {
