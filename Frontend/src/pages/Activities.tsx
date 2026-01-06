@@ -183,8 +183,7 @@ export default function Activities() {
                     <select
                         value={filterType}
                         onChange={(e) => setFilterType(e.target.value)}
-                        className="form-control"
-                        style={{ width: 'auto', minWidth: '150px' }}
+                        className="form-input form-select activities-filter-select"
                     >
                         <option value="">Todos los tipos</option>
                         {Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => (

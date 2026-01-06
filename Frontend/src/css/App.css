@@ -1026,6 +1026,27 @@
   padding-right: 40px;
 }
 
+.activities-filter-select {
+  flex: 0 0 220px;
+  min-width: 180px;
+  max-width: 260px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.activities-filter-select option {
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+@media (max-width: 640px) {
+  .activities-filter-select {
+    flex: 1 1 100%;
+    min-width: unset;
+    width: 100%;
+  }
+}
+
 /* Tables */
 .table-container {
   overflow-x: auto;
