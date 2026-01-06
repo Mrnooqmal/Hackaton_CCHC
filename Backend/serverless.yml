@@ -38,6 +38,7 @@ provider:
     USE_PERSONA_SERVICE: 'true'
     # NEW: Feature flag for unified CumplimientoService (Signatures management)
     USE_CUMPLIMIENTO_SERVICE: 'true'
+    GEMINI_API_KEY: ${env:GEMINI_API_KEY}
   httpApi:
     cors:
       allowedOrigins:
@@ -479,6 +480,14 @@ functions:
     events:
       - httpApi:
           path: /ai/extract-incident
+          method: POST
+
+  aiTranscribeAudio:
+    handler: handlers/ai-assistant.transcribeAudio
+    timeout: 60
+    events:
+      - httpApi:
+          path: /ai/transcribe
           method: POST
 
   # Surveys (Encuestas)

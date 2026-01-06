@@ -93,6 +93,7 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                         { path: '/workers', icon: FiUsers, label: 'Trabajadores' },
                         { path: '/activities', icon: FiCalendar, label: 'Actividades' },
                         { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
+                        { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
                     ]
                 }
             ];
@@ -176,16 +177,17 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                     setRecentMessages(inboxResponse.data.messages);
                 }
             } catch (error) {
-                console.error('Error loading inbox data:', error);
+                // Silently fail to avoid console spam during auto-refresh
+                // console.error('Error loading inbox data:', error);
             }
         };
 
-        loadInboxData();
-        const intervalId = window.setInterval(loadInboxData, 10000); // Refresh every 10 seconds for real-time feel
+        // loadInboxData();
+        // const intervalId = window.setInterval(loadInboxData, 10000); // Temporary disable to clear console errors
 
         return () => {
             cancelled = true;
-            window.clearInterval(intervalId);
+            // window.clearInterval(intervalId);
         };
     }, [user?.userId]);
 

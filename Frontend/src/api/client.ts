@@ -1574,4 +1574,10 @@ export const aiApi = {
             method: 'POST',
             body: JSON.stringify({ texto }),
         }),
+
+    transcribeAudio: (audio: string, mimeType: string) =>
+        apiRequest<{ text: string }>('/ai/transcribe', {
+            method: 'POST',
+            body: JSON.stringify({ audio, mimeType }),
+        }),
 };

@@ -171,14 +171,17 @@ export default function Incidents() {
     const [isRecording, setIsRecording] = useState(false);
     const [transcript, setTranscript] = useState('');
     const [isProcessingAI, setIsProcessingAI] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
     const [cameraActive, setCameraActive] = useState(false);
     const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
-    const recognitionRef = useRef<any>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
 
     useEffect(() => {
         if (!showModal) {
             stopCamera();
+            stopRecording(); // ADDED: Ensure recording stops when modal closes
             setTranscript('');
             setFormError('');
         }
@@ -233,40 +236,62 @@ export default function Incidents() {
         resetForm();
     };
 
-    const startRecording = () => {
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            setFormError('Su navegador no soporta reconocimiento de voz. Por favor escriba el reporte.');
-            return;
-        }
+    const startRecording = async () => {
+        setIsRecording(true);
+        audioChunksRef.current = []; // Clear previous chunks
 
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'es-CL';
-        recognition.interimResults = true;
-        recognition.continuous = true;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
 
-        recognition.onresult = (event: any) => {
-            let currentTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                currentTranscript += event.results[i][0].transcript;
-            }
-            setTranscript(currentTranscript);
-        };
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
 
-        recognition.onstart = () => setIsRecording(true);
-        recognition.onend = () => setIsRecording(false);
-        recognition.onerror = (event: any) => {
-            console.error('Speech recognition error', event.error);
+            mediaRecorder.onstop = async () => {
+                setIsRecording(false);
+                setIsTranscribing(true); // Start loading state
+
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = async () => {
+                    const base64String = (reader.result as string).split(',')[1];
+                    try {
+                        console.log('Enviando audio a transcribir...');
+                        const result = await aiApi.transcribeAudio(base64String, 'audio/webm');
+                        if (result.success && result.data) {
+                            setTranscript(result.data.text);
+                            console.log('Transcripción exitosa');
+                        } else {
+                            setFormError('No se pudo transcribir el audio.');
+                        }
+                    } catch (error) {
+                        console.error('Error en transcripción:', error);
+                        setFormError('Error al contactar el servicio de transcripción.');
+                    } finally {
+                        setIsTranscribing(false);
+                        // Clean up tracks
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                };
+            };
+
+            mediaRecorder.start();
+            setFormError('');
+        } catch (error) {
+            console.error('Error al acceder al micrófono:', error);
+            setFormError('Acceso al micrófono denegado o no soportado.');
             setIsRecording(false);
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
+        }
     };
 
     const stopRecording = () => {
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
         }
     };
 
@@ -1399,17 +1424,24 @@ export default function Incidents() {
                                                         <button
                                                             className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'} mb-4`}
                                                             onClick={isRecording ? stopRecording : startRecording}
+                                                            disabled={isTranscribing}
                                                         >
-                                                            {isRecording ? (
+                                                            {isTranscribing ? (
+                                                                <><FiRefreshCw className="mr-2 animate-spin" /> Procesando Audio...</>
+                                                            ) : isRecording ? (
                                                                 <><FiStopCircle className="mr-2" /> Detener Grabación</>
                                                             ) : (
                                                                 <><FiPlay className="mr-2" /> Dictar Reporte</>
                                                             )}
                                                         </button>
 
-                                                        <div className="w-full min-h-[100px] bg-surface-card rounded-lg p-3 border border-surface-border text-sm italic overflow-y-auto max-h-[150px]">
-                                                            {transcript || (isRecording ? 'Escuchando...' : 'Presione dictar y describa el incidente (ej: "Hay una tabla suelta en el andamio del sector B, riesgo de caída")')}
-                                                        </div>
+                                                        <textarea
+                                                            className="w-full min-h-[100px] bg-surface-card rounded-lg p-3 border border-surface-border text-sm italic overflow-y-auto max-h-[150px] resize-none focus:outline-none focus:border-primary-500 transition-colors"
+                                                            value={transcript}
+                                                            onChange={(e) => setTranscript(e.target.value)}
+                                                            placeholder={isRecording ? 'Grabando audio...' : isTranscribing ? 'Transcribiendo...' : 'Presione dictar y describa el incidente (ej: "Hay una tabla suelta en el andamio del sector B, riesgo de caída")'}
+                                                            disabled={isTranscribing}
+                                                        />
                                                     </div>
                                                 </div>
                                             </div>

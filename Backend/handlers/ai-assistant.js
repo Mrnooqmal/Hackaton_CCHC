@@ -1,5 +1,5 @@
 const { success, error, created } = require('../lib/response');
-const bedrock = require('../lib/bedrock');
+const gemini = require('../lib/gemini');
 
 /**
  * Normaliza la respuesta de Bedrock Risk Matrix al formato esperado por el frontend
@@ -273,14 +273,14 @@ module.exports.generateMIPER = async (event) => {
         }
 
         try {
-            console.log('[AI] Calling Bedrock generateMIPER for cargo:', cargo);
-            const result = await bedrock.generateMIPER(cargo, actividades, contexto);
-            console.log('[AI] Bedrock generateMIPER SUCCESS');
+            console.log('[AI] Calling Gemini generateMIPER for cargo:', cargo);
+            const result = await gemini.generateMIPER(cargo, actividades, contexto);
+            console.log('[AI] Gemini generateMIPER SUCCESS');
             const normalized = normalizeMIPERResponse(result, cargo);
-            return success({ ...normalized, _source: 'bedrock', _generatedAt: new Date().toISOString() });
-        } catch (bedrockError) {
-            console.error('[AI] Bedrock generateMIPER FAILED:', bedrockError.name, bedrockError.message);
-            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
+            return success({ ...normalized, _source: 'gemini', _generatedAt: new Date().toISOString() });
+        } catch (geminiError) {
+            console.error('[AI] Gemini generateMIPER FAILED:', geminiError.name, geminiError.message);
+            console.error('[AI] Full error:', JSON.stringify(geminiError, null, 2));
             const fallbackResult = FALLBACK_RESPONSES.miper(cargo);
             return success({ ...fallbackResult, _source: 'fallback', _error: bedrockError.message });
         }
@@ -303,14 +303,14 @@ module.exports.generateRiskMatrix = async (event) => {
         }
 
         try {
-            console.log('[AI] Calling Bedrock generateRiskMatrix for actividad:', actividad);
-            const result = await bedrock.generateRiskMatrix(actividad, descripcion, ubicacion);
-            console.log('[AI] Bedrock generateRiskMatrix SUCCESS');
+            console.log('[AI] Calling Gemini generateRiskMatrix for actividad:', actividad);
+            const result = await gemini.generateRiskMatrix(actividad, descripcion, ubicacion);
+            console.log('[AI] Gemini generateRiskMatrix SUCCESS');
             const normalized = normalizeRiskMatrixResponse(result, actividad);
-            return success({ ...normalized, _source: 'bedrock', _generatedAt: new Date().toISOString() });
-        } catch (bedrockError) {
-            console.error('[AI] Bedrock generateRiskMatrix FAILED:', bedrockError.name, bedrockError.message);
-            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
+            return success({ ...normalized, _source: 'gemini', _generatedAt: new Date().toISOString() });
+        } catch (geminiError) {
+            console.error('[AI] Gemini generateRiskMatrix FAILED:', geminiError.name, geminiError.message);
+            console.error('[AI] Full error:', JSON.stringify(geminiError, null, 2));
             const fallbackResult = FALLBACK_RESPONSES.riskMatrix(actividad);
             return success({ ...fallbackResult, _source: 'fallback', _error: bedrockError.message });
         }
@@ -333,13 +333,13 @@ module.exports.generatePreventionPlan = async (event) => {
         }
 
         try {
-            console.log('[AI] Calling Bedrock generateMitigationPlan for obra:', obra);
-            const result = await bedrock.generateMitigationPlan(obra, riesgos, duracion);
-            console.log('[AI] Bedrock generateMitigationPlan SUCCESS');
-            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
-        } catch (bedrockError) {
-            console.error('[AI] Bedrock generateMitigationPlan FAILED:', bedrockError.name, bedrockError.message);
-            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
+            console.log('[AI] Calling Gemini generateMitigationPlan for obra:', obra);
+            const result = await gemini.generateMitigationPlan(obra, riesgos, duracion);
+            console.log('[AI] Gemini generateMitigationPlan SUCCESS');
+            return success({ ...result, _source: 'gemini', _generatedAt: new Date().toISOString() });
+        } catch (geminiError) {
+            console.error('[AI] Gemini generateMitigationPlan FAILED:', geminiError.name, geminiError.message);
+            console.error('[AI] Full error:', JSON.stringify(geminiError, null, 2));
             return success({
                 titulo: `Plan de Prevención - ${obra}`,
                 periodo: duracion,
@@ -380,13 +380,13 @@ module.exports.generateDailyTalk = async (event) => {
         }
 
         try {
-            console.log('[AI] Calling Bedrock generateDailyTalk for tema:', tema);
-            const result = await bedrock.generateDailyTalk(tema, contexto);
-            console.log('[AI] Bedrock generateDailyTalk SUCCESS');
-            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
-        } catch (bedrockError) {
-            console.error('[AI] Bedrock generateDailyTalk FAILED:', bedrockError.name, bedrockError.message);
-            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
+            console.log('[AI] Calling Gemini generateDailyTalk for tema:', tema);
+            const result = await gemini.generateDailyTalk(tema, contexto);
+            console.log('[AI] Gemini generateDailyTalk SUCCESS');
+            return success({ ...result, _source: 'gemini', _generatedAt: new Date().toISOString() });
+        } catch (geminiError) {
+            console.error('[AI] Gemini generateDailyTalk FAILED:', geminiError.name, geminiError.message);
+            console.error('[AI] Full error:', JSON.stringify(geminiError, null, 2));
             const fallbackResult = FALLBACK_RESPONSES.dailyTalk(tema);
             return success({ ...fallbackResult, _source: 'fallback', _error: bedrockError.message });
         }
@@ -409,13 +409,13 @@ module.exports.analyzeIncident = async (event) => {
         }
 
         try {
-            console.log('[AI] Calling Bedrock analyzeIncident');
-            const result = await bedrock.analyzeIncident(descripcion, { tipo, gravedad, area });
-            console.log('[AI] Bedrock analyzeIncident SUCCESS');
-            return success({ ...result, _source: 'bedrock', _generatedAt: new Date().toISOString() });
-        } catch (bedrockError) {
-            console.error('[AI] Bedrock analyzeIncident FAILED:', bedrockError.name, bedrockError.message);
-            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
+            console.log('[AI] Calling Gemini analyzeIncident');
+            const result = await gemini.analyzeIncident(descripcion, { tipo, gravedad, area });
+            console.log('[AI] Gemini analyzeIncident SUCCESS');
+            return success({ ...result, _source: 'gemini', _generatedAt: new Date().toISOString() });
+        } catch (geminiError) {
+            console.error('[AI] Gemini analyzeIncident FAILED:', geminiError.name, geminiError.message);
+            console.error('[AI] Full error:', JSON.stringify(geminiError, null, 2));
             return success({
                 resumenIncidente: descripcion.substring(0, 100) + '...',
                 arbolDeCausas: {
@@ -466,17 +466,17 @@ module.exports.chat = async (event) => {
         }
 
         try {
-            console.log('[AI] Calling Bedrock chat');
-            const respuesta = await bedrock.chat(mensaje);
-            console.log('[AI] Bedrock chat SUCCESS');
+            console.log('[AI] Calling Gemini chat');
+            const respuesta = await gemini.chat(mensaje);
+            console.log('[AI] Gemini chat SUCCESS');
             return success({
                 respuesta,
                 timestamp: new Date().toISOString(),
-                _source: 'bedrock'
+                _source: 'gemini'
             });
-        } catch (bedrockError) {
-            console.error('[AI] Bedrock chat FAILED:', bedrockError.name, bedrockError.message);
-            console.error('[AI] Full error:', JSON.stringify(bedrockError, null, 2));
+        } catch (geminiError) {
+            console.error('[AI] Gemini chat FAILED:', geminiError.name, geminiError.message);
+            console.error('[AI] Full error:', JSON.stringify(geminiError, null, 2));
             const respuestaFallback = generarRespuestaFallback(mensaje);
             return success({
                 respuesta: respuestaFallback,
@@ -562,12 +562,12 @@ module.exports.extractIncident = async (event) => {
         }
 
         try {
-            console.log('[AI] Calling Bedrock extractIncidentFromText');
-            const result = await bedrock.extractIncidentFromText(texto);
-            console.log('[AI] Bedrock extractIncidentFromText SUCCESS');
+            console.log('[AI] Calling Gemini extractIncidentFromText');
+            const result = await gemini.extractIncidentFromText(texto);
+            console.log('[AI] Gemini extractIncidentFromText SUCCESS');
             return success({ ...result, _generatedAt: new Date().toISOString() });
-        } catch (bedrockError) {
-            console.error('[AI] Bedrock extractIncidentFromText FAILED:', bedrockError.message);
+        } catch (geminiError) {
+            console.error('[AI] Gemini extractIncidentFromText FAILED:', geminiError.message);
             // Fallback: Return raw text in description if AI fails
             return success({
                 tipo: 'incidente',
@@ -578,6 +578,29 @@ module.exports.extractIncident = async (event) => {
         }
     } catch (err) {
         console.error('Error extracting incident info:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * POST /ai/transcribe - Transcribir audio a texto usando Gemini
+ */
+module.exports.transcribeAudio = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+        const { audio, mimeType } = body;
+
+        if (!audio) {
+            return error('Se requiere el audio en base64');
+        }
+
+        console.log('[AI] Calling Gemini transcribeAudio');
+        const text = await gemini.transcribeAudio(audio, mimeType);
+        console.log('[AI] Gemini transcribeAudio SUCCESS, length:', text.length);
+
+        return success({ text });
+    } catch (err) {
+        console.error('Error transcribing audio:', err);
         return error(err.message, 500);
     }
 };
