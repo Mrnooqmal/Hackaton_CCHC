@@ -14,7 +14,9 @@ import {
     FiEye,
     FiFile,
     FiTrash2,
-    FiUserCheck
+    FiUserCheck,
+    FiAlertCircle,
+    FiCalendar
 } from 'react-icons/fi';
 import { documentsApi, workersApi, uploadsApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -43,6 +45,7 @@ export default function Documents() {
     const [uploading, setUploading] = useState(false);
     const [creating, setCreating] = useState(false);
     const [assigning, setAssigning] = useState(false);
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // New document form
@@ -57,6 +60,11 @@ export default function Documents() {
     const [assignmentType, setAssignmentType] = useState<'todos' | 'cargo' | 'personalizado'>('todos');
     const [selectedCargo, setSelectedCargo] = useState('');
     const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
+
+    const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 5000);
+    };
 
     useEffect(() => {
         loadData();
@@ -87,7 +95,7 @@ export default function Documents() {
         if (file) {
             // Validate file size (max 10MB)
             if (file.size > 10 * 1024 * 1024) {
-                alert('El archivo es demasiado grande. Máximo 10MB.');
+                showNotification('El archivo es demasiado grande. Máximo 10MB.', 'error');
                 return;
             }
             setSelectedFile(file);
@@ -139,7 +147,7 @@ export default function Documents() {
             return urlRes.data.fileKey;
         } catch (err) {
             console.error('Upload error:', err);
-            alert('Error al subir el archivo');
+            showNotification('Error al subir el archivo', 'error');
             return null;
         } finally {
             setUploading(false);
@@ -149,7 +157,7 @@ export default function Documents() {
     const handleCreateDocument = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newDoc.tipo || !newDoc.titulo) {
-            alert('Por favor complete los campos obligatorios');
+            showNotification('Por favor complete los campos obligatorios', 'warning');
             return;
         }
 
@@ -178,13 +186,13 @@ export default function Documents() {
                 setDocuments([response.data, ...documents]);
                 setShowModal(false);
                 resetForm();
-                alert('Documento creado exitosamente');
+                showNotification('Documento creado exitosamente', 'success');
             } else {
-                alert(response.error || 'Error al crear documento');
+                showNotification(response.error || 'Error al crear documento', 'error');
             }
         } catch (error) {
             console.error('Error creating document:', error);
-            alert('Error al crear documento');
+            showNotification('Error al crear documento', 'error');
         } finally {
             setCreating(false);
         }
@@ -227,7 +235,7 @@ export default function Documents() {
         }
 
         if (workerIdsToAssign.length === 0) {
-            alert('No hay trabajadores para asignar');
+            showNotification('No hay trabajadores para asignar', 'warning');
             return;
         }
 
@@ -240,15 +248,15 @@ export default function Documents() {
             });
 
             if (response.success) {
-                alert(`Documento asignado a ${workerIdsToAssign.length} trabajadores`);
+                showNotification(`Documento asignado a ${workerIdsToAssign.length} trabajadores`, 'success');
                 setShowAssignModal(false);
                 loadData(); // Refresh to get updated assignments
             } else {
-                alert(response.error || 'Error al asignar documento');
+                showNotification(response.error || 'Error al asignar documento', 'error');
             }
         } catch (error) {
             console.error('Error assigning document:', error);
-            alert('Error al asignar documento');
+            showNotification('Error al asignar documento', 'error');
         } finally {
             setAssigning(false);
         }
@@ -260,12 +268,22 @@ export default function Documents() {
             if (response.success && response.data?.downloadUrl) {
                 window.open(response.data.downloadUrl, '_blank');
             } else {
-                alert('Error al obtener el archivo');
+                showNotification('Error al obtener el archivo', 'error');
             }
         } catch (error) {
             console.error('Error downloading file:', error);
-            alert('Error al descargar archivo');
+            showNotification('Error al descargar archivo', 'error');
         }
+    };
+
+    const formatDateTime = (value?: string | null) => {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString('es-CL', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        });
     };
 
     const toggleWorkerSelection = (workerId: string) => {
@@ -296,6 +314,30 @@ export default function Documents() {
     return (
         <>
             <Header title="Documentos" />
+
+            {notification && (
+                <div className={`notification notification-${notification.type}`} style={{
+                    position: 'fixed',
+                    top: '20px',
+                    right: '20px',
+                    zIndex: 10000,
+                    padding: 'var(--space-4) var(--space-6)',
+                    borderRadius: 'var(--radius-lg)',
+                    background: notification.type === 'error' ? 'var(--danger-500)' :
+                        notification.type === 'success' ? 'var(--success-500)' :
+                            notification.type === 'warning' ? 'var(--warning-500)' : 'var(--primary-500)',
+                    color: 'white',
+                    boxShadow: 'var(--shadow-lg)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-3)',
+                    animation: 'slideIn 0.3s ease-out'
+                }}>
+                    {notification.type === 'error' && <FiAlertCircle />}
+                    {notification.type === 'success' && <FiCheck />}
+                    <span>{notification.message}</span>
+                </div>
+            )}
 
             <div className="page-content">
                 <div className="page-header">
@@ -426,10 +468,32 @@ export default function Documents() {
 
                 {/* Documents Grid */}
                 {filteredDocuments.length === 0 ? (
-                    <div className="card text-center" style={{ padding: 'var(--space-12)' }}>
-                        <FiFileText size={48} style={{ color: 'var(--text-muted)', margin: '0 auto var(--space-4)' }} />
-                        <h3>No hay documentos</h3>
-                        <p className="text-muted">Crea tu primer documento haciendo clic en "Nuevo Documento"</p>
+                    <div className="card empty-state" style={{ padding: 'var(--space-12)' }}>
+                        <div className="empty-state-icon-container" style={{
+                            width: '80px',
+                            height: '80px',
+                            borderRadius: '50%',
+                            background: 'var(--surface-elevated)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto var(--space-6)'
+                        }}>
+                            <FiFileText size={40} style={{ color: 'var(--text-muted)' }} />
+                        </div>
+                        <h3 className="empty-state-title" style={{ fontSize: 'var(--text-xl)', fontWeight: 'bold', marginBottom: 'var(--space-2)' }}>
+                            No se encontraron documentos
+                        </h3>
+                        <p className="empty-state-description" style={{ color: 'var(--text-muted)', maxWidth: '400px', margin: '0 auto var(--space-8)' }}>
+                            {searchTerm || filterType
+                                ? 'No hay documentos que coincidan con tu búsqueda actual. Intenta ajustar los filtros.'
+                                : 'Comienza subiendo políticas, reglamentos o procedimientos para tu organización.'}
+                        </p>
+                        {!searchTerm && !filterType && (
+                            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                                <FiPlus /> Crear primer documento
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="grid grid-cols-3">
@@ -483,6 +547,10 @@ export default function Documents() {
                                                 <span>{pendingCount} pendientes</span>
                                             </div>
                                         )}
+                                        <div className="flex items-center gap-2 text-xs text-muted">
+                                            <FiCalendar size={12} />
+                                            <span>{formatDateTime(doc.createdAt)}</span>
+                                        </div>
                                     </div>
 
                                     <div className="flex gap-2">
@@ -690,6 +758,14 @@ export default function Documents() {
                                     </div>
                                 )}
 
+                                <div className="flex items-center gap-3 mb-4">
+                                    <FiCalendar style={{ color: 'var(--primary-500)' }} />
+                                    <div>
+                                        <div className="text-sm font-bold">Fecha de Creación</div>
+                                        <div className="text-sm text-muted">{formatDateTime(selectedDocument.createdAt)}</div>
+                                    </div>
+                                </div>
+
                                 {/* Assignments Status */}
                                 <div>
                                     <h4 className="font-semibold mb-3">
@@ -700,21 +776,35 @@ export default function Documents() {
                                         <p className="text-muted">No hay asignaciones aún</p>
                                     ) : (
                                         <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                                            {selectedDocument.asignaciones.map((asig, idx) => (
-                                                <div
-                                                    key={idx}
-                                                    className="flex items-center justify-between"
-                                                    style={{
-                                                        padding: 'var(--space-2) var(--space-3)',
-                                                        borderBottom: '1px solid var(--surface-border)'
-                                                    }}
-                                                >
-                                                    <span>{asig.nombre || asig.workerId}</span>
-                                                    <span className={`badge ${asig.estado === 'firmado' ? 'badge-success' : 'badge-warning'}`}>
-                                                        {asig.estado === 'firmado' ? 'Firmado' : 'Pendiente'}
-                                                    </span>
-                                                </div>
-                                            ))}
+                                            <table className="table w-full text-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th className="text-left">Trabajador</th>
+                                                        <th className="text-left">Asignado</th>
+                                                        <th className="text-left">Firmado</th>
+                                                        <th className="text-left">Estado</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {selectedDocument.asignaciones.map((assignment, idx) => (
+                                                        <tr
+                                                            key={idx}
+                                                            style={{
+                                                                borderBottom: '1px solid var(--surface-border)'
+                                                            }}
+                                                        >
+                                                            <td>{assignment.nombre || assignment.workerId}</td>
+                                                            <td>{formatDateTime(assignment.fechaAsignacion)}</td>
+                                                            <td>{assignment.fechaFirma ? formatDateTime(assignment.fechaFirma) : '—'}</td>
+                                                            <td>
+                                                                <span className={`badge ${assignment.estado === 'firmado' ? 'badge-success' : 'badge-warning'}`}>
+                                                                    {assignment.estado === 'firmado' ? 'Firmado' : 'Pendiente'}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     )}
                                 </div>
@@ -868,6 +958,37 @@ export default function Documents() {
                     </div>
                 )}
             </div>
+            <style>{`
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+
+                .notification {
+                    transition: all 0.3s ease;
+                }
+
+                .empty-state {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    text-align: center;
+                }
+
+                .spinner {
+                    width: 40px;
+                    height: 40px;
+                    border: 3px solid var(--surface-border);
+                    border-top-color: var(--primary-500);
+                    border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                }
+
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+            `}</style>
         </>
     );
 }

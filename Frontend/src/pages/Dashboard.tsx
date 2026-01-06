@@ -6,9 +6,6 @@ import {
     FiFileText,
     FiCalendar,
     FiAlertTriangle,
-    FiTrendingUp,
-    FiCheck,
-    FiClock,
     FiPlus,
     FiArrowRight,
     FiCheckSquare,
@@ -17,9 +14,9 @@ import {
     FiShield,
     FiBell
 } from 'react-icons/fi';
-import { workersApi, activitiesApi, surveysApi, inboxApi, signaturesApi } from '../api/client';
+import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import type { Worker, Activity, DigitalSignature } from '../api/client';
+import type { Worker, Activity } from '../api/client';
 
 interface PendingTask {
     id: string;
@@ -38,6 +35,7 @@ interface DashboardStats {
     pendingIncidents?: number;
     unreadMessages?: number;
     pendingSurveys?: number;
+    totalDocuments?: number;
 }
 
 export default function Dashboard() {
@@ -123,7 +121,7 @@ export default function Dashboard() {
 
         // Load inbox unread
         try {
-            if (user.userId) {
+            if (user?.userId) {
                 const inboxRes = await inboxApi.getUnreadCount(user.userId);
                 if (inboxRes.success && inboxRes.data) {
                     setStats(s => ({ ...s, unreadMessages: inboxRes.data?.unreadCount || 0 }));
@@ -160,6 +158,27 @@ export default function Dashboard() {
             }
         } catch (err) {
             console.error('Error loading workers:', err);
+        }
+
+        // Load documents stats
+        try {
+            const docsRes = await documentsApi.list();
+            if (docsRes.success && docsRes.data) {
+                setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
+            }
+        } catch (err) {
+            console.error('Error loading documents:', err);
+        }
+
+        // Load incidents stats
+        try {
+            const incidentsRes = await incidentsApi.list();
+            if (incidentsRes.success && incidentsRes.data) {
+                const pending = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
+                setStats(s => ({ ...s, pendingIncidents: pending }));
+            }
+        } catch (err) {
+            console.error('Error loading incidents:', err);
         }
 
         // Load recent activities
@@ -200,6 +219,26 @@ export default function Dashboard() {
             }
         } catch (err) {
             console.error('Error loading activities:', err);
+        }
+
+        // Load documents count
+        try {
+            const docsRes = await documentsApi.list();
+            if (docsRes.success && docsRes.data) {
+                setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
+            }
+        } catch (err) {
+            console.error('Error loading documents:', err);
+        }
+
+        // Load incidents count
+        try {
+            const incidentsRes = await incidentsApi.list();
+            if (incidentsRes.success && incidentsRes.data) {
+                setStats(s => ({ ...s, pendingIncidents: incidentsRes.data?.length || 0 }));
+            }
+        } catch (err) {
+            console.error('Error loading incidents:', err);
         }
     };
 
@@ -503,7 +542,7 @@ export default function Dashboard() {
                                     </div>
                                     <span className="text-xs text-muted">Documentos</span>
                                 </div>
-                                <div className="stat-value">-</div>
+                                <div className="stat-value">{stats.totalDocuments || 0}</div>
                             </div>
 
                             <div className="card stat-card">
@@ -513,7 +552,7 @@ export default function Dashboard() {
                                     </div>
                                     <span className="text-xs text-muted">Incidentes</span>
                                 </div>
-                                <div className="stat-value">-</div>
+                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
                             </div>
                         </div>
 
@@ -589,6 +628,19 @@ export default function Dashboard() {
             </div>
 
             <style>{`
+                .spinner {
+                    width: 40px;
+                    height: 40px;
+                    border: 3px solid var(--surface-border);
+                    border-top-color: var(--primary-500);
+                    border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                }
+
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+
                 .pending-task-card {
                     padding: var(--space-4);
                     background: var(--surface-elevated);

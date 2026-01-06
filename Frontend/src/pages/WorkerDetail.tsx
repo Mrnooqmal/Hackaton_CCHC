@@ -219,6 +219,41 @@ Generado por PrevencionApp
                                 <div className={`badge mt-2 mb-3 badge-${worker.habilitado ? 'success' : 'warning'}`}>
                                     {worker.habilitado ? 'Habilitado' : 'Pendiente Enrolamiento'}
                                 </div>
+
+                                {/* Compliance Progress Bar */}
+                                {stats && (
+                                    <div className="compliance-bar-container">
+                                        <div className="compliance-header">
+                                            <span className="compliance-label">Cumplimiento</span>
+                                            <span className="compliance-percentage">
+                                                {stats.totalFirmas > 0
+                                                    ? Math.round((stats.totalFirmas / Math.max(stats.totalFirmas + 2, 5)) * 100)
+                                                    : 0}%
+                                            </span>
+                                        </div>
+                                        <div className="compliance-bar-track">
+                                            <div
+                                                className="compliance-bar-fill"
+                                                style={{
+                                                    width: `${stats.totalFirmas > 0
+                                                        ? Math.min((stats.totalFirmas / Math.max(stats.totalFirmas + 2, 5)) * 100, 100)
+                                                        : 0}%`,
+                                                    background: (() => {
+                                                        const pct = stats.totalFirmas > 0
+                                                            ? (stats.totalFirmas / Math.max(stats.totalFirmas + 2, 5)) * 100
+                                                            : 0;
+                                                        if (pct >= 75) return 'linear-gradient(90deg, #22c55e, #16a34a)';
+                                                        if (pct >= 50) return 'linear-gradient(90deg, #eab308, #ca8a04)';
+                                                        return 'linear-gradient(90deg, #ef4444, #dc2626)';
+                                                    })()
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="compliance-detail">
+                                            {stats.totalFirmas} de {Math.max(stats.totalFirmas + 2, 5)} cumplimientos
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="worker-info-list mt-2">
@@ -360,6 +395,59 @@ Generado por PrevencionApp
             <style>{`
                 .page-content {
                     padding-bottom: var(--space-6);
+                }
+                
+                /* Compliance Progress Bar */
+                .compliance-bar-container {
+                    width: 100%;
+                    padding: var(--space-4);
+                    background: var(--surface-elevated);
+                    border-radius: var(--radius-lg);
+                    border: 1px solid var(--surface-border);
+                }
+                
+                .compliance-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: var(--space-2);
+                }
+                
+                .compliance-label {
+                    font-size: 11px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    color: var(--text-muted);
+                }
+                
+                .compliance-percentage {
+                    font-size: var(--text-lg);
+                    font-weight: 800;
+                    color: var(--text-primary);
+                }
+                
+                .compliance-bar-track {
+                    width: 100%;
+                    height: 12px;
+                    background: var(--surface-border);
+                    border-radius: 6px;
+                    overflow: hidden;
+                    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+                }
+                
+                .compliance-bar-fill {
+                    height: 100%;
+                    border-radius: 6px;
+                    transition: width 0.5s ease-out;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                }
+                
+                .compliance-detail {
+                    font-size: var(--text-xs);
+                    color: var(--text-muted);
+                    text-align: center;
+                    margin-top: var(--space-2);
                 }
                 
                 .worker-info-list {

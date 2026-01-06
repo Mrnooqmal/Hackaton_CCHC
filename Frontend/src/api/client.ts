@@ -457,6 +457,8 @@ export interface Document {
     empresaId: string;
     relatorId?: string;
     s3Key?: string;
+    archivoUrl?: string;
+    archivoNombre?: string;
     firmas: DocumentSignature[];
     asignaciones: DocumentAssignment[];
     estado: string;
@@ -478,10 +480,13 @@ export interface DocumentSignature {
 
 export interface DocumentAssignment {
     workerId: string;
+    nombre?: string;
+    rut?: string;
     fechaAsignacion: string;
     fechaLimite?: string;
     estado: string;
     notificado: boolean;
+    fechaFirma?: string;
 }
 
 export interface CreateDocumentData {
@@ -491,6 +496,10 @@ export interface CreateDocumentData {
     descripcion?: string;
     empresaId?: string;
     relatorId?: string;
+    archivoUrl?: string;
+    archivoNombre?: string;
+    createdBy?: string;
+    creatorName?: string;
 }
 
 export interface DocumentListParams {
@@ -508,6 +517,8 @@ export interface AssignDocumentData {
     workerIds: string[];
     fechaLimite?: string;
     notificar?: boolean;
+    assignedBy?: string;
+    assignerName?: string;
 }
 
 export interface AssignResult {

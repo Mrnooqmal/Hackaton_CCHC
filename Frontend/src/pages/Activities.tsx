@@ -10,10 +10,12 @@ import {
     FiAward,
     FiSearch,
     FiCalendar,
-    FiFileText
+    FiFileText,
+    FiFilter
 } from 'react-icons/fi';
 import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
+import { useAuth } from '../context/AuthContext';
 
 const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
     CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: <FiMessageSquare /> },
@@ -24,6 +26,7 @@ const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React
 };
 
 export default function Activities() {
+    const { user } = useAuth();
     const [activities, setActivities] = useState<Activity[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
@@ -35,6 +38,19 @@ export default function Activities() {
     const [filterType, setFilterType] = useState('');
     const [showSignatureModal, setShowSignatureModal] = useState(false);
     const [signatureError, setSignatureError] = useState('');
+    const [showSelfSignModal, setShowSelfSignModal] = useState(false);
+    const [selfSignActivity, setSelfSignActivity] = useState<Activity | null>(null);
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+
+    const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 5000);
+    };
+
+    // Check if user is a worker (can self-sign)
+    const canSelfSign = user?.rol === 'trabajador' && user?.workerId;
+    // Check if user can manage (prevencionista/admin)
+    const canManage = user?.rol === 'admin' || user?.rol === 'prevencionista';
 
     const [newActivity, setNewActivity] = useState({
         tipo: 'CHARLA_5MIN',
@@ -99,6 +115,7 @@ export default function Activities() {
                 setShowAttendanceModal(false);
                 setSelectedActivity(null);
                 setSelectedWorkers([]);
+                showNotification(`Asistencia registrada para ${selectedWorkers.length} trabajador(es)`, 'success');
             } else {
                 setSignatureError(response.error || 'Error al registrar asistencia');
             }
@@ -111,6 +128,37 @@ export default function Activities() {
     const openAttendanceModal = (activity: Activity) => {
         setSelectedActivity(activity);
         setShowAttendanceModal(true);
+    };
+
+    // Self-sign handler for workers
+    const handleSelfSign = async (pin: string) => {
+        if (!selfSignActivity || !user?.workerId) return;
+        setSignatureError('');
+
+        try {
+            const response = await activitiesApi.registerAttendance(selfSignActivity.activityId, {
+                workerIds: [user.workerId],
+                incluirFirmaRelator: false,
+                pin: pin,
+            });
+
+            if (response.success) {
+                setShowSelfSignModal(false);
+                loadData();
+                setSelfSignActivity(null);
+                showNotification('Tu asistencia ha sido registrada exitosamente', 'success');
+            } else {
+                setSignatureError(response.error || 'Error al registrar tu asistencia');
+            }
+        } catch (error: any) {
+            console.error('Error self-signing:', error);
+            setSignatureError(error.message || 'Error al registrar tu asistencia');
+        }
+    };
+
+    const openSelfSignModal = (activity: Activity) => {
+        setSelfSignActivity(activity);
+        setShowSelfSignModal(true);
     };
 
     const toggleWorkerSelection = (workerId: string) => {
@@ -154,6 +202,40 @@ export default function Activities() {
         <>
             <Header title="Actividades" />
 
+            {/* Toast Notification */}
+            {notification && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: '80px',
+                        right: '20px',
+                        padding: 'var(--space-4) var(--space-5)',
+                        borderRadius: 'var(--radius-lg)',
+                        background: notification.type === 'success' ? 'var(--success-500)' :
+                            notification.type === 'error' ? 'var(--danger-500)' :
+                                notification.type === 'warning' ? 'var(--warning-500)' : 'var(--info-500)',
+                        color: 'white',
+                        boxShadow: 'var(--shadow-lg)',
+                        zIndex: 9999,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-3)',
+                        animation: 'slideIn 0.3s ease-out',
+                        maxWidth: '400px',
+                    }}
+                >
+                    {notification.type === 'success' && <FiCheck size={20} />}
+                    {notification.type === 'error' && <FiAlertTriangle size={20} />}
+                    <span>{notification.message}</span>
+                    <button
+                        onClick={() => setNotification(null)}
+                        style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
+                    >
+                        ✕
+                    </button>
+                </div>
+            )}
+
             <div className="page-content">
                 <div className="page-header">
                     <div className="page-header-info">
@@ -180,16 +262,41 @@ export default function Activities() {
                             style={{ border: 'none', background: 'transparent', padding: 0, boxShadow: 'none', color: 'var(--text-primary)' }}
                         />
                     </div>
-                    <select
-                        value={filterType}
-                        onChange={(e) => setFilterType(e.target.value)}
-                        className="form-input form-select activities-filter-select"
-                    >
-                        <option value="">Todos los tipos</option>
-                        {Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => (
-                            <option key={key} value={key}>{label}</option>
-                        ))}
-                    </select>
+                    <div style={{ position: 'relative', minWidth: '200px' }}>
+                        <select
+                            value={filterType}
+                            onChange={(e) => setFilterType(e.target.value)}
+                            className="form-input"
+                            style={{
+                                paddingLeft: '48px',
+                                paddingRight: '16px',
+                                height: '44px',
+                                borderRadius: '12px',
+                                cursor: 'pointer',
+                                appearance: 'none',
+                                background: 'var(--surface-elevated)',
+                                border: '1px solid var(--surface-border)',
+                                color: 'var(--text-primary)',
+                                fontWeight: 500,
+                            }}
+                        >
+                            <option value="">Todos los tipos</option>
+                            {Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => (
+                                <option key={key} value={key}>{label}</option>
+                            ))}
+                        </select>
+                        <FiFilter
+                            size={18}
+                            style={{
+                                position: 'absolute',
+                                left: '16px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                color: 'var(--text-muted)',
+                                pointerEvents: 'none',
+                            }}
+                        />
+                    </div>
                 </div>
 
                 {/* Quick Actions */}
@@ -305,13 +412,28 @@ export default function Activities() {
                                             </span>
 
                                             {activity.estado !== 'completada' && (
-                                                <button
-                                                    className="btn btn-primary btn-sm"
-                                                    onClick={() => openAttendanceModal(activity)}
-                                                >
-                                                    <FiCheck />
-                                                    Registrar Asistencia
-                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    {/* Worker self-sign button */}
+                                                    {canSelfSign && !activity.asistentes.some(a => a.workerId === user?.workerId) && (
+                                                        <button
+                                                            className="btn btn-secondary btn-sm"
+                                                            onClick={() => openSelfSignModal(activity)}
+                                                        >
+                                                            <FiCheck />
+                                                            Registrar mi asistencia
+                                                        </button>
+                                                    )}
+                                                    {/* Manager mass attendance button */}
+                                                    {canManage && (
+                                                        <button
+                                                            className="btn btn-primary btn-sm"
+                                                            onClick={() => openAttendanceModal(activity)}
+                                                        >
+                                                            <FiCheck />
+                                                            Registrar Asistencia
+                                                        </button>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -600,6 +722,18 @@ export default function Activities() {
                     title="Firmar Asistencia"
                     itemName={selectedActivity?.titulo}
                     description={`Registrarás la asistencia de ${selectedWorkers.length} trabajador(es) a esta actividad.`}
+                    error={signatureError}
+                />
+
+                {/* Self-Sign Modal for Workers */}
+                <SignatureModal
+                    isOpen={showSelfSignModal}
+                    onClose={() => setShowSelfSignModal(false)}
+                    onConfirm={handleSelfSign}
+                    type="activity"
+                    title="Registrar mi asistencia"
+                    itemName={selfSignActivity?.titulo}
+                    description="Confirma tu asistencia a esta actividad con tu firma digital."
                     error={signatureError}
                 />
             </div>

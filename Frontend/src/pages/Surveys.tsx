@@ -27,7 +27,8 @@ import {
     FiX,
     FiFileText,
     FiLock,
-    FiSearch
+    FiSearch,
+    FiCalendar
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import SignatureModal from '../components/SignatureModal';
@@ -100,7 +101,8 @@ export default function Surveys() {
     const [responseValues, setResponseValues] = useState<Record<string, string | number>>({});
     const [responding, setResponding] = useState(false);
     const [responseError, setResponseError] = useState('');
-    const [activeTab, setActiveTab] = useState<'asignadas' | 'creadas'>('asignadas');
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+    const [activeTab, setActiveTab] = useState<'assigned' | 'created'>('assigned');
     const [showOnlyMine, setShowOnlyMine] = useState(false); // Filter for 'Encuestas Creadas' tab
     const [searchQuery, setSearchQuery] = useState(''); // Search filter for surveys
     const [showSignatureModal, setShowSignatureModal] = useState(false); // Signature modal for survey response
@@ -119,6 +121,11 @@ export default function Surveys() {
     useEffect(() => {
         loadData();
     }, [canManageSurveys]);
+
+    const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 5000);
+    };
 
     const loadData = async () => {
         setLoading(true);
@@ -236,6 +243,16 @@ export default function Surveys() {
     }, [surveys, user?.userId]);
 
     // Get filtered surveys based on active tab, filter, and search
+    const formatDateTime = (value?: string | null) => {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString('es-CL', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        });
+    };
+
     const filteredSurveys = useMemo(() => {
         let result = showOnlyMine ? mySurveys : surveys;
 
@@ -384,33 +401,41 @@ export default function Surveys() {
         }
 
         setCreating(true);
-        const payload = {
+        const payload: any = {
             titulo: form.titulo,
             descripcion: form.descripcion,
             preguntas,
-            audienceType: form.audienceType,
-            cargoDestino: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
-            ruts: form.audienceType === 'personalizado' ? form.selectedRuts : undefined,
-            createdBy: user?.userId, // Track who created this survey
-            creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined, // Full name for inbox display
+            audience: {
+                tipo: form.audienceType,
+                cargo: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
+                ruts: form.audienceType === 'personalizado' ? form.selectedRuts : undefined,
+            },
+            createdBy: user?.userId,
+            creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined,
         };
 
-        const response = await surveysApi.create(payload);
-        setCreating(false);
+        try {
+            const response = await surveysApi.create(payload);
+            setCreating(false);
 
-        const createdSurvey = response.data;
-        if (!response.success || !createdSurvey) {
-            setError(response.error || 'No fue posible crear la encuesta');
-            return;
+            if (response.success && response.data) {
+                setSurveys([response.data, ...surveys]);
+                setShowModal(false);
+                resetForm();
+                showNotification('Encuesta creada exitosamente', 'success');
+            } else {
+                showNotification(response.error || 'No fue posible crear la encuesta.', 'error');
+            }
+        } catch (err) {
+            console.error('Error creando encuesta', err);
+            showNotification('Ocurrió un error al crear la encuesta. Intenta nuevamente.', 'error');
+        } finally {
+            setCreating(false);
+            // Refresh data to ensure createdBy is populated from server
+            loadData();
+            // Dispatch event to refresh sidebar counts
+            window.dispatchEvent(new CustomEvent('surveyResponded'));
         }
-
-        setSurveys((prev) => [createdSurvey, ...prev]);
-        setShowModal(false);
-        resetForm();
-        // Refresh data to ensure createdBy is populated from server
-        loadData();
-        // Dispatch event to refresh sidebar counts
-        window.dispatchEvent(new CustomEvent('surveyResponded'));
     };
 
     const formatAudience = (survey: Survey) => {
@@ -443,16 +468,6 @@ export default function Surveys() {
         const respondedCount = respondedFromStats ?? respondedFallback;
         const pendingCount = Math.max(totalRecipients - respondedCount, 0);
         return { totalRecipients, respondedCount, pendingCount };
-    };
-
-    const formatDateTime = (value?: string | null) => {
-        if (!value) return '—';
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return value;
-        return date.toLocaleString('es-CL', {
-            dateStyle: 'medium',
-            timeStyle: 'short',
-        });
     };
 
     const detailStats = selectedSurvey ? getRecipientStats(selectedSurvey) : null;
@@ -571,6 +586,7 @@ export default function Surveys() {
             }
             setShowSignatureModal(false);
             closeResponseModal();
+            showNotification('Encuesta respondida exitosamente', 'success');
             // Refresh data to update pending counts
             loadData();
             // Dispatch event to refresh sidebar pending count
@@ -644,6 +660,30 @@ export default function Surveys() {
     return (
         <>
             <Header title="Encuestas" />
+
+            {notification && (
+                <div className={`notification notification-${notification.type}`} style={{
+                    position: 'fixed',
+                    top: '20px',
+                    right: '20px',
+                    zIndex: 10000,
+                    padding: 'var(--space-4) var(--space-6)',
+                    borderRadius: 'var(--radius-lg)',
+                    background: notification.type === 'error' ? 'var(--danger-500)' :
+                        notification.type === 'success' ? 'var(--success-500)' :
+                            notification.type === 'warning' ? 'var(--warning-500)' : 'var(--primary-500)',
+                    color: 'white',
+                    boxShadow: 'var(--shadow-lg)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-3)',
+                    animation: 'slideIn 0.3s ease-out'
+                }}>
+                    {notification.type === 'error' && <FiAlertCircle />}
+                    {notification.type === 'success' && <FiCheckCircle />}
+                    <span>{notification.message}</span>
+                </div>
+            )}
 
             <div className="page-content">
                 <div className="page-header">
@@ -789,26 +829,26 @@ export default function Surveys() {
                         >
                             <button
                                 className="flex items-center gap-3"
-                                onClick={() => setActiveTab('asignadas')}
+                                onClick={() => setActiveTab('assigned')}
                                 style={{
                                     flex: 1,
                                     minWidth: '140px',
                                     padding: 'var(--space-4)',
                                     borderRadius: 'var(--radius-lg)',
-                                    border: activeTab === 'asignadas' ? '1px solid var(--warning-400)' : '1px solid transparent',
-                                    background: activeTab === 'asignadas'
+                                    border: activeTab === 'assigned' ? '1px solid var(--warning-400)' : '1px solid transparent',
+                                    background: activeTab === 'assigned'
                                         ? 'linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 193, 7, 0.05))'
                                         : 'transparent',
                                     cursor: 'pointer',
                                     transition: 'all var(--transition-fast)',
-                                    boxShadow: activeTab === 'asignadas' ? 'var(--shadow-md)' : 'none',
+                                    boxShadow: activeTab === 'assigned' ? 'var(--shadow-md)' : 'none',
                                 }}
                             >
                                 <div
                                     className="avatar"
                                     style={{
-                                        background: activeTab === 'asignadas' ? 'var(--warning-500)' : 'var(--surface-hover)',
-                                        color: activeTab === 'asignadas' ? 'white' : 'var(--text-muted)',
+                                        background: activeTab === 'assigned' ? 'var(--warning-500)' : 'var(--surface-hover)',
+                                        color: activeTab === 'assigned' ? 'white' : 'var(--text-muted)',
                                     }}
                                 >
                                     <FiUserCheck size={20} />
@@ -817,7 +857,7 @@ export default function Surveys() {
                                     <div
                                         style={{
                                             fontWeight: 600,
-                                            color: activeTab === 'asignadas' ? '#b45309' : 'var(--text-secondary)',
+                                            color: activeTab === 'assigned' ? '#b45309' : 'var(--text-secondary)',
                                             fontSize: 'var(--text-base)',
                                         }}
                                     >
@@ -826,7 +866,7 @@ export default function Surveys() {
                                     <div
                                         style={{
                                             fontSize: 'var(--text-sm)',
-                                            color: activeTab === 'asignadas' ? '#d97706' : 'var(--text-muted)',
+                                            color: activeTab === 'assigned' ? '#d97706' : 'var(--text-muted)',
                                         }}
                                     >
                                         Seguimiento personal
@@ -855,26 +895,26 @@ export default function Surveys() {
 
                             <button
                                 className="flex items-center gap-3"
-                                onClick={() => setActiveTab('creadas')}
+                                onClick={() => setActiveTab('created')}
                                 style={{
                                     flex: 1,
                                     minWidth: '140px',
                                     padding: 'var(--space-4)',
                                     borderRadius: 'var(--radius-lg)',
-                                    border: activeTab === 'creadas' ? '1px solid var(--primary-400)' : '1px solid transparent',
-                                    background: activeTab === 'creadas'
+                                    border: activeTab === 'created' ? '1px solid var(--primary-400)' : '1px solid transparent',
+                                    background: activeTab === 'created'
                                         ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05))'
                                         : 'transparent',
                                     cursor: 'pointer',
                                     transition: 'all var(--transition-fast)',
-                                    boxShadow: activeTab === 'creadas' ? 'var(--shadow-md)' : 'none',
+                                    boxShadow: activeTab === 'created' ? 'var(--shadow-md)' : 'none',
                                 }}
                             >
                                 <div
                                     className="avatar"
                                     style={{
-                                        background: activeTab === 'creadas' ? 'var(--primary-500)' : 'var(--surface-hover)',
-                                        color: activeTab === 'creadas' ? 'white' : 'var(--text-muted)',
+                                        background: activeTab === 'created' ? 'var(--primary-500)' : 'var(--surface-hover)',
+                                        color: activeTab === 'created' ? 'white' : 'var(--text-muted)',
                                     }}
                                 >
                                     <FiBarChart2 size={20} />
@@ -883,7 +923,7 @@ export default function Surveys() {
                                     <div
                                         style={{
                                             fontWeight: 600,
-                                            color: activeTab === 'creadas' ? 'var(--primary-700)' : 'var(--text-secondary)',
+                                            color: activeTab === 'created' ? 'var(--primary-700)' : 'var(--text-secondary)',
                                             fontSize: 'var(--text-base)',
                                         }}
                                     >
@@ -892,7 +932,7 @@ export default function Surveys() {
                                     <div
                                         style={{
                                             fontSize: 'var(--text-sm)',
-                                            color: activeTab === 'creadas' ? 'var(--primary-600)' : 'var(--text-muted)',
+                                            color: activeTab === 'created' ? 'var(--primary-600)' : 'var(--text-muted)',
                                         }}
                                     >
                                         {surveys.length} encuesta{surveys.length !== 1 ? 's' : ''}
@@ -921,7 +961,7 @@ export default function Surveys() {
                         </div>
 
                         {/* Tab Content: Mis Encuestas (Assigned to me) */}
-                        {activeTab === 'asignadas' && (
+                        {activeTab === 'assigned' && (
                             <section className="survey-section assigned-section mb-6">
                                 <div className="survey-section-header">
                                     <div>
@@ -991,7 +1031,7 @@ export default function Surveys() {
                         )}
 
                         {/* Tab Content: Encuestas Creadas (Management) */}
-                        {activeTab === 'creadas' && (
+                        {activeTab === 'created' && (
                             <>
                                 {/* Filter Toggle */}
                                 <div className="flex items-center justify-end gap-3 mb-4">
@@ -1022,7 +1062,7 @@ export default function Surveys() {
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-3 mb-6">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                                     <div className="card">
                                         <div className="flex items-center gap-3">
                                             <div className="avatar" style={{ background: 'var(--primary-500)' }}>
@@ -1071,7 +1111,7 @@ export default function Surveys() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                                    <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 'var(--space-4)' }}>
                                         {filteredSurveys.map((survey) => (
                                             <div key={survey.surveyId} className="card">
                                                 <div className="card-header">
@@ -1082,6 +1122,11 @@ export default function Surveys() {
                                                     <span className={`badge ${survey.estado === 'completada' ? 'badge-success' : 'badge-neutral'}`}>
                                                         {survey.estado}
                                                     </span>
+                                                </div>
+
+                                                <div className="flex items-center gap-2 text-xs text-muted">
+                                                    <FiCalendar size={14} />
+                                                    <span>Creada el {formatDateTime(survey.createdAt)}</span>
                                                 </div>
 
                                                 <div className="flex items-center gap-3 mb-4">
@@ -1126,7 +1171,7 @@ export default function Surveys() {
                                                     >
                                                         <FiUsers size={16} style={{ color: 'var(--primary-500)' }} />
                                                         <span style={{ color: 'var(--text-primary)' }}>
-                                                            {survey.audienceType === 'todos' ? (
+                                                            {survey.audience.tipo === 'todos' ? (
                                                                 <>Todos los trabajadores ({survey.recipients?.length || 0})</>
                                                             ) : (
                                                                 <>{survey.recipients?.length || 0} trabajadores asignados</>
@@ -1652,6 +1697,7 @@ export default function Surveys() {
                                                         <th>RUT</th>
                                                         <th>Cargo</th>
                                                         <th>Estado</th>
+                                                        <th>Asignada</th>
                                                         <th>Respondió</th>
                                                     </tr>
                                                 </thead>
@@ -1666,7 +1712,8 @@ export default function Surveys() {
                                                                     {recipient.estado}
                                                                 </span>
                                                             </td>
-                                                            <td>{formatDateTime(recipient.respondedAt)}</td>
+                                                            <td>{formatDateTime(recipient.respondedAt ? recipient.respondedAt : selectedSurvey.createdAt)}</td>
+                                                            <td>{recipient.respondedAt ? formatDateTime(recipient.respondedAt) : '—'}</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -1700,6 +1747,46 @@ export default function Surveys() {
                 loading={responding}
                 error={responseError}
             />
+            <style>{`
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+
+                .notification {
+                    transition: all 0.3s ease;
+                }
+
+                .spinner {
+                    width: 40px;
+                    height: 40px;
+                    border: 3px solid var(--surface-border);
+                    border-top-color: var(--primary-500);
+                    border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                }
+
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+
+                .survey-card {
+                    padding: var(--space-6);
+                    background: var(--surface-elevated);
+                    border-radius: var(--radius-lg);
+                    border: 1px solid var(--surface-border);
+                    transition: all 0.3s ease;
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-4);
+                }
+
+                .survey-card:hover {
+                    transform: translateY(-4px);
+                    box-shadow: var(--shadow-lg);
+                    border-color: var(--primary-500);
+                }
+            `}</style>
         </>
     );
 }

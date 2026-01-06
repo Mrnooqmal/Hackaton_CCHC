@@ -15,7 +15,7 @@ import {
     FiMaximize2,
     FiX
 } from 'react-icons/fi';
-import { aiApi, type MIPERResult, type RiskMatrixResult, type IncidentAnalysisResult, type DailyTalkResult, type PreventionPlanResult } from '../api/client';
+import { aiApi, incidentsApi, type MIPERResult, type RiskMatrixResult, type IncidentAnalysisResult, type DailyTalkResult, type PreventionPlanResult } from '../api/client';
 
 interface Message {
     id: string;
@@ -94,6 +94,7 @@ export default function AIAssistant() {
     const [activeAction, setActiveAction] = useState<string | null>(null);
     const [actionInput, setActionInput] = useState('');
     const [visualDocument, setVisualDocument] = useState<{ type: string; data: any } | null>(null);
+    const [creatingIncident, setCreatingIncident] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -471,7 +472,7 @@ ${data.normativaRelacionada ? `**Normativa:** ${data.normativaRelacionada.join('
                     )}
 
                     {message.data && !isVisualType && (
-                        <div className="mt-4 flex gap-2">
+                        <div className="mt-4 flex gap-2 flex-wrap">
                             <button className="btn btn-secondary btn-sm">
                                 <FiDownload />
                                 Descargar PDF
@@ -480,6 +481,45 @@ ${data.normativaRelacionada ? `**Normativa:** ${data.normativaRelacionada.join('
                                 <FiShield />
                                 Guardar
                             </button>
+                            {/* AI Incident -> Create Report Button */}
+                            {message.type === 'incident' && message.data && (
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    disabled={creatingIncident}
+                                    onClick={async () => {
+                                        setCreatingIncident(true);
+                                        try {
+                                            const incidentData = message.data as IncidentAnalysisResult;
+                                            const response = await incidentsApi.create({
+                                                tipo: incidentData.clasificacion.tipo === 'Accidente' ? 'accidente' : 'incidente',
+                                                descripcion: incidentData.resumenIncidente,
+                                                gravedad: incidentData.clasificacion.gravedad?.toLowerCase() as any || 'leve',
+                                                fecha: new Date().toISOString().split('T')[0],
+                                                hora: new Date().toTimeString().split(' ')[0].slice(0, 5),
+                                                centroTrabajo: 'Generado por IA',
+                                                trabajador: {
+                                                    nombre: 'Por asignar',
+                                                    rut: '00000000-0',
+                                                    genero: 'N/A',
+                                                    cargo: 'Por definir'
+                                                }
+                                            });
+                                            if (response.success) {
+                                                addMessage('assistant', '✅ **Incidente registrado exitosamente**\n\nEl reporte ha sido creado en el sistema y está disponible para seguimiento en el módulo de Incidentes.');
+                                            } else {
+                                                addMessage('assistant', '❌ Error al crear el reporte: ' + (response.error || 'Error desconocido'));
+                                            }
+                                        } catch (err: any) {
+                                            addMessage('assistant', '❌ Error de conexión al crear el reporte.');
+                                        } finally {
+                                            setCreatingIncident(false);
+                                        }
+                                    }}
+                                >
+                                    <FiAlertTriangle />
+                                    {creatingIncident ? 'Creando...' : 'Crear Reporte de Incidente'}
+                                </button>
+                            )}
                         </div>
                     )}
 

@@ -294,7 +294,7 @@ export default function SignatureRequests() {
                             Administra las solicitudes de firma
                         </h2>
                         <p className="text-sm text-muted" style={{ maxWidth: '600px' }}>
-                            Crea, monitorea y gestiona solicitudes de firma para documentos, charlas y capacitaciones.
+                            Las solicitudes de firma se generan automáticamente desde actividades, capacitaciones y documentos asignados. También puedes crear solicitudes manuales para casos especiales.
                         </p>
                     </div>
                     <button className="btn btn-secondary" onClick={loadData} disabled={loading} style={{ padding: '10px 20px' }}>

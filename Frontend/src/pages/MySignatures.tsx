@@ -554,7 +554,7 @@ export default function MySignatures() {
                                 <table className="table">
                                     <thead>
                                         <tr>
-                                            <th style={{ width: '30%' }}>Documento</th>
+                                            <th style={{ width: '30%' }}>Cumplimiento</th>
                                             <th>Tipo</th>
                                             <th>Solicitante</th>
                                             <th>Fecha de Firma</th>
@@ -584,7 +584,7 @@ export default function MySignatures() {
                                                         </div>
                                                         <div>
                                                             <div className="font-medium" style={{ marginBottom: '2px' }}>
-                                                                {firma.requestTitulo}
+                                                                {firma.requestTitulo || REQUEST_TYPES[firma.requestTipo]?.label || 'Sin título'}
                                                             </div>
                                                             {solicitud?.documentos && solicitud.documentos.length > 0 && (
                                                                 <div className="flex items-center gap-1 text-xs text-muted">
