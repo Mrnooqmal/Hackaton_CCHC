@@ -24,12 +24,12 @@ import { useAuth } from '../context/AuthContext';
 
 const DOCUMENT_TYPES: Record<string, { label: string; color: string }> = {
     IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)' },
-    POLITICA_SSO: { label: 'PolÃ­tica SSO', color: 'var(--info-500)' },
+    POLITICA_SSO: { label: 'Política SSO', color: 'var(--info-500)' },
     REGLAMENTO_INTERNO: { label: 'Reglamento Interno', color: 'var(--warning-500)' },
     PROCEDIMIENTO_TRABAJO: { label: 'Procedimiento de Trabajo', color: 'var(--success-500)' },
     MATRIZ_MIPPER: { label: 'Matriz MIPPER', color: 'var(--danger-500)' },
     ENTREGA_EPP: { label: 'Entrega EPP', color: 'var(--success-500)' },
-    CAPACITACION: { label: 'CapacitaciÃ³n', color: 'var(--info-500)' },
+    CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)' },
 };
 
 export default function Documents() {
@@ -685,7 +685,7 @@ export default function Documents() {
                                     </div>
 
                                     <div className="form-group">
-                                        <label className="form-label">TÃ­tulo *</label>
+                                        <label className="form-label">Título *</label>
                                         <input
                                             type="text"
                                             value={newDoc.titulo}
@@ -697,13 +697,13 @@ export default function Documents() {
                                     </div>
 
                                     <div className="form-group">
-                                        <label className="form-label">DescripciÃ³n</label>
+                                        <label className="form-label">Descripción</label>
                                         <textarea
                                             value={newDoc.descripcion}
                                             onChange={(e) => setNewDoc({ ...newDoc, descripcion: e.target.value })}
                                             className="form-input"
                                             rows={3}
-                                            placeholder="DescripciÃ³n del documento..."
+                                            placeholder="Descripción del documento..."
                                             style={{ resize: 'vertical' }}
                                         />
                                     </div>
@@ -754,7 +754,7 @@ export default function Documents() {
                                                         Haz clic para seleccionar un archivo
                                                     </p>
                                                     <p className="text-xs text-muted">
-                                                        PDF, Word, Excel o imÃ¡genes (mÃ¡x. 10MB)
+                                                        PDF, Word, Excel o imágenes (máx. 10MB)
                                                     </p>
                                                 </>
                                             )}
