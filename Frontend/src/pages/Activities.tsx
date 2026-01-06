@@ -16,6 +16,7 @@ import {
 import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
 import { useAuth } from '../context/AuthContext';
+import { useOfflineSignature } from '../hooks/useOfflineSignature';
 
 const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
     CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: <FiMessageSquare /> },
@@ -27,6 +28,7 @@ const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React
 
 export default function Activities() {
     const { user } = useAuth();
+    const { isOnline, pendingCount, signActivity, syncPendingSignatures } = useOfflineSignature();
     const [activities, setActivities] = useState<Activity[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
@@ -62,6 +64,18 @@ export default function Activities() {
     useEffect(() => {
         loadData();
     }, []);
+
+    // Sync pending offline signatures when online
+    useEffect(() => {
+        if (isOnline && pendingCount > 0) {
+            syncPendingSignatures().then(result => {
+                if (result.synced > 0) {
+                    showNotification(`✅ ${result.synced} firma(s) sincronizada(s)`, 'success');
+                    loadData();
+                }
+            });
+        }
+    }, [isOnline]);
 
     const loadData = async () => {
         try {
@@ -134,21 +148,26 @@ export default function Activities() {
     const handleSelfSign = async (pin: string) => {
         if (!selfSignActivity || !user?.workerId) return;
         setSignatureError('');
-
         try {
-            const response = await activitiesApi.registerAttendance(selfSignActivity.activityId, {
-                workerIds: [user.workerId],
-                incluirFirmaRelator: false,
-                pin: pin,
-            });
+            const result = await signActivity(
+                selfSignActivity.activityId,
+                selfSignActivity.titulo,
+                user.workerId,
+                user.nombre || 'Trabajador',
+                pin
+            );
 
-            if (response.success) {
+            if (result.success) {
                 setShowSelfSignModal(false);
-                loadData();
                 setSelfSignActivity(null);
-                showNotification('Tu asistencia ha sido registrada exitosamente', 'success');
+                if (result.offline) {
+                    showNotification('📴 Asistencia guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
+                } else {
+                    showNotification('Tu asistencia ha sido registrada exitosamente', 'success');
+                    loadData();
+                }
             } else {
-                setSignatureError(response.error || 'Error al registrar tu asistencia');
+                setSignatureError(result.error || 'Error al registrar tu asistencia');
             }
         } catch (error: any) {
             console.error('Error self-signing:', error);
@@ -248,6 +267,47 @@ export default function Activities() {
                         </p>
                     </div>
                 </div>
+
+                {/* Offline Banner */}
+                {(!isOnline || pendingCount > 0) && (
+                    <div
+                        className="mb-4 p-3 rounded-lg flex items-center justify-between"
+                        style={{
+                            background: !isOnline ? 'rgba(245, 158, 11, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                            border: `1px solid ${!isOnline ? '#f59e0b' : '#3b82f6'}`,
+                            color: !isOnline ? '#b45309' : '#1d4ed8'
+                        }}
+                    >
+                        <div className="flex items-center gap-2">
+                            {!isOnline ? (
+                                <>
+                                    <FiAlertTriangle size={18} />
+                                    <span className="font-medium">Sin conexión - Tu asistencia se guardará localmente</span>
+                                </>
+                            ) : (
+                                <>
+                                    <FiCheck size={18} />
+                                    <span className="font-medium">{pendingCount} registro(s) pendiente(s) de sincronizar</span>
+                                </>
+                            )}
+                        </div>
+                        {isOnline && pendingCount > 0 && (
+                            <button
+                                className="btn btn-sm"
+                                style={{
+                                    background: '#3b82f6',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: 'var(--space-1) var(--space-3)',
+                                    borderRadius: 'var(--radius-md)'
+                                }}
+                                onClick={() => syncPendingSignatures()}
+                            >
+                                Sincronizar ahora
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 {/* Search Bar */}
                 <div className="flex gap-3 mb-6" style={{ flexWrap: 'wrap' }}>

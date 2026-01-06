@@ -32,6 +32,7 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import SignatureModal from '../components/SignatureModal';
+import { useOfflineSignature } from '../hooks/useOfflineSignature';
 
 interface QuestionDraft {
     id: string;
@@ -87,6 +88,7 @@ const audienceOptions: AudienceOption[] = [
 
 export default function Surveys() {
     const { user } = useAuth();
+    const { isOnline, pendingCount, signSurvey, syncPendingSignatures } = useOfflineSignature();
     const canManageSurveys = user?.rol === 'admin' || user?.rol === 'prevencionista';
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
     const [surveys, setSurveys] = useState<Survey[]>([]);
@@ -120,7 +122,19 @@ export default function Surveys() {
 
     useEffect(() => {
         loadData();
-    }, [canManageSurveys]);
+    }, []);
+
+    // Sync pending offline signatures when online
+    useEffect(() => {
+        if (isOnline && pendingCount > 0) {
+            syncPendingSignatures().then(result => {
+                if (result.synced > 0) {
+                    showNotification(`✅ ${result.synced} firma(s) sincronizada(s)`, 'success');
+                    loadData();
+                }
+            });
+        }
+    }, [isOnline, pendingCount, syncPendingSignatures]);
 
     const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
         setNotification({ message, type });
@@ -564,29 +578,33 @@ export default function Surveys() {
         }, []);
 
         try {
-            const response = await surveysApi.updateResponseStatus(
+            const result = await signSurvey(
                 survey.surveyId,
+                survey.titulo,
                 recipient.workerId,
-                {
-                    estado: 'respondida',
-                    responses: responsesPayload,
-                    pin: pin, // Include PIN for digital signature
-                }
+                user.nombre || 'Trabajador',
+                responsesPayload,
+                pin
             );
 
-            if (!response.success || !response.data) {
-                setResponseError(response.error || 'No fue posible enviar tus respuestas.');
+            if (!result.success) {
+                setResponseError(result.error || 'No fue posible enviar tus respuestas.');
                 return;
             }
 
-            const updatedSurvey = response.data.survey;
-            setSurveys((prev) => prev.map((item) => (item.surveyId === updatedSurvey.surveyId ? updatedSurvey : item)));
-            if (selectedSurvey && selectedSurvey.surveyId === updatedSurvey.surveyId) {
-                setSelectedSurvey(updatedSurvey);
+            if (result.offline) {
+                showNotification('📴 Respuesta guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
+                setShowSignatureModal(false);
+                closeResponseModal();
+                return;
             }
+
+            // If online, we get the updated survey from the response (in a real scenario, signSurvey should return data)
+            // But since we are using a hook that abstracts API calls, we'll just reload data if online
+            showNotification('Encuesta respondida exitosamente', 'success');
             setShowSignatureModal(false);
             closeResponseModal();
-            showNotification('Encuesta respondida exitosamente', 'success');
+            loadData();
             // Refresh data to update pending counts
             loadData();
             // Dispatch event to refresh sidebar pending count
@@ -693,9 +711,7 @@ export default function Surveys() {
                             {canManageSurveys ? 'Diseña y distribuye encuestas' : 'Responde tus encuestas asignadas'}
                         </h2>
                         <p className="page-header-description">
-                            {canManageSurveys
-                                ? 'Crea encuestas personalizadas para recopilar información clave de tus equipos.'
-                                : 'Completa las encuestas pendientes para ayudarnos a mejorar los procesos.'}
+                            Implementa diagnósticos de seguridad, encuestas de clima y evaluaciones rápidas.
                         </p>
                     </div>
                     {canManageSurveys && (
@@ -722,6 +738,46 @@ export default function Surveys() {
                     )}
                 </div>
 
+                {/* Offline Banner */}
+                {(!isOnline || pendingCount > 0) && (
+                    <div
+                        className="mb-4 p-3 rounded-lg flex items-center justify-between"
+                        style={{
+                            background: !isOnline ? 'rgba(245, 158, 11, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                            border: `1px solid ${!isOnline ? '#f59e0b' : '#3b82f6'}`,
+                            color: !isOnline ? '#b45309' : '#1d4ed8'
+                        }}
+                    >
+                        <div className="flex items-center gap-2">
+                            {!isOnline ? (
+                                <>
+                                    <FiAlertCircle size={18} />
+                                    <span className="font-medium">Sin conexión - Tus respuestas se guardarán localmente</span>
+                                </>
+                            ) : (
+                                <>
+                                    <FiCheckCircle size={18} />
+                                    <span className="font-medium">{pendingCount} encuesta(s) pendiente(s) de sincronizar</span>
+                                </>
+                            )}
+                        </div>
+                        {isOnline && pendingCount > 0 && (
+                            <button
+                                className="btn btn-sm"
+                                style={{
+                                    background: '#3b82f6',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: 'var(--space-1) var(--space-3)',
+                                    borderRadius: 'var(--radius-md)'
+                                }}
+                                onClick={() => syncPendingSignatures()}
+                            >
+                                Sincronizar ahora
+                            </button>
+                        )}
+                    </div>
+                )}
                 {error && (
                     <div className="alert alert-danger">
                         <FiAlertCircle size={20} />

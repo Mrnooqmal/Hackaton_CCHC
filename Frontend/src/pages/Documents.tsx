@@ -21,6 +21,7 @@ import {
 } from 'react-icons/fi';
 import { documentsApi, workersApi, uploadsApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useOfflineSignature } from '../hooks/useOfflineSignature';
 
 const DOCUMENT_TYPES: Record<string, { label: string; color: string }> = {
     IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)' },
@@ -34,6 +35,7 @@ const DOCUMENT_TYPES: Record<string, { label: string; color: string }> = {
 
 export default function Documents() {
     const { user } = useAuth();
+    const { isOnline, pendingCount, signDocument, syncPendingSignatures } = useOfflineSignature();
     const [documents, setDocuments] = useState<Document[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
@@ -73,6 +75,18 @@ export default function Documents() {
     useEffect(() => {
         loadData();
     }, []);
+
+    // Sync pending offline signatures when online
+    useEffect(() => {
+        if (isOnline && pendingCount > 0) {
+            syncPendingSignatures().then(result => {
+                if (result.synced > 0) {
+                    showNotification(`✅ ${result.synced} firma(s) sincronizada(s)`, 'success');
+                    loadData();
+                }
+            });
+        }
+    }, [isOnline]);
 
     const loadData = async () => {
         try {
@@ -285,18 +299,26 @@ export default function Documents() {
 
         setSigning(true);
         try {
-            const response = await documentsApi.sign(selectedDocument.documentId, {
-                workerId: user.workerId,
-                tipoFirma: 'trabajador', // O el rol correspondiente
-                pin: pin
-            });
+            const result = await signDocument(
+                selectedDocument.documentId,
+                selectedDocument.titulo,
+                user.workerId,
+                user.nombre || 'Usuario',
+                pin
+            );
 
-            if (response.success) {
-                showNotification('Documento firmado exitosamente', 'success');
+            if (result.success) {
+                if (result.offline) {
+                    showNotification('📴 Firma guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
+                } else {
+                    showNotification('✅ Documento firmado exitosamente', 'success');
+                }
                 setShowSignModal(false);
-                loadData(); // Actualizar lista
+                if (!result.offline) {
+                    loadData(); // Solo recargar si se envió al servidor
+                }
             } else {
-                showNotification(response.error || 'Error al firmar documento', 'error');
+                showNotification(result.error || 'Error al firmar documento', 'error');
             }
         } catch (error) {
             console.error('Error signing document:', error);
@@ -403,6 +425,45 @@ export default function Documents() {
                         </p>
                     </div>
                 </div>
+
+                {/* Offline Banner */}
+                {(!isOnline || pendingCount > 0) && (
+                    <div
+                        className="mb-4 p-3 rounded-lg flex items-center justify-between"
+                        style={{
+                            background: !isOnline ? 'var(--warning-500/15)' : 'var(--info-500/15)',
+                            border: `1px solid ${!isOnline ? 'var(--warning-500)' : 'var(--info-500)'}`,
+                            color: !isOnline ? 'var(--warning-700)' : 'var(--info-700)'
+                        }}
+                    >
+                        <div className="flex items-center gap-2">
+                            {!isOnline ? (
+                                <>
+                                    <FiAlertCircle size={18} />
+                                    <span className="font-medium">Sin conexión - Las firmas se guardarán localmente</span>
+                                </>
+                            ) : (
+                                <>
+                                    <FiCheck size={18} />
+                                    <span className="font-medium">{pendingCount} firma(s) pendiente(s) de sincronizar</span>
+                                </>
+                            )}
+                        </div>
+                        {isOnline && pendingCount > 0 && (
+                            <button
+                                className="btn btn-sm"
+                                style={{
+                                    background: 'var(--info-600)',
+                                    color: 'white',
+                                    border: 'none'
+                                }}
+                                onClick={() => syncPendingSignatures()}
+                            >
+                                Sincronizar ahora
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 {/* Actions */}
                 <div className="card mb-6">
