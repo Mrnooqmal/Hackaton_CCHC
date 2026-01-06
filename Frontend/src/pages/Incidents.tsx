@@ -1366,7 +1366,7 @@ export default function Incidents() {
                                                             </div>
                                                         </>
                                                     ) : (
-                                                        <div className="camera-placeholder w-full h-full flex flex-col items-center justify-center text-white/50 p-4 text-center">
+                                                        <div className="camera-placeholder w-full flex flex-col items-center text-white/50 p-4 text-center gap-3">
                                                             {uploadedFiles.length > 0 ? (
                                                                 <div className="relative">
                                                                     <img
@@ -1389,11 +1389,10 @@ export default function Incidents() {
                                                                     <button
                                                                         className="btn btn-primary"
                                                                         onClick={startCamera}
-                                                                        style={{ marginTop: '20px' }} /* Empuja el botón hacia abajo */
                                                                     >
                                                                         <FiCamera className="mr-2" /> Activar Cámara
                                                                     </button>
-                                                                    <p className="mt-4 text-xs">O sube archivos después en el formulario</p>
+                                                                    <p className="text-xs">O sube archivos después en el formulario</p>
                                                                 </>
                                                             )}
                                                         </div>
@@ -1407,36 +1406,38 @@ export default function Incidents() {
                                                     <FiMic /> 2. ¿Qué ocurrió?
                                                 </h3>
                                                 <div className={`audio-recorder p-6 rounded-xl border-2 border-dashed transition-all ${isRecording ? 'border-danger-500 bg-danger-50/5' : 'border-surface-border bg-surface-hover/30'}`}>
-                                                    <div className="flex flex-col items-center text-center">
-                                                        <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 transition-all ${isRecording ? 'bg-danger-500 scale-110 shadow-lg shadow-danger-200' : 'bg-primary-500'}`}>
-                                                            {isRecording ? (
-                                                                <div className="flex gap-1">
-                                                                    <div className="w-1.5 h-6 bg-white animate-bounce" style={{ animationDelay: '0s' }} />
-                                                                    <div className="w-1.5 h-10 bg-white animate-bounce" style={{ animationDelay: '0.1s' }} />
-                                                                    <div className="w-1.5 h-8 bg-white animate-bounce" style={{ animationDelay: '0.2s' }} />
-                                                                    <div className="w-1.5 h-6 bg-white animate-bounce" style={{ animationDelay: '0.3s' }} />
-                                                                </div>
-                                                            ) : (
-                                                                <FiMic size={32} className="text-white" />
-                                                            )}
+                                                    <div className="quick-report-audio-body">
+                                                        <div className="quick-report-audio-controls">
+                                                            <div className={`quick-report-mic-indicator w-20 h-20 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-danger-500 scale-110 shadow-lg shadow-danger-200' : 'bg-primary-500'}`}>
+                                                                {isRecording ? (
+                                                                    <div className="flex gap-1">
+                                                                        <div className="w-1.5 h-6 bg-white animate-bounce" style={{ animationDelay: '0s' }} />
+                                                                        <div className="w-1.5 h-10 bg-white animate-bounce" style={{ animationDelay: '0.1s' }} />
+                                                                        <div className="w-1.5 h-8 bg-white animate-bounce" style={{ animationDelay: '0.2s' }} />
+                                                                        <div className="w-1.5 h-6 bg-white animate-bounce" style={{ animationDelay: '0.3s' }} />
+                                                                    </div>
+                                                                ) : (
+                                                                    <FiMic size={32} className="text-white" />
+                                                                )}
+                                                            </div>
+
+                                                            <button
+                                                                className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'} quick-report-dictate-btn`}
+                                                                onClick={isRecording ? stopRecording : startRecording}
+                                                                disabled={isTranscribing}
+                                                            >
+                                                                {isTranscribing ? (
+                                                                    <><FiRefreshCw className="mr-2 animate-spin" /> Procesando Audio...</>
+                                                                ) : isRecording ? (
+                                                                    <><FiStopCircle className="mr-2" /> Detener Grabación</>
+                                                                ) : (
+                                                                    <><FiPlay className="mr-2" /> Dictar Reporte</>
+                                                                )}
+                                                            </button>
                                                         </div>
 
-                                                        <button
-                                                            className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'} mb-4`}
-                                                            onClick={isRecording ? stopRecording : startRecording}
-                                                            disabled={isTranscribing}
-                                                        >
-                                                            {isTranscribing ? (
-                                                                <><FiRefreshCw className="mr-2 animate-spin" /> Procesando Audio...</>
-                                                            ) : isRecording ? (
-                                                                <><FiStopCircle className="mr-2" /> Detener Grabación</>
-                                                            ) : (
-                                                                <><FiPlay className="mr-2" /> Dictar Reporte</>
-                                                            )}
-                                                        </button>
-
                                                         <textarea
-                                                            className="w-full min-h-[100px] bg-surface-card rounded-lg p-3 border border-surface-border text-sm italic overflow-y-auto max-h-[150px] resize-none focus:outline-none focus:border-primary-500 transition-colors"
+                                                            className="voice-transcript-area"
                                                             value={transcript}
                                                             onChange={(e) => setTranscript(e.target.value)}
                                                             placeholder={isRecording ? 'Grabando audio...' : isTranscribing ? 'Transcribiendo...' : 'Presione dictar y describa el incidente (ej: "Hay una tabla suelta en el andamio del sector B, riesgo de caída")'}
@@ -2424,7 +2425,9 @@ export default function Incidents() {
                 }
 
                 .camera-placeholder {
-                    padding-top: var(--space-8);
+                    padding-top: var(--space-3);
+                    min-height: 220px;
+                    justify-content: flex-start;
                 }
 
                 .audio-recorder {
