@@ -396,10 +396,10 @@ export default function Documents() {
                     <div className="page-header-info">
                         <h2 className="page-header-title">
                             <FiFileText className="text-primary-500" />
-                            GestiÃ³n Documental Normativa
+                            Gestión Documental Normativa
                         </h2>
                         <p className="page-header-description">
-                            Control de polÃ­ticas, reglamentos, procedimientos y matrices de riesgo.
+                            Control de políticas, reglamentos, procedimientos y matrices de riesgo.
                         </p>
                     </div>
                 </div>
@@ -1071,10 +1071,10 @@ export default function Documents() {
                                 <form onSubmit={handleSign}>
                                     <div className="modal-body">
                                         <p className="mb-4">
-                                            EstÃ¡s a punto de firmar: <strong>{selectedDocument.titulo}</strong>
+                                            Estás a punto de firmar: <strong>{selectedDocument.titulo}</strong>
                                         </p>
                                         <p className="text-sm text-muted mb-6">
-                                            Ingresa tu PIN de 4 dÃ­gitos para confirmar tu identidad y firmar digitalmente este documento.
+                                            Ingresa tu PIN de 4 dígitos para confirmar tu identidad y firmar digitalmente este documento.
                                         </p>
 
                                         <div className="form-group">
@@ -1094,7 +1094,7 @@ export default function Documents() {
                                                         fontSize: '24px',
                                                         fontWeight: 'bold'
                                                     }}
-                                                    placeholder="â€¢â€¢â€¢â€¢"
+                                                    placeholder="••••"
                                                     autoFocus
                                                 />
                                             </div>
