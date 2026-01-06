@@ -104,7 +104,7 @@ async function invokeModel(systemPrompt, userMessage, options = {}) {
  * @param {string[]} actividades - Lista de actividades del cargo
  * @param {string} contexto - Contexto adicional (tipo de obra, etc)
  */
-async function generateMIPER(cargo, actividades, contexto = '') {
+async function generateMIPER(cargo, actividades, contexto = '', historicalContext = '') {
     const systemPrompt = `Eres un experto consultor senior en prevención de riesgos laborales en Chile con 20+ años de experiencia.
 Especializado en el Decreto Supremo 44 (DS 44) y la elaboración de matrices MIPER profesionales.
 
@@ -116,11 +116,13 @@ REGLAS ESTRICTAS:
    - Consecuencia: 1 (Leve - primeros auxilios), 2 (Moderada - tratamiento médico), 3 (Grave - incapacidad temporal), 4 (Fatal/Muy Grave - muerte o incapacidad permanente)
    - Nivel de Riesgo calculado según matriz: Crítico (A+3/4 o M+4), Alto (A+2 o M+3 o B+4), Medio (A+1 o M+2 o B+3), Bajo (M+1 o B+1/2)
 4. Las medidas de control deben seguir la jerarquía: Eliminación > Sustitución > Controles de Ingeniería > Controles Administrativos > EPP
-5. Sé específico al contexto chileno: menciona normativas aplicables (DS 594, NCh, etc.)`;
+5. Sé específico al contexto chileno: menciona normativas aplicables (DS 594, NCh, etc.)
+6. IMPORTANTE: Considera los incidentes históricos proporcionados para ajustar la probabilidad y medidas de control.`;
 
     const userMessage = `Genera una matriz MIPER profesional y completa para el cargo: "${cargo}"
 ${actividades.length > 0 ? `\nActividades principales del cargo: ${actividades.join(', ')}` : ''}
 ${contexto ? `\nContexto de la obra/empresa: ${contexto}` : ''}
+${historicalContext ? `\n\n⚠️ INCIDENTES HISTÓRICOS DE LA EMPRESA:\n${historicalContext}\nUsa esto para priorizar los riesgos reales que ya han ocurrido.` : ''}
 
 Responde SOLO con este formato JSON:
 {

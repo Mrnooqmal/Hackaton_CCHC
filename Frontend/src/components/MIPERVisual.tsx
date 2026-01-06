@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { FiCheck, FiAlertTriangle, FiShield, FiBookOpen, FiUser, FiCalendar, FiX, FiDownload } from 'react-icons/fi';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface MedidasControl {
     eliminacion?: string;
@@ -162,8 +164,252 @@ export default function MIPERVisual({ data, onApprove, onEdit }: MIPERVisualProp
         );
     };
 
+
+
     const handleExportPDF = () => {
-        alert('📄 Exportando PDF de Matriz IPER...\n\nEl documento incluirá:\n- Información del cargo\n- Todos los peligros identificados\n- Plan de acción\n- Capacitaciones requeridas\n- Firmas de aprobación');
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.width;
+
+        // Header
+        doc.setFillColor(79, 70, 229); // Primary color
+        doc.rect(0, 0, pageWidth, 40, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        doc.setFont('helvetica', 'bold');
+        doc.text('MATRIZ MIPER', 20, 20);
+
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'normal');
+        doc.text(data.cargo, 20, 30);
+
+        doc.setFontSize(10);
+        doc.text(`Fecha: ${data.fecha} | Versión: ${data.version || '1.0'}`, pageWidth - 20, 20, { align: 'right' });
+        doc.text(`Elaborado por: ${data.elaboradoPor || 'IA'}`, pageWidth - 20, 30, { align: 'right' });
+
+        let currentY = 50;
+
+        // Resumen Stats
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Resumen de Riesgos', 20, currentY);
+        currentY += 5;
+
+        autoTable(doc, {
+            startY: currentY,
+            head: [['Total Peligros', 'Críticos', 'Altos', 'Medios', 'Bajos']],
+            body: [[
+                data.resumen.totalPeligros,
+                data.resumen.criticos,
+                data.resumen.altos,
+                data.resumen.medios,
+                data.resumen.bajos
+            ]],
+            theme: 'grid',
+            headStyles: { fillColor: [243, 244, 246], textColor: 0, fontStyle: 'bold' },
+            styles: { halign: 'center' }
+        });
+
+        // ... Stats table
+
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+
+        // --- Visual Matrix Drawing ---
+        const matrixTopY = currentY;
+        const matrixLeftX = 80;
+        const cellSize = 15;
+
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Mapa de Calor de Riesgos', 20, matrixTopY + 5);
+
+        // Logic to count risks per cell
+        const matrixCounts: Record<string, number> = {};
+        data.peligros.forEach(p => {
+            const key = `${p.probabilidad}-${p.consecuencia}`;
+            matrixCounts[key] = (matrixCounts[key] || 0) + 1;
+        });
+
+        // Matrix Definition (3 rows x 4 cols) based on Gemini prompt logic
+        // Rows: A (High), M (Medium), B (Low)
+        // Cols: 1 (Leve), 2 (Mod), 3 (Grave), 4 (Fatal)
+
+        // Helper to get color
+        const getCellColor = (prob: string, cons: string) => {
+            // Critical: A3, A4, M4
+            if ((prob === 'A' && (cons === '3' || cons === '4')) || (prob === 'M' && cons === '4')) return [239, 68, 68]; // Red
+            // High: A2, M3, B4
+            if ((prob === 'A' && cons === '2') || (prob === 'M' && cons === '3') || (prob === 'B' && cons === '4')) return [249, 115, 22]; // Orange
+            // Medium: A1, M2, B3
+            if ((prob === 'A' && cons === '1') || (prob === 'M' && cons === '2') || (prob === 'B' && cons === '3')) return [234, 179, 8]; // Yellow
+            // Low: M1, B1, B2
+            return [34, 197, 94]; // Green
+        };
+
+        const rows = ['A', 'M', 'B'];
+        const cols = ['1', '2', '3', '4'];
+
+        // Draw Grid
+        rows.forEach((row, rIndex) => {
+            cols.forEach((col, cIndex) => {
+                const x = matrixLeftX + (cIndex * cellSize);
+                const y = matrixTopY + (rIndex * cellSize) + 10;
+
+                const color = getCellColor(row, col);
+                doc.setFillColor(color[0], color[1], color[2]);
+                doc.rect(x, y, cellSize, cellSize, 'F');
+                doc.setDrawColor(255, 255, 255);
+                doc.rect(x, y, cellSize, cellSize, 'S');
+
+                // Count
+                const count = matrixCounts[`${row}-${col}`] || 0;
+                if (count > 0) {
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(count.toString(), x + cellSize / 2, y + cellSize / 2 + 3, { align: 'center' });
+                }
+            });
+            // Row Labels (Prob)
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(8);
+            doc.text(row, matrixLeftX - 5, matrixTopY + (rIndex * cellSize) + 20);
+        });
+
+        // Col Labels (Cons)
+        cols.forEach((col, cIndex) => {
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(8);
+            doc.text(col, matrixLeftX + (cIndex * cellSize) + 7, matrixTopY + 10 + (rows.length * cellSize) + 5, { align: 'center' });
+        });
+
+        // Axis Labels
+        doc.setFontSize(8);
+        doc.text('Prob.', matrixLeftX - 15, matrixTopY + 35, { angle: 90 });
+        doc.text('Consecuencia', matrixLeftX + 25, matrixTopY + 10 + (rows.length * cellSize) + 12);
+
+        // --- Legend Table (Right of Matrix) ---
+        const legendData: any[] = [];
+        rows.forEach(row => {
+            cols.forEach(col => {
+                const key = `${row}-${col}`;
+                const hazardsInCell = data.peligros.filter(p => p.probabilidad === row && p.consecuencia === col);
+                if (hazardsInCell.length > 0) {
+                    legendData.push([
+                        `${row}${col}`, // Coord
+                        hazardsInCell[0].nivelRiesgo, // Level
+                        hazardsInCell.map(p => `• ${p.peligro}`).join('\n') // List of hazards
+                    ]);
+                }
+            });
+        });
+
+        autoTable(doc, {
+            startY: matrixTopY,
+            margin: { left: matrixLeftX + (cols.length * cellSize) + 10 },
+            head: [['Ub.', 'Nivel', 'Peligros en Cuadrante']],
+            body: legendData,
+            theme: 'plain',
+            styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+            headStyles: { fillColor: [243, 244, 246], textColor: 0, fontStyle: 'bold' },
+            columnStyles: {
+                0: { cellWidth: 10, fontStyle: 'bold' },
+                1: { cellWidth: 15 },
+                2: { cellWidth: 50 }
+            }
+        });
+
+        // Ensure currentY is below both matrix and legend
+        // Matrix height ~ 60, Legend height variable.
+        const legendFinalY = (doc as any).lastAutoTable.finalY;
+        const matrixFinalY = matrixTopY + 70;
+        currentY = Math.max(legendFinalY, matrixFinalY) + 15;
+
+        // --- End Visual Matrix ---
+
+        // Peligros Table
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Detalle de Peligros', 20, currentY);
+        currentY += 5;
+
+        const peligrosBody = data.peligros.map(p => {
+            const medidas = Array.isArray(p.medidasControl)
+                ? p.medidasControl.join(', ')
+                : [
+                    p.medidasControl?.eliminacion !== 'N/A' ? `Elim: ${p.medidasControl?.eliminacion}` : '',
+                    p.medidasControl?.sustitucion !== 'N/A' ? `Sus: ${p.medidasControl?.sustitucion}` : '',
+                    p.medidasControl?.ingenieria !== 'N/A' ? `Ing: ${p.medidasControl?.ingenieria}` : '',
+                    ...(p.medidasControl?.administrativas || []),
+                    ...(p.medidasControl?.epp ? p.medidasControl.epp.map(e => `EPP: ${e}`) : [])
+                ].filter(Boolean).join('\n');
+
+            return [
+                p.peligro,
+                p.riesgo,
+                `${p.probabilidad} x ${p.consecuencia} = ${p.nivelRiesgo}`,
+                medidas,
+                p.responsable || 'N/A'
+            ];
+        });
+
+        autoTable(doc, {
+            startY: currentY,
+            head: [['Peligro', 'Riesgo', 'Evaluación', 'Medidas de Control', 'Resp.']],
+            body: peligrosBody,
+            styles: { fontSize: 8, cellPadding: 2 },
+            headStyles: { fillColor: [79, 70, 229] },
+            columnStyles: {
+                0: { cellWidth: 30 },
+                1: { cellWidth: 40 },
+                2: { cellWidth: 25 },
+                3: { cellWidth: 'auto' },
+                4: { cellWidth: 25 }
+            }
+        });
+
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+
+        // Plan de Accion if exists
+        if (data.planAccion && data.planAccion.length > 0) {
+            // Check page break
+            if (currentY > 250) { doc.addPage(); currentY = 20; }
+
+            doc.text('Plan de Acción Prioritario', 20, currentY);
+            currentY += 5;
+
+            autoTable(doc, {
+                startY: currentY,
+                head: [['Prioridad', 'Acción', 'Plazo', 'Responsable']],
+                body: data.planAccion.map(a => [a.prioridad, a.accion, a.plazo, a.responsable]),
+                theme: 'striped',
+                headStyles: { fillColor: [249, 115, 22] }, // Orange
+            });
+            currentY = (doc as any).lastAutoTable.finalY + 15;
+        }
+
+        // Capacitaciones if exists
+        if (data.capacitacionesRequeridas && data.capacitacionesRequeridas.length > 0) {
+            if (currentY > 250) { doc.addPage(); currentY = 20; }
+
+            doc.text('Capacitaciones Requeridas', 20, currentY);
+            currentY += 5;
+
+            autoTable(doc, {
+                startY: currentY,
+                head: [['Tema', 'Duración', 'Frecuencia', 'Obligatoria']],
+                body: data.capacitacionesRequeridas.map(c => [
+                    c.tema,
+                    c.duracion,
+                    c.frecuencia || '-',
+                    c.obligatoria ? 'SI' : 'NO'
+                ]),
+                theme: 'grid'
+            });
+        }
+
+        doc.save(`MIPER_${data.cargo.replace(/\s+/g, '_')}_${data.fecha}.pdf`);
     };
 
     return (

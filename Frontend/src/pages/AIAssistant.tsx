@@ -76,7 +76,10 @@ const EXAMPLE_PROMPTS = [
     'Genera charla sobre orden y limpieza',
 ];
 
+import { useAuth } from '../context/AuthContext';
+
 export default function AIAssistant() {
+    const { user } = useAuth();
     const [messages, setMessages] = useState<Message[]>([
         {
             id: '1',
@@ -170,7 +173,7 @@ export default function AIAssistant() {
 
             switch (actionId) {
                 case 'miper':
-                    response = await aiApi.generateMIPER(inputValue);
+                    response = await aiApi.generateMIPER(inputValue, [], undefined, user?.empresaId);
                     if (response.success && response.data) {
                         data = response.data;
                         formattedContent = formatMIPERResponse(response.data);
@@ -411,9 +414,27 @@ ${data.normativaRelacionada ? `**Normativa:** ${data.normativaRelacionada.join('
                                 </div>
                                 <div className="flex gap-2 mb-2">
                                     {['Crítico', 'Alto', 'Medio', 'Bajo'].map(level => {
-                                        const count = message.type === 'miper'
-                                            ? message.data.resumen?.[level.toLowerCase() + 's'] || 0
-                                            : message.data.estadisticas?.[level.toLowerCase() + 's'] || 0;
+                                        let count = 0;
+
+                                        if (message.type === 'miper') {
+                                            count = message.data.resumen?.[level.toLowerCase() + 's'] || 0;
+                                        } else {
+                                            // FIX: Calculate manually for Risk Matrix to handle API inconsistencies
+                                            // Normalizing Logic from RiskMatrixVisual.tsx
+                                            const risks = message.data.riesgos || [];
+                                            count = risks.filter((r: any) => {
+                                                const lvl = r.nivelRiesgo || 'Bajo';
+                                                const text = lvl.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                                                const target = level.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                                                return text.includes(target);
+                                            }).length;
+
+                                            // Fallback if manual count is 0 but stats exist (rare but possible)
+                                            if (count === 0 && message.data.estadisticas?.[level.toLowerCase() + 's'] > 0) {
+                                                count = message.data.estadisticas[level.toLowerCase() + 's'];
+                                            }
+                                        }
+
                                         const colors: Record<string, string> = { 'Crítico': '#ef4444', 'Alto': '#f97316', 'Medio': '#eab308', 'Bajo': '#22c55e' };
                                         return (
                                             <span key={level} style={{

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { FiAlertTriangle, FiCheck, FiInfo, FiX, FiDownload, FiTarget, FiShield } from 'react-icons/fi';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface RiskItem {
     id: number;
@@ -74,14 +76,47 @@ const MATRIX_LEVELS: string[][] = [
     ['Alto', 'Alto', 'Crítico', 'Crítico', 'Crítico'] // Prob 5 (Muy Alta)
 ];
 
+// Helper to parse prob/mpact values safely
+const parseMetricValue = (val: any): number => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+
+    // Check if it's a string number "3"
+    const num = Number(val);
+    if (!isNaN(num)) return num;
+
+    // Check for text labels
+    const text = String(val).toLowerCase();
+    if (text.includes('muy alta') || text.includes('catastrófica') || text.includes('catastrofico')) return 5;
+    if (text.includes('alta') || text.includes('mayor')) return 4;
+    if (text.includes('media') || text.includes('moderada')) return 3;
+    if (text.includes('baja') || text.includes('menor')) return 2;
+    if (text.includes('muy baja') || text.includes('insignificante')) return 1;
+
+    return 0;
+}
+
+// Helper to normalize risk level string (handle accents, case)
+const normalizeRiskLevel = (level: string): string => {
+    if (!level) return 'Bajo';
+    const text = level.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Remove accents
+
+    if (text.includes('critico')) return 'Crítico';
+    if (text.includes('alto')) return 'Alto';
+    if (text.includes('medio') || text.includes('moderado')) return 'Medio';
+    if (text.includes('bajo')) return 'Bajo';
+
+    return 'Medio'; // Fallback
+};
+
 export default function RiskMatrixVisual({ data, onApprove, onExport }: RiskMatrixVisualProps) {
     const [selectedRisk, setSelectedRisk] = useState<RiskItem | null>(null);
     const [hoveredCell, setHoveredCell] = useState<{ x: number; y: number } | null>(null);
 
     const getRisksInCell = (impacto: number, probabilidad: number) => {
         return data.riesgos.filter(r => {
-            const rProb = r.posicionMatriz?.y || r.probabilidad;
-            const rImp = r.posicionMatriz?.x || r.consecuencia;
+            const rProb = parseMetricValue(r.posicionMatriz?.y) || parseMetricValue(r.probabilidad);
+            const rImp = parseMetricValue(r.posicionMatriz?.x) || parseMetricValue(r.consecuencia);
             return rImp === impacto && rProb === probabilidad;
         });
     };
@@ -91,31 +126,265 @@ export default function RiskMatrixVisual({ data, onApprove, onExport }: RiskMatr
     };
 
     const getCellColor = (level: string): string => {
-        return NIVEL_COLORS[level] || '#666';
+        // Normalize checking
+        const norm = normalizeRiskLevel(level);
+        return NIVEL_COLORS[norm] || '#666';
     };
 
-    const stats = data.estadisticas || {
+    // Calculate stats dynamic based on MATRIX COORDINATES to ensure consistency with visual map
+    // We ignore the text label 'nivelRiesgo' for stats counting, relying on PxI instead.
+    const calculatedStats = {
         total: data.riesgos.length,
-        criticos: data.riesgos.filter(r => r.nivelRiesgo === 'Crítico').length,
-        altos: data.riesgos.filter(r => r.nivelRiesgo === 'Alto').length,
-        medios: data.riesgos.filter(r => r.nivelRiesgo === 'Medio').length,
-        bajos: data.riesgos.filter(r => r.nivelRiesgo === 'Bajo').length
+        criticos: 0,
+        altos: 0,
+        medios: 0,
+        bajos: 0
     };
+
+    data.riesgos.forEach(r => {
+        const p = parseMetricValue(r.posicionMatriz?.y) || parseMetricValue(r.probabilidad);
+        const i = parseMetricValue(r.posicionMatriz?.x) || parseMetricValue(r.consecuencia);
+
+        // Default to 'Medio' if coords are missing, but usually they exist if dots are shown
+        const level = (p > 0 && i > 0) ? (MATRIX_LEVELS[p - 1]?.[i - 1] || 'Medio') : 'Medio';
+
+        const norm = normalizeRiskLevel(level); // 'Crítico', 'Alto', 'Medio', 'Bajo'
+
+        if (norm === 'Crítico') calculatedStats.criticos++;
+        else if (norm === 'Alto') calculatedStats.altos++;
+        else if (norm === 'Medio') calculatedStats.medios++;
+        else calculatedStats.bajos++;
+    });
+
+    // FIX: Always use calculated stats to ensure consistency with the visual matrix
+    const stats = calculatedStats;
 
     // Generar plan de mitigación basado en riesgos críticos y altos
     const generatedMitigationPlan = data.planMitigacion || data.riesgos
-        .filter(r => r.nivelRiesgo === 'Crítico' || r.nivelRiesgo === 'Alto')
+        .filter(r => {
+            const level = normalizeRiskLevel(r.nivelRiesgo);
+            return level === 'Crítico' || level === 'Alto';
+        })
         .map((r, i) => ({
             prioridad: i + 1,
             riesgoId: r.id,
             accion: r.controlesAdicionales?.[0] || `Implementar controles para: ${r.peligro}`,
             responsable: r.responsable || 'Prevencionista',
-            plazo: r.plazoImplementacion || (r.nivelRiesgo === 'Crítico' ? 'Inmediato' : '7 días')
+            plazo: r.plazoImplementacion || (normalizeRiskLevel(r.nivelRiesgo) === 'Crítico' ? 'Inmediato' : '7 días')
         }));
 
     const handleExportPDF = () => {
-        // Simular exportación PDF
-        alert('📄 Exportando PDF...\n\nEsta función generará un documento PDF profesional con:\n- Matriz de riesgos visual\n- Detalle de cada riesgo\n- Plan de mitigación\n- Firmas de aprobación');
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.width;
+
+        // --- 1. Header ---
+        doc.setFillColor(30, 58, 95); // #1e3a5f Dark Blue
+        doc.rect(0, 0, pageWidth, 40, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        doc.setFont('helvetica', 'bold');
+        doc.text('MATRIZ DE RIESGOS', 20, 20);
+
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'normal');
+        doc.text(data.obra || data.titulo || 'Proyecto', 20, 30);
+
+        doc.setFontSize(10);
+        doc.text(`Fecha: ${data.fecha}`, pageWidth - 20, 20, { align: 'right' });
+        if (data.actividad) {
+            doc.text(`Actividad: ${data.actividad}`, pageWidth - 20, 30, { align: 'right' });
+        }
+
+        let currentY = 50;
+
+        // --- 2. Stats Summary ---
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Resumen Ejecutivo', 20, currentY);
+        currentY += 5;
+
+        autoTable(doc, {
+            startY: currentY,
+            head: [['Total Riesgos', 'Críticos', 'Altos', 'Medios', 'Bajos']],
+            body: [[
+                stats.total,
+                stats.criticos,
+                stats.altos,
+                stats.medios,
+                stats.bajos
+            ]],
+            theme: 'grid',
+            headStyles: { fillColor: [243, 244, 246], textColor: 0, fontStyle: 'bold' },
+            styles: { halign: 'center' }
+        });
+
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+
+        // --- 3. Visual Matrix (5x5) ---
+        const matrixTopY = currentY;
+        const matrixLeftX = 60;
+        const cellSize = 12;
+
+        doc.text('Mapa de Calor (5x5)', 20, matrixTopY + 5);
+
+        // Axis Labels
+        doc.setFontSize(8);
+        doc.text('PROBABILIDAD', matrixLeftX - 25, matrixTopY + 35, { angle: 90 });
+        doc.text('IMPACTO', matrixLeftX + 25, matrixTopY + 10 + (5 * cellSize) + 12);
+
+        // Legend Data extraction (for side table)
+        const legendData: any[] = [];
+
+        // Draw 5x5 Grid (Rows: Prob 5(top) to 1(bottom), Cols: Impact 1(left) to 5(right))
+        const probs = [5, 4, 3, 2, 1]; // Rows
+        const impacts = [1, 2, 3, 4, 5]; // Cols
+
+        probs.forEach((prob, rIndex) => {
+            impacts.forEach((imp, cIndex) => {
+                const x = matrixLeftX + (cIndex * cellSize);
+                const y = matrixTopY + (rIndex * cellSize) + 10;
+
+                // Determine Cell Color/Level
+                const level = MATRIX_LEVELS[prob - 1]?.[imp - 1] || 'Medio';
+                const colorHex = NIVEL_COLORS[level] || '#666';
+
+                // Convert Hex to RGB for jsPDF
+                const r = parseInt(colorHex.slice(1, 3), 16);
+                const g = parseInt(colorHex.slice(3, 5), 16);
+                const b = parseInt(colorHex.slice(5, 7), 16);
+
+                doc.setFillColor(r, g, b);
+                doc.rect(x, y, cellSize, cellSize, 'F');
+                doc.setDrawColor(255, 255, 255);
+                doc.rect(x, y, cellSize, cellSize, 'S');
+
+                // Count risks in this cell - FIX: Use robust parsing
+                const risksInCell = data.riesgos.filter(r => {
+                    const rProb = parseMetricValue(r.posicionMatriz?.y) || parseMetricValue(r.probabilidad);
+                    const rImp = parseMetricValue(r.posicionMatriz?.x) || parseMetricValue(r.consecuencia);
+                    return rProb === prob && rImp === imp;
+                });
+
+                if (risksInCell.length > 0) {
+                    // Draw count
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFontSize(9);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(risksInCell.length.toString(), x + cellSize / 2, y + cellSize / 2 + 3, { align: 'center' });
+
+                    // Add to Legend Data
+                    legendData.push([
+                        `P${prob}-I${imp}`, // Coord
+                        level,
+                        risksInCell.map(r => `• (R${r.id}) ${r.peligro}`).join('\n')
+                    ]);
+                }
+            });
+
+            // Row Labels (Prob)
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(7);
+            doc.text(`${PROBABILITY_LABELS[prob - 1]} (${prob})`, matrixLeftX - 2, matrixTopY + (rIndex * cellSize) + 18, { align: 'right' });
+        });
+
+        // Col Labels (Impact)
+        impacts.forEach((imp, cIndex) => {
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(7);
+            doc.text(`${imp}`, matrixLeftX + (cIndex * cellSize) + 6, matrixTopY + 10 + (5 * cellSize) + 5, { align: 'center' });
+        });
+
+        // --- 4. Side Legend Table ---
+        if (legendData.length > 0) {
+            autoTable(doc, {
+                startY: matrixTopY,
+                margin: { left: matrixLeftX + (5 * cellSize) + 10 },
+                head: [['Coord.', 'Nivel', 'Riesgos en Cuadrante']],
+                body: legendData,
+                theme: 'plain',
+                styles: { fontSize: 6, cellPadding: 2, overflow: 'linebreak' },
+                headStyles: { fillColor: [243, 244, 246], textColor: 0, fontStyle: 'bold' },
+                columnStyles: {
+                    0: { cellWidth: 15, fontStyle: 'bold' },
+                    1: { cellWidth: 15 },
+                    2: { cellWidth: 60 }
+                }
+            });
+        }
+
+        const legendFinalY = (doc as any).lastAutoTable.finalY || (matrixTopY + 90); // Fallback if no legend
+        const matrixFinalY = matrixTopY + 90;
+        currentY = Math.max(legendFinalY, matrixFinalY) + 10;
+
+        // --- 5. Validating Page Break for Details ---
+        if (currentY > 250) { doc.addPage(); currentY = 20; }
+
+        // --- 6. Detailed Table ---
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Inventario de Riesgos', 20, currentY);
+        currentY += 5;
+
+        const risksBody = data.riesgos.map(r => {
+            const controls = [
+                ...(r.controlesExistentes || []),
+                ...(r.controlesAdicionales || [])
+            ];
+            const controlsText = controls.length > 0 ? controls.map(c => `• ${c}`).join('\n') : 'Sin controles definidos';
+
+            return [
+                `R${r.id}`,
+                r.peligro,
+                r.riesgo,
+                `${r.probabilidad} x ${r.consecuencia} = ${r.nivelRiesgo}`,
+                controlsText,
+                r.responsable || 'N/A'
+            ];
+        });
+
+        autoTable(doc, {
+            startY: currentY,
+            head: [['ID', 'Peligro', 'Riesgo', 'Evaluación', 'Controles', 'Resp.']],
+            body: risksBody,
+            styles: { fontSize: 7, cellPadding: 2 },
+            headStyles: { fillColor: [30, 58, 95] },
+            columnStyles: {
+                0: { cellWidth: 10, fontStyle: 'bold' },
+                1: { cellWidth: 35 },
+                2: { cellWidth: 40 },
+                3: { cellWidth: 20 },
+                4: { cellWidth: 'auto' },
+                5: { cellWidth: 20 }
+            }
+        });
+
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+
+        // --- 7. Mitigation Plan ---
+        if (generatedMitigationPlan.length > 0) {
+            if (currentY > 250) { doc.addPage(); currentY = 20; }
+            doc.text('Plan de Mitigación', 20, currentY);
+            currentY += 5;
+
+            const planBody = generatedMitigationPlan.map(p => [
+                p.prioridad,
+                p.accion,
+                p.plazo,
+                p.responsable
+            ]);
+
+            autoTable(doc, {
+                startY: currentY,
+                head: [['Prio.', 'Acción Requerida', 'Plazo', 'Responsable']],
+                body: planBody,
+                theme: 'striped',
+                headStyles: { fillColor: [234, 88, 12] }, // Orange
+            });
+        }
+
+        doc.save(`Riesgos_${(data.titulo || 'Proyecto').replace(/\s+/g, '_')}_${data.fecha}.pdf`);
         onExport?.();
     };
 

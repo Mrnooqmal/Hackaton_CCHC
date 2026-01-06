@@ -260,21 +260,52 @@ const FALLBACK_RESPONSES = {
     })
 };
 
+const { docClient } = require('../lib/dynamodb');
+const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+
 /**
  * POST /ai/miper - Generar matriz MIPER para un cargo
  */
 module.exports.generateMIPER = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
-        const { cargo, actividades = [], contexto = '' } = body;
+        const { cargo, actividades = [], contexto = '', empresaId } = body;
 
         if (!cargo) {
             return error('Se requiere especificar el cargo');
         }
 
+        let historicalContext = '';
+        if (empresaId) {
+            try {
+                // Fetch recent incidents for the company to contextualize risk
+                const incidentsResult = await docClient.send(new QueryCommand({
+                    TableName: process.env.INCIDENTS_TABLE,
+                    IndexName: 'empresaId-fecha-index',
+                    KeyConditionExpression: 'empresaId = :empresaId',
+                    ExpressionAttributeValues: {
+                        ':empresaId': empresaId
+                    },
+                    Limit: 10,
+                    ScanIndexForward: false // Most recent first
+                }));
+
+                const incidents = incidentsResult.Items || [];
+                if (incidents.length > 0) {
+                    console.log(`[AI] Found ${incidents.length} historical incidents for context.`);
+                    historicalContext = incidents.map(inc =>
+                        `- [${inc.fecha}] ${inc.titulo || 'Incidente'}: ${inc.descripcion} (Gravedad: ${inc.gravedad})`
+                    ).join('\n');
+                }
+            } catch (dbError) {
+                console.warn('[AI] Failed to fetch historical incidents:', dbError);
+                // Continue without historical context
+            }
+        }
+
         try {
             console.log('[AI] Calling Gemini generateMIPER for cargo:', cargo);
-            const result = await gemini.generateMIPER(cargo, actividades, contexto);
+            const result = await gemini.generateMIPER(cargo, actividades, contexto, historicalContext);
             console.log('[AI] Gemini generateMIPER SUCCESS');
             const normalized = normalizeMIPERResponse(result, cargo);
             return success({ ...normalized, _source: 'gemini', _generatedAt: new Date().toISOString() });
@@ -282,7 +313,7 @@ module.exports.generateMIPER = async (event) => {
             console.error('[AI] Gemini generateMIPER FAILED:', geminiError.name, geminiError.message);
             console.error('[AI] Full error:', JSON.stringify(geminiError, null, 2));
             const fallbackResult = FALLBACK_RESPONSES.miper(cargo);
-            return success({ ...fallbackResult, _source: 'fallback', _error: bedrockError.message });
+            return success({ ...fallbackResult, _source: 'fallback', _error: geminiError.message });
         }
     } catch (err) {
         console.error('Error generating MIPER:', err);

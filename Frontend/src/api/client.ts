@@ -1539,10 +1539,10 @@ export const aiApi = {
             body: JSON.stringify({ mensaje, contexto }),
         }),
 
-    generateMIPER: (cargo: string, actividades: string[] = [], contexto?: string) =>
+    generateMIPER: (cargo: string, actividades: string[] = [], contexto?: string, empresaId?: string) =>
         apiRequest<MIPERResult>('/ai/miper', {
             method: 'POST',
-            body: JSON.stringify({ cargo, actividades, contexto }),
+            body: JSON.stringify({ cargo, actividades, contexto, empresaId }),
         }),
 
     generateRiskMatrix: (actividad: string, descripcion?: string, ubicacion?: string) =>

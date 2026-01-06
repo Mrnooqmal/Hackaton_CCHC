@@ -510,7 +510,7 @@ export default function Incidents() {
     // Check if incident is new (unseen by current user)
     const isNewIncident = (incident: Incident) => {
         if (!user?.userId) return false;
-        return !incident.viewedBy || !incident.viewedBy.includes(user.userId);
+        return !incident.viewedBy || (Array.isArray(incident.viewedBy) && !incident.viewedBy.includes(user.userId));
     };
 
     // Generate calendar data for a specific month
