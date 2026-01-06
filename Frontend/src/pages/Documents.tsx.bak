@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import {
     FiPlus,
@@ -16,20 +16,19 @@ import {
     FiTrash2,
     FiUserCheck,
     FiAlertCircle,
-    FiCalendar,
-    FiPenTool
+    FiCalendar
 } from 'react-icons/fi';
 import { documentsApi, workersApi, uploadsApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 const DOCUMENT_TYPES: Record<string, { label: string; color: string }> = {
     IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)' },
-    POLITICA_SSO: { label: 'PolÃ­tica SSO', color: 'var(--info-500)' },
+    POLITICA_SSO: { label: 'Política SSO', color: 'var(--info-500)' },
     REGLAMENTO_INTERNO: { label: 'Reglamento Interno', color: 'var(--warning-500)' },
     PROCEDIMIENTO_TRABAJO: { label: 'Procedimiento de Trabajo', color: 'var(--success-500)' },
     MATRIZ_MIPPER: { label: 'Matriz MIPPER', color: 'var(--danger-500)' },
     ENTREGA_EPP: { label: 'Entrega EPP', color: 'var(--success-500)' },
-    CAPACITACION: { label: 'CapacitaciÃ³n', color: 'var(--info-500)' },
+    CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)' },
 };
 
 export default function Documents() {
@@ -99,7 +98,7 @@ export default function Documents() {
         if (file) {
             // Validate file size (max 10MB)
             if (file.size > 10 * 1024 * 1024) {
-                showNotification('El archivo es demasiado grande. MÃ¡ximo 10MB.', 'error');
+                showNotification('El archivo es demasiado grande. Máximo 10MB.', 'error');
                 return;
             }
             setSelectedFile(file);
@@ -321,7 +320,7 @@ export default function Documents() {
     };
 
     const formatDateTime = (value?: string | null) => {
-        if (!value) return 'â€”';
+        if (!value) return '—';
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return value;
         return date.toLocaleString('es-CL', {
@@ -345,7 +344,7 @@ export default function Documents() {
         const matchesSearch = doc.titulo.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesType = !filterType || doc.tipo === filterType;
 
-        // Si no es admin/prevencionista, ver solo si estÃ¡ asignado
+        // Si no es admin/prevencionista, ver solo si está asignado
         const isWorkerOrSupervisor = user?.rol === 'trabajador';
         if (isWorkerOrSupervisor) {
             const isAssigned = doc.asignaciones?.some(a => a.workerId === user?.workerId);
@@ -396,10 +395,10 @@ export default function Documents() {
                     <div className="page-header-info">
                         <h2 className="page-header-title">
                             <FiFileText className="text-primary-500" />
-                            GestiÃ³n Documental Normativa
+                            Gestión Documental Normativa
                         </h2>
                         <p className="page-header-description">
-                            Control de polÃ­ticas, reglamentos, procedimientos y matrices de riesgo.
+                            Control de políticas, reglamentos, procedimientos y matrices de riesgo.
                         </p>
                     </div>
                 </div>
@@ -538,10 +537,10 @@ export default function Documents() {
                         </h3>
                         <p className="empty-state-description" style={{ color: 'var(--text-muted)', maxWidth: '400px', margin: '0 auto var(--space-8)' }}>
                             {searchTerm || filterType
-                                ? 'No hay documentos que coincidan con tu bÃºsqueda actual. Intenta ajustar los filtros.'
+                                ? 'No hay documentos que coincidan con tu búsqueda actual. Intenta ajustar los filtros.'
                                 : user?.rol === 'trabajador'
                                     ? 'No tienes documentos asignados pendiente de firma.'
-                                    : 'Comienza subiendo polÃ­ticas, reglamentos o procedimientos para tu organizaciÃ³n.'}
+                                    : 'Comienza subiendo políticas, reglamentos o procedimientos para tu organización.'}
                         </p>
                         {!searchTerm && !filterType && (
                             <button className="btn btn-primary" onClick={() => setShowModal(true)}>
@@ -629,7 +628,7 @@ export default function Documents() {
                                             <FiUserCheck size={14} />
                                             Asignar
                                         </button>
-
+                                        )}
 
                                         {isPendingForMe && (
                                             <button
@@ -637,14 +636,9 @@ export default function Documents() {
                                                 style={{ flex: 1, background: 'var(--success-600)', borderColor: 'var(--success-600)', color: 'white' }}
                                                 onClick={() => handleOpenSignModal(doc)}
                                             >
-                                                <FiPenTool size={14} />
+                                                <FiCheck size={14} />
                                                 Firmar
                                             </button>
-                                        )}
-                                        {isSignedByMe && (
-                                            <span className="badge badge-success flex items-center justify-center" style={{ flex: 1 }}>
-                                                <FiCheck className="mr-1" /> Firmado
-                                            </span>
                                         )}
                                     </div>
                                 </div>
@@ -685,7 +679,7 @@ export default function Documents() {
                                     </div>
 
                                     <div className="form-group">
-                                        <label className="form-label">TÃ­tulo *</label>
+                                        <label className="form-label">Título *</label>
                                         <input
                                             type="text"
                                             value={newDoc.titulo}
@@ -697,13 +691,13 @@ export default function Documents() {
                                     </div>
 
                                     <div className="form-group">
-                                        <label className="form-label">DescripciÃ³n</label>
+                                        <label className="form-label">Descripción</label>
                                         <textarea
                                             value={newDoc.descripcion}
                                             onChange={(e) => setNewDoc({ ...newDoc, descripcion: e.target.value })}
                                             className="form-input"
                                             rows={3}
-                                            placeholder="DescripciÃ³n del documento..."
+                                            placeholder="Descripción del documento..."
                                             style={{ resize: 'vertical' }}
                                         />
                                     </div>
@@ -754,7 +748,7 @@ export default function Documents() {
                                                         Haz clic para seleccionar un archivo
                                                     </p>
                                                     <p className="text-xs text-muted">
-                                                        PDF, Word, Excel o imÃ¡genes (mÃ¡x. 10MB)
+                                                        PDF, Word, Excel o imágenes (máx. 10MB)
                                                     </p>
                                                 </>
                                             )}
@@ -876,7 +870,7 @@ export default function Documents() {
                                                                     <div className="flex flex-col">
                                                                         <span>{formatDateTime(assignment.fechaFirma)}</span>
                                                                     </div>
-                                                                ) : 'â€”'}
+                                                                ) : '—'}
                                                             </td>
                                                             <td>
                                                                 <span className={`badge ${assignment.estado === 'firmado' ? 'badge-success' : 'badge-warning'}`}>
@@ -891,240 +885,252 @@ export default function Documents() {
                                     )}
                                 </div>
                             </div>
-
-                            <div className="modal-footer">
-                                {(user?.workerId && selectedDocument?.asignaciones?.some(a => a.workerId === user!.workerId && a.estado === 'pendiente')) && (
-                                    <button
-                                        className="btn btn-success"
-                                        style={{ background: 'var(--success-600)', color: 'white', marginRight: 'auto' }}
-                                        onClick={() => {
-                                            setShowDetailModal(false);
-                                            setShowSignModal(true);
-                                        }}
-                                    >
-                                        <FiPenTool className="inline mr-2" />
-                                        Firmar Documento
-                                    </button>
-                                )}
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => setShowDetailModal(false)}
-                                >
-                                    Cerrar
-                                </button>
-                                <button
-                                    className="btn btn-primary"
-                                    onClick={() => {
-                                        setShowDetailModal(false);
-                                        handleOpenAssignModal(selectedDocument);
-                                    }}
-                                >
-                                    <FiUserCheck />
-                                    Asignar a más personas
-                                </button>
-                            </div>
                         </div>
                     </div>
                 )}
-                {/* Assignment Modal */}
-                {
-                    showAssignModal && selectedDocument && (
-                        <div className="modal-overlay" onClick={() => setShowAssignModal(false)}>
-                            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-                                <div className="modal-header">
-                                    <h2 className="modal-title">Asignar Documento</h2>
-                                    <button
-                                        className="btn btn-ghost btn-icon"
-                                        onClick={() => setShowAssignModal(false)}
-                                    >
-                                        <FiX />
-                                    </button>
-                                </div>
 
-                                <div className="modal-body">
-                                    <p className="mb-4">
-                                        <strong>{selectedDocument.titulo}</strong>
-                                    </p>
 
-                                    <div className="form-group">
-                                        <label className="form-label">¿A quién asignar?</label>
-                                        <div className="flex gap-2 mb-4">
-                                            <button
-                                                type="button"
-                                                className={`btn ${assignmentType === 'todos' ? 'btn-primary' : 'btn-secondary'}`}
-                                                onClick={() => setAssignmentType('todos')}
-                                            >
-                                                Todos
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={`btn ${assignmentType === 'cargo' ? 'btn-primary' : 'btn-secondary'}`}
-                                                onClick={() => setAssignmentType('cargo')}
-                                            >
-                                                Por Cargo
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={`btn ${assignmentType === 'personalizado' ? 'btn-primary' : 'btn-secondary'}`}
-                                                onClick={() => setAssignmentType('personalizado')}
-                                            >
-                                                Personalizado
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {assignmentType === 'cargo' && (
-                                        <div className="form-group">
-                                            <label className="form-label">Seleccionar Cargo</label>
-                                            <select
-                                                value={selectedCargo}
-                                                onChange={(e) => setSelectedCargo(e.target.value)}
-                                                className="form-input form-select"
-                                            >
-                                                <option value="">Seleccione un cargo</option>
-                                                {uniqueCargos.map(cargo => (
-                                                    <option key={cargo} value={cargo}>{cargo}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                <span>{formatDateTime(assignment.fechaFirma)}</span>
+                {/* Aquí podríamos mostrar detalles adicionales si están disponibles en assignment o doc.firmas */}
+            </div>
+                                                                ) : '—'}
+        </td >
+            <td>
+                <span className={`badge ${assignment.estado === 'firmado' ? 'badge-success' : 'badge-warning'}`}>
+                    {assignment.estado === 'firmado' ? 'Firmado' : 'Pendiente'}
+                </span>
+            </td>
+                                                        </tr >
+                                                    ))
+}
+                                                </tbody >
+                                            </table >
+                                        </div >
                                     )}
+                                </div >
+                            </div >
 
-                                    {assignmentType === 'personalizado' && (
-                                        <div className="form-group">
-                                            <label className="form-label">
-                                                Seleccionar Trabajadores ({selectedWorkerIds.length} seleccionados)
-                                            </label>
-                                            <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
-                                                {workers.filter(w => w.habilitado).map(worker => (
-                                                    <label
-                                                        key={worker.workerId}
-                                                        className="flex items-center gap-2"
-                                                        style={{
-                                                            padding: 'var(--space-2) var(--space-3)',
-                                                            cursor: 'pointer',
-                                                            borderBottom: '1px solid var(--surface-border)',
-                                                            background: selectedWorkerIds.includes(worker.workerId) ? 'var(--primary-500/10)' : 'transparent'
-                                                        }}
-                                                    >
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedWorkerIds.includes(worker.workerId)}
-                                                            onChange={() => toggleWorkerSelection(worker.workerId)}
-                                                        />
-                                                        <span>{worker.nombre} {worker.apellido}</span>
-                                                        <span className="text-sm text-muted">- {worker.cargo}</span>
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
+    <div className="modal-footer">
+        <button
+            className="btn btn-secondary"
+            onClick={() => setShowDetailModal(false)}
+        >
+            Cerrar
+        </button>
+        <button
+            className="btn btn-primary"
+            onClick={() => {
+                setShowDetailModal(false);
+                handleOpenAssignModal(selectedDocument);
+            }}
+        >
+            <FiUserCheck />
+            Asignar a más personas
+        </button>
+    </div>
+                        </div >
+                    </div >
+                )}
 
-                                    {assignmentType === 'todos' && (
-                                        <p className="text-muted">
-                                            Se asignará a {workers.filter(w => w.habilitado).length} trabajadores habilitados.
-                                        </p>
-                                    )}
-                                </div>
+{/* Assignment Modal */ }
+{
+    showAssignModal && selectedDocument && (
+        <div className="modal-overlay" onClick={() => setShowAssignModal(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                <div className="modal-header">
+                    <h2 className="modal-title">Asignar Documento</h2>
+                    <button
+                        className="btn btn-ghost btn-icon"
+                        onClick={() => setShowAssignModal(false)}
+                    >
+                        <FiX />
+                    </button>
+                </div>
 
-                                <div className="modal-footer">
-                                    <button
-                                        className="btn btn-secondary"
-                                        onClick={() => setShowAssignModal(false)}
-                                        disabled={assigning}
+                <div className="modal-body">
+                    <p className="mb-4">
+                        <strong>{selectedDocument.titulo}</strong>
+                    </p>
+
+                    <div className="form-group">
+                        <label className="form-label">¿A quién asignar?</label>
+                        <div className="flex gap-2 mb-4">
+                            <button
+                                type="button"
+                                className={`btn ${assignmentType === 'todos' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setAssignmentType('todos')}
+                            >
+                                Todos
+                            </button>
+                            <button
+                                type="button"
+                                className={`btn ${assignmentType === 'cargo' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setAssignmentType('cargo')}
+                            >
+                                Por Cargo
+                            </button>
+                            <button
+                                type="button"
+                                className={`btn ${assignmentType === 'personalizado' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setAssignmentType('personalizado')}
+                            >
+                                Personalizado
+                            </button>
+                        </div>
+                    </div>
+
+                    {assignmentType === 'cargo' && (
+                        <div className="form-group">
+                            <label className="form-label">Seleccionar Cargo</label>
+                            <select
+                                value={selectedCargo}
+                                onChange={(e) => setSelectedCargo(e.target.value)}
+                                className="form-input form-select"
+                            >
+                                <option value="">Seleccione un cargo</option>
+                                {uniqueCargos.map(cargo => (
+                                    <option key={cargo} value={cargo}>{cargo}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {assignmentType === 'personalizado' && (
+                        <div className="form-group">
+                            <label className="form-label">
+                                Seleccionar Trabajadores ({selectedWorkerIds.length} seleccionados)
+                            </label>
+                            <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
+                                {workers.filter(w => w.habilitado).map(worker => (
+                                    <label
+                                        key={worker.workerId}
+                                        className="flex items-center gap-2"
+                                        style={{
+                                            padding: 'var(--space-2) var(--space-3)',
+                                            cursor: 'pointer',
+                                            borderBottom: '1px solid var(--surface-border)',
+                                            background: selectedWorkerIds.includes(worker.workerId) ? 'var(--primary-500/10)' : 'transparent'
+                                        }}
                                     >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        className="btn btn-primary"
-                                        onClick={handleAssign}
-                                        disabled={assigning || (assignmentType === 'cargo' && !selectedCargo) || (assignmentType === 'personalizado' && selectedWorkerIds.length === 0)}
-                                    >
-                                        {assigning ? (
-                                            <>
-                                                <div className="spinner spinner-sm" />
-                                                Asignando...
-                                            </>
-                                        ) : (
-                                            'Asignar Documento'
-                                        )}
-                                    </button>
-                                </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedWorkerIds.includes(worker.workerId)}
+                                            onChange={() => toggleWorkerSelection(worker.workerId)}
+                                        />
+                                        <span>{worker.nombre} {worker.apellido}</span>
+                                        <span className="text-sm text-muted">- {worker.cargo}</span>
+                                    </label>
+                                ))}
                             </div>
                         </div>
-                    )
-                }
+                    )}
 
-                {/* Sign Modal */}
-                {
-                    showSignModal && selectedDocument && (
-                        <div className="modal-overlay" onClick={() => setShowSignModal(false)}>
-                            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-                                <div className="modal-header">
-                                    <h2 className="modal-title">Firmar Documento</h2>
-                                    <button
-                                        className="btn btn-ghost btn-icon"
-                                        onClick={() => setShowSignModal(false)}
-                                    >
-                                        <FiX />
-                                    </button>
-                                </div>
-                                <form onSubmit={handleSign}>
-                                    <div className="modal-body">
-                                        <p className="mb-4">
-                                            EstÃ¡s a punto de firmar: <strong>{selectedDocument.titulo}</strong>
-                                        </p>
-                                        <p className="text-sm text-muted mb-6">
-                                            Ingresa tu PIN de 4 dÃ­gitos para confirmar tu identidad y firmar digitalmente este documento.
-                                        </p>
+                    {assignmentType === 'todos' && (
+                        <p className="text-muted">
+                            Se asignará a {workers.filter(w => w.habilitado).length} trabajadores habilitados.
+                        </p>
+                    )}
+                </div>
 
-                                        <div className="form-group">
-                                            <label className="form-label center-text">Tu PIN de seguridad</label>
-                                            <div className="flex justify-center">
-                                                <input
-                                                    type="password"
-                                                    value={pin}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                                                        setPin(val);
-                                                    }}
-                                                    className="form-input text-center"
-                                                    style={{
-                                                        width: '150px',
-                                                        letterSpacing: '8px',
-                                                        fontSize: '24px',
-                                                        fontWeight: 'bold'
-                                                    }}
-                                                    placeholder="â€¢â€¢â€¢â€¢"
-                                                    autoFocus
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="modal-footer">
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary"
-                                            onClick={() => setShowSignModal(false)}
-                                            disabled={signing}
-                                        >
-                                            Cancelar
-                                        </button>
-                                        <button
-                                            type="submit"
-                                            className="btn btn-success"
-                                            disabled={signing || pin.length !== 4}
-                                            style={{ background: 'var(--success-600)', borderColor: 'var(--success-600)', color: 'white' }}
-                                        >
-                                            {signing ? 'Firmando...' : 'Confirmar Firma'}
-                                        </button>
-                                    </div>
-                                </form>
+                <div className="modal-footer">
+                    <button
+                        className="btn btn-secondary"
+                        onClick={() => setShowAssignModal(false)}
+                        disabled={assigning}
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        className="btn btn-primary"
+                        onClick={handleAssign}
+                        disabled={assigning || (assignmentType === 'cargo' && !selectedCargo) || (assignmentType === 'personalizado' && selectedWorkerIds.length === 0)}
+                    >
+                        {assigning ? (
+                            <>
+                                <div className="spinner spinner-sm" />
+                                Asignando...
+                            </>
+                        ) : (
+                            'Asignar Documento'
+                        )}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+{/* Sign Modal */ }
+{
+    showSignModal && selectedDocument && (
+        <div className="modal-overlay" onClick={() => setShowSignModal(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                <div className="modal-header">
+                    <h2 className="modal-title">Firmar Documento</h2>
+                    <button
+                        className="btn btn-ghost btn-icon"
+                        onClick={() => setShowSignModal(false)}
+                    >
+                        <FiX />
+                    </button>
+                </div>
+                <form onSubmit={handleSign}>
+                    <div className="modal-body">
+                        <p className="mb-4">
+                            Estás a punto de firmar: <strong>{selectedDocument.titulo}</strong>
+                        </p>
+                        <p className="text-sm text-muted mb-6">
+                            Ingresa tu PIN de 4 dígitos para confirmar tu identidad y firmar digitalmente este documento.
+                        </p>
+
+                        <div className="form-group">
+                            <label className="form-label center-text">Tu PIN de seguridad</label>
+                            <div className="flex justify-center">
+                                <input
+                                    type="password"
+                                    value={pin}
+                                    onChange={(e) => {
+                                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                                        setPin(val);
+                                    }}
+                                    className="form-input text-center"
+                                    style={{
+                                        width: '150px',
+                                        letterSpacing: '8px',
+                                        fontSize: '24px',
+                                        fontWeight: 'bold'
+                                    }}
+                                    placeholder="••••"
+                                    autoFocus
+                                />
                             </div>
                         </div>
-                    )
-                }
+                    </div>
+                    <div className="modal-footer">
+                        <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => setShowSignModal(false)}
+                            disabled={signing}
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="submit"
+                            className="btn btn-success"
+                            disabled={signing || pin.length !== 4}
+                            style={{ background: 'var(--success-600)', borderColor: 'var(--success-600)', color: 'white' }}
+                        >
+                            {signing ? 'Firmando...' : 'Confirmar Firma'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
             </div >
-            <style>{`
+    <style>{`
                 @keyframes slideIn {
                     from { transform: translateX(100%); opacity: 0; }
                     to { transform: translateX(0); opacity: 1; }

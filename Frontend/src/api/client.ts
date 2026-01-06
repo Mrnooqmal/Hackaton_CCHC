@@ -529,6 +529,7 @@ export interface AssignResult {
 export interface SignDocumentData {
     workerId: string;
     tipoFirma: string;
+    pin?: string;
 }
 
 export interface BulkSignData {

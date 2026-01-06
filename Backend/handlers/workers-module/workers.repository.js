@@ -8,8 +8,12 @@ const {
     generateSignatureToken,
     hashPin,
     verifyPin,
-    validatePin
+    validatePin,
+    hashPassword,
+    generateTempPassword
 } = require('../../lib/validation');
+const { sendWelcomeEmail } = require('../notifications');
+const { ROLES } = require('../users-module/users.repository');
 
 const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
@@ -60,6 +64,103 @@ class WorkersRepository {
             updatedAt: now,
         };
 
+        // Si tiene email, intentamos crearle un usuario para acceso al sistema
+        let userCreated = null;
+        let passwordTemporal = null;
+        let emailEnviado = false;
+
+        if (worker.email) {
+            try {
+                // Verificar si ya existe un usuario con este RUT
+                const existingUser = await this.dynamo.send(
+                    new ScanCommand({
+                        TableName: this.usersTable,
+                        FilterExpression: 'rut = :rut',
+                        ExpressionAttributeValues: { ':rut': worker.rut },
+                    })
+                );
+
+                if (!existingUser.Items || existingUser.Items.length === 0) {
+                    passwordTemporal = generateTempPassword(10);
+                    const userId = uuidv4();
+                    const passwordHash = hashPassword(passwordTemporal, userId);
+
+                    // Rol por defecto para trabajador enrolado: trabajador
+                    // Si el cargo incluye "Supervisor" o "Jefe", podríamos darle rol prevencionista, pero por seguridad mejor "trabajador"
+                    const rol = 'trabajador';
+                    const permisos = ROLES[rol] ? ROLES[rol].permisos : [];
+
+                    const user = {
+                        userId,
+                        email: worker.email,
+                        rut: worker.rut,
+                        nombre: worker.nombre,
+                        apellido: worker.apellido,
+                        telefono: worker.telefono,
+                        rol: rol,
+                        permisos: permisos,
+                        passwordHash: passwordHash,
+                        passwordTemporal: true,
+                        passwordCreatedAt: now,
+                        pinHash: null,
+                        habilitado: false, // Se habilita igual que el worker al firmar
+                        cargo: worker.cargo,
+                        estado: 'pendiente', // Pendiente de primer login/firma
+                        preferencias: { tema: 'dark', notificaciones: true, idioma: 'es' },
+                        avatar: null,
+                        empresaId: worker.empresaId,
+                        workerId: workerId,
+                        creadoPor: 'system-enrollment',
+                        createdAt: now,
+                        updatedAt: now,
+                        ultimoAcceso: null
+                    };
+
+                    await this.dynamo.send(
+                        new PutCommand({
+                            TableName: this.usersTable,
+                            Item: user,
+                        })
+                    );
+
+                    worker.userId = userId; // Vincular worker con nuevo user
+                    userCreated = user;
+
+                    // Enviar email de bienvenida
+                    try {
+                        const emailResult = await sendWelcomeEmail(user.email, user.nombre, user.rut, passwordTemporal);
+                        emailEnviado = emailResult.sent;
+                    } catch (emailError) {
+                        console.error('Error enviando email de bienvenida al worker:', emailError);
+                    }
+                } else {
+                    // Si ya existe usuario, intentamos vincularlo
+                    const existingUserItem = existingUser.Items[0];
+                    console.log(`Usuario ya existe para RUT ${worker.rut}, vinculando...`);
+
+                    worker.userId = existingUserItem.userId;
+
+                    // Actualizar workerId en el usuario existente si no lo tiene
+                    if (!existingUserItem.workerId) {
+                        await this.dynamo.send(
+                            new UpdateCommand({
+                                TableName: this.usersTable,
+                                Key: { userId: existingUserItem.userId },
+                                UpdateExpression: 'SET workerId = :workerId, updatedAt = :updatedAt',
+                                ExpressionAttributeValues: {
+                                    ':workerId': workerId,
+                                    ':updatedAt': now
+                                }
+                            })
+                        );
+                    }
+                }
+            } catch (err) {
+                console.error('Error creando usuario para el worker:', err);
+                // No fallamos la creación del worker si falla el usuario, pero lo logueamos
+            }
+        }
+
         await this.dynamo.send(
             new PutCommand({
                 TableName: this.workersTable,
@@ -74,7 +175,12 @@ class WorkersRepository {
             console.error('No se pudo asignar la encuesta de salud por defecto al crear worker:', healthSurveyError);
         }
 
-        return worker;
+        return {
+            ...worker,
+            userCreated: !!userCreated,
+            emailEnviado,
+            passwordTemporal: emailEnviado ? null : passwordTemporal // Devolver pass solo si no se pudo enviar email (opcional, por seguridad mejor no devolverlo siempre)
+        };
     }
 
     async list({ empresaId, includeUsers = true }) {

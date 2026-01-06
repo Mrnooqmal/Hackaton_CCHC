@@ -1,0 +1,117 @@
+                {/* Document Detail Modal */}
+                {showDetailModal && selectedDocument && (
+                    <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
+                        <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+                            <div className="modal-header">
+                                <h2 className="modal-title">{selectedDocument.titulo}</h2>
+                                <button
+                                    className="btn btn-ghost btn-icon"
+                                    onClick={() => setShowDetailModal(false)}
+                                >
+                                    <FiX />
+                                </button>
+                            </div>
+
+                            <div className="modal-body">
+                                <div className="mb-4">
+                                    <span className="badge" style={{
+                                        background: DOCUMENT_TYPES[selectedDocument.tipo]?.color || 'var(--text-muted)',
+                                        color: 'white'
+                                    }}>
+                                        {DOCUMENT_TYPES[selectedDocument.tipo]?.label || selectedDocument.tipo}
+                                    </span>
+                                </div>
+
+                                <p className="mb-4">{selectedDocument.descripcion || 'Sin descripción'}</p>
+
+                                {selectedDocument.archivoUrl && (
+                                    <div className="mb-4">
+                                        <button
+                                            className="btn btn-primary"
+                                            onClick={() => handleDownloadFile(selectedDocument.archivoUrl!)}
+                                        >
+                                            <FiDownload />
+                                            Descargar Documento
+                                        </button>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-3 mb-4">
+                                    <FiCalendar style={{ color: 'var(--primary-500)' }} />
+                                    <div>
+                                        <div className="text-sm font-bold">Fecha de Creación</div>
+                                        <div className="text-sm text-muted">{formatDateTime(selectedDocument.createdAt)}</div>
+                                    </div>
+                                </div>
+
+                                {/* Assignments Status */}
+                                <div>
+                                    <h4 className="font-semibold mb-3">
+                                        <FiUsers className="inline" /> Asignaciones ({selectedDocument.asignaciones?.length || 0})
+                                    </h4>
+
+                                    {(!selectedDocument.asignaciones || selectedDocument.asignaciones.length === 0) ? (
+                                        <p className="text-muted">No hay asignaciones aún</p>
+                                    ) : (
+                                        <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                            <table className="table w-full text-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th className="text-left">Trabajador</th>
+                                                        <th className="text-left">Asignado</th>
+                                                        <th className="text-left">Firmado</th>
+                                                        <th className="text-left">Estado</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {selectedDocument.asignaciones.map((assignment, idx) => (
+                                                        <tr
+                                                            key={idx}
+                                                            style={{
+                                                                borderBottom: '1px solid var(--surface-border)'
+                                                            }}
+                                                        >
+                                                            <td>{assignment.nombre || assignment.workerId}</td>
+                                                            <td>{formatDateTime(assignment.fechaAsignacion)}</td>
+                                                            <td>
+                                                                {assignment.fechaFirma ? (
+                                                                    <div className="flex flex-col">
+                                                                        <span>{formatDateTime(assignment.fechaFirma)}</span>
+                                                                    </div>
+                                                                ) : '—'}
+                                                            </td>
+                                                            <td>
+                                                                <span className={`badge ${assignment.estado === 'firmado' ? 'badge-success' : 'badge-warning'}`}>
+                                                                    {assignment.estado === 'firmado' ? 'FIRMADO' : 'PENDIENTE'}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="modal-footer">
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => setShowDetailModal(false)}
+                                >
+                                    Cerrar
+                                </button>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={() => {
+                                        setShowDetailModal(false);
+                                        handleOpenAssignModal(selectedDocument);
+                                    }}
+                                >
+                                    <FiUserCheck />
+                                    Asignar a más personas
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
