@@ -116,11 +116,31 @@ export default function Activities() {
         if (!selectedActivity || selectedWorkers.length === 0) return;
         setSignatureError('');
 
+        // Offline-first: if no connection, save each worker's attendance locally
+        if (!navigator.onLine) {
+            for (const workerId of selectedWorkers) {
+                const worker = workers.find(w => w.workerId === workerId);
+                await signActivity(
+                    selectedActivity.activityId,
+                    selectedActivity.titulo,
+                    workerId,
+                    worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : 'Trabajador',
+                    pin
+                );
+            }
+            setShowSignatureModal(false);
+            setShowAttendanceModal(false);
+            setSelectedActivity(null);
+            setSelectedWorkers([]);
+            showNotification(`📴 ${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizarán cuando vuelva la conexión.`, 'info');
+            return;
+        }
+
         try {
             const response = await activitiesApi.registerAttendance(selectedActivity.activityId, {
                 workerIds: selectedWorkers,
                 incluirFirmaRelator: true,
-                pin: pin, // Include PIN for digital signature
+                pin: pin,
             });
 
             if (response.success) {
@@ -131,11 +151,51 @@ export default function Activities() {
                 setSelectedWorkers([]);
                 showNotification(`Asistencia registrada para ${selectedWorkers.length} trabajador(es)`, 'success');
             } else {
-                setSignatureError(response.error || 'Error al registrar asistencia');
+                // Check if it's a network error disguised as API error
+                const errMsg = (response.error || '').toLowerCase();
+                if (errMsg.includes('fetch') || errMsg.includes('network')) {
+                    for (const workerId of selectedWorkers) {
+                        const worker = workers.find(w => w.workerId === workerId);
+                        await signActivity(
+                            selectedActivity.activityId,
+                            selectedActivity.titulo,
+                            workerId,
+                            worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : 'Trabajador',
+                            pin
+                        );
+                    }
+                    setShowSignatureModal(false);
+                    setShowAttendanceModal(false);
+                    setSelectedActivity(null);
+                    setSelectedWorkers([]);
+                    showNotification(`📴 ${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizarán cuando vuelva la conexión.`, 'info');
+                } else {
+                    setSignatureError(response.error || 'Error al registrar asistencia');
+                }
             }
         } catch (error: any) {
-            console.error('Error registering attendance:', error);
-            setSignatureError(error.message || 'Error al registrar asistencia');
+            // Network error - fallback to offline storage
+            const msg = (error?.message || '').toLowerCase();
+            if (msg.includes('fetch') || msg.includes('network') || !navigator.onLine) {
+                for (const workerId of selectedWorkers) {
+                    const worker = workers.find(w => w.workerId === workerId);
+                    await signActivity(
+                        selectedActivity.activityId,
+                        selectedActivity.titulo,
+                        workerId,
+                        worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : 'Trabajador',
+                        pin
+                    );
+                }
+                setShowSignatureModal(false);
+                setShowAttendanceModal(false);
+                setSelectedActivity(null);
+                setSelectedWorkers([]);
+                showNotification(`📴 ${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizarán cuando vuelva la conexión.`, 'info');
+            } else {
+                console.error('Error registering attendance:', error);
+                setSignatureError(error.message || 'Error al registrar asistencia');
+            }
         }
     };
 

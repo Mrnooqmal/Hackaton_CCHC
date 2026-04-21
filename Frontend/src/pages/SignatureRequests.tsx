@@ -22,6 +22,9 @@ import {
     FiBriefcase,
     FiShield,
     FiLayers,
+    FiWifiOff,
+    FiWifi,
+    FiClipboard,
 } from 'react-icons/fi';
 import {
     signatureRequestsApi,
@@ -33,10 +36,14 @@ import {
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import ConfirmModal from '../components/ConfirmModal';
+import { useOfflineSignature, type OfflinePendingSignature } from '../hooks/useOfflineSignature';
 
 export default function SignatureRequests() {
     const { user } = useAuth();
+    const { isOnline, pendingCount, syncPendingSignatures } = useOfflineSignature();
     const [requests, setRequests] = useState<SignatureRequest[]>([]);
+    const [offlinePending, setOfflinePending] = useState<OfflinePendingSignature[]>([]);
+    const [syncingOffline, setSyncingOffline] = useState(false);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -64,7 +71,39 @@ export default function SignatureRequests() {
 
     useEffect(() => {
         loadData();
+        loadOfflinePending();
     }, []);
+
+    // Auto-sync when coming back online
+    useEffect(() => {
+        if (isOnline && pendingCount > 0) {
+            handleSyncOffline();
+        }
+        loadOfflinePending();
+    }, [isOnline]);
+
+    const loadOfflinePending = () => {
+        try {
+            const stored = localStorage.getItem('pendingOfflineSignatures');
+            const pending: OfflinePendingSignature[] = stored ? JSON.parse(stored) : [];
+            setOfflinePending(pending.filter(s => !s.synced));
+        } catch {
+            setOfflinePending([]);
+        }
+    };
+
+    const handleSyncOffline = async () => {
+        setSyncingOffline(true);
+        try {
+            const result = await syncPendingSignatures();
+            if (result.synced > 0) {
+                loadData();
+            }
+            loadOfflinePending();
+        } finally {
+            setSyncingOffline(false);
+        }
+    };
 
     const loadData = async () => {
         try {
@@ -356,6 +395,104 @@ export default function SignatureRequests() {
                         </div>
                     </div>
                 </div>
+
+                {/* Offline Pending Signatures Section */}
+                {(offlinePending.length > 0 || !isOnline) && (
+                    <div className="card mb-6" style={{
+                        background: !isOnline
+                            ? 'linear-gradient(135deg, rgba(255, 152, 0, 0.1), rgba(255, 152, 0, 0.02))'
+                            : 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.02))',
+                        border: `1px solid ${!isOnline ? 'rgba(255, 152, 0, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                    }}>
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="avatar avatar-sm" style={{
+                                    background: !isOnline ? 'var(--warning-500)' : 'var(--info-500)',
+                                }}>
+                                    {!isOnline ? <FiWifiOff size={16} /> : <FiWifi size={16} />}
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontWeight: 600, fontSize: '15px' }}>
+                                        {!isOnline ? 'Sin conexión' : `${offlinePending.length} firma(s) pendiente(s) de sincronizar`}
+                                    </h3>
+                                    <p className="text-xs text-muted" style={{ margin: 0 }}>
+                                        {!isOnline
+                                            ? 'Las firmas se guardan localmente hasta tener conexión'
+                                            : 'Firmas capturadas offline listas para sincronizar'}
+                                    </p>
+                                </div>
+                            </div>
+                            {isOnline && offlinePending.length > 0 && (
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={handleSyncOffline}
+                                    disabled={syncingOffline}
+                                    style={{ padding: '8px 16px' }}
+                                >
+                                    <FiRefreshCw className={syncingOffline ? 'spin' : ''} size={14} />
+                                    {syncingOffline ? 'Sincronizando...' : 'Sincronizar ahora'}
+                                </button>
+                            )}
+                        </div>
+
+                        {offlinePending.length > 0 && (
+                            <div className="flex flex-col gap-2">
+                                {offlinePending.map((sig) => {
+                                    const typeConfig: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
+                                        documento: { label: 'Documento', icon: <FiFileText size={14} />, color: 'var(--info-500)' },
+                                        actividad: { label: 'Actividad', icon: <FiCalendar size={14} />, color: 'var(--warning-500)' },
+                                        encuesta: { label: 'Encuesta', icon: <FiClipboard size={14} />, color: 'var(--success-500)' },
+                                    };
+                                    const config = typeConfig[sig.type] || typeConfig.documento;
+                                    return (
+                                        <div
+                                            key={sig.id}
+                                            className="flex items-center justify-between"
+                                            style={{
+                                                padding: '12px 16px',
+                                                background: 'var(--surface-elevated)',
+                                                borderRadius: 'var(--radius-md)',
+                                                border: '1px solid var(--surface-border)',
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="avatar avatar-sm" style={{ background: config.color, width: 32, height: 32, fontSize: '0.8rem' }}>
+                                                    {config.icon}
+                                                </div>
+                                                <div>
+                                                    <div className="font-medium" style={{ fontSize: '13px' }}>
+                                                        {sig.targetTitle}
+                                                    </div>
+                                                    <div className="text-xs text-muted" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span>{config.label}</span>
+                                                        <span>•</span>
+                                                        <span>{sig.workerName}</span>
+                                                        <span>•</span>
+                                                        <span>
+                                                            {new Date(sig.timestamp).toLocaleString('es-CL', {
+                                                                day: '2-digit', month: 'short',
+                                                                hour: '2-digit', minute: '2-digit',
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <span className="badge" style={{
+                                                background: 'rgba(255, 152, 0, 0.15)',
+                                                color: '#b45309',
+                                                fontSize: '11px',
+                                                padding: '4px 10px',
+                                            }}>
+                                                <FiClock size={10} style={{ marginRight: '4px' }} />
+                                                Pendiente
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <div className="card signature-filters-card">
                     <div className="flex items-center justify-between gap-4 signature-actions-bar">

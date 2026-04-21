@@ -129,12 +129,12 @@ export default function Surveys() {
         if (isOnline && pendingCount > 0) {
             syncPendingSignatures().then(result => {
                 if (result.synced > 0) {
-                    showNotification(`✅ ${result.synced} firma(s) sincronizada(s)`, 'success');
+                    showNotification(`${result.synced} firma(s) sincronizada(s)`, 'success');
                     loadData();
                 }
             });
         }
-    }, [isOnline, pendingCount, syncPendingSignatures]);
+    }, [isOnline]);
 
     const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
         setNotification({ message, type });
@@ -593,7 +593,7 @@ export default function Surveys() {
             }
 
             if (result.offline) {
-                showNotification('📴 Respuesta guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
+                showNotification('Respuesta guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
                 setShowSignatureModal(false);
                 closeResponseModal();
                 return;
@@ -604,8 +604,6 @@ export default function Surveys() {
             showNotification('Encuesta respondida exitosamente', 'success');
             setShowSignatureModal(false);
             closeResponseModal();
-            loadData();
-            // Refresh data to update pending counts
             loadData();
             // Dispatch event to refresh sidebar pending count
             window.dispatchEvent(new CustomEvent('surveyResponded'));

@@ -81,7 +81,7 @@ export default function Documents() {
         if (isOnline && pendingCount > 0) {
             syncPendingSignatures().then(result => {
                 if (result.synced > 0) {
-                    showNotification(`✅ ${result.synced} firma(s) sincronizada(s)`, 'success');
+                    showNotification(`${result.synced} firma(s) sincronizada(s)`, 'success');
                     loadData();
                 }
             });
