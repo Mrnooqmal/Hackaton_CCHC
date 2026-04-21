@@ -162,7 +162,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
         if (!user?.userId) return;
 
         // Inbox auto-refresh está deshabilitado por ahora
-        return () => {};
+        return () => { };
     }, [user?.userId]);
 
     useEffect(() => {

@@ -1599,14 +1599,10 @@
   backdrop-filter: blur(4px);
   display: flex;
   align-items: flex-start;
-  /* Changed from center to move down */
   justify-content: center;
   z-index: 999998;
-  /* Extremely high to be on top of everything */
-  padding: var(--space-4);
+  padding: var(--space-6) var(--space-4);
   overflow-y: auto;
-  padding-top: 100px;
-  /* Move modal down vertically */
 }
 
 .modal {
@@ -1622,7 +1618,8 @@
   box-shadow: var(--shadow-xl);
   position: relative;
   z-index: 999999;
-  /* Even higher than overlay */
+  margin: auto;
+  flex-shrink: 0;
 }
 
 .modal-header {
@@ -1836,17 +1833,11 @@
   align-items: center;
 }
 
-/* Enhanced Modal Styling */
+/* Enhanced Modal Styling (overrides base) */
 .modal-overlay {
-  position: fixed;
-  inset: 0;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 1000;
-  padding: var(--space-4);
   animation: fadeIn 0.2s ease-in-out;
 }
 

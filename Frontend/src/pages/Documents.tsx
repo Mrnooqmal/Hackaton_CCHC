@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import {
     FiPlus,
@@ -19,7 +19,7 @@ import {
     FiCalendar,
     FiPenTool
 } from 'react-icons/fi';
-import { documentsApi, workersApi, uploadsApi, type Document, type Worker } from '../api/client';
+import { documentsApi, workersApi, uploadsApi, inboxApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import SignatureModal from '../components/SignatureModal';
@@ -266,6 +266,33 @@ export default function Documents() {
             });
 
             if (response.success) {
+                // FIXED MISSING NOTIFICATIONS (Frontend explicit push)
+                try {
+                    const recipientsRes = await inboxApi.getRecipients(user?.userId || '', user?.empresaId || '');
+                    if (recipientsRes.success && recipientsRes.data) {
+                        const allRecipients = recipientsRes.data.recipients;
+                        // Map worker IDs to their RUTs, then find matching Inbox Recipients to extract userIds
+                        const assignedRuts = workers.filter(w => workerIdsToAssign.includes(w.workerId)).map(w => w.rut);
+                        const recipientUserIds = allRecipients.filter(r => assignedRuts.includes(r.rut)).map(r => r.userId);
+                        
+                        if (recipientUserIds.length > 0) {
+                            await inboxApi.send({
+                                senderId: user?.userId || 'system',
+                                senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'Gestor SST',
+                                senderRol: user?.rol || 'system',
+                                recipientIds: recipientUserIds,
+                                type: 'task',
+                                priority: 'normal',
+                                subject: `Nuevo documento asignado: ${selectedDocument.titulo}`,
+                                content: `Se te ha asignado el documento "${selectedDocument.titulo}". Por favor revisa y firma a la brevedad.`,
+                                linkedEntity: { type: 'document', id: selectedDocument.documentId }
+                            });
+                        }
+                    }
+                } catch (notifErr) {
+                    console.error('Error mandando notificación desde frontend', notifErr);
+                }
+
                 showNotification(`Documento asignado a ${workerIdsToAssign.length} trabajadores`, 'success');
                 setShowAssignModal(false);
                 loadData(); // Refresh to get updated assignments
@@ -721,7 +748,7 @@ export default function Documents() {
                                 </button>
                             </div>
 
-                            <form onSubmit={handleCreateDocument}>
+                            <form onSubmit={handleCreateDocument} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                                 <div className="modal-body">
                                     <div className="form-group">
                                         <label className="form-label">Tipo de Documento *</label>

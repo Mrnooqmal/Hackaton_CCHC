@@ -399,24 +399,38 @@ export default function MySignatures() {
                                         key={request.requestId}
                                         className="signature-request-card"
                                         style={{
-                                            padding: 'var(--space-5)',
+                                            padding: 'var(--space-6)',
                                             borderRadius: 'var(--radius-xl)',
-                                            border: '1px solid var(--warning-300)',
-                                            background: 'linear-gradient(135deg, rgba(255, 193, 7, 0.08), rgba(255, 193, 7, 0.02))',
-                                            transition: 'all var(--transition-normal)',
+                                            backgroundColor: 'var(--surface-card)',
+                                            border: '1px solid var(--surface-border)',
+                                            boxShadow: 'var(--shadow-md)',
+                                            transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
                                             position: 'relative',
                                             overflow: 'hidden',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 'var(--space-4)',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                            e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
+                                            e.currentTarget.style.borderColor = 'var(--warning-300)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.transform = 'translateY(0)';
+                                            e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+                                            e.currentTarget.style.borderColor = 'var(--surface-border)';
                                         }}
                                     >
-                                        {/* Priority indicator */}
+                                        {/* Glowing priority indicator */}
                                         <div style={{
                                             position: 'absolute',
                                             top: 0,
                                             left: 0,
-                                            width: '4px',
+                                            width: '5px',
                                             height: '100%',
-                                            background: 'var(--warning-500)',
-                                            borderRadius: 'var(--radius-xl) 0 0 var(--radius-xl)',
+                                            background: 'linear-gradient(to bottom, var(--warning-400), var(--warning-600))',
+                                            boxShadow: '2px 0 10px rgba(234, 179, 8, 0.4)',
                                         }} />
 
                                         <div className="flex items-start justify-between gap-4">
@@ -425,36 +439,45 @@ export default function MySignatures() {
                                                     className="avatar"
                                                     style={{
                                                         fontSize: '1.75rem',
-                                                        background: 'white',
-                                                        width: '56px',
-                                                        height: '56px',
-                                                        boxShadow: 'var(--shadow-md)',
-                                                        border: '2px solid var(--warning-200)',
+                                                        background: 'var(--surface-elevated)',
+                                                        color: 'var(--warning-600)',
+                                                        width: '60px',
+                                                        height: '60px',
+                                                        borderRadius: 'var(--radius-lg)',
+                                                        boxShadow: 'var(--shadow-sm)',
+                                                        border: '1px solid var(--surface-border)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
                                                     }}
                                                 >
                                                     {REQUEST_TYPES[request.tipo]?.icon || <FiFileText />}
                                                 </div>
                                                 <div style={{ flex: 1 }}>
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="badge" style={{ background: 'var(--warning-100)', color: 'var(--warning-700)', fontSize: '11px' }}>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className="badge" style={{ background: 'var(--warning-100)', color: 'var(--warning-700)', fontSize: '12px', fontWeight: 600, padding: '4px 10px' }}>
                                                             #{index + 1} • {REQUEST_TYPES[request.tipo]?.label}
                                                         </span>
                                                     </div>
-                                                    <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>
+                                                    <h3 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, marginBottom: 'var(--space-2)', color: 'var(--text-primary)' }}>
                                                         {request.titulo}
                                                     </h3>
                                                     <div className="flex flex-wrap items-center gap-4 text-sm text-muted">
                                                         <div className="flex items-center gap-2">
-                                                            <FiUser size={14} style={{ color: 'var(--primary-500)' }} />
-                                                            <span>Solicitado por: <strong>{request.solicitanteNombre}</strong></span>
+                                                            <div className="avatar avatar-sm" style={{ width: '24px', height: '24px', background: 'var(--primary-100)', color: 'var(--primary-700)' }}>
+                                                                <FiUser size={12} />
+                                                            </div>
+                                                            <span>Solicitado por: <strong style={{ color: 'var(--text-primary)' }}>{request.solicitanteNombre}</strong></span>
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            <FiCalendar size={14} style={{ color: 'var(--info-500)' }} />
+                                                            <div className="avatar avatar-sm" style={{ width: '24px', height: '24px', background: 'var(--info-100)', color: 'var(--info-700)' }}>
+                                                                <FiCalendar size={12} />
+                                                            </div>
                                                             <span>
                                                                 {new Date(request.fechaCreacion).toLocaleDateString('es-CL', {
-                                                                    weekday: 'short',
+                                                                    weekday: 'long',
                                                                     day: 'numeric',
-                                                                    month: 'short',
+                                                                    month: 'long',
                                                                     year: 'numeric',
                                                                 })}
                                                             </span>
@@ -463,10 +486,13 @@ export default function MySignatures() {
 
                                                     {request.descripcion && (
                                                         <div
-                                                            className="mt-3 p-3 rounded-lg text-sm"
+                                                            className="mt-4 p-4 text-sm"
                                                             style={{
-                                                                background: 'rgba(255, 255, 255, 0.7)',
-                                                                border: '1px solid var(--warning-200)',
+                                                                background: 'var(--surface-elevated)',
+                                                                borderRadius: 'var(--radius-md)',
+                                                                borderLeft: '4px solid var(--warning-400)',
+                                                                color: 'var(--text-secondary)',
+                                                                lineHeight: '1.5'
                                                             }}
                                                         >
                                                             {request.descripcion}
@@ -475,43 +501,70 @@ export default function MySignatures() {
                                                 </div>
                                             </div>
 
-                                            <button
-                                                className="btn btn-primary btn-lg"
-                                                onClick={() => openSignModal(request)}
-                                                style={{
-                                                    minWidth: '140px',
-                                                    boxShadow: 'var(--shadow-glow-primary)',
-                                                }}
-                                            >
-                                                <FiEdit3 size={18} />
-                                                Firmar
-                                            </button>
+                                            <div className="flex flex-col items-end gap-3" style={{ justifyContent: 'center' }}>
+                                                <button
+                                                    className="btn btn-primary"
+                                                    onClick={() => openSignModal(request)}
+                                                    style={{
+                                                        padding: '12px 24px',
+                                                        fontSize: 'var(--text-base)',
+                                                        fontWeight: 600,
+                                                        borderRadius: 'var(--radius-lg)',
+                                                        boxShadow: 'var(--shadow-glow-primary)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '8px',
+                                                        transition: 'transform 0.2s, box-shadow 0.2s',
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.transform = 'translateY(-1px)';
+                                                        e.currentTarget.style.boxShadow = '0 0 25px rgba(76, 175, 80, 0.5)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                        e.currentTarget.style.boxShadow = 'var(--shadow-glow-primary)';
+                                                    }}
+                                                >
+                                                    <FiEdit3 size={20} />
+                                                    Firmar
+                                                </button>
+                                            </div>
                                         </div>
 
                                         {/* Documents preview */}
                                         {request.documentos.length > 0 && (
                                             <div
-                                                className="mt-4 pt-4"
+                                                className="mt-2 pt-4"
                                                 style={{
-                                                    borderTop: '1px dashed var(--warning-300)',
+                                                    borderTop: '1px solid var(--surface-border)',
                                                 }}
                                             >
                                                 <div className="flex items-center gap-2 mb-3">
-                                                    <FiFile size={14} style={{ color: 'var(--warning-600)' }} />
-                                                    <span className="text-sm font-medium">Documentos adjuntos ({request.documentos.length})</span>
+                                                    <FiFile size={16} style={{ color: 'var(--warning-500)' }} />
+                                                    <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Documentos adjuntos ({request.documentos.length})</span>
                                                 </div>
-                                                <div className="flex gap-2 flex-wrap">
+                                                <div className="flex gap-3 flex-wrap">
                                                     {request.documentos.map((doc, idx) => (
                                                         <button
                                                             key={idx}
                                                             className="btn btn-secondary btn-sm"
                                                             onClick={() => downloadDocument(doc.url, doc.nombre)}
                                                             style={{
-                                                                background: 'white',
-                                                                borderColor: 'var(--warning-200)',
+                                                                background: 'var(--surface-elevated)',
+                                                                borderColor: 'var(--surface-border)',
+                                                                color: 'var(--text-primary)',
+                                                                borderRadius: 'var(--radius-md)',
+                                                                padding: '6px 12px',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                transition: 'background 0.2s',
                                                             }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-hover)'}
+                                                            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--surface-elevated)'}
                                                         >
-                                                            <FiDownload size={14} /> {doc.nombre}
+                                                            <FiDownload size={14} style={{ color: 'var(--primary-500)' }} /> 
+                                                            <span style={{ fontWeight: 500 }}>{doc.nombre}</span>
                                                         </button>
                                                     ))}
                                                 </div>

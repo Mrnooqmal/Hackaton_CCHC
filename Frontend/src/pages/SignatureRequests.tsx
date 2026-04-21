@@ -30,6 +30,7 @@ import {
     signatureRequestsApi,
     workersApi,
     uploadsApi,
+    inboxApi,
     type SignatureRequest,
     type Worker,
     type DocumentoAdjunto,
@@ -51,6 +52,7 @@ export default function SignatureRequests() {
     const [filterStatus, setFilterStatus] = useState<string>('');
     const [searchTerm, setSearchTerm] = useState('');
     const [error, setError] = useState('');
+    const [successMsg, setSuccessMsg] = useState('');
     const [confirmCancel, setConfirmCancel] = useState<{
         isOpen: boolean;
         requestId?: string;
@@ -125,6 +127,25 @@ export default function SignatureRequests() {
         }
     };
 
+    const getMimeType = (file: File): string => {
+        if (file.type) return file.type;
+        // Infer MIME type from extension when the browser doesn't set it
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        const mimeMap: Record<string, string> = {
+            pdf: 'application/pdf',
+            doc: 'application/msword',
+            docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            xls: 'application/vnd.ms-excel',
+            xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            png: 'image/png',
+            gif: 'image/gif',
+            webp: 'image/webp',
+        };
+        return mimeMap[ext || ''] || 'application/octet-stream';
+    };
+
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
@@ -132,7 +153,10 @@ export default function SignatureRequests() {
         setUploading(true);
         try {
             for (const file of Array.from(files)) {
-                const result = await uploadsApi.uploadFile(file, 'solicitudes');
+                // Create a new File with the correct MIME type if missing
+                const mimeType = getMimeType(file);
+                const fileToUpload = file.type ? file : new File([file], file.name, { type: mimeType });
+                const result = await uploadsApi.uploadFile(fileToUpload, 'solicitudes');
                 if (result.success && result.data) {
                     setUploadedDocs(prev => [...prev, result.data!]);
                 } else {
@@ -178,9 +202,39 @@ export default function SignatureRequests() {
             });
 
             if (response.success && response.data) {
+                // FIXED MISSING NOTIFICATIONS (Frontend explicit push)
+                try {
+                    const recipientsRes = await inboxApi.getRecipients(user?.userId || '', user?.empresaId || '');
+                    if (recipientsRes.success && recipientsRes.data) {
+                        const allRecipients = recipientsRes.data.recipients;
+                        // Map worker IDs to their RUTs, then find matching Inbox Recipients to extract userIds
+                        const assignedRuts = workers.filter(w => selectedWorkers.includes(w.workerId)).map(w => w.rut);
+                        const recipientUserIds = allRecipients.filter(r => assignedRuts.includes(r.rut)).map(r => r.userId);
+                        
+                        if (recipientUserIds.length > 0) {
+                            const isUrgent = newRequest.fechaLimite && new Date(newRequest.fechaLimite) <= new Date(Date.now() + 48 * 60 * 60 * 1000); // <48hrs
+                            await inboxApi.send({
+                                senderId: user?.userId || 'system',
+                                senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'PrevencionApp',
+                                senderRol: 'system',
+                                recipientIds: recipientUserIds,
+                                type: 'task',
+                                priority: isUrgent ? 'urgent' : 'normal',
+                                subject: `Firma requerida: ${newRequest.titulo || REQUEST_TYPES[newRequest.tipo].label}`,
+                                content: `Se requiere tu firma para el documento "${newRequest.titulo || REQUEST_TYPES[newRequest.tipo].label}". Por favor firma a la brevedad.`,
+                                linkedEntity: { type: 'signature-request', id: response.data.requestId }
+                            });
+                        }
+                    }
+                } catch (notifErr) {
+                    console.error('Error mandando notificación desde frontend', notifErr);
+                }
+
                 setRequests([response.data, ...requests]);
                 resetForm();
                 setShowModal(false);
+                setSuccessMsg(`Solicitud "${response.data.titulo}" creada exitosamente con ${response.data.totalRequeridos} firmante${response.data.totalRequeridos !== 1 ? 's' : ''}`);
+                setTimeout(() => setSuccessMsg(''), 5000);
             } else {
                 setError(response.error || 'Error al crear solicitud');
             }
@@ -247,12 +301,18 @@ export default function SignatureRequests() {
             label: 'Charla 5 Minutos',
             icon: <FiClock />,
             color: 'var(--primary-500)',
-            requiresDoc: true
+            requiresDoc: false
         },
         CAPACITACION: {
             label: 'Capacitación',
             icon: <FiLayers />,
             color: 'var(--info-500)',
+            requiresDoc: true
+        },
+        INDUCCION: {
+            label: 'Inducción',
+            icon: <FiShield />,
+            color: 'var(--success-600)',
             requiresDoc: true
         },
         ENTREGA_EPP: {
@@ -265,6 +325,30 @@ export default function SignatureRequests() {
             label: 'Documento General',
             icon: <FiFileText />,
             color: 'var(--warning-500)',
+            requiresDoc: true
+        },
+        ART: {
+            label: 'Análisis de Riesgos',
+            icon: <FiAlertCircle />,
+            color: 'var(--warning-500)',
+            requiresDoc: true
+        },
+        PROCEDIMIENTO: {
+            label: 'Procedimiento',
+            icon: <FiFileText />,
+            color: 'var(--info-600)',
+            requiresDoc: true
+        },
+        INSPECCION: {
+            label: 'Inspección',
+            icon: <FiSearch />,
+            color: 'var(--neutral-600)',
+            requiresDoc: false
+        },
+        REGLAMENTO: {
+            label: 'Reglamento Interno',
+            icon: <FiFileText />,
+            color: 'var(--primary-600)',
             requiresDoc: true
         },
         OTRO: {
@@ -323,6 +407,23 @@ export default function SignatureRequests() {
                                 {error}
                             </div>
                             <button onClick={() => setError('')} className="btn-ghost btn-sm p-1">
+                                <FiX />
+                            </button>
+                        </div>
+                    )}
+                    {successMsg && (
+                        <div className="alert alert-success mb-6 flex justify-between items-center" style={{
+                            animation: 'slideIn 0.3s ease-out',
+                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(34, 197, 94, 0.06))',
+                            border: '1px solid rgba(34, 197, 94, 0.35)',
+                            borderRadius: '12px',
+                            padding: '16px 20px',
+                        }}>
+                            <div className="flex items-center gap-3" style={{ color: 'var(--success-600)', fontWeight: 500 }}>
+                                <FiCheck size={20} />
+                                {successMsg}
+                            </div>
+                            <button onClick={() => setSuccessMsg('')} className="btn-ghost btn-sm p-1" style={{ color: 'var(--success-600)' }}>
                                 <FiX />
                             </button>
                         </div>

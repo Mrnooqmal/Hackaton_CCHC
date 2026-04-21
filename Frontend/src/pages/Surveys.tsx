@@ -4,6 +4,7 @@ import Header from '../components/Header';
 import {
     surveysApi,
     workersApi,
+    inboxApi,
     type Survey,
     type SurveyAudienceType,
     type SurveyQuestionType,
@@ -433,6 +434,42 @@ export default function Surveys() {
             setCreating(false);
 
             if (response.success && response.data) {
+                // FIXED MISSING NOTIFICATIONS (Frontend explicit push)
+                try {
+                    const recipientsRes = await inboxApi.getRecipients(user?.userId || '', user?.empresaId || '');
+                    if (recipientsRes.success && recipientsRes.data) {
+                        const allRecipients = recipientsRes.data.recipients;
+                        let assignedRuts: string[] = [];
+                        
+                        // Determinar los RUTs asignados según la audiencia
+                        if (form.audienceType === 'todos') {
+                            assignedRuts = workers.filter(w => w.habilitado).map(w => w.rut);
+                        } else if (form.audienceType === 'cargo' && form.cargoDestino) {
+                            assignedRuts = workers.filter(w => w.habilitado && w.cargo === form.cargoDestino).map(w => w.rut);
+                        } else if (form.audienceType === 'personalizado' && form.selectedRuts) {
+                            assignedRuts = form.selectedRuts;
+                        }
+                        
+                        const recipientUserIds = allRecipients.filter(r => assignedRuts.includes(r.rut)).map(r => r.userId);
+                        
+                        if (recipientUserIds.length > 0) {
+                            await inboxApi.send({
+                                senderId: user?.userId || 'system',
+                                senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'PrevencionApp',
+                                senderRol: 'system',
+                                recipientIds: recipientUserIds,
+                                type: 'task',
+                                priority: 'normal',
+                                subject: `Nueva encuesta asignada: ${response.data.titulo}`,
+                                content: `Se te ha asignado la encuesta "${response.data.titulo}". Por favor responde a la brevedad.`,
+                                linkedEntity: { type: 'survey', id: response.data.surveyId }
+                            });
+                        }
+                    }
+                } catch (notifErr) {
+                    console.error('Error mandando notificación desde frontend', notifErr);
+                }
+
                 setSurveys([response.data, ...surveys]);
                 setShowModal(false);
                 resetForm();
@@ -709,7 +746,7 @@ export default function Surveys() {
                             {canManageSurveys ? 'Diseña y distribuye encuestas' : 'Responde tus encuestas asignadas'}
                         </h2>
                         <p className="page-header-description">
-                            Implementa diagnósticos de seguridad, encuestas de clima y evaluaciones rápidas.
+                            Implementa diagnósticos de seguridad, encuestas y evaluaciones rápidas.
                         </p>
                     </div>
                     {canManageSurveys && (
@@ -1303,7 +1340,7 @@ export default function Surveys() {
                                                     className="form-input"
                                                     value={form.titulo}
                                                     onChange={(e) => setForm({ ...form, titulo: e.target.value })}
-                                                    placeholder="Ej: Encuesta de clima laboral"
+                                                    placeholder="Ej: Encuesta de seguridad"
                                                     required
                                                 />
                                             </div>

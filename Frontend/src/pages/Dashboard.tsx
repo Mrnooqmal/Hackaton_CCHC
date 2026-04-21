@@ -14,7 +14,7 @@ import {
     FiShield,
     FiBell
 } from 'react-icons/fi';
-import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi } from '../api/client';
+import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi, signatureRequestsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { Worker, Activity } from '../api/client';
 
@@ -31,6 +31,8 @@ interface PendingTask {
 interface DashboardStats {
     totalWorkers?: number;
     pendingSignatures?: number;
+    ownPendingSignatures?: number;
+    workersPendingSignatures?: number;
     activitiesToday?: number;
     pendingIncidents?: number;
     unreadMessages?: number;
@@ -158,6 +160,29 @@ export default function Dashboard() {
             }
         } catch (err) {
             console.error('Error loading workers:', err);
+        }
+
+        // Load own pending signatures (for the prevencionista themselves)
+        try {
+            if (user?.workerId) {
+                const ownPendingRes = await signatureRequestsApi.getPendingByWorker(user.workerId);
+                if (ownPendingRes.success && ownPendingRes.data) {
+                    setStats(s => ({ ...s, ownPendingSignatures: ownPendingRes.data?.total || 0 }));
+                }
+            }
+        } catch (err) {
+            console.error('Error loading own pending signatures:', err);
+        }
+
+        // Load total pending signature requests across all workers
+        try {
+            const sigStatsRes = await signatureRequestsApi.getStats();
+            if (sigStatsRes.success && sigStatsRes.data) {
+                const totalPendingFirmas = sigStatsRes.data.totalFirmasRequeridas - sigStatsRes.data.totalFirmasObtenidas;
+                setStats(s => ({ ...s, workersPendingSignatures: Math.max(0, totalPendingFirmas) }));
+            }
+        } catch (err) {
+            console.error('Error loading workers pending signatures:', err);
         }
 
         // Load documents stats
@@ -424,9 +449,12 @@ export default function Dashboard() {
                                     <div className="avatar avatar-sm" style={{ background: 'var(--warning-500)' }}>
                                         <FiEdit3 />
                                     </div>
-                                    <span className="text-xs text-muted">Firmas Pendientes</span>
+                                    <span className="text-xs text-muted">Mis Firmas Pendientes</span>
                                 </div>
-                                <div className="stat-value">{stats.pendingSignatures || 0}</div>
+                                <div className="stat-value">{stats.ownPendingSignatures || 0}</div>
+                                <div className="stat-change" style={{ color: 'var(--warning-500)' }}>
+                                    Tus propias firmas
+                                </div>
                             </div>
 
                             <div className="card stat-card">
@@ -437,6 +465,36 @@ export default function Dashboard() {
                                     <span className="text-xs text-muted">Incidentes</span>
                                 </div>
                                 <div className="stat-value">{stats.pendingIncidents || 0}</div>
+                            </div>
+                        </div>
+
+                        {/* Workers Signatures Banner */}
+                        <div className="card mb-6" style={{
+                            background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08), rgba(234, 179, 8, 0.02))',
+                            border: '1px solid rgba(234, 179, 8, 0.25)',
+                            padding: 'var(--space-5)',
+                        }}>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="avatar" style={{
+                                        background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))',
+                                        width: '52px',
+                                        height: '52px',
+                                        boxShadow: '0 4px 12px rgba(234, 179, 8, 0.3)',
+                                    }}>
+                                        <FiEdit3 size={22} />
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-muted" style={{ marginBottom: '4px' }}>Firmas Pendientes de Trabajadores</div>
+                                        <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--warning-600)' }}>
+                                            {stats.workersPendingSignatures || 0}
+                                        </div>
+                                        <div className="text-sm text-muted" style={{ marginTop: '2px' }}>firmas pendientes en total de todos los trabajadores asignados</div>
+                                    </div>
+                                </div>
+                                <Link to="/signature-requests" className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
+                                    Ver Solicitudes <FiArrowRight />
+                                </Link>
                             </div>
                         </div>
 
