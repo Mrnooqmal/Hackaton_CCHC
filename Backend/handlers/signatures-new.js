@@ -6,8 +6,7 @@ const { validateRequired, generateSignatureToken, verifyPin } = require('../lib/
 const signatureRequests = require('./signature-requests');
 
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
-const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
-const USERS_TABLE = process.env.USERS_TABLE || 'Users';
+const { PersonaService } = require('../lib/services/PersonaService');
 
 /**
  * POST /signatures - Crear firma con validación de PIN
@@ -29,33 +28,27 @@ module.exports.create = async (event) => {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
-        const { workerId, pin, requestId, metadata } = body;
+        const { workerId: inputPersonaId, pin, requestId, metadata } = body;
 
-        // Obtener trabajador
-        const workerResult = await docClient.send(
-            new GetCommand({
-                TableName: WORKERS_TABLE,
-                Key: { workerId },
-            })
-        );
+        // Obtener persona
+        const personaService = new PersonaService();
+        const persona = await personaService.getById(inputPersonaId);
 
-        if (!workerResult.Item) {
-            return error('Trabajador no encontrado', 404);
+        if (!persona) {
+            return error('Persona no encontrada', 404);
         }
 
-        const worker = workerResult.Item;
-
-        // Verificar que el trabajador está habilitado
-        if (!worker.habilitado) {
-            return error('Trabajador no está habilitado. Debe completar el enrolamiento primero.', 403);
+        // Verificar que está habilitada
+        if (!persona.habilitado) {
+            return error('Persona no está habilitada. Debe completar el enrolamiento primero.', 403);
         }
 
         // Verificar PIN
-        if (!worker.pinHash) {
-            return error('Trabajador no tiene PIN configurado', 400);
+        if (!persona.pinHash) {
+            return error('Persona no tiene PIN configurado', 400);
         }
 
-        const pinValido = verifyPin(pin, worker.pinHash, workerId);
+        const pinValido = verifyPin(pin, persona.pinHash, inputPersonaId);
         if (!pinValido) {
             return error('PIN incorrecto', 401);
         }
@@ -80,7 +73,7 @@ module.exports.create = async (event) => {
         }
 
         // Verificar que el trabajador está en la lista de la solicitud
-        const trabajadorEnSolicitud = request.trabajadores.find(t => t.workerId === workerId);
+        const trabajadorEnSolicitud = request.trabajadores.find(t => t.personaId === inputPersonaId || t.workerId === inputPersonaId);
         if (!trabajadorEnSolicitud) {
             return error('No estás incluido en esta solicitud de firma', 403);
         }
@@ -105,10 +98,10 @@ module.exports.create = async (event) => {
             requestTipo: request.tipo,
 
             // Información del firmante
-            workerId,
-            workerRut: worker.rut,
-            workerNombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
-            workerCargo: worker.cargo,
+            personaId: inputPersonaId,
+            workerRut: persona.rut,
+            workerNombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+            workerCargo: persona.cargo,
 
             // Información del solicitante
             solicitanteId: request.solicitanteId,
@@ -133,7 +126,7 @@ module.exports.create = async (event) => {
             estado: 'valida',
             disputaInfo: null,
 
-            empresaId: worker.empresaId || request.empresaId || 'default',
+            tenantId: persona.tenantId || 'default',
             createdAt: now.toISOString(),
         };
 
@@ -146,7 +139,7 @@ module.exports.create = async (event) => {
         );
 
         // Actualizar la solicitud con esta firma
-        const updateResult = await signatureRequests.updateOnSignature(requestId, workerId, signatureId);
+        const updateResult = await signatureRequests.updateOnSignature(requestId, inputPersonaId, signatureId);
 
         return created({
             message: 'Firma registrada exitosamente',
@@ -188,23 +181,17 @@ module.exports.createEnrollment = async (event) => {
 
         const { workerId, pin, signatureData } = body;
 
-        // Obtener trabajador
-        const workerResult = await docClient.send(
-            new GetCommand({
-                TableName: WORKERS_TABLE,
-                Key: { workerId },
-            })
-        );
+        // Obtener persona
+        const personaService = new PersonaService();
+        const persona = await personaService.getById(workerId);
 
-        if (!workerResult.Item) {
-            return error('Trabajador no encontrado', 404);
+        if (!persona) {
+            return error('Persona no encontrada', 404);
         }
 
-        const worker = workerResult.Item;
-
-        // Verificar que no esté ya habilitado
-        if (worker.habilitado) {
-            return error('Este trabajador ya completó su enrolamiento', 400);
+        // Verificar que no esté ya habilitada
+        if (persona.habilitado) {
+            return error('Esta persona ya completó su enrolamiento', 400);
         }
 
         const now = new Date();
@@ -218,10 +205,10 @@ module.exports.createEnrollment = async (event) => {
             requestId: null, // Sin solicitud asociada
 
             // Información del firmante
-            workerId,
-            workerRut: worker.rut,
-            workerNombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
-            workerCargo: worker.cargo,
+            personaId: workerId,
+            workerRut: persona.rut,
+            workerNombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+            workerCargo: persona.cargo,
 
             // Tipo especial
             requestTipo: 'ENROLAMIENTO',
@@ -242,7 +229,7 @@ module.exports.createEnrollment = async (event) => {
             signatureData: signatureData || null,
 
             estado: 'valida',
-            empresaId: worker.empresaId || 'default',
+            tenantId: persona.tenantId || 'default',
             createdAt: now.toISOString(),
         };
 
@@ -305,57 +292,24 @@ module.exports.get = async (event) => {
 module.exports.getByWorker = async (event) => {
     try {
         const { workerId: inputId } = event.pathParameters || {};
+        if (!inputId) return error('ID requerido');
 
-        if (!inputId) {
-            return error('ID requerido');
-        }
-
-        // 1. Intentar encontrar los IDs vinculados (workerId <-> userId)
-        let workerId = inputId;
-        let userId = inputId;
-
-        // Buscar en tabla Workers
-        const workerRes = await docClient.send(new GetCommand({
-            TableName: WORKERS_TABLE,
-            Key: { workerId: inputId }
-        }));
-
-        if (workerRes.Item) {
-            userId = workerRes.Item.userId || userId;
-        } else {
-            // Si no está en Workers, buscar en tabla Users
-            const userRes = await docClient.send(new GetCommand({
-                TableName: USERS_TABLE,
-                Key: { userId: inputId }
-            }));
-            if (userRes.Item) {
-                workerId = userRes.Item.workerId || workerId;
-            }
-        }
-
-        console.log(`Searching signatures for workerId: ${workerId} and userId: ${userId}`);
-
-        // 2. Buscar firmas usando ambos identificadores
+        // Query por GSI personaId-index
         const result = await docClient.send(
-            new ScanCommand({
+            new QueryCommand({
                 TableName: SIGNATURES_TABLE,
-                FilterExpression: 'workerId = :wId OR userId = :uId OR referenciaId = :wId OR referenciaId = :uId',
-                ExpressionAttributeValues: {
-                    ':wId': workerId,
-                    ':uId': userId,
-                },
+                IndexName: 'personaId-index',
+                KeyConditionExpression: 'personaId = :pid',
+                ExpressionAttributeValues: { ':pid': inputId },
             })
         );
 
-        // Ordenar por timestamp descendente
         const signatures = (result.Items || []).sort((a, b) =>
             new Date(b.timestamp) - new Date(a.timestamp)
         );
 
         return success({
-            workerId: inputId,
-            resolvedWorkerId: workerId,
-            resolvedUserId: userId,
+            personaId: inputId,
             totalFirmas: signatures.length,
             firmas: signatures,
         });
@@ -594,23 +548,36 @@ module.exports.resolve = async (event) => {
  */
 module.exports.listDisputes = async (event) => {
     try {
-        const { empresaId } = event.queryStringParameters || {};
+        const { tenantId } = event.queryStringParameters || {};
 
-        let filterExpression = 'estado = :estado';
-        const expressionAttributeValues = {
-            ':estado': 'disputada',
-        };
+        if (tenantId) {
+            // Query por GSI + filter
+            const result = await docClient.send(
+                new QueryCommand({
+                    TableName: SIGNATURES_TABLE,
+                    IndexName: 'tenantId-index',
+                    KeyConditionExpression: 'tenantId = :tenantId',
+                    FilterExpression: 'estado = :estado',
+                    ExpressionAttributeValues: {
+                        ':tenantId': tenantId,
+                        ':estado': 'disputada',
+                    },
+                })
+            );
 
-        if (empresaId) {
-            filterExpression += ' AND empresaId = :empresaId';
-            expressionAttributeValues[':empresaId'] = empresaId;
+            const disputes = (result.Items || []).sort((a, b) =>
+                new Date(b.disputaInfo?.fechaReporte || 0) - new Date(a.disputaInfo?.fechaReporte || 0)
+            );
+
+            return success({ totalDisputas: disputes.length, disputas: disputes });
         }
 
+        // Fallback: Scan (solo admin cross-tenant)
         const result = await docClient.send(
             new ScanCommand({
                 TableName: SIGNATURES_TABLE,
-                FilterExpression: filterExpression,
-                ExpressionAttributeValues: expressionAttributeValues,
+                FilterExpression: 'estado = :estado',
+                ExpressionAttributeValues: { ':estado': 'disputada' },
             })
         );
 
@@ -618,10 +585,7 @@ module.exports.listDisputes = async (event) => {
             new Date(b.disputaInfo?.fechaReporte || 0) - new Date(a.disputaInfo?.fechaReporte || 0)
         );
 
-        return success({
-            totalDisputas: disputes.length,
-            disputas: disputes,
-        });
+        return success({ totalDisputas: disputes.length, disputas: disputes });
     } catch (err) {
         console.error('Error listing disputes:', err);
         return error(err.message, 500);

@@ -3,7 +3,7 @@ const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, Scan
 const { docClient } = require('../../lib/dynamodb');
 
 const INBOX_TABLE = process.env.INBOX_TABLE || 'Inbox';
-const USERS_TABLE = process.env.USERS_TABLE || 'Users';
+const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
 
 // Tipos de mensaje
 const MESSAGE_TYPES = ['message', 'notification', 'alert', 'task'];
@@ -13,7 +13,7 @@ class InboxRepository {
     constructor() {
         this.dynamo = docClient;
         this.inboxTable = INBOX_TABLE;
-        this.usersTable = USERS_TABLE;
+        this.personasTable = PERSONAS_TABLE;
     }
 
     async sendMessage(body) {
@@ -268,24 +268,26 @@ class InboxRepository {
     }
 
     async getRecipients(params) {
-        const { currentUserId, empresaId = 'default' } = params;
+        const { currentUserId, tenantId } = params;
+        if (!tenantId) throw new Error('tenantId es requerido');
 
-        // Obtener usuarios de la misma empresa, excluyendo al usuario actual
-        const result = await this.dynamo.send(new ScanCommand({
-            TableName: this.usersTable,
-            FilterExpression: 'empresaId = :empresaId AND estado = :estado',
+        // Obtener personas del tenant, excluyendo al usuario actual
+        const result = await this.dynamo.send(new QueryCommand({
+            TableName: this.personasTable,
+            KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+            FilterExpression: 'estado = :estado',
             ExpressionAttributeValues: {
-                ':empresaId': empresaId,
+                ':pk': `TENANT#${tenantId}`,
+                ':prefix': 'PERSONA#',
                 ':estado': 'activo'
-            },
-            ProjectionExpression: 'userId, nombre, apellido, rut, rol, cargo, email, avatar'
+            }
         }));
 
-        // Filtrar al usuario actual y organizar por rol
         const users = (result.Items || [])
-            .filter(u => u.userId !== currentUserId)
+            .filter(u => u.personaId !== currentUserId)
             .map(u => ({
-                userId: u.userId,
+                userId: u.personaId,
+                personaId: u.personaId,
                 nombre: u.nombre,
                 apellido: u.apellido || '',
                 nombreCompleto: `${u.nombre} ${u.apellido || ''}`.trim(),
@@ -295,18 +297,15 @@ class InboxRepository {
                 email: u.email
             }));
 
-        // Agrupar por rol
         const grouped = {
             admin: users.filter(u => u.rol === 'admin'),
             prevencionista: users.filter(u => u.rol === 'prevencionista'),
-            trabajador: users.filter(u => u.rol === 'trabajador')
+            supervisor: users.filter(u => u.rol === 'supervisor'),
+            trabajador: users.filter(u => u.rol === 'trabajador'),
+            relator: users.filter(u => u.rol === 'relator')
         };
 
-        return {
-            recipients: users,
-            grouped,
-            total: users.length
-        };
+        return { recipients: users, grouped, total: users.length };
     }
 }
 

@@ -1,20 +1,13 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../lib/dynamodb');
 const { success, error, created } = require('../lib/response');
 const { validateRequired, generateSignatureToken } = require('../lib/validation');
-// NEW: Import unified services and adapters
-const { CumplimientoService } = require('../lib/services/CumplimientoService');
-const { CumplimientoAdapter } = require('../lib/adapters/CumplimientoAdapter');
-const { Cumplimiento } = require('../lib/models/Cumplimiento');
-// NEW: Import EventBus for automatic notifications
+const { FirmaService } = require('../lib/services/FirmaService');
+const { PersonaService } = require('../lib/services/PersonaService');
 const { eventBus } = require('../lib/events/EventBus');
 
 const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
-const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
-
-// Feature flags for gradual rollout
-const USE_CUMPLIMIENTO_SERVICE = process.env.USE_CUMPLIMIENTO_SERVICE === 'true';
 
 // Tipos de documentos según el DS 44
 const DOCUMENT_TYPES = {
@@ -36,6 +29,8 @@ const DOCUMENT_TYPES = {
 module.exports.create = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
+        const tenantId = body.tenantId || event.queryStringParameters?.tenantId;
+        if (!tenantId) return error('tenantId es requerido');
 
         const validation = validateRequired(body, ['tipo', 'titulo']);
         if (!validation.valid) {
@@ -51,16 +46,20 @@ module.exports.create = async (event) => {
 
         const document = {
             documentId,
+            tenantId,
+            obraId: body.obraId || null,
+            clasificacion: body.clasificacion || 'diario',
+            fase: body.fase || null,
             tipo: body.tipo,
             tipoDescripcion: DOCUMENT_TYPES[body.tipo],
+            obligatorio: body.obligatorio || false,
             titulo: body.titulo,
             contenido: body.contenido || '',
             descripcion: body.descripcion || '',
-            empresaId: body.empresaId || 'default',
             relatorId: body.relatorId || null,
             s3Key: body.s3Key || null,
-            archivoUrl: body.archivoUrl || null,    // File key in S3
-            archivoNombre: body.archivoNombre || null, // Original file name
+            archivoUrl: body.archivoUrl || null,
+            archivoNombre: body.archivoNombre || null,
             createdBy: body.createdBy || null,
             creatorName: body.creatorName || null,
             firmas: [],
@@ -71,27 +70,22 @@ module.exports.create = async (event) => {
             updatedAt: now,
         };
 
-        await docClient.send(
-            new PutCommand({
-                TableName: TABLE_NAME,
-                Item: document,
-            })
-        );
+        await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: document }));
 
-        // NEW: Emit event for automatic notifications if document has workers assigned
+        // Notificar asignados (usa personaId, no workerId)
         try {
             if (body.assignedTo && Array.isArray(body.assignedTo) && body.assignedTo.length > 0) {
                 await eventBus.emit('document.assigned', {
                     documentId: document.documentId,
-                    workerIds: body.assignedTo,
+                    userIds: body.assignedTo,
                     assignedBy: body.createdBy || 'system',
+                    creatorName: body.creatorName || 'Gestor SST',
                     documentName: document.titulo,
                     dueDate: body.dueDate || null
                 });
             }
         } catch (eventError) {
             console.error('Error emitting document.assigned event:', eventError);
-            // Continue even if notification fails
         }
 
         return created(document);
@@ -106,36 +100,43 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { empresaId, tipo, estado } = event.queryStringParameters || {};
+        const { tenantId, tipo, estado, clasificacion, obraId } = event.queryStringParameters || {};
+        if (!tenantId) return error('tenantId es requerido');
 
-        let filterExpression = '';
-        const expressionAttributeValues = {};
-
-        if (empresaId) {
-            filterExpression += 'empresaId = :empresaId';
-            expressionAttributeValues[':empresaId'] = empresaId;
-        }
-
-        if (tipo) {
-            filterExpression += filterExpression ? ' AND tipo = :tipo' : 'tipo = :tipo';
-            expressionAttributeValues[':tipo'] = tipo;
-        }
-
-        if (estado) {
-            filterExpression += filterExpression ? ' AND estado = :estado' : 'estado = :estado';
-            expressionAttributeValues[':estado'] = estado;
-        }
-
+        // Query por GSI tenantId-index (no Scan)
         const params = {
             TableName: TABLE_NAME,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :tenantId',
+            ExpressionAttributeValues: { ':tenantId': tenantId }
         };
 
-        if (filterExpression) {
-            params.FilterExpression = filterExpression;
-            params.ExpressionAttributeValues = expressionAttributeValues;
+        // Si se pide por obra, usar obraId-index
+        if (obraId) {
+            params.IndexName = 'obraId-index';
+            params.KeyConditionExpression = 'obraId = :obraId';
+            params.ExpressionAttributeValues = { ':obraId': obraId };
         }
 
-        const result = await docClient.send(new ScanCommand(params));
+        // Filtros adicionales
+        let filterParts = [];
+        if (tipo) {
+            filterParts.push('tipo = :tipo');
+            params.ExpressionAttributeValues[':tipo'] = tipo;
+        }
+        if (estado) {
+            filterParts.push('estado = :estado');
+            params.ExpressionAttributeValues[':estado'] = estado;
+        }
+        if (clasificacion) {
+            filterParts.push('clasificacion = :clasificacion');
+            params.ExpressionAttributeValues[':clasificacion'] = clasificacion;
+        }
+        if (filterParts.length > 0) {
+            params.FilterExpression = filterParts.join(' AND ');
+        }
+
+        const result = await docClient.send(new QueryCommand(params));
 
         return success({
             documents: result.Items || [],
@@ -184,76 +185,57 @@ module.exports.assign = async (event) => {
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
-        if (!id) {
-            return error('ID de documento requerido');
+        if (!id) return error('ID de documento requerido');
+
+        // Acepta personaIds o workerIds (legacy)
+        const personaIds = body.personaIds || body.workerIds;
+        const { fechaLimite, notificar, assignedBy, assignerName } = body;
+
+        if (!personaIds || !Array.isArray(personaIds) || personaIds.length === 0) {
+            return error('Se requiere un array de IDs de personas');
         }
 
-        const { workerIds, fechaLimite, notificar, assignedBy, assignerName } = body;
+        const docResult = await docClient.send(new GetCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id }
+        }));
 
-        if (!workerIds || !Array.isArray(workerIds) || workerIds.length === 0) {
-            return error('Se requiere un array de IDs de trabajadores');
-        }
+        if (!docResult.Item) return error('Documento no encontrado', 404);
 
-        // Obtener documento actual
-        const docResult = await docClient.send(
-            new GetCommand({
-                TableName: TABLE_NAME,
-                Key: { documentId: id },
-            })
-        );
-
-        if (!docResult.Item) {
-            return error('Documento no encontrado', 404);
-        }
-
-        // Get worker names for better assignment records
-        const workersResult = await docClient.send(
-            new ScanCommand({
-                TableName: WORKERS_TABLE,
-                FilterExpression: 'habilitado = :h',
-                ExpressionAttributeValues: { ':h': true }
-            })
-        );
-        const workersMap = new Map((workersResult.Items || []).map(w => [w.workerId, w]));
-
+        // Lookup personas via PersonaService
+        const personaService = new PersonaService();
         const now = new Date().toISOString();
-        const nuevasAsignaciones = workerIds.map((workerId) => {
-            const worker = workersMap.get(workerId);
-            return {
-                workerId,
-                nombre: worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : workerId,
+        const nuevasAsignaciones = [];
+
+        for (const pid of personaIds) {
+            const persona = await personaService.getById(pid);
+            nuevasAsignaciones.push({
+                personaId: pid,
+                nombre: persona ? `${persona.nombre} ${persona.apellido || ''}`.trim() : pid,
                 fechaAsignacion: now,
                 fechaLimite: fechaLimite || null,
                 estado: 'pendiente',
-                notificado: notificar || false,
-            };
-        });
+                notificado: notificar || false
+            });
+        }
 
         const asignaciones = [...(docResult.Item.asignaciones || []), ...nuevasAsignaciones];
 
-        await docClient.send(
-            new UpdateCommand({
-                TableName: TABLE_NAME,
-                Key: { documentId: id },
-                UpdateExpression: 'SET asignaciones = :asignaciones, updatedAt = :updatedAt',
-                ExpressionAttributeValues: {
-                    ':asignaciones': asignaciones,
-                    ':updatedAt': now,
-                },
-            })
-        );
+        await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id },
+            UpdateExpression: 'SET asignaciones = :asignaciones, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':asignaciones': asignaciones,
+                ':updatedAt': now
+            }
+        }));
 
-        // NEW: Emit event for automatic notifications
+        // Notificar asignados
         try {
-            // Get userIds from workers for proper inbox delivery
-            const userIds = workerIds.map(wId => {
-                const worker = workersMap.get(wId);
-                return worker?.userId || wId; // Use userId if available, otherwise workerId
-            });
-
             await eventBus.emit('document.assigned', {
                 documentId: id,
-                userIds,
+                userIds: personaIds,
                 assignedBy: assignedBy || 'system',
                 creatorName: assignerName || docResult.Item.creatorName || 'Gestor SST',
                 documentName: docResult.Item.titulo,
@@ -261,12 +243,11 @@ module.exports.assign = async (event) => {
             });
         } catch (eventError) {
             console.error('Error emitting document.assigned event:', eventError);
-            // Continue even if notification fails
         }
 
         return success({
-            message: `Documento asignado a ${workerIds.length} trabajador(es)`,
-            asignaciones: nuevasAsignaciones,
+            message: `Documento asignado a ${personaIds.length} persona(s)`,
+            asignaciones: nuevasAsignaciones
         });
     } catch (err) {
         console.error('Error assigning document:', err);
@@ -282,142 +263,73 @@ module.exports.sign = async (event) => {
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
-        if (!id) {
-            return error('ID de documento requerido');
+        if (!id) return error('ID de documento requerido');
+
+        const signerPersonaId = body.personaId || body.workerId;
+        if (!signerPersonaId || !body.tipoFirma) {
+            return error('personaId y tipoFirma son requeridos');
         }
 
-        const validation = validateRequired(body, ['workerId', 'tipoFirma']);
-        if (!validation.valid) {
-            return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
-        }
-
-        // Obtener documento
-        const docResult = await docClient.send(
-            new GetCommand({
-                TableName: TABLE_NAME,
-                Key: { documentId: id },
-            })
-        );
-
-        if (!docResult.Item) {
-            return error('Documento no encontrado', 404);
-        }
-
+        const docResult = await docClient.send(new GetCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id }
+        }));
+        if (!docResult.Item) return error('Documento no encontrado', 404);
         const documentData = docResult.Item;
 
-        // NEW: Integration with CumplimientoService
-        if (USE_CUMPLIMIENTO_SERVICE) {
-            try {
-                const cumplimiento = Cumplimiento.fromDocument(documentData);
-                const contexto = {
-                    ipAddress: event.requestContext?.http?.sourceIp ||
-                        event.requestContext?.identity?.sourceIp || 'unknown',
-                    userAgent: event.headers?.['user-agent'] || 'unknown'
-                };
+        const personaService = new PersonaService();
+        const persona = await personaService.getById(signerPersonaId);
+        if (!persona) return error('Persona no encontrada', 404);
 
-                const metodo = body.pin ? 'PIN' : 'PRESENCIAL';
-                const resultado = await CumplimientoService.registrarFirmas(
-                    cumplimiento,
-                    [body.workerId],
-                    body.pin || {},
-                    contexto,
-                    false, // No incluir relator por defecto en firma individual
-                    metodo
-                );
-
-                if (resultado.errores.length > 0) {
-                    return error(resultado.errores[0].error, 400);
-                }
-
-                const updatedDocument = cumplimiento.toDocumentFormat();
-
-                await docClient.send(
-                    new UpdateCommand({
-                        TableName: TABLE_NAME,
-                        Key: { documentId: id },
-                        UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
-                        ExpressionAttributeValues: {
-                            ':firmas': updatedDocument.firmas,
-                            ':asignaciones': updatedDocument.asignaciones,
-                            ':updatedAt': updatedDocument.updatedAt,
-                        },
-                    })
-                );
-
-                const firma = resultado.nuevasFirmas[0];
-                return success(CumplimientoAdapter.toDocumentSignResponse({
-                    token: firma.token,
-                    workerId: firma.workerId,
-                    workerNombre: firma.workerNombre,
-                    workerRut: firma.workerRut,
-                    tipoFirma: firma.tipoFirma,
-                    fecha: firma.fecha,
-                    horario: firma.horario,
-                    timestamp: firma.timestamp,
-                    ipAddress: firma.ipAddress
-                }));
-
-            } catch (err) {
-                console.error('Error in CumplimientoService integration:', err);
-                return error(err.message);
-            }
-        }
-
-        // LEGACY: Original implementation
-        // Obtener datos del trabajador
-        const workerResult = await docClient.send(
-            new GetCommand({
-                TableName: WORKERS_TABLE,
-                Key: { workerId: body.workerId },
-            })
-        );
-
-        if (!workerResult.Item) {
-            return error('Trabajador no encontrado', 404);
-        }
-
-        const worker = workerResult.Item;
-        const now = new Date();
-
-        // Crear registro de firma según DS 44
-        const firma = {
-            token: generateSignatureToken(),
-            workerId: body.workerId,
-            nombre: worker.nombre,
-            rut: worker.rut,
-            tipoFirma: body.tipoFirma, // 'trabajador', 'relator', 'supervisor'
-            fecha: now.toISOString().split('T')[0],
-            horario: now.toTimeString().split(' ')[0],
-            timestamp: now.toISOString(),
-            ip: event.requestContext?.identity?.sourceIp || 'unknown',
+        const contexto = {
+            ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
+            userAgent: event.headers?.['user-agent'] || 'unknown'
         };
 
-        const firmas = [...(documentData.firmas || []), firma];
+        const metodo = body.pin ? 'PIN' : 'PRESENCIAL';
+        let firmaResult;
+        try {
+            firmaResult = await FirmaService.crear({
+                personaId: signerPersonaId,
+                tenantId: documentData.tenantId,
+                metodo,
+                credencial: body.pin || {},
+                tipoFirma: body.tipoFirma,
+                referenciaId: id,
+                referenciaTipo: 'document',
+                contexto,
+                persona
+            });
+        } catch (firmaErr) {
+            return error(firmaErr.message, 400);
+        }
 
-        // Actualizar estado de asignación si existe
+        const firmaEmbebida = FirmaService.toDocumentFirmaFormat(firmaResult);
+        const firmas = [...(documentData.firmas || []), firmaEmbebida];
+
         const asignaciones = (documentData.asignaciones || []).map((a) => {
-            if (a.workerId === body.workerId && a.estado === 'pendiente') {
-                return { ...a, estado: 'firmado', fechaFirma: now.toISOString() };
+            if ((a.personaId === signerPersonaId || a.workerId === signerPersonaId) && a.estado === 'pendiente') {
+                return { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() };
             }
             return a;
         });
 
-        await docClient.send(
-            new UpdateCommand({
-                TableName: TABLE_NAME,
-                Key: { documentId: id },
-                UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
-                ExpressionAttributeValues: {
-                    ':firmas': firmas,
-                    ':asignaciones': asignaciones,
-                    ':updatedAt': now.toISOString(),
-                },
-            })
-        );
+        await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id },
+            UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':firmas': firmas,
+                ':asignaciones': asignaciones,
+                ':updatedAt': new Date().toISOString()
+            }
+        }));
 
         return success({
             message: 'Documento firmado exitosamente',
-            firma,
+            firma: firmaEmbebida,
+            signatureId: firmaResult.signatureId,
+            token: firmaResult.token
         });
     } catch (err) {
         console.error('Error signing document:', err);
@@ -433,142 +345,64 @@ module.exports.signBulk = async (event) => {
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
-        if (!id) {
-            return error('ID de documento requerido');
+        if (!id) return error('ID de documento requerido');
+
+        const personaIds = body.personaIds || body.workerIds;
+        const { tipoFirma, pin } = body;
+
+        if (!personaIds || !Array.isArray(personaIds) || personaIds.length === 0) {
+            return error('Se requiere un array de IDs de personas');
         }
 
-        const { workerIds, tipoFirma, relatorId, pin } = body;
-
-        if (!workerIds || !Array.isArray(workerIds) || workerIds.length === 0) {
-            return error('Se requiere un array de IDs de trabajadores');
-        }
-
-        // Obtener documento
-        const docResult = await docClient.send(
-            new GetCommand({
-                TableName: TABLE_NAME,
-                Key: { documentId: id },
-            })
-        );
-
-        if (!docResult.Item) {
-            return error('Documento no encontrado', 404);
-        }
-
+        const docResult = await docClient.send(new GetCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id }
+        }));
+        if (!docResult.Item) return error('Documento no encontrado', 404);
         const documentData = docResult.Item;
 
-        // NEW: Integration with CumplimientoService
-        if (USE_CUMPLIMIENTO_SERVICE) {
-            try {
-                const cumplimiento = Cumplimiento.fromDocument(documentData);
-                const contexto = {
-                    ipAddress: event.requestContext?.http?.sourceIp ||
-                        event.requestContext?.identity?.sourceIp || 'unknown',
-                    userAgent: event.headers?.['user-agent'] || 'unknown'
-                };
+        const contexto = {
+            ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
+            userAgent: event.headers?.['user-agent'] || 'unknown'
+        };
 
-                const metodo = pin ? 'PIN' : 'PRESENCIAL';
-                const resultado = await CumplimientoService.registrarFirmas(
-                    cumplimiento,
-                    workerIds,
-                    pin || {},
-                    contexto,
-                    false, // No incluir relator automáticamente aquí
-                    metodo
-                );
+        const metodo = pin ? 'PIN' : 'PRESENCIAL';
+        const resultado = await FirmaService.crearBatch(personaIds, {
+            tenantId: documentData.tenantId,
+            metodo,
+            credencial: pin || {},
+            tipoFirma: tipoFirma || 'trabajador',
+            referenciaId: id,
+            referenciaTipo: 'document',
+            contexto
+        });
 
-                const updatedDocument = cumplimiento.toDocumentFormat();
-
-                await docClient.send(
-                    new UpdateCommand({
-                        TableName: TABLE_NAME,
-                        Key: { documentId: id },
-                        UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
-                        ExpressionAttributeValues: {
-                            ':firmas': updatedDocument.firmas,
-                            ':asignaciones': updatedDocument.asignaciones,
-                            ':updatedAt': updatedDocument.updatedAt,
-                        },
-                    })
-                );
-
-                return success({
-                    message: `${resultado.nuevasFirmas.length} firmas registradas exitosamente`,
-                    firmas: resultado.nuevasFirmas.map(f => ({
-                        token: f.token,
-                        workerId: f.workerId,
-                        nombre: f.workerNombre,
-                        rut: f.workerRut,
-                        tipoFirma: f.tipoFirma,
-                        fecha: f.fecha,
-                        horario: f.horario,
-                        timestamp: f.timestamp
-                    })),
-                    errores: resultado.errores.length > 0 ? resultado.errores : undefined
-                });
-
-            } catch (err) {
-                console.error('Error in CumplimientoService bulk integration:', err);
-                return error(err.message);
-            }
-        }
-
-        // LEGACY: Original implementation
-        const now = new Date();
-        const nuevasFirmas = [];
-
-        // Obtener datos de cada trabajador y crear firma
-        for (const workerId of workerIds) {
-            const workerResult = await docClient.send(
-                new GetCommand({
-                    TableName: WORKERS_TABLE,
-                    Key: { workerId },
-                })
-            );
-
-            if (workerResult.Item) {
-                const worker = workerResult.Item;
-                nuevosAsistentes.push({
-                    token: generateSignatureToken(),
-                    workerId,
-                    nombre: worker.nombre,
-                    rut: worker.rut,
-                    tipoFirma: tipoFirma || 'trabajador',
-                    fecha: now.toISOString().split('T')[0],
-                    horario: now.toTimeString().split(' ')[0],
-                    timestamp: now.toISOString(),
-                    firmaMasiva: true,
-                    relatorId: relatorId || null,
-                });
-            }
-        }
-
+        const nuevasFirmas = resultado.exitosas.map(f => FirmaService.toDocumentFirmaFormat(f));
         const firmas = [...(documentData.firmas || []), ...nuevasFirmas];
 
-        // Actualizar asignaciones
         const asignaciones = (documentData.asignaciones || []).map((a) => {
-            if (workerIds.includes(a.workerId) && a.estado === 'pendiente') {
-                return { ...a, estado: 'firmado', fechaFirma: now.toISOString() };
+            const firmado = personaIds.includes(a.personaId) || personaIds.includes(a.workerId);
+            if (firmado && a.estado === 'pendiente') {
+                return { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() };
             }
             return a;
         });
 
-        await docClient.send(
-            new UpdateCommand({
-                TableName: TABLE_NAME,
-                Key: { documentId: id },
-                UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
-                ExpressionAttributeValues: {
-                    ':firmas': firmas,
-                    ':asignaciones': asignaciones,
-                    ':updatedAt': now.toISOString(),
-                },
-            })
-        );
+        await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id },
+            UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':firmas': firmas,
+                ':asignaciones': asignaciones,
+                ':updatedAt': new Date().toISOString()
+            }
+        }));
 
         return success({
-            message: `${nuevasFirmas.length} firmas registradas exitosamente`,
+            message: `${resultado.exitosas.length} firmas registradas exitosamente`,
             firmas: nuevasFirmas,
+            errores: resultado.fallidas.length > 0 ? resultado.fallidas : undefined
         });
     } catch (err) {
         console.error('Error bulk signing document:', err);

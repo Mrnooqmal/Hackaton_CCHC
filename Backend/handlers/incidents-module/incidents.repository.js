@@ -1,5 +1,5 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, ScanCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
@@ -15,7 +15,7 @@ class IncidentsRepository {
 
         this.incidentsTable = process.env.INCIDENTS_TABLE;
         this.incidentEvidenceBucket = process.env.INCIDENT_EVIDENCE_BUCKET;
-        this.usersTable = process.env.USERS_TABLE;
+        this.personasTable = process.env.PERSONAS_TABLE;
         this.inboxTable = process.env.INBOX_TABLE;
 
         console.log('IncidentsRepository initialized with table:', this.incidentsTable);
@@ -74,21 +74,30 @@ class IncidentsRepository {
         return previews.filter(Boolean);
     }
 
-    async getPrevencionistas(empresaId) {
+    async getPrevencionistas(tenantId) {
         try {
-            console.log('[DEBUG] Buscando prevencionistas para empresaId:', empresaId);
-            const result = await this.dynamo.send(new ScanCommand({
-                TableName: this.usersTable,
-                FilterExpression: 'empresaId = :empresaId AND rol = :rol AND estado = :estado',
+            console.log('[DEBUG] Buscando prevencionistas para tenantId:', tenantId);
+            const result = await this.dynamo.send(new QueryCommand({
+                TableName: this.personasTable,
+                KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+                FilterExpression: 'rol = :rol AND estado = :estado',
                 ExpressionAttributeValues: {
-                    ':empresaId': empresaId,
+                    ':pk': `TENANT#${tenantId}`,
+                    ':prefix': 'PERSONA#',
                     ':rol': 'prevencionista',
                     ':estado': 'activo'
-                },
-                ProjectionExpression: 'userId, nombre, apellido, rol, cargo, empresaId'
+                }
             }));
             console.log('[DEBUG] Prevencionistas encontrados:', result.Items?.length || 0);
-            return result.Items || [];
+            // Map to common format (recipientId = personaId for inbox)
+            return (result.Items || []).map(item => ({
+                userId: item.personaId,
+                personaId: item.personaId,
+                nombre: item.nombre,
+                apellido: item.apellido || '',
+                rol: item.rol,
+                cargo: item.cargo
+            }));
         } catch (error) {
             console.error('[ERROR] Error obteniendo prevencionistas:', error);
             return [];
@@ -194,8 +203,9 @@ class IncidentsRepository {
             },
             estado: 'reportado',
             reportadoPor: data.reportadoPor || 'sistema',
-            empresaId: data.empresaId || 'default',
-            viewedBy: [], // Track who has seen the incident
+            tenantId: data.tenantId || 'default',
+            obraId: data.obraId || null,
+            viewedBy: [],
             createdAt: now,
             updatedAt: now
         };
@@ -232,7 +242,7 @@ class IncidentsRepository {
 
         // Inbox Notification
         try {
-            const prevencionistas = await this.getPrevencionistas(incident.empresaId);
+            const prevencionistas = await this.getPrevencionistas(incident.tenantId);
             await this.sendIncidentNotification(incident, prevencionistas);
         } catch (notifError) {
             console.error('[ERROR] Error enviando notificaciones inbox:', notifError);
@@ -245,27 +255,33 @@ class IncidentsRepository {
     }
 
     // LIST
-    async list({ empresaId, tipo, estado, fechaInicio, fechaFin }) {
+    async list({ tenantId, tipo, estado, fechaInicio, fechaFin }) {
         console.log('Repo.list called');
         let items = [];
 
-        // Scan simple
-        const result = await this.dynamo.send(new ScanCommand({
-            TableName: this.incidentsTable
-        }));
-        items = result.Items || [];
+        if (tenantId) {
+            // Query por GSI tenantId-fecha-index
+            const result = await this.dynamo.send(new QueryCommand({
+                TableName: this.incidentsTable,
+                IndexName: 'tenantId-fecha-index',
+                KeyConditionExpression: 'tenantId = :tenantId',
+                ExpressionAttributeValues: { ':tenantId': tenantId }
+            }));
+            items = result.Items || [];
+        } else {
+            const result = await this.dynamo.send(new ScanCommand({
+                TableName: this.incidentsTable
+            }));
+            items = result.Items || [];
+        }
 
-        if (empresaId) items = items.filter(item => item.empresaId === empresaId);
         if (tipo) items = items.filter(item => item.tipo === tipo);
         if (estado) items = items.filter(item => item.estado === estado);
         if (fechaFin) items = items.filter(item => item.fecha <= fechaFin);
 
         items.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
-        return {
-            items,
-            total: items.length
-        };
+        return { items, total: items.length };
     }
 
     // GET
@@ -367,17 +383,25 @@ class IncidentsRepository {
     }
 
     // GET STATS
-    async getStats({ empresaId, mes, masaLaboral }) {
+    async getStats({ tenantId, mes, masaLaboral }) {
         mes = mes || new Date().toISOString().slice(0, 7);
         masaLaboral = parseInt(masaLaboral) || 100;
 
         let items = [];
-        const result = await this.dynamo.send(new ScanCommand({
-            TableName: this.incidentsTable
-        }));
-        items = result.Items || [];
-
-        if (empresaId) items = items.filter(item => item.empresaId === empresaId);
+        if (tenantId) {
+            const result = await this.dynamo.send(new QueryCommand({
+                TableName: this.incidentsTable,
+                IndexName: 'tenantId-fecha-index',
+                KeyConditionExpression: 'tenantId = :tenantId',
+                ExpressionAttributeValues: { ':tenantId': tenantId }
+            }));
+            items = result.Items || [];
+        } else {
+            const result = await this.dynamo.send(new ScanCommand({
+                TableName: this.incidentsTable
+            }));
+            items = result.Items || [];
+        }
         items = items.filter(item => item.fecha && item.fecha.startsWith(mes));
 
         const accidentes = items.filter(i => i.tipo === 'accidente');
@@ -521,14 +545,25 @@ class IncidentsRepository {
     }
 
     // GET ANALYTICS
-    async getAnalytics({ empresaId, fechaInicio, fechaFin }) {
+    async getAnalytics({ tenantId, fechaInicio, fechaFin }) {
         fechaFin = fechaFin || new Date().toISOString().split('T')[0];
-        const result = await this.dynamo.send(new ScanCommand({
-            TableName: this.incidentsTable
-        }));
-        let items = result.Items || [];
+        let items = [];
 
-        if (empresaId) items = items.filter(item => item.empresaId === empresaId);
+        if (tenantId) {
+            const result = await this.dynamo.send(new QueryCommand({
+                TableName: this.incidentsTable,
+                IndexName: 'tenantId-fecha-index',
+                KeyConditionExpression: 'tenantId = :tenantId',
+                ExpressionAttributeValues: { ':tenantId': tenantId }
+            }));
+            items = result.Items || [];
+        } else {
+            const result = await this.dynamo.send(new ScanCommand({
+                TableName: this.incidentsTable
+            }));
+            items = result.Items || [];
+        }
+
         if (fechaInicio) items = items.filter(item => item.fecha >= fechaInicio);
         if (fechaFin) items = items.filter(item => item.fecha <= fechaFin);
 
@@ -618,7 +653,8 @@ class IncidentsRepository {
             reportadoPor: data.reportadoPor || 'QR-Publico',
             qrToken: data.qrToken || null,
             firmaConfirmacion: data.firmaConfirmacion || null,
-            empresaId: data.empresaId || 'default',
+            tenantId: data.tenantId || 'default',
+            obraId: data.obraId || null,
             origenReporte: 'qr_publico',
             createdAt: now,
             updatedAt: now
@@ -650,7 +686,7 @@ class IncidentsRepository {
         }
 
         try {
-            const prevencionistas = await this.getPrevencionistas(incident.empresaId);
+            const prevencionistas = await this.getPrevencionistas(incident.tenantId);
             await this.sendIncidentNotification(incident, prevencionistas);
         } catch (notifError) {
             console.error('Error enviando notificaciones inbox:', notifError);

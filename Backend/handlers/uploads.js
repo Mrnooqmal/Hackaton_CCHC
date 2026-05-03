@@ -46,7 +46,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
  *   fileType: string,      // MIME type
  *   fileSize: number,      // Tamaño en bytes
  *   categoria: string,     // Categoría del documento (opcional)
- *   empresaId?: string
+ *   tenantId?: string
  * }
  * 
  * Returns: {
@@ -64,7 +64,7 @@ module.exports.getUploadUrl = async (event) => {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
-        const { fileName, fileType, fileSize, categoria, empresaId } = body;
+        const { fileName, fileType, fileSize, categoria, tenantId } = body;
 
         // Validar tipo MIME
         if (!ALLOWED_MIME_TYPES.includes(fileType)) {
@@ -80,7 +80,7 @@ module.exports.getUploadUrl = async (event) => {
         const timestamp = Date.now();
         const uniqueId = uuidv4().slice(0, 8);
         const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const prefix = empresaId || 'general';
+        const prefix = tenantId ? `tenants/${tenantId}` : 'general';
         const folder = categoria || 'documentos';
 
         const fileKey = `${prefix}/${folder}/${timestamp}-${uniqueId}-${sanitizedFileName}`;
@@ -93,7 +93,7 @@ module.exports.getUploadUrl = async (event) => {
             Metadata: {
                 'original-name': fileName,
                 'uploaded-at': new Date().toISOString(),
-                'empresa-id': empresaId || 'general',
+                'tenant-id': tenantId || 'general',
             },
         });
 

@@ -1,18 +1,41 @@
 /**
- * Persona Model
+ * Persona Model (Refactored)
  * 
- * Abstracción que unifica Usuario y Trabajador.
- * Esta es la "single source of truth" lógica para identidad.
+ * Identidad unificada. Reemplaza las entidades separadas User y Worker.
+ * Un solo ID (personaId), un solo pinHash, sin sincronización dual.
  */
+
+const ROLES = {
+    admin: {
+        nombre: 'Administrador',
+        permisos: ['crear_usuarios', 'editar_usuarios', 'ver_usuarios', 'reset_pin',
+                   'ver_reportes', 'gestionar_empresa', 'resolver_disputas', 'gestionar_obras']
+    },
+    prevencionista: {
+        nombre: 'Prevencionista',
+        permisos: ['crear_actividades', 'asignar_documentos', 'ver_trabajadores',
+                   'firmar_relator', 'ver_reportes', 'crear_capacitaciones']
+    },
+    supervisor: {
+        nombre: 'Supervisor',
+        permisos: ['firmar_relator', 'ver_trabajadores', 'crear_actividades',
+                   'registrar_asistencia', 'ver_reportes']
+    },
+    trabajador: {
+        nombre: 'Trabajador',
+        permisos: ['ver_documentos_asignados', 'firmar_documentos',
+                   'registrar_asistencia', 'ver_perfil']
+    }
+};
 
 class Persona {
     constructor(data) {
-        // Identificadores
-        this.userId = data.userId || null;
-        this.workerId = data.workerId || null;
-        this.rut = data.rut;
+        // Identificador unico (reemplaza userId y workerId)
+        this.personaId = data.personaId;
+        this.tenantId = data.tenantId;
 
         // Datos personales
+        this.rut = data.rut;
         this.nombre = data.nombre;
         this.apellido = data.apellido || '';
         this.email = data.email || '';
@@ -20,195 +43,172 @@ class Persona {
 
         // Rol y contexto laboral
         this.rol = data.rol || 'trabajador';
+        this.permisos = data.permisos || (ROLES[this.rol]?.permisos || []);
         this.cargo = data.cargo || '';
-        this.empresaId = data.empresaId || 'default';
+        this.obraIds = data.obraIds || [];
 
-        // Estado de habilitación
-        this.habilitado = data.habilitado || false;
-        this.estado = data.estado || 'pendiente';
-
-        // Seguridad (no exponer hashes directamente)
-        this._pinHash = data.pinHash || null;
+        // Acceso y autenticacion
+        this.tieneAccesoWeb = data.tieneAccesoWeb || false;
         this._passwordHash = data.passwordHash || null;
+        this._pinHash = data.pinHash || null;
         this.pinCreatedAt = data.pinCreatedAt || null;
         this.passwordTemporal = data.passwordTemporal || false;
 
         // Enrolamiento
+        this.habilitado = data.habilitado || false;
         this.firmaEnrolamiento = data.firmaEnrolamiento || null;
+
+        // Estado
+        this.estado = data.estado || 'pendiente';
+
+        // Preferencias
+        this.preferencias = data.preferencias || {
+            tema: 'dark',
+            notificaciones: true,
+            idioma: 'es'
+        };
 
         // Metadata
         this.createdAt = data.createdAt || new Date().toISOString();
         this.updatedAt = data.updatedAt || new Date().toISOString();
-
-        // Fuente de datos original
-        this._sourceTable = data._sourceTable || null;
+        this.ultimoAcceso = data.ultimoAcceso || null;
     }
 
-    /**
-     * Verifica si la persona tiene PIN configurado
-     */
     tienePinConfigurado() {
         return !!this._pinHash;
     }
 
-    /**
-     * Verifica si la persona está completamente enrolada
-     */
     estaEnrolado() {
         return this.habilitado && this.tienePinConfigurado() && !!this.firmaEnrolamiento;
     }
 
-    /**
-     * Obtiene el ID principal (userId si existe, sino workerId)
-     */
-    getIdPrincipal() {
-        return this.userId || this.workerId;
+    tienePermiso(permiso) {
+        return this.permisos.includes(permiso);
     }
 
     /**
-     * Convierte a formato compatible con tabla Users
+     * Genera PK y SK para DynamoDB
      */
-    toUserFormat() {
+    toDynamoKeys() {
         return {
-            userId: this.userId,
+            PK: `TENANT#${this.tenantId}`,
+            SK: `PERSONA#${this.personaId}`
+        };
+    }
+
+    /**
+     * Convierte a item de DynamoDB
+     */
+    toDynamoItem() {
+        return {
+            ...this.toDynamoKeys(),
+            personaId: this.personaId,
+            tenantId: this.tenantId,
             rut: this.rut,
             nombre: this.nombre,
             apellido: this.apellido,
             email: this.email,
             telefono: this.telefono,
             rol: this.rol,
+            permisos: this.permisos,
             cargo: this.cargo,
-            empresaId: this.empresaId,
-            habilitado: this.habilitado,
-            estado: this.estado,
-            pinHash: this._pinHash,
+            obraIds: this.obraIds,
+            tieneAccesoWeb: this.tieneAccesoWeb,
             passwordHash: this._passwordHash,
+            pinHash: this._pinHash,
             pinCreatedAt: this.pinCreatedAt,
             passwordTemporal: this.passwordTemporal,
-            firmaEnrolamiento: this.firmaEnrolamiento,
-            workerId: this.workerId,
-            createdAt: this.createdAt,
-            updatedAt: this.updatedAt
-        };
-    }
-
-    /**
-     * Convierte a formato compatible con tabla Workers
-     */
-    toWorkerFormat() {
-        return {
-            workerId: this.workerId,
-            rut: this.rut,
-            nombre: this.nombre,
-            apellido: this.apellido,
-            email: this.email,
-            telefono: this.telefono,
-            cargo: this.cargo,
-            empresaId: this.empresaId,
             habilitado: this.habilitado,
-            estado: this.estado === 'activo' ? 'activo' : 'activo',
-            pinHash: this._pinHash,
-            pinCreatedAt: this.pinCreatedAt,
             firmaEnrolamiento: this.firmaEnrolamiento,
-            userId: this.userId,
+            estado: this.estado,
+            preferencias: this.preferencias,
             createdAt: this.createdAt,
-            updatedAt: this.updatedAt
+            updatedAt: this.updatedAt,
+            ultimoAcceso: this.ultimoAcceso
         };
     }
 
     /**
-     * Convierte a formato seguro para API (sin hashes)
+     * Crea instancia desde item de DynamoDB
+     */
+    static fromDynamoItem(item) {
+        if (!item) return null;
+        return new Persona(item);
+    }
+
+    /**
+     * Formato seguro para API (sin hashes)
      */
     toSafeFormat() {
         return {
-            userId: this.userId,
-            workerId: this.workerId,
+            personaId: this.personaId,
+            tenantId: this.tenantId,
             rut: this.rut,
             nombre: this.nombre,
             apellido: this.apellido,
             email: this.email,
             telefono: this.telefono,
             rol: this.rol,
+            permisos: this.permisos,
             cargo: this.cargo,
-            empresaId: this.empresaId,
+            obraIds: this.obraIds,
+            tieneAccesoWeb: this.tieneAccesoWeb,
             habilitado: this.habilitado,
-            estado: this.estado,
             pinConfigurado: this.tienePinConfigurado(),
             enrolado: this.estaEnrolado(),
+            estado: this.estado,
+            preferencias: this.preferencias,
+            createdAt: this.createdAt,
+            updatedAt: this.updatedAt,
+            ultimoAcceso: this.ultimoAcceso
+        };
+    }
+
+    /**
+     * Formato compatible con legacy worker response (para transición)
+     */
+    toLegacyWorkerFormat() {
+        return {
+            workerId: this.personaId,
+            rut: this.rut,
+            nombre: this.nombre,
+            apellido: this.apellido,
+            email: this.email,
+            telefono: this.telefono,
+            cargo: this.cargo,
+            empresaId: this.tenantId,
+            estado: this.estado === 'activo' ? 'activo' : this.estado,
+            habilitado: this.habilitado,
+            pinCreatedAt: this.pinCreatedAt,
+            firmaEnrolamiento: this.firmaEnrolamiento,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
     }
 
     /**
-     * Crea una Persona desde datos de tabla Users
+     * Formato compatible con legacy user response (para transición)
      */
-    static fromUser(userData) {
-        return new Persona({
-            ...userData,
-            _sourceTable: 'users'
-        });
-    }
-
-    /**
-     * Crea una Persona desde datos de tabla Workers
-     */
-    static fromWorker(workerData) {
-        return new Persona({
-            ...workerData,
-            rol: workerData.rol || 'trabajador',
-            _sourceTable: 'workers'
-        });
-    }
-
-    /**
-     * Fusiona datos de User y Worker en una sola Persona
-     * Prioriza User para datos de autenticación, Worker para datos laborales
-     */
-    static mergeUserAndWorker(userData, workerData) {
-        return new Persona({
-            // IDs de ambas fuentes
-            userId: userData?.userId || workerData?.userId,
-            workerId: workerData?.workerId || userData?.workerId,
-
-            // Datos personales (priorizar User si existe)
-            rut: userData?.rut || workerData?.rut,
-            nombre: userData?.nombre || workerData?.nombre,
-            apellido: userData?.apellido || workerData?.apellido,
-            email: userData?.email || workerData?.email,
-            telefono: userData?.telefono || workerData?.telefono,
-
-            // Rol (solo en Users)
-            rol: userData?.rol || 'trabajador',
-            cargo: workerData?.cargo || userData?.cargo,
-            empresaId: userData?.empresaId || workerData?.empresaId || 'default',
-
-            // Estado (cualquiera de los dos debe estar habilitado)
-            habilitado: userData?.habilitado || workerData?.habilitado || false,
-            estado: userData?.estado || (workerData?.estado === 'activo' ? 'activo' : 'pendiente'),
-
-            // Seguridad (User tiene prioridad para login, pero ambos deben tener PIN sincronizado)
-            pinHash: userData?.pinHash || workerData?.pinHash,
-            passwordHash: userData?.passwordHash,
-            pinCreatedAt: userData?.pinCreatedAt || workerData?.pinCreatedAt,
-            passwordTemporal: userData?.passwordTemporal || false,
-
-            // Enrolamiento (cualquier fuente)
-            firmaEnrolamiento: userData?.firmaEnrolamiento || workerData?.firmaEnrolamiento,
-
-            // Metadata
-            createdAt: userData?.createdAt || workerData?.createdAt,
-            updatedAt: Math.max(
-                new Date(userData?.updatedAt || 0).getTime(),
-                new Date(workerData?.updatedAt || 0).getTime()
-            ) > 0 ? new Date(Math.max(
-                new Date(userData?.updatedAt || 0).getTime(),
-                new Date(workerData?.updatedAt || 0).getTime()
-            )).toISOString() : new Date().toISOString(),
-
-            _sourceTable: 'merged'
-        });
+    toLegacyUserFormat() {
+        return {
+            userId: this.personaId,
+            rut: this.rut,
+            nombre: this.nombre,
+            apellido: this.apellido,
+            email: this.email,
+            telefono: this.telefono,
+            rol: this.rol,
+            permisos: this.permisos,
+            cargo: this.cargo,
+            empresaId: this.tenantId,
+            habilitado: this.habilitado,
+            estado: this.estado,
+            workerId: this.personaId,
+            createdAt: this.createdAt,
+            updatedAt: this.updatedAt,
+            ultimoAcceso: this.ultimoAcceso
+        };
     }
 }
 
-module.exports = { Persona };
+module.exports = { Persona, ROLES };

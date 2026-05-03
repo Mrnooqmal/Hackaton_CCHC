@@ -1,220 +1,251 @@
 /**
- * PersonaService
+ * PersonaService (Refactored)
  * 
- * Servicio que gestiona la lógica unificada de Usuario/Trabajador.
- * Actúa como "single source of truth" lógica, manteniendo sincronizadas
- * ambas tablas (Users y Workers).
+ * Opera sobre PersonasTable unicamente.
+ * Elimina toda la logica de sincronizacion dual Users/Workers.
+ * Un solo ID, un solo pinHash, queries por PK TENANT#{tenantId}.
  */
 
-const { GetCommand, ScanCommand, UpdateCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
+const { v4: uuidv4 } = require('uuid');
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../dynamodb');
-const { Persona } = require('../models/Persona');
-const { validateRut, hashPin, verifyPin, validatePin, generateSignatureToken } = require('../validation');
+const { Persona, ROLES } = require('../models/Persona');
+const {
+    validateRut, validateRequired, hashPin, verifyPin,
+    validatePin, generateSignatureToken, hashPassword, generateTempPassword
+} = require('../validation');
 
-const USERS_TABLE = process.env.USERS_TABLE || 'Users';
-const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
+const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
 
 class PersonaService {
-    /**
-     * Obtiene una Persona por ID (busca en ambas tablas y fusiona)
-     * @param {string} id - userId o workerId
-     * @param {string} tipo - 'user', 'worker', o 'auto' (busca en ambas)
-     */
-    static async obtenerPorId(id, tipo = 'auto') {
-        let userData = null;
-        let workerData = null;
-
-        if (tipo === 'user' || tipo === 'auto') {
-            try {
-                const userResult = await docClient.send(
-                    new GetCommand({
-                        TableName: USERS_TABLE,
-                        Key: { userId: id }
-                    })
-                );
-                userData = userResult.Item;
-            } catch (err) {
-                console.error('Error getting user:', err);
-            }
-        }
-
-        if (tipo === 'worker' || tipo === 'auto') {
-            try {
-                const workerResult = await docClient.send(
-                    new GetCommand({
-                        TableName: WORKERS_TABLE,
-                        Key: { workerId: id }
-                    })
-                );
-                workerData = workerResult.Item;
-            } catch (err) {
-                console.error('Error getting worker:', err);
-            }
-        }
-
-        // Si encontramos User y tiene workerId, también obtenemos el Worker
-        if (userData && userData.workerId && !workerData) {
-            try {
-                const workerResult = await docClient.send(
-                    new GetCommand({
-                        TableName: WORKERS_TABLE,
-                        Key: { workerId: userData.workerId }
-                    })
-                );
-                workerData = workerResult.Item;
-            } catch (err) {
-                console.error('Error getting linked worker:', err);
-            }
-        }
-
-        // Si encontramos Worker y tiene userId, también obtenemos el User
-        if (workerData && workerData.userId && !userData) {
-            try {
-                const userResult = await docClient.send(
-                    new GetCommand({
-                        TableName: USERS_TABLE,
-                        Key: { userId: workerData.userId }
-                    })
-                );
-                userData = userResult.Item;
-            } catch (err) {
-                console.error('Error getting linked user:', err);
-            }
-        }
-
-        if (!userData && !workerData) {
-            return null;
-        }
-
-        // Fusionar datos
-        if (userData && workerData) {
-            return Persona.mergeUserAndWorker(userData, workerData);
-        } else if (userData) {
-            return Persona.fromUser(userData);
-        } else {
-            return Persona.fromWorker(workerData);
-        }
+    constructor() {
+        this.dynamo = docClient;
+        this.table = PERSONAS_TABLE;
     }
 
     /**
-     * Obtiene una Persona por RUT
+     * Crear una nueva persona dentro de un tenant
      */
-    static async obtenerPorRut(rut) {
+    async crear(tenantId, data) {
+        const validation = validateRequired(data, ['rut', 'nombre', 'rol']);
+        if (!validation.valid) {
+            throw new Error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
+        }
+
+        const rutValidation = validateRut(data.rut);
+        if (!rutValidation.valid) throw new Error('RUT invalido');
+
+        if (!ROLES[data.rol]) {
+            throw new Error(`Rol invalido. Roles validos: ${Object.keys(ROLES).join(', ')}`);
+        }
+
+        // Verificar unicidad por RUT dentro del tenant (via GSI)
+        const existente = await this.getByRut(tenantId, rutValidation.formatted);
+        if (existente) throw new Error('Ya existe una persona con este RUT en este tenant');
+
+        const personaId = uuidv4();
+        const now = new Date().toISOString();
+        const tieneAccesoWeb = data.tieneAccesoWeb || data.rol === 'admin' || data.rol === 'prevencionista';
+        let passwordTemporal = null;
+
+        const personaData = {
+            personaId,
+            tenantId,
+            rut: rutValidation.formatted,
+            nombre: data.nombre,
+            apellido: data.apellido || '',
+            email: data.email || '',
+            telefono: data.telefono || '',
+            rol: data.rol,
+            permisos: ROLES[data.rol].permisos,
+            cargo: data.cargo || ROLES[data.rol].nombre,
+            obraIds: data.obraIds || [],
+            tieneAccesoWeb,
+            habilitado: false,
+            estado: 'pendiente',
+            createdAt: now,
+            updatedAt: now
+        };
+
+        // Generar password temporal si tiene acceso web
+        if (tieneAccesoWeb && data.email) {
+            passwordTemporal = generateTempPassword(10);
+            personaData.passwordHash = hashPassword(passwordTemporal, personaId);
+            personaData.passwordTemporal = true;
+        }
+
+        const persona = new Persona(personaData);
+
+        await this.dynamo.send(new PutCommand({
+            TableName: this.table,
+            Item: persona.toDynamoItem()
+        }));
+
+        return { persona, passwordTemporal };
+    }
+
+    /**
+     * Obtener persona por ID (via GSI personaId-index)
+     */
+    async getById(personaId) {
+        const result = await this.dynamo.send(new QueryCommand({
+            TableName: this.table,
+            IndexName: 'personaId-index',
+            KeyConditionExpression: 'personaId = :personaId',
+            ExpressionAttributeValues: { ':personaId': personaId }
+        }));
+        if (!result.Items || result.Items.length === 0) return null;
+        return Persona.fromDynamoItem(result.Items[0]);
+    }
+
+    /**
+     * Obtener persona por RUT dentro de un tenant (via GSI tenantRut-index)
+     */
+    async getByRut(tenantId, rut) {
         const rutValidation = validateRut(rut);
-        if (!rutValidation.valid) {
-            throw new Error('RUT inválido');
-        }
+        const rutFormatted = rutValidation.valid ? rutValidation.formatted : rut;
 
-        // Buscar en Users
-        const userResult = await docClient.send(
-            new ScanCommand({
-                TableName: USERS_TABLE,
-                FilterExpression: 'rut = :rut',
-                ExpressionAttributeValues: { ':rut': rutValidation.formatted }
-            })
-        );
-        const userData = userResult.Items?.[0];
-
-        // Buscar en Workers
-        const workerResult = await docClient.send(
-            new ScanCommand({
-                TableName: WORKERS_TABLE,
-                FilterExpression: 'rut = :rut',
-                ExpressionAttributeValues: { ':rut': rutValidation.formatted }
-            })
-        );
-        const workerData = workerResult.Items?.[0];
-
-        if (!userData && !workerData) {
-            return null;
-        }
-
-        if (userData && workerData) {
-            return Persona.mergeUserAndWorker(userData, workerData);
-        } else if (userData) {
-            return Persona.fromUser(userData);
-        } else {
-            return Persona.fromWorker(workerData);
-        }
+        const result = await this.dynamo.send(new QueryCommand({
+            TableName: this.table,
+            IndexName: 'tenantRut-index',
+            KeyConditionExpression: 'tenantId = :tenantId AND rut = :rut',
+            ExpressionAttributeValues: {
+                ':tenantId': tenantId,
+                ':rut': rutFormatted
+            }
+        }));
+        if (!result.Items || result.Items.length === 0) return null;
+        return Persona.fromDynamoItem(result.Items[0]);
     }
 
     /**
-     * Configura o cambia el PIN de una Persona
-     * Mantiene ambas tablas sincronizadas
-     * 
-     * @param {string} id - userId o workerId
-     * @param {string} tipo - 'user' o 'worker' (desde qué endpoint se llama)
-     * @param {string} pinActual - PIN actual (requerido si ya tiene PIN y está habilitado)
-     * @param {string} pinNuevo - Nuevo PIN a configurar
+     * Obtener persona por email (via GSI email-index, cross-tenant para login)
      */
-    static async cambiarPin(id, tipo, pinActual, pinNuevo) {
-        // Validar formato del nuevo PIN
-        const pinValidation = validatePin(pinNuevo);
-        if (!pinValidation.valid) {
-            throw new Error(pinValidation.error);
+    async getByEmail(email) {
+        const result = await this.dynamo.send(new QueryCommand({
+            TableName: this.table,
+            IndexName: 'email-index',
+            KeyConditionExpression: 'email = :email',
+            ExpressionAttributeValues: { ':email': email }
+        }));
+        if (!result.Items || result.Items.length === 0) return null;
+        return Persona.fromDynamoItem(result.Items[0]);
+    }
+
+    /**
+     * Listar personas de un tenant (via PK)
+     */
+    async listByTenant(tenantId, filters = {}) {
+        let filterExpression = '';
+        const expressionValues = {
+            ':pk': `TENANT#${tenantId}`,
+            ':prefix': 'PERSONA#'
+        };
+        const expressionNames = {};
+
+        if (filters.rol) {
+            filterExpression += 'rol = :rol';
+            expressionValues[':rol'] = filters.rol;
+        }
+        if (filters.estado) {
+            filterExpression += filterExpression ? ' AND estado = :estado' : 'estado = :estado';
+            expressionValues[':estado'] = filters.estado;
+        }
+        if (filters.obraId) {
+            filterExpression += filterExpression ? ' AND contains(obraIds, :obraId)' : 'contains(obraIds, :obraId)';
+            expressionValues[':obraId'] = filters.obraId;
         }
 
-        // Obtener persona completa
-        const persona = await this.obtenerPorId(id, tipo);
-        if (!persona) {
-            throw new Error(`${tipo === 'user' ? 'Usuario' : 'Trabajador'} no encontrado`);
+        const params = {
+            TableName: this.table,
+            KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+            ExpressionAttributeValues: expressionValues
+        };
+
+        if (filterExpression) {
+            params.FilterExpression = filterExpression;
+        }
+        if (Object.keys(expressionNames).length > 0) {
+            params.ExpressionAttributeNames = expressionNames;
         }
 
-        // Si ya tiene PIN Y está habilitado, verificar el PIN actual
+        const result = await this.dynamo.send(new QueryCommand(params));
+        return (result.Items || []).map(item => Persona.fromDynamoItem(item));
+    }
+
+    /**
+     * Actualizar datos de una persona
+     */
+    async actualizar(tenantId, personaId, updates) {
+        const allowedFields = ['nombre', 'apellido', 'email', 'telefono',
+            'cargo', 'estado', 'preferencias', 'obraIds'];
+
+        const updateExpressions = [];
+        const expressionNames = {};
+        const expressionValues = {};
+
+        allowedFields.forEach(field => {
+            if (updates[field] !== undefined) {
+                updateExpressions.push(`#${field} = :${field}`);
+                expressionNames[`#${field}`] = field;
+                expressionValues[`:${field}`] = updates[field];
+            }
+        });
+
+        if (updateExpressions.length === 0) throw new Error('No hay campos para actualizar');
+
+        updateExpressions.push('#updatedAt = :updatedAt');
+        expressionNames['#updatedAt'] = 'updatedAt';
+        expressionValues[':updatedAt'] = new Date().toISOString();
+
+        const result = await this.dynamo.send(new UpdateCommand({
+            TableName: this.table,
+            Key: {
+                PK: `TENANT#${tenantId}`,
+                SK: `PERSONA#${personaId}`
+            },
+            UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+            ExpressionAttributeNames: expressionNames,
+            ExpressionAttributeValues: expressionValues,
+            ReturnValues: 'ALL_NEW'
+        }));
+
+        return Persona.fromDynamoItem(result.Attributes);
+    }
+
+    /**
+     * Configurar PIN — un solo hash, un solo update (no dos como antes)
+     */
+    async setPin(tenantId, personaId, pin, pinActual) {
+        const pinValidation = validatePin(pin);
+        if (!pinValidation.valid) throw new Error(pinValidation.error);
+
+        const persona = await this.getById(personaId);
+        if (!persona) throw new Error('Persona no encontrada');
+
+        // Verificar PIN actual si ya tiene uno
         if (persona._pinHash && persona.habilitado) {
-            if (!pinActual) {
-                throw new Error('PIN actual es requerido para cambiar el PIN');
-            }
-            // Verificar con el ID correcto según la fuente
-            const idParaVerificar = tipo === 'user' ? persona.userId : persona.workerId;
-            const pinValido = verifyPin(pinActual, persona._pinHash, idParaVerificar);
-            if (!pinValido) {
-                throw new Error('PIN actual incorrecto');
-            }
+            if (!pinActual) throw new Error('PIN actual es requerido para cambiar el PIN');
+            const pinValido = verifyPin(pinActual, persona._pinHash, personaId);
+            if (!pinValido) throw new Error('PIN actual incorrecto');
         }
 
         const now = new Date().toISOString();
+        const newPinHash = hashPin(pin, personaId);
 
-        // Actualizar ambas tablas con PIN hasheado con su respectivo ID
-        const updates = [];
-
-        if (persona.userId) {
-            const pinHashUser = hashPin(pinNuevo, persona.userId);
-            updates.push(
-                docClient.send(
-                    new UpdateCommand({
-                        TableName: USERS_TABLE,
-                        Key: { userId: persona.userId },
-                        UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
-                        ExpressionAttributeValues: {
-                            ':pinHash': pinHashUser,
-                            ':pinCreatedAt': now,
-                            ':updatedAt': now
-                        }
-                    })
-                )
-            );
-        }
-
-        if (persona.workerId) {
-            const pinHashWorker = hashPin(pinNuevo, persona.workerId);
-            updates.push(
-                docClient.send(
-                    new UpdateCommand({
-                        TableName: WORKERS_TABLE,
-                        Key: { workerId: persona.workerId },
-                        UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
-                        ExpressionAttributeValues: {
-                            ':pinHash': pinHashWorker,
-                            ':pinCreatedAt': now,
-                            ':updatedAt': now
-                        }
-                    })
-                )
-            );
-        }
-
-        await Promise.all(updates);
+        await this.dynamo.send(new UpdateCommand({
+            TableName: this.table,
+            Key: {
+                PK: `TENANT#${tenantId}`,
+                SK: `PERSONA#${personaId}`
+            },
+            UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':pinHash': newPinHash,
+                ':pinCreatedAt': now,
+                ':updatedAt': now
+            }
+        }));
 
         return {
             message: persona._pinHash ? 'PIN actualizado exitosamente' : 'PIN configurado exitosamente',
@@ -223,102 +254,49 @@ class PersonaService {
     }
 
     /**
-     * Completa el enrolamiento de una Persona
-     * Valida PIN, crea firma de enrolamiento, y sincroniza ambas tablas
+     * Completar enrolamiento — un solo update (no dos como antes)
      */
-    static async completarEnrolamiento(id, tipo, pin, contextoRequest) {
-        // Obtener persona completa
-        const persona = await this.obtenerPorId(id, tipo);
-        if (!persona) {
-            throw new Error(`${tipo === 'user' ? 'Usuario' : 'Trabajador'} no encontrado`);
-        }
-
-        // Verificar que no esté ya habilitado (a menos que haya inconsistencia)
-        if (persona.habilitado && persona.userId && persona.workerId) {
-            // Verificar consistencia
-            const needsSync = !persona.firmaEnrolamiento;
-            if (!needsSync) {
-                throw new Error('Ya está habilitado');
-            }
-            console.log('Inconsistencia detectada: habilitado pero sin firma. Permitiendo enrolamiento.');
-        }
+    async completarEnrolamiento(tenantId, personaId, pin, eventContext) {
+        const persona = await this.getById(personaId);
+        if (!persona) throw new Error('Persona no encontrada');
+        if (persona.estaEnrolado()) throw new Error('La persona ya esta enrolada');
 
         // Verificar PIN
-        if (!persona._pinHash) {
-            throw new Error('Debe configurar un PIN primero');
-        }
-
-        const idParaVerificar = tipo === 'user' ? persona.userId : persona.workerId;
-        const pinValido = verifyPin(pin, persona._pinHash, idParaVerificar);
-        if (!pinValido) {
-            throw new Error('PIN incorrecto');
-        }
+        const pinValido = verifyPin(pin, persona._pinHash, personaId);
+        if (!pinValido) throw new Error('PIN incorrecto');
 
         const now = new Date();
         const token = generateSignatureToken();
+        const ipAddress = eventContext?.requestContext?.http?.sourceIp
+            || eventContext?.requestContext?.identity?.sourceIp || 'unknown';
 
-        // Datos de la firma de enrolamiento
         const firmaEnrolamiento = {
             token,
             fecha: now.toISOString().split('T')[0],
             horario: now.toTimeString().split(' ')[0],
             timestamp: now.toISOString(),
             metodoValidacion: 'PIN',
-            ipAddress: contextoRequest?.ipAddress || 'unknown'
+            ipAddress
         };
 
-        // Actualizar ambas tablas
-        const updates = [];
-
-        if (persona.userId) {
-            const pinHashUser = hashPin(pin, persona.userId);
-            updates.push(
-                docClient.send(
-                    new UpdateCommand({
-                        TableName: USERS_TABLE,
-                        Key: { userId: persona.userId },
-                        UpdateExpression: 'SET habilitado = :habilitado, estado = :estado, firmaEnrolamiento = :firmaEnrolamiento, pinHash = :pinHash, updatedAt = :updatedAt' +
-                            (persona.workerId && !persona.userId ? ', workerId = :workerId' : ''),
-                        ExpressionAttributeValues: {
-                            ':habilitado': true,
-                            ':estado': 'activo',
-                            ':firmaEnrolamiento': firmaEnrolamiento,
-                            ':pinHash': pinHashUser,
-                            ':updatedAt': now.toISOString(),
-                            ...(persona.workerId ? { ':workerId': persona.workerId } : {})
-                        }
-                    })
-                )
-            );
-        }
-
-        if (persona.workerId) {
-            const pinHashWorker = hashPin(pin, persona.workerId);
-            updates.push(
-                docClient.send(
-                    new UpdateCommand({
-                        TableName: WORKERS_TABLE,
-                        Key: { workerId: persona.workerId },
-                        UpdateExpression: 'SET habilitado = :habilitado, firmaEnrolamiento = :firmaEnrolamiento, pinHash = :pinHash, updatedAt = :updatedAt' +
-                            (persona.userId ? ', userId = :userId' : ''),
-                        ExpressionAttributeValues: {
-                            ':habilitado': true,
-                            ':firmaEnrolamiento': firmaEnrolamiento,
-                            ':pinHash': pinHashWorker,
-                            ':updatedAt': now.toISOString(),
-                            ...(persona.userId ? { ':userId': persona.userId } : {})
-                        }
-                    })
-                )
-            );
-        }
-
-        await Promise.all(updates);
+        await this.dynamo.send(new UpdateCommand({
+            TableName: this.table,
+            Key: {
+                PK: `TENANT#${tenantId}`,
+                SK: `PERSONA#${personaId}`
+            },
+            UpdateExpression: 'SET habilitado = :habilitado, estado = :estado, firmaEnrolamiento = :firmaEnrolamiento, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':habilitado': true,
+                ':estado': 'activo',
+                ':firmaEnrolamiento': firmaEnrolamiento,
+                ':updatedAt': now.toISOString()
+            }
+        }));
 
         return {
             message: 'Enrolamiento completado exitosamente',
-            userId: persona.userId,
-            workerId: persona.workerId,
+            personaId,
             habilitado: true,
             firma: {
                 token: firmaEnrolamiento.token,
@@ -326,79 +304,6 @@ class PersonaService {
                 horario: firmaEnrolamiento.horario
             }
         };
-    }
-
-    /**
-     * Lista todas las Personas (fusiona Users y Workers)
-     */
-    static async listar(filtros = {}) {
-        const { empresaId, rol, includeUsers = true } = filtros;
-
-        // Obtener Workers
-        const workerParams = {
-            TableName: WORKERS_TABLE,
-            FilterExpression: 'estado = :estado',
-            ExpressionAttributeValues: { ':estado': 'activo' }
-        };
-
-        if (empresaId) {
-            workerParams.FilterExpression += ' AND empresaId = :empresaId';
-            workerParams.ExpressionAttributeValues[':empresaId'] = empresaId;
-        }
-
-        const workersResult = await docClient.send(new ScanCommand(workerParams));
-        const workersMap = new Map();
-        (workersResult.Items || []).forEach(w => {
-            workersMap.set(w.rut, w);
-        });
-
-        // Obtener Users si se solicita
-        let usersMap = new Map();
-        if (includeUsers) {
-            const userParams = {
-                TableName: USERS_TABLE
-            };
-
-            if (rol) {
-                userParams.FilterExpression = 'rol = :rol';
-                userParams.ExpressionAttributeValues = { ':rol': rol };
-            }
-
-            if (empresaId) {
-                userParams.FilterExpression = userParams.FilterExpression
-                    ? userParams.FilterExpression + ' AND empresaId = :empresaId'
-                    : 'empresaId = :empresaId';
-                userParams.ExpressionAttributeValues = userParams.ExpressionAttributeValues || {};
-                userParams.ExpressionAttributeValues[':empresaId'] = empresaId;
-            }
-
-            const usersResult = await docClient.send(new ScanCommand(userParams));
-            (usersResult.Items || []).forEach(u => {
-                usersMap.set(u.rut, u);
-            });
-        }
-
-        // Fusionar por RUT
-        const allRuts = new Set([...workersMap.keys(), ...usersMap.keys()]);
-        const personas = [];
-
-        allRuts.forEach(rut => {
-            const userData = usersMap.get(rut);
-            const workerData = workersMap.get(rut);
-
-            if (userData && workerData) {
-                personas.push(Persona.mergeUserAndWorker(userData, workerData));
-            } else if (userData) {
-                personas.push(Persona.fromUser(userData));
-            } else if (workerData) {
-                personas.push(Persona.fromWorker(workerData));
-            }
-        });
-
-        // Ordenar por nombre
-        personas.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-
-        return personas;
     }
 }
 

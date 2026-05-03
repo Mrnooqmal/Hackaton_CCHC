@@ -1,21 +1,13 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../lib/dynamodb');
 const { success, error, created } = require('../lib/response');
 const { validateRequired, generateSignatureToken } = require('../lib/validation');
-// NEW: Import unified services and adapters
-const { CumplimientoService } = require('../lib/services/CumplimientoService');
-const { CumplimientoAdapter } = require('../lib/adapters/CumplimientoAdapter');
-const { Cumplimiento } = require('../lib/models/Cumplimiento');
-// NEW: Import EventBus for automatic notifications
+const { FirmaService } = require('../lib/services/FirmaService');
+const { PersonaService } = require('../lib/services/PersonaService');
 const { eventBus } = require('../lib/events/EventBus');
 
 const TABLE_NAME = process.env.ACTIVITIES_TABLE || 'Activities';
-const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
-
-// Feature flags for gradual rollout
-const USE_CUMPLIMIENTO_SERVICE = process.env.USE_CUMPLIMIENTO_SERVICE === 'true';
-const USE_PERSONA_SERVICE = process.env.USE_PERSONA_SERVICE === 'true';
 
 // Tipos de actividades según el flujo de prevención
 const ACTIVITY_TYPES = {
@@ -34,6 +26,8 @@ const ACTIVITY_TYPES = {
 module.exports.create = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
+        const tenantId = body.tenantId || event.queryStringParameters?.tenantId;
+        if (!tenantId) return error('tenantId es requerido');
 
         const validation = validateRequired(body, ['tipo', 'titulo', 'relatorId']);
         if (!validation.valid) {
@@ -49,6 +43,8 @@ module.exports.create = async (event) => {
 
         const activity = {
             activityId,
+            tenantId,
+            obraId: body.obraId || null,
             tipo: body.tipo,
             tipoDescripcion: ACTIVITY_TYPES[body.tipo],
             titulo: body.titulo,
@@ -57,23 +53,17 @@ module.exports.create = async (event) => {
             horaInicio: body.horaInicio || now.split('T')[1].substring(0, 5),
             horaFin: body.horaFin || null,
             relatorId: body.relatorId,
-            empresaId: body.empresaId || 'default',
             ubicacion: body.ubicacion || '',
             asistentes: [],
             firmaRelator: null,
-            estado: 'programada', // programada, en_curso, completada, cancelada
+            estado: 'programada',
             createdAt: now,
             updatedAt: now,
         };
 
-        await docClient.send(
-            new PutCommand({
-                TableName: TABLE_NAME,
-                Item: activity,
-            })
-        );
+        await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: activity }));
 
-        // NEW: Emit event for automatic notifications
+        // Notificar asistentes
         try {
             if (body.attendees && body.attendees.length > 0) {
                 await eventBus.emit('activity.created', {
@@ -87,7 +77,6 @@ module.exports.create = async (event) => {
             }
         } catch (eventError) {
             console.error('Error emitting activity.created event:', eventError);
-            // Continue even if notification fails
         }
 
         return created(activity);
@@ -102,61 +91,52 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { empresaId, tipo, estado, fecha, relatorId } = event.queryStringParameters || {};
+        const { tenantId, tipo, estado, fecha, relatorId } = event.queryStringParameters || {};
+        if (!tenantId) return error('tenantId es requerido');
 
-        let filterExpression = '';
-        const expressionAttributeValues = {};
-        const expressionAttributeNames = {};
-
-        if (empresaId) {
-            filterExpression += 'empresaId = :empresaId';
-            expressionAttributeValues[':empresaId'] = empresaId;
-        }
-
-        if (tipo) {
-            filterExpression += filterExpression ? ' AND tipo = :tipo' : 'tipo = :tipo';
-            expressionAttributeValues[':tipo'] = tipo;
-        }
-
-        if (estado) {
-            filterExpression += filterExpression ? ' AND estado = :estado' : 'estado = :estado';
-            expressionAttributeValues[':estado'] = estado;
-        }
-
-        if (fecha) {
-            filterExpression += filterExpression ? ' AND #fecha = :fecha' : '#fecha = :fecha';
-            expressionAttributeNames['#fecha'] = 'fecha';
-            expressionAttributeValues[':fecha'] = fecha;
-        }
-
-        if (relatorId) {
-            filterExpression += filterExpression ? ' AND relatorId = :relatorId' : 'relatorId = :relatorId';
-            expressionAttributeValues[':relatorId'] = relatorId;
-        }
-
+        // Query por GSI tenantId-index (no Scan)
         const params = {
             TableName: TABLE_NAME,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :tenantId',
+            ExpressionAttributeValues: { ':tenantId': tenantId }
         };
 
-        if (filterExpression) {
-            params.FilterExpression = filterExpression;
-            params.ExpressionAttributeValues = expressionAttributeValues;
-            if (Object.keys(expressionAttributeNames).length > 0) {
-                params.ExpressionAttributeNames = expressionAttributeNames;
-            }
+        let filterParts = [];
+        const expressionAttributeNames = {};
+
+        if (tipo) {
+            filterParts.push('tipo = :tipo');
+            params.ExpressionAttributeValues[':tipo'] = tipo;
+        }
+        if (estado) {
+            filterParts.push('estado = :estado');
+            params.ExpressionAttributeValues[':estado'] = estado;
+        }
+        if (fecha) {
+            filterParts.push('#fecha = :fecha');
+            expressionAttributeNames['#fecha'] = 'fecha';
+            params.ExpressionAttributeValues[':fecha'] = fecha;
+        }
+        if (relatorId) {
+            filterParts.push('relatorId = :relatorId');
+            params.ExpressionAttributeValues[':relatorId'] = relatorId;
         }
 
-        const result = await docClient.send(new ScanCommand(params));
+        if (filterParts.length > 0) {
+            params.FilterExpression = filterParts.join(' AND ');
+        }
+        if (Object.keys(expressionAttributeNames).length > 0) {
+            params.ExpressionAttributeNames = expressionAttributeNames;
+        }
 
-        // Ordenar por fecha descendente
+        const result = await docClient.send(new QueryCommand(params));
+
         const activities = (result.Items || []).sort((a, b) =>
             new Date(b.createdAt) - new Date(a.createdAt)
         );
 
-        return success({
-            activities,
-            types: ACTIVITY_TYPES,
-        });
+        return success({ activities, types: ACTIVITY_TYPES });
     } catch (err) {
         console.error('Error listing activities:', err);
         return error(err.message, 500);
@@ -200,128 +180,72 @@ module.exports.registerAttendance = async (event) => {
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
-        if (!id) {
-            return error('ID de actividad requerido');
-        }
+        if (!id) return error('ID de actividad requerido');
 
-        // Puede ser firma individual o masiva
-        const { workerId, workerIds, incluirFirmaRelator, pin } = body;
-        const trabajadores = workerIds || (workerId ? [workerId] : []);
+        // Acepta personaId o workerId (legacy) 
+        const { personaId, personaIds, workerId, workerIds, incluirFirmaRelator, pin } = body;
+        const personas = personaIds || (personaId ? [personaId] : workerIds || (workerId ? [workerId] : []));
 
-        if (trabajadores.length === 0) {
+        if (personas.length === 0) {
             return error('Se requiere al menos un trabajador');
         }
 
-        // Obtener actividad de la base de datos
-        const actResult = await docClient.send(
-            new GetCommand({
-                TableName: TABLE_NAME,
-                Key: { activityId: id },
-            })
-        );
+        // Obtener actividad
+        const actResult = await docClient.send(new GetCommand({
+            TableName: TABLE_NAME,
+            Key: { activityId: id }
+        }));
 
-        if (!actResult.Item) {
-            return error('Actividad no encontrada', 404);
-        }
+        if (!actResult.Item) return error('Actividad no encontrada', 404);
+        const activity = actResult.Item;
 
-        const activityData = actResult.Item;
-
-        // NEW: Integration with CumplimientoService
-        if (USE_CUMPLIMIENTO_SERVICE) {
-            try {
-                // 1. Adaptar activity de DB a modelo Cumplimiento
-                const cumplimiento = Cumplimiento.fromActivity(activityData);
-
-                // 2. Definir contexto de la firma
-                const contexto = {
-                    ipAddress: event.requestContext?.http?.sourceIp ||
-                        event.requestContext?.identity?.sourceIp || 'unknown',
-                    userAgent: event.headers?.['user-agent'] || 'unknown'
-                };
-
-                // 3. Registrar firmas usando el servicio (usa método PRESENCIAL si no hay PIN)
-                // Esto garantiza que se guarden en la tabla central Signatures
-                const metodo = pin ? 'PIN' : 'PRESENCIAL';
-                const resultado = await CumplimientoService.registrarFirmas(
-                    cumplimiento,
-                    trabajadores,
-                    pin || {}, // Opcional
-                    contexto,
-                    incluirFirmaRelator,
-                    metodo
-                );
-
-                // 4. Actualizar la actividad original en DynamoDB
-                // Obtenemos el formato legacy para no romper el esquema de la tabla Activities
-                const updatedActivity = cumplimiento.toActivityFormat();
-
-                await docClient.send(
-                    new UpdateCommand({
-                        TableName: TABLE_NAME,
-                        Key: { activityId: id },
-                        UpdateExpression: 'SET asistentes = :asistentes, firmaRelator = :firmaRelator, estado = :estado, horaFin = :horaFin, updatedAt = :updatedAt',
-                        ExpressionAttributeValues: {
-                            ':asistentes': updatedActivity.asistentes,
-                            ':firmaRelator': updatedActivity.firmaRelator,
-                            ':estado': updatedActivity.estado,
-                            ':horaFin': updatedActivity.horaFin,
-                            ':updatedAt': updatedActivity.updatedAt,
-                        },
-                    })
-                );
-
-                // 5. Responder con formato legacy usando el adaptador
-                const nuevosAsistentes = (resultado.nuevasFirmas || []).map(f => ({
-                    signatureId: f.signatureId,
-                    workerId: f.workerId,
-                    workerNombre: f.workerNombre,
-                    workerRut: f.workerRut,
-                    token: f.token,
-                    fecha: f.fecha,
-                    horario: f.horario,
-                    timestamp: f.timestamp
-                }));
-
-                return success(CumplimientoAdapter.toAttendanceResponse(cumplimiento, nuevosAsistentes));
-
-            } catch (err) {
-                console.error('Error in CumplimientoService integration:', err);
-                return error(err.message);
-            }
-        }
-
-        // LEGACY: Original implementation
-        const activity = activityData;
+        const personaService = new PersonaService();
         const now = new Date();
         const nuevosAsistentes = [];
+        const contexto = {
+            ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
+            userAgent: event.headers?.['user-agent'] || 'unknown'
+        };
 
-        // Registrar cada trabajador
-        for (const wId of trabajadores) {
-            // Verificar si ya está registrado
-            const yaRegistrado = (activity.asistentes || []).some(a => a.workerId === wId);
+        // Registrar cada persona
+        for (const pid of personas) {
+            const yaRegistrado = (activity.asistentes || []).some(a => 
+                a.personaId === pid || a.workerId === pid
+            );
             if (yaRegistrado) continue;
 
-            const workerResult = await docClient.send(
-                new GetCommand({
-                    TableName: WORKERS_TABLE,
-                    Key: { workerId: wId },
-                })
-            );
+            const persona = await personaService.getById(pid);
+            if (!persona) continue;
 
-            if (workerResult.Item) {
-                const worker = workerResult.Item;
-                nuevosAsistentes.push({
-                    workerId: wId,
-                    nombre: worker.nombre,
-                    rut: worker.rut,
-                    cargo: worker.cargo,
-                    firma: {
-                        token: generateSignatureToken(),
-                        fecha: now.toISOString().split('T')[0],
-                        horario: now.toTimeString().split(' ')[0],
-                        timestamp: now.toISOString(),
-                    },
+            // Crear firma en SignaturesTable
+            const metodo = pin ? 'PIN' : 'PRESENCIAL';
+            try {
+                const firma = await FirmaService.crear({
+                    personaId: pid,
+                    tenantId: activity.tenantId,
+                    metodo,
+                    credencial: pin || {},
+                    tipoFirma: 'actividad',
+                    referenciaId: id,
+                    referenciaTipo: 'activity',
+                    contexto,
+                    persona
                 });
+
+                nuevosAsistentes.push({
+                    personaId: pid,
+                    nombre: persona.nombre,
+                    rut: persona.rut,
+                    cargo: persona.cargo || '',
+                    firma: {
+                        token: firma.token,
+                        fecha: firma.fecha,
+                        horario: firma.horario,
+                        timestamp: firma.timestamp
+                    }
+                });
+            } catch (firmaErr) {
+                console.error(`Error creando firma para ${pid}:`, firmaErr.message);
             }
         }
 
@@ -329,51 +253,41 @@ module.exports.registerAttendance = async (event) => {
 
         // Firma del relator si se solicita
         let firmaRelator = activity.firmaRelator;
-        if (incluirFirmaRelator && !firmaRelator) {
-            const relatorResult = await docClient.send(
-                new GetCommand({
-                    TableName: WORKERS_TABLE,
-                    Key: { workerId: activity.relatorId },
-                })
-            );
-
-            if (relatorResult.Item) {
-                const relator = relatorResult.Item;
+        if (incluirFirmaRelator && !firmaRelator && activity.relatorId) {
+            const relator = await personaService.getById(activity.relatorId);
+            if (relator) {
                 firmaRelator = {
                     token: generateSignatureToken(),
-                    workerId: activity.relatorId,
+                    personaId: activity.relatorId,
                     nombre: relator.nombre,
                     rut: relator.rut,
                     fecha: now.toISOString().split('T')[0],
                     horario: now.toTimeString().split(' ')[0],
-                    timestamp: now.toISOString(),
+                    timestamp: now.toISOString()
                 };
             }
         }
 
-        // Actualizar estado si hay asistentes
         const estado = asistentes.length > 0 ? 'completada' : activity.estado;
 
-        await docClient.send(
-            new UpdateCommand({
-                TableName: TABLE_NAME,
-                Key: { activityId: id },
-                UpdateExpression: 'SET asistentes = :asistentes, firmaRelator = :firmaRelator, estado = :estado, horaFin = :horaFin, updatedAt = :updatedAt',
-                ExpressionAttributeValues: {
-                    ':asistentes': asistentes,
-                    ':firmaRelator': firmaRelator,
-                    ':estado': estado,
-                    ':horaFin': now.toTimeString().split(' ')[0].substring(0, 5),
-                    ':updatedAt': now.toISOString(),
-                },
-            })
-        );
+        await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { activityId: id },
+            UpdateExpression: 'SET asistentes = :asistentes, firmaRelator = :firmaRelator, estado = :estado, horaFin = :horaFin, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':asistentes': asistentes,
+                ':firmaRelator': firmaRelator,
+                ':estado': estado,
+                ':horaFin': now.toTimeString().split(' ')[0].substring(0, 5),
+                ':updatedAt': now.toISOString()
+            }
+        }));
 
         return success({
             message: `${nuevosAsistentes.length} asistente(s) registrado(s)`,
             totalAsistentes: asistentes.length,
             nuevosAsistentes,
-            firmaRelator: incluirFirmaRelator ? firmaRelator : undefined,
+            firmaRelator: incluirFirmaRelator ? firmaRelator : undefined
         });
     } catch (err) {
         console.error('Error registering attendance:', err);
@@ -386,15 +300,16 @@ module.exports.registerAttendance = async (event) => {
  */
 module.exports.getStats = async (event) => {
     try {
-        const { empresaId, fechaInicio, fechaFin } = event.queryStringParameters || {};
+        const { tenantId, fechaInicio, fechaFin } = event.queryStringParameters || {};
+        if (!tenantId) return error('tenantId es requerido');
 
-        const result = await docClient.send(
-            new ScanCommand({
-                TableName: TABLE_NAME,
-                FilterExpression: empresaId ? 'empresaId = :empresaId' : undefined,
-                ExpressionAttributeValues: empresaId ? { ':empresaId': empresaId } : undefined,
-            })
-        );
+        // Query por GSI tenantId-index
+        const result = await docClient.send(new QueryCommand({
+            TableName: TABLE_NAME,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :tenantId',
+            ExpressionAttributeValues: { ':tenantId': tenantId }
+        }));
 
         const activities = result.Items || [];
 

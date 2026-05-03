@@ -1,21 +1,14 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../lib/dynamodb');
 const { success, error, created } = require('../lib/response');
 const { validateRequired } = require('../lib/validation');
 const { ensureDefaultHealthSurvey } = require('../lib/healthSurvey');
-// NEW: Import PersonaService for unified worker access
 const { PersonaService } = require('../lib/services/PersonaService');
-// NEW: Import EventBus for automatic notifications
 const { eventBus } = require('../lib/events/EventBus');
-// NEW: Import FirmaService for digital signature validation
 const { FirmaService } = require('../lib/services/FirmaService');
 
 const TABLE_NAME = process.env.SURVEYS_TABLE || 'Surveys';
-const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
-
-// Feature flag: set to true to use new PersonaService
-const USE_PERSONA_SERVICE = process.env.USE_PERSONA_SERVICE === 'true';
 
 const QUESTION_TYPES = ['multiple', 'escala', 'abierta'];
 
@@ -25,41 +18,20 @@ const normalizeRut = (rut = '') => rut.replace(/[^0-9kK]/g, '').toUpperCase();
  * Obtiene todos los trabajadores.
  * Usa PersonaService si está habilitado, sino usa el método legacy.
  */
-const scanAllWorkers = async () => {
-    if (USE_PERSONA_SERVICE) {
-        // NEW: Use PersonaService for unified worker listing
-        const personas = await PersonaService.listar({ includeUsers: true });
-        // Convert Persona to worker format for compatibility
-        // Include both workerId and userId for inbox notifications
-        return personas.map(p => ({
-            workerId: p.workerId || p.userId,
-            userId: p.userId || p.workerId, // For inbox notifications
-            nombre: p.nombre,
-            apellido: p.apellido || '',
-            rut: p.rut,
-            cargo: p.cargo,
-            empresaId: p.empresaId,
-            habilitado: p.habilitado
-        }));
-    }
-
-    // LEGACY: Direct table scan
-    const workers = [];
-    let ExclusiveStartKey;
-
-    do {
-        const response = await docClient.send(
-            new ScanCommand({
-                TableName: WORKERS_TABLE,
-                ExclusiveStartKey,
-            })
-        );
-
-        workers.push(...(response.Items || []));
-        ExclusiveStartKey = response.LastEvaluatedKey;
-    } while (ExclusiveStartKey);
-
-    return workers;
+const scanAllWorkers = async (tenantId) => {
+    if (!tenantId) return [];
+    const personaService = new PersonaService();
+    const personas = await personaService.listByTenant(tenantId, { estado: 'activo' });
+    return personas.map(p => ({
+        workerId: p.personaId,
+        personaId: p.personaId,
+        nombre: p.nombre,
+        apellido: p.apellido || '',
+        rut: p.rut,
+        cargo: p.cargo,
+        tenantId: p.tenantId,
+        habilitado: p.habilitado
+    }));
 };
 
 const buildRecipients = (workers, audience) => {
@@ -82,8 +54,8 @@ const buildRecipients = (workers, audience) => {
     });
 
     return Array.from(uniqueWorkers.values()).map((worker) => ({
-        workerId: worker.workerId,
-        userId: worker.userId || worker.workerId, // For inbox notifications
+        workerId: worker.workerId || worker.personaId,
+        personaId: worker.personaId || worker.workerId,
         nombre: worker.nombre,
         apellido: worker.apellido || '',
         rut: worker.rut,
@@ -170,7 +142,7 @@ module.exports.create = async (event) => {
             return error('Debe indicar al menos un RUT para la audiencia personalizada');
         }
 
-        const workers = await scanAllWorkers();
+        const workers = await scanAllWorkers(body.tenantId);
         const recipients = buildRecipients(workers, {
             tipo: audienceType,
             cargo: body.cargoDestino,
@@ -187,9 +159,10 @@ module.exports.create = async (event) => {
             surveyId: uuidv4(),
             titulo: body.titulo,
             descripcion: body.descripcion || '',
-            empresaId: body.empresaId || 'default',
+            tenantId: body.tenantId || 'default',
+            obraId: body.obraId || null,
             estado: body.estado || 'activa',
-            createdBy: body.createdBy || null, // Track which user created this survey
+            createdBy: body.createdBy || null,
             audience: {
                 tipo: audienceType,
                 cargo: body.cargoDestino || null,
@@ -210,15 +183,15 @@ module.exports.create = async (event) => {
         // NEW: Emit event for automatic notifications
         try {
             // Use userIds for inbox delivery (inbox queries by userId, not workerId)
-            const userIds = recipients.map(r => r.userId || r.workerId);
+            const userIds = recipients.map(r => r.personaId || r.workerId);
             await eventBus.emit('survey.assigned', {
                 surveyId: survey.surveyId,
-                userIds, // Use userIds for inbox
+                userIds,
                 assignedBy: body.createdBy || 'system',
-                creatorName: body.creatorName || 'Gestor SST', // Name of user who created it
+                creatorName: body.creatorName || 'Gestor SST',
                 surveyName: survey.titulo,
                 dueDate: body.dueDate || null,
-                recipientCount: userIds.length // For display in sent folder
+                recipientCount: userIds.length
             });
         } catch (eventError) {
             console.error('Error emitting survey.assigned event:', eventError);
@@ -237,26 +210,21 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { empresaId } = event.queryStringParameters || {};
+        const { tenantId } = event.queryStringParameters || {};
+        if (!tenantId) return error('tenantId es requerido');
 
         await ensureDefaultHealthSurvey();
 
-        const response = await docClient.send(new ScanCommand({
+        const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :tenantId',
+            ExpressionAttributeValues: { ':tenantId': tenantId }
         }));
 
-        let items = response.Items || [];
-        if (empresaId) {
-            items = items.filter((survey) => survey.empresaId === empresaId);
-        }
+        const items = (result.Items || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        // Ordenar por fecha de creación descendente
-        items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-        return success({
-            total: items.length,
-            surveys: items,
-        });
+        return success({ total: items.length, surveys: items });
     } catch (err) {
         console.error('Error listing surveys:', err);
         return error(err.message || 'Error interno al listar encuestas', 500);
@@ -344,7 +312,8 @@ module.exports.updateResponseStatus = async (event) => {
 
                 // Crear firma digital usando FirmaService
                 signatureData = await FirmaService.crear({
-                    workerId,
+                    personaId: workerId,
+                    tenantId: survey.tenantId,
                     metodo: 'PIN',
                     credencial: pin,
                     tipoFirma: 'encuesta',

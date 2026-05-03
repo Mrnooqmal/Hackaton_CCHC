@@ -2,14 +2,14 @@ const { PutCommand, GetCommand, UpdateCommand, ScanCommand } = require('@aws-sdk
 const { docClient } = require('./dynamodb');
 
 const SURVEYS_TABLE = process.env.SURVEYS_TABLE || 'Surveys';
-const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
+const { PersonaService } = require('./services/PersonaService');
 const DEFAULT_SURVEY_ID = 'default-health-survey';
 
 const HEALTH_SURVEY_TEMPLATE = {
     surveyId: DEFAULT_SURVEY_ID,
     titulo: 'Ficha Básica de Salud',
     descripcion: 'Cuestionario inicial para conocer antecedentes de salud relevantes de cada colaborador.',
-    empresaId: 'default',
+    tenantId: 'default',
     estado: 'activa',
     audience: { tipo: 'todos' },
     preguntas: [
@@ -56,12 +56,13 @@ const HEALTH_SURVEY_TEMPLATE = {
     defaultCategory: 'salud',
 };
 
-const buildRecipient = (worker) => ({
-    workerId: worker.workerId,
-    nombre: worker.nombre,
-    apellido: worker.apellido || '',
-    rut: worker.rut,
-    cargo: worker.cargo,
+const buildRecipient = (persona) => ({
+    personaId: persona.personaId || persona.workerId,
+    workerId: persona.personaId || persona.workerId,
+    nombre: persona.nombre,
+    apellido: persona.apellido || '',
+    rut: persona.rut,
+    cargo: persona.cargo,
     estado: 'pendiente',
     respondedAt: null,
     responses: [],
@@ -80,57 +81,45 @@ const calculateStats = (recipients = []) => {
     };
 };
 
-const fetchAllWorkers = async () => {
-    const workers = [];
-    let ExclusiveStartKey;
-
-    do {
-        const response = await docClient.send(new ScanCommand({
-            TableName: WORKERS_TABLE,
-            ExclusiveStartKey,
-        }));
-
-        workers.push(...(response.Items || []));
-        ExclusiveStartKey = response.LastEvaluatedKey;
-    } while (ExclusiveStartKey);
-
-    return workers;
+const fetchAllPersonas = async (tenantId = 'default') => {
+    const personaService = new PersonaService();
+    return personaService.listByTenant(tenantId);
 };
 
-const mergeRecipients = (currentRecipients = [], workers = []) => {
+const mergeRecipients = (currentRecipients = [], items = []) => {
     const recipientsByWorker = new Map();
     let changed = false;
 
     currentRecipients.forEach((recipient) => {
-        recipientsByWorker.set(recipient.workerId, recipient);
+        recipientsByWorker.set(recipient.personaId || recipient.workerId, recipient);
     });
 
-    workers.forEach((worker) => {
-        if (!worker || !worker.workerId) {
+    items.forEach((persona) => {
+        if (!persona || !persona.personaId) {
             return;
         }
 
-        const existing = recipientsByWorker.get(worker.workerId);
+        const existing = recipientsByWorker.get(persona.personaId);
         if (!existing) {
-            recipientsByWorker.set(worker.workerId, buildRecipient(worker));
+            recipientsByWorker.set(persona.personaId, buildRecipient(persona));
             changed = true;
             return;
         }
 
-        const normalizedApellido = worker.apellido || '';
+        const normalizedApellido = persona.apellido || '';
         const requiresUpdate =
-            existing.nombre !== worker.nombre ||
+            existing.nombre !== persona.nombre ||
             (existing.apellido || '') !== normalizedApellido ||
-            existing.rut !== worker.rut ||
-            existing.cargo !== worker.cargo;
+            existing.rut !== persona.rut ||
+            existing.cargo !== persona.cargo;
 
         if (requiresUpdate) {
-            recipientsByWorker.set(worker.workerId, {
+            recipientsByWorker.set(persona.personaId, {
                 ...existing,
-                nombre: worker.nombre,
+                nombre: persona.nombre,
                 apellido: normalizedApellido,
-                rut: worker.rut,
-                cargo: worker.cargo,
+                rut: persona.rut,
+                cargo: persona.cargo,
             });
             changed = true;
         }
@@ -182,13 +171,13 @@ const updateSurveyRecipients = async (surveyId, recipients) => {
     };
 };
 
-const ensureDefaultHealthSurvey = async () => {
-    const workers = await fetchAllWorkers();
+const ensureDefaultHealthSurvey = async (tenantId = 'default') => {
+    const personas = await fetchAllPersonas(tenantId);
     const existingSurvey = await getDefaultSurvey();
     const now = new Date().toISOString();
 
     if (!existingSurvey) {
-        const recipients = workers.map(buildRecipient);
+        const recipients = personas.map(buildRecipient);
         const stats = calculateStats(recipients);
         const survey = {
             ...HEALTH_SURVEY_TEMPLATE,
@@ -201,7 +190,7 @@ const ensureDefaultHealthSurvey = async () => {
         return survey;
     }
 
-    const { recipients, changed } = mergeRecipients(existingSurvey.recipients, workers);
+    const { recipients, changed } = mergeRecipients(existingSurvey.recipients, personas);
     if (!changed) {
         return existingSurvey;
     }
@@ -216,8 +205,8 @@ const ensureDefaultHealthSurvey = async () => {
     };
 };
 
-const assignWorkerToHealthSurvey = async (worker) => {
-    if (!worker || !worker.workerId) {
+const assignWorkerToHealthSurvey = async (persona) => {
+    if (!persona || !persona.personaId) {
         return;
     }
 
@@ -227,18 +216,18 @@ const assignWorkerToHealthSurvey = async (worker) => {
     }
 
     const recipients = survey.recipients || [];
-    const index = recipients.findIndex((recipient) => recipient.workerId === worker.workerId);
+    const index = recipients.findIndex((r) => (r.personaId || r.workerId) === persona.personaId);
 
     if (index === -1) {
-        recipients.push(buildRecipient(worker));
+        recipients.push(buildRecipient(persona));
     } else {
         const existing = recipients[index];
         recipients[index] = {
             ...existing,
-            nombre: worker.nombre,
-            apellido: worker.apellido || '',
-            rut: worker.rut,
-            cargo: worker.cargo,
+            nombre: persona.nombre,
+            apellido: persona.apellido || '',
+            rut: persona.rut,
+            cargo: persona.cargo,
         };
     }
 

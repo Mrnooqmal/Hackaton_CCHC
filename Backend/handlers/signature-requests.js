@@ -8,8 +8,7 @@ const { eventBus } = require('../lib/events/EventBus');
 
 const TABLE_NAME = process.env.SIGNATURE_REQUESTS_TABLE || 'SignatureRequests';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
-const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
-const USERS_TABLE = process.env.USERS_TABLE || 'Users';
+const { PersonaService } = require('../lib/services/PersonaService');
 
 // Tipos de solicitudes de firma
 const REQUEST_TYPES = {
@@ -40,7 +39,7 @@ const REQUEST_TYPES = {
  *   trabajadoresIds: string[], // IDs de trabajadores que deben firmar
  *   fechaLimite?: string,      // Fecha límite opcional
  *   ubicacion?: string,        // Ubicación de la actividad
- *   empresaId?: string
+ *   tenantId?: string
  * }
  */
 module.exports.create = async (event) => {
@@ -63,35 +62,22 @@ module.exports.create = async (event) => {
             return error('Debe especificar al menos un trabajador');
         }
 
-        // Obtener información del solicitante
-        const solicitanteResult = await docClient.send(
-            new GetCommand({
-                TableName: USERS_TABLE,
-                Key: { userId: body.solicitanteId },
-            })
-        );
+        // Obtener informacion del solicitante
+        const personaService = new PersonaService();
+        const solicitante = await personaService.getById(body.solicitanteId);
+        if (!solicitante) return error('Solicitante no encontrado', 404);
 
-        if (!solicitanteResult.Item) {
-            return error('Solicitante no encontrado', 404);
-        }
-
-        const solicitante = solicitanteResult.Item;
-
-        // Obtener información de los trabajadores
+        // Obtener informacion de las personas asignadas
         const trabajadoresInfo = [];
-        for (const workerId of body.trabajadoresIds) {
-            const workerResult = await docClient.send(
-                new GetCommand({
-                    TableName: WORKERS_TABLE,
-                    Key: { workerId },
-                })
-            );
-            if (workerResult.Item) {
+        for (const pid of body.trabajadoresIds) {
+            const persona = await personaService.getById(pid);
+            if (persona) {
                 trabajadoresInfo.push({
-                    workerId: workerResult.Item.workerId,
-                    nombre: `${workerResult.Item.nombre} ${workerResult.Item.apellido || ''}`.trim(),
-                    rut: workerResult.Item.rut,
-                    cargo: workerResult.Item.cargo,
+                    personaId: persona.personaId,
+                    workerId: persona.personaId, // backward compat
+                    nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+                    rut: persona.rut,
+                    cargo: persona.cargo,
                     firmado: false,
                     signatureId: null,
                     fechaFirma: null,
@@ -100,7 +86,7 @@ module.exports.create = async (event) => {
         }
 
         if (trabajadoresInfo.length === 0) {
-            return error('Ninguno de los trabajadores especificados fue encontrado');
+            return error('Ninguna de las personas especificadas fue encontrada');
         }
 
         const now = new Date().toISOString();
@@ -134,7 +120,7 @@ module.exports.create = async (event) => {
 
             // Metadata
             ubicacion: body.ubicacion || null,
-            empresaId: body.empresaId || solicitante.empresaId || 'default',
+            tenantId: body.tenantId || solicitante.tenantId || 'default',
 
             // Estado
             estado: 'pendiente', // pendiente, en_proceso, completada, cancelada, vencida
@@ -152,13 +138,13 @@ module.exports.create = async (event) => {
 
         // NEW: Emit event for automatic notifications
         try {
-            const workerIds = trabajadoresInfo.map(t => t.workerId);
+            const personaIds = trabajadoresInfo.map(t => t.personaId);
             const isUrgent = body.fechaLimite &&
                 new Date(body.fechaLimite) <= new Date(Date.now() + 48 * 60 * 60 * 1000); // <48hrs
 
             await eventBus.emit('signature.requested', {
                 requestId: signatureRequest.requestId,
-                workerIds,
+                personaIds,
                 requestedBy: body.solicitanteId,
                 documentName: signatureRequest.titulo,
                 priority: isUrgent ? 'urgent' : 'normal'
@@ -177,56 +163,56 @@ module.exports.create = async (event) => {
 
 /**
  * GET /signature-requests - Listar solicitudes de firma
- * Query params: empresaId, estado, solicitanteId, tipo
+ * Query params: tenantId, estado, solicitanteId, tipo
  */
 module.exports.list = async (event) => {
     try {
-        const { empresaId, estado, solicitanteId, tipo } = event.queryStringParameters || {};
+        const { tenantId, estado, solicitanteId, tipo } = event.queryStringParameters || {};
 
-        let filterExpression = '';
-        const expressionAttributeValues = {};
+        if (tenantId) {
+            // Use GSI query for tenant isolation
+            let filterParts = [];
+            const expressionAttributeValues = { ':tenantId': tenantId };
 
-        if (empresaId) {
-            filterExpression += 'empresaId = :empresaId';
-            expressionAttributeValues[':empresaId'] = empresaId;
+            if (estado) { filterParts.push('estado = :estado'); expressionAttributeValues[':estado'] = estado; }
+            if (solicitanteId) { filterParts.push('solicitanteId = :solicitanteId'); expressionAttributeValues[':solicitanteId'] = solicitanteId; }
+            if (tipo) { filterParts.push('tipo = :tipo'); expressionAttributeValues[':tipo'] = tipo; }
+
+            const params = {
+                TableName: TABLE_NAME,
+                IndexName: 'tenantId-index',
+                KeyConditionExpression: 'tenantId = :tenantId',
+                ExpressionAttributeValues: expressionAttributeValues,
+            };
+            if (filterParts.length > 0) params.FilterExpression = filterParts.join(' AND ');
+
+            const result = await docClient.send(new QueryCommand(params));
+
+            const requests = (result.Items || []).sort((a, b) =>
+                new Date(b.createdAt) - new Date(a.createdAt)
+            );
+
+            return success({ requests, total: requests.length, types: REQUEST_TYPES });
         }
 
-        if (estado) {
-            filterExpression += filterExpression ? ' AND estado = :estado' : 'estado = :estado';
-            expressionAttributeValues[':estado'] = estado;
+        // Fallback: Scan without tenant filter
+        const scanParams = { TableName: TABLE_NAME };
+        let filterParts2 = [];
+        const exprVals = {};
+        if (estado) { filterParts2.push('estado = :estado'); exprVals[':estado'] = estado; }
+        if (solicitanteId) { filterParts2.push('solicitanteId = :solicitanteId'); exprVals[':solicitanteId'] = solicitanteId; }
+        if (tipo) { filterParts2.push('tipo = :tipo'); exprVals[':tipo'] = tipo; }
+        if (filterParts2.length > 0) {
+            scanParams.FilterExpression = filterParts2.join(' AND ');
+            scanParams.ExpressionAttributeValues = exprVals;
         }
+        const result = await docClient.send(new ScanCommand(scanParams));
 
-        if (solicitanteId) {
-            filterExpression += filterExpression ? ' AND solicitanteId = :solicitanteId' : 'solicitanteId = :solicitanteId';
-            expressionAttributeValues[':solicitanteId'] = solicitanteId;
-        }
-
-        if (tipo) {
-            filterExpression += filterExpression ? ' AND tipo = :tipo' : 'tipo = :tipo';
-            expressionAttributeValues[':tipo'] = tipo;
-        }
-
-        const params = {
-            TableName: TABLE_NAME,
-        };
-
-        if (filterExpression) {
-            params.FilterExpression = filterExpression;
-            params.ExpressionAttributeValues = expressionAttributeValues;
-        }
-
-        const result = await docClient.send(new ScanCommand(params));
-
-        // Ordenar por fecha de creación descendente
         const requests = (result.Items || []).sort((a, b) =>
             new Date(b.createdAt) - new Date(a.createdAt)
         );
 
-        return success({
-            requests,
-            total: requests.length,
-            types: REQUEST_TYPES,
-        });
+        return success({ requests, total: requests.length, types: REQUEST_TYPES });
     } catch (err) {
         console.error('Error listing signature requests:', err);
         return error(err.message, 500);
@@ -302,7 +288,7 @@ module.exports.getPendingByWorker = async (event) => {
 
         // Filtrar las que incluyen al trabajador y no ha firmado
         const pendientes = (result.Items || []).filter(request => {
-            const trabajador = request.trabajadores.find(t => t.workerId === workerId);
+            const trabajador = request.trabajadores.find(t => t.personaId === workerId || t.workerId === workerId);
             return trabajador && !trabajador.firmado;
         }).map(request => ({
             ...request,
@@ -326,43 +312,15 @@ module.exports.getPendingByWorker = async (event) => {
 module.exports.getHistoryByWorker = async (event) => {
     try {
         const { workerId: inputId } = event.pathParameters || {};
+        if (!inputId) return error('ID de persona requerido');
 
-        if (!inputId) {
-            return error('ID de trabajador requerido');
-        }
-
-        // 1. Resolver ambos IDs (workerId <-> userId)
-        let workerId = inputId;
-        let userId = inputId;
-
-        // Buscar en tabla Workers
-        const workerRes = await docClient.send(new GetCommand({
-            TableName: WORKERS_TABLE,
-            Key: { workerId: inputId }
-        }));
-
-        if (workerRes.Item) {
-            userId = workerRes.Item.userId || userId;
-        } else {
-            // Buscar en tabla Users
-            const userRes = await docClient.send(new GetCommand({
-                TableName: USERS_TABLE,
-                Key: { userId: inputId }
-            }));
-            if (userRes.Item) {
-                workerId = userRes.Item.workerId || workerId;
-            }
-        }
-
-        // 2. Obtener todas las firmas asociadas a cualquiera de los IDs
+        // Query por GSI personaId-index
         const signaturesResult = await docClient.send(
-            new ScanCommand({
+            new QueryCommand({
                 TableName: SIGNATURES_TABLE,
-                FilterExpression: 'workerId = :wId OR userId = :uId OR referenciaId = :wId OR referenciaId = :uId',
-                ExpressionAttributeValues: {
-                    ':wId': workerId,
-                    ':uId': userId,
-                },
+                IndexName: 'personaId-index',
+                KeyConditionExpression: 'personaId = :pid',
+                ExpressionAttributeValues: { ':pid': inputId },
             })
         );
 
@@ -370,30 +328,19 @@ module.exports.getHistoryByWorker = async (event) => {
             new Date(b.timestamp) - new Date(a.timestamp)
         );
 
-        // 3. Obtener información de las solicitudes asociadas
         const historial = [];
         for (const firma of firmas) {
             if (firma.requestId) {
                 const requestResult = await docClient.send(
-                    new GetCommand({
-                        TableName: TABLE_NAME,
-                        Key: { requestId: firma.requestId },
-                    })
+                    new GetCommand({ TableName: TABLE_NAME, Key: { requestId: firma.requestId } })
                 );
-                historial.push({
-                    firma,
-                    solicitud: requestResult.Item || null,
-                });
+                historial.push({ firma, solicitud: requestResult.Item || null });
             } else {
                 historial.push({ firma, solicitud: null });
             }
         }
 
-        return success({
-            historial,
-            totalFirmas: firmas.length,
-            resolvedIds: { workerId, userId }
-        });
+        return success({ historial, totalFirmas: firmas.length, personaId: inputId });
     } catch (err) {
         console.error('Error getting worker history:', err);
         return error(err.message, 500);
@@ -454,14 +401,14 @@ module.exports.cancel = async (event) => {
  */
 module.exports.getStats = async (event) => {
     try {
-        const { empresaId, solicitanteId } = event.queryStringParameters || {};
+        const { tenantId, solicitanteId } = event.queryStringParameters || {};
 
         let filterExpression = '';
         const expressionAttributeValues = {};
 
-        if (empresaId) {
-            filterExpression = 'empresaId = :empresaId';
-            expressionAttributeValues[':empresaId'] = empresaId;
+        if (tenantId) {
+            filterExpression = 'tenantId = :tenantId';
+            expressionAttributeValues[':tenantId'] = tenantId;
         }
 
         if (solicitanteId) {
@@ -534,7 +481,7 @@ module.exports.updateOnSignature = async (requestId, workerId, signatureId) => {
 
         // Actualizar el trabajador en la lista
         const trabajadores = request.trabajadores.map(t => {
-            if (t.workerId === workerId) {
+            if (t.personaId === workerId || t.workerId === workerId) {
                 return {
                     ...t,
                     firmado: true,
@@ -609,163 +556,59 @@ module.exports.processOfflineBatch = async (event) => {
             return error('Se requiere al menos una firma offline');
         }
 
-        // Obtener información del solicitante
-        const solicitanteResult = await docClient.send(
-            new GetCommand({
-                TableName: USERS_TABLE,
-                Key: { userId: body.solicitanteId },
-            })
-        );
-
-        const solicitante = solicitanteResult.Item || {
-            nombre: 'Usuario',
-            apellido: 'Offline',
-            rut: 'N/A',
-            empresaId: 'default',
+        // Obtener informacion del solicitante
+        const personaService = new PersonaService();
+        const solicitante = await personaService.getById(body.solicitanteId);
+        const solicitanteInfo = solicitante || {
+            nombre: 'Usuario', apellido: 'Offline', rut: 'N/A',
+            tenantId: body.tenantId || 'default',
         };
+        const tenantId = body.tenantId || solicitanteInfo.tenantId || 'default';
 
         const now = new Date().toISOString();
         const requestId = uuidv4();
-
-        // Procesar cada firma offline
         const resultadosFirmas = [];
         const trabajadoresInfo = [];
         let firmasValidas = 0;
 
-        // Helper para normalizar RUT (quitar puntos, guiones y espacios)
-        const normalizeRut = (rut) => {
-            if (!rut) return '';
-            return rut.replace(/[\.\-\s]/g, '').toUpperCase();
-        };
-
         for (const firmaOffline of body.firmasOffline) {
             const { rut, pin, nombre, timestampLocal } = firmaOffline;
+            console.log(`[Offline Sync] Buscando persona con RUT: ${rut} en tenant ${tenantId}`);
 
-            // Normalizar RUT de entrada
-            const rutNormalizado = normalizeRut(rut);
-            console.log(`[Offline Sync] Buscando trabajador con RUT: ${rut} (normalizado: ${rutNormalizado})`);
+            const persona = await personaService.getByRut(tenantId, rut);
 
-            // Buscar trabajador por RUT - scan completo para comparar normalizados
-            const workerSearch = await docClient.send(
-                new ScanCommand({
-                    TableName: WORKERS_TABLE,
-                })
-            );
-
-            let worker = null;
-            if (workerSearch.Items && workerSearch.Items.length > 0) {
-                // Buscar coincidencia exacta normalizando ambos
-                worker = workerSearch.Items.find(w =>
-                    normalizeRut(w.rut) === rutNormalizado
-                );
-                console.log(`[Offline Sync] Workers encontrados: ${workerSearch.Items.length}, Match: ${worker ? 'SI' : 'NO'}`);
-            }
-
-            if (!worker) {
-                // Buscar en tabla Users
-                console.log(`[Offline Sync] No encontrado en Workers, buscando en Users...`);
-                const userSearch = await docClient.send(
-                    new ScanCommand({
-                        TableName: USERS_TABLE,
-                    })
-                );
-
-                if (userSearch.Items && userSearch.Items.length > 0) {
-                    const user = userSearch.Items.find(u =>
-                        normalizeRut(u.rut) === rutNormalizado
-                    );
-                    console.log(`[Offline Sync] Users encontrados: ${userSearch.Items.length}, Match: ${user ? 'SI' : 'NO'}`);
-
-                    if (user && user.workerId) {
-                        // Obtener el worker asociado
-                        const workerResult = await docClient.send(
-                            new GetCommand({
-                                TableName: WORKERS_TABLE,
-                                Key: { workerId: user.workerId },
-                            })
-                        );
-                        worker = workerResult.Item;
-                        console.log(`[Offline Sync] Worker asociado al User: ${worker ? 'SI' : 'NO'}`);
-                    } else if (user && !user.workerId) {
-                        // El usuario existe pero no tiene workerId - usar sus datos directamente
-                        // Esto puede pasar con prevencionistas que también firman
-                        console.log(`[Offline Sync] Usuario encontrado sin workerId, verificando si tiene PIN...`);
-                        if (user.pinHash) {
-                            worker = {
-                                workerId: user.userId,
-                                rut: user.rut,
-                                nombre: user.nombre,
-                                apellido: user.apellido,
-                                habilitado: user.habilitado,
-                                pinHash: user.pinHash,
-                                empresaId: user.empresaId,
-                                cargo: user.rol,
-                            };
-                        }
-                    }
-                }
-            }
-
-            // Si no encontramos el trabajador
-            if (!worker) {
-                console.log(`[Offline Sync] FALLO: Trabajador no encontrado para RUT ${rut}`);
-                resultadosFirmas.push({
-                    rut,
-                    success: false,
-                    error: 'Trabajador no encontrado',
-                });
+            if (!persona) {
+                resultadosFirmas.push({ rut, success: false, error: 'Persona no encontrada' });
                 continue;
             }
 
-            console.log(`[Offline Sync] Trabajador encontrado: ${worker.nombre} ${worker.apellido || ''}, habilitado: ${worker.habilitado}, hasPin: ${!!worker.pinHash}`);
-
-            // Verificar que el trabajador esté habilitado
-            if (!worker.habilitado) {
-                console.log(`[Offline Sync] FALLO: Trabajador no habilitado`);
-                resultadosFirmas.push({
-                    rut,
-                    success: false,
-                    error: 'Trabajador no habilitado',
-                });
+            if (!persona.habilitado) {
+                resultadosFirmas.push({ rut, success: false, error: 'Persona no habilitada' });
                 continue;
             }
 
-            // Verificar PIN
-            if (!worker.pinHash) {
-                console.log(`[Offline Sync] FALLO: Trabajador sin PIN configurado`);
-                resultadosFirmas.push({
-                    rut,
-                    success: false,
-                    error: 'Trabajador sin PIN configurado',
-                });
+            if (!persona.pinHash) {
+                resultadosFirmas.push({ rut, success: false, error: 'Persona sin PIN configurado' });
                 continue;
             }
 
-            // Importar función de verificación de PIN
             const { verifyPin, generateSignatureToken } = require('../lib/validation');
-
-            const pinValido = verifyPin(pin, worker.pinHash, worker.workerId);
-            console.log(`[Offline Sync] Verificación PIN: ${pinValido ? 'VALIDO' : 'INVALIDO'}`);
+            const pinValido = verifyPin(pin, persona.pinHash, persona.personaId);
 
             if (!pinValido) {
-                resultadosFirmas.push({
-                    rut,
-                    success: false,
-                    error: 'PIN incorrecto',
-                });
+                resultadosFirmas.push({ rut, success: false, error: 'PIN incorrecto' });
                 continue;
             }
 
-            // PIN válido - crear firma
             const signatureId = uuidv4();
             const token = generateSignatureToken();
 
             const signature = {
                 signatureId,
                 token,
-                workerId: worker.workerId,
-                workerRut: worker.rut,
-                workerNombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
+                personaId: persona.personaId,
+                workerRut: persona.rut,
+                workerNombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
                 tipoFirma: body.tipo,
                 requestId,
                 requestTipo: body.tipo,
@@ -781,40 +624,27 @@ module.exports.processOfflineBatch = async (event) => {
                 userAgent: event.headers?.['user-agent'] || 'offline-sync',
                 metodoValidacion: 'PIN-OFFLINE',
                 estado: 'valida',
-                empresaId: worker.empresaId || 'default',
+                tenantId,
                 createdAt: now,
             };
 
-            // Guardar firma
-            await docClient.send(
-                new PutCommand({
-                    TableName: SIGNATURES_TABLE,
-                    Item: signature,
-                })
-            );
+            await docClient.send(new PutCommand({ TableName: SIGNATURES_TABLE, Item: signature }));
 
-            // Agregar a lista de trabajadores
             trabajadoresInfo.push({
-                workerId: worker.workerId,
-                nombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
-                rut: worker.rut,
-                cargo: worker.cargo,
+                personaId: persona.personaId,
+                workerId: persona.personaId,
+                nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+                rut: persona.rut,
+                cargo: persona.cargo,
                 firmado: true,
                 signatureId,
                 fechaFirma: timestampLocal || now,
             });
 
-            resultadosFirmas.push({
-                rut,
-                success: true,
-                signatureId,
-                token,
-            });
-
+            resultadosFirmas.push({ rut, success: true, signatureId, token });
             firmasValidas++;
         }
 
-        // Crear la solicitud con todas las firmas ya procesadas
         const signatureRequest = {
             requestId,
             tipo: body.tipo,
@@ -824,8 +654,8 @@ module.exports.processOfflineBatch = async (event) => {
             documentos: [],
             tieneDocumentos: false,
             solicitanteId: body.solicitanteId,
-            solicitanteNombre: `${solicitante.nombre} ${solicitante.apellido || ''}`.trim(),
-            solicitanteRut: solicitante.rut,
+            solicitanteNombre: `${solicitanteInfo.nombre} ${solicitanteInfo.apellido || ''}`.trim(),
+            solicitanteRut: solicitanteInfo.rut,
             trabajadores: trabajadoresInfo,
             totalRequeridos: trabajadoresInfo.length,
             totalFirmados: firmasValidas,
@@ -833,7 +663,7 @@ module.exports.processOfflineBatch = async (event) => {
             fechaLimite: null,
             fechaCompletado: firmasValidas === trabajadoresInfo.length ? now : null,
             ubicacion: body.ubicacion || null,
-            empresaId: solicitante.empresaId || 'default',
+            tenantId,
             estado: firmasValidas === trabajadoresInfo.length ? 'completada' : (firmasValidas > 0 ? 'en_proceso' : 'pendiente'),
             offlineRequest: true,
             fechaSincronizacion: now,
@@ -841,12 +671,7 @@ module.exports.processOfflineBatch = async (event) => {
             updatedAt: now,
         };
 
-        await docClient.send(
-            new PutCommand({
-                TableName: TABLE_NAME,
-                Item: signatureRequest,
-            })
-        );
+        await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: signatureRequest }));
 
         return success({
             message: `Solicitud sincronizada. ${firmasValidas}/${body.firmasOffline.length} firmas válidas.`,

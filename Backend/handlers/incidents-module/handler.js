@@ -105,8 +105,8 @@ async function create(request) {
 async function list(request) {
     try {
         console.log('List Incidents Request:', request.query);
-        const { empresaId, tipo, estado, fechaInicio, fechaFin } = request.query || {};
-        const { items, total } = await incidentsRepo.list({ empresaId, tipo, estado, fechaInicio, fechaFin });
+        const { tenantId, tipo, estado, fechaInicio, fechaFin } = request.query || {};
+        const { items, total } = await incidentsRepo.list({ tenantId, tipo, estado, fechaInicio, fechaFin });
 
         // Return in format expected by frontend: data is the array, total is top-level
         return jsonResponse({
@@ -170,8 +170,8 @@ async function uploadEvidence(request) {
 
 async function getStats(request) {
     try {
-        const { empresaId, mes, masaLaboral } = request.query || {};
-        const result = await incidentsRepo.getStats({ empresaId, mes, masaLaboral });
+        const { tenantId, mes, masaLaboral } = request.query || {};
+        const result = await incidentsRepo.getStats({ tenantId, mes, masaLaboral });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
@@ -209,8 +209,8 @@ async function getDocuments(request) {
 
 async function getAnalytics(request) {
     try {
-        const { empresaId, fechaInicio, fechaFin } = request.query || {};
-        const result = await incidentsRepo.getAnalytics({ empresaId, fechaInicio, fechaFin });
+        const { tenantId, fechaInicio, fechaFin } = request.query || {};
+        const result = await incidentsRepo.getAnalytics({ tenantId, fechaInicio, fechaFin });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);

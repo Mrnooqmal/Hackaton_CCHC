@@ -241,10 +241,10 @@ class EventBus {
      * Send urgent notification to prevencionistas for incident report
      */
     async onIncidentReported(data) {
-        const { incidentId, reportedBy, reporterName, tipo, descripcion, empresaId } = data;
+        const { incidentId, reportedBy, reporterName, tipo, descripcion, tenantId } = data;
 
         try {
-            // Get all prevencionistas for this empresa
+            // Get all prevencionistas for this tenant
             // TODO: Implement getPrevencionistas helper if needed
             // For now, we'll need to pass recipientIds from the handler
 

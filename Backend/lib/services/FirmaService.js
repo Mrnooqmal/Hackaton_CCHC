@@ -1,15 +1,16 @@
 /**
- * FirmaService
+ * FirmaService (Refactored)
  * 
  * Servicio centralizado para gestión de firmas digitales.
- * Implementa Strategy Pattern para diferentes métodos de validación.
+ * Strategy Pattern para métodos de validación.
+ * 
+ * Cambios: workerId → personaId, un solo hash, tenantId en cada firma.
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { GetCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
+const { GetCommand, PutCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../dynamodb');
 const { generateSignatureToken, verifyPin } = require('../validation');
-const { PersonaService } = require('./PersonaService');
 
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 
@@ -17,33 +18,30 @@ const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 const ESTRATEGIAS_VALIDACION = {
     PIN: {
         nombre: 'PIN',
-        validar: async (persona, credencial, idParaHash) => {
+        validar: async (persona, credencial) => {
             if (!persona._pinHash) {
                 throw new Error('PIN no configurado');
             }
-            return verifyPin(credencial, persona._pinHash, idParaHash);
+            // Un solo hash con personaId (no más dual userId/workerId)
+            return verifyPin(credencial, persona._pinHash, persona.personaId);
         }
     },
     OFFLINE: {
         nombre: 'Offline',
-        validar: async (persona, credencial, idParaHash) => {
-            // Para firma offline, la validación se hizo en el momento de captura
-            // Aquí solo verificamos el token de sincronización
+        validar: async (persona, credencial) => {
             return !!credencial.timestampLocal && !!credencial.offlineToken;
         }
     },
     BIOMETRICO: {
         nombre: 'Biométrico',
-        validar: async (persona, credencial) => {
-            // Placeholder para futura implementación
+        validar: async () => {
             throw new Error('Método biométrico no implementado aún');
         }
     },
     PRESENCIAL: {
         nombre: 'Presencial',
-        validar: async (persona, credencial) => {
+        validar: async () => {
             // Firma presencial registrada por un tercero (relator/supervisor)
-            // No requiere PIN del trabajador en este momento
             return true;
         }
     }
@@ -54,25 +52,29 @@ class FirmaService {
      * Crea una firma validando credenciales
      * 
      * @param {Object} params
-     * @param {string} params.workerId - ID del trabajador que firma
-     * @param {string} params.metodo - 'PIN', 'OFFLINE', 'BIOMETRICO'
-     * @param {any} params.credencial - Credencial según el método (PIN, token offline, etc)
-     * @param {string} params.tipoFirma - 'documento', 'actividad', 'enrolamiento', etc
+     * @param {string} params.personaId - ID de la persona que firma
+     * @param {string} params.tenantId - ID del tenant
+     * @param {string} params.metodo - 'PIN', 'OFFLINE', 'BIOMETRICO', 'PRESENCIAL'
+     * @param {any} params.credencial - Credencial según el método
+     * @param {string} params.tipoFirma - 'documento', 'actividad', 'enrolamiento'
      * @param {string} params.referenciaId - ID del documento/actividad firmada
      * @param {string} params.referenciaTipo - 'document', 'activity', 'request'
-     * @param {Object} params.contexto - Contexto de la request (IP, userAgent, etc)
+     * @param {Object} params.contexto - Contexto de la request (IP, userAgent)
      * @param {Object} params.metadata - Datos adicionales opcionales
+     * @param {Object} [params.persona] - Persona pre-cargada (evita lookup extra)
      */
     static async crear(params) {
         const {
-            workerId,
+            personaId,
+            tenantId,
             metodo = 'PIN',
             credencial,
             tipoFirma,
             referenciaId,
             referenciaTipo,
             contexto = {},
-            metadata = {}
+            metadata = {},
+            persona: personaPrecargada
         } = params;
 
         // Validar que el método existe
@@ -81,21 +83,24 @@ class FirmaService {
             throw new Error(`Método de validación '${metodo}' no soportado`);
         }
 
-        // Obtener persona (buscar en ambas tablas - puede ser worker o user)
-        const persona = await PersonaService.obtenerPorId(workerId, 'auto');
+        // Obtener persona si no fue pre-cargada
+        let persona = personaPrecargada;
         if (!persona) {
-            throw new Error('Persona no encontrada (workerId/userId no existe)');
+            const { PersonaService } = require('./PersonaService');
+            const personaService = new PersonaService();
+            persona = await personaService.getById(personaId);
+            if (!persona) {
+                throw new Error('Persona no encontrada');
+            }
         }
 
-        // Verificar que esté habilitado (excepto para enrolamiento)
+        // Verificar que esté habilitada (excepto para enrolamiento)
         if (tipoFirma !== 'enrolamiento' && !persona.habilitado) {
-            throw new Error('Trabajador no está habilitado. Debe completar el enrolamiento primero.');
+            throw new Error('Persona no está habilitada. Debe completar el enrolamiento primero.');
         }
 
         // Validar credencial con la estrategia correspondiente
-        // IMPORTANTE: PIN se hashea con userId (tabla Users), no workerId
-        const idParaHash = persona.userId || persona.workerId;
-        const valido = await estrategia.validar(persona, credencial, idParaHash);
+        const valido = await estrategia.validar(persona, credencial);
         if (!valido) {
             throw new Error(`Validación de ${metodo} fallida`);
         }
@@ -109,12 +114,12 @@ class FirmaService {
             signatureId,
             token,
 
-            // Información del firmante
-            workerId: persona.workerId,
-            userId: persona.userId,
-            workerRut: persona.rut,
-            workerNombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
-            workerCargo: persona.cargo || '',
+            // Identificación (unificada)
+            personaId: persona.personaId,
+            personaRut: persona.rut,
+            personaNombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+            personaCargo: persona.cargo || '',
+            tenantId: tenantId || persona.tenantId,
 
             // Contexto de la firma
             tipoFirma,
@@ -126,7 +131,7 @@ class FirmaService {
             horario: now.toTimeString().split(' ')[0],
             timestamp: now.toISOString(),
 
-            // Metadata
+            // Metadata de auditoría
             ipAddress: contexto.ipAddress || 'unknown',
             userAgent: contexto.userAgent || 'unknown',
             metodoValidacion: estrategia.nombre,
@@ -134,19 +139,14 @@ class FirmaService {
 
             // Estado
             estado: 'valida',
-            disputaInfo: null,
-
-            empresaId: persona.empresaId || 'default',
             createdAt: now.toISOString()
         };
 
-        // Guardar en tabla Signatures
-        await docClient.send(
-            new PutCommand({
-                TableName: SIGNATURES_TABLE,
-                Item: firma
-            })
-        );
+        // Guardar en tabla Signatures (registro inmutable)
+        await docClient.send(new PutCommand({
+            TableName: SIGNATURES_TABLE,
+            Item: firma
+        }));
 
         return firma;
     }
@@ -154,24 +154,18 @@ class FirmaService {
     /**
      * Crea múltiples firmas en batch (para firma masiva)
      */
-    static async crearBatch(workerIds, paramsComunes) {
-        const resultados = {
-            exitosas: [],
-            fallidas: []
-        };
+    static async crearBatch(personaIds, paramsComunes) {
+        const resultados = { exitosas: [], fallidas: [] };
 
-        for (const workerId of workerIds) {
+        for (const pid of personaIds) {
             try {
                 const firma = await this.crear({
                     ...paramsComunes,
-                    workerId
+                    personaId: pid
                 });
                 resultados.exitosas.push(firma);
             } catch (err) {
-                resultados.fallidas.push({
-                    workerId,
-                    error: err.message
-                });
+                resultados.fallidas.push({ personaId: pid, error: err.message });
             }
         }
 
@@ -182,55 +176,58 @@ class FirmaService {
      * Obtiene una firma por ID
      */
     static async obtenerPorId(signatureId) {
-        const result = await docClient.send(
-            new GetCommand({
-                TableName: SIGNATURES_TABLE,
-                Key: { signatureId }
-            })
-        );
-
+        const result = await docClient.send(new GetCommand({
+            TableName: SIGNATURES_TABLE,
+            Key: { signatureId }
+        }));
         return result.Item || null;
     }
 
     /**
-     * Obtiene una firma por token (para verificación pública)
+     * Obtiene firmas de una persona (via GSI personaId-index)
      */
-    static async obtenerPorToken(token) {
-        const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
-        const result = await docClient.send(
-            new ScanCommand({
-                TableName: SIGNATURES_TABLE,
-                FilterExpression: '#token = :token',
-                ExpressionAttributeNames: { '#token': 'token' },
-                ExpressionAttributeValues: { ':token': token }
-            })
-        );
-
-        return result.Items?.[0] || null;
+    static async obtenerPorPersona(personaId) {
+        const result = await docClient.send(new QueryCommand({
+            TableName: SIGNATURES_TABLE,
+            IndexName: 'personaId-index',
+            KeyConditionExpression: 'personaId = :personaId',
+            ExpressionAttributeValues: { ':personaId': personaId }
+        }));
+        return result.Items || [];
     }
 
     /**
-     * Verifica si un token de firma es válido
+     * Obtiene firmas de un tenant (via GSI tenantId-index)
      */
-    static async verificarToken(token) {
-        const firma = await this.obtenerPorToken(token);
-        if (!firma) {
-            return { valida: false, error: 'Token no encontrado' };
-        }
-
-        if (firma.estado !== 'valida') {
-            return { valida: false, error: `Firma en estado: ${firma.estado}`, firma };
-        }
-
-        return { valida: true, firma };
+    static async obtenerPorTenant(tenantId) {
+        const result = await docClient.send(new QueryCommand({
+            TableName: SIGNATURES_TABLE,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :tenantId',
+            ExpressionAttributeValues: { ':tenantId': tenantId }
+        }));
+        return result.Items || [];
     }
 
     /**
-     * Convierte firma al formato embebido usado en activities.asistentes
+     * Obtiene firmas por referencia (via GSI requestId-index)
+     */
+    static async obtenerPorReferencia(requestId) {
+        const result = await docClient.send(new QueryCommand({
+            TableName: SIGNATURES_TABLE,
+            IndexName: 'requestId-index',
+            KeyConditionExpression: 'requestId = :requestId',
+            ExpressionAttributeValues: { ':requestId': requestId }
+        }));
+        return result.Items || [];
+    }
+
+    /**
+     * Convierte firma al formato embebido para asistentes de actividades
      */
     static toAsistenteFormat(firma, persona) {
         return {
-            workerId: persona.workerId,
+            personaId: persona.personaId,
             nombre: persona.nombre,
             rut: persona.rut,
             cargo: persona.cargo || '',
@@ -244,14 +241,14 @@ class FirmaService {
     }
 
     /**
-     * Convierte firma al formato embebido usado en documents.firmas
+     * Convierte firma al formato embebido para documentos
      */
     static toDocumentFirmaFormat(firma) {
         return {
             token: firma.token,
-            workerId: firma.workerId,
-            nombre: firma.workerNombre,
-            rut: firma.workerRut,
+            personaId: firma.personaId,
+            nombre: firma.personaNombre,
+            rut: firma.personaRut,
             tipoFirma: firma.tipoFirma,
             fecha: firma.fecha,
             horario: firma.horario,

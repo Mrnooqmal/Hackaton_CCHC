@@ -269,22 +269,22 @@ const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
 module.exports.generateMIPER = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
-        const { cargo, actividades = [], contexto = '', empresaId } = body;
+        const { cargo, actividades = [], contexto = '', tenantId } = body;
 
         if (!cargo) {
             return error('Se requiere especificar el cargo');
         }
 
         let historicalContext = '';
-        if (empresaId) {
+        if (tenantId) {
             try {
-                // Fetch recent incidents for the company to contextualize risk
+                // Fetch recent incidents for the tenant to contextualize risk
                 const incidentsResult = await docClient.send(new QueryCommand({
                     TableName: process.env.INCIDENTS_TABLE,
-                    IndexName: 'empresaId-fecha-index',
-                    KeyConditionExpression: 'empresaId = :empresaId',
+                    IndexName: 'tenantId-fecha-index',
+                    KeyConditionExpression: 'tenantId = :tenantId',
                     ExpressionAttributeValues: {
-                        ':empresaId': empresaId
+                        ':tenantId': tenantId
                     },
                     Limit: 10,
                     ScanIndexForward: false // Most recent first

@@ -19,26 +19,30 @@ provider:
   region: us-east-1
   stage: ${opt:stage, 'dev'}
   environment:
-    WORKERS_TABLE: ${self:service}-workers-${self:provider.stage}
+    # --- Multi-Tenant Core Tables ---
+    TENANTS_TABLE: ${self:service}-tenants-${self:provider.stage}
+    OBRAS_TABLE: ${self:service}-obras-${self:provider.stage}
+    PERSONAS_TABLE: ${self:service}-personas-${self:provider.stage}
+    # --- Operational Tables ---
     SIGNATURE_REQUESTS_TABLE: ${self:service}-signature-requests-${self:provider.stage}
     SIGNATURES_TABLE: ${self:service}-signatures-${self:provider.stage}
-    USERS_TABLE: ${self:service}-users-${self:provider.stage}
     SESSIONS_TABLE: ${self:service}-sessions-${self:provider.stage}
     SURVEYS_TABLE: ${self:service}-surveys-${self:provider.stage}
-    SES_SENDER_EMAIL: 'benjasncz@gmail.com'
     INCIDENTS_TABLE: ${self:service}-incidents-${self:provider.stage}
-    INCIDENT_EVIDENCE_BUCKET: hackatonbackend-incident-evidence-${self:provider.stage}-${aws:accountId}
-    INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
-    DOCUMENTS_BUCKET: ${self:custom.bucketName}
     DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
     ACTIVITIES_TABLE: ${self:service}-activities-${self:provider.stage}
     INBOX_TABLE: ${self:service}-inbox-${self:provider.stage}
+    # --- Storage ---
+    DOCUMENTS_BUCKET: ${self:custom.bucketName}
+    INCIDENT_EVIDENCE_BUCKET: hackatonbackend-incident-evidence-${self:provider.stage}-${aws:accountId}
+    INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
+    # --- External ---
+    SES_SENDER_EMAIL: 'benjasncz@gmail.com'
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
-    # NEW: Feature flag for unified PersonaService (User/Worker sync)
-    USE_PERSONA_SERVICE: 'true'
-    # NEW: Feature flag for unified CumplimientoService (Signatures management)
-    USE_CUMPLIMIENTO_SERVICE: 'true'
-    GEMINI_API_KEY: ${env:GEMINI_API_KEY}
+    GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
+    # --- DEPRECATED: Legacy tables kept for migration ---
+    WORKERS_TABLE: ${self:service}-workers-${self:provider.stage}
+    USERS_TABLE: ${self:service}-users-${self:provider.stage}
   httpApi:
     cors:
       allowedOrigins:
@@ -64,18 +68,32 @@ provider:
             - dynamodb:UpdateItem
             - dynamodb:DeleteItem
           Resource:
-            - !GetAtt WorkersTable.Arn
+            # --- Multi-Tenant Core ---
+            - !GetAtt TenantsTable.Arn
+            - !Sub ${TenantsTable.Arn}/index/*
+            - !GetAtt ObrasTable.Arn
+            - !Sub ${ObrasTable.Arn}/index/*
+            - !GetAtt PersonasTable.Arn
+            - !Sub ${PersonasTable.Arn}/index/*
+            # --- Operational ---
             - !GetAtt SignatureRequestsTable.Arn
+            - !Sub ${SignatureRequestsTable.Arn}/index/*
             - !GetAtt SignaturesTable.Arn
             - !Sub ${SignaturesTable.Arn}/index/*
-            - !GetAtt UsersTable.Arn
             - !GetAtt SessionsTable.Arn
             - !GetAtt SurveysTable.Arn
+            - !Sub ${SurveysTable.Arn}/index/*
             - !GetAtt IncidentsTable.Arn
+            - !Sub ${IncidentsTable.Arn}/index/*
             - !GetAtt InboxTable.Arn
             - !Sub ${InboxTable.Arn}/index/*
             - !GetAtt ActivitiesTable.Arn
+            - !Sub ${ActivitiesTable.Arn}/index/*
             - !GetAtt DocumentsTable.Arn
+            - !Sub ${DocumentsTable.Arn}/index/*
+            # --- DEPRECATED: Legacy ---
+            - !GetAtt WorkersTable.Arn
+            - !GetAtt UsersTable.Arn
         - Effect: Allow
           Action:
             - ses:SendEmail
@@ -125,6 +143,45 @@ package:
     - '!**/__tests__/**'
 
 functions:
+  # ========================================
+  # TENANTS (Empresas / Multi-Tenant)
+  # ========================================
+  tenantsModule:
+    handler: handlers/tenants-module/handler.tenantsHandler
+    events:
+      - httpApi:
+          path: /tenants
+          method: any
+      - httpApi:
+          path: /tenants/{proxy+}
+          method: any
+
+  # ========================================
+  # OBRAS (Proyectos de Construcción)
+  # ========================================
+  obrasModule:
+    handler: handlers/obras-module/handler.obrasHandler
+    events:
+      - httpApi:
+          path: /obras
+          method: any
+      - httpApi:
+          path: /obras/{proxy+}
+          method: any
+
+  # ========================================
+  # PERSONAS (Identidad Unificada - reemplaza Users + Workers)
+  # ========================================
+  personasModule:
+    handler: handlers/personas-module/handler.personasHandler
+    events:
+      - httpApi:
+          path: /personas
+          method: any
+      - httpApi:
+          path: /personas/{proxy+}
+          method: any
+
   # Auth (Autenticación)
   authLogin:
     handler: handlers/auth.login
@@ -161,7 +218,7 @@ functions:
           path: /auth/validate-token
           method: POST
 
-  # Users (Usuarios)
+  # DEPRECATED: Legacy Users endpoint (kept for migration)
   usersModule:
     handler: handlers/users-module/handler.usersHandler
     events:
@@ -172,7 +229,7 @@ functions:
           path: /users/{proxy+}
           method: any
 
-  # Workers (Trabajadores/Enrolamiento)
+  # DEPRECATED: Legacy Workers endpoint (kept for migration)
   workersModule:
     handler: handlers/workers-module/handler.workersHandler
     events:
@@ -549,51 +606,227 @@ functions:
 
 resources:
   Resources:
-    # S3 Bucket para documentos
+    # ==========================================
+    # S3 BUCKETS
+    # ==========================================
     DocumentsBucket:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:custom.bucketName}
         CorsConfiguration:
           CorsRules:
-            - AllowedHeaders:
-                - '*'
-              AllowedMethods:
-                - GET
-                - PUT
-                - POST
-                - DELETE
-              AllowedOrigins:
-                - '*'
+            - AllowedHeaders: ['*']
+              AllowedMethods: [GET, PUT, POST, DELETE]
+              AllowedOrigins: ['*']
               MaxAge: 3000
 
-    # Workers Table
-    WorkersTable:
+    IncidentEvidenceBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.INCIDENT_EVIDENCE_BUCKET}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedOrigins: ['*']
+              AllowedMethods: [GET, PUT, POST]
+              AllowedHeaders: ['*']
+              MaxAge: 3000
+
+    # ==========================================
+    # SNS
+    # ==========================================
+    IncidentNotificationTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:provider.environment.INCIDENT_NOTIFICATION_TOPIC}
+        DisplayName: Notificaciones de Incidentes y Accidentes
+
+    # ==========================================
+    # MULTI-TENANT CORE TABLES
+    # ==========================================
+
+    # Tenants - Empresas clientes del SaaS
+    TenantsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:provider.environment.WORKERS_TABLE}
+        TableName: ${self:provider.environment.TENANTS_TABLE}
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
-          - AttributeName: workerId
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+          - AttributeName: slug
+            AttributeType: S
+          - AttributeName: estado
             AttributeType: S
         KeySchema:
-          - AttributeName: workerId
+          - AttributeName: PK
             KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: slug-index
+            KeySchema:
+              - AttributeName: slug
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: status-index
+            KeySchema:
+              - AttributeName: estado
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
 
-    # Signature Requests Table
-    SignatureRequestsTable:
+    # Obras - Proyectos de construccion por tenant
+    ObrasTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:provider.environment.SIGNATURE_REQUESTS_TABLE}
+        TableName: ${self:provider.environment.OBRAS_TABLE}
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
-          - AttributeName: requestId
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+          - AttributeName: obraId
             AttributeType: S
         KeySchema:
-          - AttributeName: requestId
+          - AttributeName: PK
             KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: obraId-index
+            KeySchema:
+              - AttributeName: obraId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
 
-    # Signatures Table con GSI para requestId
+    # Personas - Identidad unificada (reemplaza Users + Workers)
+    PersonasTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.PERSONAS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+          - AttributeName: personaId
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: rut
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: personaId-index
+            KeySchema:
+              - AttributeName: personaId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: email-index
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: tenantRut-index
+            KeySchema:
+              - AttributeName: tenantId
+                KeyType: HASH
+              - AttributeName: rut
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # ==========================================
+    # OPERATIONAL TABLES (updated with tenant GSIs)
+    # ==========================================
+
+    # Documents Table - with tenant and obra GSIs
+    DocumentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.DOCUMENTS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: documentId
+            AttributeType: S
+          - AttributeName: tenantId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: documentId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: tenantId-index
+            KeySchema:
+              - AttributeName: tenantId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          # NOTE: obraId-index will be added in a follow-up deploy
+          # (DynamoDB only allows 1 new GSI per CloudFormation update)
+
+    # Activities Table - with tenant GSI
+    ActivitiesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.ACTIVITIES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: activityId
+            AttributeType: S
+          - AttributeName: tenantId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: activityId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: tenantId-index
+            KeySchema:
+              - AttributeName: tenantId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+    # Incidents Table - rename empresaId to tenantId
+    IncidentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.INCIDENTS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: incidentId
+            AttributeType: S
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: fecha
+            AttributeType: S
+        KeySchema:
+          - AttributeName: incidentId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: tenantId-fecha-index
+            KeySchema:
+              - AttributeName: tenantId
+                KeyType: HASH
+              - AttributeName: fecha
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # Signatures Table - with tenant and persona GSIs
     SignaturesTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -603,6 +836,10 @@ resources:
           - AttributeName: signatureId
             AttributeType: S
           - AttributeName: requestId
+            AttributeType: S
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: personaId
             AttributeType: S
         KeySchema:
           - AttributeName: signatureId
@@ -614,33 +851,42 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+          - IndexName: tenantId-index
+            KeySchema:
+              - AttributeName: tenantId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: personaId-index
+            KeySchema:
+              - AttributeName: personaId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
 
-    # Users Table
-    UsersTable:
+    # Signature Requests Table - with tenant GSI
+    SignatureRequestsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:provider.environment.USERS_TABLE}
+        TableName: ${self:provider.environment.SIGNATURE_REQUESTS_TABLE}
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
-          - AttributeName: userId
+          - AttributeName: requestId
+            AttributeType: S
+          - AttributeName: tenantId
             AttributeType: S
         KeySchema:
-          - AttributeName: userId
+          - AttributeName: requestId
             KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: tenantId-index
+            KeySchema:
+              - AttributeName: tenantId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
 
-    # Sessions Table
-    SessionsTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:provider.environment.SESSIONS_TABLE}
-        BillingMode: PAY_PER_REQUEST
-        AttributeDefinitions:
-          - AttributeName: sessionId
-            AttributeType: S
-        KeySchema:
-          - AttributeName: sessionId
-            KeyType: HASH
-
+    # Surveys Table - with tenant GSI
     SurveysTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -649,55 +895,18 @@ resources:
         AttributeDefinitions:
           - AttributeName: surveyId
             AttributeType: S
+          - AttributeName: tenantId
+            AttributeType: S
         KeySchema:
           - AttributeName: surveyId
             KeyType: HASH
-    IncidentsTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:provider.environment.INCIDENTS_TABLE}
-        BillingMode: PAY_PER_REQUEST
-        AttributeDefinitions:
-          - AttributeName: incidentId
-            AttributeType: S
-          - AttributeName: empresaId
-            AttributeType: S
-          - AttributeName: fecha
-            AttributeType: S
-        KeySchema:
-          - AttributeName: incidentId
-            KeyType: HASH
         GlobalSecondaryIndexes:
-          - IndexName: empresaId-fecha-index
+          - IndexName: tenantId-index
             KeySchema:
-              - AttributeName: empresaId
+              - AttributeName: tenantId
                 KeyType: HASH
-              - AttributeName: fecha
-                KeyType: RANGE
             Projection:
               ProjectionType: ALL
-
-    IncidentEvidenceBucket:
-      Type: AWS::S3::Bucket
-      Properties:
-        BucketName: ${self:provider.environment.INCIDENT_EVIDENCE_BUCKET}
-        CorsConfiguration:
-          CorsRules:
-            - AllowedOrigins:
-                - '*'
-              AllowedMethods:
-                - GET
-                - PUT
-                - POST
-              AllowedHeaders:
-                - '*'
-              MaxAge: 3000
-
-    IncidentNotificationTopic:
-      Type: AWS::SNS::Topic
-      Properties:
-        TopicName: ${self:provider.environment.INCIDENT_NOTIFICATION_TOPIC}
-        DisplayName: Notificaciones de Incidentes y Accidentes
 
     # Inbox Messages Table
     InboxTable:
@@ -729,28 +938,45 @@ resources:
             Projection:
               ProjectionType: ALL
 
-    # Activities Table
-    ActivitiesTable:
+    # Sessions Table - with TTL
+    SessionsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:provider.environment.ACTIVITIES_TABLE}
+        TableName: ${self:provider.environment.SESSIONS_TABLE}
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
-          - AttributeName: activityId
+          - AttributeName: sessionId
             AttributeType: S
         KeySchema:
-          - AttributeName: activityId
+          - AttributeName: sessionId
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+
+    # ==========================================
+    # DEPRECATED: Legacy tables (kept for migration)
+    # ==========================================
+    WorkersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.WORKERS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: workerId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: workerId
             KeyType: HASH
 
-    # Documents Table
-    DocumentsTable:
+    UsersTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:provider.environment.DOCUMENTS_TABLE}
+        TableName: ${self:provider.environment.USERS_TABLE}
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
-          - AttributeName: documentId
+          - AttributeName: userId
             AttributeType: S
         KeySchema:
-          - AttributeName: documentId
+          - AttributeName: userId
             KeyType: HASH
