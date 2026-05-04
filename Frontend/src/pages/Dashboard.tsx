@@ -155,7 +155,7 @@ export default function Dashboard() {
             const workersRes = await workersApi.list();
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
-                const unenrolled = workersRes.data.filter(w => !w.habilitado).length;
+                const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
                 setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0, pendingSignatures: unenrolled }));
             }
         } catch (err) {

@@ -16,6 +16,7 @@ import ChangePassword from './pages/ChangePassword';
 import EnrollMe from './pages/EnrollMe';
 import Unauthorized from './pages/Unauthorized';
 import RegisterAdmin from './pages/RegisterAdmin';
+import TenantOnboarding from './pages/TenantOnboarding';
 import SignatureRequests from './pages/SignatureRequests';
 import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
@@ -39,6 +40,7 @@ function AppContent() {
 
           <Route path="/login" element={<Login />} />
           <Route path="/register-admin" element={<RegisterAdmin />} />
+          <Route path="/onboarding" element={<TenantOnboarding />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
           <Route path="/" element={

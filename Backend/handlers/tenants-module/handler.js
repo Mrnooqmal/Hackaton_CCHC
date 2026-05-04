@@ -5,7 +5,7 @@
  */
 const { TenantService } = require('../../lib/services/TenantService');
 const { PersonaService } = require('../../lib/services/PersonaService');
-const { success, error, created } = require('../../lib/response');
+const { success, error, created, cors } = require('../../lib/response');
 
 const tenantService = new TenantService();
 
@@ -19,6 +19,9 @@ module.exports.tenantsHandler = async (event) => {
     const action = segments[1] || null;
 
     try {
+        // CORS preflight
+        if (method === 'OPTIONS') return cors();
+
         // POST /tenants/setup — Setup inicial de empresa
         if (method === 'POST' && segments[0] === 'setup') {
             const body = JSON.parse(event.body || '{}');
@@ -26,10 +29,11 @@ module.exports.tenantsHandler = async (event) => {
 
             // Si se proporcionan datos del admin, crear persona admin
             let adminResult = null;
+            let passwordTemporal = null;
             if (body.admin) {
                 try {
                     const personaService = new PersonaService();
-                    const admin = await personaService.crear(tenant.tenantId, {
+                    const { persona, passwordTemporal: pwd } = await personaService.crear(tenant.tenantId, {
                         rut: body.admin.rut,
                         nombre: body.admin.nombre,
                         apellido: body.admin.apellido || '',
@@ -37,13 +41,14 @@ module.exports.tenantsHandler = async (event) => {
                         rol: 'admin',
                         tieneAccesoWeb: true
                     });
+                    passwordTemporal = pwd;
                     // Vincular admin al tenant
                     await tenantService.updateConfig(tenant.tenantId, {
-                        adminPersonaId: admin.personaId
+                        adminPersonaId: persona.personaId
                     });
                     // Activar tenant
                     await tenantService.activar(tenant.tenantId);
-                    adminResult = admin.toSafeFormat();
+                    adminResult = persona.toSafeFormat();
                 } catch (adminErr) {
                     console.error('Error creating admin persona:', adminErr);
                 }
@@ -52,14 +57,20 @@ module.exports.tenantsHandler = async (event) => {
             return created({
                 message: 'Tenant creado exitosamente',
                 tenant: tenant.toSafeFormat(),
-                admin: adminResult
+                admin: adminResult,
+                passwordTemporal
             });
         }
 
-        // GET /tenants — Listar tenants activos (solo superadmin)
+        // GET /tenants — Listar tenants
         if (method === 'GET' && !tenantId) {
-            const estado = event.queryStringParameters?.estado || 'activo';
-            const tenants = await tenantService.listByEstado(estado);
+            const estado = event.queryStringParameters?.estado || 'all';
+            let tenants;
+            if (estado === 'all') {
+                tenants = await tenantService.listAll();
+            } else {
+                tenants = await tenantService.listByEstado(estado);
+            }
             return success({
                 total: tenants.length,
                 tenants: tenants.map(t => t.toSafeFormat())

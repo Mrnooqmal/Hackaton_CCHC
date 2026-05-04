@@ -6,17 +6,34 @@ interface ApiResponse<T> {
     error?: string;
 }
 
-async function apiRequest<T>(
+export async function apiRequest<T>(
     endpoint: string,
     options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
     try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers,
-            },
+        const token = localStorage.getItem('auth_token');
+        const tenantId = localStorage.getItem('tenant_id');
+        
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            ...(options.headers as Record<string, string> || {}),
+        };
+
+        if (token && !headers['Authorization']) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        let finalEndpoint = endpoint;
+        // Si hay tenantId y la ruta no es de auth (login/refresh) ni de tenants (onboarding)
+        if (tenantId && !endpoint.startsWith('/auth') && !endpoint.startsWith('/tenants') && !endpoint.includes('tenantId=')) {
+            finalEndpoint = endpoint.includes('?') 
+                ? `${endpoint}&tenantId=${tenantId}` 
+                : `${endpoint}?tenantId=${tenantId}`;
+        }
+
+        const response = await fetch(`${API_BASE_URL}${finalEndpoint}`, {
             ...options,
+            headers,
         });
 
         const data = await response.json();
@@ -29,89 +46,134 @@ async function apiRequest<T>(
     }
 }
 
-// Workers API
+// Workers API (Legacy mapping to Personas)
 export const workersApi = {
-    list: (empresaId?: string) =>
-        apiRequest<Worker[]>(`/workers${empresaId ? `?empresaId=${empresaId}` : ''}`),
+    list: async (empresaId?: string) => {
+        const tenantId = empresaId || localStorage.getItem('tenant_id');
+        const res = await apiRequest<{ total: number; personas: any[] }>(`/personas?tenantId=${tenantId}`);
+        if (res.success && res.data) {
+            // Map Personas to legacy Worker structure expected by components
+            const mapped = res.data.personas.map(p => ({
+                ...p,
+                workerId: p.personaId,
+                empresaId: p.tenantId
+            }));
+            return { success: true, data: mapped as unknown as Worker[] };
+        }
+        return res as any;
+    },
 
-    get: (id: string) =>
-        apiRequest<Worker>(`/workers/${id}`),
+    get: async (id: string) => {
+        const res = await personasApi.get(id);
+        if (res.success && res.data) {
+            return { success: true, data: { ...res.data, workerId: res.data.personaId, empresaId: res.data.tenantId } as unknown as Worker };
+        }
+        return res as any;
+    },
 
-    getByRut: (rut: string) =>
-        apiRequest<Worker>(`/workers/rut/${encodeURIComponent(rut)}`),
+    getByRut: async (rut: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        const res = await personasApi.getByRut(tenantId, rut);
+        if (res.success && res.data) {
+            return { success: true, data: { ...res.data, workerId: res.data.personaId, empresaId: res.data.tenantId } as unknown as Worker };
+        }
+        return res as any;
+    },
 
     create: (worker: CreateWorkerData) =>
-        apiRequest<Worker>('/workers', {
+        apiRequest<Worker>('/personas', {
             method: 'POST',
             body: JSON.stringify(worker),
         }),
 
-    update: (id: string, data: Partial<Worker>) =>
-        apiRequest<Worker>(`/workers/${id}`, {
-            method: 'PUT',
-            body: JSON.stringify(data),
-        }),
+    update: (id: string, data: Partial<Worker>) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.update(tenantId, id, data as any);
+    },
 
     sign: (id: string, signData: SignData) =>
-        apiRequest<SignatureResult>(`/workers/${id}/sign`, {
+        apiRequest<SignatureResult>(`/signatures/worker/${id}`, {
             method: 'POST',
             body: JSON.stringify(signData),
         }),
 
-    setPin: (id: string, pin: string, pinActual?: string) =>
-        apiRequest<{ message: string; pinCreatedAt: string }>(`/workers/${id}/set-pin`, {
-            method: 'POST',
-            body: JSON.stringify({ pin, pinActual }),
-        }),
-
-    completeEnrollment: (id: string, pin: string) =>
-        apiRequest<EnrollmentResult>(`/workers/${id}/complete-enrollment`, {
-            method: 'POST',
-            body: JSON.stringify({ pin }),
-        }),
-};
-
-// Users API
-export const usersApi = {
-    create: (user: CreateUserData) =>
-        apiRequest<User>('/users', {
-            method: 'POST',
-            body: JSON.stringify(user),
-        }),
-
-    list: (params?: UserListParams) => {
-        const query = new URLSearchParams(params as Record<string, string>).toString();
-        return apiRequest<{ total: number; users: User[]; roles: Record<string, any> }>(`/users${query ? `?${query}` : ''}`);
+    setPin: (id: string, pin: string, pinActual?: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.setPin(tenantId, id, pin, pinActual);
     },
 
-    get: (id: string) =>
-        apiRequest<User>(`/users/${id}`),
+    completeEnrollment: (id: string, pin: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.completarEnrolamiento(tenantId, id, pin);
+    },
+};
 
-    getByRut: (rut: string) =>
-        apiRequest<User>(`/users/rut/${encodeURIComponent(rut)}`),
-
-    update: (id: string, data: Partial<User>) =>
-        apiRequest<User>(`/users/${id}`, {
-            method: 'PUT',
-            body: JSON.stringify(data),
-        }),
-
-    resetPassword: (id: string) =>
-        apiRequest<{ message: string; passwordTemporal: string }>(`/users/${id}/reset-password`, {
+// Users API (Legacy mapping to Personas)
+export const usersApi = {
+    create: (user: CreateUserData) => {
+        const tenantId = user.empresaId || localStorage.getItem('tenant_id') || '';
+        return apiRequest<User>(`/personas?tenantId=${tenantId}`, {
             method: 'POST',
-        }),
+            body: JSON.stringify({
+                ...user,
+                tieneAccesoWeb: true
+            }),
+        });
+    },
 
-    setPin: (id: string, pin: string) =>
-        apiRequest<{ message: string; pinCreatedAt: string }>(`/users/${id}/set-pin`, {
-            method: 'POST',
-            body: JSON.stringify({ pin }),
-        }),
+    list: async (params?: UserListParams) => {
+        const tenantId = params?.empresaId || localStorage.getItem('tenant_id') || '';
+        const res = await personasApi.list(tenantId, params as any);
+        if (res.success && res.data) {
+            const mapped = res.data.personas.map(p => ({
+                ...p,
+                userId: p.personaId,
+                empresaId: p.tenantId
+            }));
+            return { success: true, data: { total: res.data.total, users: mapped as unknown as User[], roles: {} } };
+        }
+        return res as any;
+    },
 
-    completeEnrollment: (id: string, pin: string) =>
-        apiRequest<EnrollmentResult>(`/users/${id}/complete-enrollment`, {
+    get: async (id: string) => {
+        const res = await personasApi.get(id);
+        if (res.success && res.data) {
+            return { success: true, data: { ...res.data, userId: res.data.personaId, empresaId: res.data.tenantId } as unknown as User };
+        }
+        return res as any;
+    },
+
+    getByRut: async (rut: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        const res = await personasApi.getByRut(tenantId, rut);
+        if (res.success && res.data) {
+            return { success: true, data: { ...res.data, userId: res.data.personaId, empresaId: res.data.tenantId } as unknown as User };
+        }
+        return res as any;
+    },
+
+    update: (id: string, data: Partial<User>) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.update(tenantId, id, data as any);
+    },
+
+    resetPassword: (id: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        // NOTA: resetPassword endpoint podría requerir mapeo especial, por ahora lo pasamos a un update genérico o endpoint si existe
+        return apiRequest<{ message: string; passwordTemporal: string }>(`/personas/${id}/reset-password?tenantId=${tenantId}`, {
             method: 'POST',
-            body: JSON.stringify({ pin }),
-        }),
+        });
+    },
+
+    setPin: (id: string, pin: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.setPin(tenantId, id, pin);
+    },
+
+    completeEnrollment: (id: string, pin: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.completarEnrolamiento(tenantId, id, pin);
+    },
 };
 
 // Auth API
@@ -240,6 +302,8 @@ export interface Worker {
 // User & Auth Types
 export interface User {
     userId: string;
+    personaId?: string;
+    tenantId?: string;
     rut: string;
     nombre: string;
     apellido: string;
@@ -289,7 +353,7 @@ export interface LoginResponse {
 }
 
 export interface ChangePasswordData {
-    userId: string;
+    personaId: string;
     passwordActual: string;
     passwordNuevo: string;
     confirmarPassword: string;
@@ -1330,7 +1394,7 @@ export interface InboxMessage {
     readAt: string | null;
     archivedByRecipient: boolean;
     linkedEntity?: {
-        type: 'activity' | 'document' | 'incident' | 'survey';
+        type: 'activity' | 'document' | 'incident' | 'survey' | 'signature-request';
         id: string;
         title?: string;
     };
@@ -1605,3 +1669,179 @@ export const aiApi = {
             body: JSON.stringify({ audio, mimeType }),
         }),
 };
+
+// ========================================
+// TENANT TYPES
+// ========================================
+export interface TenantSettings {
+    maxWorkers?: number;
+    dataRetentionDays?: number;
+    twoFactorEnabled?: boolean;
+    modulosActivos?: string[];
+}
+
+export interface TenantReglas {
+    fasesObligatorias?: string[];
+    limiteObras?: number;
+    requiereFirmaPin?: boolean;
+}
+
+export interface TenantPreferencias {
+    timezone?: string;
+    idioma?: string;
+    formatoFecha?: string;
+    colorPrimario?: string;
+    colorSecundario?: string;
+    logoUrl?: string | null;
+}
+
+export interface Tenant {
+    tenantId: string;
+    slug: string;
+    nombre: string;
+    rutEmpresa: string;
+    email: string;
+    telefono: string;
+    plan: 'starter' | 'professional' | 'enterprise';
+    tamano: 'micro' | 'pequena' | 'mediana' | 'grande';
+    cantidadTrabajadores: number;
+    estado: 'setup' | 'activo' | 'suspendido';
+    adminPersonaId: string | null;
+    settings: TenantSettings;
+    reglas: TenantReglas;
+    preferencias: TenantPreferencias;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface TenantSetupData {
+    nombre: string;
+    rutEmpresa: string;
+    cantidadTrabajadores: number;
+    email?: string;
+    telefono?: string;
+    plan?: 'starter' | 'professional' | 'enterprise';
+    settings?: Partial<TenantSettings>;
+    reglas?: Partial<TenantReglas>;
+    preferencias?: Partial<TenantPreferencias>;
+    admin?: {
+        rut: string;
+        nombre: string;
+        apellido?: string;
+        email: string;
+    };
+}
+
+export interface TenantSetupResponse {
+    message: string;
+    tenant: Tenant;
+    admin: {
+        personaId: string;
+        rut: string;
+        nombre: string;
+        apellido: string;
+        email: string;
+        rol: string;
+        estado: string;
+    } | null;
+}
+
+export interface PersonaResponse {
+    personaId: string;
+    tenantId: string;
+    rut: string;
+    nombre: string;
+    apellido: string;
+    email: string;
+    rol: string;
+    cargo: string;
+    estado: string;
+    tieneAccesoWeb: boolean;
+    habilitado: boolean;
+    pinConfigurado: boolean;
+    enrolado: boolean;
+    permisos: string[];
+    obraIds: string[];
+    createdAt: string;
+    updatedAt: string;
+}
+
+// ========================================
+// TENANTS API
+// ========================================
+export const tenantsApi = {
+    setup: (data: TenantSetupData) =>
+        apiRequest<TenantSetupResponse>('/tenants/setup', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    list: (estado?: string) => {
+        const query = estado ? `?estado=${estado}` : '';
+        return apiRequest<{ total: number; tenants: Tenant[] }>(`/tenants${query}`);
+    },
+
+    get: (id: string) =>
+        apiRequest<Tenant>(`/tenants/${id}`),
+
+    update: (id: string, data: Partial<Tenant>) =>
+        apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+};
+
+// ========================================
+// PERSONAS API (Multi-tenant)
+// ========================================
+export const personasApi = {
+    create: (tenantId: string, data: {
+        rut: string;
+        nombre: string;
+        apellido?: string;
+        email?: string;
+        telefono?: string;
+        rol: string;
+        cargo?: string;
+        tieneAccesoWeb?: boolean;
+        obraIds?: string[];
+    }) =>
+        apiRequest<{ message: string; persona: PersonaResponse; passwordTemporal?: string; emailNotificado: boolean }>(
+            `/personas?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    list: (tenantId: string, filters?: { rol?: string; estado?: string; obraId?: string }) => {
+        const params = new URLSearchParams({ tenantId });
+        if (filters?.rol) params.append('rol', filters.rol);
+        if (filters?.estado) params.append('estado', filters.estado);
+        if (filters?.obraId) params.append('obraId', filters.obraId);
+        return apiRequest<{ total: number; personas: PersonaResponse[] }>(`/personas?${params}`);
+    },
+
+    get: (id: string) =>
+        apiRequest<PersonaResponse>(`/personas/${id}`),
+
+    getByRut: (tenantId: string, rut: string) =>
+        apiRequest<PersonaResponse>(`/personas/by-rut/${encodeURIComponent(rut)}?tenantId=${tenantId}`),
+
+    update: (tenantId: string, id: string, data: Partial<PersonaResponse>) =>
+        apiRequest<{ message: string; persona: PersonaResponse }>(`/personas/${id}?tenantId=${tenantId}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+
+    setPin: (tenantId: string, id: string, pin: string, pinActual?: string) =>
+        apiRequest<{ message: string; pinCreatedAt: string }>(`/personas/${id}/set-pin?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify({ pin, pinActual }),
+        }),
+
+    completarEnrolamiento: (tenantId: string, id: string, pin: string) =>
+        apiRequest<{ message: string; personaId: string; habilitado: boolean; firmaEnrolamiento: any }>(`/personas/${id}/enrolamiento?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify({ pin }),
+        }),
+};
+

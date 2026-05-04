@@ -5,7 +5,7 @@
  * Todas las operaciones filtran por tenantId.
  */
 const { PersonaService } = require('../../lib/services/PersonaService');
-const { success, error, created } = require('../../lib/response');
+const { success, error, created, cors } = require('../../lib/response');
 const { sendWelcomeEmail } = require('../notifications');
 
 const personaService = new PersonaService();
@@ -24,6 +24,9 @@ module.exports.personasHandler = async (event) => {
         || null;
 
     try {
+        // CORS preflight
+        if (method === 'OPTIONS') return cors();
+
         // POST /personas — Crear persona
         if (method === 'POST' && !personaId) {
             if (!tenantId) return error('tenantId es requerido');

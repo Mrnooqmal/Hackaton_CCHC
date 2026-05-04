@@ -163,8 +163,13 @@ export default function Login() {
                         Powered by <span className="text-primary-400">The Code Cookers</span>
                     </p>
                     <p className="login-footer-link">
-                        <a href="/register-admin" className="login-admin-link">
-                            Crear primer administrador
+                        <a href="/onboarding" className="login-admin-link">
+                            Registrar nueva empresa
+                        </a>
+                    </p>
+                    <p className="login-footer-link">
+                        <a href="/register-admin" className="login-admin-link" style={{ opacity: 0.6, fontSize: '0.78rem' }}>
+                            Crear primer administrador (legacy)
                         </a>
                     </p>
                 </div>

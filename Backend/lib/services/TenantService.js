@@ -91,7 +91,8 @@ class TenantService {
      */
     async updateConfig(tenantId, updates) {
         const allowedFields = ['nombre', 'email', 'telefono', 'plan',
-            'cantidadTrabajadores', 'settings', 'reglas', 'preferencias'];
+            'cantidadTrabajadores', 'settings', 'reglas', 'preferencias',
+            'estado', 'adminPersonaId'];
 
         const updateExpressions = [];
         const expressionNames = {};
@@ -140,6 +141,22 @@ class TenantService {
      */
     async activar(tenantId) {
         return this.updateConfig(tenantId, { estado: 'activo' });
+    }
+
+    /**
+     * Listar absolutamente todos los tenants
+     */
+    async listAll() {
+        const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+        const result = await this.dynamo.send(new ScanCommand({
+            TableName: this.table,
+            FilterExpression: 'begins_with(PK, :pk) AND begins_with(SK, :sk)',
+            ExpressionAttributeValues: {
+                ':pk': 'TENANT#',
+                ':sk': 'METADATA#'
+            }
+        }));
+        return (result.Items || []).map(item => Tenant.fromDynamoItem(item));
     }
 
     /**

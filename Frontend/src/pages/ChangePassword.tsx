@@ -34,7 +34,7 @@ export default function ChangePassword() {
 
         try {
             const response = await authApi.changePassword({
-                userId: user?.userId || '',
+                personaId: user?.personaId || user?.userId || '',
                 ...formData
             });
 

@@ -1,4 +1,4 @@
-service: HackatonBackend
+service: hackatonbackendv2
 
 plugins:
   - serverless-prune-plugin
@@ -11,7 +11,7 @@ custom:
   serverless-offline:
     httpPort: 3001
     lambdaPort: 3002
-  bucketName: hackatonbackend-documents-v245-${self:provider.stage}
+  bucketName: ${self:service}-documents-v245-${self:provider.stage}-${aws:accountId}
 
 provider:
   name: aws
@@ -34,7 +34,7 @@ provider:
     INBOX_TABLE: ${self:service}-inbox-${self:provider.stage}
     # --- Storage ---
     DOCUMENTS_BUCKET: ${self:custom.bucketName}
-    INCIDENT_EVIDENCE_BUCKET: hackatonbackend-incident-evidence-${self:provider.stage}-${aws:accountId}
+    INCIDENT_EVIDENCE_BUCKET: ${self:service}-evidence-${self:provider.stage}-${aws:accountId}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     # --- External ---
     SES_SENDER_EMAIL: 'benjasncz@gmail.com'

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { usersApi } from '../api/client';
+import { personasApi } from '../api/client';
 import PinInput from '../components/PinInput';
 import { FiCheckCircle, FiShield, FiLock, FiArrowRight, FiKey } from 'react-icons/fi';
 
@@ -35,19 +35,22 @@ export default function EnrollMe() {
         setCurrentStep('processing');
 
         try {
-            if (!user?.userId) {
-                throw new Error('Usuario no encontrado');
+            const targetId = (user as any)?.personaId || user?.userId;
+            const targetTenant = (user as any)?.tenantId || (user as any)?.empresaId;
+
+            if (!targetId || !targetTenant) {
+                throw new Error('Usuario o Tenant no encontrado en la sesión');
             }
 
             // Paso 1: Configurar el PIN
-            const setPinResponse = await usersApi.setPin(user.userId, pin);
+            const setPinResponse = await personasApi.setPin(targetTenant, targetId, pin);
 
             if (!setPinResponse.success) {
                 throw new Error(setPinResponse.error || 'Error al configurar el PIN');
             }
 
             // Paso 2: Completar enrolamiento (crea la firma digital)
-            const enrollResponse = await usersApi.completeEnrollment(user.userId, pin);
+            const enrollResponse = await personasApi.completarEnrolamiento(targetTenant, targetId, pin);
 
             if (!enrollResponse.success || !enrollResponse.data) {
                 throw new Error(enrollResponse.error || 'Error al completar el enrolamiento');

@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { offlineStore } from '../services/offlineStore';
 import type { OfflineRequest } from '../services/offlineStore';
 import { useOnlineStatus } from './useOnlineStatus';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { apiRequest } from '../api/client';
 
 interface SyncResult {
     requestId: string;
@@ -89,10 +88,9 @@ export function useOfflineSync(): UseOfflineSyncReturn {
                 message: `Iniciando sincronización de ${request.firmas.length} firmas`,
             });
 
-            // Enviar al backend
-            const response = await fetch(`${API_BASE_URL}/signature-requests/offline-batch`, {
+            // Enviar al backend usando apiRequest para heredar auth y tenantId
+            const data = await apiRequest<any>('/signature-requests/offline-batch', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     tipo: request.tipo,
                     titulo: request.titulo,
@@ -108,8 +106,6 @@ export function useOfflineSync(): UseOfflineSyncReturn {
                     fechaCreacionOffline: request.fechaCreacion,
                 }),
             });
-
-            const data = await response.json();
 
             if (data.success) {
                 request.syncStatus = 'synced';

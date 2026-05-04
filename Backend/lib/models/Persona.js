@@ -157,6 +157,7 @@ class Persona {
             pinConfigurado: this.tienePinConfigurado(),
             enrolado: this.estaEnrolado(),
             estado: this.estado,
+            passwordTemporal: this.passwordTemporal,
             preferencias: this.preferencias,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,

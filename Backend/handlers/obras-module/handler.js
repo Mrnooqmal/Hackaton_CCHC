@@ -4,7 +4,7 @@
  * Router para endpoints de gestión de obras/proyectos.
  */
 const { ObraService } = require('../../lib/services/ObraService');
-const { success, error, created } = require('../../lib/response');
+const { success, error, created, cors } = require('../../lib/response');
 
 const obraService = new ObraService();
 
@@ -22,6 +22,9 @@ module.exports.obrasHandler = async (event) => {
         || null;
 
     try {
+        // CORS preflight
+        if (method === 'OPTIONS') return cors();
+
         // POST /obras — Crear obra
         if (method === 'POST' && !obraId) {
             if (!tenantId) return error('tenantId es requerido');

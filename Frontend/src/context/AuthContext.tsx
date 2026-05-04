@@ -30,11 +30,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const response = await authApi.me(token);
             if (response.success && response.data) {
-                setUser(response.data.user);
+                const userData = response.data.user;
+                // Map personaId → userId for backward compatibility
+                const enrichedUser = {
+                    ...userData,
+                    personaId: (userData as any).personaId || userData.userId,
+                    userId: userData.userId || (userData as any).personaId,
+                    workerId: userData.workerId || (userData as any).personaId || userData.userId,
+                    empresaId: userData.empresaId || (userData as any).tenantId || (response.data as any).tenantId,
+                    tenantId: (userData as any).tenantId || (response.data as any).tenantId,
+                };
+                setUser(enrichedUser);
                 setSession(response.data.session);
+                // Ensure tenant_id is set in localStorage
+                if (enrichedUser.tenantId) {
+                    localStorage.setItem('tenant_id', enrichedUser.tenantId);
+                }
             } else {
                 localStorage.removeItem('auth_token');
                 localStorage.removeItem('session_id');
+                localStorage.removeItem('tenant_id');
             }
         } catch (err) {
             console.error('Error checking auth:', err);
@@ -56,8 +71,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 localStorage.setItem('auth_token', token);
                 localStorage.setItem('session_id', sessionId);
+                if ((response.data as any).tenantId) {
+                    localStorage.setItem('tenant_id', (response.data as any).tenantId);
+                } else if ((userData as any).empresaId) {
+                    localStorage.setItem('tenant_id', (userData as any).empresaId);
+                } else if ((userData as any).tenantId) {
+                    localStorage.setItem('tenant_id', (userData as any).tenantId);
+                }
 
-                setUser(userData);
+                // Map personaId → userId for backward compatibility
+                const enrichedUser = {
+                    ...userData,
+                    personaId: (userData as any).personaId || userData.userId,
+                    userId: userData.userId || (userData as any).personaId,
+                    workerId: userData.workerId || (userData as any).personaId || userData.userId,
+                    empresaId: userData.empresaId || (userData as any).tenantId,
+                    tenantId: (userData as any).tenantId,
+                };
+
+                setUser(enrichedUser);
                 setSession({
                     sessionId,
                     expiresAt,
@@ -86,6 +118,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         localStorage.removeItem('auth_token');
         localStorage.removeItem('session_id');
+        localStorage.removeItem('tenant_id');
         setUser(null);
         setSession(null);
     };

@@ -23,4 +23,15 @@ const error = (message, statusCode = 400) => ({
 
 const created = (data) => success(data, 201);
 
-module.exports = { success, error, created, headers };
+/**
+ * Respuesta para preflight CORS (OPTIONS).
+ * Usar al inicio de handlers con method: any.
+ */
+const cors = () => ({
+    statusCode: 204,
+    headers,
+    body: '',
+});
+
+module.exports = { success, error, created, cors, headers };
+

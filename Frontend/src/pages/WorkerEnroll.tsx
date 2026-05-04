@@ -130,7 +130,7 @@ export default function WorkerEnroll() {
             const response = await workersApi.completeEnrollment(workerId, pin);
 
             if (response.success && response.data) {
-                setSignatureToken(response.data.firma.token);
+                setSignatureToken((response.data as any).firmaEnrolamiento?.token || 'TOKEN-COMPLETADO');
                 setStep('complete');
             } else {
                 setPinError(response.error || 'Error al completar enrolamiento');
