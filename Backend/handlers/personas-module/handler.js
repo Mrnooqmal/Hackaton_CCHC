@@ -109,6 +109,13 @@ module.exports.personasHandler = async (event) => {
             return success(result);
         }
 
+        // POST /personas/{id}/reset-password — Resetear contraseña
+        if (method === 'POST' && personaId && action === 'reset-password') {
+            if (!tenantId) return error('tenantId es requerido');
+            const result = await personaService.resetPassword(tenantId, personaId);
+            return success(result);
+        }
+
         return error('Ruta no encontrada', 404);
     } catch (err) {
         console.error('Error in personas handler:', err);

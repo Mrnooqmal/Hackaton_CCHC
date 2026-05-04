@@ -305,6 +305,37 @@ class PersonaService {
             }
         };
     }
+    /**
+     * Resetear contraseña — genera nueva password temporal
+     */
+    async resetPassword(tenantId, personaId) {
+        const persona = await this.getById(personaId);
+        if (!persona) throw new Error('Persona no encontrada');
+
+        const passwordTemporal = generateTempPassword(10);
+        const passwordHash = hashPassword(passwordTemporal, personaId);
+        const now = new Date().toISOString();
+
+        await this.dynamo.send(new UpdateCommand({
+            TableName: this.table,
+            Key: {
+                PK: `TENANT#${tenantId}`,
+                SK: `PERSONA#${personaId}`
+            },
+            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':passwordHash': passwordHash,
+                ':passwordTemporal': true,
+                ':updatedAt': now
+            }
+        }));
+
+        return {
+            message: 'Contraseña reseteada exitosamente',
+            passwordTemporal,
+            personaId
+        };
+    }
 }
 
 module.exports = { PersonaService };

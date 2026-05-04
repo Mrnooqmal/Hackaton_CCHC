@@ -9,7 +9,6 @@ import {
     FiCheckSquare,
     FiMessageSquare,
     FiSettings,
-    FiUser,
     FiAlertTriangle,
     FiClipboard,
     FiMail,
@@ -90,7 +89,7 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                 {
                     section: 'Gestión',
                     items: [
-                        { path: '/workers', icon: FiUsers, label: 'Trabajadores' },
+                        { path: '/personas', icon: FiUsers, label: 'Personas' },
                         { path: '/activities', icon: FiCalendar, label: 'Actividades' },
                         { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
                         { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
@@ -110,8 +109,18 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                 {
                     section: 'Administración',
                     items: [
-                        { path: '/users', icon: FiUser, label: 'Usuarios' },
-                        { path: '/workers', icon: FiUsers, label: 'Trabajadores' },
+                        { path: '/personas', icon: FiUsers, label: 'Personas' },
+                    ]
+                },
+                {
+                    section: 'Cumplimiento',
+                    items: [
+                        { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma' },
+                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Certificados' },
+                        { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
+                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
+                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
+                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
                     ]
                 },
                 {

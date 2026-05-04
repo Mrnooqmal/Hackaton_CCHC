@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
-import Workers from './pages/Workers';
+import PersonasManagement from './pages/PersonasManagement';
 import WorkerDetail from './pages/WorkerDetail';
 import WorkerEnroll from './pages/WorkerEnroll';
 import Documents from './pages/Documents';
@@ -11,7 +11,7 @@ import Surveys from './pages/Surveys';
 import Incidents from './pages/Incidents';
 import Inbox from './pages/Inbox';
 import Login from './pages/Login';
-import UserManagement from './pages/UserManagement';
+// Legacy UserManagement replaced by PersonasManagement
 import ChangePassword from './pages/ChangePassword';
 import EnrollMe from './pages/EnrollMe';
 import Unauthorized from './pages/Unauthorized';
@@ -49,11 +49,15 @@ function AppContent() {
             </ProtectedRoute>
           } />
 
-          <Route path="/workers" element={
+          <Route path="/personas" element={
             <ProtectedRoute requiredPermission="ver_trabajadores">
-              <Workers />
+              <PersonasManagement />
             </ProtectedRoute>
           } />
+
+          {/* Legacy routes redirect to unified personas */}
+          <Route path="/workers" element={<Navigate to="/personas" replace />} />
+          <Route path="/users" element={<Navigate to="/personas" replace />} />
 
           <Route path="/workers/:rut" element={
             <ProtectedRoute requiredPermission="ver_trabajadores">
@@ -64,12 +68,6 @@ function AppContent() {
           <Route path="/workers/enroll" element={
             <ProtectedRoute requiredPermission="ver_trabajadores">
               <WorkerEnroll />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/users" element={
-            <ProtectedRoute requiredPermission="crear_usuarios">
-              <UserManagement />
             </ProtectedRoute>
           } />
 

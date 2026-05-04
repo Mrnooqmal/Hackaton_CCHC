@@ -1843,5 +1843,10 @@ export const personasApi = {
             method: 'POST',
             body: JSON.stringify({ pin }),
         }),
+
+    resetPassword: (tenantId: string, id: string) =>
+        apiRequest<{ message: string; passwordTemporal: string; personaId: string }>(`/personas/${id}/reset-password?tenantId=${tenantId}`, {
+            method: 'POST',
+        }),
 };
 
