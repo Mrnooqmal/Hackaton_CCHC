@@ -1850,3 +1850,18 @@ export const personasApi = {
         }),
 };
 
+
+// Obras API
+export const obrasApi = {
+    list: (tenantId?: string) => {
+        const id = tenantId || localStorage.getItem('tenant_id') || '';
+        return apiRequest<any[]>(`/obras?tenantId=${id}`);
+    },
+    create: (data: any) =>
+        apiRequest<any>('/obras', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+    getById: (id: string) =>
+        apiRequest<any>(`/obras/${id}`),
+};

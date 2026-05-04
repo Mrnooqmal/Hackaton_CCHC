@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
     FiHome,
     FiUsers,
+    FiUser,
     FiFileText,
     FiCalendar,
     FiEdit3,
@@ -109,14 +110,16 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                 {
                     section: 'Administración',
                     items: [
-                        { path: '/personas', icon: FiUsers, label: 'Personas' },
+                        { path: '/users', icon: FiUser, label: 'Usuarios' },
+                        { path: '/workers', icon: FiUsers, label: 'Trabajadores' },
+                        { path: '/obras', icon: FiHome, label: 'Obras' },
                     ]
                 },
                 {
                     section: 'Cumplimiento',
                     items: [
                         { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma' },
-                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Certificados' },
+                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
                         { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
                         { path: '/documents', icon: FiFileText, label: 'Documentos' },
                         { path: '/activities', icon: FiCalendar, label: 'Actividades' },

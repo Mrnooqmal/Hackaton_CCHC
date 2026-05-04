@@ -20,6 +20,7 @@ import TenantOnboarding from './pages/TenantOnboarding';
 import SignatureRequests from './pages/SignatureRequests';
 import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
+import Obras from './pages/Obras';
 import OfflineBanner from './components/OfflineBanner';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
@@ -62,6 +63,12 @@ function AppContent() {
           <Route path="/workers/:rut" element={
             <ProtectedRoute requiredPermission="ver_trabajadores">
               <WorkerDetail />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/obras" element={
+            <ProtectedRoute requiredPermission="crear_usuarios">
+              <Obras />
             </ProtectedRoute>
           } />
 
