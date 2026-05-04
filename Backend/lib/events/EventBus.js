@@ -50,37 +50,9 @@ class EventBus {
      * Send a notification to inbox for document assignment
      */
     async onDocumentAssigned(data) {
-        // Accept both userIds (new) and workerIds (legacy) for backwards compatibility
-        const { documentId, userIds, workerIds, assignedBy, creatorName, documentName, dueDate } = data;
-        let recipientIds = userIds || [];
-
-        // If we only got workerIds, resolve them to userIds
-        if (recipientIds.length === 0 && workerIds && workerIds.length > 0) {
-            try {
-                const { GetCommand } = require('@aws-sdk/lib-dynamodb');
-                const { docClient } = require('../../lib/dynamodb');
-                const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
-
-                for (const wId of workerIds) {
-                    try {
-                        const workerRes = await docClient.send(new GetCommand({
-                            TableName: WORKERS_TABLE,
-                            Key: { workerId: wId }
-                        }));
-                        if (workerRes.Item && workerRes.Item.userId) {
-                            recipientIds.push(workerRes.Item.userId);
-                        } else {
-                            recipientIds.push(wId);
-                        }
-                    } catch (lookupErr) {
-                        recipientIds.push(wId);
-                    }
-                }
-            } catch (resolveErr) {
-                console.error('Error resolving workerIds for document notification:', resolveErr);
-                recipientIds = workerIds; // Fallback
-            }
-        }
+        // In the new model, userIds, workerIds, and personaIds are all the same (personaId)
+        const { documentId, userIds, workerIds, personaIds, assignedBy, creatorName, documentName, dueDate } = data;
+        const recipientIds = personaIds || userIds || workerIds || [];
 
         if (!recipientIds || recipientIds.length === 0) {
             console.log('No users to notify for document assignment');
@@ -176,54 +148,23 @@ class EventBus {
      * Send a notification to inbox for signature request
      */
     async onSignatureRequested(data) {
-        const { requestId, workerIds, requestedBy, documentName, priority } = data;
+        // In the new model, workerIds and personaIds are the same (personaId)
+        const { requestId, workerIds, personaIds, requestedBy, documentName, priority } = data;
+        const recipientIds = personaIds || workerIds || [];
 
-        if (!workerIds || workerIds.length === 0) {
-            console.log('No workers to notify for signature request');
+        if (!recipientIds || recipientIds.length === 0) {
+            console.log('No recipients to notify for signature request');
             return;
         }
 
         try {
-            // Resolve workerIds to userIds for inbox delivery
-            const { GetCommand } = require('@aws-sdk/lib-dynamodb');
-            const { docClient } = require('../../lib/dynamodb');
-            const WORKERS_TABLE = process.env.WORKERS_TABLE || 'Workers';
-
-            const resolvedRecipientIds = [];
-            for (const wId of workerIds) {
-                try {
-                    // Look up the worker to find their userId
-                    const workerRes = await docClient.send(new GetCommand({
-                        TableName: WORKERS_TABLE,
-                        Key: { workerId: wId }
-                    }));
-
-                    if (workerRes.Item && workerRes.Item.userId) {
-                        // Worker has a linked userId — use that for inbox
-                        resolvedRecipientIds.push(workerRes.Item.userId);
-                    } else {
-                        // workerId might already be a userId (legacy users mapped as workers)
-                        resolvedRecipientIds.push(wId);
-                    }
-                } catch (lookupErr) {
-                    console.error(`Error resolving workerId ${wId}:`, lookupErr);
-                    // Fallback: use workerId as-is
-                    resolvedRecipientIds.push(wId);
-                }
-            }
-
-            if (resolvedRecipientIds.length === 0) {
-                console.log('No resolved recipients for signature request notification');
-                return;
-            }
-
             const priorityLevel = priority === 'urgent' ? 'urgent' : 'normal';
 
             await this.inboxRepo.sendMessage({
                 senderId: requestedBy || 'system',
                 senderName: 'PrevencionApp',
                 senderRol: 'system',
-                recipientIds: resolvedRecipientIds,
+                recipientIds: recipientIds,
                 type: 'task',
                 priority: priorityLevel,
                 subject: `Firma requerida: ${documentName}`,
@@ -231,7 +172,7 @@ class EventBus {
                 linkedEntity: { type: 'signature-request', id: requestId }
             });
 
-            console.log(`Notification sent for signature request ${requestId} to ${resolvedRecipientIds.length} workers (resolved from ${workerIds.length} workerIds)`);
+            console.log(`✅ Notification sent for signature request ${requestId} to ${recipientIds.length} personas`);
         } catch (error) {
             console.error('Error sending signature request notification:', error);
         }

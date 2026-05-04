@@ -157,19 +157,19 @@ async function main() {
             rut: data.rut,
             nombre: data.nombre,
             apellido: data.apellido,
-            email: data.email || null,
             rol: data.rol,
             cargo: data.cargo,
             tieneAccesoWeb: data.tieneAccesoWeb,
-            passwordHash: data.tieneAccesoWeb ? hashPassword(tempPassword, personaId) : null,
             passwordTemporal: data.tieneAccesoWeb,
-            pinHash: null,
             habilitado: data.tieneAccesoWeb, // Workers need enrollment
             estado: 'activo',
             obraId,
             createdAt: now,
             updatedAt: now
         };
+
+        if (data.email) persona.email = data.email;
+        if (data.tieneAccesoWeb) persona.passwordHash = hashPassword(tempPassword, personaId);
 
         await docClient.send(new PutCommand({ TableName: PERSONAS_TABLE, Item: persona }));
 

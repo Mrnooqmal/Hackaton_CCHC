@@ -40,9 +40,7 @@ provider:
     SES_SENDER_EMAIL: 'benjasncz@gmail.com'
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
-    # --- DEPRECATED: Legacy tables kept for migration ---
-    WORKERS_TABLE: ${self:service}-workers-${self:provider.stage}
-    USERS_TABLE: ${self:service}-users-${self:provider.stage}
+
   httpApi:
     cors:
       allowedOrigins:
@@ -91,9 +89,7 @@ provider:
             - !Sub ${ActivitiesTable.Arn}/index/*
             - !GetAtt DocumentsTable.Arn
             - !Sub ${DocumentsTable.Arn}/index/*
-            # --- DEPRECATED: Legacy ---
-            - !GetAtt WorkersTable.Arn
-            - !GetAtt UsersTable.Arn
+
         - Effect: Allow
           Action:
             - ses:SendEmail
@@ -218,27 +214,6 @@ functions:
           path: /auth/validate-token
           method: POST
 
-  # DEPRECATED: Legacy Users endpoint (kept for migration)
-  usersModule:
-    handler: handlers/users-module/handler.usersHandler
-    events:
-      - httpApi:
-          path: /users
-          method: any
-      - httpApi:
-          path: /users/{proxy+}
-          method: any
-
-  # DEPRECATED: Legacy Workers endpoint (kept for migration)
-  workersModule:
-    handler: handlers/workers-module/handler.workersHandler
-    events:
-      - httpApi:
-          path: /workers
-          method: any
-      - httpApi:
-          path: /workers/{proxy+}
-          method: any
 
   # ========================================
   # SIGNATURE REQUESTS (Solicitudes de Firma)
@@ -954,29 +929,3 @@ resources:
           AttributeName: ttl
           Enabled: true
 
-    # ==========================================
-    # DEPRECATED: Legacy tables (kept for migration)
-    # ==========================================
-    WorkersTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:provider.environment.WORKERS_TABLE}
-        BillingMode: PAY_PER_REQUEST
-        AttributeDefinitions:
-          - AttributeName: workerId
-            AttributeType: S
-        KeySchema:
-          - AttributeName: workerId
-            KeyType: HASH
-
-    UsersTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:provider.environment.USERS_TABLE}
-        BillingMode: PAY_PER_REQUEST
-        AttributeDefinitions:
-          - AttributeName: userId
-            AttributeType: S
-        KeySchema:
-          - AttributeName: userId
-            KeyType: HASH
