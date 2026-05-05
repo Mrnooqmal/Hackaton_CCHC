@@ -339,6 +339,10 @@ export default function ObraDetalle() {
   }
 
   const documentosPendientes = ds44Docs.filter((doc) => !doc.archivoSubido);
+  const ds44Total = ds44Docs.length;
+  const ds44Uploaded = ds44Total - documentosPendientes.length;
+  const ds44Progress = ds44Total > 0 ? Math.round((ds44Uploaded / ds44Total) * 100) : 0;
+  const documentosPendientesTitulos = documentosPendientes.map((doc) => doc.titulo);
   const inactiveWorkers = trabajadores.filter((worker) => worker.estado === 'inactivo');
   const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
 
@@ -485,7 +489,7 @@ export default function ObraDetalle() {
           ))}
         </div>
 
-        <div style={{ display: 'grid', gap: 'var(--space-5)', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+        <div className="obra-dashboard-grid">
           <div className="card">
             <div className="card-header">
               <div className="card-title">Resumen de Obra</div>
@@ -629,11 +633,35 @@ export default function ObraDetalle() {
               <div className="card-title">Documentos DS44</div>
               <LuFileText className="text-muted" />
             </div>
-            {documentosPendientes.length > 0 && (
-              <div className="alert alert-danger">
-                Faltan {documentosPendientes.length} documentos obligatorios por subir.
+            <div style={{ display: 'grid', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                <div className="font-medium">Progreso DS44</div>
+                <div className="text-muted">{ds44Uploaded}/{ds44Total} documentos subidos</div>
               </div>
-            )}
+              <div
+                style={{
+                  height: '10px',
+                  borderRadius: '999px',
+                  overflow: 'hidden',
+                  background: 'var(--surface-elevated)',
+                  border: '1px solid var(--surface-border)'
+                }}
+              >
+                <div
+                  style={{
+                    width: `${ds44Progress}%`,
+                    height: '100%',
+                    background: 'var(--gradient-primary)',
+                    transition: 'width 200ms ease'
+                  }}
+                />
+              </div>
+              {documentosPendientes.length > 0 && (
+                <div className="ds44-missing" style={{ fontSize: 'var(--text-sm)' }}>
+                  Documentos faltantes: {documentosPendientesTitulos.join(', ')}.
+                </div>
+              )}
+            </div>
             <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {ds44Docs.map((doc) => (
