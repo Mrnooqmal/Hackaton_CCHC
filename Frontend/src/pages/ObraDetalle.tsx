@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi } from '../api/client';
-import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuX } from 'react-icons/lu';
+import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus } from 'react-icons/lu';
+import { Modal } from '../components/ui';
 
 const REQUIRED_DS44 = [
   {
@@ -597,19 +598,19 @@ export default function ObraDetalle() {
         style={{ display: 'none' }}
       />
 
-      {isWorkersModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content max-w-3xl">
-            <div className="modal-header">
-              <div>
-                <h2 className="modal-title">Gestionar trabajadores</h2>
-                <p className="modal-subtitle">Agrega o da de baja trabajadores asociados a la obra.</p>
-              </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setIsWorkersModalOpen(false)}>
-                <LuX />
-              </button>
-            </div>
-            <div className="modal-body">
+      <Modal
+        isOpen={isWorkersModalOpen}
+        onClose={() => setIsWorkersModalOpen(false)}
+        title="Gestionar trabajadores"
+        subtitle="Agrega o da de baja trabajadores asociados a la obra."
+        size="lg"
+        footer={
+          <button className="btn btn-secondary" onClick={() => setIsWorkersModalOpen(false)}>
+            Cerrar
+          </button>
+        }
+      >
+        <div className="modal-body">
               <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
                 {allWorkers.map((worker) => {
                   const isAssigned = Array.isArray(worker.obraIds) && worker.obraIds.includes(obraId);
@@ -650,15 +651,8 @@ export default function ObraDetalle() {
                   );
                 })}
               </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setIsWorkersModalOpen(false)}>
-                Cerrar
-              </button>
-            </div>
-          </div>
         </div>
-      )}
+      </Modal>
     </>
   );
 }

@@ -3,6 +3,7 @@ import Header from '../components/Header';
 import { personasApi, type PersonaResponse } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import ConfirmModal from '../components/ConfirmModal';
+import { Modal } from '../components/ui';
 import {
     FiUserPlus, FiShield, FiCheckCircle, FiAlertCircle, FiEdit2,
     FiArrowRight, FiUsers, FiLock, FiX, FiSave,
@@ -262,17 +263,21 @@ export default function PersonasManagement() {
             </div>
 
             {/* Create Modal */}
-            {showCreate && (
-                <div className="modal-overlay">
-                    <div className="modal-content" style={{ maxWidth: 560 }}>
-                        <div className="modal-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div className="modal-header-icon" style={{ background: 'var(--primary-500)', marginBottom: 0 }}><FiUserPlus size={24} /></div>
-                                <h2 className="modal-title" style={{ marginBottom: 0 }}>Nueva Persona</h2>
-                            </div>
-                            <p className="modal-subtitle" style={{ marginTop: 0 }}>Agregue un nuevo miembro a su empresa</p>
-                        </div>
-                        <form onSubmit={handleCreate} className="modal-body">
+            <Modal
+                isOpen={showCreate}
+                onClose={() => setShowCreate(false)}
+                title="Nueva Persona"
+                subtitle="Agregue un nuevo miembro a su empresa"
+                icon={<FiUserPlus size={24} />}
+                size="lg"
+                footer={
+                    <>
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancelar</button>
+                        <button type="submit" form="crear-persona-form" className="btn btn-primary" disabled={loading || !newPersona.nombre || !newPersona.rut}>{loading ? <div className="spinner" /> : <><FiUserPlus /> Crear Persona</>}</button>
+                    </>
+                }
+            >
+                <form id="crear-persona-form" onSubmit={handleCreate} className="modal-body p-0">
                             <div className="form-section">
                                 <h3 className="form-section-title">Datos Personales</h3>
                                 <div className="grid grid-cols-2 gap-4">
@@ -306,25 +311,26 @@ export default function PersonasManagement() {
                                     </label>
                                 </div>
                             )}
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancelar</button>
-                                <button type="submit" className="btn btn-primary" disabled={loading || !newPersona.nombre || !newPersona.rut}>{loading ? <div className="spinner" /> : <><FiUserPlus /> Crear Persona</>}</button>
-                            </div>
                         </form>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             {/* Edit Modal */}
-            {showEdit && editing && (
-                <div className="modal-overlay">
-                    <div className="modal-content" style={{ maxWidth: 480 }}>
-                        <div className="modal-header">
-                            <div className="modal-header-icon" style={{ background: 'linear-gradient(135deg, var(--info-500), var(--info-600))' }}><FiEdit2 size={24} /></div>
-                            <h2 className="modal-title">Editar Persona</h2>
-                            <p className="modal-subtitle">{editing.nombre} {editing.apellido} — {rolBadge(editing.rol)}</p>
-                        </div>
-                        <form onSubmit={handleUpdate} className="modal-body">
+            <Modal
+                isOpen={showEdit}
+                onClose={() => { setShowEdit(false); setEditing(null); }}
+                title="Editar Persona"
+                subtitle={`${editing?.nombre} ${editing?.apellido} — Editar información`}
+                icon={<FiEdit2 size={24} />}
+                size="md"
+                footer={
+                    <>
+                        <button type="button" className="btn btn-secondary" onClick={() => { setShowEdit(false); setEditing(null); }}><FiX /> Cancelar</button>
+                        <button type="submit" form="editar-persona-form" className="btn btn-primary" disabled={loading}>{loading ? <div className="spinner" /> : <><FiSave /> Guardar</>}</button>
+                    </>
+                }
+            >
+                {editing && (
+                    <form id="editar-persona-form" onSubmit={handleUpdate} className="modal-body p-0">
                             <div className="form-section">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="form-group"><label className="form-label">Nombre</label><input type="text" className="form-input" value={editForm.nombre} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} required /></div>
@@ -338,14 +344,9 @@ export default function PersonasManagement() {
                                     </select>
                                 </div>
                             </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => { setShowEdit(false); setEditing(null); }}><FiX /> Cancelar</button>
-                                <button type="submit" className="btn btn-primary" disabled={loading}>{loading ? <div className="spinner" /> : <><FiSave /> Guardar</>}</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+                    </form>
+                )}
+            </Modal>
 
             <ConfirmModal isOpen={confirmModal.isOpen} title={confirmModal.title} message={confirmModal.message} confirmLabel="Resetear Contraseña" variant="warning" onConfirm={confirmReset} onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))} />
 
@@ -357,16 +358,6 @@ export default function PersonasManagement() {
                 .role-card-icon { font-size: 28px; margin-bottom: 8px; }
                 .role-card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
                 .role-card-desc { font-size: 10px; color: var(--text-muted); line-height: 1.4; }
-                .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: fadeIn .2s; }
-                @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-                .modal-content { background: var(--surface-card); border-radius: var(--radius-xl); border: 1px solid var(--surface-border); box-shadow: 0 25px 50px -12px rgba(0,0,0,.5); width: 100%; max-height: 90vh; overflow-y: auto; animation: slideUp .3s; }
-                @keyframes slideUp { from { opacity: 0; transform: translateY(20px) } to { opacity: 1; transform: translateY(0) } }
-                .modal-header { text-align: center; padding: 24px; border-bottom: 1px solid var(--surface-border); background: var(--surface-elevated); }
-                .modal-header-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; color: #fff; }
-                .modal-title { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
-                .modal-subtitle { font-size: 13px; color: var(--text-muted); }
-                .modal-body { padding: 24px; }
-                .modal-footer { display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--surface-border); margin-top: 16px; }
                 .form-section { margin-bottom: 24px; }
                 .form-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--surface-border); }
                 .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block; }

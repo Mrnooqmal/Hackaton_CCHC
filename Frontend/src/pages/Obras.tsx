@@ -7,10 +7,10 @@ import {
   LuBuilding2,
   LuPlus,
   LuChevronDown,
-  LuMapPin,
-  LuX
+  LuMapPin
 } from 'react-icons/lu';
 import { FiAlertTriangle } from 'react-icons/fi';
+import { Modal } from '../components/ui';
 
 interface Obra {
   obraId?: string;
@@ -53,7 +53,7 @@ export const Obras: React.FC = () => {
   const [loading, setLoading] = useState(true);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const canViewObras = user?.rol === 'admin' || user?.role === 'admin';
+  const canViewObras = user?.rol === 'admin';
   const [companyName, setCompanyName] = useState('');
   const resolvedCompanyName = useMemo(() => {
     const userAny = user as any;
@@ -323,26 +323,25 @@ export const Obras: React.FC = () => {
       </div>
 
       {/* Modal Crear Obra */}
-      {isModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content max-w-3xl">
-            <div className="modal-header">
-              <div>
-                <h2 className="modal-title">Nueva Obra</h2>
-                <p className="modal-subtitle">Completa los datos principales y asigna trabajadores.</p>
-              </div>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setIsModalOpen(false)}
-                aria-label="Cerrar"
-              >
-                <LuX />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="modal-form">
-              <div className="modal-body">
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title="Nueva Obra"
+        subtitle="Completa los datos principales y asigna trabajadores."
+        size="lg"
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>
+              Cancelar
+            </button>
+            <button type="submit" form="crear-obra-form" className="btn btn-primary">
+              Crear Obra
+            </button>
+          </>
+        }
+      >
+        <form id="crear-obra-form" onSubmit={handleSubmit} className="modal-form">
+          <div className="modal-body p-0">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                   <div className="form-group">
                     <label className="form-label">Nombre de obra</label>
@@ -459,19 +458,8 @@ export const Obras: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Crear Obra
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+        </form>
+      </Modal>
     </>
   );
 };
