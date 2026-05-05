@@ -62,6 +62,7 @@ module.exports.create = async (event) => {
             s3Key: body.s3Key || null,
             archivoUrl: body.archivoUrl || null,
             archivoNombre: body.archivoNombre || null,
+            fechaCaducidad: body.fechaCaducidad || null,
             createdBy: body.createdBy || null,
             creatorName: body.creatorName || null,
             firmas: [],
@@ -185,7 +186,7 @@ module.exports.update = async (event) => {
         if (!id) return error('ID de documento requerido');
 
         const body = JSON.parse(event.body || '{}');
-        const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio'];
+        const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad'];
         const updateExpressions = [];
         const expressionNames = {};
         const expressionValues = {};
@@ -234,7 +235,7 @@ module.exports.assign = async (event) => {
 
         // Acepta personaIds o workerIds (legacy)
         const personaIds = body.personaIds || body.workerIds;
-        const { fechaLimite, notificar, assignedBy, assignerName } = body;
+        const { fechaLimite, notificar, assignedBy, assignerName, replace } = body;
 
         if (!personaIds || !Array.isArray(personaIds) || personaIds.length === 0) {
             return error('Se requiere un array de IDs de personas');
@@ -257,6 +258,7 @@ module.exports.assign = async (event) => {
             nuevasAsignaciones.push({
                 personaId: pid,
                 nombre: persona ? `${persona.nombre} ${persona.apellido || ''}`.trim() : pid,
+                rut: persona?.rut || null,
                 fechaAsignacion: now,
                 fechaLimite: fechaLimite || null,
                 estado: 'pendiente',
@@ -264,16 +266,24 @@ module.exports.assign = async (event) => {
             });
         }
 
-        const asignaciones = [...(docResult.Item.asignaciones || []), ...nuevasAsignaciones];
+        const shouldReplace = Boolean(replace);
+        const asignaciones = shouldReplace
+            ? nuevasAsignaciones
+            : [...(docResult.Item.asignaciones || []), ...nuevasAsignaciones];
+
+        const updateExpression = shouldReplace
+            ? 'SET asignaciones = :asignaciones, firmas = :firmas, updatedAt = :updatedAt'
+            : 'SET asignaciones = :asignaciones, updatedAt = :updatedAt';
+
+        const expressionAttributeValues = shouldReplace
+            ? { ':asignaciones': asignaciones, ':firmas': [], ':updatedAt': now }
+            : { ':asignaciones': asignaciones, ':updatedAt': now };
 
         await docClient.send(new UpdateCommand({
             TableName: TABLE_NAME,
             Key: { documentId: id },
-            UpdateExpression: 'SET asignaciones = :asignaciones, updatedAt = :updatedAt',
-            ExpressionAttributeValues: {
-                ':asignaciones': asignaciones,
-                ':updatedAt': now
-            }
+            UpdateExpression: updateExpression,
+            ExpressionAttributeValues: expressionAttributeValues
         }));
 
         // Notificar asignados

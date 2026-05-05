@@ -69,11 +69,16 @@ export default function ObraDetalle() {
   const [selectedDs44Doc, setSelectedDs44Doc] = useState<Ds44Item | null>(null);
   const [selectedDs44Detail, setSelectedDs44Detail] = useState<any | null>(null);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
+  const [selectedExpiryDate, setSelectedExpiryDate] = useState('');
+  const [expiryNotApplicable, setExpiryNotApplicable] = useState(false);
   const [ds44Loading, setDs44Loading] = useState(false);
   const [ds44Saving, setDs44Saving] = useState(false);
   const [ds44Previewing, setDs44Previewing] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [pendingDs44File, setPendingDs44File] = useState<File | null>(null);
+  const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
+  const [signatureModalDoc, setSignatureModalDoc] = useState<{ titulo: string; asignaciones: any[] } | null>(null);
   const [editData, setEditData] = useState<any | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isWorkersModalOpen, setIsWorkersModalOpen] = useState(false);
   const [updatingWorkers, setUpdatingWorkers] = useState<string | null>(null);
 
@@ -169,10 +174,49 @@ export default function ObraDetalle() {
     }
   };
 
+  const getDocExpiryDate = (doc: any) => {
+    if (!doc) return null;
+    if (doc.fechaCaducidad) return doc.fechaCaducidad;
+    const fechas = (doc.asignaciones || [])
+      .map((asignacion: any) => asignacion.fechaLimite)
+      .filter(Boolean)
+      .map((fecha: string) => new Date(fecha))
+      .filter((fecha: Date) => !Number.isNaN(fecha.getTime()));
+    if (fechas.length === 0) return null;
+    const earliest = fechas.reduce((min, current) => (current < min ? current : min), fechas[0]);
+    return earliest.toISOString();
+  };
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return 'No aplica';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString('es-CL');
+  };
+
+  const toDateInputValue = (value?: string | null) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+    }
+    return date.toISOString().slice(0, 10);
+  };
+
+  const getSignatureStats = (doc: any) => {
+    const asignaciones = doc?.asignaciones || [];
+    const firmadas = asignaciones.filter((asignacion: any) => asignacion.estado === 'firmado' || asignacion.fechaFirma).length;
+    return { firmadas, total: asignaciones.length, asignaciones };
+  };
+
   const openDs44Modal = async (doc: Ds44Item) => {
     setSelectedDs44Doc(doc);
     setSelectedDs44Detail(doc.document || null);
-    setSelectedWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.workerId));
+    setSelectedWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.personaId || a.workerId));
+    const docExpiry = getDocExpiryDate(doc.document);
+    setSelectedExpiryDate(toDateInputValue(docExpiry));
+    setExpiryNotApplicable(Boolean(doc.document && !docExpiry));
+    setPendingDs44File(null);
     setIsDs44ModalOpen(true);
 
     if (doc.documentId) {
@@ -181,7 +225,10 @@ export default function ObraDetalle() {
         const res = await documentsApi.get(doc.documentId);
         if (res.success && res.data) {
           setSelectedDs44Detail(res.data);
-          setSelectedWorkerIds((res.data.asignaciones || []).map((a: any) => a.workerId));
+          setSelectedWorkerIds((res.data.asignaciones || []).map((a: any) => a.personaId || a.workerId));
+          const fetchedExpiry = getDocExpiryDate(res.data);
+          setSelectedExpiryDate(toDateInputValue(fetchedExpiry));
+          setExpiryNotApplicable(Boolean(!fetchedExpiry));
         }
       } catch (error) {
         console.error('Error loading DS44 document:', error);
@@ -191,48 +238,79 @@ export default function ObraDetalle() {
     }
   };
 
-  const handleDs44FileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDs44FileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !selectedDs44Doc || !obraId) return;
+    if (!file) return;
+    setPendingDs44File(file);
+    if (event.target) {
+      event.target.value = '';
+    }
+  };
+
+  const handleSaveDs44Changes = async () => {
+    if (!selectedDs44Doc || !obraId) return;
+
+    if (!expiryNotApplicable && !selectedExpiryDate) {
+      alert('Selecciona una fecha de vencimiento para el documento.');
+      return;
+    }
+
+    const expiryValue = expiryNotApplicable ? null : selectedExpiryDate;
+    const existingSignerIds = (selectedDs44Detail?.asignaciones || []).map((asignacion: any) => asignacion.personaId || asignacion.workerId);
+    const targetSignerIds = selectedWorkerIds.length > 0 ? selectedWorkerIds : existingSignerIds;
+
+    if (!selectedDs44Doc.documentId && !pendingDs44File) {
+      alert('Debes seleccionar un archivo antes de guardar.');
+      return;
+    }
 
     setUploadingKey(selectedDs44Doc.key);
+    setDs44Saving(true);
+
     try {
-      const uploadUrlRes = await uploadsApi.getUploadUrl({
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
-        categoria: 'obras',
-        empresaId: obra?.tenantId
-      });
+      let fileKey = selectedDs44Detail?.s3Key || selectedDs44Detail?.archivoUrl || null;
+      let fileName = selectedDs44Detail?.archivoNombre || null;
 
-      if (!uploadUrlRes.success || !uploadUrlRes.data) {
-        throw new Error(uploadUrlRes.error || 'Error al obtener URL de subida');
+      if (pendingDs44File) {
+        const uploadUrlRes = await uploadsApi.getUploadUrl({
+          fileName: pendingDs44File.name,
+          fileType: pendingDs44File.type,
+          fileSize: pendingDs44File.size,
+          categoria: 'obras',
+          empresaId: obra?.tenantId
+        });
+
+        if (!uploadUrlRes.success || !uploadUrlRes.data) {
+          throw new Error(uploadUrlRes.error || 'Error al obtener URL de subida');
+        }
+
+        const uploadResult = await fetch(uploadUrlRes.data.uploadUrl, {
+          method: 'PUT',
+          body: pendingDs44File,
+          headers: { 'Content-Type': pendingDs44File.type }
+        });
+
+        if (!uploadResult.ok) {
+          throw new Error('Error al subir archivo');
+        }
+
+        fileKey = uploadUrlRes.data.fileKey;
+        fileName = pendingDs44File.name;
+        await uploadsApi.confirmUpload({
+          fileKey,
+          fileName: pendingDs44File.name,
+          fileType: pendingDs44File.type,
+          fileSize: pendingDs44File.size
+        });
       }
-
-      const uploadResult = await fetch(uploadUrlRes.data.uploadUrl, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type }
-      });
-
-      if (!uploadResult.ok) {
-        throw new Error('Error al subir archivo');
-      }
-
-      const fileKey = uploadUrlRes.data.fileKey;
-      await uploadsApi.confirmUpload({
-        fileKey,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size
-      });
 
       let documentId = selectedDs44Doc.documentId;
       if (documentId) {
         await documentsApi.update(documentId, {
           s3Key: fileKey,
           archivoUrl: fileKey,
-          archivoNombre: file.name
+          archivoNombre: fileName,
+          fechaCaducidad: expiryValue
         } as any);
       } else {
         const createRes = await documentsApi.create({
@@ -243,11 +321,23 @@ export default function ObraDetalle() {
           obligatorio: true,
           titulo: selectedDs44Doc.titulo,
           archivoUrl: fileKey,
-          archivoNombre: file.name,
+          archivoNombre: fileName,
+          fechaCaducidad: expiryValue,
           createdBy: user?.userId,
           creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
         } as any);
         documentId = (createRes as any)?.data?.documentId || (createRes as any)?.data?.id || documentId;
+      }
+
+      if (documentId && targetSignerIds.length > 0) {
+        await documentsApi.assign(documentId, {
+          workerIds: targetSignerIds,
+          fechaLimite: expiryValue,
+          notificar: true,
+          replace: true,
+          assignedBy: user?.userId,
+          assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
+        } as any);
       }
 
       await reloadDocs();
@@ -257,12 +347,19 @@ export default function ObraDetalle() {
         if (updatedDoc.success && updatedDoc.data) {
           setSelectedDs44Detail(updatedDoc.data);
           setSelectedDs44Doc((prev) => prev ? { ...prev, documentId } : prev);
+          const updatedExpiry = getDocExpiryDate(updatedDoc.data);
+          setSelectedExpiryDate(toDateInputValue(updatedExpiry));
+          setExpiryNotApplicable(Boolean(!updatedExpiry));
         }
       }
+
+      setPendingDs44File(null);
+      setIsDs44ModalOpen(false);
     } catch (error) {
-      console.error('Error uploading documento DS44:', error);
+      console.error('Error updating documento DS44:', error);
     } finally {
       setUploadingKey(null);
+      setDs44Saving(false);
     }
   };
 
@@ -272,26 +369,19 @@ export default function ObraDetalle() {
     );
   };
 
-  const handleSaveAssignments = async () => {
-    if (!selectedDs44Doc?.documentId) {
-      alert('Primero debes subir el documento para asignar firmantes.');
-      return;
-    }
-    setDs44Saving(true);
+  const handlePreviewDocumentFromCard = async (doc: Ds44Item) => {
+    const fileKey = doc.document?.s3Key || doc.document?.archivoUrl;
+    if (!fileKey) return;
+    setDs44Previewing(true);
     try {
-      await documentsApi.assign(selectedDs44Doc.documentId, {
-        workerIds: selectedWorkerIds,
-        assignedBy: user?.userId,
-        assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
-      } as any);
-      const updatedDoc = await documentsApi.get(selectedDs44Doc.documentId);
-      if (updatedDoc.success && updatedDoc.data) {
-        setSelectedDs44Detail(updatedDoc.data);
+      const res = await uploadsApi.getDownloadUrl(fileKey);
+      if (res.success && res.data?.downloadUrl) {
+        window.open(res.data.downloadUrl, '_blank');
       }
     } catch (error) {
-      console.error('Error assigning workers to document:', error);
+      console.error('Error opening document:', error);
     } finally {
-      setDs44Saving(false);
+      setDs44Previewing(false);
     }
   };
 
@@ -309,6 +399,12 @@ export default function ObraDetalle() {
     } finally {
       setDs44Previewing(false);
     }
+  };
+
+  const openSignatureModal = (doc: Ds44Item) => {
+    const stats = getSignatureStats(doc.document);
+    setSignatureModalDoc({ titulo: doc.titulo, asignaciones: stats.asignaciones || [] });
+    setIsSignatureModalOpen(true);
   };
 
   if (loading) {
@@ -339,6 +435,11 @@ export default function ObraDetalle() {
   }
 
   const documentosPendientes = ds44Docs.filter((doc) => !doc.archivoSubido);
+  const documentosVencidos = ds44Docs.filter((doc) => {
+    const fechaCaducidad = getDocExpiryDate(doc.document);
+    if (!fechaCaducidad) return false;
+    return new Date(fechaCaducidad) < new Date();
+  });
   const ds44Total = ds44Docs.length;
   const ds44Uploaded = ds44Total - documentosPendientes.length;
   const ds44Progress = ds44Total > 0 ? Math.round((ds44Uploaded / ds44Total) * 100) : 0;
@@ -347,17 +448,12 @@ export default function ObraDetalle() {
   const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
 
   const handleEditToggle = () => {
-    setIsEditing((prev) => !prev);
     setEditData({
       nombre: obra.nombre || '',
-      codigo: obra.codigo || '',
-      direccion: obra.direccion || '',
-      comuna: obra.comuna || '',
-      region: obra.region || '',
       etapaActual: obra.etapaActual || 'excavacion',
-      estado: obra.estado || 'activa',
-      mandante: obra.mandante || ''
+      estado: obra.estado || 'activa'
     });
+    setIsEditModalOpen(true);
   };
 
   const handleEditChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -369,10 +465,6 @@ export default function ObraDetalle() {
     if (!obraId || !editData) return;
     const res = await obrasApi.update(obraId, {
       nombre: editData.nombre,
-      codigo: editData.codigo,
-      direccion: editData.direccion,
-      comuna: editData.comuna,
-      region: editData.region,
       etapaActual: editData.etapaActual,
       estado: editData.estado
     });
@@ -381,7 +473,7 @@ export default function ObraDetalle() {
     } else if (res.success && res.data) {
       setObra(res.data);
     }
-    setIsEditing(false);
+    setIsEditModalOpen(false);
   };
 
   const handleAddWorker = async (worker: any) => {
@@ -469,7 +561,7 @@ export default function ObraDetalle() {
               {obra.nombre}
             </h2>
             <p className="page-header-description">
-              Codigo {obra.codigo || '-'} · {obra.comuna || '-'}, {obra.region || '-'} · ID {obraId}
+              {obra.comuna || '-'}, {obra.region || '-'}
             </p>
           </div>
           <div className="page-header-actions">
@@ -495,73 +587,23 @@ export default function ObraDetalle() {
               <div className="card-title">Resumen de Obra</div>
               <button className="btn btn-ghost btn-sm" onClick={handleEditToggle}>
                 <LuPencil />
-                {isEditing ? 'Cancelar' : 'Editar'}
+                Editar
               </button>
             </div>
-            {isEditing && editData ? (
-              <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
-                <div className="form-group">
-                  <label className="form-label">Nombre</label>
-                  <input className="form-input" name="nombre" value={editData.nombre} onChange={handleEditChange} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Codigo</label>
-                  <input className="form-input" name="codigo" value={editData.codigo} onChange={handleEditChange} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Direccion</label>
-                  <input className="form-input" name="direccion" value={editData.direccion} onChange={handleEditChange} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Region</label>
-                  <input className="form-input" name="region" value={editData.region} onChange={handleEditChange} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Comuna</label>
-                  <input className="form-input" name="comuna" value={editData.comuna} onChange={handleEditChange} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Etapa actual</label>
-                  <select className="form-input form-select" name="etapaActual" value={editData.etapaActual} onChange={handleEditChange}>
-                    <option value="excavacion">Excavacion</option>
-                    <option value="obra_gruesa">Obra gruesa</option>
-                    <option value="terminaciones">Terminaciones</option>
-                    <option value="entrega">Entrega</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Estado</label>
-                  <select className="form-input form-select" name="estado" value={editData.estado} onChange={handleEditChange}>
-                    <option value="activa">Activa</option>
-                    <option value="pausada">Pausada</option>
-                    <option value="finalizada">Finalizada</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Mandante</label>
-                  <input className="form-input" name="mandante" value={editData.mandante} disabled />
-                </div>
-                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                  <button className="btn btn-primary" type="button" onClick={handleSaveObra}>Guardar cambios</button>
-                  <button className="btn btn-secondary" type="button" onClick={handleEditToggle}>Cancelar</button>
-                </div>
+            <>
+              <div className="text-muted">Mandante</div>
+              <div className="font-medium">{obra.mandante || '-'}</div>
+              <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Direccion</div>
+              <div className="font-medium">{obra.direccion || '-'}</div>
+              <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Region / Comuna</div>
+              <div className="font-medium">{obra.region || '-'} · {obra.comuna || '-'}</div>
+              <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Etapa actual</div>
+              <div className="badge badge-info" style={{ width: 'fit-content', textTransform: 'capitalize' }}>
+                {obra.etapaActual?.replace('_', ' ') || '-'}
               </div>
-            ) : (
-              <>
-                <div className="text-muted">Mandante</div>
-                <div className="font-medium">{obra.mandante || '-'}</div>
-                <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Direccion</div>
-                <div className="font-medium">{obra.direccion || '-'}</div>
-                <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Region / Comuna</div>
-                <div className="font-medium">{obra.region || '-'} · {obra.comuna || '-'}</div>
-                <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Etapa actual</div>
-                <div className="badge badge-info" style={{ width: 'fit-content', textTransform: 'capitalize' }}>
-                  {obra.etapaActual?.replace('_', ' ') || '-'}
-                </div>
-                <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Estado</div>
-                <div className="badge badge-success" style={{ width: 'fit-content' }}>{obra.estado || '-'}</div>
-              </>
-            )}
+              <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Estado</div>
+              <div className="badge badge-success" style={{ width: 'fit-content' }}>{obra.estado || '-'}</div>
+            </>
           </div>
 
           <div className="card">
@@ -657,15 +699,31 @@ export default function ObraDetalle() {
                 />
               </div>
               {documentosPendientes.length > 0 && (
-                <div className="ds44-missing" style={{ fontSize: 'var(--text-sm)' }}>
+                <div className="alert alert-danger">
                   Documentos faltantes: {documentosPendientesTitulos.join(', ')}.
+                </div>
+              )}
+              {documentosVencidos.length > 0 && (
+                <div className="alert alert-danger">
+                  Hay {documentosVencidos.length} documento{documentosVencidos.length === 1 ? '' : 's'} DS44 vencido{documentosVencidos.length === 1 ? '' : 's'}.
                 </div>
               )}
             </div>
             <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {ds44Docs.map((doc) => (
-                  <div key={doc.key} className="card" style={{ padding: 'var(--space-3)' }}>
+                {ds44Docs.map((doc) => {
+                  const { firmadas, total, asignaciones } = getSignatureStats(doc.document);
+                  const fechaCaducidad = getDocExpiryDate(doc.document);
+                  const isExpired = Boolean(fechaCaducidad && new Date(fechaCaducidad) < new Date());
+                  const showSignatureDetails = total > 0;
+                  const firmasCompletas = total > 0 && firmadas === total;
+                  const firmasClass = total === 0
+                    ? 'signature-counter signature-counter-neutral'
+                    : firmasCompletas
+                      ? 'signature-counter signature-counter-complete'
+                      : 'signature-counter signature-counter-pending';
+                  return (
+                    <div key={doc.key} className="card" style={{ padding: 'var(--space-3)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
                       <div>
                         <div className="font-medium">{doc.titulo}</div>
@@ -673,10 +731,23 @@ export default function ObraDetalle() {
                         <div className={doc.archivoSubido ? 'text-muted' : 'text-danger-500'} style={{ marginTop: 'var(--space-1)' }}>
                           {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
                         </div>
+                        <div className={isExpired ? 'text-danger-500' : 'text-muted'} style={{ marginTop: 'var(--space-1)' }}>
+                          Vencimiento: {formatDate(fechaCaducidad)}
+                        </div>
                       </div>
-                      <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-danger'}`}>
-                        {doc.archivoSubido ? 'Cargado' : 'Pendiente'}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-2)' }}>
+                        <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-danger'}`}>
+                          {doc.archivoSubido ? 'Cargado' : 'Pendiente'}
+                        </span>
+                        {isExpired && (
+                          <span className="badge badge-danger">Vencido</span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-3)' }}>
+                      <div className={firmasClass}>
+                        Firmas: {firmadas}/{total}
+                      </div>
                     </div>
                     <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
                       <button
@@ -684,11 +755,29 @@ export default function ObraDetalle() {
                         type="button"
                         onClick={() => openDs44Modal(doc)}
                       >
-                        {doc.archivoSubido ? 'Gestionar documento' : 'Subir y gestionar'}
+                        {doc.archivoSubido ? 'Actualizar documento' : 'Subir documento'}
                       </button>
+                      <button
+                        className="btn btn-secondary"
+                        type="button"
+                        disabled={!doc.archivoSubido || ds44Previewing}
+                        onClick={() => handlePreviewDocumentFromCard(doc)}
+                      >
+                        Ver documento
+                      </button>
+                      {showSignatureDetails && (
+                        <button
+                          className="btn btn-secondary"
+                          type="button"
+                          onClick={() => openSignatureModal(doc)}
+                        >
+                          Detalle de firmas
+                        </button>
+                      )}
                     </div>
                   </div>
-                ))}
+                );
+              })}
               </div>
             </div>
           </div>
@@ -738,26 +827,51 @@ export default function ObraDetalle() {
 
       <Modal
         isOpen={isDs44ModalOpen}
-        onClose={() => setIsDs44ModalOpen(false)}
+        onClose={() => {
+          setIsDs44ModalOpen(false);
+          setPendingDs44File(null);
+        }}
         title={selectedDs44Doc?.titulo ? `Documento DS44 - ${selectedDs44Doc.titulo}` : 'Documento DS44'}
-        subtitle="Sube el archivo y define quiénes deben firmar"
+        subtitle="Sube el archivo, selecciona firmantes y define vencimiento"
         size="lg"
         footer={
           <>
-            <button className="btn btn-secondary" onClick={() => setIsDs44ModalOpen(false)} disabled={ds44Saving}>
+            <button className="btn btn-secondary" onClick={() => setIsDs44ModalOpen(false)} disabled={ds44Saving || uploadingKey === selectedDs44Doc?.key}>
               Cerrar
             </button>
-            <button
-              className="btn btn-primary"
-              onClick={handleSaveAssignments}
-              disabled={ds44Saving || !selectedDs44Doc?.documentId}
-            >
-              Guardar firmantes
+            <button className="btn btn-primary" onClick={handleSaveDs44Changes} disabled={ds44Saving || uploadingKey === selectedDs44Doc?.key}>
+              Guardar cambios
             </button>
           </>
         }
       >
         <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Vencimiento</label>
+            <label className="checkbox-row" style={{ marginTop: 'var(--space-2)' }}>
+              <input
+                type="checkbox"
+                className="checkbox-input custom-checkbox"
+                checked={expiryNotApplicable}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setExpiryNotApplicable(checked);
+                  if (checked) {
+                    setSelectedExpiryDate('');
+                  }
+                }}
+              />
+              <span>No aplica</span>
+            </label>
+            {!expiryNotApplicable && (
+              <input
+                className="form-input"
+                type="date"
+                value={selectedExpiryDate}
+                onChange={(event) => setSelectedExpiryDate(event.target.value)}
+              />
+            )}
+          </div>
           <div
             style={{
               border: '1px dashed var(--surface-border)',
@@ -775,7 +889,7 @@ export default function ObraDetalle() {
               <div>
                 <div className="font-medium">Subir documento</div>
                 <div className="text-muted">
-                  {selectedDs44Detail?.archivoNombre || 'PDF requerido para completar el DS44'}
+                  {pendingDs44File?.name || selectedDs44Detail?.archivoNombre || 'PDF requerido para completar el DS44'}
                 </div>
               </div>
             </div>
@@ -785,9 +899,9 @@ export default function ObraDetalle() {
                 className="btn btn-primary"
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingKey === selectedDs44Doc?.key}
+                disabled={uploadingKey === selectedDs44Doc?.key || ds44Loading}
               >
-                {selectedDs44Detail?.archivoUrl ? 'Actualizar archivo' : 'Seleccionar archivo'}
+                {pendingDs44File ? 'Cambiar archivo' : selectedDs44Detail?.archivoUrl ? 'Actualizar archivo' : 'Seleccionar archivo'}
               </button>
               <button
                 className="btn btn-secondary"
@@ -830,35 +944,6 @@ export default function ObraDetalle() {
             )}
           </div>
 
-          <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
-            <div className="font-medium">Estado de firmas</div>
-            {ds44Loading ? (
-              <div className="text-muted">Cargando firmas...</div>
-            ) : selectedDs44Detail?.asignaciones?.length ? (
-              <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
-                {selectedDs44Detail.asignaciones.map((asignacion: any) => {
-                  const signedIds = new Set((selectedDs44Detail.firmas || []).map((firma: any) => firma.workerId));
-                  const isSigned = asignacion.estado === 'firmado' || signedIds.has(asignacion.workerId);
-                  return (
-                    <div
-                      key={asignacion.workerId}
-                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                    >
-                      <div>
-                        <div className="font-medium">{asignacion.nombre || 'Trabajador'}</div>
-                        <div className="text-muted">{asignacion.rut || ''}</div>
-                      </div>
-                      <span className={`badge ${isSigned ? 'badge-success' : 'badge-warning'}`}>
-                        {isSigned ? 'Firmado' : 'Pendiente'}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-muted">Aún no hay firmantes asignados.</div>
-            )}
-          </div>
         </div>
       </Modal>
 
@@ -932,6 +1017,89 @@ export default function ObraDetalle() {
                   );
                 })}
               </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isSignatureModalOpen}
+        onClose={() => setIsSignatureModalOpen(false)}
+        title={signatureModalDoc?.titulo ? `Firmas - ${signatureModalDoc.titulo}` : 'Firmas'}
+        subtitle="Detalle de firmas solicitadas"
+        size="md"
+        footer={
+          <button className="btn btn-secondary" onClick={() => setIsSignatureModalOpen(false)}>
+            Cerrar
+          </button>
+        }
+      >
+        <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+          {!signatureModalDoc?.asignaciones?.length ? (
+            <div className="text-muted">No hay firmantes asignados.</div>
+          ) : (
+            signatureModalDoc.asignaciones.map((asignacion: any) => (
+              <div
+                key={asignacion.personaId || asignacion.workerId}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <div>
+                  <div className="font-medium">{asignacion.nombre || 'Trabajador'}</div>
+                  <div className="text-muted">{asignacion.rut || ''}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className={`badge ${asignacion.estado === 'firmado' ? 'badge-success' : 'badge-warning'}`}>
+                    {asignacion.estado === 'firmado' ? 'Firmado' : 'Pendiente'}
+                  </div>
+                  {asignacion.fechaFirma && (
+                    <div className="text-muted" style={{ marginTop: 'var(--space-1)' }}>
+                      {formatDate(asignacion.fechaFirma)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        title="Editar obra"
+        subtitle="Solo puedes editar nombre, etapa y estado"
+        size="md"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setIsEditModalOpen(false)}>
+              Cancelar
+            </button>
+            <button className="btn btn-primary" onClick={handleSaveObra}>
+              Guardar cambios
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+          <div className="form-group">
+            <label className="form-label">Nombre</label>
+            <input className="form-input" name="nombre" value={editData?.nombre || ''} onChange={handleEditChange} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Etapa actual</label>
+            <select className="form-input form-select" name="etapaActual" value={editData?.etapaActual || 'excavacion'} onChange={handleEditChange}>
+              <option value="excavacion">Excavacion</option>
+              <option value="obra_gruesa">Obra gruesa</option>
+              <option value="terminaciones">Terminaciones</option>
+              <option value="entrega">Entrega</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Estado</label>
+            <select className="form-input form-select" name="estado" value={editData?.estado || 'activa'} onChange={handleEditChange}>
+              <option value="activa">Activa</option>
+              <option value="pausada">Pausada</option>
+              <option value="finalizada">Finalizada</option>
+            </select>
+          </div>
         </div>
       </Modal>
     </>
