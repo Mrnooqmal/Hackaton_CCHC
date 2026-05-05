@@ -332,6 +332,13 @@ functions:
           path: /documents/{id}
           method: GET
 
+  updateDocument:
+    handler: handlers/documents.update
+    events:
+      - httpApi:
+          path: /documents/{id}
+          method: PUT
+
   assignDocument:
     handler: handlers/documents.assign
     events:

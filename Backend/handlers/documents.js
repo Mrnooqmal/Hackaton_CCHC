@@ -12,10 +12,12 @@ const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
 // Tipos de documentos según el DS 44
 const DOCUMENT_TYPES = {
     IRL: 'Informe de Riesgos Laborales',
+    DIAGNOSTICO_LEGAL: 'Diagnóstico de aspectos legales',
     POLITICA_SSO: 'Política de Seguridad y Salud Ocupacional',
     REGLAMENTO_INTERNO: 'Reglamento Interno',
     PROCEDIMIENTO_TRABAJO: 'Procedimiento de Trabajo Seguro',
     MATRIZ_MIPPER: 'Matriz MIPPER',
+    MIPER: 'MIPER',
     ENCUESTA_SALUD: 'Encuesta de Salud Pre-Ocupacional',
     TEST_EVALUACION: 'Test de Evaluación',
     ENTREGA_EPP: 'Entrega de EPP',
@@ -111,15 +113,12 @@ module.exports.list = async (event) => {
             ExpressionAttributeValues: { ':tenantId': tenantId }
         };
 
-        // Si se pide por obra, usar obraId-index
-        if (obraId) {
-            params.IndexName = 'obraId-index';
-            params.KeyConditionExpression = 'obraId = :obraId';
-            params.ExpressionAttributeValues = { ':obraId': obraId };
-        }
-
         // Filtros adicionales
         let filterParts = [];
+        if (obraId) {
+            filterParts.push('obraId = :obraId');
+            params.ExpressionAttributeValues[':obraId'] = obraId;
+        }
         if (tipo) {
             filterParts.push('tipo = :tipo');
             params.ExpressionAttributeValues[':tipo'] = tipo;
@@ -173,6 +172,52 @@ module.exports.get = async (event) => {
         return success(result.Item);
     } catch (err) {
         console.error('Error getting document:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * PUT /documents/{id} - Actualizar documento
+ */
+module.exports.update = async (event) => {
+    try {
+        const { id } = event.pathParameters || {};
+        if (!id) return error('ID de documento requerido');
+
+        const body = JSON.parse(event.body || '{}');
+        const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio'];
+        const updateExpressions = [];
+        const expressionNames = {};
+        const expressionValues = {};
+
+        allowedFields.forEach((field) => {
+            if (body[field] !== undefined) {
+                updateExpressions.push(`#${field} = :${field}`);
+                expressionNames[`#${field}`] = field;
+                expressionValues[`:${field}`] = body[field];
+            }
+        });
+
+        if (updateExpressions.length === 0) {
+            return error('No hay campos para actualizar');
+        }
+
+        updateExpressions.push('#updatedAt = :updatedAt');
+        expressionNames['#updatedAt'] = 'updatedAt';
+        expressionValues[':updatedAt'] = new Date().toISOString();
+
+        const result = await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id },
+            UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+            ExpressionAttributeNames: expressionNames,
+            ExpressionAttributeValues: expressionValues,
+            ReturnValues: 'ALL_NEW'
+        }));
+
+        return success(result.Attributes);
+    } catch (err) {
+        console.error('Error updating document:', err);
         return error(err.message, 500);
     }
 };

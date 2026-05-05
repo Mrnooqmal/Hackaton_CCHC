@@ -1,15 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import Header from '../components/Header';
-import { obrasApi, workersApi } from '../api/client';
+import { obrasApi, tenantsApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import {
   LuBuilding2,
   LuPlus,
   LuChevronDown,
-  LuChevronUp,
   LuMapPin,
-  LuFileText,
-  LuUsers,
   LuX
 } from 'react-icons/lu';
 import { FiAlertTriangle } from 'react-icons/fi';
@@ -27,16 +25,40 @@ interface Obra {
   trabajadoresAprobados?: string[];
 }
 
+const REGION_COMUNAS: Record<string, string[]> = {
+  'Arica y Parinacota': ['Arica', 'Camarones', 'Putre', 'General Lagos'],
+  Tarapacá: ['Iquique', 'Alto Hospicio', 'Pozo Almonte', 'Camiña', 'Colchane', 'Huara', 'Pica'],
+  Antofagasta: ['Antofagasta', 'Mejillones', 'Sierra Gorda', 'Taltal', 'Calama', 'Ollagüe', 'San Pedro de Atacama', 'Tocopilla', 'María Elena'],
+  Atacama: ['Copiapó', 'Caldera', 'Tierra Amarilla', 'Chañaral', 'Diego de Almagro', 'Vallenar', 'Alto del Carmen', 'Freirina', 'Huasco'],
+  Coquimbo: ['La Serena', 'Coquimbo', 'Andacollo', 'La Higuera', 'Paihuano', 'Vicuña', 'Illapel', 'Canela', 'Los Vilos', 'Salamanca', 'Ovalle', 'Combarbalá', 'Monte Patria', 'Punitaqui', 'Río Hurtado'],
+  Valparaíso: ['Valparaíso', 'Casablanca', 'Concón', 'Juan Fernández', 'Puchuncaví', 'Quintero', 'Viña del Mar', 'Isla de Pascua', 'Los Andes', 'Calle Larga', 'Rinconada', 'San Esteban', 'La Ligua', 'Cabildo', 'Papudo', 'Petorca', 'Zapallar', 'Quillota', 'Calera', 'Hijuelas', 'La Cruz', 'Nogales', 'San Antonio', 'Algarrobo', 'Cartagena', 'El Quisco', 'El Tabo', 'Santo Domingo', 'San Felipe', 'Catemu', 'Llaillay', 'Panquehue', 'Putaendo', 'Santa María', 'Limache', 'Olmué', 'Quilpué', 'Villa Alemana'],
+  Metropolitana: ['Santiago', 'Cerrillos', 'Cerro Navia', 'Conchalí', 'El Bosque', 'Estación Central', 'Huechuraba', 'Independencia', 'La Cisterna', 'La Florida', 'La Granja', 'La Pintana', 'La Reina', 'Las Condes', 'Lo Barnechea', 'Lo Espejo', 'Lo Prado', 'Macul', 'Maipú', 'Ñuñoa', 'Pedro Aguirre Cerda', 'Peñalolén', 'Providencia', 'Pudahuel', 'Quilicura', 'Quinta Normal', 'Recoleta', 'Renca', 'San Joaquín', 'San Miguel', 'San Ramón', 'Vitacura', 'Puente Alto', 'Pirque', 'San José de Maipo', 'Colina', 'Lampa', 'Tiltil', 'San Bernardo', 'Buin', 'Calera de Tango', 'Paine', 'Melipilla', 'Alhué', 'Curacaví', 'María Pinto', 'San Pedro', 'Talagante', 'El Monte', 'Isla de Maipo', 'Padre Hurtado', 'Peñaflor'],
+  "O'Higgins": ['Rancagua', 'Codegua', 'Coinco', 'Coltauco', 'Doñihue', 'Graneros', 'Las Cabras', 'Machalí', 'Malloa', 'Mostazal', 'Olivar', 'Peumo', 'Pichidegua', 'Quinta de Tilcoco', 'Rengo', 'Requínoa', 'San Vicente', 'Pichilemu', 'La Estrella', 'Litueche', 'Marchigüe', 'Navidad', 'Paredones', 'San Fernando', 'Chimbarongo', 'Lolol', 'Nancagua', 'Palmilla', 'Peralillo', 'Placilla', 'Pumanque', 'Santa Cruz'],
+  Maule: ['Talca', 'Constitución', 'Curepto', 'Empedrado', 'Maule', 'Pelarco', 'Pencahue', 'Río Claro', 'San Clemente', 'San Rafael', 'Cauquenes', 'Chanco', 'Pelluhue', 'Curicó', 'Hualañé', 'Licantén', 'Molina', 'Rauco', 'Romeral', 'Sagrada Familia', 'Teno', 'Vichuquén', 'Linares', 'Colbún', 'Longaví', 'Parral', 'Retiro', 'San Javier', 'Villa Alegre', 'Yerbas Buenas'],
+  Ñuble: ['Chillán', 'Chillán Viejo', 'El Carmen', 'Pemuco', 'Pinto', 'Quillón', 'San Ignacio', 'Yungay', 'Bulnes', 'Cobquecura', 'Coelemu', 'Ninhue', 'Portezuelo', 'Quirihue', 'Ránquil', 'San Carlos', 'San Fabián', 'San Nicolás', 'Coihueco', 'Ñiquén'],
+  Biobío: ['Concepción', 'Coronel', 'Chiguayante', 'Florida', 'Hualqui', 'Lota', 'Penco', 'San Pedro de la Paz', 'Santa Juana', 'Talcahuano', 'Tomé', 'Hualpén', 'Lebu', 'Arauco', 'Cañete', 'Contulmo', 'Curanilahue', 'Los Álamos', 'Tirúa', 'Los Ángeles', 'Antuco', 'Cabrero', 'Laja', 'Mulchén', 'Nacimiento', 'Negrete', 'Quilleco', 'Quilaco', 'San Rosendo', 'Santa Bárbara', 'Tucapel', 'Yumbel', 'Alto Biobío'],
+  'La Araucanía': ['Temuco', 'Carahue', 'Cunco', 'Curarrehue', 'Freire', 'Galvarino', 'Gorbea', 'Lautaro', 'Loncoche', 'Melipeuco', 'Nueva Imperial', 'Padre Las Casas', 'Perquenco', 'Pitrufquén', 'Pucón', 'Saavedra', 'Teodoro Schmidt', 'Toltén', 'Vilcún', 'Villarrica', 'Cholchol', 'Angol', 'Collipulli', 'Curacautín', 'Ercilla', 'Lonquimay', 'Los Sauces', 'Lumaco', 'Purén', 'Renaico', 'Traiguén', 'Victoria'],
+  'Los Ríos': ['Valdivia', 'Corral', 'Lanco', 'Los Lagos', 'Máfil', 'Mariquina', 'Paillaco', 'Panguipulli', 'La Unión', 'Futrono', 'Lago Ranco', 'Río Bueno'],
+  'Los Lagos': ['Puerto Montt', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Los Muermos', 'Llanquihue', 'Maullín', 'Puerto Varas', 'Castro', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quemchi', 'Quinchao', 'Osorno', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena'],
+  Aysén: ['Coyhaique', 'Lago Verde', 'Aysén', 'Cisnes', 'Guaitecas', 'Cochrane', "O'Higgins", 'Tortel', 'Chile Chico', 'Río Ibáñez'],
+  Magallanes: ['Punta Arenas', 'Laguna Blanca', 'Río Verde', 'San Gregorio', 'Cabo de Hornos', 'Antártica', 'Porvenir', 'Primavera', 'Timaukel', 'Natales', 'Torres del Paine']
+};
+
 export const Obras: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   
   const [obras, setObras] = useState<Obra[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [expandedObraId, setExpandedObraId] = useState<string | null>(null);
   const canViewObras = user?.rol === 'admin' || user?.role === 'admin';
+  const [companyName, setCompanyName] = useState('');
+  const resolvedCompanyName = useMemo(() => {
+    const userAny = user as any;
+    return companyName || userAny?.empresaNombre || userAny?.nombreEmpresa || userAny?.tenantNombre || userAny?.razonSocial || '';
+  }, [companyName, user]);
 
   // Form State
   const [formData, setFormData] = useState<Obra>({
@@ -77,10 +99,33 @@ export const Obras: React.FC = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    const loadTenantName = async () => {
+      if (!user?.tenantId) return;
+      if (companyName) return;
+      try {
+        const res = await tenantsApi.get(user.tenantId);
+        if (res.success && res.data?.nombre) {
+          setCompanyName(res.data.nombre);
+        }
+      } catch (error) {
+        console.error('Error loading tenant name:', error);
+      }
+    };
+    loadTenantName();
+  }, [companyName, user?.tenantId]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    if (resolvedCompanyName && !formData.mandante) {
+      setFormData(prev => ({ ...prev, mandante: resolvedCompanyName }));
+    }
+  }, [resolvedCompanyName, formData.mandante, isModalOpen]);
 
   const handleWorkerToggle = (workerId: string) => {
     setFormData(prev => {
@@ -95,7 +140,10 @@ export const Obras: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await obrasApi.create(formData);
+      const res = await obrasApi.create({
+        ...formData,
+        mandante: resolvedCompanyName || formData.mandante
+      });
       if (res.success) {
         setIsModalOpen(false);
         setFormData({
@@ -118,8 +166,8 @@ export const Obras: React.FC = () => {
     }
   };
 
-  const toggleExpand = (obraId: string) => {
-    setExpandedObraId(prev => prev === obraId ? null : obraId);
+  const handleRegionChange = (value: string) => {
+    setFormData(prev => ({ ...prev, region: value, comuna: '' }));
   };
 
   if (!canViewObras) {
@@ -215,12 +263,13 @@ export const Obras: React.FC = () => {
                           ? 'badge badge-warning'
                           : 'badge badge-neutral';
                       const stageLabel = obra.etapaActual ? obra.etapaActual.replace('_', ' ') : '-';
+                      const obraKey = obra.obraId || obra.codigo;
 
                       return (
                         <React.Fragment key={obra.obraId || obra.codigo}>
                           <tr
                             style={{ cursor: 'pointer' }}
-                            onClick={() => toggleExpand(obra.obraId as string)}
+                            onClick={() => navigate(`/obras/${obraKey}`)}
                           >
                             <td>
                               <div className="flex items-center gap-3">
@@ -254,101 +303,14 @@ export const Obras: React.FC = () => {
                                 className="btn btn-ghost btn-sm"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  toggleExpand(obra.obraId as string);
+                                  navigate(`/obras/${obraKey}`);
                                 }}
                                 title="Ver detalles"
                               >
-                                {expandedObraId === obra.obraId ? <LuChevronUp /> : <LuChevronDown />}
+                                <LuChevronDown />
                               </button>
                             </td>
                           </tr>
-
-                          {expandedObraId === obra.obraId && (
-                            <tr>
-                              <td colSpan={5}>
-                                <div
-                                  style={{
-                                    display: 'grid',
-                                    gap: 'var(--space-5)',
-                                    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                                    padding: 'var(--space-4) 0'
-                                  }}
-                                >
-                                  <div className="card card-balanced-padding">
-                                    <div className="card-header">
-                                      <div className="card-title">Detalles del Proyecto</div>
-                                    </div>
-                                    <div className="text-muted">Mandante</div>
-                                    <div className="font-medium">{obra.mandante || '-'}</div>
-                                    <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Dirección</div>
-                                    <div className="font-medium">{obra.direccion || '-'}</div>
-                                  </div>
-
-                                  <div className="card card-balanced-padding">
-                                    <div className="card-header">
-                                      <div className="card-title">Trabajadores Asignados</div>
-                                      <LuUsers className="text-muted" />
-                                    </div>
-                                    {obra.trabajadoresAprobados && obra.trabajadoresAprobados.length > 0 ? (
-                                      <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
-                                        {obra.trabajadoresAprobados.map((rId, index) => {
-                                          const worker = workers.find(w => w.personaId === rId || w.rut === rId);
-                                          return (
-                                            <div
-                                              key={rId}
-                                              style={{
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                padding: 'var(--space-2) 0',
-                                                borderBottom: index === obra.trabajadoresAprobados!.length - 1 ? 'none' : '1px solid var(--surface-border)'
-                                              }}
-                                            >
-                                              <span>{worker ? worker.nombre : rId}</span>
-                                              <span className="text-muted">{worker ? worker.rut : ''}</span>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      <p className="text-muted">No hay trabajadores asignados.</p>
-                                    )}
-                                  </div>
-
-                                  <div className="card card-balanced-padding">
-                                    <div className="card-header">
-                                      <div className="card-title">Documentos DS44</div>
-                                      <LuFileText className="text-muted" />
-                                    </div>
-                                    <div className="text-muted" style={{ marginBottom: 'var(--space-2)' }}>Etapa actual</div>
-                                    <div className="progress" style={{ marginBottom: 'var(--space-3)' }}>
-                                      <div className="progress-bar" style={{ width: '85%' }} />
-                                    </div>
-                                    <div className="text-muted">85% completado</div>
-                                    <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>
-                                      MIPER: Completado · Charlas ODI: 42/50 firmas
-                                    </div>
-                                  </div>
-
-                                  <div className="card card-balanced-padding">
-                                    <div className="card-header">
-                                      <div className="card-title">Prevención e Incidentes</div>
-                                      <FiAlertTriangle className="text-muted" />
-                                    </div>
-                                    <div style={{ display: 'grid', gap: 'var(--space-3)', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
-                                      <div className="card stat-card" style={{ padding: 'var(--space-3)' }}>
-                                        <div className="stat-value">2</div>
-                                        <div className="stat-label">Incidentes leves (mes)</div>
-                                      </div>
-                                      <div className="card stat-card" style={{ padding: 'var(--space-3)' }}>
-                                        <div className="stat-value">14</div>
-                                        <div className="stat-label">Charlas realizadas</div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
                         </React.Fragment>
                       );
                     })}
@@ -381,37 +343,70 @@ export const Obras: React.FC = () => {
 
             <form onSubmit={handleSubmit} className="modal-form">
               <div className="modal-body">
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                    gap: 'var(--space-4)'
-                  }}
-                >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                   <div className="form-group">
                     <label className="form-label">Nombre de obra</label>
                     <input required name="nombre" value={formData.nombre} onChange={handleInputChange} className="form-input" />
                   </div>
+
                   <div className="form-group">
-                    <label className="form-label">Código interno</label>
-                    <input required name="codigo" value={formData.codigo} onChange={handleInputChange} className="form-input" />
+                    <label className="form-label">Mandante</label>
+                    <input
+                      required
+                      name="mandante"
+                      value={resolvedCompanyName || formData.mandante}
+                      onChange={handleInputChange}
+                      className="form-input"
+                      placeholder={resolvedCompanyName || 'Empresa mandante'}
+                      disabled
+                    />
                   </div>
+
+                  <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
+                    <div style={{ flex: 1 }} className="form-group">
+                      <label className="form-label">Región</label>
+                      <select
+                        name="region"
+                        value={formData.region}
+                        onChange={(event) => handleRegionChange(event.target.value)}
+                        className="form-input form-select"
+                        required
+                      >
+                        <option value="">Selecciona una región</option>
+                        {Object.keys(REGION_COMUNAS).map(region => (
+                          <option key={region} value={region}>{region}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ flex: 1 }} className="form-group">
+                      <label className="form-label">Comuna</label>
+                      <select
+                        name="comuna"
+                        value={formData.comuna}
+                        onChange={handleInputChange}
+                        className="form-input form-select"
+                        required
+                        disabled={!formData.region}
+                      >
+                        <option value="">Selecciona una comuna</option>
+                        {(REGION_COMUNAS[formData.region] || []).map(comuna => (
+                          <option key={comuna} value={comuna}>{comuna}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="form-group">
                     <label className="form-label">Dirección</label>
                     <input required name="direccion" value={formData.direccion} onChange={handleInputChange} className="form-input" />
                   </div>
+
                   <div className="form-group">
-                    <label className="form-label">Comuna</label>
-                    <input required name="comuna" value={formData.comuna} onChange={handleInputChange} className="form-input" />
+                    <label className="form-label">Código interno</label>
+                    <input required name="codigo" value={formData.codigo} onChange={handleInputChange} className="form-input" />
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Región</label>
-                    <input required name="region" value={formData.region} onChange={handleInputChange} className="form-input" />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Mandante</label>
-                    <input required name="mandante" value={formData.mandante} onChange={handleInputChange} className="form-input" />
-                  </div>
+
                   <div className="form-group">
                     <label className="form-label">Etapa actual</label>
                     <select name="etapaActual" value={formData.etapaActual} onChange={handleInputChange} className="form-input form-select">
@@ -421,6 +416,7 @@ export const Obras: React.FC = () => {
                       <option value="entrega">Entrega / Cierre</option>
                     </select>
                   </div>
+
                   <div className="form-group">
                     <label className="form-label">Estado</label>
                     <select name="estado" value={formData.estado} onChange={handleInputChange} className="form-input form-select">
@@ -442,7 +438,7 @@ export const Obras: React.FC = () => {
                       workers.map((worker, index) => (
                         <label
                           key={worker.personaId}
-                          className="flex items-center gap-2"
+                          className="checkbox-row"
                           style={{
                             padding: 'var(--space-2) var(--space-3)',
                             cursor: 'pointer',
@@ -453,6 +449,7 @@ export const Obras: React.FC = () => {
                             type="checkbox"
                             checked={formData.trabajadoresAprobados?.includes(worker.personaId)}
                             onChange={() => handleWorkerToggle(worker.personaId)}
+                            className="checkbox-input custom-checkbox"
                           />
                           <span>{worker.nombre}</span>
                           <span className="text-muted">({worker.rut})</span>

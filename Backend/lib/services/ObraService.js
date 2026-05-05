@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../dynamodb');
 const { Obra } = require('../models/Obra');
+const { PersonaService } = require('./PersonaService');
 const { validateRequired } = require('../validation');
 
 const OBRAS_TABLE = process.env.OBRAS_TABLE || 'Obras';
@@ -17,6 +18,7 @@ class ObraService {
     constructor() {
         this.dynamo = docClient;
         this.table = OBRAS_TABLE;
+        this.personaService = new PersonaService();
     }
 
     /**
@@ -45,6 +47,24 @@ class ObraService {
             TableName: this.table,
             Item: obra.toDynamoItem()
         }));
+
+        // Asignar obra a personas seleccionadas (si corresponde)
+        if (Array.isArray(data.trabajadoresAprobados) && data.trabajadoresAprobados.length > 0) {
+            for (const personaId of data.trabajadoresAprobados) {
+                try {
+                    const persona = await this.personaService.getById(personaId);
+                    if (!persona) continue;
+                    const obraIds = Array.isArray(persona.obraIds) ? persona.obraIds : [];
+                    if (!obraIds.includes(obraId)) {
+                        await this.personaService.actualizar(tenantId, personaId, {
+                            obraIds: [...obraIds, obraId]
+                        });
+                    }
+                } catch (assignErr) {
+                    console.error('Error asignando obra a persona:', personaId, assignErr);
+                }
+            }
+        }
 
         return obra;
     }

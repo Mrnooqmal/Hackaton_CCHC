@@ -219,6 +219,12 @@ export const documentsApi = {
     get: (id: string) =>
         apiRequest<Document>(`/documents/${id}`),
 
+    update: (id: string, data: Partial<Document>) =>
+        apiRequest<Document>(`/documents/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+
     create: (doc: CreateDocumentData) =>
         apiRequest<Document>('/documents', {
             method: 'POST',
@@ -1860,6 +1866,11 @@ export const obrasApi = {
     create: (data: any) =>
         apiRequest<any>('/obras', {
             method: 'POST',
+            body: JSON.stringify(data),
+        }),
+    update: (id: string, data: any) =>
+        apiRequest<any>(`/obras/${id}`, {
+            method: 'PUT',
             body: JSON.stringify(data),
         }),
     getById: (id: string) =>

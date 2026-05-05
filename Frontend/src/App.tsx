@@ -21,6 +21,7 @@ import SignatureRequests from './pages/SignatureRequests';
 import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
+import ObraDetalle from './pages/ObraDetalle';
 import OfflineBanner from './components/OfflineBanner';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
@@ -69,6 +70,12 @@ function AppContent() {
           <Route path="/obras" element={
             <ProtectedRoute requiredPermission="crear_usuarios">
               <Obras />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/obras/:obraId" element={
+            <ProtectedRoute requiredPermission="crear_usuarios">
+              <ObraDetalle />
             </ProtectedRoute>
           } />
 
