@@ -1,12 +1,11 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import Header from '../components/Header';
-import { obrasApi, tenantsApi, workersApi } from '../api/client';
+import { documentsApi, obrasApi, tenantsApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
   LuBuilding2,
   LuPlus,
-  LuChevronDown,
   LuMapPin
 } from 'react-icons/lu';
 import { FiAlertTriangle } from 'react-icons/fi';
@@ -24,6 +23,14 @@ interface Obra {
   estado: string;
   trabajadoresAprobados?: string[];
 }
+
+const REQUIRED_DS44 = [
+  { tipos: ['POLITICA_SSO'] },
+  { tipos: ['DIAGNOSTICO_LEGAL'] },
+  { tipos: ['MIPER', 'MATRIZ_MIPPER'] },
+  { tipos: ['MAPA_RIESGOS'] },
+  { tipos: ['REGLAMENTO_INTERNO'] }
+];
 
 const REGION_COMUNAS: Record<string, string[]> = {
   'Arica y Parinacota': ['Arica', 'Camarones', 'Putre', 'General Lagos'],
@@ -50,6 +57,7 @@ export const Obras: React.FC = () => {
   
   const [obras, setObras] = useState<Obra[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
+  const [ds44Alerts, setDs44Alerts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -80,14 +88,38 @@ export const Obras: React.FC = () => {
         obrasApi.list(),
         workersApi.list()
       ]);
-      
+
+      let obrasList: Obra[] = [];
       if (obrasRes.success && obrasRes.data) {
         const data = obrasRes.data as any;
-        setObras(Array.isArray(data) ? data : (data.obras || []));
+        obrasList = Array.isArray(data) ? data : (data.obras || []);
+        setObras(obrasList);
       }
       
       if (workersRes.success && workersRes.data) {
         setWorkers((workersRes.data as any).personas || workersRes.data);
+      }
+
+      if (obrasList.length > 0) {
+        const alerts: Record<string, number> = {};
+        await Promise.all(
+          obrasList.map(async (obra) => {
+            if (!obra.obraId) {
+              return;
+            }
+            const docsRes = await documentsApi.list({ obraId: obra.obraId, clasificacion: 'obra' } as any);
+            const docs = docsRes.success && docsRes.data ? docsRes.data.documents || [] : [];
+            const missingCount = REQUIRED_DS44.filter((required) => {
+              const existing = docs.find((doc: any) => required.tipos.includes(doc.tipo));
+              const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
+              return !hasFile;
+            }).length;
+            alerts[obra.obraId] = missingCount;
+          })
+        );
+        setDs44Alerts(alerts);
+      } else {
+        setDs44Alerts({});
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -252,7 +284,7 @@ export const Obras: React.FC = () => {
                       <th>Ubicación</th>
                       <th>Etapa</th>
                       <th>Estado</th>
-                      <th>Acciones</th>
+                      <th>Alertas</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -264,6 +296,7 @@ export const Obras: React.FC = () => {
                           : 'badge badge-neutral';
                       const stageLabel = obra.etapaActual ? obra.etapaActual.replace('_', ' ') : '-';
                       const obraKey = obra.obraId || obra.codigo;
+                      const alertCount = obra.obraId ? (ds44Alerts[obra.obraId] ?? 0) : 0;
 
                       return (
                         <React.Fragment key={obra.obraId || obra.codigo}>
@@ -299,16 +332,14 @@ export const Obras: React.FC = () => {
                               </span>
                             </td>
                             <td>
-                              <button
-                                className="btn btn-ghost btn-sm"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  navigate(`/obras/${obraKey}`);
-                                }}
-                                title="Ver detalles"
-                              >
-                                <LuChevronDown />
-                              </button>
+                              {alertCount > 0 ? (
+                                <div className="flex items-center gap-2 text-danger-500" style={{ fontWeight: 600 }}>
+                                  <FiAlertTriangle />
+                                  <span>{alertCount}</span>
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--text-primary)' }}>0</span>
+                              )}
                             </td>
                           </tr>
                         </React.Fragment>

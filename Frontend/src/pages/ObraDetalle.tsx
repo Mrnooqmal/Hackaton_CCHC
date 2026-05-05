@@ -4,6 +4,7 @@ import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi } from '../api/client';
 import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus } from 'react-icons/lu';
+import { FiUploadCloud, FiEye } from 'react-icons/fi';
 import { Modal } from '../components/ui';
 
 const REQUIRED_DS44 = [
@@ -46,6 +47,7 @@ interface Ds44Item {
   estadoFirma: string;
   documentId?: string;
   archivoSubido: boolean;
+  document?: any;
 }
 
 export default function ObraDetalle() {
@@ -63,7 +65,13 @@ export default function ObraDetalle() {
   const [actividades, setActividades] = useState<any[]>([]);
   const [ds44Docs, setDs44Docs] = useState<Ds44Item[]>([]);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
-  const [selectedDoc, setSelectedDoc] = useState<Ds44Item | null>(null);
+  const [isDs44ModalOpen, setIsDs44ModalOpen] = useState(false);
+  const [selectedDs44Doc, setSelectedDs44Doc] = useState<Ds44Item | null>(null);
+  const [selectedDs44Detail, setSelectedDs44Detail] = useState<any | null>(null);
+  const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
+  const [ds44Loading, setDs44Loading] = useState(false);
+  const [ds44Saving, setDs44Saving] = useState(false);
+  const [ds44Previewing, setDs44Previewing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<any | null>(null);
   const [isWorkersModalOpen, setIsWorkersModalOpen] = useState(false);
@@ -113,7 +121,8 @@ export default function ObraDetalle() {
           return {
             ...required,
             documentId: existing?.documentId,
-            archivoSubido: hasFile
+            archivoSubido: hasFile,
+            document: existing
           };
         });
         setDs44Docs(mappedDs44);
@@ -152,26 +161,41 @@ export default function ObraDetalle() {
         return {
           ...required,
           documentId: existing?.documentId,
-          archivoSubido: hasFile
+          archivoSubido: hasFile,
+          document: existing
         };
       });
       setDs44Docs(mappedDs44);
     }
   };
 
-  const handleSelectFile = (doc: Ds44Item) => {
-    setSelectedDoc(doc);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-      fileInputRef.current.click();
+  const openDs44Modal = async (doc: Ds44Item) => {
+    setSelectedDs44Doc(doc);
+    setSelectedDs44Detail(doc.document || null);
+    setSelectedWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.workerId));
+    setIsDs44ModalOpen(true);
+
+    if (doc.documentId) {
+      setDs44Loading(true);
+      try {
+        const res = await documentsApi.get(doc.documentId);
+        if (res.success && res.data) {
+          setSelectedDs44Detail(res.data);
+          setSelectedWorkerIds((res.data.asignaciones || []).map((a: any) => a.workerId));
+        }
+      } catch (error) {
+        console.error('Error loading DS44 document:', error);
+      } finally {
+        setDs44Loading(false);
+      }
     }
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDs44FileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !selectedDoc || !obraId) return;
+    if (!file || !selectedDs44Doc || !obraId) return;
 
-    setUploadingKey(selectedDoc.key);
+    setUploadingKey(selectedDs44Doc.key);
     try {
       const uploadUrlRes = await uploadsApi.getUploadUrl({
         fileName: file.name,
@@ -203,33 +227,87 @@ export default function ObraDetalle() {
         fileSize: file.size
       });
 
-      if (selectedDoc.documentId) {
-        await documentsApi.update(selectedDoc.documentId, {
+      let documentId = selectedDs44Doc.documentId;
+      if (documentId) {
+        await documentsApi.update(documentId, {
           s3Key: fileKey,
           archivoUrl: fileKey,
           archivoNombre: file.name
         } as any);
       } else {
-        await documentsApi.create({
+        const createRes = await documentsApi.create({
           obraId,
           clasificacion: 'obra',
           fase: faseActual,
-          tipo: selectedDoc.tipos[0],
+          tipo: selectedDs44Doc.tipos[0],
           obligatorio: true,
-          titulo: selectedDoc.titulo,
+          titulo: selectedDs44Doc.titulo,
           archivoUrl: fileKey,
           archivoNombre: file.name,
           createdBy: user?.userId,
           creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
         } as any);
+        documentId = (createRes as any)?.data?.documentId || (createRes as any)?.data?.id || documentId;
       }
 
       await reloadDocs();
+
+      if (documentId) {
+        const updatedDoc = await documentsApi.get(documentId);
+        if (updatedDoc.success && updatedDoc.data) {
+          setSelectedDs44Detail(updatedDoc.data);
+          setSelectedDs44Doc((prev) => prev ? { ...prev, documentId } : prev);
+        }
+      }
     } catch (error) {
       console.error('Error uploading documento DS44:', error);
     } finally {
       setUploadingKey(null);
-      setSelectedDoc(null);
+    }
+  };
+
+  const toggleWorkerSelection = (workerId: string) => {
+    setSelectedWorkerIds((prev) =>
+      prev.includes(workerId) ? prev.filter((id) => id !== workerId) : [...prev, workerId]
+    );
+  };
+
+  const handleSaveAssignments = async () => {
+    if (!selectedDs44Doc?.documentId) {
+      alert('Primero debes subir el documento para asignar firmantes.');
+      return;
+    }
+    setDs44Saving(true);
+    try {
+      await documentsApi.assign(selectedDs44Doc.documentId, {
+        workerIds: selectedWorkerIds,
+        assignedBy: user?.userId,
+        assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
+      } as any);
+      const updatedDoc = await documentsApi.get(selectedDs44Doc.documentId);
+      if (updatedDoc.success && updatedDoc.data) {
+        setSelectedDs44Detail(updatedDoc.data);
+      }
+    } catch (error) {
+      console.error('Error assigning workers to document:', error);
+    } finally {
+      setDs44Saving(false);
+    }
+  };
+
+  const handlePreviewDocument = async () => {
+    const fileKey = selectedDs44Detail?.s3Key || selectedDs44Detail?.archivoUrl;
+    if (!fileKey) return;
+    setDs44Previewing(true);
+    try {
+      const res = await uploadsApi.getDownloadUrl(fileKey);
+      if (res.success && res.data?.downloadUrl) {
+        window.open(res.data.downloadUrl, '_blank');
+      }
+    } catch (error) {
+      console.error('Error opening document:', error);
+    } finally {
+      setDs44Previewing(false);
     }
   };
 
@@ -330,6 +408,12 @@ export default function ObraDetalle() {
     if (!obraId) return;
     setUpdatingWorkers(worker.personaId);
     try {
+      // Prevent deactivating administrators
+      if (worker.rol === 'admin') {
+        alert('No se puede dar de baja a un trabajador con rol de administrador.');
+        return;
+      }
+
       await workersApi.update(worker.personaId || worker.workerId, {
         estado: 'inactivo'
       } as any);
@@ -341,6 +425,30 @@ export default function ObraDetalle() {
       }
     } catch (error) {
       console.error('Error deactivating worker:', error);
+    } finally {
+      setUpdatingWorkers(null);
+    }
+  };
+
+  const handleReactivateWorker = async (worker: any) => {
+    if (!obraId) return;
+    setUpdatingWorkers(worker.personaId);
+    try {
+      // set worker as active; also ensure obraId present in obraIds
+      const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
+      const updated = {
+        estado: 'activo',
+        obraIds: obraIds.includes(obraId) ? obraIds : [...obraIds, obraId]
+      } as any;
+      await workersApi.update(worker.personaId || worker.workerId, updated);
+      const refreshed = await workersApi.list();
+      if (refreshed.success && refreshed.data) {
+        const workers = refreshed.data as any[];
+        setAllWorkers(workers);
+        setTrabajadores(workers.filter((w: any) => Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
+      }
+    } catch (error) {
+      console.error('Error reactivating worker:', error);
     } finally {
       setUpdatingWorkers(null);
     }
@@ -454,48 +562,6 @@ export default function ObraDetalle() {
 
           <div className="card">
             <div className="card-header">
-              <div className="card-title">Documentos DS44</div>
-              <LuFileText className="text-muted" />
-            </div>
-            {documentosPendientes.length > 0 && (
-              <div className="alert alert-warning">
-                Faltan {documentosPendientes.length} documentos obligatorios por subir.
-              </div>
-            )}
-            <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {ds44Docs.map((doc) => (
-                  <div key={doc.key} className="card" style={{ padding: 'var(--space-3)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
-                      <div>
-                        <div className="font-medium">{doc.titulo}</div>
-                        <div className="text-muted">{doc.estadoFirma}</div>
-                        <div className="text-muted" style={{ marginTop: 'var(--space-1)' }}>
-                          {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
-                        </div>
-                      </div>
-                      <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-warning'}`}>
-                        {doc.archivoSubido ? 'Cargado' : 'Pendiente'}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-                      <button
-                        className={doc.archivoSubido ? 'btn btn-secondary' : 'btn btn-primary'}
-                        type="button"
-                        onClick={() => handleSelectFile(doc)}
-                        disabled={uploadingKey === doc.key}
-                      >
-                        {doc.archivoSubido ? 'Actualizar archivo' : 'Subir archivo'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-header">
               <div className="card-title">Trabajadores Asignados</div>
               <LuUsers className="text-muted" />
             </div>
@@ -522,7 +588,8 @@ export default function ObraDetalle() {
                         className="btn btn-secondary btn-sm"
                         type="button"
                         onClick={() => handleDeactivateWorker(worker)}
-                        disabled={updatingWorkers === worker.personaId}
+                        disabled={updatingWorkers === worker.personaId || worker.rol === 'admin'}
+                        title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
                       >
                         Dar de baja
                       </button>
@@ -538,11 +605,81 @@ export default function ObraDetalle() {
                           <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
                           <div className="text-muted">{worker.cargo || 'Trabajador'}</div>
                         </div>
-                        <span className="badge badge-warning">Baja</span>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                          <span className="badge badge-warning">Baja</span>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            type="button"
+                            onClick={() => handleReactivateWorker(worker)}
+                            disabled={updatingWorkers === worker.personaId}
+                          >
+                            Reactivar
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+
+          <div className="card" style={{ gridColumn: '1 / -1' }}>
+            <div className="card-header">
+              <div className="card-title">Documentos DS44</div>
+              <LuFileText className="text-muted" />
+            </div>
+            {documentosPendientes.length > 0 && (
+              <div className="alert alert-danger">
+                Faltan {documentosPendientes.length} documentos obligatorios por subir.
+              </div>
+            )}
+            <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                {ds44Docs.map((doc) => (
+                  <div key={doc.key} className="card" style={{ padding: 'var(--space-3)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
+                      <div>
+                        <div className="font-medium">{doc.titulo}</div>
+                        <div className="text-muted">{doc.estadoFirma}</div>
+                        <div className={doc.archivoSubido ? 'text-muted' : 'text-danger-500'} style={{ marginTop: 'var(--space-1)' }}>
+                          {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
+                        </div>
+                      </div>
+                      <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-danger'}`}>
+                        {doc.archivoSubido ? 'Cargado' : 'Pendiente'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+                      <button
+                        className={doc.archivoSubido ? 'btn btn-secondary' : 'btn btn-primary'}
+                        type="button"
+                        onClick={() => openDs44Modal(doc)}
+                      >
+                        {doc.archivoSubido ? 'Gestionar documento' : 'Subir y gestionar'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">Incidentes y Hallazgos</div>
+              <LuShieldAlert className="text-muted" />
+            </div>
+            {incidentes.length === 0 ? (
+              <div className="text-muted">No hay incidentes reportados en esta obra.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+                {incidentes.map((item) => (
+                  <div key={item.incidentId} className="card" style={{ padding: 'var(--space-3)' }}>
+                    <div className="stat-value">{item.tipo}</div>
+                    <div className="stat-label">{item.estado}</div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -568,33 +705,140 @@ export default function ObraDetalle() {
               </div>
             )}
           </div>
+        </div>
+      </div>
 
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Incidentes y Hallazgos</div>
-              <LuShieldAlert className="text-muted" />
+      <Modal
+        isOpen={isDs44ModalOpen}
+        onClose={() => setIsDs44ModalOpen(false)}
+        title={selectedDs44Doc?.titulo ? `Documento DS44 - ${selectedDs44Doc.titulo}` : 'Documento DS44'}
+        subtitle="Sube el archivo y define quiénes deben firmar"
+        size="lg"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setIsDs44ModalOpen(false)} disabled={ds44Saving}>
+              Cerrar
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveAssignments}
+              disabled={ds44Saving || !selectedDs44Doc?.documentId}
+            >
+              Guardar firmantes
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+          <div
+            style={{
+              border: '1px dashed var(--surface-border)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'var(--space-4)',
+              background: 'var(--surface-elevated)',
+              display: 'grid',
+              gap: 'var(--space-3)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <div className="avatar" style={{ background: 'var(--surface-hover)', color: 'var(--primary-500)' }}>
+                <FiUploadCloud size={20} />
+              </div>
+              <div>
+                <div className="font-medium">Subir documento</div>
+                <div className="text-muted">
+                  {selectedDs44Detail?.archivoNombre || 'PDF requerido para completar el DS44'}
+                </div>
+              </div>
             </div>
-            {incidentes.length === 0 ? (
-              <div className="text-muted">No hay incidentes reportados en esta obra.</div>
+
+            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingKey === selectedDs44Doc?.key}
+              >
+                {selectedDs44Detail?.archivoUrl ? 'Actualizar archivo' : 'Seleccionar archivo'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={handlePreviewDocument}
+                disabled={!selectedDs44Detail?.archivoUrl && !selectedDs44Detail?.s3Key || ds44Previewing}
+              >
+                <FiEye /> Ver documento
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+            <div className="font-medium">Firmantes requeridos</div>
+            {trabajadores.length === 0 ? (
+              <div className="text-muted">No hay trabajadores asignados a esta obra.</div>
             ) : (
-              <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
-                {incidentes.map((item) => (
-                  <div key={item.incidentId} className="card" style={{ padding: 'var(--space-3)' }}>
-                    <div className="stat-value">{item.tipo}</div>
-                    <div className="stat-label">{item.estado}</div>
-                  </div>
+              <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
+                {trabajadores.map((worker, index) => (
+                  <label
+                    key={worker.personaId || worker.workerId}
+                    className="checkbox-row"
+                    style={{
+                      padding: 'var(--space-2) var(--space-3)',
+                      cursor: 'pointer',
+                      borderBottom: index === trabajadores.length - 1 ? 'none' : '1px solid var(--surface-border)'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="checkbox-input custom-checkbox"
+                      checked={selectedWorkerIds.includes(worker.personaId || worker.workerId)}
+                      onChange={() => toggleWorkerSelection(worker.personaId || worker.workerId)}
+                    />
+                    <span>{worker.nombre} {worker.apellido || ''}</span>
+                    <span className="text-muted">({worker.rut})</span>
+                  </label>
                 ))}
               </div>
             )}
           </div>
+
+          <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+            <div className="font-medium">Estado de firmas</div>
+            {ds44Loading ? (
+              <div className="text-muted">Cargando firmas...</div>
+            ) : selectedDs44Detail?.asignaciones?.length ? (
+              <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+                {selectedDs44Detail.asignaciones.map((asignacion: any) => {
+                  const signedIds = new Set((selectedDs44Detail.firmas || []).map((firma: any) => firma.workerId));
+                  const isSigned = asignacion.estado === 'firmado' || signedIds.has(asignacion.workerId);
+                  return (
+                    <div
+                      key={asignacion.workerId}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
+                      <div>
+                        <div className="font-medium">{asignacion.nombre || 'Trabajador'}</div>
+                        <div className="text-muted">{asignacion.rut || ''}</div>
+                      </div>
+                      <span className={`badge ${isSigned ? 'badge-success' : 'badge-warning'}`}>
+                        {isSigned ? 'Firmado' : 'Pendiente'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-muted">Aún no hay firmantes asignados.</div>
+            )}
+          </div>
         </div>
-      </div>
+      </Modal>
 
       <input
         ref={fileInputRef}
         type="file"
         accept="application/pdf"
-        onChange={handleFileChange}
+        onChange={handleDs44FileChange}
         style={{ display: 'none' }}
       />
 
@@ -627,13 +871,22 @@ export default function ObraDetalle() {
                             <span className={`badge ${isInactive ? 'badge-warning' : 'badge-success'}`}>
                               {isInactive ? 'Baja' : 'Activo'}
                             </span>
-                            {!isInactive && (
+                            {!isInactive ? (
                               <button
                                 className="btn btn-secondary btn-sm"
                                 onClick={() => handleDeactivateWorker(worker)}
-                                disabled={updatingWorkers === worker.personaId}
+                                disabled={updatingWorkers === worker.personaId || worker.rol === 'admin'}
+                                title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
                               >
                                 Dar de baja
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => handleReactivateWorker(worker)}
+                                disabled={updatingWorkers === worker.personaId}
+                              >
+                                Reactivar
                               </button>
                             )}
                           </div>
