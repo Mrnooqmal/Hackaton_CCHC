@@ -25,9 +25,11 @@ import ObraDetalle from './pages/ObraDetalle';
 import OfflineBanner from './components/OfflineBanner';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
+import { ToastProvider } from './context/ToastContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import './css/index.css';
 import './css/App.css';
+import './css/components.css';
 
 function AppContent() {
   const { user } = useAuth();
@@ -161,11 +163,13 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <LayoutProvider>
-        <BrowserRouter>
-          <AppContent />
-        </BrowserRouter>
-      </LayoutProvider>
+      <ToastProvider>
+        <LayoutProvider>
+          <BrowserRouter>
+            <AppContent />
+          </BrowserRouter>
+        </LayoutProvider>
+      </ToastProvider>
     </AuthProvider>
   );
 }

@@ -34,6 +34,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import SignatureModal from '../components/SignatureModal';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
+import { Modal } from '../components/ui';
 
 interface QuestionDraft {
     id: string;
@@ -1295,18 +1296,33 @@ export default function Surveys() {
                         )}
                     </>
                 )}
-                {canManageSurveys && showModal && (
-                    <div className="modal-overlay">
-                        <div className="modal" style={{ maxWidth: '900px' }}>
-                            <div className="modal-header">
-                                <h2 className="modal-title">Nueva Encuesta</h2>
-                                <button className="btn btn-ghost btn-icon" onClick={() => { setShowModal(false); resetForm(); }}>
-                                    ✕
+                {canManageSurveys && (
+                    <Modal
+                        isOpen={showModal}
+                        onClose={() => { setShowModal(false); resetForm(); }}
+                        title="Nueva Encuesta"
+                        size="xl"
+                        preventClose={creating}
+                        footer={
+                            <>
+                                <button type="button" className="btn btn-secondary" onClick={() => { setShowModal(false); resetForm(); }}>
+                                    Cancelar
                                 </button>
-                            </div>
-
-                            <form className="modal-form" onSubmit={handleCreateSurvey}>
-                                <div className="modal-body">
+                                <button type="submit" form="create-survey-form" className="btn btn-primary" disabled={creating}>
+                                    {creating ? (
+                                        <div className="spinner" />
+                                    ) : (
+                                        <>
+                                            <FiSend />
+                                            Crear y enviar
+                                        </>
+                                    )}
+                                </button>
+                            </>
+                        }
+                    >
+                        <form id="create-survey-form" className="modal-form" onSubmit={handleCreateSurvey}>
+                            <div className="modal-body" style={{ padding: 0 }}>
                                     <div className="survey-hero">
                                         <div className="survey-hero-icon">
                                             <FiClipboard size={24} />
@@ -1563,42 +1579,35 @@ export default function Surveys() {
                                             ))}
                                         </div>
                                     </section>
-                                </div>
-
-                                <div className="modal-footer">
-                                    <button type="button" className="btn btn-secondary" onClick={() => { setShowModal(false); resetForm(); }}>
-                                        Cancelar
-                                    </button>
-                                    <button type="submit" className="btn btn-primary" disabled={creating}>
-                                        {creating ? (
-                                            <div className="spinner" />
-                                        ) : (
-                                            <>
-                                                <FiSend />
-                                                Crear y enviar
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
+                            </div>
+                        </form>
+                    </Modal>
                 )}
 
-                {responseModal && (
-                    <div className="modal-overlay">
-                        <div className="modal" style={{ maxWidth: '720px' }}>
-                            <div className="modal-header">
-                                <div>
-                                    <h2 className="modal-title">Responder encuesta</h2>
-                                    <p className="text-muted text-sm">{responseModal.survey.titulo}</p>
-                                </div>
-                                <button className="btn btn-ghost btn-icon" onClick={closeResponseModal}>
-                                    ✕
-                                </button>
-                            </div>
-
-                            <div className="modal-body">
+                <Modal
+                    isOpen={!!responseModal}
+                    onClose={closeResponseModal}
+                    title="Responder encuesta"
+                    subtitle={responseModal?.survey.titulo}
+                    size="lg"
+                    preventClose={responding}
+                    footer={
+                        <>
+                            <button className="btn btn-secondary" onClick={closeResponseModal}>
+                                Cancelar
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => setShowSignatureModal(true)}
+                                disabled={responding}
+                            >
+                                <FiLock />
+                                Firmar y Enviar
+                            </button>
+                        </>
+                    }
+                >
+                    <div className="modal-body" style={{ padding: 0 }}>
                                 {responseError && (
                                     <div className="alert alert-danger">
                                         <FiAlertCircle size={20} />
@@ -1618,7 +1627,7 @@ export default function Surveys() {
                                     </div>
 
                                     <div className="response-question-list">
-                                        {responseModal.survey.preguntas.map((question) => (
+                                        {responseModal?.survey.preguntas.map((question) => (
                                             <div key={question.questionId} className="response-question">
                                                 <div className="response-question-header">
                                                     <div>
@@ -1635,39 +1644,23 @@ export default function Surveys() {
                                     </div>
                                 </section>
                             </div>
+                </Modal>
 
-                            <div className="modal-footer">
-                                <button className="btn" onClick={closeResponseModal}>
-                                    Cancelar
-                                </button>
-                                <button
-                                    className="btn btn-primary"
-                                    onClick={() => setShowSignatureModal(true)}
-                                    disabled={responding}
-                                >
-                                    <FiLock />
-                                    Firmar y Enviar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {selectedSurvey && (
-                    <div className="modal-overlay">
-                        <div className="modal" style={{ maxWidth: '900px' }}>
-                            <div className="modal-header">
-                                <div>
-                                    <h2 className="modal-title">Detalles de la encuesta</h2>
-                                    <p className="text-muted text-sm">{selectedSurvey.titulo}</p>
-                                </div>
-                                <button className="btn btn-ghost btn-icon" onClick={() => setSelectedSurvey(null)}>
-                                    ✕
-                                </button>
-                            </div>
-
-                            <div className="modal-body">
-                                <div className="survey-detail-hero">
+                <Modal
+                    isOpen={!!selectedSurvey}
+                    onClose={() => setSelectedSurvey(null)}
+                    title="Detalles de la encuesta"
+                    subtitle={selectedSurvey?.titulo}
+                    size="xl"
+                    footer={
+                        <button className="btn" onClick={() => setSelectedSurvey(null)}>
+                            Cerrar
+                        </button>
+                    }
+                >
+                    {selectedSurvey && (
+                        <div className="modal-body" style={{ padding: 0 }}>
+                            <div className="survey-detail-hero">
                                     <div>
                                         <p className="survey-section-eyebrow">Encuesta {selectedSurvey.estado}</p>
                                         <h3>{selectedSurvey.titulo}</h3>
@@ -1814,16 +1807,9 @@ export default function Surveys() {
                                         <p className="text-muted text-sm">No hay trabajadores asignados.</p>
                                     )}
                                 </section>
-                            </div>
-
-                            <div className="modal-footer">
-                                <button className="btn" onClick={() => setSelectedSurvey(null)}>
-                                    Cerrar
-                                </button>
-                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </Modal>
             </div>
 
             {/* Signature Modal for Survey Response */}

@@ -8,6 +8,7 @@ import {
 } from 'react-icons/fi';
 import { inboxApi, type InboxMessage, type InboxRecipient, type SendMessageData, type MessageType, type MessagePriority } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { Modal } from '../components/ui';
 
 type TabType = 'inbox' | 'sent' | 'archived';
 type FilterType = 'all' | 'unread' | 'archived';
@@ -807,17 +808,21 @@ export default function Inbox() {
             </div>
 
             {/* Compose Modal */}
-            {showCompose && (
-                <div className="modal-overlay" onClick={() => setShowCompose(false)}>
-                    <div className="modal-content max-w-2xl" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <div className="modal-header-icon">
-                                <FiSend />
-                            </div>
-                            <h2 className="modal-title">Nuevo Mensaje</h2>
-                        </div>
-
-                        <div className="modal-body">
+            <Modal
+                isOpen={showCompose}
+                onClose={() => setShowCompose(false)}
+                title="Nuevo Mensaje"
+                size="lg"
+                preventClose={composing}
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => setShowCompose(false)}>Cancelar</button>
+                        <button className="btn btn-primary" onClick={handleSend} disabled={composing}>
+                            {composing ? <><div className="spinner" /> Enviando...</> : <><FiSend /> Enviar</>}
+                        </button>
+                    </>
+                }
+            >
                             <div className="form-group">
                                 <label className="form-label">Destinatarios *</label>
                                 {loadingRecipients ? (
@@ -891,19 +896,7 @@ export default function Inbox() {
                                     onChange={(e) => setComposeData({ ...composeData, content: e.target.value })}
                                 />
                             </div>
-                        </div>
-
-                        <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowCompose(false)}>
-                                Cancelar
-                            </button>
-                            <button className="btn btn-primary" onClick={handleSend} disabled={composing}>
-                                {composing ? <><div className="spinner" /> Enviando...</> : <><FiSend /> Enviar</>}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             <style>{`
                 .inbox-container {

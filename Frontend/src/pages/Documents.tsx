@@ -10,7 +10,6 @@ import {
     FiFilter,
     FiUpload,
     FiDownload,
-    FiX,
     FiEye,
     FiFile,
     FiTrash2,
@@ -21,8 +20,10 @@ import {
 } from 'react-icons/fi';
 import { documentsApi, workersApi, uploadsApi, inboxApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import SignatureModal from '../components/SignatureModal';
+import { Modal } from '../components/ui';
 
 const DOCUMENT_TYPES: Record<string, { label: string; color: string }> = {
     IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)' },
@@ -50,8 +51,8 @@ export default function Documents() {
     const [uploading, setUploading] = useState(false);
     const [creating, setCreating] = useState(false);
     const [assigning, setAssigning] = useState(false);
-    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
     const [signing, setSigning] = useState(false);
+    const { toast } = useToast();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // New document form
@@ -67,11 +68,6 @@ export default function Documents() {
     const [selectedCargo, setSelectedCargo] = useState('');
     const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
 
-    const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
-        setNotification({ message, type });
-        setTimeout(() => setNotification(null), 5000);
-    };
-
     useEffect(() => {
         loadData();
     }, []);
@@ -81,7 +77,7 @@ export default function Documents() {
         if (isOnline && pendingCount > 0) {
             syncPendingSignatures().then(result => {
                 if (result.synced > 0) {
-                    showNotification(`${result.synced} firma(s) sincronizada(s)`, 'success');
+                    toast.success(`${result.synced} firma(s) sincronizada(s)`);
                     loadData();
                 }
             });
@@ -113,7 +109,7 @@ export default function Documents() {
         if (file) {
             // Validate file size (max 10MB)
             if (file.size > 10 * 1024 * 1024) {
-                showNotification('El archivo es demasiado grande. MÃ¡ximo 10MB.', 'error');
+                toast.error('El archivo es demasiado grande. MÃ¡ximo 10MB.');
                 return;
             }
             setSelectedFile(file);
@@ -165,7 +161,7 @@ export default function Documents() {
             return urlRes.data.fileKey;
         } catch (err) {
             console.error('Upload error:', err);
-            showNotification('Error al subir el archivo', 'error');
+            toast.error('Error al subir el archivo');
             return null;
         } finally {
             setUploading(false);
@@ -175,7 +171,7 @@ export default function Documents() {
     const handleCreateDocument = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newDoc.tipo || !newDoc.titulo) {
-            showNotification('Por favor complete los campos obligatorios', 'warning');
+            toast.warning('Por favor complete los campos obligatorios');
             return;
         }
 
@@ -204,13 +200,13 @@ export default function Documents() {
                 setDocuments([response.data, ...documents]);
                 setShowModal(false);
                 resetForm();
-                showNotification('Documento creado exitosamente', 'success');
+                toast.success('Documento creado exitosamente');
             } else {
-                showNotification(response.error || 'Error al crear documento', 'error');
+                toast.error(response.error || 'Error al crear documento');
             }
         } catch (error) {
             console.error('Error creating document:', error);
-            showNotification('Error al crear documento', 'error');
+            toast.error('Error al crear documento');
         } finally {
             setCreating(false);
         }
@@ -253,7 +249,7 @@ export default function Documents() {
         }
 
         if (workerIdsToAssign.length === 0) {
-            showNotification('No hay trabajadores para asignar', 'warning');
+            toast.warning('No hay trabajadores para asignar');
             return;
         }
 
@@ -283,8 +279,8 @@ export default function Documents() {
                                 recipientIds: recipientUserIds,
                                 type: 'task',
                                 priority: 'normal',
-                                subject: `Nuevo documento asignado: ${selectedDocument.titulo}`,
-                                content: `Se te ha asignado el documento "${selectedDocument.titulo}". Por favor revisa y firma a la brevedad.`,
+                                subject: `Nuevo documento asignado: ${selectedDocument?.titulo}`,
+                                content: `Se te ha asignado el documento "${selectedDocument?.titulo}". Por favor revisa y firma a la brevedad.`,
                                 linkedEntity: { type: 'document', id: selectedDocument.documentId }
                             });
                         }
@@ -293,15 +289,15 @@ export default function Documents() {
                     console.error('Error mandando notificación desde frontend', notifErr);
                 }
 
-                showNotification(`Documento asignado a ${workerIdsToAssign.length} trabajadores`, 'success');
+                toast.success(`Documento asignado a ${workerIdsToAssign.length} trabajadores`);
                 setShowAssignModal(false);
                 loadData(); // Refresh to get updated assignments
             } else {
-                showNotification(response.error || 'Error al asignar documento', 'error');
+                toast.error(response.error || 'Error al asignar documento');
             }
         } catch (error) {
             console.error('Error assigning document:', error);
-            showNotification('Error al asignar documento', 'error');
+            toast.error('Error al asignar documento');
         } finally {
             setAssigning(false);
         }
@@ -329,9 +325,9 @@ export default function Documents() {
 
             if (result.success) {
                 if (result.offline) {
-                    showNotification('Firma guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
+                    toast.info('Firma guardada localmente. Se sincronizará cuando vuelva la conexión.');
                 } else {
-                    showNotification('Documento firmado exitosamente', 'success');
+                    toast.success('Documento firmado exitosamente');
                 }
                 setShowSignModal(false);
                 if (!result.offline) {
@@ -354,11 +350,11 @@ export default function Documents() {
             if (response.success && response.data?.downloadUrl) {
                 window.open(response.data.downloadUrl, '_blank');
             } else {
-                showNotification('Error al obtener el archivo', 'error');
+                toast.error('Error al obtener el archivo');
             }
         } catch (error) {
             console.error('Error downloading file:', error);
-            showNotification('Error al descargar archivo', 'error');
+            toast.error('Error al descargar archivo');
         }
     };
 
@@ -409,29 +405,7 @@ export default function Documents() {
         <>
             <Header title="Documentos" />
 
-            {notification && (
-                <div className={`notification notification-${notification.type}`} style={{
-                    position: 'fixed',
-                    top: '20px',
-                    right: '20px',
-                    zIndex: 10000,
-                    padding: 'var(--space-4) var(--space-6)',
-                    borderRadius: 'var(--radius-lg)',
-                    background: notification.type === 'error' ? 'var(--danger-500)' :
-                        notification.type === 'success' ? 'var(--success-500)' :
-                            notification.type === 'warning' ? 'var(--warning-500)' : 'var(--primary-500)',
-                    color: 'white',
-                    boxShadow: 'var(--shadow-lg)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--space-3)',
-                    animation: 'slideIn 0.3s ease-out'
-                }}>
-                    {notification.type === 'error' && <FiAlertCircle />}
-                    {notification.type === 'success' && <FiCheck />}
-                    <span>{notification.message}</span>
-                </div>
-            )}
+
 
             <div className="page-content">
                 <div className="page-header">
@@ -735,22 +709,22 @@ export default function Documents() {
                 )}
 
                 {/* Create Document Modal */}
-                {showModal && (
-                    <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                        <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-                            <div className="modal-header">
-                                <h2 className="modal-title">Nuevo Documento</h2>
-                                <button
-                                    className="btn btn-ghost btn-icon"
-                                    onClick={() => { setShowModal(false); resetForm(); }}
-                                >
-                                    <FiX />
-                                </button>
-                            </div>
-
-                            <form onSubmit={handleCreateDocument} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                                <div className="modal-body">
-                                    <div className="form-group">
+                <Modal
+                    isOpen={showModal}
+                    onClose={() => { setShowModal(false); resetForm(); }}
+                    title="Nuevo Documento"
+                    preventClose={creating || uploading}
+                    footer={
+                        <>
+                            <button type="button" className="btn btn-secondary" onClick={() => { setShowModal(false); resetForm(); }} disabled={creating || uploading}>Cancelar</button>
+                            <button type="submit" form="create-doc-form" className="btn btn-primary" disabled={creating || uploading}>
+                                {uploading ? (<><div className="spinner spinner-sm" />Subiendo...</>) : creating ? (<><div className="spinner spinner-sm" />Creando...</>) : 'Crear Documento'}
+                            </button>
+                        </>
+                    }
+                >
+                    <form id="create-doc-form" onSubmit={handleCreateDocument}>
+                        <div className="form-group">
                                         <label className="form-label">Tipo de Documento *</label>
                                         <select
                                             value={newDoc.tipo}
@@ -841,65 +815,39 @@ export default function Documents() {
                                             )}
                                         </div>
                                     </div>
-                                </div>
-
-                                <div className="modal-footer">
-                                    <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        onClick={() => { setShowModal(false); resetForm(); }}
-                                        disabled={creating || uploading}
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="btn btn-primary"
-                                        disabled={creating || uploading}
-                                    >
-                                        {uploading ? (
-                                            <>
-                                                <div className="spinner spinner-sm" />
-                                                Subiendo archivo...
-                                            </>
-                                        ) : creating ? (
-                                            <>
-                                                <div className="spinner spinner-sm" />
-                                                Creando...
-                                            </>
-                                        ) : (
-                                            'Crear Documento'
-                                        )}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
+                    </form>
+                </Modal>
 
                 {/* Document Detail Modal */}
-                {showDetailModal && selectedDocument && (
-                    <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
-                        <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-                            <div className="modal-header">
-                                <h2 className="modal-title">{selectedDocument.titulo}</h2>
-                                <button
-                                    className="btn btn-ghost btn-icon"
-                                    onClick={() => setShowDetailModal(false)}
-                                >
-                                    <FiX />
+                <Modal
+                    isOpen={showDetailModal && !!selectedDocument}
+                    onClose={() => setShowDetailModal(false)}
+                    title={selectedDocument?.titulo || ''}
+                    size="lg"
+                    footer={
+                        <>
+                            {(user?.workerId && selectedDocument?.asignaciones?.some(a => a.workerId === user!.workerId && a.estado === 'pendiente')) && (
+                                <button className="btn btn-success" style={{ background: 'var(--success-600)', color: 'white', marginRight: 'auto' }} onClick={() => { setShowDetailModal(false); setShowSignModal(true); }}>
+                                    <FiPenTool className="inline mr-2" />Firmar Documento
                                 </button>
+                            )}
+                            <button className="btn btn-secondary" onClick={() => setShowDetailModal(false)}>Cerrar</button>
+                            <button className="btn btn-primary" onClick={() => { setShowDetailModal(false); selectedDocument && handleOpenAssignModal(selectedDocument); }}>
+                                <FiUserCheck />Asignar a mas personas
+                            </button>
+                        </>
+                    }
+                >
+                    {selectedDocument && (
+                        <div className="modal-body">
+                            <div className="mb-4">
+                                <span className="badge" style={{
+                                    background: DOCUMENT_TYPES[selectedDocument.tipo]?.color || 'var(--text-muted)',
+                                    color: 'white'
+                                }}>
+                                    {DOCUMENT_TYPES[selectedDocument.tipo]?.label || selectedDocument.tipo}
+                                </span>
                             </div>
-
-                            <div className="modal-body">
-                                <div className="mb-4">
-                                    <span className="badge" style={{
-                                        background: DOCUMENT_TYPES[selectedDocument.tipo]?.color || 'var(--text-muted)',
-                                        color: 'white'
-                                    }}>
-                                        {DOCUMENT_TYPES[selectedDocument.tipo]?.label || selectedDocument.tipo}
-                                    </span>
-                                </div>
 
                                 <p className="mb-4">{selectedDocument.descripcion || 'Sin descripción'}</p>
 
@@ -971,60 +919,26 @@ export default function Documents() {
                                         </div>
                                     )}
                                 </div>
-                            </div>
-
-                            <div className="modal-footer">
-                                {(user?.workerId && selectedDocument?.asignaciones?.some(a => a.workerId === user!.workerId && a.estado === 'pendiente')) && (
-                                    <button
-                                        className="btn btn-success"
-                                        style={{ background: 'var(--success-600)', color: 'white', marginRight: 'auto' }}
-                                        onClick={() => {
-                                            setShowDetailModal(false);
-                                            setShowSignModal(true);
-                                        }}
-                                    >
-                                        <FiPenTool className="inline mr-2" />
-                                        Firmar Documento
-                                    </button>
-                                )}
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => setShowDetailModal(false)}
-                                >
-                                    Cerrar
-                                </button>
-                                <button
-                                    className="btn btn-primary"
-                                    onClick={() => {
-                                        setShowDetailModal(false);
-                                        handleOpenAssignModal(selectedDocument);
-                                    }}
-                                >
-                                    <FiUserCheck />
-                                    Asignar a más personas
-                                </button>
-                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </Modal>
                 {/* Assignment Modal */}
-                {
-                    showAssignModal && selectedDocument && (
-                        <div className="modal-overlay" onClick={() => setShowAssignModal(false)}>
-                            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-                                <div className="modal-header">
-                                    <h2 className="modal-title">Asignar Documento</h2>
-                                    <button
-                                        className="btn btn-ghost btn-icon"
-                                        onClick={() => setShowAssignModal(false)}
-                                    >
-                                        <FiX />
-                                    </button>
-                                </div>
-
-                                <div className="modal-body">
+                <Modal
+                    isOpen={showAssignModal && !!selectedDocument}
+                    onClose={() => setShowAssignModal(false)}
+                    title="Asignar Documento"
+                    preventClose={assigning}
+                    footer={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => setShowAssignModal(false)} disabled={assigning}>Cancelar</button>
+                            <button className="btn btn-primary" onClick={handleAssign} disabled={assigning || (assignmentType === 'cargo' && !selectedCargo) || (assignmentType === 'personalizado' && selectedWorkerIds.length === 0)}>
+                                {assigning ? (<><div className="spinner spinner-sm" />Asignando...</>) : 'Asignar Documento'}
+                            </button>
+                        </>
+                    }
+                >
                                     <p className="mb-4">
-                                        <strong>{selectedDocument.titulo}</strong>
+                                        <strong>{selectedDocument?.titulo}</strong>
                                     </p>
 
                                     <div className="form-group">
@@ -1105,35 +1019,7 @@ export default function Documents() {
                                             Se asignará a {workers.filter(w => w.habilitado).length} trabajadores habilitados.
                                         </p>
                                     )}
-                                </div>
-
-                                <div className="modal-footer">
-                                    <button
-                                        className="btn btn-secondary"
-                                        onClick={() => setShowAssignModal(false)}
-                                        disabled={assigning}
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        className="btn btn-primary"
-                                        onClick={handleAssign}
-                                        disabled={assigning || (assignmentType === 'cargo' && !selectedCargo) || (assignmentType === 'personalizado' && selectedWorkerIds.length === 0)}
-                                    >
-                                        {assigning ? (
-                                            <>
-                                                <div className="spinner spinner-sm" />
-                                                Asignando...
-                                            </>
-                                        ) : (
-                                            'Asignar Documento'
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )
-                }
+                </Modal>
 
                 {/* Sign Modal */}
                 <SignatureModal
@@ -1147,37 +1033,7 @@ export default function Documents() {
                     loading={signing}
                 />
             </div >
-            <style>{`
-                @keyframes slideIn {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to { transform: translateX(0); opacity: 1; }
-                }
 
-                .notification {
-                    transition: all 0.3s ease;
-                }
-
-                .empty-state {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    text-align: center;
-                }
-
-                .spinner {
-                    width: 40px;
-                    height: 40px;
-                    border: 3px solid var(--surface-border);
-                    border-top-color: var(--primary-500);
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
-                }
-
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
-                }
-            `}</style>
         </>
     );
 }

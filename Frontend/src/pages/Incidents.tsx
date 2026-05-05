@@ -11,6 +11,7 @@ import {
 import { incidentsApi, aiApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData, IncidentLocation } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { Modal } from '../components/ui';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
 
@@ -1356,38 +1357,21 @@ export default function Incidents() {
                 )}
 
                 {/* Create Modal */}
-                {showModal && (
-                    <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                        <div className="modal-content max-w-4xl" onClick={(e) => e.stopPropagation()}>
-                            <div className="modal-header">
-                                <div className="flex items-center gap-4">
-                                    <div className="modal-header-icon">
-                                        <FiAlertTriangle size={24} />
-                                    </div>
-                                    <div className="modal-header-text" style={{ marginBottom: '10px' }}> {/* Añade margen inferior */}
-                                        <h2 className="modal-title">
-                                            {showSuccess ? '¡Reporte Enviado!' : step === 0 ? 'Reporte Rápido de Incidente' : 'Detalles del Reporte'}
-                                        </h2>
-                                        <p className="modal-subtitle">
-                                            {showSuccess
-                                                ? 'El incidente ha sido registrado y notificado correctamente'
-                                                : step === 0
-                                                    ? 'Capture una foto y dicte el incidente para agilizar el registro'
-                                                    : 'Verifique y complete la información extraída por la IA'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <button
-                                    className="modal-close-btn"
-                                    onClick={handleCloseModal}
-                                    aria-label="Cerrar modal"
-                                    style={{ position: 'absolute', top: '20px', right: '20px' }} /* Posiciona la X */
-                                >
-                                    <FiX size={20} />
-                                </button>
-                            </div>
-
-                            <div className="modal-body p-0">
+                <Modal
+                    isOpen={showModal}
+                    onClose={handleCloseModal}
+                    title={showSuccess ? '¡Reporte Enviado!' : step === 0 ? 'Reporte Rápido de Incidente' : 'Detalles del Reporte'}
+                    subtitle={showSuccess
+                        ? 'El incidente ha sido registrado y notificado correctamente'
+                        : step === 0
+                            ? 'Capture una foto y dicte el incidente para agilizar el registro'
+                            : 'Verifique y complete la información extraída por la IA'
+                    }
+                    icon={<FiAlertTriangle size={24} />}
+                    size="xl"
+                    preventClose={uploading}
+                >
+                    <div className="modal-body p-0">
                                 {showSuccess ? (
                                     <div className="success-modal-body p-12 text-center">
                                         <div className="success-animation-container mb-8">
@@ -1941,25 +1925,38 @@ export default function Incidents() {
                                     </form>
                                 )}
                             </div>
-                        </div>
-                    </div>
-                )}
+                </Modal>
 
                 {/* Detail Modal */}
-                {selectedIncident && (
-                    <div className="modal-overlay" onClick={() => setSelectedIncident(null)}>
-                        <div className="modal-content max-w-4xl" onClick={(e) => e.stopPropagation()}>
-                            <div className="modal-header">
-                                <div className="modal-header-icon" style={{ background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))' }}>
-                                    {getTipoIcon(selectedIncident.tipo)}
-                                </div>
-                                <h2 className="modal-title">Detalle del {getTipoLabel(selectedIncident.tipo)}</h2>
-                                <p className="modal-subtitle">
-                                    Reportado el {new Date(selectedIncident.fecha).toLocaleDateString('es-CL')}
-                                </p>
-                            </div>
-
-                            <div className="modal-body">
+                <Modal
+                    isOpen={!!selectedIncident}
+                    onClose={() => {
+                        setSelectedIncident(null);
+                        setDetailError('');
+                        setDetailLoading(false);
+                        setImagePreview(null);
+                    }}
+                    title={`Detalle del ${selectedIncident ? getTipoLabel(selectedIncident.tipo) : ''}`}
+                    subtitle={`Reportado el ${selectedIncident ? new Date(selectedIncident.fecha).toLocaleDateString('es-CL') : ''}`}
+                    icon={<FiAlertTriangle size={24} />}
+                    size="xl"
+                    footer={
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => {
+                                setSelectedIncident(null);
+                                setDetailError('');
+                                setDetailLoading(false);
+                                setImagePreview(null);
+                            }}
+                        >
+                            <FiX className="mr-2" />
+                            Cerrar
+                        </button>
+                    }
+                >
+                    {selectedIncident && (
+                        <div className="modal-body">
                                 <div className="grid grid-cols-2 gap-6">
                                     {/* Columna Izquierda */}
                                     <div className="space-y-6">
@@ -2159,24 +2156,8 @@ export default function Incidents() {
                                     )}
                                 </div>
                             </div>
-
-                            <div className="modal-footer">
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => {
-                                        setSelectedIncident(null);
-                                        setDetailError('');
-                                        setDetailLoading(false);
-                                        setImagePreview(null);
-                                    }}
-                                >
-                                    <FiX className="mr-2" />
-                                    Cerrar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                    )}
+                </Modal>
 
 
                 {imagePreview && (

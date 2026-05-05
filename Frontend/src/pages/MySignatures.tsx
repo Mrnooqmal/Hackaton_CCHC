@@ -25,6 +25,7 @@ import {
     REQUEST_TYPES,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { Modal } from '../components/ui';
 
 type TabType = 'pendientes' | 'historial';
 
@@ -746,46 +747,34 @@ export default function MySignatures() {
             </div>
 
             {/* Sign Modal */}
-            {showSignModal && selectedRequest && (
-                <div className="modal-overlay" onClick={() => setShowSignModal(false)}>
-                    <div
-                        className="modal"
-                        style={{ maxWidth: '520px' }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="modal-header" style={{ borderBottom: '1px solid var(--surface-border)', paddingBottom: 'var(--space-4)' }}>
-                            <div className="flex items-center gap-3">
-                                <div
-                                    className="avatar"
-                                    style={{
-                                        background: 'var(--gradient-primary)',
-                                        boxShadow: 'var(--shadow-glow-primary)',
-                                    }}
-                                >
-                                    <FiEdit3 size={20} />
-                                </div>
-                                <div>
-                                    <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 600 }}>Confirmar Firma Digital</h2>
-                                    <p className="text-sm text-muted">Revisa los detalles antes de firmar</p>
-                                </div>
-                            </div>
-                            <button className="btn btn-ghost btn-icon" onClick={() => setShowSignModal(false)}>
-                                <FiX size={20} />
-                            </button>
-                        </div>
-
-                        <div className="modal-body" style={{ padding: 'var(--space-5)' }}>
-                            {/* Request Details */}
-                            <div
-                                className="survey-section mb-4"
-                                style={{
-                                    background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.08), rgba(76, 175, 80, 0.02))',
-                                    border: '1px solid rgba(76, 175, 80, 0.2)',
-                                    marginBottom: 'var(--space-4)',
-                                    padding: 'var(--space-4)',
-                                }}
-                            >
-                                <div className="flex items-start gap-4">
+            <Modal
+                isOpen={showSignModal && !!selectedRequest}
+                onClose={() => setShowSignModal(false)}
+                title="Confirmar Firma Digital"
+                subtitle="Revisa los detalles antes de firmar"
+                preventClose={signing}
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => setShowSignModal(false)} disabled={signing} style={{ flex: 1 }}><FiX size={16} />Cancelar</button>
+                        <button className="btn btn-primary" onClick={handleSign} disabled={signing || pin.length !== 4} style={{ flex: 2, boxShadow: pin.length === 4 ? 'var(--shadow-glow-primary)' : 'none' }}>
+                            {signing ? (<><div className="spinner" style={{ width: '16px', height: '16px' }} />Firmando...</>) : (<><FiCheck size={18} />Confirmar Firma</>)}
+                        </button>
+                    </>
+                }
+                >
+                {selectedRequest && (
+                    <div className="modal-body">
+                        {/* Request Details */}
+                        <div
+                            className="survey-section mb-4"
+                            style={{
+                                background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.08), rgba(76, 175, 80, 0.02))',
+                                border: '1px solid rgba(76, 175, 80, 0.2)',
+                                marginBottom: 'var(--space-4)',
+                                padding: 'var(--space-4)',
+                            }}
+                        >
+                            <div className="flex items-start gap-4">
                                     <div
                                         className="avatar"
                                         style={{
@@ -948,49 +937,8 @@ export default function MySignatures() {
                                 )}
                             </div>
                         </div>
-
-                        <div
-                            className="modal-footer"
-                            style={{
-                                borderTop: '1px solid var(--surface-border)',
-                                paddingTop: 'var(--space-4)',
-                                gap: 'var(--space-3)',
-                            }}
-                        >
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => setShowSignModal(false)}
-                                disabled={signing}
-                                style={{ flex: 1 }}
-                            >
-                                <FiX size={16} />
-                                Cancelar
-                            </button>
-                            <button
-                                className="btn btn-primary"
-                                onClick={handleSign}
-                                disabled={signing || pin.length !== 4}
-                                style={{
-                                    flex: 2,
-                                    boxShadow: pin.length === 4 ? 'var(--shadow-glow-primary)' : 'none',
-                                }}
-                            >
-                                {signing ? (
-                                    <>
-                                        <div className="spinner" style={{ width: '16px', height: '16px' }} />
-                                        Firmando...
-                                    </>
-                                ) : (
-                                    <>
-                                        <FiCheck size={18} />
-                                        Confirmar Firma
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                )}
+            </Modal>
         </>
     );
 }

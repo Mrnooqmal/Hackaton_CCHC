@@ -17,6 +17,7 @@ import {
     FiStar
 } from 'react-icons/fi';
 import ConfirmModal from '../components/ConfirmModal';
+import { Modal } from '../components/ui';
 
 export default function UserManagement() {
     const [users, setUsers] = useState<User[]>([]);
@@ -356,245 +357,119 @@ export default function UserManagement() {
                 </div>
             </div>
 
-            {/* Modal de Creación Mejorado */}
-            {showCreateModal && (
-                <div className="modal-overlay">
-                    <div className="modal-content max-w-lg">
-                        <div className="modal-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                                <div className="modal-header-icon" style={{ background: 'var(--primary-500)', marginBottom: 0 }}>
-                                    <FiUserPlus size={24} />
-                                </div>
-                                <h2 className="modal-title" style={{ marginBottom: 0 }}>Nuevo Usuario</h2>
+            {/* Modal de Creacion */}
+            <Modal
+                isOpen={showCreateModal}
+                onClose={() => setShowCreateModal(false)}
+                title="Nuevo Usuario"
+                subtitle="Complete los datos para crear un nuevo usuario en el sistema"
+                size="lg"
+                footer={
+                    <>
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>Cancelar</button>
+                        <button type="submit" form="create-user-form" className="btn btn-primary" disabled={loading || !newUser.nombre || !newUser.apellido || !newUser.rut}>
+                            {loading ? <div className="spinner" /> : (<><FiUserPlus className="mr-2" />Crear Usuario</>)}
+                        </button>
+                    </>
+                }
+            >
+                <form id="create-user-form" onSubmit={handleCreateUser}>
+                    <div className="form-section">
+                        <h3 className="form-section-title">Datos Personales</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="form-group">
+                                <label className="form-label">Nombre *</label>
+                                <input type="text" className="form-input" placeholder="Juan" value={newUser.nombre} onChange={(e) => setNewUser({ ...newUser, nombre: e.target.value })} required />
                             </div>
-                            <p className="modal-subtitle" style={{ marginTop: 0 }}>Complete los datos para crear un nuevo usuario en el sistema</p>
+                            <div className="form-group">
+                                <label className="form-label">Apellido *</label>
+                                <input type="text" className="form-input" placeholder="Perez" value={newUser.apellido} onChange={(e) => setNewUser({ ...newUser, apellido: e.target.value })} required />
+                            </div>
                         </div>
-
-                        <form onSubmit={handleCreateUser} className="modal-body">
-                            {/* Sección: Datos Personales */}
-                            <div className="form-section">
-                                <h3 className="form-section-title">Datos Personales</h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="form-group">
-                                        <label className="form-label">Nombre *</label>
-                                        <input
-                                            type="text"
-                                            className="form-input"
-                                            placeholder="Juan"
-                                            value={newUser.nombre}
-                                            onChange={(e) => setNewUser({ ...newUser, nombre: e.target.value })}
-                                            required
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Apellido *</label>
-                                        <input
-                                            type="text"
-                                            className="form-input"
-                                            placeholder="Pérez"
-                                            value={newUser.apellido}
-                                            onChange={(e) => setNewUser({ ...newUser, apellido: e.target.value })}
-                                            required
-                                        />
-                                    </div>
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">RUT *</label>
-                                    <input
-                                        type="text"
-                                        className="form-input"
-                                        placeholder="12.345.678-9"
-                                        value={newUser.rut}
-                                        onChange={(e) => setNewUser({ ...newUser, rut: e.target.value })}
-                                        required
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Email</label>
-                                    <input
-                                        type="email"
-                                        className="form-input"
-                                        placeholder="usuario@empresa.cl"
-                                        value={newUser.email}
-                                        onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                                    />
-                                    <span className="form-hint">Se notificará al usuario por email con sus credenciales</span>
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label flex items-center gap-2">
-                                        <FiBriefcase size={14} className="text-text-muted" />
-                                        Cargo
-                                    </label>
-                                    <input
-                                        type="text"
-                                        className="form-input"
-                                        placeholder="Ej: Operador de Maquinaria"
-                                        value={newUser.cargo}
-                                        onChange={(e) => setNewUser({ ...newUser, cargo: e.target.value })}
-                                    />
-                                    <span className="form-hint">Si se deja vacío, se usará el nombre del rol</span>
-                                </div>
-                            </div>
-
-                            {/* Sección: Rol */}
-                            <div className="form-section">
-                                <h3 className="form-section-title">Rol en el Sistema</h3>
-                                <div className="role-selector">
-                                    <button
-                                        type="button"
-                                        className={`role-card ${newUser.rol === 'trabajador' ? 'selected' : ''}`}
-                                        onClick={() => setNewUser({ ...newUser, rol: 'trabajador' })}
-                                    >
-                                        <div className="role-card-icon">
-                                            <FiUsers size={24} />
-                                        </div>
-                                        <span className="role-card-title">Trabajador</span>
-                                        <span className="role-card-desc">Acceso básico para firmar documentos y actividades</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`role-card ${newUser.rol === 'prevencionista' ? 'selected' : ''}`}
-                                        onClick={() => setNewUser({ ...newUser, rol: 'prevencionista' })}
-                                    >
-                                        <div className="role-card-icon">
-                                            <FiShield size={24} />
-                                        </div>
-                                        <span className="role-card-title">Prevencionista</span>
-                                        <span className="role-card-desc">Gestión de documentos, actividades y prevención</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`role-card ${newUser.rol === 'admin' ? 'selected' : ''}`}
-                                        onClick={() => setNewUser({ ...newUser, rol: 'admin' })}
-                                    >
-                                        <div className="role-card-icon">
-                                            <FiStar size={24} />
-                                        </div>
-                                        <span className="role-card-title">Administrador</span>
-                                        <span className="role-card-desc">Acceso completo al sistema y gestión de usuarios</span>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="modal-footer">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={() => setShowCreateModal(false)}
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="btn btn-primary"
-                                    disabled={loading || !newUser.nombre || !newUser.apellido || !newUser.rut}
-                                >
-                                    {loading ? <div className="spinner" /> : (
-                                        <>
-                                            <FiUserPlus className="mr-2" />
-                                            Crear Usuario
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal de Edición */}
-            {showEditModal && editingUser && (
-                <div className="modal-overlay">
-                    <div className="modal-content max-w-md">
-                        <div className="modal-header">
-                            <div className="modal-header-icon" style={{ background: 'linear-gradient(135deg, var(--info-500), var(--info-600))' }}>
-                                <FiEdit2 size={24} />
-                            </div>
-                            <h2 className="modal-title">Editar Usuario</h2>
-                            <p className="modal-subtitle">{editingUser.nombre} {editingUser.apellido}</p>
+                        <div className="form-group">
+                            <label className="form-label">RUT *</label>
+                            <input type="text" className="form-input" placeholder="12.345.678-9" value={newUser.rut} onChange={(e) => setNewUser({ ...newUser, rut: e.target.value })} required />
                         </div>
-
-                        <form onSubmit={handleUpdateUser} className="modal-body">
-                            <div className="form-section">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="form-group">
-                                        <label className="form-label">Nombre</label>
-                                        <input
-                                            type="text"
-                                            className="form-input"
-                                            value={editForm.nombre}
-                                            onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
-                                            required
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Apellido</label>
-                                        <input
-                                            type="text"
-                                            className="form-input"
-                                            value={editForm.apellido}
-                                            onChange={(e) => setEditForm({ ...editForm, apellido: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Email</label>
-                                    <input
-                                        type="email"
-                                        className="form-input"
-                                        value={editForm.email}
-                                        onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Cargo</label>
-                                    <input
-                                        type="text"
-                                        className="form-input"
-                                        value={editForm.cargo}
-                                        onChange={(e) => setEditForm({ ...editForm, cargo: e.target.value })}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Estado</label>
-                                    <select
-                                        className="form-input"
-                                        value={editForm.estado}
-                                        onChange={(e) => setEditForm({ ...editForm, estado: e.target.value as any })}
-                                    >
-                                        <option value="pendiente">Pendiente</option>
-                                        <option value="activo">Activo</option>
-                                        <option value="suspendido">Suspendido</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="modal-footer">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={() => { setShowEditModal(false); setEditingUser(null); }}
-                                >
-                                    <FiX className="mr-2" />
-                                    Cancelar
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="btn btn-primary"
-                                    disabled={loading}
-                                >
-                                    {loading ? <div className="spinner" /> : (
-                                        <>
-                                            <FiSave className="mr-2" />
-                                            Guardar Cambios
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </form>
+                        <div className="form-group">
+                            <label className="form-label">Email</label>
+                            <input type="email" className="form-input" placeholder="usuario@empresa.cl" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} />
+                            <span className="form-hint">Se notificara al usuario por email con sus credenciales</span>
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label flex items-center gap-2"><FiBriefcase size={14} className="text-text-muted" />Cargo</label>
+                            <input type="text" className="form-input" placeholder="Ej: Operador de Maquinaria" value={newUser.cargo} onChange={(e) => setNewUser({ ...newUser, cargo: e.target.value })} />
+                            <span className="form-hint">Si se deja vacio, se usara el nombre del rol</span>
+                        </div>
                     </div>
-                </div>
-            )}
+                    <div className="form-section">
+                        <h3 className="form-section-title">Rol en el Sistema</h3>
+                        <div className="role-selector">
+                            <button type="button" className={`role-card ${newUser.rol === 'trabajador' ? 'selected' : ''}`} onClick={() => setNewUser({ ...newUser, rol: 'trabajador' })}>
+                                <div className="role-card-icon"><FiUsers size={24} /></div>
+                                <span className="role-card-title">Trabajador</span>
+                                <span className="role-card-desc">Acceso basico para firmar documentos y actividades</span>
+                            </button>
+                            <button type="button" className={`role-card ${newUser.rol === 'prevencionista' ? 'selected' : ''}`} onClick={() => setNewUser({ ...newUser, rol: 'prevencionista' })}>
+                                <div className="role-card-icon"><FiShield size={24} /></div>
+                                <span className="role-card-title">Prevencionista</span>
+                                <span className="role-card-desc">Gestion de documentos, actividades y prevencion</span>
+                            </button>
+                            <button type="button" className={`role-card ${newUser.rol === 'admin' ? 'selected' : ''}`} onClick={() => setNewUser({ ...newUser, rol: 'admin' })}>
+                                <div className="role-card-icon"><FiStar size={24} /></div>
+                                <span className="role-card-title">Administrador</span>
+                                <span className="role-card-desc">Acceso completo al sistema y gestion de usuarios</span>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Modal de Edicion */}
+            <Modal
+                isOpen={showEditModal && !!editingUser}
+                onClose={() => { setShowEditModal(false); setEditingUser(null); }}
+                title="Editar Usuario"
+                subtitle={editingUser ? `${editingUser.nombre} ${editingUser.apellido}` : ''}
+                footer={
+                    <>
+                        <button type="button" className="btn btn-secondary" onClick={() => { setShowEditModal(false); setEditingUser(null); }}><FiX className="mr-2" />Cancelar</button>
+                        <button type="submit" form="edit-user-form" className="btn btn-primary" disabled={loading}>
+                            {loading ? <div className="spinner" /> : (<><FiSave className="mr-2" />Guardar Cambios</>)}
+                        </button>
+                    </>
+                }
+            >
+                <form id="edit-user-form" onSubmit={handleUpdateUser}>
+                    <div className="form-section">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="form-group">
+                                <label className="form-label">Nombre</label>
+                                <input type="text" className="form-input" value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} required />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Apellido</label>
+                                <input type="text" className="form-input" value={editForm.apellido} onChange={(e) => setEditForm({ ...editForm, apellido: e.target.value })} />
+                            </div>
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Email</label>
+                            <input type="email" className="form-input" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Cargo</label>
+                            <input type="text" className="form-input" value={editForm.cargo} onChange={(e) => setEditForm({ ...editForm, cargo: e.target.value })} />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Estado</label>
+                            <select className="form-input" value={editForm.estado} onChange={(e) => setEditForm({ ...editForm, estado: e.target.value as any })}>
+                                <option value="pendiente">Pendiente</option>
+                                <option value="activo">Activo</option>
+                                <option value="suspendido">Suspendido</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+            </Modal>
 
             <ConfirmModal
                 isOpen={confirmModal.isOpen}
@@ -606,174 +481,6 @@ export default function UserManagement() {
                 onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
             />
 
-            <style>{`
-                .badge {
-                    padding: 2px 8px;
-                    border-radius: 9999px;
-                    font-size: 12px;
-                    font-weight: 600;
-                    text-transform: uppercase;
-                }
-                .badge-primary { background: var(--primary-500); color: white; }
-                .badge-warning { background: var(--warning-500); color: white; }
-                .badge-secondary { background: var(--gray-600); color: white; }
-                
-                .modal-overlay {
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: rgba(0,0,0,0.7);
-                    backdrop-filter: blur(4px);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    z-index: 1000;
-                    animation: fadeIn 0.2s ease-out;
-                }
-                
-                @keyframes fadeIn {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
-                }
-                
-                .modal-content {
-                    background: var(--surface-card);
-                    border-radius: var(--radius-xl);
-                    border: 1px solid var(--surface-border);
-                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-                    width: 100%;
-                    max-height: 90vh;
-                    overflow-y: auto;
-                    animation: slideUp 0.3s ease-out;
-                }
-                
-                @keyframes slideUp {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                
-                .modal-header {
-                    text-align: center;
-                    padding: var(--space-6);
-                    border-bottom: 1px solid var(--surface-border);
-                    background: var(--surface-elevated);
-                }
-                
-                .modal-header-icon {
-                    width: 56px;
-                    height: 56px;
-                    background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
-                    border-radius: 16px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin: 0 auto var(--space-3);
-                    color: white;
-                }
-                
-                .modal-title {
-                    font-size: var(--text-xl);
-                    font-weight: 700;
-                    color: var(--text-primary);
-                    margin-bottom: var(--space-1);
-                }
-                
-                .modal-subtitle {
-                    font-size: var(--text-sm);
-                    color: var(--text-muted);
-                }
-                
-                .modal-body {
-                    padding: var(--space-6);
-                }
-                
-                .modal-footer {
-                    display: flex;
-                    gap: var(--space-3);
-                    justify-content: flex-end;
-                    padding-top: var(--space-4);
-                    border-top: 1px solid var(--surface-border);
-                    margin-top: var(--space-4);
-                }
-                
-                .form-section {
-                    margin-bottom: var(--space-6);
-                }
-                
-                .form-section-title {
-                    font-size: var(--text-sm);
-                    font-weight: 600;
-                    color: var(--text-secondary);
-                    text-transform: uppercase;
-                    letter-spacing: 0.05em;
-                    margin-bottom: var(--space-4);
-                    padding-bottom: var(--space-2);
-                    border-bottom: 1px solid var(--surface-border);
-                }
-                
-                .form-hint {
-                    font-size: 11px;
-                    color: var(--text-muted);
-                    margin-top: 4px;
-                    display: block;
-                }
-                
-                .role-selector {
-                    display: grid;
-                    grid-template-columns: repeat(3, 1fr);
-                    gap: var(--space-3);
-                }
-                
-                .role-card {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    text-align: center;
-                    padding: var(--space-4);
-                    background: var(--surface-elevated);
-                    border: 2px solid var(--surface-border);
-                    border-radius: var(--radius-lg);
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                }
-                
-                .role-card:hover {
-                    border-color: var(--primary-400);
-                    background: var(--surface-card);
-                }
-                
-                .role-card.selected {
-                    border-color: var(--primary-500);
-                    background: rgba(76, 175, 80, 0.1);
-                    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
-                }
-                
-                .role-card-icon {
-                    font-size: 28px;
-                    margin-bottom: var(--space-2);
-                }
-                
-                .role-card-title {
-                    font-size: var(--text-sm);
-                    font-weight: 600;
-                    color: var(--text-primary);
-                    margin-bottom: var(--space-1);
-                }
-                
-                .role-card-desc {
-                    font-size: 10px;
-                    color: var(--text-muted);
-                    line-height: 1.4;
-                }
-                
-                @media (max-width: 640px) {
-                    .role-selector {
-                        grid-template-columns: 1fr;
-                    }
-                }
-            `}</style>
         </>
     );
 }

@@ -15,7 +15,9 @@ import {
 } from 'react-icons/fi';
 import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
+import { Modal } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 
 const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
@@ -29,6 +31,7 @@ const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React
 export default function Activities() {
     const { user } = useAuth();
     const { isOnline, pendingCount, signActivity, syncPendingSignatures } = useOfflineSignature();
+    const { toast } = useToast();
     const [activities, setActivities] = useState<Activity[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
@@ -42,12 +45,6 @@ export default function Activities() {
     const [signatureError, setSignatureError] = useState('');
     const [showSelfSignModal, setShowSelfSignModal] = useState(false);
     const [selfSignActivity, setSelfSignActivity] = useState<Activity | null>(null);
-    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
-
-    const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
-        setNotification({ message, type });
-        setTimeout(() => setNotification(null), 5000);
-    };
 
     // Check if user is a worker (can self-sign)
     const canSelfSign = user?.rol === 'trabajador' && user?.workerId;
@@ -70,7 +67,7 @@ export default function Activities() {
         if (isOnline && pendingCount > 0) {
             syncPendingSignatures().then(result => {
                 if (result.synced > 0) {
-                    showNotification(`✅ ${result.synced} firma(s) sincronizada(s)`, 'success');
+                    toast.success(`${result.synced} firma(s) sincronizada(s)`);
                     loadData();
                 }
             });
@@ -132,7 +129,7 @@ export default function Activities() {
             setShowAttendanceModal(false);
             setSelectedActivity(null);
             setSelectedWorkers([]);
-            showNotification(`📴 ${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizarán cuando vuelva la conexión.`, 'info');
+            toast.info(`${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizaran cuando vuelva la conexion.`);
             return;
         }
 
@@ -149,7 +146,7 @@ export default function Activities() {
                 setShowAttendanceModal(false);
                 setSelectedActivity(null);
                 setSelectedWorkers([]);
-                showNotification(`Asistencia registrada para ${selectedWorkers.length} trabajador(es)`, 'success');
+                toast.success(`Asistencia registrada para ${selectedWorkers.length} trabajador(es)`);
             } else {
                 // Check if it's a network error disguised as API error
                 const errMsg = (response.error || '').toLowerCase();
@@ -168,7 +165,7 @@ export default function Activities() {
                     setShowAttendanceModal(false);
                     setSelectedActivity(null);
                     setSelectedWorkers([]);
-                    showNotification(`📴 ${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizarán cuando vuelva la conexión.`, 'info');
+                    toast.info(`${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizaran cuando vuelva la conexion.`);
                 } else {
                     setSignatureError(response.error || 'Error al registrar asistencia');
                 }
@@ -191,7 +188,7 @@ export default function Activities() {
                 setShowAttendanceModal(false);
                 setSelectedActivity(null);
                 setSelectedWorkers([]);
-                showNotification(`📴 ${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizarán cuando vuelva la conexión.`, 'info');
+                toast.info(`${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizaran cuando vuelva la conexion.`);
             } else {
                 console.error('Error registering attendance:', error);
                 setSignatureError(error.message || 'Error al registrar asistencia');
@@ -221,9 +218,9 @@ export default function Activities() {
                 setShowSelfSignModal(false);
                 setSelfSignActivity(null);
                 if (result.offline) {
-                    showNotification('📴 Asistencia guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
+                    toast.info('Asistencia guardada localmente. Se sincronizara cuando vuelva la conexion.');
                 } else {
-                    showNotification('Tu asistencia ha sido registrada exitosamente', 'success');
+                    toast.success('Tu asistencia ha sido registrada exitosamente');
                     loadData();
                 }
             } else {
@@ -281,39 +278,7 @@ export default function Activities() {
         <>
             <Header title="Actividades" />
 
-            {/* Toast Notification */}
-            {notification && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        top: '80px',
-                        right: '20px',
-                        padding: 'var(--space-4) var(--space-5)',
-                        borderRadius: 'var(--radius-lg)',
-                        background: notification.type === 'success' ? 'var(--success-500)' :
-                            notification.type === 'error' ? 'var(--danger-500)' :
-                                notification.type === 'warning' ? 'var(--warning-500)' : 'var(--info-500)',
-                        color: 'white',
-                        boxShadow: 'var(--shadow-lg)',
-                        zIndex: 9999,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 'var(--space-3)',
-                        animation: 'slideIn 0.3s ease-out',
-                        maxWidth: '400px',
-                    }}
-                >
-                    {notification.type === 'success' && <FiCheck size={20} />}
-                    {notification.type === 'error' && <FiAlertTriangle size={20} />}
-                    <span>{notification.message}</span>
-                    <button
-                        onClick={() => setNotification(null)}
-                        style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
-                    >
-                        ✕
-                    </button>
-                </div>
-            )}
+
 
             <div className="page-content">
                 <div className="page-header">
@@ -628,210 +593,151 @@ export default function Activities() {
                 </div>
 
                 {/* Create Activity Modal */}
-                {showModal && (
-                    <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                        <div className="modal" onClick={(e) => e.stopPropagation()}>
-                            <div className="modal-header">
-                                <h2 className="modal-title">Nueva Actividad</h2>
-                                <button
-                                    className="btn btn-ghost btn-icon"
-                                    onClick={() => setShowModal(false)}
-                                >
-                                    ✕
-                                </button>
-                            </div>
-
-                            <form onSubmit={handleCreateActivity}>
-                                <div className="modal-body">
-                                    <div className="form-group">
-                                        <label className="form-label">Tipo de Actividad *</label>
-                                        <select
-                                            value={newActivity.tipo}
-                                            onChange={(e) => setNewActivity({ ...newActivity, tipo: e.target.value })}
-                                            className="form-input form-select"
-                                            required
-                                        >
-                                            {Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => (
-                                                <option key={key} value={key}>{label}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div className="form-group">
-                                        <label className="form-label">Título *</label>
-                                        <input
-                                            type="text"
-                                            value={newActivity.titulo}
-                                            onChange={(e) => setNewActivity({ ...newActivity, titulo: e.target.value })}
-                                            className="form-input"
-                                            placeholder="Ej: Uso correcto de EPP"
-                                            required
-                                        />
-                                    </div>
-
-                                    <div className="form-group">
-                                        <label className="form-label">Descripción</label>
-                                        <textarea
-                                            value={newActivity.descripcion}
-                                            onChange={(e) => setNewActivity({ ...newActivity, descripcion: e.target.value })}
-                                            className="form-input"
-                                            rows={3}
-                                            placeholder="Descripción de la actividad..."
-                                            style={{ resize: 'vertical' }}
-                                        />
-                                    </div>
-
-                                    <div className="form-group">
-                                        <label className="form-label">Relator *</label>
-                                        <select
-                                            value={newActivity.relatorId}
-                                            onChange={(e) => setNewActivity({ ...newActivity, relatorId: e.target.value })}
-                                            className="form-input form-select"
-                                            required
-                                        >
-                                            <option value="">Seleccione un relator</option>
-                                            {workers.map((worker) => (
-                                                <option key={worker.workerId} value={worker.workerId}>
-                                                    {worker.nombre} {worker.apellido} - {worker.cargo}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div className="modal-footer">
-                                    <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        onClick={() => setShowModal(false)}
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button type="submit" className="btn btn-primary">
-                                        Crear Actividad
-                                    </button>
-                                </div>
-                            </form>
+                <Modal
+                    isOpen={showModal}
+                    onClose={() => setShowModal(false)}
+                    title="Nueva Actividad"
+                    footer={
+                        <>
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button>
+                            <button type="submit" form="create-activity-form" className="btn btn-primary">Crear Actividad</button>
+                        </>
+                    }
+                >
+                    <form id="create-activity-form" onSubmit={handleCreateActivity}>
+                        <div className="form-group">
+                            <label className="form-label">Tipo de Actividad *</label>
+                            <select
+                                value={newActivity.tipo}
+                                onChange={(e) => setNewActivity({ ...newActivity, tipo: e.target.value })}
+                                className="form-input form-select"
+                                required
+                            >
+                                {Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => (
+                                    <option key={key} value={key}>{label}</option>
+                                ))}
+                            </select>
                         </div>
-                    </div>
-                )}
+
+                        <div className="form-group">
+                            <label className="form-label">Título *</label>
+                            <input
+                                type="text"
+                                value={newActivity.titulo}
+                                onChange={(e) => setNewActivity({ ...newActivity, titulo: e.target.value })}
+                                className="form-input"
+                                placeholder="Ej: Uso correcto de EPP"
+                                required
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Descripción</label>
+                            <textarea
+                                value={newActivity.descripcion}
+                                onChange={(e) => setNewActivity({ ...newActivity, descripcion: e.target.value })}
+                                className="form-input"
+                                rows={3}
+                                placeholder="Descripción de la actividad..."
+                                style={{ resize: 'vertical' }}
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Relator *</label>
+                            <select
+                                value={newActivity.relatorId}
+                                onChange={(e) => setNewActivity({ ...newActivity, relatorId: e.target.value })}
+                                className="form-input form-select"
+                                required
+                            >
+                                <option value="">Seleccione un relator</option>
+                                {workers.map((worker) => (
+                                    <option key={worker.workerId} value={worker.workerId}>
+                                        {worker.nombre} {worker.apellido} - {worker.cargo}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </form>
+                </Modal>
 
                 {/* Attendance Modal */}
-                {showAttendanceModal && selectedActivity && (
-                    <div className="modal-overlay" onClick={() => setShowAttendanceModal(false)}>
-                        <div
-                            className="modal"
-                            onClick={(e) => e.stopPropagation()}
-                            style={{ maxWidth: '700px' }}
-                        >
-                            <div className="modal-header">
-                                <div>
-                                    <h2 className="modal-title">Registrar Asistencia</h2>
-                                    <p className="text-sm text-muted">{selectedActivity.titulo}</p>
-                                </div>
-                                <button
-                                    className="btn btn-ghost btn-icon"
-                                    onClick={() => setShowAttendanceModal(false)}
-                                >
-                                    ✕
+                <Modal
+                    isOpen={showAttendanceModal && !!selectedActivity}
+                    onClose={() => setShowAttendanceModal(false)}
+                    title="Registrar Asistencia"
+                    subtitle={selectedActivity?.titulo}
+                    size="lg"
+                    footer={
+                        <>
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowAttendanceModal(false)}>Cancelar</button>
+                            <button
+                                className="btn btn-primary"
+                                disabled={selectedWorkers.length === 0}
+                                onClick={() => setShowSignatureModal(true)}
+                            >
+                                <FiCheck />
+                                Firmar y Registrar {selectedWorkers.length} Asistencia(s)
+                            </button>
+                        </>
+                    }
+                >
+                    {selectedActivity && (
+                        <>
+                            <div className="flex justify-between items-center mb-4">
+                                <span className="font-bold">Seleccionar Trabajadores</span>
+                                <button className="btn btn-secondary btn-sm" onClick={selectAllWorkers}>
+                                    {selectedWorkers.length === workers.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
                                 </button>
                             </div>
 
-                            <div className="modal-body">
-                                <div className="flex justify-between items-center mb-4">
-                                    <span className="font-bold">Seleccionar Trabajadores</span>
-                                    <button
-                                        className="btn btn-secondary btn-sm"
-                                        onClick={selectAllWorkers}
-                                    >
-                                        {selectedWorkers.length === workers.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
-                                    </button>
-                                </div>
-
-                                <div
-                                    className="flex flex-col gap-2"
-                                    style={{ maxHeight: '300px', overflowY: 'auto' }}
-                                >
-                                    {workers.map((worker) => {
-                                        const isSelected = selectedWorkers.includes(worker.workerId);
-                                        const alreadyAttended = selectedActivity.asistentes
-                                            .some(a => a.workerId === worker.workerId);
-
-                                        return (
-                                            <div
-                                                key={worker.workerId}
-                                                className={`flex items-center justify-between ${alreadyAttended ? '' : 'cursor-pointer'}`}
-                                                style={{
-                                                    padding: 'var(--space-3)',
-                                                    background: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'var(--surface-elevated)',
-                                                    borderRadius: 'var(--radius-md)',
-                                                    border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
-                                                    opacity: alreadyAttended ? 0.5 : 1
-                                                }}
-                                                onClick={() => !alreadyAttended && toggleWorkerSelection(worker.workerId)}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm">
-                                                        {worker.nombre.charAt(0)}
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold">{worker.nombre} {worker.apellido}</div>
-                                                        <div className="text-sm text-muted">{worker.cargo}</div>
-                                                    </div>
+                            <div className="flex flex-col gap-2" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                {workers.map((worker) => {
+                                    const isSelected = selectedWorkers.includes(worker.workerId);
+                                    const alreadyAttended = selectedActivity.asistentes.some(a => a.workerId === worker.workerId);
+                                    return (
+                                        <div
+                                            key={worker.workerId}
+                                            className={`flex items-center justify-between ${alreadyAttended ? '' : 'cursor-pointer'}`}
+                                            style={{
+                                                padding: 'var(--space-3)',
+                                                background: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'var(--surface-elevated)',
+                                                borderRadius: 'var(--radius-md)',
+                                                border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
+                                                opacity: alreadyAttended ? 0.5 : 1
+                                            }}
+                                            onClick={() => !alreadyAttended && toggleWorkerSelection(worker.workerId)}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>
+                                                <div>
+                                                    <div className="font-bold">{worker.nombre} {worker.apellido}</div>
+                                                    <div className="text-sm text-muted">{worker.cargo}</div>
                                                 </div>
-
-                                                {alreadyAttended ? (
-                                                    <span className="badge badge-success">Ya registrado</span>
-                                                ) : (
-                                                    <div
-                                                        style={{
-                                                            width: '24px',
-                                                            height: '24px',
-                                                            borderRadius: '4px',
-                                                            border: '2px solid var(--surface-border)',
-                                                            background: isSelected ? 'var(--primary-500)' : 'transparent',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}
-                                                    >
-                                                        {isSelected && <FiCheck style={{ color: 'white' }} />}
-                                                    </div>
-                                                )}
                                             </div>
-                                        );
-                                    })}
-                                </div>
-
-                                {selectedWorkers.length > 0 && (
-                                    <div className="mt-6">
-                                        <div className="alert alert-info">
-                                            <strong>{selectedWorkers.length}</strong> trabajador(es) seleccionado(s) para firma masiva.
+                                            {alreadyAttended ? (
+                                                <span className="badge badge-success">Ya registrado</span>
+                                            ) : (
+                                                <div style={{ width: '24px', height: '24px', borderRadius: '4px', border: '2px solid var(--surface-border)', background: isSelected ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    {isSelected && <FiCheck style={{ color: 'white' }} />}
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })}
                             </div>
 
-                            <div className="modal-footer">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={() => setShowAttendanceModal(false)}
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    className="btn btn-primary"
-                                    disabled={selectedWorkers.length === 0}
-                                    onClick={() => setShowSignatureModal(true)}
-                                >
-                                    <FiCheck />
-                                    Firmar y Registrar {selectedWorkers.length} Asistencia(s)
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                            {selectedWorkers.length > 0 && (
+                                <div className="mt-6">
+                                    <div className="alert alert-info">
+                                        <strong>{selectedWorkers.length}</strong> trabajador(es) seleccionado(s) para firma masiva.
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </Modal>
 
                 {/* Signature Modal for Attendance Registration */}
                 <SignatureModal

@@ -38,6 +38,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import ConfirmModal from '../components/ConfirmModal';
 import { useOfflineSignature, type OfflinePendingSignature } from '../hooks/useOfflineSignature';
+import { Modal } from '../components/ui';
 
 export default function SignatureRequests() {
     const { user } = useAuth();
@@ -982,52 +983,63 @@ export default function SignatureRequests() {
                 </div>
             </div>
 
-            {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                    <div
-                        className="modal"
-                        style={{
-                            maxWidth: '1000px',
-                            width: '95vw',
-                            maxHeight: '90vh',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            borderRadius: '20px'
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div
-                            className="modal-header"
-                            style={{
-                                flexShrink: 0,
-                                borderBottom: '1px solid var(--surface-border)',
-                                padding: '24px',
-                            }}
-                        >
-                            <div className="flex items-center gap-3">
-                                <div
-                                    className="avatar"
-                                    style={{
-                                        background: 'var(--gradient-primary)',
-                                        boxShadow: 'var(--shadow-glow-primary)',
-                                        width: '48px',
-                                        height: '48px'
-                                    }}
-                                >
-                                    <FiSend size={22} />
-                                </div>
-                                <div>
-                                    <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '4px' }}>Nueva Solicitud de Firma</h2>
-                                    <p className="text-sm text-muted">Completa los pasos para crear la solicitud</p>
-                                </div>
-                            </div>
-                            <button className="btn btn-ghost btn-icon" onClick={() => { resetForm(); setShowModal(false); }} style={{ width: '44px', height: '44px' }}>
-                                <FiX size={22} />
+            <Modal
+                isOpen={showModal}
+                onClose={() => { resetForm(); setShowModal(false); }}
+                title="Nueva Solicitud de Firma"
+                subtitle="Completa los pasos para crear la solicitud"
+                icon={<FiSend size={22} />}
+                size="xl"
+                preventClose={submitting}
+                footer={
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                        <div className="flex items-center gap-2">
+                            {selectedWorkers.length === 0 ? (
+                                <>
+                                    <FiAlertCircle style={{ color: 'var(--warning-500)', fontSize: '18px' }} />
+                                    <span className="text-sm text-muted">Selecciona al menos un firmante</span>
+                                </>
+                            ) : (
+                                <>
+                                    <FiCheck style={{ color: 'var(--success-500)', fontSize: '18px' }} />
+                                    <span className="text-sm" style={{ color: 'var(--success-600)', fontWeight: 500 }}>{selectedWorkers.length} firmante{selectedWorkers.length !== 1 ? 's' : ''} seleccionado{selectedWorkers.length !== 1 ? 's' : ''}</span>
+                                </>
+                            )}
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => { resetForm(); setShowModal(false); }}
+                            >
+                                <FiX size={18} /> Cancelar
+                            </button>
+                            <button
+                                type="submit"
+                                form="signature-request-form"
+                                className="btn btn-primary"
+                                disabled={submitting || selectedWorkers.length === 0 || (REQUEST_TYPES[newRequest.tipo].requiresDoc && uploadedDocs.length === 0)}
+                                style={{
+                                    boxShadow: selectedWorkers.length > 0 ? 'var(--shadow-glow-primary)' : 'none',
+                                }}
+                            >
+                                {submitting ? (
+                                    <>
+                                        <div className="spinner" style={{ width: '18px', height: '18px' }} />
+                                        Creando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FiSend size={18} />
+                                        Crear Solicitud
+                                    </>
+                                )}
                             </button>
                         </div>
-
-                        <form onSubmit={handleCreateRequest} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                            <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+                    </div>
+                }
+            >
+                <form id="signature-request-form" onSubmit={handleCreateRequest} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
 
                                 <div
                                     className="survey-section mb-8"
@@ -1430,70 +1442,8 @@ export default function SignatureRequests() {
                                         </div>
                                     )}
                                 </div>
-                            </div>
-
-                            <div
-                                className="modal-footer"
-                                style={{
-                                    flexShrink: 0,
-                                    borderTop: '1px solid var(--surface-border)',
-                                    padding: '20px 24px',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    background: 'var(--surface-elevated)',
-                                }}
-                            >
-                                <div className="flex items-center gap-2">
-                                    {selectedWorkers.length === 0 ? (
-                                        <>
-                                            <FiAlertCircle style={{ color: 'var(--warning-500)', fontSize: '18px' }} />
-                                            <span className="text-sm text-muted">Selecciona al menos un firmante</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <FiCheck style={{ color: 'var(--success-500)', fontSize: '18px' }} />
-                                            <span className="text-sm" style={{ color: 'var(--success-600)', fontWeight: 500 }}>{selectedWorkers.length} firmante{selectedWorkers.length !== 1 ? 's' : ''} seleccionado{selectedWorkers.length !== 1 ? 's' : ''}</span>
-                                        </>
-                                    )}
-                                </div>
-                                <div className="flex gap-3">
-                                    <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        onClick={() => { resetForm(); setShowModal(false); }}
-                                        style={{ padding: '10px 20px', height: '44px' }}
-                                    >
-                                        <FiX size={18} /> Cancelar
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="btn btn-primary"
-                                        disabled={submitting || selectedWorkers.length === 0 || (REQUEST_TYPES[newRequest.tipo].requiresDoc && uploadedDocs.length === 0)}
-                                        style={{
-                                            boxShadow: selectedWorkers.length > 0 ? 'var(--shadow-glow-primary)' : 'none',
-                                            padding: '10px 24px',
-                                            height: '44px'
-                                        }}
-                                    >
-                                        {submitting ? (
-                                            <>
-                                                <div className="spinner" style={{ width: '18px', height: '18px' }} />
-                                                Creando...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <FiSend size={18} />
-                                                Crear Solicitud
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+                </form>
+            </Modal>
             <ConfirmModal
                 isOpen={confirmCancel.isOpen}
                 title="¿Cancelar solicitud?"

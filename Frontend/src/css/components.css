@@ -1,0 +1,284 @@
+/* ================================================================== */
+/*  components.css — Estilos para componentes UI reutilizables          */
+/* ================================================================== */
+
+/* ------------------------------------------------------------------ */
+/*  Toast                                                              */
+/* ------------------------------------------------------------------ */
+.ui-toast-container {
+    position: fixed;
+    top: var(--space-5);
+    right: var(--space-5);
+    z-index: 99999999;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-width: 380px;
+    width: 100%;
+    pointer-events: none;
+}
+
+.ui-toast {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--surface-card);
+    box-shadow: var(--shadow-xl);
+    pointer-events: auto;
+    animation: uiToastSlideIn 0.3s ease-out;
+}
+
+@keyframes uiToastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.ui-toast-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+.ui-toast-message {
+    flex: 1;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.ui-toast-close {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--space-1);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    transition: all var(--transition-fast);
+}
+
+.ui-toast-close:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------------ */
+/*  EmptyState                                                         */
+/* ------------------------------------------------------------------ */
+.ui-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: var(--space-12);
+}
+
+.ui-empty-state-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: var(--surface-elevated);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: var(--space-6);
+    color: var(--text-muted);
+    font-size: 40px;
+}
+
+.ui-empty-state-title {
+    font-size: var(--text-xl);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+}
+
+.ui-empty-state-description {
+    color: var(--text-muted);
+    max-width: 400px;
+    margin: 0 auto var(--space-8);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+}
+
+/* ------------------------------------------------------------------ */
+/*  StatCard                                                           */
+/* ------------------------------------------------------------------ */
+.ui-stat-card-value {
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.ui-stat-card-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-top: var(--space-1);
+}
+
+/* ------------------------------------------------------------------ */
+/*  SearchInput                                                        */
+/* ------------------------------------------------------------------ */
+.ui-search-input {
+    position: relative;
+    flex: 1;
+}
+
+.ui-search-input-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* ------------------------------------------------------------------ */
+/*  LoadingSpinner                                                     */
+/* ------------------------------------------------------------------ */
+.ui-loading-fullpage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: var(--space-4);
+}
+
+.ui-loading-inline {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8);
+}
+
+.ui-loading-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Badge sm                                                           */
+/* ------------------------------------------------------------------ */
+.badge-sm {
+    font-size: var(--text-xs);
+    padding: 2px 6px;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal header left alignment                                        */
+/* ------------------------------------------------------------------ */
+.modal-header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    flex: 1;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Responsive toasts                                                  */
+/* ------------------------------------------------------------------ */
+@media (max-width: 480px) {
+    .ui-toast-container {
+        left: var(--space-3);
+        right: var(--space-3);
+        max-width: none;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Form Sections                                                      */
+/* ------------------------------------------------------------------ */
+.form-section {
+    margin-bottom: var(--space-6);
+}
+
+.form-section-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--surface-border);
+}
+
+.form-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    display: block;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Role Selector                                                      */
+/* ------------------------------------------------------------------ */
+.role-selector {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-3);
+}
+
+.role-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--space-4);
+    background: var(--surface-elevated);
+    border: 2px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.role-card:hover {
+    border-color: var(--primary-400);
+    background: var(--surface-card);
+}
+
+.role-card.selected {
+    border-color: var(--primary-500);
+    background: rgba(76, 175, 80, 0.1);
+    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+}
+
+.role-card-icon {
+    font-size: 28px;
+    margin-bottom: var(--space-2);
+}
+
+.role-card-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+}
+
+.role-card-desc {
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+    .role-selector {
+        grid-template-columns: 1fr;
+    }
+}
