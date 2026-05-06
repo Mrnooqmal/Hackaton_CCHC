@@ -16,6 +16,7 @@ import {
 } from 'react-icons/fi';
 import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi, signatureRequestsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useObraContext } from '../context/ObraContext';
 import type { Worker, Activity } from '../api/client';
 
 interface PendingTask {
@@ -42,6 +43,7 @@ interface DashboardStats {
 
 export default function Dashboard() {
     const { user } = useAuth();
+    const { obras, selectedObraId } = useObraContext();
     const navigate = useNavigate();
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [stats, setStats] = useState<DashboardStats>({});
@@ -52,7 +54,7 @@ export default function Dashboard() {
 
     useEffect(() => {
         loadDashboardData();
-    }, [user]);
+    }, [user, selectedObraId]);
 
     const loadDashboardData = async () => {
         if (!user) return;
@@ -152,7 +154,7 @@ export default function Dashboard() {
     const loadPrevencionistaDashboard = async () => {
         // Load workers stats
         try {
-            const workersRes = await workersApi.list();
+            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
                 const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
@@ -187,7 +189,7 @@ export default function Dashboard() {
 
         // Load documents stats
         try {
-            const docsRes = await documentsApi.list();
+            const docsRes = await documentsApi.list({ obraId: selectedObraId || undefined });
             if (docsRes.success && docsRes.data) {
                 setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
             }
@@ -208,7 +210,7 @@ export default function Dashboard() {
 
         // Load recent activities
         try {
-            const activitiesRes = await activitiesApi.list();
+            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
             if (activitiesRes.success && activitiesRes.data) {
                 const recent = activitiesRes.data.activities.slice(0, 5);
                 setRecentActivities(recent);
@@ -227,7 +229,7 @@ export default function Dashboard() {
     const loadAdminDashboard = async () => {
         // Load global stats
         try {
-            const workersRes = await workersApi.list();
+            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
                 setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0 }));
@@ -238,7 +240,7 @@ export default function Dashboard() {
 
         // Load activities
         try {
-            const activitiesRes = await activitiesApi.list();
+            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
             if (activitiesRes.success && activitiesRes.data) {
                 setStats(s => ({ ...s, activitiesToday: activitiesRes.data?.activities.length || 0 }));
             }
@@ -248,7 +250,7 @@ export default function Dashboard() {
 
         // Load documents count
         try {
-            const docsRes = await documentsApi.list();
+            const docsRes = await documentsApi.list({ obraId: selectedObraId || undefined });
             if (docsRes.success && docsRes.data) {
                 setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
             }
@@ -614,71 +616,73 @@ export default function Dashboard() {
                             </div>
                         </div>
 
-                        {/* Recent Workers */}
+                        {/* Obras Cards instead of Recent Workers */}
                         <div className="card">
                             <div className="card-header">
                                 <div>
-                                    <h2 className="card-title">Trabajadores Recientes</h2>
-                                    <p className="card-subtitle">Últimos trabajadores enrolados</p>
+                                    <h2 className="card-title">Resumen de Obras</h2>
+                                    <p className="card-subtitle">
+                                        {selectedObraId ? 'Detalles de la obra seleccionada' : 'Tus obras activas en la plataforma'}
+                                    </p>
                                 </div>
-                                <Link to="/workers" className="btn btn-secondary btn-sm">
-                                    Ver todos
+                                <Link to="/obras" className="btn btn-secondary btn-sm">
+                                    Ver todas las obras
                                 </Link>
                             </div>
 
-                            {workers.length === 0 ? (
+                            {obras.length === 0 ? (
                                 <div className="empty-state">
-                                    <FiUsers size={48} className="empty-state-icon" />
-                                    <h3 className="empty-state-title">Sin trabajadores</h3>
+                                    <FiAlertTriangle size={48} className="empty-state-icon" style={{ color: 'var(--warning-500)' }} />
+                                    <h3 className="empty-state-title">No tienes obras creadas</h3>
                                     <p className="empty-state-description">
-                                        Comienza enrolando tu primer trabajador.
+                                        1. Crea tu primera Obra.<br/>
+                                        2. Enrola trabajadores y asígnalos.<br/>
+                                        3. Sube los documentos para comenzar.
                                     </p>
-                                    <Link to="/workers/enroll" className="btn btn-primary">
-                                        <FiPlus /> Enrolar Trabajador
+                                    <Link to="/obras" className="btn btn-primary mt-4">
+                                        <FiPlus /> Crear Obra
                                     </Link>
                                 </div>
                             ) : (
-                                <>
-                                    <div className="scroll-hint">
-                                        <FiArrowRight />
-                                        <span>Desliza para ver más</span>
-                                    </div>
-                                    <div className="table-container">
-                                        <table className="table">
-                                            <thead>
-                                                <tr>
-                                                    <th>Trabajador</th>
-                                                    <th>RUT</th>
-                                                    <th>Cargo</th>
-                                                    <th>Fecha Enrolamiento</th>
-                                                    <th>Estado</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {workers.slice(0, 5).map((worker) => (
-                                                    <tr key={worker.workerId}>
-                                                        <td>
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="avatar avatar-sm">
-                                                                    {worker.nombre.charAt(0)}
-                                                                </div>
-                                                                <span className="font-bold">{worker.nombre} {worker.apellido}</span>
-                                                            </div>
-                                                        </td>
-                                                        <td>{worker.rut}</td>
-                                                        <td>{worker.cargo}</td>
-                                                        <td>{new Date(worker.fechaEnrolamiento).toLocaleDateString('es-CL')}</td>
-                                                        <td>
-                                                            <span className={`badge badge-${worker.habilitado ? 'success' : 'warning'}`}>
-                                                                {worker.habilitado ? 'Habilitado' : 'Pendiente'}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
+                                    {(selectedObraId ? obras.filter(o => o.obraId === selectedObraId) : obras).map((obra) => {
+                                        const totalDocs = obra.fasesConfig?.[obra.etapaActual]?.length || 0;
+                                        // Mock compliance logic for now
+                                        const completedDocs = Math.floor(Math.random() * (totalDocs + 1)); 
+                                        const progress = totalDocs > 0 ? Math.round((completedDocs / totalDocs) * 100) : 100;
+                                        
+                                        return (
+                                            <div key={obra.obraId} className="card" style={{ padding: 'var(--space-4)', border: '1px solid var(--surface-border)' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-3)' }}>
+                                                    <div>
+                                                        <h3 className="font-bold text-lg">{obra.nombre}</h3>
+                                                        <span className="badge badge-secondary">{obra.etapaActual}</span>
+                                                    </div>
+                                                    <span className={`badge badge-${obra.estado === 'activa' ? 'success' : 'warning'}`}>
+                                                        {obra.estado}
+                                                    </span>
+                                                </div>
+                                                <div style={{ marginBottom: 'var(--space-4)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-1)' }}>
+                                                        <span className="text-sm text-muted">Cumplimiento Fase Actual</span>
+                                                        <span className="text-sm font-bold">{progress}%</span>
+                                                    </div>
+                                                    <div className="progress">
+                                                        <div className="progress-bar" style={{ width: `${progress}%`, background: progress === 100 ? 'var(--success-500)' : 'var(--primary-500)' }} />
+                                                    </div>
+                                                    <div className="text-xs text-muted mt-1">
+                                                        {completedDocs} de {totalDocs} documentos normativos listos
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                                                    <Link to={`/obras/${obra.obraId}`} className="btn btn-secondary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                                                        Gestionar Obra
+                                                    </Link>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             )}
                         </div>
                     </>

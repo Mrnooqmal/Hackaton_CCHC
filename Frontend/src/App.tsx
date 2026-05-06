@@ -26,6 +26,7 @@ import OfflineBanner from './components/OfflineBanner';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ToastProvider } from './context/ToastContext';
+import { ObraProvider } from './context/ObraContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import './css/index.css';
 import './css/App.css';
@@ -164,11 +165,13 @@ function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <LayoutProvider>
-          <BrowserRouter>
-            <AppContent />
-          </BrowserRouter>
-        </LayoutProvider>
+        <ObraProvider>
+          <LayoutProvider>
+            <BrowserRouter>
+              <AppContent />
+            </BrowserRouter>
+          </LayoutProvider>
+        </ObraProvider>
       </ToastProvider>
     </AuthProvider>
   );

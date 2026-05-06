@@ -49,9 +49,13 @@ export async function apiRequest<T>(
 
 // Workers API (Legacy mapping to Personas)
 export const workersApi = {
-    list: async (empresaId?: string) => {
-        const tenantId = empresaId || localStorage.getItem('tenant_id');
-        const res = await apiRequest<{ total: number; personas: any[] }>(`/personas?tenantId=${tenantId}`);
+    list: async (params?: { empresaId?: string; obraId?: string }) => {
+        const tenantId = params?.empresaId || localStorage.getItem('tenant_id');
+        let query = `/personas?tenantId=${tenantId}`;
+        if (params?.obraId) {
+            query += `&obraId=${params.obraId}`;
+        }
+        const res = await apiRequest<{ total: number; personas: any[] }>(query);
         if (res.success && res.data) {
             // Map Personas to legacy Worker structure expected by components
             const mapped = res.data.personas.map(p => ({
@@ -346,6 +350,7 @@ export interface CreateUserData {
 
 export interface UserListParams {
     empresaId?: string;
+    obraId?: string;
     rol?: string;
     estado?: string;
 }
@@ -380,6 +385,7 @@ export interface CreateWorkerData {
     telefono?: string;
     cargo: string;
     empresaId?: string;
+    obraIds?: string[];
 }
 
 export interface SignData {
@@ -575,6 +581,7 @@ export interface CreateDocumentData {
 
 export interface DocumentListParams {
     empresaId?: string;
+    obraId?: string;
     tipo?: string;
     estado?: string;
 }
@@ -659,6 +666,7 @@ export interface CreateActivityData {
 
 export interface ActivityListParams {
     empresaId?: string;
+    obraId?: string;
     tipo?: string;
     estado?: string;
     fecha?: string;
@@ -686,6 +694,7 @@ export interface AttendanceResult {
 
 export interface StatsParams {
     empresaId?: string;
+    obraId?: string;
     fechaInicio?: string;
     fechaFin?: string;
 }
@@ -785,9 +794,12 @@ export interface UpdateSurveyResponsePayload {
 }
 
 export const surveysApi = {
-    list: (params?: { empresaId?: string }) => {
-        const query = params?.empresaId ? `?empresaId=${params.empresaId}` : '';
-        return apiRequest<{ total: number; surveys: Survey[] }>(`/surveys${query}`);
+    list: (params?: { empresaId?: string; obraId?: string }) => {
+        const queryParams = new URLSearchParams();
+        if (params?.empresaId) queryParams.append('empresaId', params.empresaId);
+        if (params?.obraId) queryParams.append('obraId', params.obraId);
+        const query = queryParams.toString();
+        return apiRequest<{ total: number; surveys: Survey[] }>(`/surveys${query ? `?${query}` : ''}`);
     },
 
     get: (surveyId: string) =>

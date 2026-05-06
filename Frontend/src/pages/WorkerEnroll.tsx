@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import PinInput from '../components/PinInput';
-import { FiUser, FiMail, FiPhone, FiBriefcase, FiCheck, FiArrowRight, FiArrowLeft, FiLock, FiShield } from 'react-icons/fi';
+import { FiUser, FiMail, FiPhone, FiBriefcase, FiCheck, FiArrowRight, FiArrowLeft, FiLock, FiShield, FiMapPin } from 'react-icons/fi';
 import { workersApi, type CreateWorkerData } from '../api/client';
+import { useObraContext } from '../context/ObraContext';
 
 type Step = 'data' | 'create-pin' | 'confirm-pin' | 'sign' | 'complete';
 
@@ -24,6 +25,7 @@ export default function WorkerEnroll() {
         email: '',
         telefono: '',
         cargo: '',
+        obraIds: [],
     });
 
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -141,6 +143,15 @@ export default function WorkerEnroll() {
             setLoading(false);
         }
     };
+
+    const { obras, selectedObraId } = useObraContext();
+
+    // Auto-select obra if in context
+    useState(() => {
+        if (selectedObraId) {
+            setFormData(prev => ({ ...prev, obraIds: [selectedObraId] }));
+        }
+    });
 
     const cargos = [
         'Operario',
@@ -265,6 +276,34 @@ export default function WorkerEnroll() {
                         </p>
 
                         <form onSubmit={handleSubmitData}>
+                            {obras.length > 0 && (
+                                <div className="form-group mb-6 p-4 rounded-lg" style={{ background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)' }}>
+                                    <label className="form-label font-bold flex items-center gap-2">
+                                        <FiMapPin className="text-primary-500" />
+                                        Asignación a Obra
+                                    </label>
+                                    <p className="text-sm text-muted mb-3">
+                                        Seleccione la obra a la que será asignado inicialmente. Puede modificar esto más adelante.
+                                    </p>
+                                    <select
+                                        name="obraIds"
+                                        value={formData.obraIds?.[0] || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setFormData(prev => ({ ...prev, obraIds: val ? [val] : [] }));
+                                        }}
+                                        className="form-input form-select"
+                                    >
+                                        <option value="">Sin asignar a obra específica por ahora</option>
+                                        {obras.map(obra => (
+                                            <option key={obra.obraId} value={obra.obraId}>
+                                                {obra.nombre}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
                             <div className="form-group">
                                 <label className="form-label">
                                     RUT *

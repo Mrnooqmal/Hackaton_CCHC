@@ -21,23 +21,27 @@ import {
 import { documentsApi, workersApi, uploadsApi, inboxApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { useObraContext } from '../context/ObraContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import SignatureModal from '../components/SignatureModal';
 import { Modal } from '../components/ui';
 
-const DOCUMENT_TYPES: Record<string, { label: string; color: string }> = {
-    IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)' },
-    POLITICA_SSO: { label: 'Política SSO', color: 'var(--info-500)' },
-    REGLAMENTO_INTERNO: { label: 'Reglamento Interno', color: 'var(--warning-500)' },
-    PROCEDIMIENTO_TRABAJO: { label: 'Procedimiento de Trabajo', color: 'var(--success-500)' },
-    MATRIZ_MIPPER: { label: 'Matriz MIPPER', color: 'var(--danger-500)' },
-    ENTREGA_EPP: { label: 'Entrega EPP', color: 'var(--success-500)' },
-    CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)' },
+const DOCUMENT_TYPES: Record<string, { label: string; color: string; category: string }> = {
+    IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)', category: 'normativo' },
+    POLITICA_SSO: { label: 'Política SSO', color: 'var(--info-500)', category: 'normativo' },
+    REGLAMENTO_INTERNO: { label: 'Reglamento Interno', color: 'var(--warning-500)', category: 'normativo' },
+    PROCEDIMIENTO_TRABAJO: { label: 'Procedimiento de Trabajo', color: 'var(--success-500)', category: 'normativo' },
+    MATRIZ_MIPPER: { label: 'Matriz MIPPER', color: 'var(--danger-500)', category: 'normativo' },
+    ENTREGA_EPP: { label: 'Entrega EPP', color: 'var(--success-500)', category: 'diario' },
+    CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)', category: 'diario' },
+    CHARLA_5_MIN: { label: 'Charla 5 Minutos', color: 'var(--warning-500)', category: 'diario' },
 };
 
 export default function Documents() {
     const { user } = useAuth();
+    const { selectedObraId } = useObraContext();
     const { isOnline, pendingCount, signDocument, syncPendingSignatures } = useOfflineSignature();
+    const [activeTab, setActiveTab] = useState<'normativos' | 'diarios'>('normativos');
     const [documents, setDocuments] = useState<Document[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
@@ -70,7 +74,7 @@ export default function Documents() {
 
     useEffect(() => {
         loadData();
-    }, []);
+    }, [selectedObraId]);
 
     // Sync pending offline signatures when online
     useEffect(() => {
@@ -87,8 +91,8 @@ export default function Documents() {
     const loadData = async () => {
         try {
             const [docsRes, workersRes] = await Promise.all([
-                documentsApi.list(),
-                workersApi.list()
+                documentsApi.list({ obraId: selectedObraId || undefined }),
+                workersApi.list({ obraId: selectedObraId || undefined })
             ]);
 
             if (docsRes.success && docsRes.data) {
@@ -380,17 +384,19 @@ export default function Documents() {
     const uniqueCargos = [...new Set(workers.map(w => w.cargo).filter(Boolean))] as string[];
 
     const filteredDocuments = documents.filter((doc) => {
+        const typeInfo = DOCUMENT_TYPES[doc.tipo];
+        const categoryMatch = typeInfo ? typeInfo.category === activeTab : activeTab === 'normativos';
         const matchesSearch = doc.titulo.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesType = !filterType || doc.tipo === filterType;
 
-        // Si no es admin/prevencionista, ver solo si estÃ¡ asignado
+        // Si no es admin/prevencionista, ver solo si está asignado
         const isWorkerOrSupervisor = user?.rol === 'trabajador';
         if (isWorkerOrSupervisor) {
             const isAssigned = doc.asignaciones?.some(a => a.workerId === user?.workerId);
-            return matchesSearch && matchesType && isAssigned;
+            return categoryMatch && matchesSearch && matchesType && isAssigned;
         }
 
-        return matchesSearch && matchesType;
+        return categoryMatch && matchesSearch && matchesType;
     });
 
     if (loading) {
@@ -459,6 +465,42 @@ export default function Documents() {
                     </div>
                 )}
 
+                {/* Tabs */}
+                <div className="tabs mb-6" style={{ borderBottom: '1px solid var(--surface-border)', display: 'flex', gap: 'var(--space-6)' }}>
+                    <button
+                        className={`tab ${activeTab === 'normativos' ? 'active' : ''}`}
+                        onClick={() => { setActiveTab('normativos'); setFilterType(''); }}
+                        style={{
+                            padding: 'var(--space-3) 0',
+                            background: 'transparent',
+                            border: 'none',
+                            borderBottom: activeTab === 'normativos' ? '2px solid var(--primary-500)' : '2px solid transparent',
+                            color: activeTab === 'normativos' ? 'var(--primary-600)' : 'var(--text-muted)',
+                            fontWeight: activeTab === 'normativos' ? '600' : 'normal',
+                            cursor: 'pointer',
+                            fontSize: '1rem'
+                        }}
+                    >
+                        Documentos Normativos (DS44)
+                    </button>
+                    <button
+                        className={`tab ${activeTab === 'diarios' ? 'active' : ''}`}
+                        onClick={() => { setActiveTab('diarios'); setFilterType(''); }}
+                        style={{
+                            padding: 'var(--space-3) 0',
+                            background: 'transparent',
+                            border: 'none',
+                            borderBottom: activeTab === 'diarios' ? '2px solid var(--primary-500)' : '2px solid transparent',
+                            color: activeTab === 'diarios' ? 'var(--primary-600)' : 'var(--text-muted)',
+                            fontWeight: activeTab === 'diarios' ? '600' : 'normal',
+                            cursor: 'pointer',
+                            fontSize: '1rem'
+                        }}
+                    >
+                        Documentos de Uso Diario
+                    </button>
+                </div>
+
                 {/* Actions */}
                 <div className="card mb-6">
                     <div className="documents-actions-bar">
@@ -491,7 +533,9 @@ export default function Documents() {
                                     style={{ paddingLeft: '40px', minWidth: '200px' }}
                                 >
                                     <option value="">Todos los tipos</option>
-                                    {Object.entries(DOCUMENT_TYPES).map(([key, { label }]) => (
+                                    {Object.entries(DOCUMENT_TYPES)
+                                        .filter(([, info]) => info.category === activeTab)
+                                        .map(([key, { label }]) => (
                                         <option key={key} value={key}>{label}</option>
                                     ))}
                                 </select>
@@ -733,7 +777,9 @@ export default function Documents() {
                                             required
                                         >
                                             <option value="">Seleccione un tipo</option>
-                                            {Object.entries(DOCUMENT_TYPES).map(([key, { label }]) => (
+                                            {Object.entries(DOCUMENT_TYPES)
+                                                .filter(([, info]) => info.category === activeTab)
+                                                .map(([key, { label }]) => (
                                                 <option key={key} value={key}>{label}</option>
                                             ))}
                                         </select>
