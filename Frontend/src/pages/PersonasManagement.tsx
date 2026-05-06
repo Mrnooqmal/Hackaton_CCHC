@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
-import { personasApi, type PersonaResponse } from '../api/client';
+import { apiBaseUrl, personasApi, type PersonaResponse } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import ConfirmModal from '../components/ConfirmModal';
 import {
     FiUserPlus, FiShield, FiCheckCircle, FiAlertCircle, FiEdit2,
     FiArrowRight, FiUsers, FiLock, FiX, FiSave,
-    FiBriefcase, FiStar, FiSearch, FiEye
+    FiBriefcase, FiStar, FiSearch, FiEye, FiUpload, FiDownload
 } from 'react-icons/fi';
 
 const ROLE_CONFIG: Record<string, { label: string; color: string; icon: any; desc: string }> = {
@@ -42,6 +42,15 @@ export default function PersonasManagement() {
     // Reset password
     const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string; personaId?: string }>({ isOpen: false, title: '', message: '' });
     const [resetResult, setResetResult] = useState<{ rut: string; passwordTemporal: string } | null>(null);
+
+    // Bulk upload
+    const [showBulkUpload, setShowBulkUpload] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [uploadResult, setUploadResult] = useState<any | null>(null);
+    const [uploadError, setUploadError] = useState('');
+    const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [sendWelcomeEmail, setSendWelcomeEmail] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     const fetchPersonas = async () => {
         setLoading(true);
@@ -107,6 +116,81 @@ export default function PersonasManagement() {
         });
     };
 
+    const readFileAsBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = typeof reader.result === 'string' ? reader.result : '';
+            const base64 = result.includes('base64,') ? result.split('base64,')[1] : result;
+            resolve(base64);
+        };
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+        reader.readAsDataURL(file);
+    });
+
+    const handleDownloadTemplate = async () => {
+        setUploadError('');
+        try {
+            const token = localStorage.getItem('auth_token');
+            const params = new URLSearchParams();
+            if (tenantId) params.set('tenantId', tenantId);
+            const url = `${apiBaseUrl}/personas/plantilla${params.toString() ? `?${params}` : ''}`;
+
+            const response = await fetch(url, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+
+            if (!response.ok) {
+                setUploadError('No fue posible descargar la plantilla');
+                return;
+            }
+
+            const blob = await response.blob();
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'plantilla_personas.xlsx';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(link.href);
+        } catch {
+            setUploadError('Error al descargar la plantilla');
+        }
+    };
+
+    const handleBulkUpload = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!uploadFile) {
+            setUploadError('Selecciona un archivo Excel');
+            return;
+        }
+
+        setUploading(true);
+        setUploadError('');
+        setUploadResult(null);
+
+        try {
+            const fileBase64 = await readFileAsBase64(uploadFile);
+            const res = await personasApi.bulkUpload(tenantId, {
+                fileBase64,
+                fileName: uploadFile.name,
+                sendWelcomeEmail
+            });
+
+            if (res.success && res.data) {
+                setUploadResult(res.data);
+                fetchPersonas();
+            } else {
+                setUploadError(res.error || 'Error en la carga masiva');
+            }
+        } catch {
+            setUploadError('Error de conexión');
+        } finally {
+            setUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            setUploadFile(null);
+        }
+    };
+
     const confirmReset = async () => {
         const pid = confirmModal.personaId;
         if (!pid) return;
@@ -145,6 +229,9 @@ export default function PersonasManagement() {
                         <p className="page-header-description">Gestione todos los usuarios, roles y permisos desde un solo lugar.</p>
                     </div>
                     <div className="page-header-actions">
+                        <button className="btn btn-secondary" onClick={() => { setUploadResult(null); setUploadError(''); setSendWelcomeEmail(false); setShowBulkUpload(true); }}>
+                            <FiUpload /> Carga Masiva
+                        </button>
                         <button className="btn btn-primary" onClick={() => { setCreateResult(null); setShowCreate(true); }}>
                             <FiUserPlus /> Nueva Persona
                         </button>
@@ -261,6 +348,105 @@ export default function PersonasManagement() {
                 </div>
             </div>
 
+            {/* Bulk Upload Modal */}
+            {showBulkUpload && (
+                <div className="modal-overlay">
+                    <div className="modal-content" style={{ maxWidth: 600 }}>
+                        <div className="modal-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div className="modal-header-icon" style={{ background: 'var(--info-500)', marginBottom: 0 }}><FiUpload size={24} /></div>
+                                <h2 className="modal-title" style={{ marginBottom: 0 }}>Carga masiva de personas</h2>
+                            </div>
+                            <p className="modal-subtitle" style={{ marginTop: 0 }}>Descargue la plantilla, complete los datos y suba el Excel</p>
+                        </div>
+                        <form onSubmit={handleBulkUpload} className="modal-body">
+                            <div className="form-section">
+                                <h3 className="form-section-title">Plantilla</h3>
+                                <p className="text-sm" style={{ marginBottom: 12 }}>Use la plantilla oficial para evitar errores en la carga.</p>
+                                <button type="button" className="btn btn-secondary" onClick={handleDownloadTemplate}>
+                                    <FiDownload /> Descargar plantilla
+                                </button>
+                            </div>
+                            <div className="form-section">
+                                <h3 className="form-section-title">Opciones</h3>
+                                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <input type="checkbox" checked={sendWelcomeEmail} onChange={e => setSendWelcomeEmail(e.target.checked)} />
+                                    Enviar credenciales por email cuando aplique
+                                </label>
+                            </div>
+
+                            {uploadError && <div className="alert alert-danger mb-4">{uploadError}</div>}
+                            {uploadResult && (
+                                <div className={`alert mb-4 ${uploadResult.resultados?.errores?.length > 0 ? 'alert-danger' : uploadResult.resultados?.duplicados?.length > 0 ? 'alert-warning' : 'alert-success'}`}>
+                                    <div style={{ fontWeight: 700, marginBottom: 12, fontSize: '15px' }}>{uploadResult.mensaje}</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span className="badge badge-success" style={{ width: 28, textAlign: 'center', display: 'inline-block' }}>{uploadResult.resultados?.creados?.length || 0}</span>
+                                            <span className="text-sm font-medium">Usuarios creados exitosamente</span>
+                                        </div>
+                                        {(uploadResult.resultados?.duplicados?.length || 0) > 0 && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--warning-600)' }}>
+                                                <span className="badge badge-warning" style={{ width: 28, textAlign: 'center', display: 'inline-block' }}>{uploadResult.resultados?.duplicados?.length || 0}</span>
+                                                <span className="text-sm font-medium">Registros duplicados (ignorados)</span>
+                                            </div>
+                                        )}
+                                        {(uploadResult.resultados?.errores?.length || 0) > 0 && (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger-500)' }}>
+                                                    <span className="badge badge-danger" style={{ width: 28, textAlign: 'center', display: 'inline-block' }}>{uploadResult.resultados?.errores?.length || 0}</span>
+                                                    <span className="text-sm font-medium">Errores encontrados (filas omitidas)</span>
+                                                </div>
+                                                <div style={{ marginTop: '4px', maxHeight: '120px', overflowY: 'auto', fontSize: '12px', background: 'var(--surface-bg)', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '8px' }}>
+                                                    <ul style={{ margin: 0, paddingLeft: '16px', color: 'var(--text-secondary)' }}>
+                                                        {uploadResult.resultados?.errores?.map((err: any, idx: number) => (
+                                                            <li key={idx} style={{ marginBottom: '4px' }}>
+                                                                <strong>Fila {err.fila}:</strong> {err.error}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="form-section">
+                                <h3 className="form-section-title">Archivo</h3>
+                                <div className="form-group">
+                                    <label className="form-label">Archivo Excel (.xlsx)</label>
+                                    <div 
+                                        className="file-upload-zone"
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        <FiUpload size={28} style={{ marginBottom: 12, color: uploadFile ? 'var(--primary-500)' : 'var(--text-muted)', display: 'inline-block' }} />
+                                        {uploadFile ? (
+                                            <div style={{ fontWeight: 600, color: 'var(--primary-500)', fontSize: '14px' }}>{uploadFile.name}</div>
+                                        ) : (
+                                            <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Haz clic aquí para seleccionar un archivo .xlsx</div>
+                                        )}
+                                    </div>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept=".xlsx"
+                                        style={{ display: 'none' }}
+                                        onChange={e => setUploadFile(e.target.files?.[0] || null)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-secondary" onClick={() => setShowBulkUpload(false)}>Cancelar</button>
+                                <button type="submit" className="btn btn-primary" disabled={uploading || !uploadFile}>
+                                    {uploading ? <div className="spinner" /> : <><FiUpload /> Cargar archivo</>}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* Create Modal */}
             {showCreate && (
                 <div className="modal-overlay">
@@ -372,6 +558,8 @@ export default function PersonasManagement() {
                 .form-section { margin-bottom: 24px; }
                 .form-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--surface-border); }
                 .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block; }
+                .file-upload-zone { border: 2px dashed var(--surface-border); border-radius: 12px; padding: 32px 16px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--surface-elevated); }
+                .file-upload-zone:hover { border-color: var(--primary-400); background: var(--surface-card); }
                 @media (max-width: 640px) { .role-selector { grid-template-columns: 1fr; } }
             `}</style>
         </>

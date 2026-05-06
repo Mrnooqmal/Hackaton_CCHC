@@ -1,4 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+export const apiBaseUrl = API_BASE_URL;
 
 interface ApiResponse<T> {
     success: boolean;
@@ -1853,6 +1854,12 @@ export const personasApi = {
     resetPassword: (tenantId: string, id: string) =>
         apiRequest<{ message: string; passwordTemporal: string; personaId: string }>(`/personas/${id}/reset-password?tenantId=${tenantId}`, {
             method: 'POST',
+        }),
+
+    bulkUpload: (tenantId: string, data: { fileBase64: string; fileName: string; sendWelcomeEmail?: boolean }) =>
+        apiRequest<{ mensaje: string; resultados: any }>(`/personas/carga-masiva?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify(data),
         }),
 };
 
