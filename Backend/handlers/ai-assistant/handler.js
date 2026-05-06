@@ -1,5 +1,5 @@
-const { success, error, created } = require('../lib/response');
-const gemini = require('../lib/gemini');
+const { success, error, created } = require('../../lib/utils/response');
+const gemini = require('../../lib/ai/gemini');
 
 /**
  * Normaliza la respuesta de Bedrock Risk Matrix al formato esperado por el frontend
@@ -260,7 +260,7 @@ const FALLBACK_RESPONSES = {
     })
 };
 
-const { docClient } = require('../lib/dynamodb');
+const { docClient } = require('../../lib/clients/dynamodb');
 const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
 
 /**

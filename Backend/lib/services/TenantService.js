@@ -7,9 +7,9 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../dynamodb');
+const { docClient } = require('../clients/dynamodb');
 const { Tenant } = require('../models/Tenant');
-const { validateRequired } = require('../validation');
+const { validateRequired } = require('../utils/validation');
 
 const TENANTS_TABLE = process.env.TENANTS_TABLE || 'Tenants';
 

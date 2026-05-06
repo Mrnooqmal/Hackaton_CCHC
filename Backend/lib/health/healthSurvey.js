@@ -1,8 +1,8 @@
 const { PutCommand, GetCommand, UpdateCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('./dynamodb');
+const { docClient } = require('../clients/dynamodb');
 
 const SURVEYS_TABLE = process.env.SURVEYS_TABLE || 'Surveys';
-const { PersonaService } = require('./services/PersonaService');
+const { PersonaService } = require('../services/PersonaService');
 const DEFAULT_SURVEY_ID = 'default-health-survey';
 
 const HEALTH_SURVEY_TEMPLATE = {

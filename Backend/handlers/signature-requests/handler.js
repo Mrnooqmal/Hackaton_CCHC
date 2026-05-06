@@ -1,14 +1,14 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../lib/dynamodb');
-const { success, error, created } = require('../lib/response');
-const { validateRequired } = require('../lib/validation');
+const { docClient } = require('../../lib/clients/dynamodb');
+const { success, error, created } = require('../../lib/utils/response');
+const { validateRequired } = require('../../lib/utils/validation');
 // NEW: Import EventBus for automatic notifications
-const { eventBus } = require('../lib/events/EventBus');
+const { eventBus } = require('../../lib/events/EventBus');
 
 const TABLE_NAME = process.env.SIGNATURE_REQUESTS_TABLE || 'SignatureRequests';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
-const { PersonaService } = require('../lib/services/PersonaService');
+const { PersonaService } = require('../../lib/services/PersonaService');
 
 // Tipos de solicitudes de firma
 const REQUEST_TYPES = {
@@ -592,7 +592,7 @@ module.exports.processOfflineBatch = async (event) => {
                 continue;
             }
 
-            const { verifyPin, generateSignatureToken } = require('../lib/validation');
+            const { verifyPin, generateSignatureToken } = require('../../lib/utils/validation');
             const pinValido = verifyPin(pin, persona.pinHash, persona.personaId);
 
             if (!pinValido) {

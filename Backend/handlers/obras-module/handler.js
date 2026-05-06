@@ -4,7 +4,7 @@
  * Router para endpoints de gestión de obras/proyectos.
  */
 const { ObraService } = require('../../lib/services/ObraService');
-const { success, error, created, cors } = require('../../lib/response');
+const { success, error, created, cors } = require('../../lib/utils/response');
 
 const obraService = new ObraService();
 

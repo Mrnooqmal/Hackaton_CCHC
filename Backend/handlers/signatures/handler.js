@@ -1,12 +1,12 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../lib/dynamodb');
-const { success, error, created } = require('../lib/response');
-const { validateRequired, generateSignatureToken, verifyPin } = require('../lib/validation');
-const signatureRequests = require('./signature-requests');
+const { docClient } = require('../../lib/clients/dynamodb');
+const { success, error, created } = require('../../lib/utils/response');
+const { validateRequired, generateSignatureToken, verifyPin } = require('../../lib/utils/validation');
+const signatureRequests = require('../signature-requests/handler');
 
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
-const { PersonaService } = require('../lib/services/PersonaService');
+const { PersonaService } = require('../../lib/services/PersonaService');
 
 /**
  * POST /signatures - Crear firma con validación de PIN

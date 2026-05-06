@@ -7,10 +7,10 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../dynamodb');
+const { docClient } = require('../clients/dynamodb');
 const { Obra } = require('../models/Obra');
 const { PersonaService } = require('./PersonaService');
-const { validateRequired } = require('../validation');
+const { validateRequired } = require('../utils/validation');
 
 const OBRAS_TABLE = process.env.OBRAS_TABLE || 'Obras';
 

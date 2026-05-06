@@ -8,12 +8,12 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../dynamodb');
+const { docClient } = require('../clients/dynamodb');
 const { Persona, ROLES } = require('../models/Persona');
 const {
     validateRut, validateRequired, hashPin, verifyPin,
     validatePin, generateSignatureToken, hashPassword, generateTempPassword
-} = require('../validation');
+} = require('../utils/validation');
 
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
 

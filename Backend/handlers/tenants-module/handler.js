@@ -5,7 +5,7 @@
  */
 const { TenantService } = require('../../lib/services/TenantService');
 const { PersonaService } = require('../../lib/services/PersonaService');
-const { success, error, created, cors } = require('../../lib/response');
+const { success, error, created, cors } = require('../../lib/utils/response');
 
 const tenantService = new TenantService();
 

@@ -1,12 +1,12 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../lib/dynamodb');
-const { success, error, created } = require('../lib/response');
-const { validateRequired } = require('../lib/validation');
-const { ensureDefaultHealthSurvey } = require('../lib/healthSurvey');
-const { PersonaService } = require('../lib/services/PersonaService');
-const { eventBus } = require('../lib/events/EventBus');
-const { FirmaService } = require('../lib/services/FirmaService');
+const { docClient } = require('../../lib/clients/dynamodb');
+const { success, error, created } = require('../../lib/utils/response');
+const { validateRequired } = require('../../lib/utils/validation');
+const { ensureDefaultHealthSurvey } = require('../../lib/health/healthSurvey');
+const { PersonaService } = require('../../lib/services/PersonaService');
+const { eventBus } = require('../../lib/events/EventBus');
+const { FirmaService } = require('../../lib/services/FirmaService');
 
 const TABLE_NAME = process.env.SURVEYS_TABLE || 'Surveys';
 

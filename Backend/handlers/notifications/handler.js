@@ -1,5 +1,5 @@
 const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
-const { success, error } = require('../lib/response');
+const { success, error } = require('../../lib/utils/response');
 
 const sesClient = new SESClient({ region: 'us-east-1' });
 

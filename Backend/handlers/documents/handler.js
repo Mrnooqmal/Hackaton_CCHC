@@ -1,11 +1,11 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../lib/dynamodb');
-const { success, error, created } = require('../lib/response');
-const { validateRequired, generateSignatureToken } = require('../lib/validation');
-const { FirmaService } = require('../lib/services/FirmaService');
-const { PersonaService } = require('../lib/services/PersonaService');
-const { eventBus } = require('../lib/events/EventBus');
+const { docClient } = require('../../lib/clients/dynamodb');
+const { success, error, created } = require('../../lib/utils/response');
+const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
+const { FirmaService } = require('../../lib/services/FirmaService');
+const { PersonaService } = require('../../lib/services/PersonaService');
+const { eventBus } = require('../../lib/events/EventBus');
 
 const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
 

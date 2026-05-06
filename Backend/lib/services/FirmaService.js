@@ -9,8 +9,8 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { GetCommand, PutCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../dynamodb');
-const { generateSignatureToken, verifyPin } = require('../validation');
+const { docClient } = require('../clients/dynamodb');
+const { generateSignatureToken, verifyPin } = require('../utils/validation');
 
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 

@@ -1,26 +1,14 @@
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { v4: uuidv4 } = require('uuid');
-const { success, error } = require('../lib/response');
-const { validateRequired } = require('../lib/validation');
+const { success, error } = require('../../lib/utils/response');
+const { validateRequired } = require('../../lib/utils/validation');
 
 const isOffline = process.env.IS_OFFLINE === 'true';
 const BUCKET_NAME = process.env.DOCUMENTS_BUCKET || 'hackaton-documents';
 
 // Configuración del cliente S3
-const s3Client = new S3Client(
-    isOffline
-        ? {
-            region: 'us-east-1',
-            endpoint: 'http://localhost:4566', // LocalStack para desarrollo
-            forcePathStyle: true,
-            credentials: {
-                accessKeyId: 'test',
-                secretAccessKey: 'test',
-            },
-        }
-        : { region: process.env.AWS_REGION || 'us-east-1' }
-);
+const { s3Client } = require("../../lib/clients/s3");
 
 // Tipos MIME permitidos
 const ALLOWED_MIME_TYPES = [

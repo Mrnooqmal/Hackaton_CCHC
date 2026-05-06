@@ -6,8 +6,8 @@
  */
 const XLSX = require('xlsx');
 const { PersonaService } = require('../../lib/services/PersonaService');
-const { success, error, created, cors, headers } = require('../../lib/response');
-const { sendWelcomeEmail } = require('../notifications');
+const { success, error, created, cors } = require('../../lib/utils/response');
+const { sendWelcomeEmail } = require('../notifications/handler');
 
 const personaService = new PersonaService();
 

@@ -9,10 +9,10 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../lib/dynamodb');
-const { success, error } = require('../lib/response');
-const { validateRut, validateRequired, hashPassword, verifyPassword } = require('../lib/validation');
-const { PersonaService } = require('../lib/services/PersonaService');
+const { docClient } = require('../../lib/clients/dynamodb');
+const { success, error } = require('../../lib/utils/response');
+const { validateRut, validateRequired, hashPassword, verifyPassword } = require('../../lib/utils/validation');
+const { PersonaService } = require('../../lib/services/PersonaService');
 const crypto = require('crypto');
 
 const SESSIONS_TABLE = process.env.SESSIONS_TABLE || 'Sessions';
@@ -67,7 +67,7 @@ module.exports.login = async (event) => {
                 ExpressionAttributeValues: { ':rut': rutValidation.formatted }
             }));
             if (scanResult.Items && scanResult.Items.length > 0) {
-                const { Persona } = require('../lib/models/Persona');
+                const { Persona } = require('../../lib/models/Persona');
                 persona = Persona.fromDynamoItem(scanResult.Items[0]);
             }
         }

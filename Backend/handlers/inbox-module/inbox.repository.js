@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../../lib/dynamodb');
+const { docClient } = require('../../lib/clients/dynamodb');
 
 const INBOX_TABLE = process.env.INBOX_TABLE || 'Inbox';
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
