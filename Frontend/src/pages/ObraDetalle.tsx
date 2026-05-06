@@ -81,6 +81,7 @@ export default function ObraDetalle() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isWorkersModalOpen, setIsWorkersModalOpen] = useState(false);
   const [updatingWorkers, setUpdatingWorkers] = useState<string | null>(null);
+  const [selectedUnassignedWorkerIds, setSelectedUnassignedWorkerIds] = useState<string[]>([]);
 
   const faseActual = obra?.etapaActual || 'excavacion';
 
@@ -478,7 +479,7 @@ export default function ObraDetalle() {
 
   const handleAddWorker = async (worker: any) => {
     if (!obraId) return;
-    setUpdatingWorkers(worker.personaId);
+    setUpdatingWorkers(worker.personaId || worker.workerId);
     try {
       const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
       if (!obraIds.includes(obraId)) {
@@ -495,6 +496,33 @@ export default function ObraDetalle() {
       }
     } catch (error) {
       console.error('Error adding worker to obra:', error);
+    } finally {
+      setUpdatingWorkers(null);
+    }
+  };
+
+  const handleAddMultipleWorkers = async (workersToAdd: any[]) => {
+    if (!obraId || workersToAdd.length === 0) return;
+    setUpdatingWorkers('multiple');
+    try {
+      for (const worker of workersToAdd) {
+        const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
+        if (!obraIds.includes(obraId)) {
+          await workersApi.update(worker.personaId || worker.workerId, {
+            obraIds: [...obraIds, obraId],
+            estado: 'activo'
+          } as any);
+        }
+      }
+      const refreshed = await workersApi.list();
+      if (refreshed.success && refreshed.data) {
+        const workers = refreshed.data as any[];
+        setAllWorkers(workers);
+        setTrabajadores(workers.filter((w: any) => Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
+        setSelectedUnassignedWorkerIds([]);
+      }
+    } catch (error) {
+      console.error('Error adding multiple workers to obra:', error);
     } finally {
       setUpdatingWorkers(null);
     }
@@ -613,7 +641,11 @@ export default function ObraDetalle() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
               <div className="text-muted">{trabajadores.length} trabajadores asociados</div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setIsWorkersModalOpen(true)}>
+              <button 
+                className="btn btn-sm" 
+                style={{ backgroundColor: 'var(--success-500, #10b981)', color: 'white', border: 'none' }} 
+                onClick={() => setIsWorkersModalOpen(true)}
+              >
                 <LuUserPlus />
                 Gestionar
               </button>
@@ -962,22 +994,79 @@ export default function ObraDetalle() {
         subtitle="Agrega o da de baja trabajadores asociados a la obra."
         size="lg"
         footer={
-          <button className="btn btn-secondary" onClick={() => setIsWorkersModalOpen(false)}>
-            Cerrar
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+            <div>
+              {selectedUnassignedWorkerIds.length > 0 && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    const workersToAdd = allWorkers.filter(w => selectedUnassignedWorkerIds.includes(w.personaId || w.workerId));
+                    handleAddMultipleWorkers(workersToAdd);
+                  }}
+                  disabled={updatingWorkers === 'multiple'}
+                >
+                  Agregar seleccionados ({selectedUnassignedWorkerIds.length})
+                </button>
+              )}
+            </div>
+            <button className="btn btn-secondary" onClick={() => setIsWorkersModalOpen(false)}>
+              Cerrar
+            </button>
+          </div>
         }
       >
         <div className="modal-body">
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                <div className="text-muted">
+                  Selecciona trabajadores para agregarlos a la obra.
+                </div>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    const unassigned = allWorkers.filter(w => !(Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
+                    const unassignedIds = unassigned.map(w => w.personaId || w.workerId);
+                    if (selectedUnassignedWorkerIds.length === unassignedIds.length && unassignedIds.length > 0) {
+                      setSelectedUnassignedWorkerIds([]);
+                    } else {
+                      setSelectedUnassignedWorkerIds(unassignedIds);
+                    }
+                  }}
+                >
+                  {(() => {
+                    const unassignedCount = allWorkers.filter(w => !(Array.isArray(w.obraIds) && w.obraIds.includes(obraId))).length;
+                    if (unassignedCount === 0) return 'Todos agregados';
+                    return selectedUnassignedWorkerIds.length === unassignedCount ? 'Deseleccionar todos' : 'Seleccionar todos los disponibles';
+                  })()}
+                </button>
+              </div>
               <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
                 {allWorkers.map((worker) => {
+                  const workerId = worker.personaId || worker.workerId;
                   const isAssigned = Array.isArray(worker.obraIds) && worker.obraIds.includes(obraId);
                   const isInactive = worker.estado === 'inactivo';
+                  const isSelected = selectedUnassignedWorkerIds.includes(workerId);
+
                   return (
-                    <div key={worker.personaId || worker.workerId} className="card" style={{ padding: 'var(--space-3)' }}>
+                    <div key={workerId} className="card" style={{ padding: 'var(--space-3)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
-                          <div className="text-muted">{worker.cargo || 'Trabajador'} · {worker.rut}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                          {!isAssigned && (
+                            <input
+                              type="checkbox"
+                              className="checkbox-input custom-checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                setSelectedUnassignedWorkerIds(prev => 
+                                  prev.includes(workerId) ? prev.filter(id => id !== workerId) : [...prev, workerId]
+                                );
+                              }}
+                              disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
+                            />
+                          )}
+                          <div>
+                            <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
+                            <div className="text-muted">{worker.cargo || 'Trabajador'} · {worker.rut}</div>
+                          </div>
                         </div>
                         {isAssigned ? (
                           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
@@ -988,7 +1077,7 @@ export default function ObraDetalle() {
                               <button
                                 className="btn btn-secondary btn-sm"
                                 onClick={() => handleDeactivateWorker(worker)}
-                                disabled={updatingWorkers === worker.personaId || worker.rol === 'admin'}
+                                disabled={updatingWorkers === workerId || worker.rol === 'admin'}
                                 title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
                               >
                                 Dar de baja
@@ -997,7 +1086,7 @@ export default function ObraDetalle() {
                               <button
                                 className="btn btn-primary btn-sm"
                                 onClick={() => handleReactivateWorker(worker)}
-                                disabled={updatingWorkers === worker.personaId}
+                                disabled={updatingWorkers === workerId}
                               >
                                 Reactivar
                               </button>
@@ -1007,7 +1096,7 @@ export default function ObraDetalle() {
                           <button
                             className="btn btn-primary btn-sm"
                             onClick={() => handleAddWorker(worker)}
-                            disabled={updatingWorkers === worker.personaId}
+                            disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
                           >
                             Agregar a obra
                           </button>
