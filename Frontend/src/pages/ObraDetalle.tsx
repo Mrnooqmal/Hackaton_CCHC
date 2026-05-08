@@ -70,7 +70,7 @@ export default function ObraDetalle() {
   const [selectedDs44Detail, setSelectedDs44Detail] = useState<any | null>(null);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
   const [selectedExpiryDate, setSelectedExpiryDate] = useState('');
-  const [expiryNotApplicable, setExpiryNotApplicable] = useState(false);
+  const [expiryApplicable, setExpiryApplicable] = useState(true);
   const [ds44Loading, setDs44Loading] = useState(false);
   const [ds44Saving, setDs44Saving] = useState(false);
   const [ds44Previewing, setDs44Previewing] = useState(false);
@@ -216,7 +216,7 @@ export default function ObraDetalle() {
     setSelectedWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.personaId || a.workerId));
     const docExpiry = getDocExpiryDate(doc.document);
     setSelectedExpiryDate(toDateInputValue(docExpiry));
-    setExpiryNotApplicable(Boolean(doc.document && !docExpiry));
+    setExpiryApplicable(Boolean(!doc.document || docExpiry));
     setPendingDs44File(null);
     setIsDs44ModalOpen(true);
 
@@ -229,7 +229,7 @@ export default function ObraDetalle() {
           setSelectedWorkerIds((res.data.asignaciones || []).map((a: any) => a.personaId || a.workerId));
           const fetchedExpiry = getDocExpiryDate(res.data);
           setSelectedExpiryDate(toDateInputValue(fetchedExpiry));
-          setExpiryNotApplicable(Boolean(!fetchedExpiry));
+          setExpiryApplicable(Boolean(fetchedExpiry));
         }
       } catch (error) {
         console.error('Error loading DS44 document:', error);
@@ -251,12 +251,12 @@ export default function ObraDetalle() {
   const handleSaveDs44Changes = async () => {
     if (!selectedDs44Doc || !obraId) return;
 
-    if (!expiryNotApplicable && !selectedExpiryDate) {
-      alert('Selecciona una fecha de vencimiento para el documento.');
+    if (expiryApplicable && !selectedExpiryDate) {
+      alert('Selecciona una fecha de caducidad para el documento.');
       return;
     }
 
-    const expiryValue = expiryNotApplicable ? null : selectedExpiryDate;
+    const expiryValue = expiryApplicable ? selectedExpiryDate : null;
     const existingSignerIds = (selectedDs44Detail?.asignaciones || []).map((asignacion: any) => asignacion.personaId || asignacion.workerId);
     const targetSignerIds = selectedWorkerIds.length > 0 ? selectedWorkerIds : existingSignerIds;
 
@@ -350,7 +350,7 @@ export default function ObraDetalle() {
           setSelectedDs44Doc((prev) => prev ? { ...prev, documentId } : prev);
           const updatedExpiry = getDocExpiryDate(updatedDoc.data);
           setSelectedExpiryDate(toDateInputValue(updatedExpiry));
-          setExpiryNotApplicable(Boolean(!updatedExpiry));
+          setExpiryApplicable(Boolean(updatedExpiry));
         }
       }
 
@@ -864,7 +864,7 @@ export default function ObraDetalle() {
           setPendingDs44File(null);
         }}
         title={selectedDs44Doc?.titulo ? `Documento DS44 - ${selectedDs44Doc.titulo}` : 'Documento DS44'}
-        subtitle="Sube el archivo, selecciona firmantes y define vencimiento"
+        subtitle="Sube el archivo, selecciona firmantes y define caducidad"
         size="lg"
         footer={
           <>
@@ -878,31 +878,74 @@ export default function ObraDetalle() {
         }
       >
         <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Vencimiento</label>
-            <label className="checkbox-row" style={{ marginTop: 'var(--space-2)' }}>
-              <input
-                type="checkbox"
-                className="checkbox-input custom-checkbox"
-                checked={expiryNotApplicable}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  setExpiryNotApplicable(checked);
-                  if (checked) {
-                    setSelectedExpiryDate('');
-                  }
-                }}
-              />
-              <span>No aplica</span>
-            </label>
-            {!expiryNotApplicable && (
-              <input
-                className="form-input"
-                type="date"
-                value={selectedExpiryDate}
-                onChange={(event) => setSelectedExpiryDate(event.target.value)}
-              />
-            )}
+          <div className="ds44-expiry-section">
+            <div className="ds44-expiry-toggle">
+              <label className="ds44-toggle-label" htmlFor="expiry-toggle">
+                <div className="ds44-toggle-text">
+                  <span className="ds44-toggle-title">Aplica caducidad</span>
+                  <span className="ds44-toggle-hint">
+                    {expiryApplicable ? 'Este documento tiene fecha de vencimiento' : 'Sin fecha de vencimiento'}
+                  </span>
+                </div>
+                <div className="ds44-switch-wrapper">
+                  <input
+                    type="checkbox"
+                    id="expiry-toggle"
+                    className="ds44-switch-input"
+                    checked={expiryApplicable}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setExpiryApplicable(checked);
+                      if (!checked) {
+                        setSelectedExpiryDate('');
+                      }
+                    }}
+                  />
+                  <span className="ds44-switch-track">
+                    <span className="ds44-switch-thumb" />
+                  </span>
+                </div>
+              </label>
+            </div>
+            <div className={`ds44-date-picker-container ${expiryApplicable ? 'ds44-date-visible' : ''}`}>
+              <label className="form-label" style={{ marginBottom: 'var(--space-2)' }}>Fecha de caducidad</label>
+              <div className="ds44-date-presets">
+                {[
+                  { label: '3 meses', months: 3 },
+                  { label: '6 meses', months: 6 },
+                  { label: '1 año', months: 12 },
+                  { label: '2 años', months: 24 },
+                ].map((preset) => {
+                  const presetDate = new Date();
+                  presetDate.setMonth(presetDate.getMonth() + preset.months);
+                  const presetValue = presetDate.toISOString().split('T')[0];
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      className={`ds44-date-preset-btn ${selectedExpiryDate === presetValue ? 'active' : ''}`}
+                      onClick={() => setSelectedExpiryDate(presetValue)}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="ds44-date-input-wrapper">
+                <input
+                  className="form-input ds44-date-input"
+                  type="date"
+                  value={selectedExpiryDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(event) => setSelectedExpiryDate(event.target.value)}
+                />
+                {selectedExpiryDate && (
+                  <div className="ds44-date-display">
+                    Caduca el {new Date(selectedExpiryDate + 'T12:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           <div
             style={{
