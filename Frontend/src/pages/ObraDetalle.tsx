@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
-import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi } from '../api/client';
-import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus } from 'react-icons/lu';
-import { FiUploadCloud, FiEye } from 'react-icons/fi';
+import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi } from '../api/client';
+import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock } from 'react-icons/lu';
+import { FiUploadCloud, FiEye, FiAlertTriangle } from 'react-icons/fi';
 import { Modal } from '../components/ui';
 
 const REQUIRED_DS44 = [
@@ -339,6 +339,33 @@ export default function ObraDetalle() {
           assignedBy: user?.userId,
           assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
         } as any);
+
+        // Also create a SignatureRequest so workers see it in "Mis Firmas"
+        try {
+          const docTitle = selectedDs44Doc.titulo || 'Documento DS44';
+          const docAttachments = fileKey ? [{
+            nombre: fileName || docTitle,
+            url: fileKey,
+            tipo: 'application/pdf',
+            tamaño: pendingDs44File?.size || 0
+          }] : [];
+
+          await signatureRequestsApi.create({
+            tipo: 'DOCUMENTO',
+            titulo: `Firma requerida: ${docTitle}`,
+            descripcion: `Se requiere su firma para el documento DS44 "${docTitle}" de la obra.`,
+            documentos: docAttachments,
+            trabajadoresIds: targetSignerIds,
+            solicitanteId: user?.userId || '',
+            fechaLimite: expiryValue || undefined,
+            empresaId: obra?.tenantId,
+            referenciaId: documentId,
+            referenciaTipo: 'document',
+            documentId,
+          } as any);
+        } catch (sigReqError) {
+          console.warn('No se pudo crear solicitud de firma (los trabajadores podrían no ver la firma pendiente):', sigReqError);
+        }
       }
 
       await reloadDocs();
@@ -730,14 +757,20 @@ export default function ObraDetalle() {
                   }}
                 />
               </div>
-              {documentosPendientes.length > 0 && (
-                <div className="alert alert-danger">
-                  Documentos faltantes: {documentosPendientesTitulos.join(', ')}.
-                </div>
-              )}
-              {documentosVencidos.length > 0 && (
-                <div className="alert alert-danger">
-                  Hay {documentosVencidos.length} documento{documentosVencidos.length === 1 ? '' : 's'} DS44 vencido{documentosVencidos.length === 1 ? '' : 's'}.
+              {(documentosPendientes.length > 0 || documentosVencidos.length > 0) && (
+                <div className="ds44-alerts">
+                  {documentosPendientes.length > 0 && (
+                    <div className="ds44-alert ds44-alert-danger">
+                      <span className="ds44-alert-icon"><FiAlertTriangle size={16} /></span>
+                      <span>Documentos faltantes: {documentosPendientesTitulos.join(', ')}.</span>
+                    </div>
+                  )}
+                  {documentosVencidos.length > 0 && (
+                    <div className="ds44-alert ds44-alert-warning">
+                      <span className="ds44-alert-icon"><LuClock size={16} /></span>
+                      <span>Hay {documentosVencidos.length} documento{documentosVencidos.length === 1 ? '' : 's'} DS44 vencido{documentosVencidos.length === 1 ? '' : 's'}.</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -760,11 +793,17 @@ export default function ObraDetalle() {
                       <div>
                         <div className="font-medium">{doc.titulo}</div>
                         <div className="text-muted">{doc.estadoFirma}</div>
-                        <div className={doc.archivoSubido ? 'text-muted' : 'text-danger-500'} style={{ marginTop: 'var(--space-1)' }}>
-                          {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
-                        </div>
-                        <div className={isExpired ? 'text-danger-500' : 'text-muted'} style={{ marginTop: 'var(--space-1)' }}>
-                          Vencimiento: {formatDate(fechaCaducidad)}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                          <span className={`ds44-card-status ${doc.archivoSubido ? 'ds44-card-status-ok' : 'ds44-card-status-danger'}`}>
+                            <span className="ds44-card-status-dot" />
+                            {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
+                          </span>
+                          {fechaCaducidad && (
+                            <span className={`ds44-card-status ${isExpired ? 'ds44-card-status-danger' : 'ds44-card-status-ok'}`}>
+                              <span className="ds44-card-status-dot" />
+                              {isExpired ? 'Vencido' : 'Caduca'}: {formatDate(fechaCaducidad)}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-2)' }}>

@@ -20,6 +20,7 @@ const REQUEST_TYPES = {
     PROCEDIMIENTO: { label: 'Procedimiento de Trabajo', icon: '📋', requiresDoc: true },
     INSPECCION: { label: 'Inspección de Seguridad', icon: '🔍', requiresDoc: false },
     REGLAMENTO: { label: 'Reglamento Interno', icon: '📖', requiresDoc: true },
+    DOCUMENTO: { label: 'Documento DS44', icon: '📄', requiresDoc: true },
     OTRO: { label: 'Otro', icon: '📝', requiresDoc: false },
 };
 
@@ -92,12 +93,20 @@ module.exports.create = async (event) => {
         const now = new Date().toISOString();
         const requestId = uuidv4();
 
+        const referenciaId = body.referenciaId || body.documentId || null;
+        const referenciaTipo = body.referenciaTipo || (body.documentId ? 'document' : null);
+
         const signatureRequest = {
             requestId,
             tipo: body.tipo,
             tipoInfo: REQUEST_TYPES[body.tipo],
             titulo: body.titulo,
             descripcion: body.descripcion || '',
+
+            // Referencia opcional (ej: documento DS44)
+            referenciaId,
+            referenciaTipo,
+            documentId: body.documentId || null,
 
             // Documentos adjuntos
             documentos: body.documentos || [],
@@ -587,13 +596,13 @@ module.exports.processOfflineBatch = async (event) => {
                 continue;
             }
 
-            if (!persona.pinHash) {
+            if (!persona.tienePinConfigurado || !persona.tienePinConfigurado()) {
                 resultadosFirmas.push({ rut, success: false, error: 'Persona sin PIN configurado' });
                 continue;
             }
 
             const { verifyPin, generateSignatureToken } = require('../../lib/utils/validation');
-            const pinValido = verifyPin(pin, persona.pinHash, persona.personaId);
+            const pinValido = verifyPin(pin, persona._pinHash, persona.personaId);
 
             if (!pinValido) {
                 resultadosFirmas.push({ rut, success: false, error: 'PIN incorrecto' });

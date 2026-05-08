@@ -6,6 +6,7 @@ const { validateRequired, generateSignatureToken, verifyPin } = require('../../l
 const signatureRequests = require('../signature-requests/handler');
 
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
+const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 const { PersonaService } = require('../../lib/services/PersonaService');
 
 /**
@@ -44,11 +45,11 @@ module.exports.create = async (event) => {
         }
 
         // Verificar PIN
-        if (!persona.pinHash) {
+        if (!persona.tienePinConfigurado || !persona.tienePinConfigurado()) {
             return error('Persona no tiene PIN configurado', 400);
         }
 
-        const pinValido = verifyPin(pin, persona.pinHash, inputPersonaId);
+        const pinValido = verifyPin(pin, persona._pinHash, inputPersonaId);
         if (!pinValido) {
             return error('PIN incorrecto', 401);
         }
@@ -140,6 +141,43 @@ module.exports.create = async (event) => {
 
         // Actualizar la solicitud con esta firma
         const updateResult = await signatureRequests.updateOnSignature(requestId, inputPersonaId, signatureId);
+
+        // Si la solicitud referencia un documento, marcar asignacion como firmada
+        const referencedDocumentId = request.referenciaId || request.documentId || null;
+        if (request.referenciaTipo === 'document' && referencedDocumentId) {
+            try {
+                const docResult = await docClient.send(
+                    new GetCommand({
+                        TableName: DOCUMENTS_TABLE,
+                        Key: { documentId: referencedDocumentId }
+                    })
+                );
+
+                if (docResult.Item) {
+                    const nowIso = new Date().toISOString();
+                    const asignaciones = (docResult.Item.asignaciones || []).map((a) => {
+                        if ((a.personaId === inputPersonaId || a.workerId === inputPersonaId) && a.estado !== 'firmado') {
+                            return { ...a, estado: 'firmado', fechaFirma: nowIso };
+                        }
+                        return a;
+                    });
+
+                    await docClient.send(
+                        new UpdateCommand({
+                            TableName: DOCUMENTS_TABLE,
+                            Key: { documentId: referencedDocumentId },
+                            UpdateExpression: 'SET asignaciones = :asignaciones, updatedAt = :updatedAt',
+                            ExpressionAttributeValues: {
+                                ':asignaciones': asignaciones,
+                                ':updatedAt': nowIso
+                            }
+                        })
+                    );
+                }
+            } catch (docUpdateError) {
+                console.error('Error syncing document assignment from signature request:', docUpdateError);
+            }
+        }
 
         return created({
             message: 'Firma registrada exitosamente',

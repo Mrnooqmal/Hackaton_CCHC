@@ -59,6 +59,9 @@ export interface CreateSignatureRequestData {
     fechaLimite?: string;
     ubicacion?: string;
     empresaId?: string;
+    referenciaId?: string;
+    referenciaTipo?: string;
+    documentId?: string;
 }
 
 export interface DisputeInfo {
@@ -133,6 +136,7 @@ export const REQUEST_TYPES: Record<string, SignatureRequestType> = {
     PROCEDIMIENTO: { label: 'Procedimiento de Trabajo', icon: '📋', requiresDoc: true },
     INSPECCION: { label: 'Inspección de Seguridad', icon: '🔍', requiresDoc: false },
     REGLAMENTO: { label: 'Reglamento Interno', icon: '📖', requiresDoc: true },
+    DOCUMENTO: { label: 'Documento DS44', icon: '📄', requiresDoc: true },
     OTRO: { label: 'Otro', icon: '📝', requiresDoc: false },
 };
 

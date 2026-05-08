@@ -436,6 +436,84 @@
   font-weight: 700;
 }
 
+/* DS44 - Alert banners */
+.ds44-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.ds44-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.ds44-alert-danger {
+  background: rgba(244, 67, 54, 0.08);
+  border: 1px solid rgba(244, 67, 54, 0.25);
+  color: var(--danger-500);
+}
+
+.ds44-alert-warning {
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  color: var(--warning-500);
+}
+
+.ds44-alert-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* DS44 - Card inline status indicators */
+.ds44-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ds44-card-status-danger {
+  background: rgba(244, 67, 54, 0.12);
+  color: #ff6b6b;
+  border: 1px solid rgba(244, 67, 54, 0.2);
+}
+
+.ds44-card-status-ok {
+  color: var(--text-muted);
+}
+
+.ds44-card-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ds44-card-status-danger .ds44-card-status-dot {
+  background: #ff6b6b;
+  box-shadow: 0 0 6px rgba(244, 67, 54, 0.5);
+}
+
+.ds44-card-status-ok .ds44-card-status-dot {
+  background: var(--text-muted);
+}
+
 /* DS44 - Expiry toggle section */
 .ds44-expiry-section {
   border: 1px solid var(--surface-border);
@@ -1820,6 +1898,22 @@
 
 .text-muted {
   color: var(--text-muted);
+}
+
+.text-danger-500 {
+  color: var(--danger-500);
+}
+
+.text-warning-500 {
+  color: var(--warning-500);
+}
+
+.text-success-500 {
+  color: var(--success-500);
+}
+
+.text-primary-500 {
+  color: var(--primary-500);
 }
 
 .text-sm {
