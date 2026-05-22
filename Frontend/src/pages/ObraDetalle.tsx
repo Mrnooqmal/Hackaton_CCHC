@@ -40,10 +40,118 @@ const REQUIRED_DS44 = [
   }
 ];
 
+// Documentos obligatorios Fase HACER (DO) — subprocesos operativos permanentes
+const REQUIRED_DO = [
+  {
+    key: 'PLAN_CAPACITACION',
+    tipos: ['PLAN_CAPACITACION'],
+    titulo: 'Plan de Capacitación',
+    descripcion: 'Mín. 8 hrs, periodicidad ≤ 2 años, registro de asistencia y evaluación',
+    articulo: 'Art. 16',
+    estadoFirma: 'Firmada por trabajadores (registro de asistencia)'
+  },
+  {
+    key: 'INFO_RIESGOS_LABORALES',
+    tipos: ['INFO_RIESGOS_LABORALES'],
+    titulo: 'Información de Riesgos Laborales',
+    descripcion: 'Previo al inicio de labores y ante cambios de proceso, tecnología o materiales',
+    articulo: 'Art. 15',
+    estadoFirma: 'Firmada por trabajadores'
+  },
+  {
+    key: 'PROCEDIMIENTO_EPP',
+    tipos: ['PROCEDIMIENTO_EPP'],
+    titulo: 'Procedimiento de Provisión y Uso de EPP',
+    descripcion: 'Procedimiento + capacitación mín. 1 hr + refuerzo anual + certificación ISP',
+    articulo: 'Art. 13',
+    estadoFirma: 'Firmada por trabajadores y responsable SST'
+  },
+  {
+    key: 'OPERACION_MAQUINAS',
+    tipos: ['OPERACION_MAQUINAS'],
+    titulo: 'Operación Segura de Máquinas y Herramientas',
+    descripcion: 'Programa preventivo de operación y mantenimiento',
+    articulo: 'Art. 10',
+    estadoFirma: 'Firmada por responsable de operaciones'
+  },
+  {
+    key: 'PLAN_EMERGENCIAS',
+    tipos: ['PLAN_EMERGENCIAS'],
+    titulo: 'Plan de Gestión de Emergencias',
+    descripcion: 'Ejecución continua + ensayo anual simulado + revisión ante riesgo grave',
+    articulo: 'Art. 19',
+    estadoFirma: 'Firmada por representante legal y CPHS'
+  },
+  {
+    key: 'VIGILANCIA_AMBIENTAL',
+    tipos: ['VIGILANCIA_AMBIENTAL'],
+    titulo: 'Vigilancia Ambiental y de Salud',
+    descripcion: 'Protocolos MINSAL + exámenes ocupacionales + autorización tiempo Art. 68',
+    articulo: 'Art. 67',
+    estadoFirma: 'Gestionada con OAL (mutualidad)'
+  },
+  {
+    key: 'COORDINACION_ENTIDADES',
+    tipos: ['COORDINACION_ENTIDADES'],
+    titulo: 'Coordinación con Otras Entidades en Faena',
+    descripcion: 'Información mutua de riesgos + planes de emergencia conjuntos (si aplica)',
+    articulo: 'Art. 20',
+    estadoFirma: 'Firmada por representantes de cada entidad'
+  },
+  {
+    key: 'CONSULTA_REPRESENTANTES',
+    tipos: ['CONSULTA_REPRESENTANTES'],
+    titulo: 'Consulta a Representantes de Trabajadores',
+    descripcion: 'Ante cambios en procesos o estructura organizacional que generen riesgo grave',
+    articulo: 'Art. 17',
+    estadoFirma: 'Firmada por CPHS o Delegado SST'
+  }
+];
+
+// Eventos sobrevinientes Fase HACER (DO) — se activan ante hechos concretos
+const EVENTOS_DO = [
+  {
+    key: 'REGISTRO_RIESGO_GRAVE',
+    tipos: ['REGISTRO_RIESGO_GRAVE'],
+    titulo: 'Registro de Riesgo Grave e Inminente',
+    descripcion: 'Informar trabajadores afectados + suspender faenas + evacuar + avisar a Inspección del Trabajo',
+    articulo: 'Art. 18',
+    estadoFirma: 'Firmada por prevencionista y representante legal'
+  },
+  {
+    key: 'REGISTRO_AT_EP',
+    tipos: ['REGISTRO_AT_EP'],
+    titulo: 'Registro AT, EP e Incidentes Peligrosos',
+    descripcion: 'Metodología del OAL con enfoque de género + participación de trabajadores',
+    articulo: 'Arts. 71-72',
+    estadoFirma: 'Firmada por investigador y CPHS'
+  },
+  {
+    key: 'TRASLADO_PUESTO',
+    tipos: ['TRASLADO_PUESTO'],
+    titulo: 'Traslado de Puesto por EP Diagnosticada',
+    descripcion: 'A puesto sin exposición al riesgo, sin detrimento de remuneración',
+    articulo: 'Art. 69',
+    estadoFirma: 'Firmada por empleador y trabajador'
+  }
+];
+
 interface Ds44Item {
   key: string;
   tipos: string[];
   titulo: string;
+  estadoFirma: string;
+  documentId?: string;
+  archivoSubido: boolean;
+  document?: any;
+}
+
+interface DoItem {
+  key: string;
+  tipos: string[];
+  titulo: string;
+  descripcion: string;
+  articulo: string;
   estadoFirma: string;
   documentId?: string;
   archivoSubido: boolean;
@@ -83,7 +191,24 @@ export default function ObraDetalle() {
   const [updatingWorkers, setUpdatingWorkers] = useState<string | null>(null);
   const [selectedUnassignedWorkerIds, setSelectedUnassignedWorkerIds] = useState<string[]>([]);
 
+  // Fase 2 (DO/HACER) state
+  const [doDocs, setDoDocs] = useState<DoItem[]>([]);
+  const [eventosDo, setEventosDo] = useState<DoItem[]>([]);
+  const [activatingFaseDeming, setActivatingFaseDeming] = useState(false);
+  const [selectedDoDoc, setSelectedDoDoc] = useState<DoItem | null>(null);
+  const [selectedDoDetail, setSelectedDoDetail] = useState<any | null>(null);
+  const [isDoModalOpen, setIsDoModalOpen] = useState(false);
+  const [doLoading, setDoLoading] = useState(false);
+  const [doSaving, setDoSaving] = useState(false);
+  const [pendingDoFile, setPendingDoFile] = useState<File | null>(null);
+  const [doExpiryDate, setDoExpiryDate] = useState('');
+  const [doExpiryNotApplicable, setDoExpiryNotApplicable] = useState(false);
+  const [doWorkerIds, setDoWorkerIds] = useState<string[]>([]);
+  const [doPreviewing, setDoPreviewing] = useState(false);
+  const doFileInputRef = useRef<HTMLInputElement | null>(null);
+
   const faseActual = obra?.etapaActual || 'excavacion';
+  const faseDeming = obra?.faseDeming || 'plan';
 
   const indicadores = useMemo(() => {
     const pendientesFirma = documentosPrevencion.reduce((total, doc) => {
@@ -133,6 +258,23 @@ export default function ObraDetalle() {
         });
         setDs44Docs(mappedDs44);
 
+        // Cargar documentos Fase 2 (DO) si la obra ya avanzó a esa fase
+        const obraFaseDeming = obraData?.faseDeming || 'plan';
+        if (obraFaseDeming === 'hacer' || obraFaseDeming === 'verificar' || obraFaseDeming === 'actuar') {
+          const mappedDo = REQUIRED_DO.map((required) => {
+            const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
+            const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
+            return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
+          });
+          setDoDocs(mappedDo);
+          const mappedEventos = EVENTOS_DO.map((required) => {
+            const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
+            const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
+            return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
+          });
+          setEventosDo(mappedEventos);
+        }
+
         const docsPrev = docsPrevRes.success && docsPrevRes.data ? docsPrevRes.data.documents || [] : [];
         setDocumentosPrevencion(docsPrev);
 
@@ -164,14 +306,180 @@ export default function ObraDetalle() {
       const mappedDs44 = REQUIRED_DS44.map((required) => {
         const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
         const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-        return {
-          ...required,
-          documentId: existing?.documentId,
-          archivoSubido: hasFile,
-          document: existing
-        };
+        return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
       });
       setDs44Docs(mappedDs44);
+      // Refrescar docs DO si aplica
+      const mappedDo = REQUIRED_DO.map((required) => {
+        const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
+        const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
+        return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
+      });
+      setDoDocs(mappedDo);
+      const mappedEventos = EVENTOS_DO.map((required) => {
+        const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
+        const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
+        return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
+      });
+      setEventosDo(mappedEventos);
+    }
+  };
+
+  const handleActivarFaseHacer = async () => {
+    if (!obraId) return;
+    setActivatingFaseDeming(true);
+    try {
+      const res = await obrasApi.avanzarFaseDeming(obraId);
+      if (res.success && res.data?.obra) {
+        setObra(res.data.obra);
+        await reloadDocs();
+      }
+    } catch (err) {
+      console.error('Error activando fase HACER:', err);
+    } finally {
+      setActivatingFaseDeming(false);
+    }
+  };
+
+  const openDoModal = async (doc: DoItem) => {
+    setSelectedDoDoc(doc);
+    setSelectedDoDetail(doc.document || null);
+    setDoWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.personaId || a.workerId));
+    const docExpiry = getDocExpiryDate(doc.document);
+    setDoExpiryDate(toDateInputValue(docExpiry));
+    setDoExpiryNotApplicable(Boolean(doc.document && !docExpiry));
+    setPendingDoFile(null);
+    setIsDoModalOpen(true);
+
+    if (doc.documentId) {
+      setDoLoading(true);
+      try {
+        const res = await documentsApi.get(doc.documentId);
+        if (res.success && res.data) {
+          setSelectedDoDetail(res.data);
+          setDoWorkerIds((res.data.asignaciones || []).map((a: any) => a.personaId || a.workerId));
+          const fetchedExpiry = getDocExpiryDate(res.data);
+          setDoExpiryDate(toDateInputValue(fetchedExpiry));
+          setDoExpiryNotApplicable(Boolean(!fetchedExpiry));
+        }
+      } catch (error) {
+        console.error('Error loading DO document:', error);
+      } finally {
+        setDoLoading(false);
+      }
+    }
+  };
+
+  const handleDoFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPendingDoFile(file);
+    if (event.target) event.target.value = '';
+  };
+
+  const handleSaveDoChanges = async () => {
+    if (!selectedDoDoc || !obraId) return;
+    if (!doExpiryNotApplicable && !doExpiryDate) {
+      alert('Selecciona una fecha de vencimiento para el documento.');
+      return;
+    }
+    if (!selectedDoDoc.documentId && !pendingDoFile) {
+      alert('Debes seleccionar un archivo antes de guardar.');
+      return;
+    }
+
+    const expiryValue = doExpiryNotApplicable ? null : doExpiryDate;
+    setDoSaving(true);
+    try {
+      let fileKey = selectedDoDetail?.s3Key || selectedDoDetail?.archivoUrl || null;
+      let fileName = selectedDoDetail?.archivoNombre || null;
+
+      if (pendingDoFile) {
+        const uploadUrlRes = await uploadsApi.getUploadUrl({
+          fileName: pendingDoFile.name,
+          fileType: pendingDoFile.type,
+          fileSize: pendingDoFile.size,
+          categoria: 'obras',
+          empresaId: obra?.tenantId
+        });
+        if (!uploadUrlRes.success || !uploadUrlRes.data) throw new Error('Error al obtener URL de subida');
+        const uploadResult = await fetch(uploadUrlRes.data.uploadUrl, {
+          method: 'PUT',
+          body: pendingDoFile,
+          headers: { 'Content-Type': pendingDoFile.type }
+        });
+        if (!uploadResult.ok) throw new Error('Error al subir archivo');
+        fileKey = uploadUrlRes.data.fileKey;
+        fileName = pendingDoFile.name;
+        await uploadsApi.confirmUpload({ fileKey, fileName: pendingDoFile.name, fileType: pendingDoFile.type, fileSize: pendingDoFile.size });
+      }
+
+      let documentId = selectedDoDoc.documentId;
+      if (documentId) {
+        await documentsApi.update(documentId, { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: fileName, fechaCaducidad: expiryValue } as any);
+      } else {
+        const createRes = await documentsApi.create({
+          obraId,
+          clasificacion: 'obra',
+          fase: faseDeming,
+          tipo: selectedDoDoc.tipos[0],
+          obligatorio: true,
+          titulo: selectedDoDoc.titulo,
+          archivoUrl: fileKey,
+          archivoNombre: fileName,
+          fechaCaducidad: expiryValue,
+          createdBy: user?.userId,
+          creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
+        } as any);
+        documentId = (createRes as any)?.data?.documentId || documentId;
+      }
+
+      if (documentId && doWorkerIds.length > 0) {
+        await documentsApi.assign(documentId, {
+          workerIds: doWorkerIds,
+          fechaLimite: expiryValue,
+          notificar: true,
+          replace: true,
+          assignedBy: user?.userId,
+          assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
+        } as any);
+      }
+
+      await reloadDocs();
+      setPendingDoFile(null);
+      setIsDoModalOpen(false);
+    } catch (error) {
+      console.error('Error guardando documento DO:', error);
+    } finally {
+      setDoSaving(false);
+    }
+  };
+
+  const handlePreviewDoDocument = async () => {
+    const fileKey = selectedDoDetail?.s3Key || selectedDoDetail?.archivoUrl;
+    if (!fileKey) return;
+    setDoPreviewing(true);
+    try {
+      const res = await uploadsApi.getDownloadUrl(fileKey);
+      if (res.success && res.data?.downloadUrl) window.open(res.data.downloadUrl, '_blank');
+    } catch (error) {
+      console.error('Error abriendo documento DO:', error);
+    } finally {
+      setDoPreviewing(false);
+    }
+  };
+
+  const handlePreviewDoFromCard = async (doc: DoItem) => {
+    const fileKey = doc.document?.s3Key || doc.document?.archivoUrl;
+    if (!fileKey) return;
+    setDoPreviewing(true);
+    try {
+      const res = await uploadsApi.getDownloadUrl(fileKey);
+      if (res.success && res.data?.downloadUrl) window.open(res.data.downloadUrl, '_blank');
+    } catch (error) {
+      console.error('Error abriendo documento DO:', error);
+    } finally {
+      setDoPreviewing(false);
     }
   };
 
@@ -475,6 +783,21 @@ export default function ObraDetalle() {
   const inactiveWorkers = trabajadores.filter((worker) => worker.estado === 'inactivo');
   const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
 
+  // Fase 2 (DO) progress
+  const planCompleto = ds44Docs.length > 0 && ds44Docs.every((doc) => doc.archivoSubido);
+  const doPendientes = doDocs.filter((doc) => !doc.archivoSubido);
+  const doTotal = doDocs.length;
+  const doUploaded = doTotal - doPendientes.length;
+  const doProgress = doTotal > 0 ? Math.round((doUploaded / doTotal) * 100) : 0;
+
+  const FASES_DEMING = [
+    { key: 'plan', label: 'PLANIFICAR', short: 'PLAN' },
+    { key: 'hacer', label: 'HACER', short: 'DO' },
+    { key: 'verificar', label: 'VERIFICAR', short: 'CHECK' },
+    { key: 'actuar', label: 'ACTUAR', short: 'ACT' },
+  ];
+  const idxFaseDeming = FASES_DEMING.findIndex(f => f.key === faseDeming);
+
   const handleEditToggle = () => {
     setEditData({
       nombre: obra.nombre || '',
@@ -634,6 +957,41 @@ export default function ObraDetalle() {
               <div className="stat-label">{item.label}</div>
             </div>
           ))}
+        </div>
+
+        {/* Indicador ciclo Deming DS44 */}
+        <div className="card" style={{ marginBottom: 'var(--space-6)', padding: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+            <div className="font-medium" style={{ minWidth: '120px' }}>Ciclo DS44 (Deming):</div>
+            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+              {FASES_DEMING.map((fase, idx) => {
+                const isActive = fase.key === faseDeming;
+                const isDone = idx < idxFaseDeming;
+                return (
+                  <React.Fragment key={fase.key}>
+                    <div style={{
+                      padding: 'var(--space-1) var(--space-3)',
+                      borderRadius: 'var(--radius-full)',
+                      fontWeight: isActive ? 700 : 400,
+                      fontSize: '0.85rem',
+                      background: isDone
+                        ? 'var(--success-500, #10b981)'
+                        : isActive
+                          ? 'var(--primary-500, #3b82f6)'
+                          : 'var(--surface-elevated)',
+                      color: isDone || isActive ? 'white' : 'var(--text-muted)',
+                      border: `1px solid ${isDone ? 'var(--success-500,#10b981)' : isActive ? 'var(--primary-500,#3b82f6)' : 'var(--surface-border)'}`,
+                    }}>
+                      {isDone ? '✓ ' : ''}{fase.label}
+                    </div>
+                    {idx < FASES_DEMING.length - 1 && (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <div className="obra-dashboard-grid">
@@ -852,6 +1210,178 @@ export default function ObraDetalle() {
               </div>
             </div>
           </div>
+
+          {/* Banner activación Fase HACER cuando PLAN está completo */}
+          {faseDeming === 'plan' && planCompleto && (
+            <div className="card" style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 'var(--space-1)' }}>
+                    ✓ Fase PLANIFICAR completada
+                  </div>
+                  <div style={{ opacity: 0.9, fontSize: '0.9rem' }}>
+                    Todos los documentos de la Fase PLAN han sido subidos. Puedes activar la Fase HACER (DO) para continuar con la implementación del PTP.
+                  </div>
+                </div>
+                <button
+                  className="btn"
+                  style={{ background: 'white', color: '#059669', fontWeight: 600, border: 'none', whiteSpace: 'nowrap' }}
+                  onClick={handleActivarFaseHacer}
+                  disabled={activatingFaseDeming}
+                >
+                  {activatingFaseDeming ? 'Activando...' : 'Activar Fase HACER →'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Sección Fase 2: HACER (DO) — Ejecución operativa del SGSST */}
+          {faseDeming !== 'plan' && (
+            <>
+              {/* Subprocesos operativos permanentes */}
+              <div className="card" style={{ gridColumn: '1 / -1' }}>
+                <div className="card-header">
+                  <div>
+                    <div className="card-title">Fase HACER (DO) — Subprocesos Operativos</div>
+                    <div className="text-muted" style={{ fontSize: '0.85rem' }}>Implementación del Programa de Trabajo Preventivo (PTP) · Título II DS44</div>
+                  </div>
+                  <LuFileText className="text-muted" />
+                </div>
+                <div style={{ display: 'grid', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                    <div className="font-medium">Progreso subprocesos</div>
+                    <div className="text-muted">{doUploaded}/{doTotal} documentos subidos</div>
+                  </div>
+                  <div style={{ height: '10px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)' }}>
+                    <div style={{ width: `${doProgress}%`, height: '100%', background: 'linear-gradient(90deg,#10b981,#059669)', transition: 'width 200ms ease' }} />
+                  </div>
+                  {doPendientes.length > 0 && (
+                    <div className="alert alert-warning">
+                      Subprocesos pendientes: {doPendientes.map(d => d.titulo).join(', ')}.
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {doDocs.map((doc) => {
+                    const { firmadas, total: totalFirmas } = getSignatureStats(doc.document);
+                    const fechaCaducidad = getDocExpiryDate(doc.document);
+                    const isExpired = Boolean(fechaCaducidad && new Date(fechaCaducidad) < new Date());
+                    return (
+                      <div key={doc.key} className="card" style={{ padding: 'var(--space-3)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+                              <div className="font-medium">{doc.titulo}</div>
+                              <span className="badge badge-neutral" style={{ fontSize: '0.75rem' }}>{doc.articulo}</span>
+                            </div>
+                            <div className="text-muted" style={{ fontSize: '0.85rem' }}>{doc.descripcion}</div>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: 'var(--space-1)' }}>{doc.estadoFirma}</div>
+                            <div className={doc.archivoSubido ? 'text-muted' : 'text-danger-500'} style={{ marginTop: 'var(--space-1)', fontSize: '0.85rem' }}>
+                              {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
+                            </div>
+                            {fechaCaducidad && (
+                              <div className={isExpired ? 'text-danger-500' : 'text-muted'} style={{ fontSize: '0.8rem' }}>
+                                Vencimiento: {formatDate(fechaCaducidad)}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-1)' }}>
+                            <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-danger'}`}>
+                              {doc.archivoSubido ? 'Cargado' : 'Pendiente'}
+                            </span>
+                            {isExpired && <span className="badge badge-danger">Vencido</span>}
+                            {totalFirmas > 0 && (
+                              <span className={`badge ${firmadas === totalFirmas ? 'badge-success' : 'badge-warning'}`}>
+                                Firmas {firmadas}/{totalFirmas}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
+                          <button
+                            className={doc.archivoSubido ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
+                            type="button"
+                            onClick={() => openDoModal(doc)}
+                          >
+                            {doc.archivoSubido ? 'Actualizar documento' : 'Subir documento'}
+                          </button>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            type="button"
+                            disabled={!doc.archivoSubido || doPreviewing}
+                            onClick={() => handlePreviewDoFromCard(doc)}
+                          >
+                            Ver documento
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Eventos sobrevinientes */}
+              <div className="card" style={{ gridColumn: '1 / -1' }}>
+                <div className="card-header">
+                  <div>
+                    <div className="card-title">Fase HACER (DO) — Eventos Sobrevinientes</div>
+                    <div className="text-muted" style={{ fontSize: '0.85rem' }}>Respuesta obligatoria ante hechos concretos — se activan cuando ocurre el evento</div>
+                  </div>
+                  <LuShieldAlert className="text-muted" />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {eventosDo.map((doc) => {
+                    const { firmadas, total: totalFirmas } = getSignatureStats(doc.document);
+                    const fechaCaducidad = getDocExpiryDate(doc.document);
+                    return (
+                      <div key={doc.key} className="card" style={{ padding: 'var(--space-3)', borderLeft: '3px solid var(--warning-500, #f59e0b)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+                              <div className="font-medium">{doc.titulo}</div>
+                              <span className="badge badge-warning" style={{ fontSize: '0.75rem' }}>{doc.articulo}</span>
+                            </div>
+                            <div className="text-muted" style={{ fontSize: '0.85rem' }}>{doc.descripcion}</div>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: 'var(--space-1)' }}>{doc.estadoFirma}</div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-1)' }}>
+                            <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-neutral'}`}>
+                              {doc.archivoSubido ? 'Registrado' : 'Sin eventos'}
+                            </span>
+                            {totalFirmas > 0 && (
+                              <span className={`badge ${firmadas === totalFirmas ? 'badge-success' : 'badge-warning'}`}>
+                                Firmas {firmadas}/{totalFirmas}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
+                          <button
+                            className={doc.archivoSubido ? 'btn btn-secondary btn-sm' : 'btn btn-warning btn-sm'}
+                            style={!doc.archivoSubido ? { background: 'var(--warning-500,#f59e0b)', color: 'white', border: 'none' } : {}}
+                            type="button"
+                            onClick={() => openDoModal(doc)}
+                          >
+                            {doc.archivoSubido ? 'Actualizar registro' : 'Registrar evento'}
+                          </button>
+                          {doc.archivoSubido && (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              type="button"
+                              disabled={doPreviewing}
+                              onClick={() => handlePreviewDoFromCard(doc)}
+                            >
+                              Ver registro
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="card">
             <div className="card-header">
@@ -1231,6 +1761,93 @@ export default function ObraDetalle() {
           )}
         </div>
       </Modal>
+
+      {/* Modal subida documentos Fase HACER (DO) */}
+      <Modal
+        isOpen={isDoModalOpen}
+        onClose={() => { setIsDoModalOpen(false); setPendingDoFile(null); }}
+        title={selectedDoDoc?.titulo ? `Fase DO — ${selectedDoDoc.titulo}` : 'Documento Fase HACER'}
+        subtitle={selectedDoDoc ? `${selectedDoDoc.articulo} · ${selectedDoDoc.descripcion}` : 'Sube el archivo, selecciona firmantes y define vencimiento'}
+        size="lg"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setIsDoModalOpen(false)} disabled={doSaving}>
+              Cerrar
+            </button>
+            <button className="btn btn-primary" onClick={handleSaveDoChanges} disabled={doSaving}>
+              Guardar cambios
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Vencimiento</label>
+            <label className="checkbox-row" style={{ marginTop: 'var(--space-2)' }}>
+              <input
+                type="checkbox"
+                className="checkbox-input custom-checkbox"
+                checked={doExpiryNotApplicable}
+                onChange={(e) => { setDoExpiryNotApplicable(e.target.checked); if (e.target.checked) setDoExpiryDate(''); }}
+              />
+              <span>No aplica</span>
+            </label>
+            {!doExpiryNotApplicable && (
+              <input
+                className="form-input"
+                type="date"
+                value={doExpiryDate}
+                onChange={(e) => setDoExpiryDate(e.target.value)}
+              />
+            )}
+          </div>
+          <div style={{ border: '1px dashed var(--surface-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-4)', background: 'var(--surface-elevated)', display: 'grid', gap: 'var(--space-3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <div className="avatar" style={{ background: 'var(--surface-hover)', color: 'var(--primary-500)' }}>
+                <FiUploadCloud size={20} />
+              </div>
+              <div>
+                <div className="font-medium">Subir documento</div>
+                <div className="text-muted">{pendingDoFile?.name || selectedDoDetail?.archivoNombre || 'PDF requerido'}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+              <button className="btn btn-primary" type="button" onClick={() => doFileInputRef.current?.click()} disabled={doLoading}>
+                {pendingDoFile ? 'Cambiar archivo' : selectedDoDetail?.archivoUrl ? 'Actualizar archivo' : 'Seleccionar archivo'}
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={handlePreviewDoDocument} disabled={(!selectedDoDetail?.archivoUrl && !selectedDoDetail?.s3Key) || doPreviewing}>
+                <FiEye /> Ver documento
+              </button>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+            <div className="font-medium">Firmantes requeridos</div>
+            {trabajadores.length === 0 ? (
+              <div className="text-muted">No hay trabajadores asignados a esta obra.</div>
+            ) : (
+              <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
+                {trabajadores.map((worker, index) => (
+                  <label key={worker.personaId || worker.workerId} className="checkbox-row" style={{ padding: 'var(--space-2) var(--space-3)', cursor: 'pointer', borderBottom: index === trabajadores.length - 1 ? 'none' : '1px solid var(--surface-border)' }}>
+                    <input
+                      type="checkbox"
+                      className="checkbox-input custom-checkbox"
+                      checked={doWorkerIds.includes(worker.personaId || worker.workerId)}
+                      onChange={() => {
+                        const id = worker.personaId || worker.workerId;
+                        setDoWorkerIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                      }}
+                    />
+                    <span>{worker.nombre} {worker.apellido || ''}</span>
+                    <span className="text-muted">({worker.rut})</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      <input ref={doFileInputRef} type="file" accept="application/pdf" onChange={handleDoFileChange} style={{ display: 'none' }} />
 
       <Modal
         isOpen={isEditModalOpen}

@@ -103,7 +103,7 @@ class ObraService {
      */
     async actualizar(tenantId, obraId, updates) {
         const allowedFields = ['nombre', 'codigo', 'direccion', 'comuna',
-            'region', 'mandante', 'estado', 'etapaActual', 'fasesConfig'];
+            'region', 'mandante', 'estado', 'etapaActual', 'fasesConfig', 'faseDeming'];
 
         const updateExpressions = [];
         const expressionNames = {};
@@ -138,6 +138,24 @@ class ObraService {
         }));
 
         return Obra.fromDynamoItem(result.Attributes);
+    }
+
+    /**
+     * Avanzar a la fase HACER del ciclo Deming (DS44)
+     * Se activa cuando la Fase PLAN está completa
+     */
+    async avanzarFaseDeming(tenantId, obraId) {
+        const obra = await this.getById(obraId);
+        if (!obra) throw new Error('Obra no encontrada');
+
+        const ORDEN_DEMING = ['plan', 'hacer', 'verificar', 'actuar'];
+        const idxActual = ORDEN_DEMING.indexOf(obra.faseDeming || 'plan');
+        if (idxActual === -1 || idxActual >= ORDEN_DEMING.length - 1) {
+            throw new Error('La obra ya está en la última fase Deming');
+        }
+
+        const faseSiguiente = ORDEN_DEMING[idxActual + 1];
+        return this.actualizar(tenantId, obraId, { faseDeming: faseSiguiente });
     }
 
     /**

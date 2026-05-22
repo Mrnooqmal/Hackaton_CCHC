@@ -74,6 +74,16 @@ module.exports.obrasHandler = async (event) => {
             });
         }
 
+        // POST /obras/{id}/avanzar-fase-deming — Avanzar fase ciclo Deming (PLAN→HACER→VERIFICAR→ACTUAR)
+        if (method === 'POST' && obraId && action === 'avanzar-fase-deming') {
+            if (!tenantId) return error('tenantId es requerido');
+            const obra = await obraService.avanzarFaseDeming(tenantId, obraId);
+            return success({
+                message: `Fase Deming avanzada a: ${obra.faseDeming}`,
+                obra: obra.toSafeFormat()
+            });
+        }
+
         return error('Ruta no encontrada', 404);
     } catch (err) {
         console.error('Error in obras handler:', err);

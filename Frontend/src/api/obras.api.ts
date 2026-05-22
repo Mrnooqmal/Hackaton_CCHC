@@ -20,4 +20,8 @@ export const obrasApi = {
         }),
     getById: (id: string) =>
         apiRequest<any>(`/obras/${id}`),
+    avanzarFaseDeming: (id: string) =>
+        apiRequest<any>(`/obras/${id}/avanzar-fase-deming`, {
+            method: 'POST',
+        }),
 };

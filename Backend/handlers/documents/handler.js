@@ -11,6 +11,7 @@ const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
 
 // Tipos de documentos según el DS 44
 const DOCUMENT_TYPES = {
+    // Fase PLAN (ciclo Deming)
     IRL: 'Informe de Riesgos Laborales',
     DIAGNOSTICO_LEGAL: 'Diagnóstico de aspectos legales',
     POLITICA_SSO: 'Política de Seguridad y Salud Ocupacional',
@@ -23,6 +24,19 @@ const DOCUMENT_TYPES = {
     ENTREGA_EPP: 'Entrega de EPP',
     CAPACITACION: 'Capacitación',
     MAPA_RIESGOS: 'Mapa de Riesgos',
+    // Fase HACER (ciclo Deming) — subprocesos operativos permanentes
+    PLAN_CAPACITACION: 'Plan de Capacitación (Art. 16)',
+    INFO_RIESGOS_LABORALES: 'Información de Riesgos Laborales (Art. 15)',
+    PROCEDIMIENTO_EPP: 'Procedimiento de Provisión y Uso de EPP (Art. 13)',
+    OPERACION_MAQUINAS: 'Operación Segura de Máquinas y Herramientas (Art. 10)',
+    PLAN_EMERGENCIAS: 'Plan de Gestión de Emergencias (Art. 19)',
+    VIGILANCIA_AMBIENTAL: 'Vigilancia Ambiental y de Salud (Art. 67)',
+    COORDINACION_ENTIDADES: 'Coordinación con Otras Entidades en Faena (Art. 20)',
+    CONSULTA_REPRESENTANTES: 'Consulta a Representantes de Trabajadores (Art. 17)',
+    // Fase HACER — eventos sobrevinientes
+    REGISTRO_RIESGO_GRAVE: 'Registro de Riesgo Grave e Inminente (Art. 18)',
+    REGISTRO_AT_EP: 'Registro AT, EP e Incidentes Peligrosos (Arts. 71-72)',
+    TRASLADO_PUESTO: 'Traslado de Puesto por EP Diagnosticada (Art. 69)',
 };
 
 /**

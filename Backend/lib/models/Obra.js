@@ -33,6 +33,9 @@ class Obra {
             data.fasesObligatorias || FASES_ORDEN
         );
 
+        // Fase del ciclo Deming para el SGSST (DS44)
+        this.faseDeming = data.faseDeming || 'plan'; // 'plan' | 'hacer' | 'verificar' | 'actuar'
+
         this.createdAt = data.createdAt || new Date().toISOString();
         this.updatedAt = data.updatedAt || new Date().toISOString();
     }
@@ -94,6 +97,7 @@ class Obra {
             mandante: this.mandante,
             estado: this.estado,
             fasesConfig: this.fasesConfig,
+            faseDeming: this.faseDeming,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
@@ -120,6 +124,7 @@ class Obra {
             mandante: this.mandante,
             estado: this.estado,
             fasesConfig: this.fasesConfig,
+            faseDeming: this.faseDeming,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
