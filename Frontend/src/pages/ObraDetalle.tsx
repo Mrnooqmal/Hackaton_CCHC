@@ -435,14 +435,44 @@ export default function ObraDetalle() {
       }
 
       if (documentId && doWorkerIds.length > 0) {
-        await documentsApi.assign(documentId, {
-          workerIds: doWorkerIds,
-          fechaLimite: expiryValue,
-          notificar: true,
-          replace: true,
-          assignedBy: user?.userId,
-          assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
-        } as any);
+        const docTitle = selectedDoDoc.titulo || 'Documento DS44';
+        const docAttachments = fileKey ? [{
+          nombre: fileName || docTitle,
+          url: fileKey,
+          tipo: pendingDoFile?.type || 'application/pdf',
+          tamaño: pendingDoFile?.size || 0
+        }] : [];
+
+        const [assignRes, signatureReqRes] = await Promise.allSettled([
+          documentsApi.assign(documentId, {
+            workerIds: doWorkerIds,
+            fechaLimite: expiryValue,
+            notificar: true,
+            replace: true,
+            assignedBy: user?.userId,
+            assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
+          } as any),
+          signatureRequestsApi.create({
+            tipo: 'DOCUMENTO',
+            titulo: `Firma requerida: ${docTitle}`,
+            descripcion: `Se requiere su firma para el documento "${docTitle}" de la obra.`,
+            documentos: docAttachments,
+            trabajadoresIds: doWorkerIds.filter(Boolean),
+            solicitanteId: user?.userId || '',
+            fechaLimite: expiryValue || undefined,
+            tenantId: obra?.tenantId,
+            referenciaId: documentId,
+            referenciaTipo: 'document',
+            documentId,
+          } as any),
+        ]);
+
+        if (assignRes.status === 'rejected') {
+          console.warn('No se pudo asignar documento a firmantes:', assignRes.reason);
+        }
+        if (signatureReqRes.status === 'rejected') {
+          console.warn('No se pudo crear solicitud de firma (los trabajadores podrían no ver la firma pendiente):', signatureReqRes.reason);
+        }
       }
 
       await reloadDocs();
@@ -566,7 +596,7 @@ export default function ObraDetalle() {
 
     const expiryValue = expiryApplicable ? selectedExpiryDate : null;
     const existingSignerIds = (selectedDs44Detail?.asignaciones || []).map((asignacion: any) => asignacion.personaId || asignacion.workerId);
-    const targetSignerIds = selectedWorkerIds.length > 0 ? selectedWorkerIds : existingSignerIds;
+    const targetSignerIds = (selectedWorkerIds.length > 0 ? selectedWorkerIds : existingSignerIds).filter(Boolean);
 
     if (!selectedDs44Doc.documentId && !pendingDs44File) {
       alert('Debes seleccionar un archivo antes de guardar.');
@@ -639,26 +669,24 @@ export default function ObraDetalle() {
       }
 
       if (documentId && targetSignerIds.length > 0) {
-        await documentsApi.assign(documentId, {
-          workerIds: targetSignerIds,
-          fechaLimite: expiryValue,
-          notificar: true,
-          replace: true,
-          assignedBy: user?.userId,
-          assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
-        } as any);
+        const docTitle = selectedDs44Doc.titulo || 'Documento DS44';
+        const docAttachments = fileKey ? [{
+          nombre: fileName || docTitle,
+          url: fileKey,
+          tipo: 'application/pdf',
+          tamaño: pendingDs44File?.size || 0
+        }] : [];
 
-        // Also create a SignatureRequest so workers see it in "Mis Firmas"
-        try {
-          const docTitle = selectedDs44Doc.titulo || 'Documento DS44';
-          const docAttachments = fileKey ? [{
-            nombre: fileName || docTitle,
-            url: fileKey,
-            tipo: 'application/pdf',
-            tamaño: pendingDs44File?.size || 0
-          }] : [];
-
-          await signatureRequestsApi.create({
+        const [assignRes, signatureReqRes] = await Promise.allSettled([
+          documentsApi.assign(documentId, {
+            workerIds: targetSignerIds,
+            fechaLimite: expiryValue,
+            notificar: true,
+            replace: true,
+            assignedBy: user?.userId,
+            assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
+          } as any),
+          signatureRequestsApi.create({
             tipo: 'DOCUMENTO',
             titulo: `Firma requerida: ${docTitle}`,
             descripcion: `Se requiere su firma para el documento DS44 "${docTitle}" de la obra.`,
@@ -666,13 +694,18 @@ export default function ObraDetalle() {
             trabajadoresIds: targetSignerIds,
             solicitanteId: user?.userId || '',
             fechaLimite: expiryValue || undefined,
-            empresaId: obra?.tenantId,
+            tenantId: obra?.tenantId,
             referenciaId: documentId,
             referenciaTipo: 'document',
             documentId,
-          } as any);
-        } catch (sigReqError) {
-          console.warn('No se pudo crear solicitud de firma (los trabajadores podrían no ver la firma pendiente):', sigReqError);
+          } as any),
+        ]);
+
+        if (assignRes.status === 'rejected') {
+          console.warn('No se pudo asignar documento a firmantes:', assignRes.reason);
+        }
+        if (signatureReqRes.status === 'rejected') {
+          console.warn('No se pudo crear solicitud de firma (los trabajadores podrían no ver la firma pendiente):', signatureReqRes.reason);
         }
       }
 
@@ -1445,7 +1478,7 @@ export default function ObraDetalle() {
               Cerrar
             </button>
             <button className="btn btn-primary" onClick={handleSaveDs44Changes} disabled={ds44Saving || uploadingKey === selectedDs44Doc?.key}>
-              Guardar cambios
+              {ds44Saving || uploadingKey === selectedDs44Doc?.key ? 'Actualizando documento...' : 'Guardar cambios'}
             </button>
           </>
         }
@@ -1779,7 +1812,7 @@ export default function ObraDetalle() {
               Cerrar
             </button>
             <button className="btn btn-primary" onClick={handleSaveDoChanges} disabled={doSaving}>
-              Guardar cambios
+              {doSaving ? 'Actualizando documento...' : 'Guardar cambios'}
             </button>
           </>
         }

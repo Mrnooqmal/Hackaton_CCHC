@@ -95,11 +95,15 @@ export default function Dashboard() {
             });
         }
 
-        // Load pending surveys
-        try {
-            const surveysRes = await surveysApi.list();
-            if (surveysRes.success && surveysRes.data?.surveys && user?.workerId) {
-                const mySurveys = surveysRes.data.surveys.filter(s =>
+        const [surveysRes, inboxRes] = await Promise.allSettled([
+            surveysApi.list(),
+            user?.userId ? inboxApi.getUnreadCount(user.userId) : Promise.resolve(null),
+        ]);
+
+        if (surveysRes.status === 'fulfilled') {
+            const data = surveysRes.value;
+            if (data?.success && data.data?.surveys && user?.workerId) {
+                const mySurveys = data.data.surveys.filter(s =>
                     s.recipients?.some(r => r.workerId === user.workerId && r.estado !== 'respondida')
                 );
 
@@ -113,26 +117,23 @@ export default function Dashboard() {
                     });
                 });
 
-                const completedSurveys = surveysRes.data.surveys.filter(s =>
+                const completedSurveys = data.data.surveys.filter(s =>
                     s.recipients?.some(r => r.workerId === user.workerId && r.estado === 'respondida')
                 ).length;
 
                 completedCount += completedSurveys;
             }
-        } catch (err) {
-            console.error('Error loading surveys:', err);
+        } else {
+            console.error('Error loading surveys:', surveysRes.reason);
         }
 
-        // Load inbox unread
-        try {
-            if (user?.userId) {
-                const inboxRes = await inboxApi.getUnreadCount(user.userId);
-                if (inboxRes.success && inboxRes.data) {
-                    setStats(s => ({ ...s, unreadMessages: inboxRes.data?.unreadCount || 0 }));
-                }
+        if (inboxRes.status === 'fulfilled') {
+            const data = inboxRes.value;
+            if (data?.success && data.data) {
+                setStats(s => ({ ...s, unreadMessages: data.data?.unreadCount || 0 }));
             }
-        } catch (err) {
-            console.error('Error loading inbox:', err);
+        } else if (inboxRes.status === 'rejected') {
+            console.error('Error loading inbox:', inboxRes.reason);
         }
 
         // Calculate progress
@@ -152,121 +153,132 @@ export default function Dashboard() {
     };
 
     const loadPrevencionistaDashboard = async () => {
-        // Load workers stats
-        try {
-            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
-            if (workersRes.success && workersRes.data) {
-                setWorkers(workersRes.data);
-                const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
-                setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0, pendingSignatures: unenrolled }));
+        const [workersRes, ownPendingRes, sigStatsRes, docsRes, incidentsRes, activitiesRes] = await Promise.allSettled([
+            workersApi.list({ obraId: selectedObraId || undefined }),
+            user?.workerId ? signatureRequestsApi.getPendingByWorker(user.workerId) : Promise.resolve(null),
+            signatureRequestsApi.getStats(),
+            documentsApi.list({ obraId: selectedObraId || undefined }),
+            incidentsApi.list(),
+            activitiesApi.list({ obraId: selectedObraId || undefined }),
+        ]);
+
+        const nextStats: DashboardStats = {};
+
+        if (workersRes.status === 'fulfilled') {
+            const data = workersRes.value;
+            if (data?.success && data.data) {
+                setWorkers(data.data);
+                const unenrolled = data.data.filter((w: any) => !w.habilitado).length;
+                nextStats.totalWorkers = data.data?.length || 0;
+                nextStats.pendingSignatures = unenrolled;
             }
-        } catch (err) {
-            console.error('Error loading workers:', err);
+        } else {
+            console.error('Error loading workers:', workersRes.reason);
         }
 
-        // Load own pending signatures (for the prevencionista themselves)
-        try {
-            if (user?.workerId) {
-                const ownPendingRes = await signatureRequestsApi.getPendingByWorker(user.workerId);
-                if (ownPendingRes.success && ownPendingRes.data) {
-                    setStats(s => ({ ...s, ownPendingSignatures: ownPendingRes.data?.total || 0 }));
-                }
+        if (ownPendingRes.status === 'fulfilled') {
+            const data = ownPendingRes.value;
+            if (data?.success && data.data) {
+                nextStats.ownPendingSignatures = data.data?.total || 0;
             }
-        } catch (err) {
-            console.error('Error loading own pending signatures:', err);
+        } else if (ownPendingRes.status === 'rejected') {
+            console.error('Error loading own pending signatures:', ownPendingRes.reason);
         }
 
-        // Load total pending signature requests across all workers
-        try {
-            const sigStatsRes = await signatureRequestsApi.getStats();
-            if (sigStatsRes.success && sigStatsRes.data) {
-                const totalPendingFirmas = sigStatsRes.data.totalFirmasRequeridas - sigStatsRes.data.totalFirmasObtenidas;
-                setStats(s => ({ ...s, workersPendingSignatures: Math.max(0, totalPendingFirmas) }));
+        if (sigStatsRes.status === 'fulfilled') {
+            const data = sigStatsRes.value;
+            if (data?.success && data.data) {
+                const totalPendingFirmas = data.data.totalFirmasRequeridas - data.data.totalFirmasObtenidas;
+                nextStats.workersPendingSignatures = Math.max(0, totalPendingFirmas);
             }
-        } catch (err) {
-            console.error('Error loading workers pending signatures:', err);
+        } else {
+            console.error('Error loading workers pending signatures:', sigStatsRes.reason);
         }
 
-        // Load documents stats
-        try {
-            const docsRes = await documentsApi.list({ obraId: selectedObraId || undefined });
-            if (docsRes.success && docsRes.data) {
-                setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
+        if (docsRes.status === 'fulfilled') {
+            const data = docsRes.value;
+            if (data?.success && data.data) {
+                nextStats.totalDocuments = data.data?.documents.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading documents:', err);
+        } else {
+            console.error('Error loading documents:', docsRes.reason);
         }
 
-        // Load incidents stats
-        try {
-            const incidentsRes = await incidentsApi.list();
-            if (incidentsRes.success && incidentsRes.data) {
-                const pending = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
-                setStats(s => ({ ...s, pendingIncidents: pending }));
+        if (incidentsRes.status === 'fulfilled') {
+            const data = incidentsRes.value;
+            if (data?.success && data.data) {
+                const pending = data.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
+                nextStats.pendingIncidents = pending;
             }
-        } catch (err) {
-            console.error('Error loading incidents:', err);
+        } else {
+            console.error('Error loading incidents:', incidentsRes.reason);
         }
 
-        // Load recent activities
-        try {
-            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
-            if (activitiesRes.success && activitiesRes.data) {
-                const recent = activitiesRes.data.activities.slice(0, 5);
+        if (activitiesRes.status === 'fulfilled') {
+            const data = activitiesRes.value;
+            if (data?.success && data.data) {
+                const recent = data.data.activities.slice(0, 5);
                 setRecentActivities(recent);
 
                 const today = new Date().toISOString().split('T')[0];
-                const todayActivities = activitiesRes.data.activities.filter(a =>
-                    a.fecha === today
-                ).length;
-                setStats(s => ({ ...s, activitiesToday: todayActivities }));
+                const todayActivities = data.data.activities.filter(a => a.fecha === today).length;
+                nextStats.activitiesToday = todayActivities;
             }
-        } catch (err) {
-            console.error('Error loading activities:', err);
+        } else {
+            console.error('Error loading activities:', activitiesRes.reason);
         }
+
+        setStats(s => ({ ...s, ...nextStats }));
     };
 
     const loadAdminDashboard = async () => {
-        // Load global stats
-        try {
-            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
-            if (workersRes.success && workersRes.data) {
-                setWorkers(workersRes.data);
-                setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0 }));
+        const [workersRes, activitiesRes, docsRes, incidentsRes] = await Promise.allSettled([
+            workersApi.list({ obraId: selectedObraId || undefined }),
+            activitiesApi.list({ obraId: selectedObraId || undefined }),
+            documentsApi.list({ obraId: selectedObraId || undefined }),
+            incidentsApi.list(),
+        ]);
+
+        const nextStats: DashboardStats = {};
+
+        if (workersRes.status === 'fulfilled') {
+            const data = workersRes.value;
+            if (data?.success && data.data) {
+                setWorkers(data.data);
+                nextStats.totalWorkers = data.data?.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading workers:', err);
+        } else {
+            console.error('Error loading workers:', workersRes.reason);
         }
 
-        // Load activities
-        try {
-            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
-            if (activitiesRes.success && activitiesRes.data) {
-                setStats(s => ({ ...s, activitiesToday: activitiesRes.data?.activities.length || 0 }));
+        if (activitiesRes.status === 'fulfilled') {
+            const data = activitiesRes.value;
+            if (data?.success && data.data) {
+                nextStats.activitiesToday = data.data?.activities.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading activities:', err);
+        } else {
+            console.error('Error loading activities:', activitiesRes.reason);
         }
 
-        // Load documents count
-        try {
-            const docsRes = await documentsApi.list({ obraId: selectedObraId || undefined });
-            if (docsRes.success && docsRes.data) {
-                setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
+        if (docsRes.status === 'fulfilled') {
+            const data = docsRes.value;
+            if (data?.success && data.data) {
+                nextStats.totalDocuments = data.data?.documents.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading documents:', err);
+        } else {
+            console.error('Error loading documents:', docsRes.reason);
         }
 
-        // Load incidents count
-        try {
-            const incidentsRes = await incidentsApi.list();
-            if (incidentsRes.success && incidentsRes.data) {
-                setStats(s => ({ ...s, pendingIncidents: incidentsRes.data?.length || 0 }));
+        if (incidentsRes.status === 'fulfilled') {
+            const data = incidentsRes.value;
+            if (data?.success && data.data) {
+                nextStats.pendingIncidents = data.data?.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading incidents:', err);
+        } else {
+            console.error('Error loading incidents:', incidentsRes.reason);
         }
+
+        setStats(s => ({ ...s, ...nextStats }));
     };
 
     const getUrgentTasks = () => pendings.filter(p => p.urgent || p.priority === 'high');

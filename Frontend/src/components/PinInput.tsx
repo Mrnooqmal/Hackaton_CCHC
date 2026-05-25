@@ -158,7 +158,7 @@ export default function PinInput({
                         onKeyDown={(e) => handleKeyDown(index, e)}
                         onPaste={handlePaste}
                         disabled={disabled || isComplete}
-                        className={`pin-digit ${digit ? 'filled' : ''} ${error ? 'error' : ''} ${isComplete && !error ? 'success' : ''}`}
+                        className={`pin-digit ${digit ? 'filled' : ''} ${error ? 'error' : ''} ${isComplete && !error && mode !== 'verify' ? 'success' : ''}`}
                         autoComplete="off"
                     />
                 ))}
@@ -183,14 +183,14 @@ export default function PinInput({
                 </div>
             )}
 
-            {isComplete && !error && (
+            {isComplete && !error && mode !== 'verify' && (
                 <div className="pin-success">
                     <FiCheck size={16} />
                     <span>PIN ingresado correctamente</span>
                 </div>
             )}
 
-            {(error || isComplete) && (
+            {(error || (isComplete && mode !== 'verify')) && (
                 <button
                     type="button"
                     className="btn btn-secondary btn-sm"

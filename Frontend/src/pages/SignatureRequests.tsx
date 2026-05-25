@@ -391,58 +391,15 @@ export default function SignatureRequests({ embedded = false }: { embedded?: boo
         );
     }
 
+    const containerClass = embedded
+        ? 'page-content signature-requests-embedded'
+        : 'page-content';
+
     return (
         <>
             {!embedded && <Header title="Solicitudes de Firma" />}
 
-            <div className="page-content">
-                <div className="survey-hero mb-8">
-                    <div className="survey-hero-icon">
-                        <FiSend size={28} />
-                    </div>
-
-                    {error && (
-                        <div className="alert alert-danger mb-6 flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <FiAlertCircle />
-                                {error}
-                            </div>
-                            <button onClick={() => setError('')} className="btn-ghost btn-sm p-1">
-                                <FiX />
-                            </button>
-                        </div>
-                    )}
-                    {successMsg && (
-                        <div className="alert alert-success mb-6 flex justify-between items-center" style={{
-                            animation: 'slideIn 0.3s ease-out',
-                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(34, 197, 94, 0.06))',
-                            border: '1px solid rgba(34, 197, 94, 0.35)',
-                            borderRadius: '12px',
-                            padding: '16px 20px',
-                        }}>
-                            <div className="flex items-center gap-3" style={{ color: 'var(--success-600)', fontWeight: 500 }}>
-                                <FiCheck size={20} />
-                                {successMsg}
-                            </div>
-                            <button onClick={() => setSuccessMsg('')} className="btn-ghost btn-sm p-1" style={{ color: 'var(--success-600)' }}>
-                                <FiX />
-                            </button>
-                        </div>
-                    )}
-                    <div style={{ flex: 1 }}>
-                        <div className="survey-hero-eyebrow">Gestión de Solicitudes</div>
-                        <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, marginBottom: 'var(--space-2)' }}>
-                            Administra las solicitudes de firma
-                        </h2>
-                        <p className="text-sm text-muted" style={{ maxWidth: '600px' }}>
-                            Las solicitudes de firma se generan automáticamente desde actividades, capacitaciones y documentos asignados. También puedes crear solicitudes manuales para casos especiales.
-                        </p>
-                    </div>
-                    <button className="btn btn-secondary" onClick={loadData} disabled={loading} style={{ padding: '10px 20px' }}>
-                        <FiRefreshCw className={loading ? 'spin' : ''} /> Actualizar
-                    </button>
-                </div>
-
+            <div className={containerClass}>
                 <div className="grid grid-cols-4 mb-6">
                     <div className="card stat-card">
                         <div className="flex items-center gap-3 mb-1">

@@ -45,6 +45,10 @@
   flex: 1;
 }
 
+.signature-requests-embedded {
+  padding: 0;
+}
+
 @media (max-width: 768px) {
   .page-content {
     padding: var(--space-4) var(--space-2);

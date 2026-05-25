@@ -828,7 +828,15 @@ export default function MySignatures() {
                 )}
 
                 {activeTab === 'solicitudes' && canManageRequests && (
-                    <SignatureRequests embedded />
+                    <div className="card">
+                        <div className="card-header">
+                            <div>
+                                <h2 className="card-title">Solicitudes de Firma</h2>
+                                <p className="card-subtitle">Gestión y seguimiento de solicitudes del equipo</p>
+                            </div>
+                        </div>
+                        <SignatureRequests embedded />
+                    </div>
                 )}
             </div>
 
