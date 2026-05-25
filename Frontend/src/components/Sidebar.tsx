@@ -5,7 +5,6 @@ import {
     FiUsers,
     FiFileText,
     FiCalendar,
-    FiEdit3,
     FiCheckSquare,
     FiMessageSquare,
     FiSettings,
@@ -48,7 +47,7 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                     items: [
                         { path: '/', icon: FiHome, label: 'Dashboard' },
                         { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
+                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Firmas' },
                     ]
                 },
                 {
@@ -80,8 +79,7 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                 {
                     section: 'Cumplimiento',
                     items: [
-                        { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma' },
-                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
+                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Firmas' },
                         { path: '/surveys', icon: FiClipboard, label: 'Auditorías y Encuestas' },
                         { path: '/documents', icon: FiFileText, label: 'Documentos' },
                     ]
@@ -116,8 +114,7 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                 {
                     section: 'Cumplimiento',
                     items: [
-                        { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma' },
-                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Certificados' },
+                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Firmas' },
                         { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
                         { path: '/documents', icon: FiFileText, label: 'Documentos' },
                         { path: '/activities', icon: FiCalendar, label: 'Actividades' },

@@ -1261,6 +1261,7 @@ export default function ObraDetalle() {
                     </div>
                   )}
                 </div>
+                <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   {doDocs.map((doc) => {
                     const { firmadas, total: totalFirmas } = getSignatureStats(doc.document);
@@ -1318,6 +1319,7 @@ export default function ObraDetalle() {
                     );
                   })}
                 </div>
+                </div>
               </div>
 
               {/* Eventos sobrevinientes */}
@@ -1329,6 +1331,7 @@ export default function ObraDetalle() {
                   </div>
                   <LuShieldAlert className="text-muted" />
                 </div>
+                <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                   {eventosDo.map((doc) => {
                     const { firmadas, total: totalFirmas } = getSignatureStats(doc.document);
@@ -1378,6 +1381,7 @@ export default function ObraDetalle() {
                       </div>
                     );
                   })}
+                </div>
                 </div>
               </div>
             </>

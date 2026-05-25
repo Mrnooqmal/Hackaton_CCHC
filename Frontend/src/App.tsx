@@ -17,7 +17,7 @@ import EnrollMe from './pages/EnrollMe';
 import Unauthorized from './pages/Unauthorized';
 import RegisterAdmin from './pages/RegisterAdmin';
 import TenantOnboarding from './pages/TenantOnboarding';
-import SignatureRequests from './pages/SignatureRequests';
+// SignatureRequests is now a tab inside MySignatures (Firmas)
 import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
@@ -112,11 +112,8 @@ function AppContent() {
             </ProtectedRoute>
           } />
 
-          <Route path="/signature-requests" element={
-            <ProtectedRoute requiredPermission="crear_actividades">
-              <SignatureRequests />
-            </ProtectedRoute>
-          } />
+          {/* Solicitudes de firma ahora es pestaña dentro de Firmas */}
+          <Route path="/signature-requests" element={<Navigate to="/my-signatures" replace />} />
 
           <Route path="/my-signatures" element={
             <ProtectedRoute>

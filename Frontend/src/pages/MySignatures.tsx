@@ -15,6 +15,7 @@ import {
     FiShield,
     FiTrendingUp,
     FiRefreshCw,
+    FiSend,
 } from 'react-icons/fi';
 import {
     signatureRequestsApi,
@@ -26,11 +27,13 @@ import {
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/ui';
+import SignatureRequests from './SignatureRequests';
 
-type TabType = 'pendientes' | 'historial';
+type TabType = 'pendientes' | 'historial' | 'solicitudes';
 
 export default function MySignatures() {
     const { user } = useAuth();
+    const canManageRequests = user?.rol === 'admin' || user?.rol === 'prevencionista';
     const [activeTab, setActiveTab] = useState<TabType>('pendientes');
     const [pendingRequests, setPendingRequests] = useState<SignatureRequest[]>([]);
     const [signatureHistory, setSignatureHistory] = useState<{ firma: NewSignature; solicitud: SignatureRequest | null }[]>([]);
@@ -133,10 +136,10 @@ export default function MySignatures() {
         );
     }
 
-    if (!user?.workerId) {
+    if (!user?.workerId && !canManageRequests) {
         return (
             <>
-                <Header title="Mis Firmas" />
+                <Header title="Firmas" />
                 <div className="main-content">
                     <div className="empty-state">
                         <div className="empty-state-icon"><FiAlertCircle size={48} style={{ color: 'var(--warning-500)' }} /></div>
@@ -150,12 +153,37 @@ export default function MySignatures() {
         );
     }
 
+    // Admin/prevencionista without workerId: show only Solicitudes tab
+    if (!user?.workerId && canManageRequests) {
+        return (
+            <>
+                <Header title="Firmas" />
+                <div className="page-content">
+                    <div className="survey-hero mb-6">
+                        <div className="survey-hero-icon">
+                            <FiEdit3 size={28} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <div className="survey-hero-eyebrow">Centro de Firmas</div>
+                            <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
+                                Gestión de firmas digitales
+                            </h2>
+                            <p className="text-sm text-muted">
+                                Administra las solicitudes de firma del equipo.
+                            </p>
+                        </div>
+                    </div>
+                    <SignatureRequests embedded />
+                </div>
+            </>
+        );
+    }
+
     return (
         <>
-            <Header title="Mis Firmas" />
+            <Header title="Firmas" />
 
             <div className="page-content">
-                {/* Hero Section */}
                 <div className="survey-hero mb-6">
                     <div className="survey-hero-icon">
                         <FiEdit3 size={28} />
@@ -163,10 +191,13 @@ export default function MySignatures() {
                     <div style={{ flex: 1 }}>
                         <div className="survey-hero-eyebrow">Centro de Firmas</div>
                         <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
-                            Bienvenido a tu panel de firmas digitales
+                            {canManageRequests ? 'Gestión de firmas digitales' : 'Bienvenido a tu panel de firmas digitales'}
                         </h2>
                         <p className="text-sm text-muted">
-                            Revisa y firma documentos de manera segura. Todas tus firmas quedan registradas con validación criptográfica.
+                            {canManageRequests
+                                ? 'Revisa firmas pendientes, historial y administra las solicitudes de firma del equipo.'
+                                : 'Revisa y firma documentos de manera segura. Todas tus firmas quedan registradas con validación criptográfica.'
+                            }
                         </p>
                     </div>
                     <button className="btn btn-secondary" onClick={loadData} disabled={loading}>
@@ -365,6 +396,57 @@ export default function MySignatures() {
                             </span>
                         )}
                     </button>
+
+                    {canManageRequests && (
+                        <button
+                            className="flex items-center gap-3"
+                            onClick={() => setActiveTab('solicitudes')}
+                            style={{
+                                flex: 1,
+                                padding: 'var(--space-4)',
+                                borderRadius: 'var(--radius-lg)',
+                                border: activeTab === 'solicitudes' ? '1px solid var(--primary-400)' : '1px solid transparent',
+                                background: activeTab === 'solicitudes'
+                                    ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(99, 102, 241, 0.05))'
+                                    : 'transparent',
+                                cursor: 'pointer',
+                                transition: 'all var(--transition-fast)',
+                                boxShadow: activeTab === 'solicitudes' ? 'var(--shadow-md)' : 'none',
+                            }}
+                        >
+                            <div
+                                className="avatar"
+                                style={{
+                                    background: activeTab === 'solicitudes' ? 'var(--primary-500)' : 'var(--surface-hover)',
+                                    color: activeTab === 'solicitudes' ? 'white' : 'var(--text-muted)',
+                                    width: '44px',
+                                    height: '44px',
+                                    transition: 'all var(--transition-fast)',
+                                }}
+                            >
+                                <FiSend size={20} />
+                            </div>
+                            <div style={{ textAlign: 'left' }}>
+                                <div
+                                    style={{
+                                        fontWeight: 600,
+                                        color: activeTab === 'solicitudes' ? 'var(--primary-700)' : 'var(--text-secondary)',
+                                        fontSize: 'var(--text-base)',
+                                    }}
+                                >
+                                    Solicitudes
+                                </div>
+                                <div
+                                    style={{
+                                        fontSize: 'var(--text-sm)',
+                                        color: activeTab === 'solicitudes' ? 'var(--primary-600)' : 'var(--text-muted)',
+                                    }}
+                                >
+                                    Gestión de solicitudes
+                                </div>
+                            </div>
+                        </button>
+                    )}
                 </div>
 
                 {/* Content */}
@@ -743,6 +825,10 @@ export default function MySignatures() {
                             </div>
                         )}
                     </div>
+                )}
+
+                {activeTab === 'solicitudes' && canManageRequests && (
+                    <SignatureRequests embedded />
                 )}
             </div>
 

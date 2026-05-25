@@ -40,7 +40,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { useOfflineSignature, type OfflinePendingSignature } from '../hooks/useOfflineSignature';
 import { Modal } from '../components/ui';
 
-export default function SignatureRequests() {
+export default function SignatureRequests({ embedded = false }: { embedded?: boolean } = {}) {
     const { user } = useAuth();
     const { isOnline, pendingCount, syncPendingSignatures } = useOfflineSignature();
     const [requests, setRequests] = useState<SignatureRequest[]>([]);
@@ -385,7 +385,7 @@ export default function SignatureRequests() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center" style={{ height: '100vh' }}>
+            <div className="flex items-center justify-center" style={{ height: embedded ? '400px' : '100vh' }}>
                 <div className="spinner" />
             </div>
         );
@@ -393,7 +393,7 @@ export default function SignatureRequests() {
 
     return (
         <>
-            <Header title="Solicitudes de Firma" />
+            {!embedded && <Header title="Solicitudes de Firma" />}
 
             <div className="page-content">
                 <div className="survey-hero mb-8">
