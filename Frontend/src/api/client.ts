@@ -14,6 +14,7 @@ export * from './ai.api';
 export * from './inbox.api';
 export * from './tenants.api';
 export * from './obras.api';
+export * from './suggestions.api';
 //export type { User, PersonaResponse } from './types';
 
 

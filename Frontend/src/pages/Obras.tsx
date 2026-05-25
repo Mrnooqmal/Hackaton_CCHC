@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import Header from '../components/Header';
-import { documentsApi, obrasApi, tenantsApi, workersApi } from '../api/client';
+import { documentsApi, obrasApi, tenantsApi, workersApi, uploadsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -22,6 +22,7 @@ interface Obra {
   mandante: string;
   estado: string;
   trabajadoresAprobados?: string[];
+  imagenKey?: string;
 }
 
 const REQUIRED_DS44 = [
@@ -59,6 +60,11 @@ export const Obras: React.FC = () => {
   const [workers, setWorkers] = useState<any[]>([]);
   const [ds44Alerts, setDs44Alerts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [obraImageFile, setObraImageFile] = useState<File | null>(null);
+  const [obraImagePreview, setObraImagePreview] = useState<string>('');
+  const [obraImageUrls, setObraImageUrls] = useState<Record<string, string>>({});
+  const [isCreating, setIsCreating] = useState(false);
+  const imageCacheKey = 'obraImageCache';
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const canViewObras = user?.rol === 'admin';
@@ -84,9 +90,10 @@ export const Obras: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [obrasRes, workersRes] = await Promise.all([
+      const [obrasRes, workersRes, docsRes] = await Promise.all([
         obrasApi.list(),
-        workersApi.list()
+        workersApi.list(),
+        documentsApi.list({ clasificacion: 'obra' })
       ]);
 
       let obrasList: Obra[] = [];
@@ -100,31 +107,89 @@ export const Obras: React.FC = () => {
         setWorkers((workersRes.data as any).personas || workersRes.data);
       }
 
+      // Hide loading spinner as soon as the core structure is ready
+      setLoading(false);
+
+      // Compute DS44 alerts in-memory instantly
       if (obrasList.length > 0) {
+        const allDocs = docsRes.success && docsRes.data ? (docsRes.data as any).documents || [] : [];
         const alerts: Record<string, number> = {};
-        await Promise.all(
-          obrasList.map(async (obra) => {
-            if (!obra.obraId) {
-              return;
-            }
-            const docsRes = await documentsApi.list({ obraId: obra.obraId, clasificacion: 'obra' } as any);
-            const docs = docsRes.success && docsRes.data ? docsRes.data.documents || [] : [];
-            const missingCount = REQUIRED_DS44.filter((required) => {
-              const existing = docs.find((doc: any) => required.tipos.includes(doc.tipo));
-              const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-              return !hasFile;
-            }).length;
-            alerts[obra.obraId] = missingCount;
-          })
-        );
+        obrasList.forEach((obra) => {
+          if (!obra.obraId) {
+            return;
+          }
+          const docs = allDocs.filter((doc: any) => doc.obraId === obra.obraId);
+          const missingCount = REQUIRED_DS44.filter((required) => {
+            const existing = docs.find((doc: any) => required.tipos.includes(doc.tipo));
+            const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
+            return !hasFile;
+          }).length;
+          alerts[obra.obraId] = missingCount;
+        });
         setDs44Alerts(alerts);
       } else {
         setDs44Alerts({});
       }
+
+      // Load/fetch images progressively with persistent localStorage cache
+      const imageKeys = obrasList
+        .map((obra) => ({ obraId: obra.obraId, imagenKey: obra.imagenKey }))
+        .filter((entry) => entry.obraId && entry.imagenKey) as { obraId: string; imagenKey: string }[];
+      
+      if (imageKeys.length > 0) {
+        const now = Date.now();
+        const cachedRaw = localStorage.getItem(imageCacheKey);
+        const cached: Record<string, { url: string; expiresAt: number }> = cachedRaw ? JSON.parse(cachedRaw) : {};
+        const needsFetch = new Set<string>();
+
+        // Set already cached and valid images immediately
+        const nextImages: Record<string, string> = {};
+        imageKeys.forEach(({ obraId, imagenKey }) => {
+          const cachedEntry = cached[imagenKey];
+          if (cachedEntry && cachedEntry.expiresAt > now) {
+            nextImages[obraId] = cachedEntry.url;
+          } else {
+            needsFetch.add(imagenKey);
+          }
+        });
+
+        if (Object.keys(nextImages).length > 0) {
+          setObraImageUrls(prev => ({ ...prev, ...nextImages }));
+        }
+
+        // Fetch missing URLs in background
+        if (needsFetch.size > 0) {
+          const downloadResponse = await uploadsApi.getBatchDownloadUrls(Array.from(needsFetch));
+          if (downloadResponse?.success && downloadResponse.data?.urls) {
+            const expiresInMs = (downloadResponse.data.expiresIn || 0) * 1000;
+            const updatedImages: Record<string, string> = {};
+            
+            downloadResponse.data.urls.forEach((item: any) => {
+              if (item.downloadUrl && item.fileKey) {
+                cached[item.fileKey] = {
+                  url: item.downloadUrl,
+                  expiresAt: now + expiresInMs
+                };
+                
+                // Map back to all matching obras
+                imageKeys.forEach(({ obraId, imagenKey }) => {
+                  if (imagenKey === item.fileKey) {
+                    updatedImages[obraId] = item.downloadUrl;
+                  }
+                });
+              }
+            });
+            localStorage.setItem(imageCacheKey, JSON.stringify(cached));
+            setObraImageUrls(prev => ({ ...prev, ...updatedImages }));
+          }
+        }
+      } else {
+        setObraImageUrls({});
+      }
     } catch (error) {
       console.error("Error fetching data:", error);
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -159,6 +224,22 @@ export const Obras: React.FC = () => {
     }
   }, [resolvedCompanyName, formData.mandante, isModalOpen]);
 
+  useEffect(() => {
+    if (!obraImageFile) {
+      setObraImagePreview('');
+      return;
+    }
+    const previewUrl = URL.createObjectURL(obraImageFile);
+    setObraImagePreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [obraImageFile]);
+
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    setObraImageFile(file || null);
+    if (event.target) event.target.value = '';
+  };
+
   const handleWorkerToggle = (workerId: string) => {
     setFormData(prev => {
       const current = prev.trabajadoresAprobados || [];
@@ -171,10 +252,39 @@ export const Obras: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCreating) return;
+    setIsCreating(true);
     try {
+      let imagenKey = '';
+      const tenantId = user?.tenantId || localStorage.getItem('tenant_id') || '';
+      if (obraImageFile) {
+        const uploadUrlRes = await uploadsApi.getUploadUrl({
+          fileName: obraImageFile.name,
+          fileType: obraImageFile.type,
+          fileSize: obraImageFile.size,
+          categoria: 'obras',
+          tenantId
+        });
+        if (!uploadUrlRes.success || !uploadUrlRes.data) throw new Error('Error al obtener URL de subida');
+        const uploadResult = await fetch(uploadUrlRes.data.uploadUrl, {
+          method: 'PUT',
+          body: obraImageFile,
+          headers: { 'Content-Type': obraImageFile.type }
+        });
+        if (!uploadResult.ok) throw new Error('Error al subir imagen de obra');
+        imagenKey = uploadUrlRes.data.fileKey;
+        await uploadsApi.confirmUpload({
+          fileKey: imagenKey,
+          fileName: obraImageFile.name,
+          fileType: obraImageFile.type,
+          fileSize: obraImageFile.size
+        });
+      }
+
       const res = await obrasApi.create({
         ...formData,
-        mandante: resolvedCompanyName || formData.mandante
+        mandante: resolvedCompanyName || formData.mandante,
+        imagenKey
       });
       if (res.success) {
         setIsModalOpen(false);
@@ -189,12 +299,16 @@ export const Obras: React.FC = () => {
           estado: 'activa',
           trabajadoresAprobados: []
         });
+        setObraImageFile(null);
+        setObraImagePreview('');
         fetchData();
       } else {
         alert("Error al crear obra");
       }
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -276,77 +390,74 @@ export const Obras: React.FC = () => {
                 </div>
               </div>
 
-              <div className="table-container">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Obra</th>
-                      <th>Ubicación</th>
-                      <th>Etapa</th>
-                      <th>Estado</th>
-                      <th>Alertas</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {obras.map((obra) => {
-                      const statusClass = obra.estado === 'activa'
-                        ? 'badge badge-success'
-                        : obra.estado === 'pausada'
-                          ? 'badge badge-warning'
-                          : 'badge badge-neutral';
-                      const stageLabel = obra.etapaActual ? obra.etapaActual.replace('_', ' ') : '-';
-                      const obraKey = obra.obraId || obra.codigo;
-                      const alertCount = obra.obraId ? (ds44Alerts[obra.obraId] ?? 0) : 0;
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 'var(--space-4)' }}>
+                {obras.map((obra) => {
+                  const obraKey = obra.obraId || obra.codigo;
+                  const alertCount = obra.obraId ? (ds44Alerts[obra.obraId] ?? 0) : 0;
+                  const imageUrl = obra.obraId ? obraImageUrls[obra.obraId] : '';
+                  const displayImage = imageUrl || '/obraDefault.png';
 
-                      return (
-                        <React.Fragment key={obra.obraId || obra.codigo}>
-                          <tr
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => navigate(`/obras/${obraKey}`)}
+                  return (
+                    <div
+                      key={obra.obraId || obra.codigo}
+                      className="card"
+                      style={{ padding: 0, overflow: 'hidden', cursor: 'pointer' }}
+                      onClick={() => navigate(`/obras/${obraKey}`)}
+                    >
+                      <div style={{ position: 'relative', height: '160px', background: 'var(--surface-elevated)' }}>
+                        <img
+                          src={displayImage}
+                          alt={`Foto de ${obra.nombre}`}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          loading="lazy"
+                        />
+                        {alertCount > 0 && (
+                          <div
+                            style={{
+                              position: 'absolute', right: '12px', top: '12px',
+                              background: 'rgba(239, 68, 68, 0.92)',
+                              color: 'white',
+                              borderRadius: '999px',
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              fontWeight: 600
+                            }}
                           >
-                            <td>
-                              <div className="flex items-center gap-3">
-                                <div className="avatar avatar-sm">
-                                  <LuBuilding2 />
-                                </div>
-                                <div>
-                                  <div className="font-bold">{obra.nombre}</div>
-                                  <div className="text-muted">Código: {obra.codigo || '-'}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td>
-                              <div className="flex items-center gap-2">
-                                <LuMapPin className="text-muted" />
-                                <span>{obra.comuna || '-'}, {obra.region || '-'}</span>
-                              </div>
-                            </td>
-                            <td>
-                              <span className="badge badge-info" style={{ textTransform: 'capitalize' }}>
-                                {stageLabel}
-                              </span>
-                            </td>
-                            <td>
-                              <span className={statusClass}>
-                                {obra.estado.toUpperCase()}
-                              </span>
-                            </td>
-                            <td>
-                              {alertCount > 0 ? (
-                                <div className="flex items-center gap-2 text-danger-500" style={{ fontWeight: 600 }}>
-                                  <FiAlertTriangle />
-                                  <span>{alertCount}</span>
-                                </div>
-                              ) : (
-                                <span style={{ color: 'var(--text-primary)' }}>0</span>
-                              )}
-                            </td>
-                          </tr>
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            <FiAlertTriangle />
+                            {alertCount}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ padding: 'var(--space-3)' }}>
+                        <div className="font-bold" style={{ marginBottom: '6px' }}>{obra.nombre}</div>
+                        <div className="text-muted" style={{ marginTop: '2px' }}>
+                          {obra.comuna || '-'}, {obra.region || '-'}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: '10px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '6px 12px',
+                            borderRadius: '999px',
+                            background: alertCount > 0 ? 'rgba(239, 68, 68, 0.12)' : 'var(--surface-elevated)',
+                            color: alertCount > 0 ? 'var(--danger-600)' : 'var(--text-muted)',
+                            border: alertCount > 0 ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--surface-border)',
+                            fontWeight: 600,
+                            fontSize: '0.85rem'
+                          }}
+                        >
+                          <FiAlertTriangle style={{ opacity: alertCount > 0 ? 1 : 0.4 }} />
+                          Alertas DS44: {alertCount}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -365,8 +476,13 @@ export const Obras: React.FC = () => {
             <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>
               Cancelar
             </button>
-            <button type="submit" form="crear-obra-form" className="btn btn-primary">
-              Crear Obra
+            <button
+              type="submit"
+              form="crear-obra-form"
+              className="btn btn-primary"
+              disabled={isCreating}
+            >
+              {isCreating ? 'Creando obra' : 'Crear Obra'}
             </button>
           </>
         }
@@ -374,6 +490,60 @@ export const Obras: React.FC = () => {
         <form id="crear-obra-form" onSubmit={handleSubmit} className="modal-form">
           <div className="modal-body p-0">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                  <div className="form-group">
+                    <label className="form-label">Imagen de referencia</label>
+                    <div
+                      style={{
+                        border: '1px dashed var(--surface-border)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: 'var(--space-3)',
+                        background: 'linear-gradient(180deg, rgba(59, 130, 246, 0.06), rgba(59, 130, 246, 0.02))'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                        <label
+                          htmlFor="obra-image-upload"
+                          className="btn btn-secondary"
+                          style={{ display: 'inline-flex', alignItems: 'center' }}
+                        >
+                          Seleccionar imagen
+                        </label>
+                        <span className="text-muted" style={{ fontSize: '0.85rem' }}>
+                          {obraImageFile ? obraImageFile.name : 'Sin archivo seleccionado'}
+                        </span>
+                      </div>
+                      <input
+                        id="obra-image-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageChange}
+                        style={{ display: 'none' }}
+                      />
+                      <div style={{ marginTop: '10px', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
+                        {obraImagePreview ? (
+                          <img
+                            src={obraImagePreview}
+                            alt="Vista previa obra"
+                            style={{ width: '100%', height: '160px', objectFit: 'cover', display: 'block' }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              height: '160px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'var(--text-muted)',
+                              fontSize: '0.9rem'
+                            }}
+                          >
+                            Sube una imagen para mostrarla aqui
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="form-group">
                     <label className="form-label">Nombre de obra</label>
                     <input required name="nombre" value={formData.nombre} onChange={handleInputChange} className="form-input" />

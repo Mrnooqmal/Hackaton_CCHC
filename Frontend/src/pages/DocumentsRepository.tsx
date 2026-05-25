@@ -31,7 +31,7 @@ type RepoDocument = Document & {
 
 export default function DocumentsRepository() {
     const { user, hasPermission } = useAuth();
-    const { selectedObraId, selectedObra } = useObraContext();
+    const { obras, selectedObraId, selectedObra, setSelectedObraId, isLoadingObras } = useObraContext();
     const { toast } = useToast();
 
     const [documents, setDocuments] = useState<RepoDocument[]>([]);
@@ -41,6 +41,7 @@ export default function DocumentsRepository() {
     const [filterType, setFilterType] = useState('');
     const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
     const canViewGeneral = user?.rol !== 'trabajador';
+    const canSelectObra = user?.rol === 'admin';
     const [activeScope, setActiveScope] = useState<'general' | 'personal'>(canViewGeneral ? 'general' : 'personal');
 
     const canUpload = hasPermission('asignar_documentos') || hasPermission('gestionar_obras');
@@ -269,13 +270,27 @@ export default function DocumentsRepository() {
                             Registro centralizado de documentos de la obra, incluyendo DS44 y anexos generales.
                         </p>
                     </div>
-                    {canUpload && selectedObraId && (
-                        <div className="page-header-actions">
+                    <div className="page-header-actions" style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                        {canSelectObra && (
+                            <select
+                                className="form-input form-select"
+                                value={selectedObraId || ''}
+                                onChange={(e) => setSelectedObraId(e.target.value || null)}
+                                disabled={isLoadingObras || obras.length === 0}
+                                style={{ minWidth: '220px' }}
+                            >
+                                <option value="">Selecciona una obra</option>
+                                {obras.map((obra) => (
+                                    <option key={obra.obraId} value={obra.obraId}>{obra.nombre}</option>
+                                ))}
+                            </select>
+                        )}
+                        {canUpload && selectedObraId && (
                             <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)}>
                                 <FiUpload /> Subir Documento
                             </button>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
 
                 {!selectedObraId && (
@@ -516,8 +531,9 @@ export default function DocumentsRepository() {
                 )}
 
                 {!loading && selectedObraId && visibleDocuments.length > 0 && (
-                    <div className="table-container">
-                        <table className="table table-compact" style={{ minWidth: '960px' }}>
+                    <div className="card" style={{ padding: 'var(--space-2)', background: 'var(--surface-card)', border: '1px solid var(--surface-border)' }}>
+                        <div className="table-container">
+                            <table className="table table-compact" style={{ minWidth: '960px' }}>
                             <thead>
                                 <tr>
                                     <th style={{ width: '36%' }}>Documento</th>
@@ -540,7 +556,10 @@ export default function DocumentsRepository() {
                                             <tr>
                                                 <td>
                                                     <div className="flex items-start gap-3">
-                                                        <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
+                                                        <div
+                                                            className="avatar avatar-sm"
+                                                            style={{ background: 'var(--primary-500)', width: '36px', height: '36px', flexShrink: 0, alignSelf: 'flex-start' }}
+                                                        >
                                                             <FiFileText />
                                                         </div>
                                                         <div>
@@ -629,7 +648,8 @@ export default function DocumentsRepository() {
                                     );
                                 })}
                             </tbody>
-                        </table>
+                            </table>
+                        </div>
                     </div>
                 )}
             </div>

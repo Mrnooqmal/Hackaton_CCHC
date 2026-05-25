@@ -36,6 +36,7 @@ class Obra {
         this.etapaActual = data.etapaActual || 'excavacion';
         this.mandante = data.mandante || '';
         this.estado = data.estado || 'activa';
+        this.imagenKey = data.imagenKey || '';
 
         // Tracking cumplimiento DS44 (PLAN/DO/CHECK)
         this.cumplimientoDS44 = data.cumplimientoDS44 || {
@@ -122,6 +123,7 @@ class Obra {
             etapaActual: this.etapaActual,
             mandante: this.mandante,
             estado: this.estado,
+            imagenKey: this.imagenKey,
             fasesConfig: this.fasesConfig,
             faseDeming: this.faseDeming,
             cumplimientoDS44: this.cumplimientoDS44,
@@ -149,6 +151,7 @@ class Obra {
             region: this.region,
             mandante: this.mandante,
             estado: this.estado,
+            imagenKey: this.imagenKey,
             fasesConfig: this.fasesConfig,
             faseDeming: this.faseDeming,
             cumplimientoDS44: this.cumplimientoDS44,

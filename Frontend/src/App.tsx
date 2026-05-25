@@ -24,6 +24,7 @@ import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
 import ObraDetalle from './pages/ObraDetalle';
 import OfflineBanner from './components/OfflineBanner';
+import SuggestionsWidget from './components/SuggestionsWidget';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ToastProvider } from './context/ToastContext';
@@ -169,6 +170,7 @@ function AppContent() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        {user && <SuggestionsWidget />}
       </main>
     </div>
   );

@@ -21,11 +21,13 @@ export interface ConfirmUploadResponse {
 }
 
 export const uploadsApi = {
-    getUploadUrl: (data: { fileName: string; fileType: string; fileSize: number; categoria?: string; empresaId?: string }) =>
-        apiRequest<UploadUrlResponse>('/uploads/presigned-url', {
+    getUploadUrl: (data: { fileName: string; fileType: string; fileSize: number; categoria?: string; empresaId?: string; tenantId?: string }) => {
+        const tenantId = data.tenantId || data.empresaId;
+        return apiRequest<UploadUrlResponse>('/uploads/presigned-url', {
             method: 'POST',
-            body: JSON.stringify(data),
-        }),
+            body: JSON.stringify({ ...data, tenantId }),
+        });
+    },
 
     getDownloadUrl: (fileKey: string) =>
         apiRequest<{ downloadUrl: string; expiresIn: number }>('/uploads/download-url', {
@@ -53,7 +55,7 @@ export const uploadsApi = {
             }
         ),
 
-    uploadFile: async (file: File, categoria?: string, empresaId?: string): Promise<ApiResponse<DocumentoAdjunto>> => {
+    uploadFile: async (file: File, categoria?: string, empresaId?: string, tenantId?: string): Promise<ApiResponse<DocumentoAdjunto>> => {
         try {
             const urlResponse = await uploadsApi.getUploadUrl({
                 fileName: file.name,
@@ -61,6 +63,7 @@ export const uploadsApi = {
                 fileSize: file.size,
                 categoria,
                 empresaId,
+                tenantId,
             });
 
             if (!urlResponse.success || !urlResponse.data) {

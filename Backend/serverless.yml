@@ -32,6 +32,7 @@ provider:
     DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
     ACTIVITIES_TABLE: ${self:service}-activities-${self:provider.stage}
     INBOX_TABLE: ${self:service}-inbox-${self:provider.stage}
+    SUGGESTIONS_TABLE: ${self:service}-sugerencias-${self:provider.stage}
     # --- Storage ---
     DOCUMENTS_BUCKET: ${self:custom.bucketName}
     INCIDENT_EVIDENCE_BUCKET: ${self:service}-evidence-${self:provider.stage}-${aws:accountId}
@@ -89,6 +90,8 @@ provider:
             - !Sub ${ActivitiesTable.Arn}/index/*
             - !GetAtt DocumentsTable.Arn
             - !Sub ${DocumentsTable.Arn}/index/*
+            - !GetAtt SuggestionsTable.Arn
+            - !Sub ${SuggestionsTable.Arn}/index/*
 
         - Effect: Allow
           Action:
@@ -586,6 +589,14 @@ functions:
           path: /inbox/{proxy+}
           method: any
 
+  # Suggestions (Sugerencias)
+  createSuggestion:
+    handler: handlers/suggestions/handler.create
+    events:
+      - httpApi:
+          path: /suggestions
+          method: POST
+
 resources:
   Resources:
     # ==========================================
@@ -758,6 +769,32 @@ resources:
             Projection:
               ProjectionType: ALL
           # NOTE: obraId-index will be added in a follow-up deploy
+
+    # Suggestions Table
+    SuggestionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.SUGGESTIONS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: suggestionId
+            AttributeType: S
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: suggestionId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: tenantId-createdAt-index
+            KeySchema:
+              - AttributeName: tenantId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
           # (DynamoDB only allows 1 new GSI per CloudFormation update)
 
     # Activities Table - with tenant GSI

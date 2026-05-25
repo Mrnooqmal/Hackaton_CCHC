@@ -97,6 +97,7 @@ export default function ObraDetalle() {
   const [localDoneOverrides, setLocalDoneOverrides] = useState<Record<string, boolean>>({});
 
   const faseDeming = obra?.faseDeming || 'plan';
+  const [selectedDemingPhase, setSelectedDemingPhase] = useState(faseDeming);
 
   const onboardingSummary = useMemo(() => {
     const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
@@ -287,6 +288,10 @@ export default function ObraDetalle() {
 
     loadData();
   }, [obraId]);
+
+  useEffect(() => {
+    setSelectedDemingPhase(faseDeming);
+  }, [faseDeming]);
 
   const reloadDocs = useCallback(async () => {
     if (!obraId) return;
@@ -969,10 +974,10 @@ export default function ObraDetalle() {
   const doUploaded = doTotal - doPendientes.length;
   void doUploaded; // reservado para indicador de fase DO
 
-  const faseLabel = DS44_PHASE_LABELS[faseDeming] || faseDeming.toUpperCase();
-  const isPlanPhase = faseDeming === 'plan';
-  const isDoPhase = faseDeming === 'hacer';
-  const isCheckPhase = faseDeming === 'verificar';
+  const faseLabel = DS44_PHASE_LABELS[selectedDemingPhase] || selectedDemingPhase.toUpperCase();
+  const isPlanPhase = selectedDemingPhase === 'plan';
+  const isDoPhase = selectedDemingPhase === 'hacer';
+  const isCheckPhase = selectedDemingPhase === 'verificar';
 
   const FASES_DEMING = [
     { key: 'plan', label: 'PLANIFICAR', short: 'PLAN' },
@@ -1192,41 +1197,6 @@ export default function ObraDetalle() {
           ))}
         </div>
 
-        {/* Indicador ciclo Deming DS44 */}
-        <div className="card" style={{ marginBottom: 'var(--space-6)', padding: 'var(--space-4)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-            <div className="font-medium" style={{ minWidth: '120px' }}>Ciclo DS44 (Deming):</div>
-            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
-              {FASES_DEMING.map((fase, idx) => {
-                const isActive = fase.key === faseDeming;
-                const isDone = idx < idxFaseDeming;
-                return (
-                  <React.Fragment key={fase.key}>
-                    <div style={{
-                      padding: 'var(--space-1) var(--space-3)',
-                      borderRadius: 'var(--radius-full)',
-                      fontWeight: isActive ? 700 : 400,
-                      fontSize: '0.85rem',
-                      background: isDone
-                        ? 'var(--success-500, #10b981)'
-                        : isActive
-                          ? 'var(--primary-500, #3b82f6)'
-                          : 'var(--surface-elevated)',
-                      color: isDone || isActive ? 'white' : 'var(--text-muted)',
-                      border: `1px solid ${isDone ? 'var(--success-500,#10b981)' : isActive ? 'var(--primary-500,#3b82f6)' : 'var(--surface-border)'}`,
-                    }}>
-                      {isDone ? '✓ ' : ''}{fase.label}
-                    </div>
-                    {idx < FASES_DEMING.length - 1 && (
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
         <div className="obra-dashboard-grid">
           <div className="card">
             <div className="card-header">
@@ -1271,53 +1241,104 @@ export default function ObraDetalle() {
             {trabajadores.length === 0 ? (
               <div className="text-muted">No hay trabajadores asociados a esta obra.</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {activeWorkers.map((worker) => (
-                  <div key={worker.personaId || worker.workerId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
-                      <div className="text-muted">{worker.cargo || 'Trabajador'}</div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                      <span className="text-muted">{worker.rut}</span>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        type="button"
-                        onClick={() => handleDeactivateWorker(worker)}
-                        disabled={updatingWorkers === worker.personaId || worker.rol === 'admin'}
-                        title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
-                      >
-                        Dar de baja
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {inactiveWorkers.length > 0 && (
-                  <div style={{ marginTop: 'var(--space-3)' }}>
-                    <div className="text-muted" style={{ marginBottom: 'var(--space-2)' }}>Dados de baja</div>
-                    {inactiveWorkers.map((worker) => (
-                      <div key={worker.personaId || worker.workerId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
-                          <div className="text-muted">{worker.cargo || 'Trabajador'}</div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                          <span className="badge badge-warning">Baja</span>
-                          <button
-                            className="btn btn-primary btn-sm"
-                            type="button"
-                            onClick={() => handleReactivateWorker(worker)}
-                            disabled={updatingWorkers === worker.personaId}
-                          >
-                            Reactivar
-                          </button>
-                        </div>
+              <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {activeWorkers.map((worker) => (
+                    <div key={worker.personaId || worker.workerId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
+                        <div className="text-muted">{worker.cargo || 'Trabajador'}</div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                        <span className="text-muted">{worker.rut}</span>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          type="button"
+                          onClick={() => handleDeactivateWorker(worker)}
+                          disabled={updatingWorkers === worker.personaId || worker.rol === 'admin'}
+                          title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
+                        >
+                          Dar de baja
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {inactiveWorkers.length > 0 && (
+                    <div style={{ marginTop: 'var(--space-3)' }}>
+                      <div className="text-muted" style={{ marginBottom: 'var(--space-2)' }}>Dados de baja</div>
+                      {inactiveWorkers.map((worker) => (
+                        <div key={worker.personaId || worker.workerId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
+                            <div className="text-muted">{worker.cargo || 'Trabajador'}</div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                            <span className="badge badge-warning">Baja</span>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              type="button"
+                              onClick={() => handleReactivateWorker(worker)}
+                              disabled={updatingWorkers === worker.personaId}
+                            >
+                              Reactivar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
+          </div>
+
+          <div className="card" style={{ gridColumn: '1 / -1', padding: 'var(--space-4)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <div className="font-medium">Ciclo DS44 (Deming)</div>
+              <div className="text-muted" style={{ fontSize: '0.85rem' }}>
+                Selecciona una fase para revisar sus documentos.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', marginTop: 'var(--space-3)' }}>
+              {FASES_DEMING.map((fase, idx) => {
+                const isActive = fase.key === faseDeming;
+                const isDone = idx < idxFaseDeming;
+                const isSelected = fase.key === selectedDemingPhase;
+                return (
+                  <React.Fragment key={fase.key}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDemingPhase(fase.key)}
+                      style={{
+                        padding: 'var(--space-1) var(--space-3)',
+                        borderRadius: 'var(--radius-full)',
+                        fontWeight: isSelected ? 700 : 500,
+                        fontSize: isSelected ? '0.9rem' : '0.85rem',
+                        cursor: 'pointer',
+                        background: isDone
+                          ? 'var(--success-500, #10b981)'
+                          : isActive
+                            ? 'var(--primary-500, #3b82f6)'
+                            : isSelected
+                              ? 'rgba(15, 23, 42, 0.06)'
+                              : 'var(--surface-elevated)',
+                        color: isDone || isActive ? 'white' : isSelected ? 'var(--text-primary)' : 'var(--text-muted)',
+                        border: isSelected
+                          ? `2px solid ${isDone || isActive ? 'rgba(255,255,255,0.8)' : 'var(--primary-400,#60a5fa)'}`
+                          : `1px solid ${isDone ? 'var(--success-500,#10b981)' : isActive ? 'var(--primary-500,#3b82f6)' : 'var(--surface-border)'}`,
+                        boxShadow: isSelected ? '0 8px 18px rgba(15, 23, 42, 0.16)' : 'none',
+                        transform: isSelected ? 'scale(1.02)' : 'none'
+                      }}
+                    >
+                      {isDone ? '✓ ' : ''}{fase.label}
+                    </button>
+                    {idx < FASES_DEMING.length - 1 && (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
           </div>
 
           <div className="card" style={{ gridColumn: '1 / -1' }}>
@@ -1460,7 +1481,7 @@ export default function ObraDetalle() {
             )}
 
             {isDoPhase && (
-              <>
+              <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
                 {/* ── Sección A: Registro AT/EP/Incidentes Peligrosos (Arts. 72-73) ── */}
                 <div className="card" style={{ padding: 'var(--space-4)', marginBottom: 'var(--space-3)', border: '1px solid var(--surface-border)', background: 'var(--surface-elevated)' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
@@ -1616,7 +1637,7 @@ export default function ObraDetalle() {
                     })}
                   </div>
                 )}
-              </>
+              </div>
             )}
 
 
@@ -1679,7 +1700,7 @@ export default function ObraDetalle() {
             {incidentes.length === 0 ? (
               <div className="text-muted">No hay incidentes reportados en esta obra.</div>
             ) : (
-              <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+              <div style={{ maxHeight: '320px', overflowY: 'auto', paddingRight: 'var(--space-2)', display: 'grid', gap: 'var(--space-3)' }}>
                 {incidentes.map((item) => (
                   <div key={item.incidentId} className="card" style={{ padding: 'var(--space-3)' }}>
                     <div className="stat-value">{item.tipo}</div>
@@ -1698,7 +1719,7 @@ export default function ObraDetalle() {
             {documentosPrevencion.length === 0 ? (
               <div className="text-muted">No hay documentos diarios asociados.</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div style={{ maxHeight: '280px', overflowY: 'auto', paddingRight: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {documentosPrevencion.map((doc) => (
                   <div key={doc.documentId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>

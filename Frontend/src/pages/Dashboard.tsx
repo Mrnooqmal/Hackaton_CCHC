@@ -59,32 +59,37 @@ export default function Dashboard() {
     const selectedObraProgress = selectedObra ? obraProgress[selectedObra.obraId] : null;
 
     useEffect(() => {
-        loadDashboardData();
-    }, [user, selectedObraId]);
+        const activeRef = { current: true };
+        const loadDashboardData = async () => {
+            if (!user) return;
 
-    const loadDashboardData = async () => {
-        if (!user) return;
-
-        setLoading(true);
-        try {
-            // Load data based on role
-            if (user.rol === 'trabajador') {
-                await loadWorkerDashboard();
-            } else if (user.rol === 'prevencionista') {
-                await loadPrevencionistaDashboard();
-            } else if ((user.rol as string) === 'jefe_obra') {
-                await loadJefeObraDashboard();
-            } else if ((user.rol as string) === 'supervisor') {
-                await loadSupervisorDashboard();
-            } else if (user.rol === 'admin') {
-                await loadAdminDashboard();
+            setLoading(true);
+            try {
+                if (user.rol === 'trabajador') {
+                    await loadWorkerDashboard();
+                } else if (user.rol === 'prevencionista') {
+                    await loadPrevencionistaDashboard();
+                } else if ((user.rol as string) === 'jefe_obra') {
+                    await loadJefeObraDashboard();
+                } else if ((user.rol as string) === 'supervisor') {
+                    await loadSupervisorDashboard();
+                } else if (user.rol === 'admin') {
+                    await loadAdminDashboard();
+                }
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+            } finally {
+                if (activeRef.current) {
+                    setLoading(false);
+                }
             }
-        } catch (error) {
-            console.error('Error loading dashboard:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
+        };
+
+        loadDashboardData();
+        return () => {
+            activeRef.current = false;
+        };
+    }, [user, selectedObraId]);
 
     const buildDocStatusMap = (docs: any[]) => {
         const status = new Map<string, boolean>();
@@ -260,10 +265,14 @@ export default function Dashboard() {
             });
         }
 
-        // Load pending surveys
-        try {
-            const surveysRes = await surveysApi.list();
-            if (surveysRes.success && surveysRes.data?.surveys && user?.workerId) {
+        const [surveysResult, inboxResult] = await Promise.allSettled([
+            surveysApi.list(),
+            user?.userId ? inboxApi.getUnreadCount(user.userId) : Promise.resolve(null)
+        ]);
+
+        if (surveysResult.status === 'fulfilled') {
+            const surveysRes = surveysResult.value;
+            if (surveysRes?.success && surveysRes.data?.surveys && user?.workerId) {
                 const mySurveys = surveysRes.data.surveys.filter(s =>
                     s.recipients?.some(r => r.workerId === user.workerId && r.estado !== 'respondida')
                 );
@@ -284,20 +293,17 @@ export default function Dashboard() {
 
                 completedCount += completedSurveys;
             }
-        } catch (err) {
-            console.error('Error loading surveys:', err);
+        } else {
+            console.error('Error loading surveys:', surveysResult.reason);
         }
 
-        // Load inbox unread
-        try {
-            if (user?.userId) {
-                const inboxRes = await inboxApi.getUnreadCount(user.userId);
-                if (inboxRes.success && inboxRes.data) {
-                    setStats(s => ({ ...s, unreadMessages: inboxRes.data?.unreadCount || 0 }));
-                }
+        if (inboxResult.status === 'fulfilled') {
+            const inboxRes = inboxResult.value;
+            if (inboxRes?.success && inboxRes.data) {
+                setStats(s => ({ ...s, unreadMessages: inboxRes.data?.unreadCount || 0 }));
             }
-        } catch (err) {
-            console.error('Error loading inbox:', err);
+        } else if (inboxResult.reason) {
+            console.error('Error loading inbox:', inboxResult.reason);
         }
 
         // Calculate progress
@@ -317,217 +323,258 @@ export default function Dashboard() {
     };
 
     const loadPrevencionistaDashboard = async () => {
-        // Load workers stats
-        try {
-            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
+        const [workersResult, ownPendingResult, sigStatsResult, docsResult, incidentsResult, activitiesResult] = await Promise.allSettled([
+            workersApi.list({ obraId: selectedObraId || undefined }),
+            user?.workerId ? signatureRequestsApi.getPendingByWorker(user.workerId) : Promise.resolve(null),
+            signatureRequestsApi.getStats(),
+            documentsApi.list({ obraId: selectedObraId || undefined }),
+            incidentsApi.list(),
+            activitiesApi.list({ obraId: selectedObraId || undefined })
+        ]);
+
+        const nextStats: DashboardStats = {};
+
+        if (workersResult.status === 'fulfilled') {
+            const workersRes = workersResult.value;
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
                 const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
-                setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0, pendingSignatures: unenrolled }));
+                nextStats.totalWorkers = workersRes.data?.length || 0;
+                nextStats.pendingSignatures = unenrolled;
             }
-        } catch (err) {
-            console.error('Error loading workers:', err);
+        } else {
+            console.error('Error loading workers:', workersResult.reason);
         }
 
-        // Load own pending signatures (for the prevencionista themselves)
-        try {
-            if (user?.workerId) {
-                const ownPendingRes = await signatureRequestsApi.getPendingByWorker(user.workerId);
-                if (ownPendingRes.success && ownPendingRes.data) {
-                    setStats(s => ({ ...s, ownPendingSignatures: ownPendingRes.data?.total || 0 }));
-                }
+        if (ownPendingResult.status === 'fulfilled') {
+            const ownPendingRes = ownPendingResult.value;
+            if (ownPendingRes?.success && ownPendingRes.data) {
+                nextStats.ownPendingSignatures = ownPendingRes.data?.total || 0;
             }
-        } catch (err) {
-            console.error('Error loading own pending signatures:', err);
+        } else if (ownPendingResult.reason) {
+            console.error('Error loading own pending signatures:', ownPendingResult.reason);
         }
 
-        // Load total pending signature requests across all workers
-        try {
-            const sigStatsRes = await signatureRequestsApi.getStats();
+        if (sigStatsResult.status === 'fulfilled') {
+            const sigStatsRes = sigStatsResult.value;
             if (sigStatsRes.success && sigStatsRes.data) {
                 const totalPendingFirmas = sigStatsRes.data.totalFirmasRequeridas - sigStatsRes.data.totalFirmasObtenidas;
-                setStats(s => ({ ...s, workersPendingSignatures: Math.max(0, totalPendingFirmas) }));
+                nextStats.workersPendingSignatures = Math.max(0, totalPendingFirmas);
             }
-        } catch (err) {
-            console.error('Error loading workers pending signatures:', err);
+        } else {
+            console.error('Error loading workers pending signatures:', sigStatsResult.reason);
         }
 
-        // Load documents stats
-        try {
-            const docsRes = await documentsApi.list({ obraId: selectedObraId || undefined });
+        if (docsResult.status === 'fulfilled') {
+            const docsRes = docsResult.value;
             if (docsRes.success && docsRes.data) {
-                setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
+                nextStats.totalDocuments = docsRes.data?.documents.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading documents:', err);
+        } else {
+            console.error('Error loading documents:', docsResult.reason);
         }
 
-        // Load incidents stats
-        try {
-            const incidentsRes = await incidentsApi.list();
+        if (incidentsResult.status === 'fulfilled') {
+            const incidentsRes = incidentsResult.value;
             if (incidentsRes.success && incidentsRes.data) {
-                const pending = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
-                setStats(s => ({ ...s, pendingIncidents: pending }));
+                nextStats.pendingIncidents = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
             }
-        } catch (err) {
-            console.error('Error loading incidents:', err);
+        } else {
+            console.error('Error loading incidents:', incidentsResult.reason);
         }
 
-        // Load recent activities
-        try {
-            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
+        if (activitiesResult.status === 'fulfilled') {
+            const activitiesRes = activitiesResult.value;
             if (activitiesRes.success && activitiesRes.data) {
                 const recent = activitiesRes.data.activities.slice(0, 5);
                 setRecentActivities(recent);
 
                 const today = new Date().toISOString().split('T')[0];
-                const todayActivities = activitiesRes.data.activities.filter(a =>
-                    a.fecha === today
-                ).length;
-                setStats(s => ({ ...s, activitiesToday: todayActivities }));
+                nextStats.activitiesToday = activitiesRes.data.activities.filter(a => a.fecha === today).length;
             }
-        } catch (err) {
-            console.error('Error loading activities:', err);
+        } else {
+            console.error('Error loading activities:', activitiesResult.reason);
         }
+
+        setStats(s => ({ ...s, ...nextStats }));
 
         if (selectedObraId) {
             const obra = obras.find(o => o.obraId === selectedObraId);
             if (obra) {
-                await loadDs44Progress([obra]);
+                void loadDs44Progress([obra]);
             }
         }
     };
 
     const loadJefeObraDashboard = async () => {
-        // Jefe de obra: full obra summary — workers, activities, documents, incidents, signatures
-        try {
-            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
+        const [workersResult, docsResult, incidentsResult, activitiesResult, sigStatsResult] = await Promise.allSettled([
+            workersApi.list({ obraId: selectedObraId || undefined }),
+            documentsApi.list({ obraId: selectedObraId || undefined }),
+            incidentsApi.list(),
+            activitiesApi.list({ obraId: selectedObraId || undefined }),
+            signatureRequestsApi.getStats()
+        ]);
+
+        const nextStats: DashboardStats = {};
+
+        if (workersResult.status === 'fulfilled') {
+            const workersRes = workersResult.value;
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
                 const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
-                setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0, pendingSignatures: unenrolled }));
+                nextStats.totalWorkers = workersRes.data?.length || 0;
+                nextStats.pendingSignatures = unenrolled;
             }
-        } catch (err) { console.error('Error loading workers:', err); }
+        } else {
+            console.error('Error loading workers:', workersResult.reason);
+        }
 
-        try {
-            const docsRes = await documentsApi.list({ obraId: selectedObraId || undefined });
+        if (docsResult.status === 'fulfilled') {
+            const docsRes = docsResult.value;
             if (docsRes.success && docsRes.data) {
-                setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
+                nextStats.totalDocuments = docsRes.data?.documents.length || 0;
             }
-        } catch (err) { console.error('Error loading documents:', err); }
+        } else {
+            console.error('Error loading documents:', docsResult.reason);
+        }
 
-        try {
-            const incidentsRes = await incidentsApi.list();
+        if (incidentsResult.status === 'fulfilled') {
+            const incidentsRes = incidentsResult.value;
             if (incidentsRes.success && incidentsRes.data) {
-                const pending = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
-                setStats(s => ({ ...s, pendingIncidents: pending }));
+                nextStats.pendingIncidents = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
             }
-        } catch (err) { console.error('Error loading incidents:', err); }
+        } else {
+            console.error('Error loading incidents:', incidentsResult.reason);
+        }
 
-        try {
-            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
+        if (activitiesResult.status === 'fulfilled') {
+            const activitiesRes = activitiesResult.value;
             if (activitiesRes.success && activitiesRes.data) {
                 const recent = activitiesRes.data.activities.slice(0, 5);
                 setRecentActivities(recent);
                 const today = new Date().toISOString().split('T')[0];
-                const todayActivities = activitiesRes.data.activities.filter(a => a.fecha === today).length;
-                setStats(s => ({ ...s, activitiesToday: todayActivities }));
+                nextStats.activitiesToday = activitiesRes.data.activities.filter(a => a.fecha === today).length;
             }
-        } catch (err) { console.error('Error loading activities:', err); }
+        } else {
+            console.error('Error loading activities:', activitiesResult.reason);
+        }
 
-        try {
-            const sigStatsRes = await signatureRequestsApi.getStats();
+        if (sigStatsResult.status === 'fulfilled') {
+            const sigStatsRes = sigStatsResult.value;
             if (sigStatsRes.success && sigStatsRes.data) {
                 const totalPendingFirmas = sigStatsRes.data.totalFirmasRequeridas - sigStatsRes.data.totalFirmasObtenidas;
-                setStats(s => ({ ...s, workersPendingSignatures: Math.max(0, totalPendingFirmas) }));
+                nextStats.workersPendingSignatures = Math.max(0, totalPendingFirmas);
             }
-        } catch (err) { console.error('Error loading signature stats:', err); }
+        } else {
+            console.error('Error loading signature stats:', sigStatsResult.reason);
+        }
+
+        setStats(s => ({ ...s, ...nextStats }));
 
         if (selectedObraId) {
             const obra = obras.find(o => o.obraId === selectedObraId);
             if (obra) {
-                await loadDs44Progress([obra]);
+                void loadDs44Progress([obra]);
             }
         } else {
-            await loadDs44Progress(obras);
+            void loadDs44Progress(obras);
         }
     };
 
     const loadSupervisorDashboard = async () => {
-        // Supervisor: workers + activities + incidents for their obra
-        try {
-            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
+        const [workersResult, activitiesResult, incidentsResult] = await Promise.allSettled([
+            workersApi.list({ obraId: selectedObraId || undefined }),
+            activitiesApi.list({ obraId: selectedObraId || undefined }),
+            incidentsApi.list()
+        ]);
+
+        const nextStats: DashboardStats = {};
+
+        if (workersResult.status === 'fulfilled') {
+            const workersRes = workersResult.value;
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
-                setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0 }));
+                nextStats.totalWorkers = workersRes.data?.length || 0;
             }
-        } catch (err) { console.error('Error loading workers:', err); }
+        } else {
+            console.error('Error loading workers:', workersResult.reason);
+        }
 
-        try {
-            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
+        if (activitiesResult.status === 'fulfilled') {
+            const activitiesRes = activitiesResult.value;
             if (activitiesRes.success && activitiesRes.data) {
                 const recent = activitiesRes.data.activities.slice(0, 5);
                 setRecentActivities(recent);
                 const today = new Date().toISOString().split('T')[0];
-                const todayActivities = activitiesRes.data.activities.filter(a => a.fecha === today).length;
-                setStats(s => ({ ...s, activitiesToday: todayActivities }));
+                nextStats.activitiesToday = activitiesRes.data.activities.filter(a => a.fecha === today).length;
             }
-        } catch (err) { console.error('Error loading activities:', err); }
+        } else {
+            console.error('Error loading activities:', activitiesResult.reason);
+        }
 
-        try {
-            const incidentsRes = await incidentsApi.list();
+        if (incidentsResult.status === 'fulfilled') {
+            const incidentsRes = incidentsResult.value;
             if (incidentsRes.success && incidentsRes.data) {
-                const pending = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
-                setStats(s => ({ ...s, pendingIncidents: pending }));
+                nextStats.pendingIncidents = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
             }
-        } catch (err) { console.error('Error loading incidents:', err); }
+        } else {
+            console.error('Error loading incidents:', incidentsResult.reason);
+        }
+
+        setStats(s => ({ ...s, ...nextStats }));
     };
 
     const loadAdminDashboard = async () => {
-        // Load global stats
-        try {
-            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
+        const [workersResult, activitiesResult, docsResult, incidentsResult] = await Promise.allSettled([
+            workersApi.list({ obraId: selectedObraId || undefined }),
+            activitiesApi.list({ obraId: selectedObraId || undefined }),
+            documentsApi.list({ obraId: selectedObraId || undefined }),
+            incidentsApi.list()
+        ]);
+
+        const nextStats: DashboardStats = {};
+
+        if (workersResult.status === 'fulfilled') {
+            const workersRes = workersResult.value;
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
-                setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0 }));
+                nextStats.totalWorkers = workersRes.data?.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading workers:', err);
+        } else {
+            console.error('Error loading workers:', workersResult.reason);
         }
 
-        // Load activities
-        try {
-            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
+        if (activitiesResult.status === 'fulfilled') {
+            const activitiesRes = activitiesResult.value;
             if (activitiesRes.success && activitiesRes.data) {
-                setStats(s => ({ ...s, activitiesToday: activitiesRes.data?.activities.length || 0 }));
+                nextStats.activitiesToday = activitiesRes.data?.activities.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading activities:', err);
+        } else {
+            console.error('Error loading activities:', activitiesResult.reason);
         }
 
-        // Load documents count
-        try {
-            const docsRes = await documentsApi.list({ obraId: selectedObraId || undefined });
+        if (docsResult.status === 'fulfilled') {
+            const docsRes = docsResult.value;
             if (docsRes.success && docsRes.data) {
-                setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
+                nextStats.totalDocuments = docsRes.data?.documents.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading documents:', err);
+        } else {
+            console.error('Error loading documents:', docsResult.reason);
         }
 
-        // Load incidents count
-        try {
-            const incidentsRes = await incidentsApi.list();
+        if (incidentsResult.status === 'fulfilled') {
+            const incidentsRes = incidentsResult.value;
             if (incidentsRes.success && incidentsRes.data) {
-                setStats(s => ({ ...s, pendingIncidents: incidentsRes.data?.length || 0 }));
+                nextStats.pendingIncidents = incidentsRes.data?.length || 0;
             }
-        } catch (err) {
-            console.error('Error loading incidents:', err);
+        } else {
+            console.error('Error loading incidents:', incidentsResult.reason);
         }
 
-        // Load real DS44 compliance progress per obra
+        setStats(s => ({ ...s, ...nextStats }));
+
         const obrasToCheck = selectedObraId ? obras.filter(o => o.obraId === selectedObraId) : obras;
-        await loadDs44Progress(obrasToCheck);
+        void loadDs44Progress(obrasToCheck);
     };
 
     const getUrgentTasks = () => pendings.filter(p => p.urgent || p.priority === 'high');

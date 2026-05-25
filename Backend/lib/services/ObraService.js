@@ -40,6 +40,7 @@ class ObraService {
             comuna: data.comuna,
             region: data.region,
             mandante: data.mandante,
+            imagenKey: data.imagenKey,
             fasesObligatorias: data.fasesObligatorias
         });
 
@@ -103,7 +104,7 @@ class ObraService {
      */
     async actualizar(tenantId, obraId, updates) {
         const allowedFields = ['nombre', 'codigo', 'direccion', 'comuna',
-            'region', 'mandante', 'estado', 'etapaActual', 'fasesConfig', 'faseDeming', 'cumplimientoDS44'];
+            'region', 'mandante', 'estado', 'etapaActual', 'fasesConfig', 'faseDeming', 'cumplimientoDS44', 'imagenKey'];
 
         const updateExpressions = [];
         const expressionNames = {};

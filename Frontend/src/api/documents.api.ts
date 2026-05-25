@@ -60,6 +60,7 @@ export interface DocumentListParams {
     obraId?: string;
     tipo?: string;
     estado?: string;
+    clasificacion?: string;
 }
 
 export interface DocumentListResponse {

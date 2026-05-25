@@ -69,7 +69,6 @@ function ToastItem({
         <div
             className="ui-toast"
             style={{
-                background: config.bg,
                 borderLeft: `3px solid ${config.border}`,
             }}
         >
