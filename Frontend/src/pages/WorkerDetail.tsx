@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
+import { useAuth } from '../context/AuthContext';
 import {
     LuChevronLeft,
     LuUser,
@@ -14,15 +15,22 @@ import {
     LuClock,
     LuBriefcase,
     LuShield,
-    LuUsers
+    LuUsers,
+    LuCircleMinus,
+    LuBuilding2 as LuBuild
 } from 'react-icons/lu';
 import {
     workersApi,
+    documentsApi,
+    uploadsApi,
     signaturesApi,
+    signatureRequestsApi,
     type Worker as ApiWorker,
     type DigitalSignature,
     REQUEST_TYPES
 } from '../api/client';
+import { useObraContext } from '../context/ObraContext';
+import { DS44_ONBOARDING_ITEMS } from '../utils/ds44';
 
 interface WorkerStats {
     totalFirmas: number;
@@ -34,6 +42,7 @@ interface WorkerStats {
 // Extender la interfaz Worker para incluir rol (que viene del backend para usuarios legacy)
 interface WorkerWithRole extends ApiWorker {
     rol?: 'admin' | 'prevencionista' | 'trabajador';
+    obraIds?: string[];
 }
 
 const getSigIcon = (sig: DigitalSignature) => {
@@ -56,18 +65,59 @@ const getSigIcon = (sig: DigitalSignature) => {
 export default function WorkerDetail() {
     const { rut } = useParams<{ rut: string }>();
     const navigate = useNavigate();
+    const { selectedObraId } = useObraContext();
+    const { user } = useAuth();
 
     const [worker, setWorker] = useState<WorkerWithRole | null>(null);
     const [stats, setStats] = useState<WorkerStats | null>(null);
     const [signatures, setSignatures] = useState<DigitalSignature[]>([]);
+    const [compliance, setCompliance] = useState({ completed: 0, assigned: 0 });
+    const [ds44Checklist, setDs44Checklist] = useState<{ completed: number; total: number; items: Array<{ key: string; label: string; articulo?: string; kind?: string; tipo?: string; status: 'ok' | 'pending' | 'na' }> } | null>(null);
+    const [docRecordMap, setDocRecordMap] = useState<Record<string, { documentId: string; s3Key: string | null; archivoNombre: string | null }>>({});
+    const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
+    const [markingDone, setMarkingDone] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+
+    const getLatestOverrideObraId = (overrides?: Record<string, { items?: Record<string, { doneAt: string }>; updatedAt?: string }>) => {
+        if (!overrides) return null;
+        let latestId: string | null = null;
+        let latestTs = 0;
+
+        Object.entries(overrides).forEach(([obraId, entry]) => {
+            let ts = 0;
+            if (entry?.updatedAt) {
+                const parsed = Date.parse(entry.updatedAt);
+                if (!Number.isNaN(parsed)) ts = parsed;
+            }
+            if (ts === 0 && entry?.items) {
+                Object.values(entry.items).forEach((item) => {
+                    const parsed = Date.parse(item.doneAt);
+                    if (!Number.isNaN(parsed) && parsed > ts) ts = parsed;
+                });
+            }
+            if (ts > latestTs) {
+                latestTs = ts;
+                latestId = obraId;
+            }
+        });
+
+        return latestId;
+    };
+
+    const resolveTargetObraId = (workerData: WorkerWithRole | null) => {
+        if (selectedObraId) return selectedObraId;
+        if (!workerData) return null;
+        const overrideObraId = getLatestOverrideObraId((workerData as any).onboardingDS44);
+        if (overrideObraId) return overrideObraId;
+        return workerData.obraIds?.[0] || null;
+    };
 
     useEffect(() => {
         if (rut) {
             loadWorkerData();
         }
-    }, [rut]);
+    }, [rut, selectedObraId]);
 
     const loadWorkerData = async () => {
         if (!rut) return;
@@ -84,8 +134,16 @@ export default function WorkerDetail() {
             }
             setWorker(workerRes.data as WorkerWithRole);
 
-            // Load signatures and calculate stats
-            const signaturesRes = await signaturesApi.getByWorker(workerRes.data.workerId);
+            const targetObraId = resolveTargetObraId(workerRes.data as WorkerWithRole);
+            const manualOverrides = targetObraId
+                ? (workerRes.data as any).onboardingDS44?.[targetObraId]?.items || {}
+                : {};
+            const [signaturesRes, , historyRes, docsRes] = await Promise.all([
+                signaturesApi.getByWorker(workerRes.data.workerId),
+                signatureRequestsApi.getPendingByWorker(workerRes.data.workerId),
+                signatureRequestsApi.getHistoryByWorker(workerRes.data.workerId),
+                targetObraId ? documentsApi.list({ obraId: targetObraId } as any) : Promise.resolve({ success: false })
+            ]);
 
             if (signaturesRes.success && signaturesRes.data) {
                 const firmas = signaturesRes.data.firmas || [];
@@ -105,6 +163,75 @@ export default function WorkerDetail() {
                     ).length
                 });
             }
+
+            const historyItems = historyRes.success && historyRes.data
+                ? (historyRes.data.historial || [])
+                : [];
+            const completedRequests = historyItems
+                .map((item: any) => item.solicitud)
+                .filter(Boolean);
+
+            const filteredCompleted = targetObraId
+                ? completedRequests.filter((req: any) => req.obraId === targetObraId)
+                : completedRequests;
+
+            const completedTypes = new Set(filteredCompleted.map((req: any) => req.tipo));
+
+            const docs = docsRes && (docsRes as any).success && (docsRes as any).data
+                ? (docsRes as any).data.documents || []
+                : [];
+            const docStatus = new Map<string, boolean>();
+            const newDocRecordMap: Record<string, { documentId: string; s3Key: string | null; archivoNombre: string | null }> = {};
+            docs.forEach((doc: any) => {
+                const hasFile = Boolean(doc.s3Key || doc.archivoUrl);
+                (doc.asignaciones || []).forEach((asig: any) => {
+                    const personaId = asig.personaId || asig.workerId;
+                    if (personaId !== workerRes.data.workerId) return;
+                    if (!doc.tipo) return;
+                    // Track sign status — file uploaded also counts as done
+                    if (asig.estado === 'firmado' || asig.fechaFirma || hasFile) {
+                        docStatus.set(doc.tipo, true);
+                    } else if (!docStatus.has(doc.tipo)) {
+                        docStatus.set(doc.tipo, false);
+                    }
+                    // Track document record for upload
+                    if (!newDocRecordMap[doc.tipo]) {
+                        newDocRecordMap[doc.tipo] = { documentId: doc.documentId, s3Key: doc.s3Key || null, archivoNombre: doc.archivoNombre || null };
+                    }
+                });
+            });
+            setDocRecordMap(newDocRecordMap);
+
+            let ds44Total = 0;
+            let ds44Completed = 0;
+            const checklistItems = DS44_ONBOARDING_ITEMS.map((item) => {
+                ds44Total += 1;
+                const manualDone = Boolean((manualOverrides as any)[item.tipo]);
+
+                if (item.kind === 'document') {
+                    const signed = docStatus.get(item.tipo) || false;
+                    const done = signed || manualDone;
+                    if (done) ds44Completed += 1;
+                    return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status: done ? 'ok' as const : 'pending' as const };
+                }
+
+                if (item.kind === 'signature') {
+                    const signed = completedTypes.has(item.tipo) || manualDone;
+                    if (signed) ds44Completed += 1;
+                    return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status: signed ? 'ok' as const : 'pending' as const };
+                }
+
+                if (item.kind === 'actividad') {
+                    const hasCap = completedTypes.has('CAPACITACION') || manualDone;
+                    if (hasCap) ds44Completed += 1;
+                    return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status: hasCap ? 'ok' as const : 'pending' as const };
+                }
+
+                return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status: 'pending' as const };
+            });
+
+            setDs44Checklist({ completed: ds44Completed, total: ds44Total, items: checklistItems });
+            setCompliance({ completed: ds44Completed, assigned: ds44Total });
 
         } catch (err) {
             console.error('Error loading worker details:', err);
@@ -151,6 +278,76 @@ Generado por PrevencionApp
         URL.revokeObjectURL(url);
     };
 
+    const handleUploadWorkerDoc = async (tipo: string, file: File) => {
+        const docRecord = docRecordMap[tipo];
+        if (!docRecord || !worker) return;
+        setUploadingDocType(tipo);
+        try {
+            const uploadRes = await uploadsApi.getUploadUrl({
+                fileName: file.name, fileType: file.type, fileSize: file.size,
+                categoria: 'trabajadores', empresaId: (worker as any).tenantId || (worker as any).empresaId || 'default'
+            });
+            if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
+            await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+            const fileKey = uploadRes.data.fileKey;
+            await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
+            await documentsApi.update(docRecord.documentId, { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: file.name } as any);
+            await loadWorkerData(); // Recargar datos
+        } catch (err) {
+            console.error('Error subiendo documento del trabajador:', err);
+        } finally {
+            setUploadingDocType(null);
+        }
+    };
+
+    const handleMarkOnboardingItem = async (tipo?: string) => {
+        if (!worker || !tipo) return;
+        const targetObraId = resolveTargetObraId(worker);
+        if (!targetObraId) {
+            alert('Este trabajador no tiene una obra asociada para registrar onboarding.');
+            return;
+        }
+
+        const key = `${worker.workerId}:${tipo}`;
+        setMarkingDone(key);
+        try {
+            const now = new Date().toISOString();
+            const current = (worker as any).onboardingDS44 || {};
+            const obraEntry = current[targetObraId] || {};
+            const items = { ...(obraEntry.items || {}) };
+            items[tipo] = {
+                doneAt: now,
+                doneBy: user?.userId,
+                source: 'manual'
+            };
+
+            const nextOnboarding = {
+                ...current,
+                [targetObraId]: {
+                    ...obraEntry,
+                    items,
+                    updatedAt: now
+                }
+            };
+
+            const res = await workersApi.update(worker.workerId, { onboardingDS44: nextOnboarding } as any);
+            if (res.success) {
+                const updated = (res.data as any)?.persona;
+                setWorker((prev) => prev ? { ...prev, onboardingDS44: updated?.onboardingDS44 || nextOnboarding } : prev);
+                await loadWorkerData();
+            }
+        } catch (err) {
+            console.error('Error marcando onboarding como listo:', err);
+        } finally {
+            setMarkingDone(null);
+        }
+    };
+
+    const compliancePercent = compliance.assigned > 0
+        ? (compliance.completed / compliance.assigned) * 100
+        : 0;
+    const compliancePercentRounded = Math.round(compliancePercent);
+
     if (loading) {
         return (
             <div className="flex items-center justify-center" style={{ height: '100vh' }}>
@@ -165,7 +362,7 @@ Generado por PrevencionApp
                 <div className="card text-center p-12">
                     <LuCircleAlert size={48} className="text-danger-500 mb-4 mx-auto" />
                     <h2 className="text-xl font-bold mb-2">{error || 'Trabajador no encontrado'}</h2>
-                    <button className="btn btn-primary" onClick={() => navigate('/workers')}>
+                    <button className="btn btn-primary" onClick={() => navigate('/personas')}>
                         Volver al listado
                     </button>
                 </div>
@@ -182,10 +379,10 @@ Generado por PrevencionApp
                     <div className="page-header-info">
                         <button
                             className="btn btn-ghost btn-sm mb-2"
-                            onClick={() => navigate('/workers')}
+                            onClick={() => navigate('/personas')}
                             style={{ marginLeft: '-12px' }}
                         >
-                            <LuChevronLeft className="mr-1" /> Volver a Trabajadores
+                            <LuChevronLeft className="mr-1" /> Volver a Personas
                         </button>
                         <h2 className="page-header-title">
                             <LuUser className="text-primary-500" />
@@ -217,27 +414,21 @@ Generado por PrevencionApp
                                 </div>
 
                                 {/* Compliance Progress Bar */}
-                                {stats && (
+                                {(
                                     <div className="compliance-bar-container">
                                         <div className="compliance-header">
                                             <span className="compliance-label">Cumplimiento</span>
                                             <span className="compliance-percentage">
-                                                {stats.totalFirmas > 0
-                                                    ? Math.round((stats.totalFirmas / Math.max(stats.totalFirmas + 2, 5)) * 100)
-                                                    : 0}%
+                                                {compliancePercentRounded}%
                                             </span>
                                         </div>
                                         <div className="compliance-bar-track">
                                             <div
                                                 className="compliance-bar-fill"
                                                 style={{
-                                                    width: `${stats.totalFirmas > 0
-                                                        ? Math.min((stats.totalFirmas / Math.max(stats.totalFirmas + 2, 5)) * 100, 100)
-                                                        : 0}%`,
+                                                    width: `${Math.min(compliancePercent, 100)}%`,
                                                     background: (() => {
-                                                        const pct = stats.totalFirmas > 0
-                                                            ? (stats.totalFirmas / Math.max(stats.totalFirmas + 2, 5)) * 100
-                                                            : 0;
+                                                        const pct = compliancePercent;
                                                         if (pct >= 75) return 'linear-gradient(90deg, #22c55e, #16a34a)';
                                                         if (pct >= 50) return 'linear-gradient(90deg, #eab308, #ca8a04)';
                                                         return 'linear-gradient(90deg, #ef4444, #dc2626)';
@@ -246,11 +437,94 @@ Generado por PrevencionApp
                                             />
                                         </div>
                                         <div className="compliance-detail">
-                                            {stats.totalFirmas} de {Math.max(stats.totalFirmas + 2, 5)} cumplimientos
+                                            {compliance.assigned > 0
+                                                ? `${compliance.completed} de ${compliance.assigned} cumplimientos`
+                                                : 'Sin cumplimientos asignados'}
                                         </div>
                                     </div>
                                 )}
                             </div>
+
+                            {ds44Checklist && (() => {
+                                const pct = ds44Checklist.total > 0 ? Math.round((ds44Checklist.completed / ds44Checklist.total) * 100) : 0;
+                                return (
+                                    <div style={{ width: '100%', textAlign: 'left', marginTop: 'var(--space-3)' }}>
+                                        {/* Header con progreso */}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                                            <div className="text-xs text-muted" style={{ fontWeight: 700, letterSpacing: '0.08em' }}>ONBOARDING DS44</div>
+                                            <span className={`badge ${pct >= 80 ? 'badge-success' : pct >= 50 ? 'badge-warning' : 'badge-danger'}`}>
+                                                {ds44Checklist.completed}/{ds44Checklist.total}
+                                            </span>
+                                        </div>
+                                        {/* Fecha de ingreso a la obra */}
+                                        {worker.obraIds && worker.obraIds.length > 0 && (
+                                            <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <LuBuild size={12} />
+                                                Obra: {worker.obraIds.length} asignación{worker.obraIds.length !== 1 ? 'es' : ''}
+                                                {(worker as any).createdAt && ` · Ingreso: ${new Date((worker as any).createdAt).toLocaleDateString('es-CL')}`}
+                                            </div>
+                                        )}
+
+                                        {/* Barra de progreso */}
+                                        <div style={{ height: '6px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', marginBottom: 'var(--space-3)' }}>
+                                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444', transition: 'width 300ms' }} />
+                                        </div>
+                                        {/* Lista de 6 ítems */}
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                            {ds44Checklist.items.map((item) => (
+                                                <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', padding: '5px 0', borderBottom: '1px solid var(--surface-border)' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                                        <span style={{ flexShrink: 0, display: 'flex' }}>
+                                                            {item.status === 'ok'
+                                                                ? <LuCircleCheck size={15} style={{ color: '#10b981' }} />
+                                                                : item.status === 'na'
+                                                                ? <LuCircleMinus size={15} style={{ color: 'var(--text-muted)' }} />
+                                                                : <LuClock size={15} style={{ color: 'var(--text-muted)' }} />
+                                                            }
+                                                        </span>
+                                                        <div style={{ minWidth: 0 }}>
+                                                            <div style={{ fontSize: '0.83rem', fontWeight: item.status === 'ok' ? 400 : 500, color: item.status === 'ok' ? 'var(--text-muted)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                {item.label}
+                                                            </div>
+                                                            <div className="text-muted" style={{ fontSize: '0.72rem' }}>{(item as any).articulo}</div>
+                                                        </div>
+                                                    </div>
+                                                    {item.status === 'pending' && item.kind === 'document' ? (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente</span>
+                                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                                                                {uploadingDocType === item.tipo
+                                                                    ? <><LuClock size={11} /> Subiendo...</>
+                                                                    : <><LuDownload size={11} /> Subir</>
+                                                                }
+                                                                <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }}
+                                                                    disabled={!!uploadingDocType}
+                                                                    onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }}
+                                                                />
+                                                            </label>
+                                                        </div>
+                                                    ) : item.status === 'pending' ? (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Pendiente</span>
+                                                            <button
+                                                                className="btn btn-secondary"
+                                                                style={{ padding: '2px 10px', fontSize: '0.72rem', flexShrink: 0 }}
+                                                                disabled={markingDone === `${worker.workerId}:${item.tipo}`}
+                                                                onClick={() => handleMarkOnboardingItem(item.tipo)}
+                                                            >
+                                                                {markingDone === `${worker.workerId}:${item.tipo}` ? '...' : 'Marcar listo'}
+                                                            </button>
+                                                        </div>
+                                                    ) : null}
+                                                    {item.status === 'ok' && (
+                                                        <LuCircleCheck size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             <div className="worker-info-list mt-2">
                                 <div className="info-item">
@@ -400,6 +674,7 @@ Generado por PrevencionApp
                     background: var(--surface-elevated);
                     border-radius: var(--radius-lg);
                     border: 1px solid var(--surface-border);
+                    margin-top: var(--space-2);
                 }
                 
                 .compliance-header {

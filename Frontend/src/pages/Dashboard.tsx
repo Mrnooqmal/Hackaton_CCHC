@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
+import ObraProgressCard from '../components/ObraProgressCard';
 import {
     FiUsers,
     FiFileText,
@@ -12,12 +13,14 @@ import {
     FiAlertCircle,
     FiEdit3,
     FiShield,
-    FiBell
+    FiBell,
+    FiMapPin
 } from 'react-icons/fi';
 import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi, signatureRequestsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
-import type { Worker, Activity } from '../api/client';
+import type { Worker, Activity, SignatureRequest } from '../api/client';
+import { DS44_ONBOARDING_ITEMS, DS44_PLAN_DOCS } from '../utils/ds44';
 
 interface PendingTask {
     id: string;
@@ -42,15 +45,18 @@ interface DashboardStats {
 }
 
 export default function Dashboard() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
     const { obras, selectedObraId } = useObraContext();
     const navigate = useNavigate();
-    const [workers, setWorkers] = useState<Worker[]>([]);
+    const [, setWorkers] = useState<Worker[]>([]);
     const [stats, setStats] = useState<DashboardStats>({});
     const [pendings, setPendings] = useState<PendingTask[]>([]);
     const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
     const [loading, setLoading] = useState(true);
     const [progressPercentage, setProgressPercentage] = useState(0);
+    const [obraProgress, setObraProgress] = useState<Record<string, { uploaded: number; total: number; progress: number; label?: string }>>({});
+    const selectedObra = selectedObraId ? obras.find(o => o.obraId === selectedObraId) : null;
+    const selectedObraProgress = selectedObra ? obraProgress[selectedObra.obraId] : null;
 
     useEffect(() => {
         loadDashboardData();
@@ -66,6 +72,10 @@ export default function Dashboard() {
                 await loadWorkerDashboard();
             } else if (user.rol === 'prevencionista') {
                 await loadPrevencionistaDashboard();
+            } else if ((user.rol as string) === 'jefe_obra') {
+                await loadJefeObraDashboard();
+            } else if ((user.rol as string) === 'supervisor') {
+                await loadSupervisorDashboard();
             } else if (user.rol === 'admin') {
                 await loadAdminDashboard();
             }
@@ -74,6 +84,161 @@ export default function Dashboard() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const buildDocStatusMap = (docs: any[]) => {
+        const status = new Map<string, boolean>();
+        docs.forEach((doc) => {
+            const tipo = doc.tipo;
+            (doc.asignaciones || []).forEach((asig: any) => {
+                const personaId = asig.personaId || asig.workerId;
+                if (!personaId || !tipo) return;
+                const key = `${personaId}:${tipo}`;
+                if (asig.estado === 'firmado') {
+                    status.set(key, true);
+                } else if (!status.has(key)) {
+                    status.set(key, false);
+                }
+            });
+        });
+        return status;
+    };
+
+    const buildSignatureStatusMap = (requests: SignatureRequest[]) => {
+        const status = new Map<string, boolean>();
+        requests.forEach((request) => {
+            (request.trabajadores || []).forEach((trabajador) => {
+                const workerId = trabajador.workerId;
+                if (!workerId || !request.tipo) return;
+                const key = `${workerId}:${request.tipo}`;
+                if (trabajador.firmado) {
+                    status.set(key, true);
+                } else if (!status.has(key)) {
+                    status.set(key, false);
+                }
+            });
+        });
+        return status;
+    };
+
+    const computeOnboardingProgress = (
+        workers: Worker[],
+        docs: any[],
+        requests: SignatureRequest[]
+    ) => {
+        if (!workers.length) {
+            return { uploaded: 0, total: 0, progress: 0, label: 'tareas de onboarding completadas' };
+        }
+
+        const docStatus = buildDocStatusMap(docs);
+        const requestStatus = buildSignatureStatusMap(requests);
+
+        let total = 0;
+        let completed = 0;
+
+        workers.forEach((worker) => {
+            DS44_ONBOARDING_ITEMS.forEach((item) => {
+                if (item.kind === 'persona') {
+                    const vigilancia = (worker as any).vigilanciaSalud?.enVigilancia;
+                    if (!vigilancia) {
+                        return;
+                    }
+                    total += 1;
+                    if (item.key === 'VIGILANCIA_SALUD') {
+                        completed += 1;
+                    } else if (item.key === 'EXAMEN_OCUPACIONAL') {
+                        const fecha = (worker as any).vigilanciaSalud?.fechaUltimoExamen;
+                        if (fecha) completed += 1;
+                    }
+                    return;
+                }
+
+                total += 1;
+                const key = `${worker.workerId}:${item.tipo}`;
+                if (item.kind === 'document') {
+                    if (docStatus.get(key)) completed += 1;
+                } else if (item.kind === 'signature') {
+                    if (requestStatus.get(key)) completed += 1;
+                }
+            });
+        });
+
+        const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+        return { uploaded: completed, total, progress, label: 'tareas de onboarding completadas' };
+    };
+
+    const loadDs44Progress = async (targetObras: typeof obras) => {
+        if (targetObras.length === 0) {
+            setObraProgress({});
+            return;
+        }
+
+        const progressMap: Record<string, { uploaded: number; total: number; progress: number; label?: string }> = {};
+
+        await Promise.all(targetObras.map(async (obra) => {
+            try {
+                const faseDeming = obra.faseDeming || 'plan';
+                if (faseDeming === 'plan') {
+                    const docsObraRes = await documentsApi.list({ obraId: obra.obraId, clasificacion: 'obra' } as any);
+                    const docsObra = docsObraRes.success && docsObraRes.data ? docsObraRes.data.documents || [] : [];
+                    const ds44Total = DS44_PLAN_DOCS.length;
+                    const ds44Uploaded = DS44_PLAN_DOCS.filter(req => {
+                        const existing = docsObra.find((doc: any) => req.tipos.includes(doc.tipo));
+                        return Boolean(existing?.s3Key || existing?.archivoUrl);
+                    }).length;
+                    const progress = ds44Total > 0 ? Math.round((ds44Uploaded / ds44Total) * 100) : 0;
+                    progressMap[obra.obraId] = {
+                        uploaded: ds44Uploaded,
+                        total: ds44Total,
+                        progress,
+                        label: 'documentos planificados listos'
+                    };
+                    return;
+                }
+
+                if (faseDeming === 'hacer') {
+                    const tenantId = obra.tenantId || localStorage.getItem('tenant_id') || '';
+                    const [workersRes, docsDiarioRes, requestsRes] = await Promise.all([
+                        workersApi.list({ obraId: obra.obraId }),
+                        documentsApi.list({ obraId: obra.obraId, clasificacion: 'diario' } as any),
+                        signatureRequestsApi.list({ empresaId: tenantId, obraId: obra.obraId })
+                    ]);
+
+                    const workers = workersRes.success && workersRes.data ? (workersRes.data as Worker[]) : [];
+                    const docsDiario = docsDiarioRes.success && docsDiarioRes.data ? docsDiarioRes.data.documents || [] : [];
+                    const requests = requestsRes.success && requestsRes.data ? requestsRes.data.requests || [] : [];
+
+                    progressMap[obra.obraId] = computeOnboardingProgress(workers, docsDiario, requests);
+                    return;
+                }
+
+                if (faseDeming === 'verificar') {
+                    const hasEval = Boolean((obra as any).cumplimientoDS44?.check?.ultimaEvaluacion);
+                    const total = 1;
+                    const uploaded = hasEval ? 1 : 0;
+                    const progress = Math.round((uploaded / total) * 100);
+                    progressMap[obra.obraId] = {
+                        uploaded,
+                        total,
+                        progress,
+                        label: 'evaluacion anual completada'
+                    };
+                    return;
+                }
+
+                progressMap[obra.obraId] = {
+                    uploaded: 0,
+                    total: 0,
+                    progress: 0,
+                    label: 'tareas DS44 completadas'
+                };
+            } catch (err) {
+                console.error(`Error loading DS44 docs for obra ${obra.obraId}:`, err);
+                progressMap[obra.obraId] = { uploaded: 0, total: DS44_PLAN_DOCS.length, progress: 0 };
+            }
+        }));
+
+        setObraProgress(progressMap);
     };
 
     const loadWorkerDashboard = async () => {
@@ -224,6 +389,98 @@ export default function Dashboard() {
         } catch (err) {
             console.error('Error loading activities:', err);
         }
+
+        if (selectedObraId) {
+            const obra = obras.find(o => o.obraId === selectedObraId);
+            if (obra) {
+                await loadDs44Progress([obra]);
+            }
+        }
+    };
+
+    const loadJefeObraDashboard = async () => {
+        // Jefe de obra: full obra summary — workers, activities, documents, incidents, signatures
+        try {
+            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
+            if (workersRes.success && workersRes.data) {
+                setWorkers(workersRes.data);
+                const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
+                setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0, pendingSignatures: unenrolled }));
+            }
+        } catch (err) { console.error('Error loading workers:', err); }
+
+        try {
+            const docsRes = await documentsApi.list({ obraId: selectedObraId || undefined });
+            if (docsRes.success && docsRes.data) {
+                setStats(s => ({ ...s, totalDocuments: docsRes.data?.documents.length || 0 }));
+            }
+        } catch (err) { console.error('Error loading documents:', err); }
+
+        try {
+            const incidentsRes = await incidentsApi.list();
+            if (incidentsRes.success && incidentsRes.data) {
+                const pending = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
+                setStats(s => ({ ...s, pendingIncidents: pending }));
+            }
+        } catch (err) { console.error('Error loading incidents:', err); }
+
+        try {
+            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
+            if (activitiesRes.success && activitiesRes.data) {
+                const recent = activitiesRes.data.activities.slice(0, 5);
+                setRecentActivities(recent);
+                const today = new Date().toISOString().split('T')[0];
+                const todayActivities = activitiesRes.data.activities.filter(a => a.fecha === today).length;
+                setStats(s => ({ ...s, activitiesToday: todayActivities }));
+            }
+        } catch (err) { console.error('Error loading activities:', err); }
+
+        try {
+            const sigStatsRes = await signatureRequestsApi.getStats();
+            if (sigStatsRes.success && sigStatsRes.data) {
+                const totalPendingFirmas = sigStatsRes.data.totalFirmasRequeridas - sigStatsRes.data.totalFirmasObtenidas;
+                setStats(s => ({ ...s, workersPendingSignatures: Math.max(0, totalPendingFirmas) }));
+            }
+        } catch (err) { console.error('Error loading signature stats:', err); }
+
+        if (selectedObraId) {
+            const obra = obras.find(o => o.obraId === selectedObraId);
+            if (obra) {
+                await loadDs44Progress([obra]);
+            }
+        } else {
+            await loadDs44Progress(obras);
+        }
+    };
+
+    const loadSupervisorDashboard = async () => {
+        // Supervisor: workers + activities + incidents for their obra
+        try {
+            const workersRes = await workersApi.list({ obraId: selectedObraId || undefined });
+            if (workersRes.success && workersRes.data) {
+                setWorkers(workersRes.data);
+                setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0 }));
+            }
+        } catch (err) { console.error('Error loading workers:', err); }
+
+        try {
+            const activitiesRes = await activitiesApi.list({ obraId: selectedObraId || undefined });
+            if (activitiesRes.success && activitiesRes.data) {
+                const recent = activitiesRes.data.activities.slice(0, 5);
+                setRecentActivities(recent);
+                const today = new Date().toISOString().split('T')[0];
+                const todayActivities = activitiesRes.data.activities.filter(a => a.fecha === today).length;
+                setStats(s => ({ ...s, activitiesToday: todayActivities }));
+            }
+        } catch (err) { console.error('Error loading activities:', err); }
+
+        try {
+            const incidentsRes = await incidentsApi.list();
+            if (incidentsRes.success && incidentsRes.data) {
+                const pending = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
+                setStats(s => ({ ...s, pendingIncidents: pending }));
+            }
+        } catch (err) { console.error('Error loading incidents:', err); }
     };
 
     const loadAdminDashboard = async () => {
@@ -267,6 +524,10 @@ export default function Dashboard() {
         } catch (err) {
             console.error('Error loading incidents:', err);
         }
+
+        // Load real DS44 compliance progress per obra
+        const obrasToCheck = selectedObraId ? obras.filter(o => o.obraId === selectedObraId) : obras;
+        await loadDs44Progress(obrasToCheck);
     };
 
     const getUrgentTasks = () => pendings.filter(p => p.urgent || p.priority === 'high');
@@ -289,12 +550,25 @@ export default function Dashboard() {
                     <h1 className="text-2xl font-bold mb-1">
                         Bienvenido, {user?.nombre} {user?.apellido}
                     </h1>
-                    <p className="text-muted flex items-center gap-2">
-                        <FiShield size={16} />
-                        {user?.rol === 'admin' && 'Administrador'}
-                        {user?.rol === 'prevencionista' && 'Prevencionista'}
-                        {user?.rol === 'trabajador' && 'Trabajador'}
-                    </p>
+                    <div className="flex items-center gap-3 text-muted flex-wrap">
+                        <span className="flex items-center gap-1.5 text-sm font-medium">
+                            <FiShield size={14} />
+                            {user?.rol === 'admin' && 'Administrador'}
+                            {(user?.rol as string) === 'jefe_obra' && 'Jefe de Obra'}
+                            {user?.rol === 'prevencionista' && 'Prevencionista'}
+                            {(user?.rol as string) === 'supervisor' && 'Supervisor'}
+                            {user?.rol === 'trabajador' && 'Trabajador'}
+                        </span>
+                        {['jefe_obra', 'supervisor', 'prevencionista'].includes(user?.rol || '') && (
+                            <>
+                                <span className="text-gray-400">•</span>
+                                <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary-500/10 text-primary-500 text-xs font-semibold border border-primary-500/20">
+                                    <FiMapPin size={12} />
+                                    {selectedObraId ? obras.find(o => o.obraId === selectedObraId)?.nombre : 'Seleccionar Obra'}
+                                </span>
+                            </>
+                        )}
+                    </div>
                 </div>
 
                 {/* TRABAJADOR VIEW */}
@@ -470,6 +744,17 @@ export default function Dashboard() {
                             </div>
                         </div>
 
+                        {selectedObra && selectedObraProgress && (
+                            <div className="mb-6">
+                                <h3 className="text-sm font-bold uppercase tracking-wider text-muted mb-4">Progreso de Fase (DS44)</h3>
+                                <ObraProgressCard
+                                    obra={selectedObra}
+                                    progress={selectedObraProgress}
+                                    managePath={hasPermission('gestionar_obras') ? `/obras/${selectedObra.obraId}` : undefined}
+                                />
+                            </div>
+                        )}
+
                         {/* Workers Signatures Banner */}
                         <div className="card mb-6" style={{
                             background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08), rgba(234, 179, 8, 0.02))',
@@ -571,6 +856,264 @@ export default function Dashboard() {
                     </>
                 )}
 
+                {/* JEFE DE OBRA VIEW */}
+                {(user?.rol as string) === 'jefe_obra' && (
+                    <>
+                        {/* Stats Grid */}
+                        <div className="grid grid-cols-4 mb-6">
+                            <div className="card stat-card">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
+                                        <FiUsers />
+                                    </div>
+                                    <span className="text-xs text-muted">Trabajadores</span>
+                                </div>
+                                <div className="stat-value">{stats.totalWorkers || 0}</div>
+                                <div className="stat-change">
+                                    {stats.pendingSignatures || 0} sin enrolar
+                                </div>
+                            </div>
+
+                            <div className="card stat-card">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
+                                        <FiCalendar />
+                                    </div>
+                                    <span className="text-xs text-muted">Actividades Hoy</span>
+                                </div>
+                                <div className="stat-value">{stats.activitiesToday || 0}</div>
+                            </div>
+
+                            <div className="card stat-card">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <div className="avatar avatar-sm" style={{ background: 'var(--info-500)' }}>
+                                        <FiFileText />
+                                    </div>
+                                    <span className="text-xs text-muted">Documentos</span>
+                                </div>
+                                <div className="stat-value">{stats.totalDocuments || 0}</div>
+                            </div>
+
+                            <div className="card stat-card">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
+                                        <FiAlertTriangle />
+                                    </div>
+                                    <span className="text-xs text-muted">Incidentes</span>
+                                </div>
+                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
+                            </div>
+                        </div>
+
+                        {selectedObra && selectedObraProgress && (
+                            <div className="mb-6">
+                                <h3 className="text-sm font-bold uppercase tracking-wider text-muted mb-4">Progreso de Fase (DS44)</h3>
+                                <ObraProgressCard
+                                    obra={selectedObra}
+                                    progress={selectedObraProgress}
+                                    managePath={hasPermission('gestionar_obras') ? `/obras/${selectedObra.obraId}` : undefined}
+                                />
+                            </div>
+                        )}
+
+                        {/* Firmas Pendientes Banner */}
+                        {(stats.workersPendingSignatures || 0) > 0 && (
+                            <div className="card mb-6" style={{
+                                background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08), rgba(234, 179, 8, 0.02))',
+                                border: '1px solid rgba(234, 179, 8, 0.25)',
+                                padding: 'var(--space-5)',
+                            }}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-4">
+                                        <div className="avatar" style={{
+                                            background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))',
+                                            width: '52px', height: '52px',
+                                            boxShadow: '0 4px 12px rgba(234, 179, 8, 0.3)',
+                                        }}>
+                                            <FiEdit3 size={22} />
+                                        </div>
+                                        <div>
+                                            <div className="text-sm text-muted" style={{ marginBottom: '4px' }}>Firmas Pendientes de Trabajadores</div>
+                                            <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--warning-600)' }}>
+                                                {stats.workersPendingSignatures || 0}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <Link to="/signature-requests" className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
+                                        Ver Solicitudes <FiArrowRight />
+                                    </Link>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Removed redundant Obras list since selected via dropdown / navbar */}
+
+                        {/* Main grid: Activities + Quick Actions */}
+                        <div className="dashboard-main-grid">
+                            <div className="card">
+                                <div className="card-header">
+                                    <div>
+                                        <h2 className="card-title">Actividades Recientes</h2>
+                                        <p className="card-subtitle">Últimas actividades creadas</p>
+                                    </div>
+                                    <Link to="/activities" className="btn btn-primary btn-sm">
+                                        <FiPlus /> Nueva
+                                    </Link>
+                                </div>
+                                {recentActivities.length === 0 ? (
+                                    <div className="empty-state">
+                                        <FiCalendar size={36} className="mb-3 opacity-20" />
+                                        <p>No hay actividades recientes</p>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-3">
+                                        {recentActivities.map((activity) => (
+                                            <div
+                                                key={activity.activityId}
+                                                className="flex items-center justify-between"
+                                                style={{
+                                                    padding: 'var(--space-3)',
+                                                    background: 'var(--surface-elevated)',
+                                                    borderRadius: 'var(--radius-md)'
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
+                                                        <FiCalendar />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold">{activity.titulo}</div>
+                                                        <div className="text-sm text-muted">{activity.fecha}</div>
+                                                    </div>
+                                                </div>
+                                                <span className="badge badge-secondary">{activity.tipo}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="card">
+                                <h2 className="card-title mb-4">Acciones Rápidas</h2>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                    <Link to="/personas" className="btn btn-primary" style={{ width: '100%', justifyContent: 'flex-start' }}>
+                                        <FiUsers /> Equipo de Obra
+                                    </Link>
+                                    <Link to="/documents" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
+                                        <FiFileText /> Documentos
+                                    </Link>
+                                    <Link to="/activities" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
+                                        <FiCalendar /> Actividades
+                                    </Link>
+                                    <Link to="/signature-requests" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
+                                        <FiEdit3 /> Firma Electrónica
+                                    </Link>
+                                    <Link to="/incidents" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
+                                        <FiAlertTriangle /> Incidentes
+                                    </Link>
+                                </div>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {/* SUPERVISOR VIEW */}
+                {(user?.rol as any) === 'supervisor' && (
+                    <>
+                        <div className="grid grid-cols-3 mb-6">
+                            <div className="card stat-card">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
+                                        <FiUsers />
+                                    </div>
+                                    <span className="text-xs text-muted">Trabajadores</span>
+                                </div>
+                                <div className="stat-value">{stats.totalWorkers || 0}</div>
+                            </div>
+
+                            <div className="card stat-card">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
+                                        <FiCalendar />
+                                    </div>
+                                    <span className="text-xs text-muted">Actividades Hoy</span>
+                                </div>
+                                <div className="stat-value">{stats.activitiesToday || 0}</div>
+                            </div>
+
+                            <div className="card stat-card">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
+                                        <FiAlertTriangle />
+                                    </div>
+                                    <span className="text-xs text-muted">Incidentes</span>
+                                </div>
+                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
+                            </div>
+                        </div>
+
+                        <div className="dashboard-main-grid">
+                            <div className="card">
+                                <div className="card-header">
+                                    <div>
+                                        <h2 className="card-title">Actividades Recientes</h2>
+                                        <p className="card-subtitle">Últimas actividades de tu equipo</p>
+                                    </div>
+                                    <Link to="/activities" className="btn btn-primary btn-sm">
+                                        <FiPlus /> Nueva
+                                    </Link>
+                                </div>
+                                {recentActivities.length === 0 ? (
+                                    <div className="empty-state">
+                                        <FiCalendar size={36} className="mb-3 opacity-20" />
+                                        <p>No hay actividades recientes</p>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-3">
+                                        {recentActivities.map((activity) => (
+                                            <div
+                                                key={activity.activityId}
+                                                className="flex items-center justify-between"
+                                                style={{
+                                                    padding: 'var(--space-3)',
+                                                    background: 'var(--surface-elevated)',
+                                                    borderRadius: 'var(--radius-md)'
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
+                                                        <FiCalendar />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold">{activity.titulo}</div>
+                                                        <div className="text-sm text-muted">{activity.fecha}</div>
+                                                    </div>
+                                                </div>
+                                                <span className="badge badge-secondary">{activity.tipo}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="card">
+                                <h2 className="card-title mb-4">Acciones Rápidas</h2>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                    <Link to="/personas" className="btn btn-primary" style={{ width: '100%', justifyContent: 'flex-start' }}>
+                                        <FiUsers /> Mi Equipo
+                                    </Link>
+                                    <Link to="/activities" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
+                                        <FiCalendar /> Actividades
+                                    </Link>
+                                    <Link to="/incidents" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
+                                        <FiAlertTriangle /> Incidentes
+                                    </Link>
+                                </div>
+                            </div>
+                        </div>
+                    </>
+                )}
+
                 {/* ADMIN VIEW */}
                 {user?.rol === 'admin' && (
                     <>
@@ -646,40 +1189,14 @@ export default function Dashboard() {
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
                                     {(selectedObraId ? obras.filter(o => o.obraId === selectedObraId) : obras).map((obra) => {
-                                        const totalDocs = obra.fasesConfig?.[obra.etapaActual]?.length || 0;
-                                        // Mock compliance logic for now
-                                        const completedDocs = Math.floor(Math.random() * (totalDocs + 1)); 
-                                        const progress = totalDocs > 0 ? Math.round((completedDocs / totalDocs) * 100) : 100;
-                                        
+                                        const obraStats = obraProgress[obra.obraId] || { uploaded: 0, total: DS44_PLAN_DOCS.length, progress: 0 };
                                         return (
-                                            <div key={obra.obraId} className="card" style={{ padding: 'var(--space-4)', border: '1px solid var(--surface-border)' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-3)' }}>
-                                                    <div>
-                                                        <h3 className="font-bold text-lg">{obra.nombre}</h3>
-                                                        <span className="badge badge-secondary">{obra.etapaActual}</span>
-                                                    </div>
-                                                    <span className={`badge badge-${obra.estado === 'activa' ? 'success' : 'warning'}`}>
-                                                        {obra.estado}
-                                                    </span>
-                                                </div>
-                                                <div style={{ marginBottom: 'var(--space-4)' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-1)' }}>
-                                                        <span className="text-sm text-muted">Cumplimiento Fase Actual</span>
-                                                        <span className="text-sm font-bold">{progress}%</span>
-                                                    </div>
-                                                    <div className="progress">
-                                                        <div className="progress-bar" style={{ width: `${progress}%`, background: progress === 100 ? 'var(--success-500)' : 'var(--primary-500)' }} />
-                                                    </div>
-                                                    <div className="text-xs text-muted mt-1">
-                                                        {completedDocs} de {totalDocs} documentos normativos listos
-                                                    </div>
-                                                </div>
-                                                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                                                    <Link to={`/obras/${obra.obraId}`} className="btn btn-secondary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
-                                                        Gestionar Obra
-                                                    </Link>
-                                                </div>
-                                            </div>
+                                            <ObraProgressCard
+                                                key={obra.obraId}
+                                                obra={obra}
+                                                progress={obraStats}
+                                                managePath={hasPermission('gestionar_obras') ? `/obras/${obra.obraId}` : undefined}
+                                            />
                                         );
                                     })}
                                 </div>

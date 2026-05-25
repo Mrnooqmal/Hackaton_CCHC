@@ -1,5 +1,6 @@
 import { apiRequest } from './client';
 import { personasApi } from './personas.api';
+import type { Ds44OnboardingOverrides } from './types';
 import type { SignData, Signature, SignatureResult } from './signatures.api';
 
 export interface EnrollmentResult {
@@ -34,6 +35,7 @@ export interface Worker {
         horario: string;
         timestamp: string;
     };
+    onboardingDS44?: Ds44OnboardingOverrides;
     firmas?: Signature[];
     createdAt: string;
     updatedAt: string;

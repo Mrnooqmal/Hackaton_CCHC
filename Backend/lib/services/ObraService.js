@@ -103,7 +103,7 @@ class ObraService {
      */
     async actualizar(tenantId, obraId, updates) {
         const allowedFields = ['nombre', 'codigo', 'direccion', 'comuna',
-            'region', 'mandante', 'estado', 'etapaActual', 'fasesConfig', 'faseDeming'];
+            'region', 'mandante', 'estado', 'etapaActual', 'fasesConfig', 'faseDeming', 'cumplimientoDS44'];
 
         const updateExpressions = [];
         const expressionNames = {};
@@ -142,7 +142,8 @@ class ObraService {
 
     /**
      * Avanzar a la fase HACER del ciclo Deming (DS44)
-     * Se activa cuando la Fase PLAN está completa
+     * Se activa cuando la Fase PLAN está completa.
+     * Persiste cumplimientoDS44.plan.completado = true con timestamp.
      */
     async avanzarFaseDeming(tenantId, obraId) {
         const obra = await this.getById(obraId);
@@ -155,7 +156,23 @@ class ObraService {
         }
 
         const faseSiguiente = ORDEN_DEMING[idxActual + 1];
-        return this.actualizar(tenantId, obraId, { faseDeming: faseSiguiente });
+        const now = new Date().toISOString();
+
+        // Si estamos avanzando de PLAN → HACER, marcar plan como completado con timestamp
+        const updates = { faseDeming: faseSiguiente };
+        if (obra.faseDeming === 'plan') {
+            const cumplimiento = obra.cumplimientoDS44 || {};
+            updates.cumplimientoDS44 = {
+                ...cumplimiento,
+                plan: {
+                    ...(cumplimiento.plan || {}),
+                    completado: true,
+                    fechaCompletado: now
+                }
+            };
+        }
+
+        return this.actualizar(tenantId, obraId, updates);
     }
 
     /**

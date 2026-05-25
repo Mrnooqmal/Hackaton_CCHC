@@ -5,9 +5,13 @@
  * Todas las operaciones filtran por tenantId.
  */
 const XLSX = require('xlsx');
+const { v4: uuidv4 } = require('uuid');
+const { PutCommand } = require('@aws-sdk/lib-dynamodb');
+const { docClient } = require('../../lib/clients/dynamodb');
 const { PersonaService } = require('../../lib/services/PersonaService');
-const { success, error, created, cors } = require('../../lib/utils/response');
+const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { sendWelcomeEmail } = require('../notifications/handler');
+const { eventBus } = require('../../lib/events/EventBus');
 
 const personaService = new PersonaService();
 
@@ -35,6 +39,55 @@ const TEMPLATE_INSTRUCTIONS = [
     '5. Elimine las filas de ejemplo antes de cargar el archivo.'
 ];
 
+const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
+const SIGNATURE_REQUESTS_TABLE = process.env.SIGNATURE_REQUESTS_TABLE || 'SignatureRequests';
+
+const ONBOARDING_DOCUMENTS = [
+    {
+        tipo: 'IRL',
+        titulo: 'IRL — Información de Riesgos Laborales',
+        descripcion: 'Art. 15 — Documento de información y recepción por trabajador'
+    },
+    {
+        tipo: 'REGLAMENTO_INTERNO',
+        titulo: 'Reglamento Interno (RIHS/RIOHS)',
+        descripcion: 'Art. 56 — Entrega y recepción firmada'
+    },
+    {
+        tipo: 'PROCEDIMIENTO_TRABAJO',
+        titulo: 'Procedimientos de Trabajo Seguro aplicables',
+        descripcion: 'Art. 10 — Recepción y firma del trabajador'
+    }
+];
+
+const ONBOARDING_SIGNATURE_REQUESTS = [
+    // NOTA: CAPACITACION (Art. 16) es grupal — se crea como Actividad por el prevencionista,
+    // no como SignatureRequest individual. El sistema la trackea via actividades de la obra.
+    {
+        tipo: 'ENTREGA_EPP',
+        titulo: 'Entrega y capacitación de EPP',
+        descripcion: 'Art. 13 — Entrega y firma de recepción'
+    },
+    {
+        tipo: 'INDUCCION',
+        titulo: 'Inducción Plan de Emergencia',
+        descripcion: 'Art. 19 — Inducción y firma de asistencia'
+    }
+];
+
+const REQUEST_TYPES = {
+    CHARLA_5MIN: { label: 'Charla de 5 Minutos', icon: '💬', requiresDoc: false },
+    CAPACITACION: { label: 'Capacitación', icon: '📚', requiresDoc: true },
+    INDUCCION: { label: 'Inducción', icon: '🎓', requiresDoc: true },
+    ENTREGA_EPP: { label: 'Entrega de EPP', icon: '🦺', requiresDoc: true },
+    ART: { label: 'Análisis de Riesgos en Terreno', icon: '⚠️', requiresDoc: true },
+    PROCEDIMIENTO: { label: 'Procedimiento de Trabajo', icon: '📋', requiresDoc: true },
+    INSPECCION: { label: 'Inspección de Seguridad', icon: '🔍', requiresDoc: false },
+    REGLAMENTO: { label: 'Reglamento Interno', icon: '📖', requiresDoc: true },
+    DOCUMENTO: { label: 'Documento DS44', icon: '📄', requiresDoc: true },
+    OTRO: { label: 'Otro', icon: '📝', requiresDoc: false }
+};
+
 const normalizeHeader = (value) =>
     String(value || '')
         .trim()
@@ -61,6 +114,144 @@ const parseBoolean = (value) => {
     if (['si', 'sí', 'true', '1', 'yes'].includes(normalized)) return true;
     if (['no', 'false', '0'].includes(normalized)) return false;
     return undefined;
+};
+
+const buildAssignment = (persona, fechaLimite = null) => {
+    const now = new Date().toISOString();
+    return {
+        personaId: persona.personaId,
+        nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+        rut: persona.rut,
+        fechaAsignacion: now,
+        fechaLimite,
+        estado: 'pendiente',
+        notificado: true
+    };
+};
+
+const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante, docConfig }) => {
+    const now = new Date().toISOString();
+    const documentId = uuidv4();
+    const asignacion = buildAssignment(persona);
+
+    const document = {
+        documentId,
+        tenantId,
+        obraId,
+        clasificacion: 'diario',
+        fase: 'hacer',
+        tipo: docConfig.tipo,
+        tipoDescripcion: docConfig.titulo,
+        obligatorio: true,
+        titulo: docConfig.titulo,
+        contenido: '',
+        descripcion: docConfig.descripcion || '',
+        relatorId: null,
+        s3Key: null,
+        archivoUrl: null,
+        archivoNombre: null,
+        fechaCaducidad: null,
+        createdBy: solicitante?.personaId || 'system',
+        creatorName: solicitante ? `${solicitante.nombre} ${solicitante.apellido || ''}`.trim() : 'Sistema DS44',
+        firmas: [],
+        asignaciones: [asignacion],
+        estado: 'activo',
+        version: 1,
+        createdAt: now,
+        updatedAt: now
+    };
+
+    await docClient.send(new PutCommand({ TableName: DOCUMENTS_TABLE, Item: document }));
+
+    try {
+        await eventBus.emit('document.assigned', {
+            documentId,
+            userIds: [persona.personaId],
+            assignedBy: solicitante?.personaId || 'system',
+            creatorName: document.creatorName,
+            documentName: docConfig.titulo,
+            dueDate: null
+        });
+    } catch (eventError) {
+        console.error('Error emitting document.assigned event (onboarding):', eventError);
+    }
+
+    return documentId;
+};
+
+const createSignatureRequest = async ({ tenantId, obraId, persona, solicitante, requestConfig }) => {
+    const now = new Date().toISOString();
+    const requestId = uuidv4();
+    const solicitanteId = solicitante?.personaId || persona.personaId;
+    const solicitanteNombre = solicitante
+        ? `${solicitante.nombre} ${solicitante.apellido || ''}`.trim()
+        : `${persona.nombre} ${persona.apellido || ''}`.trim();
+    const solicitanteRut = solicitante?.rut || persona.rut;
+
+    const signatureRequest = {
+        requestId,
+        tipo: requestConfig.tipo,
+        tipoInfo: REQUEST_TYPES[requestConfig.tipo],
+        titulo: requestConfig.titulo,
+        descripcion: requestConfig.descripcion || '',
+        referenciaId: null,
+        referenciaTipo: null,
+        documentId: null,
+        documentos: [],
+        tieneDocumentos: false,
+        solicitanteId,
+        solicitanteNombre,
+        solicitanteRut,
+        trabajadores: [
+            {
+                personaId: persona.personaId,
+                workerId: persona.personaId,
+                nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+                rut: persona.rut,
+                cargo: persona.cargo,
+                firmado: false,
+                signatureId: null,
+                fechaFirma: null
+            }
+        ],
+        totalRequeridos: 1,
+        totalFirmados: 0,
+        fechaCreacion: now,
+        fechaLimite: null,
+        fechaCompletado: null,
+        ubicacion: null,
+        obraId,
+        tenantId,
+        estado: 'pendiente',
+        createdAt: now,
+        updatedAt: now
+    };
+
+    await docClient.send(new PutCommand({ TableName: SIGNATURE_REQUESTS_TABLE, Item: signatureRequest }));
+
+    try {
+        await eventBus.emit('signature.requested', {
+            requestId,
+            personaIds: [persona.personaId],
+            requestedBy: solicitanteId,
+            documentName: signatureRequest.titulo,
+            priority: 'normal'
+        });
+    } catch (eventError) {
+        console.error('Error emitting signature.requested event (onboarding):', eventError);
+    }
+
+    return requestId;
+};
+
+const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) => {
+    for (const docConfig of ONBOARDING_DOCUMENTS) {
+        await createOnboardingDocument({ tenantId, obraId, persona, solicitante, docConfig });
+    }
+
+    for (const requestConfig of ONBOARDING_SIGNATURE_REQUESTS) {
+        await createSignatureRequest({ tenantId, obraId, persona, solicitante, requestConfig });
+    }
 };
 
 const createTemplateBuffer = () => {
@@ -287,7 +478,36 @@ module.exports.personasHandler = async (event) => {
         if (method === 'PUT' && personaId && !action) {
             if (!tenantId) return error('tenantId es requerido');
             const body = JSON.parse(event.body || '{}');
+            const previousPersona = await personaService.getById(personaId);
+            const previousObraIds = new Set(previousPersona?.obraIds || []);
             const persona = await personaService.actualizar(tenantId, personaId, body);
+
+            try {
+                const nextObraIds = Array.isArray(persona.obraIds) ? persona.obraIds : [];
+                const addedObras = nextObraIds.filter((id) => !previousObraIds.has(id));
+                const isWorker = persona.rol === 'trabajador';
+
+                if (isWorker && addedObras.length > 0) {
+                    const solicitanteId = body.solicitanteId
+                        || event.requestContext?.authorizer?.claims?.sub
+                        || null;
+                    const solicitante = solicitanteId
+                        ? await personaService.getById(solicitanteId)
+                        : null;
+
+                    for (const obraId of addedObras) {
+                        await runOnboardingForObra({
+                            tenantId,
+                            obraId,
+                            persona,
+                            solicitante
+                        });
+                    }
+                }
+            } catch (onboardingError) {
+                console.error('Error creating onboarding tasks:', onboardingError);
+            }
+
             return success({
                 message: 'Persona actualizada',
                 persona: persona.toSafeFormat()

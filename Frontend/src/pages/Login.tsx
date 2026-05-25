@@ -167,11 +167,7 @@ export default function Login() {
                             Registrar nueva empresa
                         </a>
                     </p>
-                    <p className="login-footer-link">
-                        <a href="/register-admin" className="login-admin-link" style={{ opacity: 0.6, fontSize: '0.78rem' }}>
-                            Crear primer administrador (legacy)
-                        </a>
-                    </p>
+
                 </div>
             </div>
 

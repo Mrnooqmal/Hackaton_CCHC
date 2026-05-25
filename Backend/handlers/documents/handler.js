@@ -24,6 +24,12 @@ const DOCUMENT_TYPES = {
     ENTREGA_EPP: 'Entrega de EPP',
     CAPACITACION: 'Capacitación',
     MAPA_RIESGOS: 'Mapa de Riesgos',
+    REGISTRO_ACTIVIDAD: 'Registro de Actividad Preventiva (Art. 72)',
+    INDUCCION_EMERGENCIA: 'Inducción Plan de Emergencia (Art. 19)',
+    VIGILANCIA_SALUD: 'Registro de Vigilancia de Salud (Art. 67)',
+    EXAMEN_OCUPACIONAL: 'Registro de Examen Ocupacional (Art. 68)',
+    INVESTIGACION_ACCIDENTE: 'Investigación de Accidente / EP',
+    RESTRICCION_LABORAL: 'Restricción o Traslado por EP',
     // Fase HACER (ciclo Deming) — subprocesos operativos permanentes
     PLAN_CAPACITACION: 'Plan de Capacitación (Art. 16)',
     INFO_RIESGOS_LABORALES: 'Información de Riesgos Laborales (Art. 15)',
@@ -37,6 +43,7 @@ const DOCUMENT_TYPES = {
     REGISTRO_RIESGO_GRAVE: 'Registro de Riesgo Grave e Inminente (Art. 18)',
     REGISTRO_AT_EP: 'Registro AT, EP e Incidentes Peligrosos (Arts. 71-72)',
     TRASLADO_PUESTO: 'Traslado de Puesto por EP Diagnosticada (Art. 69)',
+    OTRO: 'Documento General',
 };
 
 /**

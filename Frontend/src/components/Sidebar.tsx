@@ -19,6 +19,7 @@ import {
 } from 'react-icons/fi';
 import { surveysApi, workersApi, type InboxMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useObraContext } from '../context/ObraContext';
 
 interface SidebarProps {
     isOpen?: boolean;
@@ -39,8 +40,164 @@ interface NavSection {
 }
 
 // Role-based navigation configuration
-const getNavItemsByRole = (role: string): NavSection[] => {
+const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSection[] => {
     switch (role) {
+
+        // ─────────────────────────────────────────
+        // ADMIN EMPRESA — siempre vista global
+        // ─────────────────────────────────────────
+        case 'admin':
+            return [
+                {
+                    section: 'Empresa',
+                    items: [
+                        { path: '/', icon: FiHome, label: 'Inicio' },
+                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                    ]
+                },
+                {
+                    section: 'Gestión',
+                    items: [
+                        { path: '/obras', icon: FiHome, label: 'Obras' },
+                        { path: '/personas', icon: FiUsers, label: 'Personas' },
+                        { path: '/documents-repository', icon: FiFileText, label: 'Archivos' },
+                    ]
+                },
+                {
+                    section: 'Sistema',
+                    items: [
+                        { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
+                        { path: '/settings', icon: FiSettings, label: 'Configuración' },
+                    ]
+                }
+            ];
+
+        // ─────────────────────────────────────────
+        // JEFE DE OBRA — gestiona su(s) obra(s)
+        // ─────────────────────────────────────────
+        case 'jefe_obra':
+            if (!hasObraContext) {
+                return [
+                    {
+                        section: 'Mis Obras',
+                        items: [
+                            { path: '/obras', icon: FiHome, label: 'Seleccionar Obra' },
+                            { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                        ]
+                    }
+                ];
+            }
+            return [
+                {
+                    section: 'Obra Activa',
+                    items: [
+                        { path: '/', icon: FiHome, label: 'Resumen de Obra' },
+                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                    ]
+                },
+                {
+                    section: 'Gestión de Obra',
+                    items: [
+                        { path: '/personas', icon: FiUsers, label: 'Equipo de Obra' },
+                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
+                        { path: '/documents-repository', icon: FiFileText, label: 'Archivos' },
+                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
+                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
+                    ]
+                },
+                {
+                    section: 'Cumplimiento',
+                    items: [
+                        { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
+                        { path: '/surveys', icon: FiClipboard, label: 'Encuestas y Audits' },
+                    ]
+                },
+                {
+                    section: 'Sistema',
+                    items: [
+                        { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
+                    ]
+                }
+            ];
+
+        // ─────────────────────────────────────────
+        // SUPERVISOR — lidera en terreno
+        // ─────────────────────────────────────────
+        case 'supervisor':
+            if (!hasObraContext) {
+                return [
+                    {
+                        section: 'Mis Obras',
+                        items: [
+                            { path: '/obras', icon: FiHome, label: 'Seleccionar Obra' },
+                            { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                        ]
+                    }
+                ];
+            }
+            return [
+                {
+                    section: 'Obra Activa',
+                    items: [
+                        { path: '/', icon: FiHome, label: 'Dashboard' },
+                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                    ]
+                },
+                {
+                    section: 'Mi Equipo',
+                    items: [
+                        { path: '/personas', icon: FiUsers, label: 'Trabajadores' },
+                        { path: '/documents-repository', icon: FiFileText, label: 'Repositorio' },
+                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
+                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
+                    ]
+                }
+            ];
+
+        // ─────────────────────────────────────────
+        // PREVENCIONISTA — cumplimiento SST
+        // ─────────────────────────────────────────
+        case 'prevencionista':
+            if (!hasObraContext) {
+                return [
+                    {
+                        section: 'Mis Obras',
+                        items: [
+                            { path: '/obras', icon: FiHome, label: 'Seleccionar Obra' },
+                            { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                        ]
+                    }
+                ];
+            }
+            return [
+                {
+                    section: 'Obra Activa',
+                    items: [
+                        { path: '/', icon: FiHome, label: 'Resumen de Obra' },
+                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
+                    ]
+                },
+                {
+                    section: 'SST',
+                    items: [
+                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
+                        { path: '/documents-repository', icon: FiFileText, label: 'Repositorio' },
+                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
+                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
+                    ]
+                },
+                {
+                    section: 'Cumplimiento',
+                    items: [
+                        { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
+                        { path: '/surveys', icon: FiClipboard, label: 'Encuestas y Audits' },
+                    ]
+                }
+            ];
+
+        // ─────────────────────────────────────────
+        // TRABAJADOR — panel personal
+        // ─────────────────────────────────────────
         case 'trabajador':
             return [
                 {
@@ -68,79 +225,12 @@ const getNavItemsByRole = (role: string): NavSection[] => {
                 }
             ];
 
-        case 'prevencionista':
-            return [
-                {
-                    section: 'Panel',
-                    items: [
-                        { path: '/', icon: FiHome, label: 'Dashboard' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                    ]
-                },
-                {
-                    section: 'Cumplimiento',
-                    items: [
-                        { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma' },
-                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
-                        { path: '/surveys', icon: FiClipboard, label: 'Auditorías y Encuestas' },
-                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
-                    ]
-                },
-                {
-                    section: 'Gestión',
-                    items: [
-                        { path: '/personas', icon: FiUsers, label: 'Personas' },
-                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
-                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
-                        { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
-                    ]
-                }
-            ];
-
-        case 'admin':
-            return [
-                {
-                    section: 'Panel',
-                    items: [
-                        { path: '/', icon: FiHome, label: 'Dashboard' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                    ]
-                },
-                {
-                    section: 'Administración',
-                    items: [
-                        { path: '/personas', icon: FiUsers, label: 'Personas' },
-                        { path: '/obras', icon: FiHome, label: 'Obras' },
-                    ]
-                },
-                {
-                    section: 'Cumplimiento',
-                    items: [
-                        { path: '/signature-requests', icon: FiEdit3, label: 'Solicitudes de Firma' },
-                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Certificados' },
-                        { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
-                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
-                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
-                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
-                    ]
-                },
-                {
-                    section: 'Sistema',
-                    items: [
-                        { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
-                        { path: '/settings', icon: FiSettings, label: 'Configuración' },
-                    ]
-                }
-            ];
-
         default:
-            // Fallback para roles desconocidos
             return [
                 {
                     section: 'Principal',
                     items: [
                         { path: '/', icon: FiHome, label: 'Dashboard' },
-                        { path: '/settings', icon: FiSettings, label: 'Configuración' },
                     ]
                 }
             ];
@@ -150,6 +240,8 @@ const getNavItemsByRole = (role: string): NavSection[] => {
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) {
     const location = useLocation();
     const { user, hasPermission } = useAuth();
+    const { selectedObraId } = useObraContext();
+    const hasObraContext = Boolean(selectedObraId);
     const [theme, setTheme] = useState<'dark' | 'light'>(() => {
         if (typeof window !== 'undefined') {
             return window.localStorage.getItem('theme') === 'light' ? 'light' : 'dark';
@@ -316,7 +408,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 </div>
 
                 <nav className="sidebar-nav">
-                    {getNavItemsByRole(user?.rol || '').map((section: NavSection) => {
+                    {getNavItemsByRole(user?.rol || '', hasObraContext).map((section: NavSection) => {
                         // Permissions are already filtered by role, but keep this for double-checking
                         const visibleItems = section.items.filter((item: NavItem) =>
                             !item.permission || hasPermission(item.permission)

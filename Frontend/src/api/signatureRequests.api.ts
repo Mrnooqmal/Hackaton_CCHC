@@ -42,6 +42,7 @@ export interface SignatureRequest {
     fechaLimite: string | null;
     fechaCompletado: string | null;
     ubicacion: string | null;
+    obraId?: string | null;
     empresaId: string;
     estado: 'pendiente' | 'en_proceso' | 'completada' | 'cancelada' | 'vencida';
     motivoCancelacion?: string;
@@ -59,6 +60,7 @@ export interface CreateSignatureRequestData {
     fechaLimite?: string;
     ubicacion?: string;
     empresaId?: string;
+    obraId?: string;
     referenciaId?: string;
     referenciaTipo?: string;
     documentId?: string;
@@ -150,7 +152,7 @@ export const signatureRequestsApi = {
             body: JSON.stringify(data),
         }),
 
-    list: (params?: { empresaId?: string; estado?: string; solicitanteId?: string; tipo?: string }) => {
+    list: (params?: { empresaId?: string; estado?: string; solicitanteId?: string; tipo?: string; obraId?: string }) => {
         const query = params ? new URLSearchParams(params as Record<string, string>).toString() : '';
         return apiRequest<{ requests: SignatureRequest[]; total: number; types: Record<string, SignatureRequestType> }>(
             `/signature-requests${query ? `?${query}` : ''}`

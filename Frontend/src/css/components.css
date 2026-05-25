@@ -282,3 +282,231 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* ------------------------------------------------------------------ */
+/*  AlertBanner                                                        */
+/* ------------------------------------------------------------------ */
+.alert-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-lg);
+    background: var(--alert-bg);
+    border: 1px solid var(--alert-border);
+    position: relative;
+    overflow: hidden;
+    margin-bottom: var(--space-4);
+    animation: alertSlideIn 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.alert-banner--exit {
+    animation: alertSlideOut 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes alertSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes alertSlideOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+        max-height: 200px;
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-8px);
+        max-height: 0;
+        margin-bottom: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+}
+
+.alert-banner__accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--alert-accent);
+    border-radius: 4px 0 0 4px;
+}
+
+.alert-banner__icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background: var(--alert-border);
+    color: var(--alert-accent);
+}
+
+.alert-banner__body {
+    flex: 1;
+    min-width: 0;
+}
+
+.alert-banner__message {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.alert-banner__content {
+    margin-top: var(--space-3);
+}
+
+.alert-banner__close {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--alert-border);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.alert-banner__close:hover {
+    background: var(--alert-border);
+    color: var(--text-primary);
+    transform: scale(1.05);
+}
+
+/* ------------------------------------------------------------------ */
+/*  CredentialCard                                                     */
+/* ------------------------------------------------------------------ */
+.credential-card {
+    margin-top: var(--space-2);
+}
+
+.credential-card__header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+
+.credential-card__title {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.credential-card__body {
+    border-radius: var(--radius-lg);
+    padding: var(--space-1);
+    border: 1px solid var(--surface-border);
+}
+
+.credential-card__field {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    transition: background 0.2s ease;
+}
+
+.credential-card__field:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.credential-card__field-icon {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+}
+
+.credential-card__field-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.credential-card__label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.credential-card__value {
+    font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.credential-card__value--password {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.credential-card__divider {
+    height: 1px;
+    background: var(--surface-border);
+    margin: 0 var(--space-4);
+}
+
+.credential-card__copy {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--surface-border);
+    background: var(--surface-elevated);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.credential-card__copy:hover {
+    background: var(--surface-card);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+    transform: scale(1.05);
+}
+
+.credential-card__copy--accent:hover {
+    color: var(--copy-accent);
+    border-color: var(--copy-accent);
+}
+
+.credential-card__hint {
+    margin-top: var(--space-3);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    line-height: 1.5;
+}

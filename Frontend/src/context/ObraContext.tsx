@@ -8,8 +8,10 @@ export interface Obra {
   nombre: string;
   codigo?: string;
   etapaActual: string;
+  faseDeming?: string;
   estado: string;
   fasesConfig?: any;
+  cumplimientoDS44?: any;
   [key: string]: any;
 }
 
@@ -41,18 +43,26 @@ export const ObraProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response = await obrasApi.list();
       if (response.success && response.data) {
         // response.data could be { total, obras: [...] } or [...] depending on backend.
-        const obrasArray = Array.isArray(response.data) ? response.data : (response.data.obras || []);
+        const obrasArray = Array.isArray(response.data) ? response.data : ((response.data as any).obras || []);
         setObras(obrasArray);
         
-        // If there's only one obra, auto-select it.
-        // If there's a saved obra ID in localStorage, try to select it.
-        const savedObraId = localStorage.getItem('selectedObraId');
-        if (savedObraId && obrasArray.some((o: Obra) => o.obraId === savedObraId)) {
-          setSelectedObraIdState(savedObraId);
-        } else if (obrasArray.length === 1) {
-          setSelectedObraIdState(obrasArray[0].obraId);
-          localStorage.setItem('selectedObraId', obrasArray[0].obraId);
-        } else if (obrasArray.length === 0) {
+        // Admin nunca auto-selecciona obra — siempre vista global de empresa
+        const isAdminTenant = user?.rol === 'admin';
+
+        if (!isAdminTenant) {
+          // Solo auto-seleccionar para prevencionista/supervisor/trabajador
+          const savedObraId = localStorage.getItem('selectedObraId');
+          if (savedObraId && obrasArray.some((o: Obra) => o.obraId === savedObraId)) {
+            setSelectedObraIdState(savedObraId);
+          } else if (obrasArray.length === 1) {
+            setSelectedObraIdState(obrasArray[0].obraId);
+            localStorage.setItem('selectedObraId', obrasArray[0].obraId);
+          } else if (obrasArray.length === 0) {
+            setSelectedObraIdState(null);
+            localStorage.removeItem('selectedObraId');
+          }
+        } else {
+          // Admin nunca auto-selecciona obra
           setSelectedObraIdState(null);
           localStorage.removeItem('selectedObraId');
         }

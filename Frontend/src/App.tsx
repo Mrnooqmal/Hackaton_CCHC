@@ -5,6 +5,7 @@ import PersonasManagement from './pages/PersonasManagement';
 import WorkerDetail from './pages/WorkerDetail';
 import WorkerEnroll from './pages/WorkerEnroll';
 import Documents from './pages/Documents';
+import DocumentsRepository from './pages/DocumentsRepository';
 import Activities from './pages/Activities';
 import AIAssistant from './pages/AIAssistant';
 import Surveys from './pages/Surveys';
@@ -60,6 +61,12 @@ function AppContent() {
             </ProtectedRoute>
           } />
 
+          <Route path="/personas/:rut" element={
+            <ProtectedRoute requiredPermission="ver_trabajadores">
+              <WorkerDetail />
+            </ProtectedRoute>
+          } />
+
           {/* Legacy routes redirect to unified personas */}
           <Route path="/workers" element={<Navigate to="/personas" replace />} />
           <Route path="/users" element={<Navigate to="/personas" replace />} />
@@ -71,13 +78,13 @@ function AppContent() {
           } />
 
           <Route path="/obras" element={
-            <ProtectedRoute requiredPermission="crear_usuarios">
+            <ProtectedRoute requiredPermission="gestionar_obras">
               <Obras />
             </ProtectedRoute>
           } />
 
           <Route path="/obras/:obraId" element={
-            <ProtectedRoute requiredPermission="crear_usuarios">
+            <ProtectedRoute requiredPermission="gestionar_obras">
               <ObraDetalle />
             </ProtectedRoute>
           } />
@@ -91,6 +98,12 @@ function AppContent() {
           <Route path="/documents" element={
             <ProtectedRoute>
               <Documents />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/documents-repository" element={
+            <ProtectedRoute>
+              <DocumentsRepository />
             </ProtectedRoute>
           } />
 

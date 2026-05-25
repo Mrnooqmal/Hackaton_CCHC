@@ -6,6 +6,15 @@
  */
 
 // Documentos obligatorios por fase según DS 44
+
+// Documentos obligatorios DS44 - Fase PLAN
+const DOCS_OBLIGATORIOS_PLAN = [
+    'POLITICA_SSO',
+    'DIAGNOSTICO_LEGAL',
+    'MIPER',
+    'MAPA_RIESGOS',
+    'REGLAMENTO_INTERNO'
+];
 const DOCS_OBLIGATORIOS_POR_FASE = {
     excavacion: ['IRL', 'POLITICA_SSO', 'REGLAMENTO_INTERNO', 'MAPA_RIESGOS'],
     obra_gruesa: ['PROCEDIMIENTO_TRABAJO', 'ENTREGA_EPP', 'CAPACITACION'],
@@ -27,6 +36,23 @@ class Obra {
         this.etapaActual = data.etapaActual || 'excavacion';
         this.mandante = data.mandante || '';
         this.estado = data.estado || 'activa';
+
+        // Tracking cumplimiento DS44 (PLAN/DO/CHECK)
+        this.cumplimientoDS44 = data.cumplimientoDS44 || {
+            plan: {
+                documentosRequeridos: DOCS_OBLIGATORIOS_PLAN,
+                documentosSubidos: [],
+                completado: false
+            },
+            do: {
+                activo: true,
+                registrosMaestros: []
+            },
+            check: {
+                ultimaEvaluacion: null,
+                resultados: null
+            }
+        };
 
         // Configuración de fases con documentos obligatorios
         this.fasesConfig = data.fasesConfig || Obra.generarFasesConfig(
@@ -98,6 +124,7 @@ class Obra {
             estado: this.estado,
             fasesConfig: this.fasesConfig,
             faseDeming: this.faseDeming,
+            cumplimientoDS44: this.cumplimientoDS44,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
@@ -120,15 +147,15 @@ class Obra {
             direccion: this.direccion,
             comuna: this.comuna,
             region: this.region,
-            etapaActual: this.etapaActual,
             mandante: this.mandante,
             estado: this.estado,
             fasesConfig: this.fasesConfig,
             faseDeming: this.faseDeming,
+            cumplimientoDS44: this.cumplimientoDS44,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
     }
 }
 
-module.exports = { Obra, DOCS_OBLIGATORIOS_POR_FASE, FASES_ORDEN };
+module.exports = { Obra, DOCS_OBLIGATORIOS_POR_FASE, DOCS_OBLIGATORIOS_PLAN, FASES_ORDEN };

@@ -17,6 +17,13 @@ export interface User {
     empresaId?: string;
 }
 
+export interface Ds44OnboardingOverrides {
+    [obraId: string]: {
+        items?: Record<string, { doneAt: string; doneBy?: string; source?: string }>;
+        updatedAt?: string;
+    };
+}
+
 export interface PersonaResponse {
     personaId: string;
     tenantId: string;
@@ -33,6 +40,7 @@ export interface PersonaResponse {
     enrolado: boolean;
     permisos: string[];
     obraIds: string[];
+    onboardingDS44?: Ds44OnboardingOverrides;
     createdAt: string;
     updatedAt: string;
 }

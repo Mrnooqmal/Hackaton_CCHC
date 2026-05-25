@@ -38,7 +38,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import ConfirmModal from '../components/ConfirmModal';
 import { useOfflineSignature, type OfflinePendingSignature } from '../hooks/useOfflineSignature';
-import { Modal } from '../components/ui';
+import { Modal, AlertBanner } from '../components/ui';
 
 export default function SignatureRequests() {
     const { user } = useAuth();
@@ -402,32 +402,19 @@ export default function SignatureRequests() {
                     </div>
 
                     {error && (
-                        <div className="alert alert-danger mb-6 flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <FiAlertCircle />
-                                {error}
-                            </div>
-                            <button onClick={() => setError('')} className="btn-ghost btn-sm p-1">
-                                <FiX />
-                            </button>
-                        </div>
+                        <AlertBanner
+                            variant="error"
+                            message={error}
+                            onDismiss={() => setError('')}
+                        />
                     )}
                     {successMsg && (
-                        <div className="alert alert-success mb-6 flex justify-between items-center" style={{
-                            animation: 'slideIn 0.3s ease-out',
-                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(34, 197, 94, 0.06))',
-                            border: '1px solid rgba(34, 197, 94, 0.35)',
-                            borderRadius: '12px',
-                            padding: '16px 20px',
-                        }}>
-                            <div className="flex items-center gap-3" style={{ color: 'var(--success-600)', fontWeight: 500 }}>
-                                <FiCheck size={20} />
-                                {successMsg}
-                            </div>
-                            <button onClick={() => setSuccessMsg('')} className="btn-ghost btn-sm p-1" style={{ color: 'var(--success-600)' }}>
-                                <FiX />
-                            </button>
-                        </div>
+                        <AlertBanner
+                            variant="success"
+                            message={successMsg}
+                            onDismiss={() => setSuccessMsg('')}
+                            autoDismissMs={5000}
+                        />
                     )}
                     <div style={{ flex: 1 }}>
                         <div className="survey-hero-eyebrow">Gestión de Solicitudes</div>

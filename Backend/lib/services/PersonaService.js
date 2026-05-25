@@ -45,7 +45,7 @@ class PersonaService {
 
         const personaId = uuidv4();
         const now = new Date().toISOString();
-        const tieneAccesoWeb = data.tieneAccesoWeb || data.rol === 'admin' || data.rol === 'prevencionista' || data.rol === 'supervisor';
+        const tieneAccesoWeb = data.tieneAccesoWeb || data.rol === 'admin' || data.rol === 'jefe_obra' || data.rol === 'prevencionista' || data.rol === 'supervisor';
         let passwordTemporal = null;
 
         const personaData = {
@@ -178,7 +178,7 @@ class PersonaService {
      */
     async actualizar(tenantId, personaId, updates) {
         const allowedFields = ['nombre', 'apellido', 'email', 'telefono',
-            'cargo', 'estado', 'preferencias', 'obraIds'];
+            'cargo', 'estado', 'preferencias', 'obraIds', 'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44'];
 
         const updateExpressions = [];
         const expressionNames = {};

@@ -7,19 +7,28 @@
 
 const ROLES = {
     admin: {
-        nombre: 'Administrador',
+        nombre: 'Administrador Empresa',
         permisos: ['crear_usuarios', 'editar_usuarios', 'ver_usuarios', 'reset_pin',
-                   'ver_reportes', 'gestionar_empresa', 'resolver_disputas', 'gestionar_obras']
+                   'ver_reportes', 'gestionar_empresa', 'resolver_disputas',
+                   'gestionar_obras', 'crear_obras', 'editar_obras', 'eliminar_obras']
+    },
+    jefe_obra: {
+        nombre: 'Jefe de Obra',
+        permisos: ['ver_trabajadores', 'crear_usuarios', 'editar_usuarios',
+                   'gestionar_obras', 'editar_obras',
+                   'crear_actividades', 'asignar_documentos',
+                   'ver_reportes', 'firmar_relator', 'crear_capacitaciones']
+    },
+    supervisor: {
+        nombre: 'Supervisor',
+        permisos: ['firmar_relator', 'ver_trabajadores',
+                   'registrar_asistencia', 'ver_reportes',
+                   'gestionar_incidentes']
     },
     prevencionista: {
         nombre: 'Prevencionista',
         permisos: ['crear_actividades', 'asignar_documentos', 'ver_trabajadores',
-                   'firmar_relator', 'ver_reportes', 'crear_capacitaciones']
-    },
-    supervisor: {
-        nombre: 'Supervisor',
-        permisos: ['firmar_relator', 'ver_trabajadores', 'crear_actividades',
-                   'registrar_asistencia', 'ver_reportes']
+                   'ver_reportes', 'crear_capacitaciones']
     },
     trabajador: {
         nombre: 'Trabajador',
@@ -58,8 +67,23 @@ class Persona {
         this.habilitado = data.habilitado || false;
         this.firmaEnrolamiento = data.firmaEnrolamiento || null;
 
+        // Overrides de onboarding DS44 por obra (marcas manuales)
+        this.onboardingDS44 = data.onboardingDS44 || {};
+
         // Estado
         this.estado = data.estado || 'pendiente';
+
+        // Vigilancia de salud ocupacional (DS44)
+        this.vigilanciaSalud = data.vigilanciaSalud || {
+            enVigilancia: false,
+            protocolos: [],
+            fechaUltimoExamen: null,
+            aptitudLaboral: null,
+            restricciones: []
+        };
+
+        // Restriccion o traslado por EP (DS44)
+        this.restriccionLaboral = data.restriccionLaboral || null;
 
         // Preferencias
         this.preferencias = data.preferencias || {
@@ -120,7 +144,10 @@ class Persona {
             passwordTemporal: this.passwordTemporal,
             habilitado: this.habilitado,
             firmaEnrolamiento: this.firmaEnrolamiento,
+            onboardingDS44: this.onboardingDS44,
             estado: this.estado,
+            vigilanciaSalud: this.vigilanciaSalud,
+            restriccionLaboral: this.restriccionLaboral,
             preferencias: this.preferencias,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
@@ -158,6 +185,9 @@ class Persona {
             enrolado: this.estaEnrolado(),
             estado: this.estado,
             passwordTemporal: this.passwordTemporal,
+            onboardingDS44: this.onboardingDS44,
+            vigilanciaSalud: this.vigilanciaSalud,
+            restriccionLaboral: this.restriccionLaboral,
             preferencias: this.preferencias,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
@@ -182,6 +212,7 @@ class Persona {
             habilitado: this.habilitado,
             pinCreatedAt: this.pinCreatedAt,
             firmaEnrolamiento: this.firmaEnrolamiento,
+            onboardingDS44: this.onboardingDS44,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
@@ -205,6 +236,7 @@ class Persona {
             habilitado: this.habilitado,
             estado: this.estado,
             workerId: this.personaId,
+            onboardingDS44: this.onboardingDS44,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
             ultimoAcceso: this.ultimoAcceso

@@ -1,146 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi } from '../api/client';
-import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock } from 'react-icons/lu';
+import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle } from 'react-icons/fi';
 import { Modal } from '../components/ui';
-
-const REQUIRED_DS44 = [
-  {
-    key: 'POLITICA_SSO',
-    tipos: ['POLITICA_SSO'],
-    titulo: 'Politica de Seguridad y Salud en el Trabajo',
-    estadoFirma: 'Firmada por el representante legal'
-  },
-  {
-    key: 'DIAGNOSTICO_LEGAL',
-    tipos: ['DIAGNOSTICO_LEGAL'],
-    titulo: 'Diagnostico de aspectos legales',
-    estadoFirma: 'Consultar quien los firma'
-  },
-  {
-    key: 'MIPER',
-    tipos: ['MIPER', 'MATRIZ_MIPPER'],
-    titulo: 'MIPER',
-    estadoFirma: 'Firmada Trabajadores, Comite, delegado y sindicato'
-  },
-  {
-    key: 'MAPA_RIESGOS',
-    tipos: ['MAPA_RIESGOS'],
-    titulo: 'Mapa de Riesgos',
-    estadoFirma: 'No firmable (confirmar)'
-  },
-  {
-    key: 'REGLAMENTO_INTERNO',
-    tipos: ['REGLAMENTO_INTERNO'],
-    titulo: 'Reglamento Interno de Higiene y Seguridad',
-    estadoFirma: 'Firmada Trabajadores, Comite, delegado y sindicato'
-  }
-];
-
-// Documentos obligatorios Fase HACER (DO) — subprocesos operativos permanentes
-const REQUIRED_DO = [
-  {
-    key: 'PLAN_CAPACITACION',
-    tipos: ['PLAN_CAPACITACION'],
-    titulo: 'Plan de Capacitación',
-    descripcion: 'Mín. 8 hrs, periodicidad ≤ 2 años, registro de asistencia y evaluación',
-    articulo: 'Art. 16',
-    estadoFirma: 'Firmada por trabajadores (registro de asistencia)'
-  },
-  {
-    key: 'INFO_RIESGOS_LABORALES',
-    tipos: ['INFO_RIESGOS_LABORALES'],
-    titulo: 'Información de Riesgos Laborales',
-    descripcion: 'Previo al inicio de labores y ante cambios de proceso, tecnología o materiales',
-    articulo: 'Art. 15',
-    estadoFirma: 'Firmada por trabajadores'
-  },
-  {
-    key: 'PROCEDIMIENTO_EPP',
-    tipos: ['PROCEDIMIENTO_EPP'],
-    titulo: 'Procedimiento de Provisión y Uso de EPP',
-    descripcion: 'Procedimiento + capacitación mín. 1 hr + refuerzo anual + certificación ISP',
-    articulo: 'Art. 13',
-    estadoFirma: 'Firmada por trabajadores y responsable SST'
-  },
-  {
-    key: 'OPERACION_MAQUINAS',
-    tipos: ['OPERACION_MAQUINAS'],
-    titulo: 'Operación Segura de Máquinas y Herramientas',
-    descripcion: 'Programa preventivo de operación y mantenimiento',
-    articulo: 'Art. 10',
-    estadoFirma: 'Firmada por responsable de operaciones'
-  },
-  {
-    key: 'PLAN_EMERGENCIAS',
-    tipos: ['PLAN_EMERGENCIAS'],
-    titulo: 'Plan de Gestión de Emergencias',
-    descripcion: 'Ejecución continua + ensayo anual simulado + revisión ante riesgo grave',
-    articulo: 'Art. 19',
-    estadoFirma: 'Firmada por representante legal y CPHS'
-  },
-  {
-    key: 'VIGILANCIA_AMBIENTAL',
-    tipos: ['VIGILANCIA_AMBIENTAL'],
-    titulo: 'Vigilancia Ambiental y de Salud',
-    descripcion: 'Protocolos MINSAL + exámenes ocupacionales + autorización tiempo Art. 68',
-    articulo: 'Art. 67',
-    estadoFirma: 'Gestionada con OAL (mutualidad)'
-  },
-  {
-    key: 'COORDINACION_ENTIDADES',
-    tipos: ['COORDINACION_ENTIDADES'],
-    titulo: 'Coordinación con Otras Entidades en Faena',
-    descripcion: 'Información mutua de riesgos + planes de emergencia conjuntos (si aplica)',
-    articulo: 'Art. 20',
-    estadoFirma: 'Firmada por representantes de cada entidad'
-  },
-  {
-    key: 'CONSULTA_REPRESENTANTES',
-    tipos: ['CONSULTA_REPRESENTANTES'],
-    titulo: 'Consulta a Representantes de Trabajadores',
-    descripcion: 'Ante cambios en procesos o estructura organizacional que generen riesgo grave',
-    articulo: 'Art. 17',
-    estadoFirma: 'Firmada por CPHS o Delegado SST'
-  }
-];
-
-// Eventos sobrevinientes Fase HACER (DO) — se activan ante hechos concretos
-const EVENTOS_DO = [
-  {
-    key: 'REGISTRO_RIESGO_GRAVE',
-    tipos: ['REGISTRO_RIESGO_GRAVE'],
-    titulo: 'Registro de Riesgo Grave e Inminente',
-    descripcion: 'Informar trabajadores afectados + suspender faenas + evacuar + avisar a Inspección del Trabajo',
-    articulo: 'Art. 18',
-    estadoFirma: 'Firmada por prevencionista y representante legal'
-  },
-  {
-    key: 'REGISTRO_AT_EP',
-    tipos: ['REGISTRO_AT_EP'],
-    titulo: 'Registro AT, EP e Incidentes Peligrosos',
-    descripcion: 'Metodología del OAL con enfoque de género + participación de trabajadores',
-    articulo: 'Arts. 71-72',
-    estadoFirma: 'Firmada por investigador y CPHS'
-  },
-  {
-    key: 'TRASLADO_PUESTO',
-    tipos: ['TRASLADO_PUESTO'],
-    titulo: 'Traslado de Puesto por EP Diagnosticada',
-    descripcion: 'A puesto sin exposición al riesgo, sin detrimento de remuneración',
-    articulo: 'Art. 69',
-    estadoFirma: 'Firmada por empleador y trabajador'
-  }
-];
+import { DS44_CHECK_ITEM, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, type Ds44OnboardingItem } from '../utils/ds44';
+import type { SignatureRequest } from '../api/client';
 
 interface Ds44Item {
   key: string;
   tipos: string[];
   titulo: string;
-  estadoFirma: string;
+  estadoFirma?: string;
   documentId?: string;
   archivoSubido: boolean;
   document?: any;
@@ -171,6 +44,7 @@ export default function ObraDetalle() {
   const [documentosPrevencion, setDocumentosPrevencion] = useState<any[]>([]);
   const [incidentes, setIncidentes] = useState<any[]>([]);
   const [actividades, setActividades] = useState<any[]>([]);
+  const [obraSignatureRequests, setObraSignatureRequests] = useState<SignatureRequest[]>([]);
   const [ds44Docs, setDs44Docs] = useState<Ds44Item[]>([]);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [isDs44ModalOpen, setIsDs44ModalOpen] = useState(false);
@@ -191,14 +65,13 @@ export default function ObraDetalle() {
   const [updatingWorkers, setUpdatingWorkers] = useState<string | null>(null);
   const [selectedUnassignedWorkerIds, setSelectedUnassignedWorkerIds] = useState<string[]>([]);
 
-  // Fase 2 (DO/HACER) state
-  const [doDocs, setDoDocs] = useState<DoItem[]>([]);
-  const [eventosDo, setEventosDo] = useState<DoItem[]>([]);
+  // Fase 2 (DO/HACER) state — modal DO listo para conectar cuando se agregue lista de docs DO
+  const [doDocs] = useState<DoItem[]>([]);
   const [activatingFaseDeming, setActivatingFaseDeming] = useState(false);
-  const [selectedDoDoc, setSelectedDoDoc] = useState<DoItem | null>(null);
-  const [selectedDoDetail, setSelectedDoDetail] = useState<any | null>(null);
+  const [selectedDoDoc] = useState<DoItem | null>(null);
+  const [selectedDoDetail] = useState<any | null>(null);
   const [isDoModalOpen, setIsDoModalOpen] = useState(false);
-  const [doLoading, setDoLoading] = useState(false);
+  const [doLoading] = useState(false);
   const [doSaving, setDoSaving] = useState(false);
   const [pendingDoFile, setPendingDoFile] = useState<File | null>(null);
   const [doExpiryDate, setDoExpiryDate] = useState('');
@@ -206,27 +79,142 @@ export default function ObraDetalle() {
   const [doWorkerIds, setDoWorkerIds] = useState<string[]>([]);
   const [doPreviewing, setDoPreviewing] = useState(false);
   const doFileInputRef = useRef<HTMLInputElement | null>(null);
+  const autoAdvanceRef = useRef(false);
+  // Panel DO: workers expandidos
+  const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set());
+  const [planToast, setPlanToast] = useState(false);
+  // Modal de onboarding post-asignación
+  const [onboardingUploadModal, setOnboardingUploadModal] = useState<{ show: boolean; addedWorkers: any[] } | null>(null);
+  const [bulkUploadingTipo, setBulkUploadingTipo] = useState<string | null>(null);
+  const [bulkUploadDone, setBulkUploadDone] = useState<Record<string, boolean>>({});
+  // Registro AT/EP export
+  const [registroSignModal, setRegistroSignModal] = useState(false);
+  const [exportingRegistro, setExportingRegistro] = useState(false);
+  // Inline per-worker doc upload
+  const [uploadingWorkerDoc, setUploadingWorkerDoc] = useState<string | null>(null); // `${workerId}:${tipo}`
+  const [markingDone, setMarkingDone] = useState<string | null>(null); // `${workerId}:${tipo}`
+  // Local override map so checklist updates immediately without full refetch
+  const [localDoneOverrides, setLocalDoneOverrides] = useState<Record<string, boolean>>({});
 
-  const faseActual = obra?.etapaActual || 'excavacion';
   const faseDeming = obra?.faseDeming || 'plan';
+
+  const onboardingSummary = useMemo(() => {
+    const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
+    if (!activeWorkers.length) {
+      return { completed: 0, total: 0, progress: 0, byWorker: [] as any[] };
+    }
+
+    const docStatus = new Map<string, boolean>();
+    documentosPrevencion.forEach((doc) => {
+      const hasFile = Boolean(doc.s3Key || doc.archivoUrl);
+      (doc.asignaciones || []).forEach((asig: any) => {
+        const personaId = asig.personaId || asig.workerId;
+        if (!personaId || !doc.tipo) return;
+        const key = `${personaId}:${doc.tipo}`;
+        if (asig.estado === 'firmado' || asig.fechaFirma || hasFile) {
+          docStatus.set(key, true);
+        } else if (!docStatus.has(key)) {
+          docStatus.set(key, false);
+        }
+      });
+    });
+
+    const requestStatus = new Map<string, boolean>();
+    obraSignatureRequests.forEach((request) => {
+      (request.trabajadores || []).forEach((trabajador) => {
+        const workerId = trabajador.workerId;
+        if (!workerId || !request.tipo) return;
+        const key = `${workerId}:${request.tipo}`;
+        if (trabajador.firmado) {
+          requestStatus.set(key, true);
+        } else if (!requestStatus.has(key)) {
+          requestStatus.set(key, false);
+        }
+      });
+    });
+
+    let total = 0;
+    let completed = 0;
+
+    const byWorker = activeWorkers.map((worker) => {
+      const workerId = worker.personaId || worker.workerId;
+      let workerTotal = 0;
+      let workerCompleted = 0;
+      const obraKey = obraId || '';
+      const manualOverrides = obraKey ? (worker as any).onboardingDS44?.[obraKey]?.items || {} : {};
+
+      // Check actividades for CAPACITACION (grupal)
+      const hasCapacitacion = actividades.some(
+        (act: any) => (act.obraId === obraId || !obraId) &&
+          (act.tipo === 'CAPACITACION' || act.titulo?.toLowerCase().includes('capacitacion') || act.titulo?.toLowerCase().includes('capacitación')) &&
+          (act.asistentes || []).some((a: any) => (a.personaId || a.workerId) === workerId && a.asistio !== false)
+      );
+
+      const itemDetail = DS44_ONBOARDING_ITEMS.map((item) => {
+        let done = false;
+        const overrideKey = `${workerId}:${item.tipo}`;
+        const manualDone = Boolean(manualOverrides[item.tipo]);
+        const localDone = localDoneOverrides[overrideKey] === true;
+
+        if (item.kind === 'document') {
+          const key = `${workerId}:${item.tipo}`;
+          done = docStatus.get(key) === true;
+        } else if (item.kind === 'signature') {
+          const key = `${workerId}:${item.tipo}`;
+          done = requestStatus.get(key) === true;
+        } else if (item.kind === 'actividad') {
+          // CAPACITACION grupal
+          done = hasCapacitacion;
+        }
+
+        if (manualDone || localDone) {
+          done = true;
+        }
+
+        workerTotal += 1;
+        if (done) workerCompleted += 1;
+
+        return { key: item.key, tipo: item.tipo, label: item.label, articulo: item.articulo, done, kind: item.kind, actionLabel: item.actionLabel, actionRoute: item.actionRoute };
+      });
+
+      total += workerTotal;
+      completed += workerCompleted;
+
+      return {
+        workerId,
+        nombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
+        cargo: worker.cargo || '',
+        fechaIngreso: (worker.obraIds || []).length > 0 ? (worker.createdAt || null) : null,
+        completed: workerCompleted,
+        total: workerTotal,
+        itemDetail
+      };
+    });
+
+    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { completed, total, progress, byWorker };
+  }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, obraId, localDoneOverrides]);
 
   const indicadores = useMemo(() => {
     const pendientesFirma = documentosPrevencion.reduce((total, doc) => {
       const pendientes = (doc.asignaciones || []).filter((a: any) => a.estado !== 'firmado').length;
       return total + pendientes;
     }, 0);
-    const ds44Pendientes = ds44Docs.filter((doc) => !doc.archivoSubido).length;
+    const ds44Pendientes = faseDeming === 'hacer'
+      ? Math.max(onboardingSummary.total - onboardingSummary.completed, 0)
+      : ds44Docs.filter((doc) => !doc.archivoSubido).length;
     const mesActual = new Date().toISOString().slice(0, 7);
     const actividadesMes = actividades.filter((act) => act.fecha?.startsWith(mesActual)).length;
     const incidentesAbiertos = incidentes.filter((inc) => ['reportado', 'en_investigacion'].includes(inc.estado)).length;
+    const ds44Label = faseDeming === 'hacer' ? 'Onboarding DS44 pendiente' : 'Documentos DS44 pendientes';
 
     return [
       { label: 'Firmas pendientes', value: String(pendientesFirma) },
-      { label: 'Documentos DS44 pendientes', value: String(ds44Pendientes) },
+      { label: ds44Label, value: String(ds44Pendientes) },
       { label: 'Actividades del mes', value: String(actividadesMes) },
       { label: 'Incidentes abiertos', value: String(incidentesAbiertos) }
     ];
-  }, [documentosPrevencion, ds44Docs, actividades, incidentes]);
+  }, [documentosPrevencion, ds44Docs, actividades, incidentes, faseDeming, onboardingSummary]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -246,7 +234,7 @@ export default function ObraDetalle() {
         setObra(obraData || null);
 
         const docsObra = docsObraRes.success && docsObraRes.data ? docsObraRes.data.documents || [] : [];
-        const mappedDs44 = REQUIRED_DS44.map((required) => {
+        const mappedDs44 = DS44_PLAN_DOCS.map((required) => {
           const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
           const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
           return {
@@ -258,25 +246,21 @@ export default function ObraDetalle() {
         });
         setDs44Docs(mappedDs44);
 
-        // Cargar documentos Fase 2 (DO) si la obra ya avanzó a esa fase
-        const obraFaseDeming = obraData?.faseDeming || 'plan';
-        if (obraFaseDeming === 'hacer' || obraFaseDeming === 'verificar' || obraFaseDeming === 'actuar') {
-          const mappedDo = REQUIRED_DO.map((required) => {
-            const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-            const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-            return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
-          });
-          setDoDocs(mappedDo);
-          const mappedEventos = EVENTOS_DO.map((required) => {
-            const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-            const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-            return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
-          });
-          setEventosDo(mappedEventos);
-        }
 
-        const docsPrev = docsPrevRes.success && docsPrevRes.data ? docsPrevRes.data.documents || [] : [];
-        setDocumentosPrevencion(docsPrev);
+        const docsPrevRaw = docsPrevRes.success && docsPrevRes.data ? docsPrevRes.data.documents || [] : [];
+        const ds44Types = new Set([...DS44_ONBOARDING_ITEMS.map(i => i.tipo), ...DS44_PLAN_DOCS.flatMap(req => req.tipos)]);
+        const docsPrevFiltered = docsPrevRaw.filter((d: any) => d.clasificacion === 'diario' || (!ds44Types.has(d.tipo) && d.clasificacion !== 'obra' && d.clasificacion !== 'trabajador'));
+
+        const uniqueDocsPrev: any[] = [];
+        const seenIds = new Set();
+        for (const doc of docsPrevFiltered) {
+          const key = doc.tipo || doc.titulo;
+          if (!seenIds.has(key)) {
+            seenIds.add(key);
+            uniqueDocsPrev.push(doc);
+          }
+        }
+        setDocumentosPrevencion(uniqueDocsPrev);
 
         const workers = workersRes.success && workersRes.data ? workersRes.data : [];
         setAllWorkers(workers);
@@ -288,6 +272,12 @@ export default function ObraDetalle() {
 
         const actItems = activitiesRes.success && activitiesRes.data ? activitiesRes.data.activities || [] : [];
         setActividades(actItems.filter((act: any) => act.obraId === obraId));
+
+        const tenantId = obraData?.tenantId || localStorage.getItem('tenant_id') || '';
+        const sigRes = await signatureRequestsApi.list({ empresaId: tenantId, obraId });
+        if (sigRes.success && sigRes.data) {
+          setObraSignatureRequests(sigRes.data.requests || []);
+        }
       } catch (error) {
         console.error('Error loading obra detail:', error);
       } finally {
@@ -298,34 +288,21 @@ export default function ObraDetalle() {
     loadData();
   }, [obraId]);
 
-  const reloadDocs = async () => {
+  const reloadDocs = useCallback(async () => {
     if (!obraId) return;
     const docsObraRes = await documentsApi.list({ obraId, clasificacion: 'obra' } as any);
     if (docsObraRes.success && docsObraRes.data) {
       const docsObra = docsObraRes.data.documents || [];
-      const mappedDs44 = REQUIRED_DS44.map((required) => {
+      const mappedDs44 = DS44_PLAN_DOCS.map((required) => {
         const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
         const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
         return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
       });
       setDs44Docs(mappedDs44);
-      // Refrescar docs DO si aplica
-      const mappedDo = REQUIRED_DO.map((required) => {
-        const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-        const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-        return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
-      });
-      setDoDocs(mappedDo);
-      const mappedEventos = EVENTOS_DO.map((required) => {
-        const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-        const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-        return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
-      });
-      setEventosDo(mappedEventos);
     }
-  };
+  }, [obraId]);
 
-  const handleActivarFaseHacer = async () => {
+  const handleActivarFaseHacer = useCallback(async () => {
     if (!obraId) return;
     setActivatingFaseDeming(true);
     try {
@@ -333,42 +310,17 @@ export default function ObraDetalle() {
       if (res.success && res.data?.obra) {
         setObra(res.data.obra);
         await reloadDocs();
+        // Toast de 3s: PLAN completado
+        setPlanToast(true);
+        setTimeout(() => setPlanToast(false), 3000);
       }
     } catch (err) {
       console.error('Error activando fase HACER:', err);
     } finally {
       setActivatingFaseDeming(false);
     }
-  };
+  }, [obraId, reloadDocs]);
 
-  const openDoModal = async (doc: DoItem) => {
-    setSelectedDoDoc(doc);
-    setSelectedDoDetail(doc.document || null);
-    setDoWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.personaId || a.workerId));
-    const docExpiry = getDocExpiryDate(doc.document);
-    setDoExpiryDate(toDateInputValue(docExpiry));
-    setDoExpiryNotApplicable(Boolean(doc.document && !docExpiry));
-    setPendingDoFile(null);
-    setIsDoModalOpen(true);
-
-    if (doc.documentId) {
-      setDoLoading(true);
-      try {
-        const res = await documentsApi.get(doc.documentId);
-        if (res.success && res.data) {
-          setSelectedDoDetail(res.data);
-          setDoWorkerIds((res.data.asignaciones || []).map((a: any) => a.personaId || a.workerId));
-          const fetchedExpiry = getDocExpiryDate(res.data);
-          setDoExpiryDate(toDateInputValue(fetchedExpiry));
-          setDoExpiryNotApplicable(Boolean(!fetchedExpiry));
-        }
-      } catch (error) {
-        console.error('Error loading DO document:', error);
-      } finally {
-        setDoLoading(false);
-      }
-    }
-  };
 
   const handleDoFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -469,18 +421,271 @@ export default function ObraDetalle() {
     }
   };
 
-  const handlePreviewDoFromCard = async (doc: DoItem) => {
-    const fileKey = doc.document?.s3Key || doc.document?.archivoUrl;
-    if (!fileKey) return;
-    setDoPreviewing(true);
+  const handleBulkOnboardingUpload = async (tipo: string, file: File, workers: any[]) => {
+    if (!obraId || !obra) return;
+    setBulkUploadingTipo(tipo);
     try {
-      const res = await uploadsApi.getDownloadUrl(fileKey);
-      if (res.success && res.data?.downloadUrl) window.open(res.data.downloadUrl, '_blank');
-    } catch (error) {
-      console.error('Error abriendo documento DO:', error);
+      const uploadRes = await uploadsApi.getUploadUrl({
+        fileName: file.name, fileType: file.type, fileSize: file.size,
+        categoria: 'obras', empresaId: obra.tenantId
+      });
+      if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
+      await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const fileKey = uploadRes.data.fileKey;
+      await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
+
+      // Actualizar el documento de cada worker para este tipo
+      for (const worker of workers) {
+        const workerId = worker.personaId || worker.workerId;
+        const docsRes = await documentsApi.list({ obraId, workerId } as any);
+        if (docsRes.success && docsRes.data) {
+          const workerDocs = docsRes.data.documents || [];
+          const targetDoc = workerDocs.find((d: any) =>
+            d.tipo === tipo &&
+            (d.asignaciones || []).some((a: any) => (a.personaId || a.workerId) === workerId)
+          );
+          if (targetDoc) {
+            // Update file + mark the worker's asignacion as firmado so checklist reflects it
+            const updatedAsignaciones = (targetDoc.asignaciones || []).map((a: any) =>
+              (a.personaId || a.workerId) === workerId
+                ? { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() }
+                : a
+            );
+            await documentsApi.update(targetDoc.documentId, {
+              s3Key: fileKey,
+              archivoUrl: fileKey,
+              archivoNombre: file.name,
+              asignaciones: updatedAsignaciones
+            } as any);
+          }
+        }
+      }
+      setBulkUploadDone(prev => ({ ...prev, [tipo]: true }));
+    } catch (err) {
+      console.error('Error en carga masiva de onboarding:', err);
     } finally {
-      setDoPreviewing(false);
+      setBulkUploadingTipo(null);
     }
+  };
+
+  const generateRegistroATHTML = () => {
+    const fecha = new Date().toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
+    const abiertos = incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado));
+    const cerrados = incidentes.filter(i => !['reportado', 'en_investigacion'].includes((i as any).estado));
+    const rows = incidentes.map((inc: any) => `
+      <tr>
+        <td>${inc.fecha ? new Date(inc.fecha).toLocaleDateString('es-CL') : '-'}</td>
+        <td>${inc.tipo || '-'}</td>
+        <td>${inc.descripcion || inc.titulo || '-'}</td>
+        <td>${inc.trabajadorAfectado || inc.personaAfectada || '-'}</td>
+        <td><span class="badge-${inc.estado === 'cerrado' ? 'ok' : 'warn'}">${inc.estado || '-'}</span></td>
+        <td>${inc.responsable || inc.creadoPor || '-'}</td>
+      </tr>`).join('');
+
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Registro AT/EP/Incidentes Peligrosos — ${obra?.nombre}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; font-size: 12px; padding: 32px; }
+    .header { text-align: center; border-bottom: 3px solid #1a1a2e; padding-bottom: 16px; margin-bottom: 24px; }
+    .header h1 { font-size: 15px; font-weight: 700; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .header .subtitle { font-size: 11px; color: #555; margin-bottom: 2px; }
+    .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
+    .meta-card { border: 1px solid #ddd; padding: 10px 12px; border-radius: 6px; }
+    .meta-label { font-size: 9px; text-transform: uppercase; color: #888; letter-spacing: 0.06em; margin-bottom: 2px; }
+    .meta-value { font-size: 16px; font-weight: 700; color: #1a1a2e; }
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #555; margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #eee; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #1a1a2e; color: #fff; padding: 8px 10px; text-align: left; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+    td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    tr:nth-child(even) td { background: #fafafa; }
+    .badge-ok { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; }
+    .badge-warn { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; }
+    .empty { text-align: center; color: #aaa; padding: 24px; font-style: italic; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 48px; }
+    .sign-box { border-top: 1px solid #333; padding-top: 8px; text-align: center; }
+    .sign-name { font-weight: 600; font-size: 12px; }
+    .sign-role { font-size: 10px; color: #888; }
+    .legal-note { margin-top: 24px; font-size: 9px; color: #aaa; border-top: 1px solid #eee; padding-top: 8px; text-align: center; }
+    @media print { body { padding: 20px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Registro de Accidentes del Trabajo, Enfermedades Profesionales e Incidentes Peligrosos</h1>
+    <p class="subtitle">Arts. 72 y 73 — Decreto Supremo N°44/2024 — Ministerio de Salud</p>
+    <p class="subtitle">Generado: ${fecha}</p>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-card"><div class="meta-label">Obra</div><div class="meta-value" style="font-size:13px">${obra?.nombre || '-'}</div></div>
+    <div class="meta-card"><div class="meta-label">Total incidentes</div><div class="meta-value">${incidentes.length}</div></div>
+    <div class="meta-card"><div class="meta-label">Abiertos</div><div class="meta-value" style="color:#d97706">${abiertos.length}</div></div>
+    <div class="meta-card"><div class="meta-label">Cerrados</div><div class="meta-value" style="color:#059669">${cerrados.length}</div></div>
+  </div>
+
+  <div class="section-title">Detalle de incidentes registrados</div>
+  ${incidentes.length === 0
+        ? '<p class="empty">No se han registrado incidentes para esta obra.</p>'
+        : `<table>
+        <thead><tr>
+          <th>Fecha</th><th>Tipo</th><th>Descripci&oacute;n</th><th>Afectado</th><th>Estado</th><th>Responsable</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`
+      }
+
+  <div class="signatures">
+    <div class="sign-box">
+      <div style="height:48px"></div>
+      <div class="sign-name">${user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'Prevencionista'}</div>
+      <div class="sign-role">Prevencionista / Responsable SST</div>
+    </div>
+    <div class="sign-box">
+      <div style="height:48px"></div>
+      <div class="sign-name">Jefe de Obra</div>
+      <div class="sign-role">Revisado y validado</div>
+    </div>
+  </div>
+
+  <p class="legal-note">Documento generado por PrevencionApp &bull; ${obra?.nombre} &bull; Cumplimiento DS44 Arts. 72-73</p>
+  <script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+  };
+
+  const handleExportRegistroAT = async () => {
+    setRegistroSignModal(false);
+    setExportingRegistro(true);
+    try {
+      const html = generateRegistroATHTML();
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+
+      // Registrar el export como documento firmado en el sistema
+      await documentsApi.create({
+        obraId,
+        clasificacion: 'obra',
+        fase: 'hacer',
+        tipo: 'REGISTRO_AT_EP',
+        titulo: `Registro AT/EP — ${obra?.nombre} — ${new Date().toLocaleDateString('es-CL')}`,
+        obligatorio: false,
+        estado: 'activo',
+        createdBy: user?.userId,
+        creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
+      } as any);
+    } catch (err) {
+      console.error('Error exportando Registro AT/EP:', err);
+    } finally {
+      setExportingRegistro(false);
+    }
+  };
+
+  const handleInlineWorkerUpload = async (workerId: string, tipo: string, file: File) => {
+    if (!obraId || !obra) return;
+    const key = `${workerId}:${tipo}`;
+    setUploadingWorkerDoc(key);
+    try {
+      const uploadRes = await uploadsApi.getUploadUrl({
+        fileName: file.name, fileType: file.type, fileSize: file.size,
+        categoria: 'obras', empresaId: obra.tenantId
+      });
+      if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
+      await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const fileKey = uploadRes.data.fileKey;
+      await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
+
+      // Find and update the worker's specific doc record
+      const docsRes = await documentsApi.list({ obraId, workerId } as any);
+      if (docsRes.success && docsRes.data) {
+        const workerDocs = docsRes.data.documents || [];
+        const targetDoc = workerDocs.find((d: any) =>
+          d.tipo === tipo &&
+          (d.asignaciones || []).some((a: any) => (a.personaId || a.workerId) === workerId)
+        );
+        if (targetDoc) {
+          const updatedAsignaciones = (targetDoc.asignaciones || []).map((a: any) =>
+            (a.personaId || a.workerId) === workerId
+              ? { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() }
+              : a
+          );
+          await documentsApi.update(targetDoc.documentId, {
+            s3Key: fileKey, archivoUrl: fileKey, archivoNombre: file.name,
+            asignaciones: updatedAsignaciones
+          } as any);
+        }
+      }
+      setLocalDoneOverrides(prev => ({ ...prev, [key]: true }));
+    } catch (err) {
+      console.error('Error subiendo doc de onboarding:', err);
+    } finally {
+      setUploadingWorkerDoc(null);
+    }
+  };
+
+  const handleMarkItemDone = async (workerId: string, tipo: string, kind: string) => {
+    if (!obraId || !obra) return;
+    const key = `${workerId}:${tipo}`;
+    setMarkingDone(key);
+    try {
+      if (kind === 'document') return;
+      const worker = trabajadores.find((w) => (w.personaId || w.workerId) === workerId);
+      if (!worker) throw new Error('Trabajador no encontrado');
+
+      const now = new Date().toISOString();
+      const current = (worker as any).onboardingDS44 || {};
+      const obraEntry = current[obraId] || {};
+      const items = { ...(obraEntry.items || {}) };
+      items[tipo] = {
+        doneAt: now,
+        doneBy: user?.userId,
+        source: 'manual'
+      };
+
+      const nextOnboarding = {
+        ...current,
+        [obraId]: {
+          ...obraEntry,
+          items,
+          updatedAt: now
+        }
+      };
+
+      const res = await workersApi.update(workerId, { onboardingDS44: nextOnboarding } as any);
+      if (res.success) {
+        setLocalDoneOverrides((prev) => ({ ...prev, [key]: true }));
+        const updated = (res.data as any)?.persona;
+        const nextOverrides = updated?.onboardingDS44 || nextOnboarding;
+
+        setTrabajadores((prev) => prev.map((w) =>
+          (w.personaId || w.workerId) === workerId
+            ? { ...w, onboardingDS44: nextOverrides }
+            : w
+        ));
+        setAllWorkers((prev) => prev.map((w) =>
+          (w.personaId || w.workerId) === workerId
+            ? { ...w, onboardingDS44: nextOverrides }
+            : w
+        ));
+      }
+    } catch (err) {
+      console.error('Error marcando item como listo:', err);
+    } finally {
+      setMarkingDone(null);
+    }
+  };
+
+  const toggleExpandWorker = (workerId: string) => {
+    setExpandedWorkers((prev) => {
+      const next = new Set(prev);
+      if (next.has(workerId)) next.delete(workerId); else next.add(workerId);
+      return next;
+    });
   };
 
   const getDocExpiryDate = (doc: any) => {
@@ -492,7 +697,7 @@ export default function ObraDetalle() {
       .map((fecha: string) => new Date(fecha))
       .filter((fecha: Date) => !Number.isNaN(fecha.getTime()));
     if (fechas.length === 0) return null;
-    const earliest = fechas.reduce((min, current) => (current < min ? current : min), fechas[0]);
+    const earliest = fechas.reduce((min: Date, current: Date) => (current < min ? current : min), fechas[0]);
     return earliest.toISOString();
   };
 
@@ -625,7 +830,7 @@ export default function ObraDetalle() {
         const createRes = await documentsApi.create({
           obraId,
           clasificacion: 'obra',
-          fase: faseActual,
+          fase: 'plan',
           tipo: selectedDs44Doc.tipos[0],
           obligatorio: true,
           titulo: selectedDs44Doc.titulo,
@@ -743,6 +948,52 @@ export default function ObraDetalle() {
     setIsSignatureModalOpen(true);
   };
 
+  const documentosPendientes = ds44Docs.filter((doc) => !doc.archivoSubido);
+  const documentosVencidos = ds44Docs.filter((doc) => {
+    const fechaCaducidad = getDocExpiryDate(doc.document);
+    if (!fechaCaducidad) return false;
+    return new Date(fechaCaducidad) < new Date();
+  });
+  const ds44Total = ds44Docs.length;
+  const ds44Uploaded = ds44Total - documentosPendientes.length;
+  const ds44Progress = ds44Total > 0 ? Math.round((ds44Uploaded / ds44Total) * 100) : 0;
+  const documentosPendientesTitulos = documentosPendientes.map((doc) => doc.titulo);
+  const inactiveWorkers = trabajadores.filter((worker) => worker.estado === 'inactivo');
+  const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
+
+
+  // Fase 2 (DO) progress — disponible para uso futuro en JSX
+  const planCompleto = ds44Docs.length > 0 && ds44Docs.every((doc) => doc.archivoSubido);
+  const doPendientes = doDocs.filter((doc) => !doc.archivoSubido);
+  const doTotal = doDocs.length;
+  const doUploaded = doTotal - doPendientes.length;
+  void doUploaded; // reservado para indicador de fase DO
+
+  const faseLabel = DS44_PHASE_LABELS[faseDeming] || faseDeming.toUpperCase();
+  const isPlanPhase = faseDeming === 'plan';
+  const isDoPhase = faseDeming === 'hacer';
+  const isCheckPhase = faseDeming === 'verificar';
+
+  const FASES_DEMING = [
+    { key: 'plan', label: 'PLANIFICAR', short: 'PLAN' },
+    { key: 'hacer', label: 'HACER', short: 'DO' },
+    { key: 'verificar', label: 'VERIFICAR', short: 'CHECK' },
+    { key: 'actuar', label: 'ACTUAR', short: 'ACT' },
+  ];
+  const idxFaseDeming = FASES_DEMING.findIndex(f => f.key === faseDeming);
+
+  useEffect(() => {
+    if (!obraId) return;
+    if (faseDeming !== 'plan' || !planCompleto) {
+      autoAdvanceRef.current = false;
+      return;
+    }
+    if (activatingFaseDeming || autoAdvanceRef.current) return;
+
+    autoAdvanceRef.current = true;
+    handleActivarFaseHacer();
+  }, [obraId, faseDeming, planCompleto, activatingFaseDeming, handleActivarFaseHacer]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center" style={{ height: '100vh' }}>
@@ -769,34 +1020,6 @@ export default function ObraDetalle() {
       </>
     );
   }
-
-  const documentosPendientes = ds44Docs.filter((doc) => !doc.archivoSubido);
-  const documentosVencidos = ds44Docs.filter((doc) => {
-    const fechaCaducidad = getDocExpiryDate(doc.document);
-    if (!fechaCaducidad) return false;
-    return new Date(fechaCaducidad) < new Date();
-  });
-  const ds44Total = ds44Docs.length;
-  const ds44Uploaded = ds44Total - documentosPendientes.length;
-  const ds44Progress = ds44Total > 0 ? Math.round((ds44Uploaded / ds44Total) * 100) : 0;
-  const documentosPendientesTitulos = documentosPendientes.map((doc) => doc.titulo);
-  const inactiveWorkers = trabajadores.filter((worker) => worker.estado === 'inactivo');
-  const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
-
-  // Fase 2 (DO) progress
-  const planCompleto = ds44Docs.length > 0 && ds44Docs.every((doc) => doc.archivoSubido);
-  const doPendientes = doDocs.filter((doc) => !doc.archivoSubido);
-  const doTotal = doDocs.length;
-  const doUploaded = doTotal - doPendientes.length;
-  const doProgress = doTotal > 0 ? Math.round((doUploaded / doTotal) * 100) : 0;
-
-  const FASES_DEMING = [
-    { key: 'plan', label: 'PLANIFICAR', short: 'PLAN' },
-    { key: 'hacer', label: 'HACER', short: 'DO' },
-    { key: 'verificar', label: 'VERIFICAR', short: 'CHECK' },
-    { key: 'actuar', label: 'ACTUAR', short: 'ACT' },
-  ];
-  const idxFaseDeming = FASES_DEMING.findIndex(f => f.key === faseDeming);
 
   const handleEditToggle = () => {
     setEditData({
@@ -835,7 +1058,8 @@ export default function ObraDetalle() {
       if (!obraIds.includes(obraId)) {
         await workersApi.update(worker.personaId || worker.workerId, {
           obraIds: [...obraIds, obraId],
-          estado: 'activo'
+          estado: 'activo',
+          solicitanteId: user?.userId
         } as any);
       }
       const refreshed = await workersApi.list();
@@ -844,6 +1068,9 @@ export default function ObraDetalle() {
         setAllWorkers(workers);
         setTrabajadores(workers.filter((w: any) => Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
       }
+      // Abrir modal de onboarding post-asignación
+      setBulkUploadDone({});
+      setOnboardingUploadModal({ show: true, addedWorkers: [worker] });
     } catch (error) {
       console.error('Error adding worker to obra:', error);
     } finally {
@@ -860,7 +1087,8 @@ export default function ObraDetalle() {
         if (!obraIds.includes(obraId)) {
           await workersApi.update(worker.personaId || worker.workerId, {
             obraIds: [...obraIds, obraId],
-            estado: 'activo'
+            estado: 'activo',
+            solicitanteId: user?.userId
           } as any);
         }
       }
@@ -871,6 +1099,10 @@ export default function ObraDetalle() {
         setTrabajadores(workers.filter((w: any) => Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
         setSelectedUnassignedWorkerIds([]);
       }
+      // Abrir modal de onboarding post-asignación
+      setIsWorkersModalOpen(false);
+      setBulkUploadDone({});
+      setOnboardingUploadModal({ show: true, addedWorkers: workersToAdd });
     } catch (error) {
       console.error('Error adding multiple workers to obra:', error);
     } finally {
@@ -912,7 +1144,8 @@ export default function ObraDetalle() {
       const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
       const updated = {
         estado: 'activo',
-        obraIds: obraIds.includes(obraId) ? obraIds : [...obraIds, obraId]
+        obraIds: obraIds.includes(obraId) ? obraIds : [...obraIds, obraId],
+        solicitanteId: user?.userId
       } as any;
       await workersApi.update(worker.personaId || worker.workerId, updated);
       const refreshed = await workersApi.list();
@@ -1026,9 +1259,9 @@ export default function ObraDetalle() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
               <div className="text-muted">{trabajadores.length} trabajadores asociados</div>
-              <button 
-                className="btn btn-sm" 
-                style={{ backgroundColor: 'var(--success-500, #10b981)', color: 'white', border: 'none' }} 
+              <button
+                className="btn btn-sm"
+                style={{ backgroundColor: 'var(--success-500, #10b981)', color: 'white', border: 'none' }}
                 onClick={() => setIsWorkersModalOpen(true)}
               >
                 <LuUserPlus />
@@ -1089,298 +1322,353 @@ export default function ObraDetalle() {
 
           <div className="card" style={{ gridColumn: '1 / -1' }}>
             <div className="card-header">
-              <div className="card-title">Documentos DS44</div>
+              <div>
+                <div className="card-title">Cumplimiento DS44 — Fase {faseLabel}</div>
+                <div className="text-muted" style={{ fontSize: '0.85rem' }}>
+                  {isPlanPhase
+                    ? 'Documentos base de la obra (PLAN)'
+                    : isDoPhase
+                      ? 'Checklist de onboarding por trabajador (HACER)'
+                      : isCheckPhase
+                        ? 'Evaluacion anual y consolidacion de evidencias (CHECK)'
+                        : 'Seguimiento de mejora continua'}
+                </div>
+              </div>
               <LuFileText className="text-muted" />
             </div>
-            <div style={{ display: 'grid', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-                <div className="font-medium">Progreso DS44</div>
-                <div className="text-muted">{ds44Uploaded}/{ds44Total} documentos subidos</div>
-              </div>
-              <div
-                style={{
-                  height: '10px',
-                  borderRadius: '999px',
-                  overflow: 'hidden',
-                  background: 'var(--surface-elevated)',
-                  border: '1px solid var(--surface-border)'
-                }}
-              >
-                <div
-                  style={{
-                    width: `${ds44Progress}%`,
-                    height: '100%',
-                    background: 'var(--gradient-primary)',
-                    transition: 'width 200ms ease'
-                  }}
-                />
-              </div>
-              {(documentosPendientes.length > 0 || documentosVencidos.length > 0) && (
-                <div className="ds44-alerts">
-                  {documentosPendientes.length > 0 && (
-                    <div className="ds44-alert ds44-alert-danger">
-                      <span className="ds44-alert-icon"><FiAlertTriangle size={16} /></span>
-                      <span>Documentos faltantes: {documentosPendientesTitulos.join(', ')}.</span>
-                    </div>
-                  )}
-                  {documentosVencidos.length > 0 && (
-                    <div className="ds44-alert ds44-alert-warning">
-                      <span className="ds44-alert-icon"><LuClock size={16} /></span>
-                      <span>Hay {documentosVencidos.length} documento{documentosVencidos.length === 1 ? '' : 's'} DS44 vencido{documentosVencidos.length === 1 ? '' : 's'}.</span>
+
+            {isPlanPhase && (
+              <>
+                <div style={{ display: 'grid', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                    <div className="font-medium">Progreso PLAN</div>
+                    <div className="text-muted">{ds44Uploaded}/{ds44Total} documentos subidos</div>
+                  </div>
+                  <div
+                    style={{
+                      height: '10px',
+                      borderRadius: '999px',
+                      overflow: 'hidden',
+                      background: 'var(--surface-elevated)',
+                      border: '1px solid var(--surface-border)'
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${ds44Progress}%`,
+                        height: '100%',
+                        background: 'var(--gradient-primary)',
+                        transition: 'width 200ms ease'
+                      }}
+                    />
+                  </div>
+                  {(documentosPendientes.length > 0 || documentosVencidos.length > 0) && (
+                    <div className="ds44-alerts">
+                      {documentosPendientes.length > 0 && (
+                        <div className="ds44-alert ds44-alert-danger">
+                          <span className="ds44-alert-icon"><FiAlertTriangle size={16} /></span>
+                          <span>Documentos faltantes: {documentosPendientesTitulos.join(', ')}.</span>
+                        </div>
+                      )}
+                      {documentosVencidos.length > 0 && (
+                        <div className="ds44-alert ds44-alert-warning">
+                          <span className="ds44-alert-icon"><LuClock size={16} /></span>
+                          <span>Hay {documentosVencidos.length} documento{documentosVencidos.length === 1 ? '' : 's'} DS44 vencido{documentosVencidos.length === 1 ? '' : 's'}.</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-            <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {ds44Docs.map((doc) => {
-                  const { firmadas, total, asignaciones } = getSignatureStats(doc.document);
-                  const fechaCaducidad = getDocExpiryDate(doc.document);
-                  const isExpired = Boolean(fechaCaducidad && new Date(fechaCaducidad) < new Date());
-                  const showSignatureDetails = total > 0;
-                  const firmasCompletas = total > 0 && firmadas === total;
-                  const firmasClass = total === 0
-                    ? 'signature-counter signature-counter-neutral'
-                    : firmasCompletas
-                      ? 'signature-counter signature-counter-complete'
-                      : 'signature-counter signature-counter-pending';
-                  return (
-                    <div key={doc.key} className="card" style={{ padding: 'var(--space-3)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
-                      <div>
-                        <div className="font-medium">{doc.titulo}</div>
-                        <div className="text-muted">{doc.estadoFirma}</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-                          <span className={`ds44-card-status ${doc.archivoSubido ? 'ds44-card-status-ok' : 'ds44-card-status-danger'}`}>
-                            <span className="ds44-card-status-dot" />
-                            {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
-                          </span>
-                          {fechaCaducidad && (
-                            <span className={`ds44-card-status ${isExpired ? 'ds44-card-status-danger' : 'ds44-card-status-ok'}`}>
-                              <span className="ds44-card-status-dot" />
-                              {isExpired ? 'Vencido' : 'Caduca'}: {formatDate(fechaCaducidad)}
-                            </span>
-                          )}
+                <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    {ds44Docs.map((doc) => {
+                      const { firmadas, total } = getSignatureStats(doc.document);
+                      const fechaCaducidad = getDocExpiryDate(doc.document);
+                      const isExpired = Boolean(fechaCaducidad && new Date(fechaCaducidad) < new Date());
+                      const showSignatureDetails = total > 0;
+                      const firmasCompletas = total > 0 && firmadas === total;
+                      const firmasClass = total === 0
+                        ? 'signature-counter signature-counter-neutral'
+                        : firmasCompletas
+                          ? 'signature-counter signature-counter-complete'
+                          : 'signature-counter signature-counter-pending';
+                      return (
+                        <div key={doc.key} className="card" style={{ padding: 'var(--space-3)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
+                            <div>
+                              <div className="font-medium">{doc.titulo}</div>
+                              <div className="text-muted">{doc.estadoFirma}</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                                <span className={`ds44-card-status ${doc.archivoSubido ? 'ds44-card-status-ok' : 'ds44-card-status-danger'}`}>
+                                  <span className="ds44-card-status-dot" />
+                                  {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
+                                </span>
+                                {fechaCaducidad && (
+                                  <span className={`ds44-card-status ${isExpired ? 'ds44-card-status-danger' : 'ds44-card-status-ok'}`}>
+                                    <span className="ds44-card-status-dot" />
+                                    {isExpired ? 'Vencido' : 'Caduca'}: {formatDate(fechaCaducidad)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-2)' }}>
+                              <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-danger'}`}>
+                                {doc.archivoSubido ? 'Cargado' : 'Pendiente'}
+                              </span>
+                              {isExpired && (
+                                <span className="badge badge-danger">Vencido</span>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-3)' }}>
+                            <div className={firmasClass}>
+                              Firmas: {firmadas}/{total}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+                            <button
+                              className={doc.archivoSubido ? 'btn btn-secondary' : 'btn btn-primary'}
+                              type="button"
+                              onClick={() => openDs44Modal(doc)}
+                            >
+                              {doc.archivoSubido ? 'Actualizar documento' : 'Subir documento'}
+                            </button>
+                            <button
+                              className="btn btn-secondary"
+                              type="button"
+                              disabled={!doc.archivoSubido || ds44Previewing}
+                              onClick={() => handlePreviewDocumentFromCard(doc)}
+                            >
+                              Ver documento
+                            </button>
+                            {showSignatureDetails && (
+                              <button
+                                className="btn btn-secondary"
+                                type="button"
+                                onClick={() => openSignatureModal(doc)}
+                              >
+                                Detalle de firmas
+                              </button>
+                            )}
+                          </div>
                         </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {isDoPhase && (
+              <>
+                {/* ── Sección A: Registro AT/EP/Incidentes Peligrosos (Arts. 72-73) ── */}
+                <div className="card" style={{ padding: 'var(--space-4)', marginBottom: 'var(--space-3)', border: '1px solid var(--surface-border)', background: 'var(--surface-elevated)' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
+                    {/* Info */}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '4px' }}>
+                        <LuShieldAlert size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        <div className="font-medium">Registro AT/EP/Incidentes Peligrosos</div>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-2)' }}>
-                        <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-danger'}`}>
-                          {doc.archivoSubido ? 'Cargado' : 'Pendiente'}
+                      <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 'var(--space-2)' }}>
+                        Arts. 72-73 DS44 &middot; Generado automáticamente desde los incidentes registrados en esta obra.
+                      </div>
+                      <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.82rem' }}>
+                          <span style={{ fontWeight: 600 }}>{incidentes.length}</span>
+                          <span className="text-muted"> incidente{incidentes.length !== 1 ? 's' : ''} total{incidentes.length !== 1 ? 'es' : ''}</span>
                         </span>
-                        {isExpired && (
-                          <span className="badge badge-danger">Vencido</span>
+                        {incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado)).length > 0 && (
+                          <span style={{ fontSize: '0.82rem', color: '#f59e0b', fontWeight: 500 }}>
+                            {incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado)).length} abierto{incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado)).length !== 1 ? 's' : ''}
+                          </span>
                         )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-3)' }}>
-                      <div className={firmasClass}>
-                        Firmas: {firmadas}/{total}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-                      <button
-                        className={doc.archivoSubido ? 'btn btn-secondary' : 'btn btn-primary'}
-                        type="button"
-                        onClick={() => openDs44Modal(doc)}
-                      >
-                        {doc.archivoSubido ? 'Actualizar documento' : 'Subir documento'}
-                      </button>
+                    {/* Acciones */}
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexShrink: 0, alignItems: 'center' }}>
                       <button
                         className="btn btn-secondary"
-                        type="button"
-                        disabled={!doc.archivoSubido || ds44Previewing}
-                        onClick={() => handlePreviewDocumentFromCard(doc)}
+                        style={{ padding: '6px 14px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        onClick={() => navigate(`/incidents?obraId=${obraId}`)}
                       >
-                        Ver documento
+                        <LuFileText size={14} /> Ver incidentes
                       </button>
-                      {showSignatureDetails && (
-                        <button
-                          className="btn btn-secondary"
-                          type="button"
-                          onClick={() => openSignatureModal(doc)}
-                        >
-                          Detalle de firmas
-                        </button>
-                      )}
+                      <button
+                        className="btn btn-primary"
+                        style={{ padding: '6px 14px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        onClick={() => setRegistroSignModal(true)}
+                        disabled={exportingRegistro}
+                      >
+                        <LuDownload size={14} /> Exportar y Firmar
+                      </button>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+
+                {/* ── Sección B: Onboarding por trabajador ─────────────────── */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: 'var(--space-3) 0 var(--space-2)' }}>
+                  <div className="font-medium">Onboarding de trabajadores</div>
+                  <div className="text-muted" style={{ fontSize: '0.85rem' }}>
+                    {onboardingSummary.completed}/{onboardingSummary.total} completados
+                    {onboardingSummary.total > 0 && ` · ${onboardingSummary.progress}%`}
+                  </div>
+                </div>
+
+                {/* Barra global */}
+                <div style={{ height: '8px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', marginBottom: 'var(--space-3)' }}>
+                  <div style={{ width: `${onboardingSummary.progress}%`, height: '100%', background: 'linear-gradient(90deg,#10b981,#059669)', transition: 'width 300ms ease' }} />
+                </div>
+
+                {onboardingSummary.byWorker.length === 0 ? (
+                  <div className="text-muted" style={{ padding: 'var(--space-3)', textAlign: 'center' }}>
+                    No hay trabajadores activos asignados a esta obra.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                    {onboardingSummary.byWorker.map((worker) => {
+                      const pct = worker.total > 0 ? Math.round((worker.completed / worker.total) * 100) : 0;
+                      const isExpanded = expandedWorkers.has(worker.workerId);
+                      return (
+                        <div key={worker.workerId} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                          {/* Cabecera del worker — clic para expandir */}
+                          <button
+                            onClick={() => toggleExpandWorker(worker.workerId)}
+                            style={{ width: '100%', background: 'none', border: 'none', padding: 'var(--space-3)', cursor: 'pointer', textAlign: 'left' }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div className="font-medium" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>{worker.nombre}</div>
+                                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>{(worker as any).cargo || 'Trabajador'}</div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
+                                <div style={{ width: '80px', height: '6px', borderRadius: '999px', background: 'var(--surface-elevated)', overflow: 'hidden' }}>
+                                  <div style={{ width: `${pct}%`, height: '100%', background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444', transition: 'width 300ms' }} />
+                                </div>
+                                <span className={`badge ${pct >= 80 ? 'badge-success' : pct >= 50 ? 'badge-warning' : 'badge-danger'}`} style={{ minWidth: '48px', textAlign: 'center' }}>
+                                  {worker.completed}/{worker.total}
+                                </span>
+                                {isExpanded ? <LuChevronUp size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} /> : <LuChevronDown size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Checklist expandible */}
+                          {isExpanded && (
+                            <div style={{ borderTop: '1px solid var(--surface-border)', padding: 'var(--space-2) var(--space-3)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {((worker as any).itemDetail as Array<Ds44OnboardingItem & { done: boolean }>).map((item) => (
+                                <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--surface-border)', gap: 'var(--space-2)' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
+                                    {item.done
+                                      ? <LuCircleCheck size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                                      : <LuClock size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                    }
+                                    <div style={{ minWidth: 0 }}>
+                                      <div style={{ fontSize: '0.87rem', fontWeight: item.done ? 400 : 500, color: item.done ? 'var(--text-muted)' : 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {item.label}
+                                      </div>
+                                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>{item.articulo}</div>
+                                    </div>
+                                  </div>
+                                  {!item.done && (
+                                    item.kind === 'document' ? (
+                                      <>
+                                        <input
+                                          type="file"
+                                          id={`wd-${worker.workerId}-${item.key}`}
+                                          style={{ display: 'none' }}
+                                          accept="application/pdf,image/*"
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) handleInlineWorkerUpload(worker.workerId, item.tipo, file);
+                                            e.target.value = '';
+                                          }}
+                                        />
+                                        <button
+                                          className="btn btn-secondary"
+                                          style={{ padding: '2px 10px', fontSize: '0.78rem', flexShrink: 0 }}
+                                          disabled={uploadingWorkerDoc === `${worker.workerId}:${item.tipo}`}
+                                          onClick={() => document.getElementById(`wd-${worker.workerId}-${item.key}`)?.click()}
+                                        >
+                                          {uploadingWorkerDoc === `${worker.workerId}:${item.tipo}` ? '...' : 'Subir'}
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: '2px 10px', fontSize: '0.78rem', flexShrink: 0 }}
+                                        disabled={markingDone === `${worker.workerId}:${item.tipo}`}
+                                        onClick={() => handleMarkItemDone(worker.workerId, item.tipo, item.kind)}
+                                      >
+                                        {markingDone === `${worker.workerId}:${item.tipo}` ? '...' : 'Marcar listo'}
+                                      </button>
+                                    )
+                                  )}
+                                  {item.done && (
+                                    <LuCircleCheck size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+
+
+            {isCheckPhase && (
+              <div className="card" style={{ padding: 'var(--space-4)', background: 'var(--surface-elevated)' }}>
+                <div className="font-medium" style={{ marginBottom: 'var(--space-2)' }}>{DS44_CHECK_ITEM.titulo}</div>
+                <div className="text-muted" style={{ marginBottom: 'var(--space-3)' }}>{DS44_CHECK_ITEM.descripcion}</div>
+                <div className="text-xs text-muted">{DS44_CHECK_ITEM.articulo}</div>
+                <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>
+                  {activeWorkers.length > 100
+                    ? 'Requiere evaluacion anual. Marca los resultados en la ficha de obra.'
+                    : 'No aplica: obra con menos de 100 trabajadores.'}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Toast flotante: PLAN completado (3 segundos) */}
+          {planToast && (
+            <div style={{
+              position: 'fixed', top: '24px', right: '24px', zIndex: 9999,
+              background: 'linear-gradient(135deg,#10b981,#059669)', color: 'white',
+              padding: '14px 20px', borderRadius: '12px', boxShadow: '0 4px 24px rgba(16,185,129,0.4)',
+              display: 'flex', alignItems: 'center', gap: '10px',
+              animation: 'fadeInRight 0.3s ease',
+              maxWidth: '340px', fontSize: '0.9rem', fontWeight: 500
+            }}>
+              <LuCircleCheck size={20} style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 700 }}>¡Fase PLAN completada!</div>
+                <div style={{ opacity: 0.9, fontSize: '0.82rem' }}>La obra avanza automáticamente a la Fase DO.</div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Banner activación Fase HACER cuando PLAN está completo */}
           {faseDeming === 'plan' && planCompleto && (
             <div className="card" style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 'var(--space-1)' }}>
-                    ✓ Fase PLANIFICAR completada
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '1.1rem', marginBottom: 'var(--space-1)' }}>
+                    <LuCircleCheck size={18} /> Fase PLANIFICAR completada
                   </div>
                   <div style={{ opacity: 0.9, fontSize: '0.9rem' }}>
-                    Todos los documentos de la Fase PLAN han sido subidos. Puedes activar la Fase HACER (DO) para continuar con la implementación del PTP.
+                    Todos los documentos de la Fase PLAN han sido subidos. La Fase HACER (DO) se activará automáticamente para continuar con la implementación del PTP.
                   </div>
                 </div>
-                <button
-                  className="btn"
-                  style={{ background: 'white', color: '#059669', fontWeight: 600, border: 'none', whiteSpace: 'nowrap' }}
-                  onClick={handleActivarFaseHacer}
-                  disabled={activatingFaseDeming}
-                >
-                  {activatingFaseDeming ? 'Activando...' : 'Activar Fase HACER →'}
-                </button>
+                <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {activatingFaseDeming ? 'Activando Fase HACER...' : 'Activación automática en curso'}
+                </div>
               </div>
             </div>
-          )}
-
-          {/* Sección Fase 2: HACER (DO) — Ejecución operativa del SGSST */}
-          {faseDeming !== 'plan' && (
-            <>
-              {/* Subprocesos operativos permanentes */}
-              <div className="card" style={{ gridColumn: '1 / -1' }}>
-                <div className="card-header">
-                  <div>
-                    <div className="card-title">Fase HACER (DO) — Subprocesos Operativos</div>
-                    <div className="text-muted" style={{ fontSize: '0.85rem' }}>Implementación del Programa de Trabajo Preventivo (PTP) · Título II DS44</div>
-                  </div>
-                  <LuFileText className="text-muted" />
-                </div>
-                <div style={{ display: 'grid', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-                    <div className="font-medium">Progreso subprocesos</div>
-                    <div className="text-muted">{doUploaded}/{doTotal} documentos subidos</div>
-                  </div>
-                  <div style={{ height: '10px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)' }}>
-                    <div style={{ width: `${doProgress}%`, height: '100%', background: 'linear-gradient(90deg,#10b981,#059669)', transition: 'width 200ms ease' }} />
-                  </div>
-                  {doPendientes.length > 0 && (
-                    <div className="alert alert-warning">
-                      Subprocesos pendientes: {doPendientes.map(d => d.titulo).join(', ')}.
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                  {doDocs.map((doc) => {
-                    const { firmadas, total: totalFirmas } = getSignatureStats(doc.document);
-                    const fechaCaducidad = getDocExpiryDate(doc.document);
-                    const isExpired = Boolean(fechaCaducidad && new Date(fechaCaducidad) < new Date());
-                    return (
-                      <div key={doc.key} className="card" style={{ padding: 'var(--space-3)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
-                              <div className="font-medium">{doc.titulo}</div>
-                              <span className="badge badge-neutral" style={{ fontSize: '0.75rem' }}>{doc.articulo}</span>
-                            </div>
-                            <div className="text-muted" style={{ fontSize: '0.85rem' }}>{doc.descripcion}</div>
-                            <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: 'var(--space-1)' }}>{doc.estadoFirma}</div>
-                            <div className={doc.archivoSubido ? 'text-muted' : 'text-danger-500'} style={{ marginTop: 'var(--space-1)', fontSize: '0.85rem' }}>
-                              {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
-                            </div>
-                            {fechaCaducidad && (
-                              <div className={isExpired ? 'text-danger-500' : 'text-muted'} style={{ fontSize: '0.8rem' }}>
-                                Vencimiento: {formatDate(fechaCaducidad)}
-                              </div>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-1)' }}>
-                            <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-danger'}`}>
-                              {doc.archivoSubido ? 'Cargado' : 'Pendiente'}
-                            </span>
-                            {isExpired && <span className="badge badge-danger">Vencido</span>}
-                            {totalFirmas > 0 && (
-                              <span className={`badge ${firmadas === totalFirmas ? 'badge-success' : 'badge-warning'}`}>
-                                Firmas {firmadas}/{totalFirmas}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
-                          <button
-                            className={doc.archivoSubido ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
-                            type="button"
-                            onClick={() => openDoModal(doc)}
-                          >
-                            {doc.archivoSubido ? 'Actualizar documento' : 'Subir documento'}
-                          </button>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            type="button"
-                            disabled={!doc.archivoSubido || doPreviewing}
-                            onClick={() => handlePreviewDoFromCard(doc)}
-                          >
-                            Ver documento
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Eventos sobrevinientes */}
-              <div className="card" style={{ gridColumn: '1 / -1' }}>
-                <div className="card-header">
-                  <div>
-                    <div className="card-title">Fase HACER (DO) — Eventos Sobrevinientes</div>
-                    <div className="text-muted" style={{ fontSize: '0.85rem' }}>Respuesta obligatoria ante hechos concretos — se activan cuando ocurre el evento</div>
-                  </div>
-                  <LuShieldAlert className="text-muted" />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                  {eventosDo.map((doc) => {
-                    const { firmadas, total: totalFirmas } = getSignatureStats(doc.document);
-                    const fechaCaducidad = getDocExpiryDate(doc.document);
-                    return (
-                      <div key={doc.key} className="card" style={{ padding: 'var(--space-3)', borderLeft: '3px solid var(--warning-500, #f59e0b)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
-                              <div className="font-medium">{doc.titulo}</div>
-                              <span className="badge badge-warning" style={{ fontSize: '0.75rem' }}>{doc.articulo}</span>
-                            </div>
-                            <div className="text-muted" style={{ fontSize: '0.85rem' }}>{doc.descripcion}</div>
-                            <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: 'var(--space-1)' }}>{doc.estadoFirma}</div>
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-1)' }}>
-                            <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-neutral'}`}>
-                              {doc.archivoSubido ? 'Registrado' : 'Sin eventos'}
-                            </span>
-                            {totalFirmas > 0 && (
-                              <span className={`badge ${firmadas === totalFirmas ? 'badge-success' : 'badge-warning'}`}>
-                                Firmas {firmadas}/{totalFirmas}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
-                          <button
-                            className={doc.archivoSubido ? 'btn btn-secondary btn-sm' : 'btn btn-warning btn-sm'}
-                            style={!doc.archivoSubido ? { background: 'var(--warning-500,#f59e0b)', color: 'white', border: 'none' } : {}}
-                            type="button"
-                            onClick={() => openDoModal(doc)}
-                          >
-                            {doc.archivoSubido ? 'Actualizar registro' : 'Registrar evento'}
-                          </button>
-                          {doc.archivoSubido && (
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              type="button"
-                              disabled={doPreviewing}
-                              onClick={() => handlePreviewDoFromCard(doc)}
-                            >
-                              Ver registro
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
           )}
 
           <div className="card">
@@ -1415,7 +1703,6 @@ export default function ObraDetalle() {
                   <div key={doc.documentId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div className="font-medium">{doc.titulo}</div>
-                      <div className="text-muted">{doc.estado || 'activo'}</div>
                     </div>
                     <span className="badge badge-neutral">{doc.estado || 'activo'}</span>
                   </div>
@@ -1599,6 +1886,122 @@ export default function ObraDetalle() {
         style={{ display: 'none' }}
       />
 
+      {/* ── Modal: Confirmar firma y exportar Registro AT/EP ── */}
+      <Modal
+        isOpen={registroSignModal}
+        onClose={() => setRegistroSignModal(false)}
+        title="Exportar Registro AT/EP"
+        subtitle="Arts. 72-73 DS44 — Registro de Accidentes del Trabajo, Enfermedades Profesionales e Incidentes Peligrosos"
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
+            <button className="btn btn-secondary" onClick={() => setRegistroSignModal(false)}>
+              Cancelar
+            </button>
+            <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={handleExportRegistroAT} disabled={exportingRegistro}>
+              <LuDownload size={14} />
+              {exportingRegistro ? 'Generando...' : 'Firmar y Exportar PDF'}
+            </button>
+          </div>
+        }
+      >
+        <div className="modal-body">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <div className="card" style={{ padding: 'var(--space-3)', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)' }}>
+              <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '120px' }}>
+                  <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: '2px' }}>Incidentes totales</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>{incidentes.length}</div>
+                </div>
+                <div style={{ flex: 1, minWidth: '120px' }}>
+                  <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: '2px' }}>Abiertos</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f59e0b' }}>
+                    {incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado)).length}
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: '120px' }}>
+                  <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: '2px' }}>Cerrados</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#10b981' }}>
+                    {incidentes.filter(i => !['reportado', 'en_investigacion'].includes((i as any).estado)).length}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p style={{ fontSize: '0.87rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              Al confirmar, reconoces haber revisado todos los incidentes registrados en esta obra.
+              El sistema generará el PDF oficial y registrará tu firma como Prevencionista responsable.
+            </p>
+            <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', fontSize: '0.82rem', color: '#92400e' }}>
+              El documento se abrirá en una nueva pestaña. Usa <strong>Ctrl+P → Guardar como PDF</strong> para descargarlo.
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Modal: Documentos de onboarding generados post-asignación ── */}
+      <Modal
+        isOpen={!!onboardingUploadModal?.show}
+        onClose={() => setOnboardingUploadModal(null)}
+        title="Documentos de onboarding generados"
+        subtitle={`${onboardingUploadModal?.addedWorkers.length ?? 0} trabajador(es) asignado(s). Puedes subir los archivos ahora o desde el perfil de cada trabajador.`}
+        size="lg"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+            <button className="btn btn-primary" onClick={() => setOnboardingUploadModal(null)}>
+              Listo
+            </button>
+          </div>
+        }
+      >
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          {DS44_ONBOARDING_ITEMS.map((item) => {
+            const isDone = bulkUploadDone[item.tipo];
+            const isUploading = bulkUploadingTipo === item.tipo;
+            return (
+              <div key={item.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)', minWidth: 0 }}>
+                  {isDone
+                    ? <LuCircleCheck size={16} style={{ color: '#10b981', marginTop: '2px', flexShrink: 0 }} />
+                    : item.kind === 'document'
+                      ? <LuDownload size={16} style={{ color: 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }} />
+                      : <LuClock size={16} style={{ color: 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }} />
+                  }
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{item.label}</div>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>{item.articulo}</div>
+                  </div>
+                </div>
+
+                <div style={{ flexShrink: 0 }}>
+                  {item.kind === 'document' && !isDone && (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 14px', borderRadius: '8px', border: '1px solid var(--surface-border)', fontSize: '0.82rem', cursor: isUploading ? 'wait' : 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)' }}>
+                      {isUploading ? <><LuClock size={13} /> Subiendo...</> : <><LuDownload size={13} /> Subir archivo</>}
+                      <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }}
+                        disabled={!!bulkUploadingTipo}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f && onboardingUploadModal) handleBulkOnboardingUpload(item.tipo, f, onboardingUploadModal.addedWorkers);
+                          if (e.target) e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  )}
+                  {item.kind === 'document' && isDone && (
+                    <span className="badge badge-success" style={{ fontSize: '0.8rem' }}>Subido</span>
+                  )}
+                  {item.kind === 'signature' && (
+                    <span className="badge badge-secondary" style={{ fontSize: '0.78rem' }}>Solicitud creada</span>
+                  )}
+                  {item.kind === 'actividad' && (
+                    <span className="badge badge-secondary" style={{ fontSize: '0.78rem' }}>Via actividades</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Modal>
+
       <Modal
         isOpen={isWorkersModalOpen}
         onClose={() => setIsWorkersModalOpen(false)}
@@ -1628,96 +2031,96 @@ export default function ObraDetalle() {
         }
       >
         <div className="modal-body">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
-                <div className="text-muted">
-                  Selecciona trabajadores para agregarlos a la obra.
-                </div>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    const unassigned = allWorkers.filter(w => !(Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
-                    const unassignedIds = unassigned.map(w => w.personaId || w.workerId);
-                    if (selectedUnassignedWorkerIds.length === unassignedIds.length && unassignedIds.length > 0) {
-                      setSelectedUnassignedWorkerIds([]);
-                    } else {
-                      setSelectedUnassignedWorkerIds(unassignedIds);
-                    }
-                  }}
-                >
-                  {(() => {
-                    const unassignedCount = allWorkers.filter(w => !(Array.isArray(w.obraIds) && w.obraIds.includes(obraId))).length;
-                    if (unassignedCount === 0) return 'Todos agregados';
-                    return selectedUnassignedWorkerIds.length === unassignedCount ? 'Deseleccionar todos' : 'Seleccionar todos los disponibles';
-                  })()}
-                </button>
-              </div>
-              <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
-                {allWorkers.map((worker) => {
-                  const workerId = worker.personaId || worker.workerId;
-                  const isAssigned = Array.isArray(worker.obraIds) && worker.obraIds.includes(obraId);
-                  const isInactive = worker.estado === 'inactivo';
-                  const isSelected = selectedUnassignedWorkerIds.includes(workerId);
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+            <div className="text-muted">
+              Selecciona trabajadores para agregarlos a la obra.
+            </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                const unassigned = allWorkers.filter(w => !(Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
+                const unassignedIds = unassigned.map(w => w.personaId || w.workerId);
+                if (selectedUnassignedWorkerIds.length === unassignedIds.length && unassignedIds.length > 0) {
+                  setSelectedUnassignedWorkerIds([]);
+                } else {
+                  setSelectedUnassignedWorkerIds(unassignedIds);
+                }
+              }}
+            >
+              {(() => {
+                const unassignedCount = allWorkers.filter(w => !(Array.isArray(w.obraIds) && w.obraIds.includes(obraId))).length;
+                if (unassignedCount === 0) return 'Todos agregados';
+                return selectedUnassignedWorkerIds.length === unassignedCount ? 'Deseleccionar todos' : 'Seleccionar todos los disponibles';
+              })()}
+            </button>
+          </div>
+          <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+            {allWorkers.map((worker) => {
+              const workerId = worker.personaId || worker.workerId;
+              const isAssigned = Array.isArray(worker.obraIds) && worker.obraIds.includes(obraId);
+              const isInactive = worker.estado === 'inactivo';
+              const isSelected = selectedUnassignedWorkerIds.includes(workerId);
 
-                  return (
-                    <div key={workerId} className="card" style={{ padding: 'var(--space-3)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                          {!isAssigned && (
-                            <input
-                              type="checkbox"
-                              className="checkbox-input custom-checkbox"
-                              checked={isSelected}
-                              onChange={() => {
-                                setSelectedUnassignedWorkerIds(prev => 
-                                  prev.includes(workerId) ? prev.filter(id => id !== workerId) : [...prev, workerId]
-                                );
-                              }}
-                              disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
-                            />
-                          )}
-                          <div>
-                            <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
-                            <div className="text-muted">{worker.cargo || 'Trabajador'} · {worker.rut}</div>
-                          </div>
-                        </div>
-                        {isAssigned ? (
-                          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                            <span className={`badge ${isInactive ? 'badge-warning' : 'badge-success'}`}>
-                              {isInactive ? 'Baja' : 'Activo'}
-                            </span>
-                            {!isInactive ? (
-                              <button
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => handleDeactivateWorker(worker)}
-                                disabled={updatingWorkers === workerId || worker.rol === 'admin'}
-                                title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
-                              >
-                                Dar de baja
-                              </button>
-                            ) : (
-                              <button
-                                className="btn btn-primary btn-sm"
-                                onClick={() => handleReactivateWorker(worker)}
-                                disabled={updatingWorkers === workerId}
-                              >
-                                Reactivar
-                              </button>
-                            )}
-                          </div>
+              return (
+                <div key={workerId} className="card" style={{ padding: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                      {!isAssigned && (
+                        <input
+                          type="checkbox"
+                          className="checkbox-input custom-checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedUnassignedWorkerIds(prev =>
+                              prev.includes(workerId) ? prev.filter(id => id !== workerId) : [...prev, workerId]
+                            );
+                          }}
+                          disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
+                        />
+                      )}
+                      <div>
+                        <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
+                        <div className="text-muted">{worker.cargo || 'Trabajador'} · {worker.rut}</div>
+                      </div>
+                    </div>
+                    {isAssigned ? (
+                      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                        <span className={`badge ${isInactive ? 'badge-warning' : 'badge-success'}`}>
+                          {isInactive ? 'Baja' : 'Activo'}
+                        </span>
+                        {!isInactive ? (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleDeactivateWorker(worker)}
+                            disabled={updatingWorkers === workerId || worker.rol === 'admin'}
+                            title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
+                          >
+                            Dar de baja
+                          </button>
                         ) : (
                           <button
                             className="btn btn-primary btn-sm"
-                            onClick={() => handleAddWorker(worker)}
-                            disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
+                            onClick={() => handleReactivateWorker(worker)}
+                            disabled={updatingWorkers === workerId}
                           >
-                            Agregar a obra
+                            Reactivar
                           </button>
                         )}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    ) : (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => handleAddWorker(worker)}
+                        disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
+                      >
+                        Agregar a obra
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </Modal>
 

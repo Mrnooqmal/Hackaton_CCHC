@@ -1,24 +1,35 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import Header from '../components/Header';
 import { apiBaseUrl, personasApi, type PersonaResponse } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useObraContext } from '../context/ObraContext';
 import ConfirmModal from '../components/ConfirmModal';
+import { AlertBanner, CredentialCard } from '../components/ui';
 import {
-    FiUserPlus, FiShield, FiCheckCircle, FiAlertCircle, FiEdit2,
+    FiUserPlus, FiShield, FiEdit2, FiAlertCircle,
     FiArrowRight, FiUsers, FiLock, FiX, FiSave,
     FiBriefcase, FiStar, FiSearch, FiEye, FiUpload, FiDownload
 } from 'react-icons/fi';
 
 const ROLE_CONFIG: Record<string, { label: string; color: string; icon: any; desc: string }> = {
     admin: { label: 'Administrador', color: 'var(--primary-500)', icon: FiStar, desc: 'Acceso completo al sistema' },
+    jefe_obra: { label: 'Jefe de Obra', color: 'var(--success-500)', icon: FiBriefcase, desc: 'Gestiona su(s) obra(s) asignadas' },
     prevencionista: { label: 'Prevencionista', color: 'var(--warning-500)', icon: FiShield, desc: 'Gestión de prevención y documentos' },
     supervisor: { label: 'Supervisor', color: 'var(--info-500)', icon: FiEye, desc: 'Supervisión de trabajadores y actividades' },
     trabajador: { label: 'Trabajador', color: 'var(--gray-500)', icon: FiUsers, desc: 'Acceso básico para firmas y documentos' },
 };
 
 export default function PersonasManagement() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const { selectedObraId, selectedObra } = useObraContext();
     const tenantId = user?.tenantId || user?.empresaId || localStorage.getItem('tenant_id') || '';
+    const isAdmin = user?.rol === 'admin';
+    const isObraScoped = Boolean(user && !isAdmin);
+    const isMissingObra = isObraScoped && !selectedObraId;
+    const canCreatePersonas = isAdmin;
+    const canBulkUpload = isAdmin;
+    const canManageObra = hasPermission('gestionar_obras');
 
     const [personas, setPersonas] = useState<PersonaResponse[]>([]);
     const [loading, setLoading] = useState(true);
@@ -53,10 +64,21 @@ export default function PersonasManagement() {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     const fetchPersonas = async () => {
+        if (!tenantId) {
+            setPersonas([]);
+            setLoading(false);
+            return;
+        }
+        if (isMissingObra) {
+            setPersonas([]);
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
             const filters: any = {};
             if (filterRol) filters.rol = filterRol;
+            if (isObraScoped && selectedObraId) filters.obraId = selectedObraId;
             const res = await personasApi.list(tenantId, filters);
             if (res.success && res.data) {
                 setPersonas(res.data.personas || []);
@@ -67,15 +89,21 @@ export default function PersonasManagement() {
         finally { setLoading(false); }
     };
 
-    useEffect(() => { if (tenantId) fetchPersonas(); }, [tenantId, filterRol]);
+    useEffect(() => { fetchPersonas(); }, [tenantId, filterRol, selectedObraId, isObraScoped]);
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!canCreatePersonas) {
+            setError('No tienes permisos para crear personas.');
+            return;
+        }
         setLoading(true);
         try {
+            const obraIds = isObraScoped && selectedObraId ? [selectedObraId] : undefined;
             const res = await personasApi.create(tenantId, {
                 ...newPersona,
-                tieneAccesoWeb: newPersona.tieneAccesoWeb || newPersona.rol === 'admin' || newPersona.rol === 'prevencionista'
+                obraIds,
+                tieneAccesoWeb: newPersona.tieneAccesoWeb || newPersona.rol === 'admin' || newPersona.rol === 'jefe_obra' || newPersona.rol === 'prevencionista'
             });
             if (res.success && res.data) {
                 setCreateResult({
@@ -159,6 +187,10 @@ export default function PersonasManagement() {
 
     const handleBulkUpload = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!canBulkUpload) {
+            setUploadError('Solo administradores pueden usar la carga masiva.');
+            return;
+        }
         if (!uploadFile) {
             setUploadError('Selecciona un archivo Excel');
             return;
@@ -219,69 +251,102 @@ export default function PersonasManagement() {
         return <span style={{ background: cfg.color, color: '#fff', padding: '2px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const }}>{cfg.label}</span>;
     };
 
+    const pageTitle = isObraScoped ? 'Equipo de Obra' : 'Personas de la Empresa';
+    const pageDescription = isObraScoped
+        ? selectedObra
+            ? `Personas asignadas a ${selectedObra.nombre}.`
+            : 'Selecciona una obra para ver el equipo asignado.'
+        : 'Gestione todos los usuarios, roles y permisos desde un solo lugar.';
+        const showAdminActions = isAdmin;
+
     return (
         <>
-            <Header title="Gestión de Personas" />
+            <Header title={isObraScoped ? 'Equipo de Obra' : 'Gestión de Personas'} />
             <div className="page-content">
                 <div className="page-header">
                     <div className="page-header-info">
-                        <h2 className="page-header-title"><FiUsers className="text-primary-500" /> Personas de la Empresa</h2>
-                        <p className="page-header-description">Gestione todos los usuarios, roles y permisos desde un solo lugar.</p>
+                        <h2 className="page-header-title"><FiUsers className="text-primary-500" /> {pageTitle}</h2>
+                        <p className="page-header-description">{pageDescription}</p>
                     </div>
-                    <div className="page-header-actions">
-                        <button className="btn btn-secondary" onClick={() => { setUploadResult(null); setUploadError(''); setSendWelcomeEmail(false); setShowBulkUpload(true); }}>
-                            <FiUpload /> Carga Masiva
-                        </button>
-                        <button className="btn btn-primary" onClick={() => { setCreateResult(null); setShowCreate(true); }}>
-                            <FiUserPlus /> Nueva Persona
-                        </button>
-                    </div>
+                    {showAdminActions && (
+                        <div className="page-header-actions">
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => { setUploadResult(null); setUploadError(''); setSendWelcomeEmail(false); setShowBulkUpload(true); }}
+                            >
+                                <FiUpload /> Carga Masiva
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => { setCreateResult(null); setShowCreate(true); }}
+                            >
+                                <FiUserPlus /> Nueva Persona
+                            </button>
+                        </div>
+                    )}
                 </div>
+
+                {isMissingObra && (
+                    <AlertBanner
+                        variant="warning"
+                        message="Selecciona una obra en el encabezado para ver y gestionar el equipo asignado."
+                    />
+                )}
+
+                {!isAdmin && selectedObraId && (
+                    <AlertBanner
+                        variant="info"
+                        message="Las nuevas personas se crean a nivel empresa. Para sumar personas a esta obra, asigna personal desde la ficha de la obra."
+                    >
+                        {canManageObra && (
+                            <Link to={`/obras/${selectedObraId}`} className="btn btn-secondary btn-sm" style={{ marginTop: 'var(--space-2)' }}>
+                                Ir a Gestionar Obra
+                            </Link>
+                        )}
+                    </AlertBanner>
+                )}
 
                 {/* Result Banners */}
                 {createResult && (
-                    <div className="alert alert-success mb-6">
-                        <div className="flex items-start gap-3">
-                            <FiCheckCircle size={24} className="text-success-500" style={{ flexShrink: 0, marginTop: 2 }} />
-                            <div className="flex-1">
-                                <div className="flex justify-between items-start">
-                                    <h3 className="font-bold text-lg">Persona creada con éxito</h3>
-                                    <button onClick={() => setCreateResult(null)}><FiX /></button>
-                                </div>
-                                {createResult.password && (
-                                    <>
-                                        <p className="text-sm mt-1">Credenciales de acceso:</p>
-                                        <div className="mt-2" style={{ background: 'var(--surface-elevated)', border: '1px solid rgba(76,175,80,0.2)', padding: 12, borderRadius: 12, fontFamily: 'var(--font-mono)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <div><span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block' }}>RUT</span><strong>{createResult.persona?.rut}</strong></div>
-                                            <div style={{ textAlign: 'right' }}><span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block' }}>Pass Temporal</span><strong style={{ fontSize: 18, color: 'var(--primary-500)' }}>{createResult.password}</strong></div>
-                                        </div>
-                                        <p className="mt-2 text-xs text-muted flex items-center gap-1"><FiAlertCircle size={12} /> El usuario deberá cambiar esta contraseña al iniciar sesión.</p>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                    <AlertBanner
+                        variant="success"
+                        message="Persona creada con éxito"
+                        onDismiss={() => setCreateResult(null)}
+                        autoDismissMs={0}
+                    >
+                        {createResult.password && (
+                            <CredentialCard
+                                rut={createResult.persona?.rut || ''}
+                                password={createResult.password}
+                                variant="primary"
+                            />
+                        )}
+                    </AlertBanner>
                 )}
 
                 {resetResult && (
-                    <div className="alert alert-warning mb-6">
-                        <div className="flex items-start gap-3">
-                            <FiLock size={24} className="text-warning-500" style={{ flexShrink: 0, marginTop: 2 }} />
-                            <div className="flex-1">
-                                <div className="flex justify-between items-start">
-                                    <h3 className="font-bold text-lg">Contraseña Reseteada</h3>
-                                    <button onClick={() => setResetResult(null)}><FiX /></button>
-                                </div>
-                                <div className="mt-2" style={{ background: 'var(--surface-elevated)', border: '1px solid rgba(234,179,8,0.2)', padding: 12, borderRadius: 12, fontFamily: 'var(--font-mono)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div><span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block' }}>RUT</span><strong>{resetResult.rut}</strong></div>
-                                    <div style={{ textAlign: 'right' }}><span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block' }}>Nueva Clave</span><strong style={{ fontSize: 18, color: 'var(--warning-500)' }}>{resetResult.passwordTemporal}</strong></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <AlertBanner
+                        variant="warning"
+                        message="Contraseña Reseteada"
+                        onDismiss={() => setResetResult(null)}
+                        autoDismissMs={0}
+                    >
+                        <CredentialCard
+                            rut={resetResult.rut}
+                            password={resetResult.passwordTemporal}
+                            title="Nueva clave de acceso"
+                            variant="warning"
+                        />
+                    </AlertBanner>
                 )}
 
-                {error && <div className="alert alert-danger mb-6">{error} <button onClick={() => setError('')} style={{ float: 'right' }}><FiX /></button></div>}
+                {error && (
+                    <AlertBanner
+                        variant="error"
+                        message={error}
+                        onDismiss={() => setError('')}
+                    />
+                )}
 
                 {/* Filters */}
                 <div className="card mb-6">
@@ -293,6 +358,7 @@ export default function PersonasManagement() {
                         <select className="form-input" style={{ width: 180 }} value={filterRol} onChange={e => setFilterRol(e.target.value)}>
                             <option value="">Todos los roles</option>
                             <option value="admin">Administrador</option>
+                            <option value="jefe_obra">Jefe de Obra</option>
                             <option value="prevencionista">Prevencionista</option>
                             <option value="supervisor">Supervisor</option>
                             <option value="trabajador">Trabajador</option>
@@ -312,6 +378,8 @@ export default function PersonasManagement() {
                             <tbody>
                                 {loading && filtered.length === 0 ? (
                                     <tr><td colSpan={6} className="text-center"><div className="spinner" style={{ margin: '16px auto' }} /></td></tr>
+                                ) : isMissingObra ? (
+                                    <tr><td colSpan={6} className="text-center text-muted" style={{ padding: 32 }}>Selecciona una obra para ver su equipo</td></tr>
                                 ) : filtered.length === 0 ? (
                                     <tr><td colSpan={6} className="text-center text-muted" style={{ padding: 32 }}>No hay personas registradas</td></tr>
                                 ) : filtered.map(p => (
@@ -319,10 +387,10 @@ export default function PersonasManagement() {
                                         <td>
                                             <div className="flex items-center gap-3">
                                                 <div className="avatar avatar-sm" style={{ background: ROLE_CONFIG[p.rol]?.color || 'var(--gray-500)', color: '#fff' }}>{p.nombre[0]}{(p.apellido || p.nombre)[0]}</div>
-                                                <div>
+                                                <Link to={`/personas/${p.rut}`} style={{ color: 'inherit', textDecoration: 'none' }}>
                                                     <div style={{ fontWeight: 600 }}>{p.nombre} {p.apellido}</div>
                                                     <div className="text-muted" style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>{p.rut}</div>
-                                                </div>
+                                                </Link>
                                             </div>
                                         </td>
                                         <td>{rolBadge(p.rol)}</td>
@@ -349,7 +417,7 @@ export default function PersonasManagement() {
             </div>
 
             {/* Bulk Upload Modal */}
-            {showBulkUpload && (
+            {showBulkUpload && canBulkUpload && (
                 <div className="modal-overlay">
                     <div className="modal-content" style={{ maxWidth: 600 }}>
                         <div className="modal-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
@@ -448,7 +516,7 @@ export default function PersonasManagement() {
             )}
 
             {/* Create Modal */}
-            {showCreate && (
+            {showCreate && canCreatePersonas && (
                 <div className="modal-overlay">
                     <div className="modal-content" style={{ maxWidth: 560 }}>
                         <div className="modal-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
@@ -456,7 +524,9 @@ export default function PersonasManagement() {
                                 <div className="modal-header-icon" style={{ background: 'var(--primary-500)', marginBottom: 0 }}><FiUserPlus size={24} /></div>
                                 <h2 className="modal-title" style={{ marginBottom: 0 }}>Nueva Persona</h2>
                             </div>
-                            <p className="modal-subtitle" style={{ marginTop: 0 }}>Agregue un nuevo miembro a su empresa</p>
+                            <p className="modal-subtitle" style={{ marginTop: 0 }}>
+                                {isObraScoped ? 'Agregue un nuevo miembro a la obra seleccionada' : 'Agregue un nuevo miembro a su empresa'}
+                            </p>
                         </div>
                         <form onSubmit={handleCreate} className="modal-body">
                             <div className="form-section">
@@ -465,7 +535,7 @@ export default function PersonasManagement() {
                                     {Object.entries(ROLE_CONFIG).map(([key, cfg]) => {
                                         const Icon = cfg.icon;
                                         return (
-                                            <button key={key} type="button" className={`role-card ${newPersona.rol === key ? 'selected' : ''}`} onClick={() => setNewPersona({ ...newPersona, rol: key, cargo: key === 'trabajador' ? newPersona.cargo : '', tieneAccesoWeb: key === 'admin' || key === 'prevencionista' || key === 'supervisor' })}>
+                                            <button key={key} type="button" className={`role-card ${newPersona.rol === key ? 'selected' : ''}`} onClick={() => setNewPersona({ ...newPersona, rol: key, cargo: key === 'trabajador' ? newPersona.cargo : '', tieneAccesoWeb: key === 'admin' || key === 'jefe_obra' || key === 'prevencionista' || key === 'supervisor' })}>
                                                 <div className="role-card-icon"><Icon size={24} /></div>
                                                 <span className="role-card-title">{cfg.label}</span>
                                                 <span className="role-card-desc">{cfg.desc}</span>

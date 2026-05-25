@@ -12,16 +12,18 @@ const { PersonaService } = require('../../lib/services/PersonaService');
 
 // Tipos de solicitudes de firma
 const REQUEST_TYPES = {
-    CHARLA_5MIN: { label: 'Charla de 5 Minutos', icon: '💬', requiresDoc: false },
-    CAPACITACION: { label: 'Capacitación', icon: '📚', requiresDoc: true },
-    INDUCCION: { label: 'Inducción', icon: '🎓', requiresDoc: true },
-    ENTREGA_EPP: { label: 'Entrega de EPP', icon: '🦺', requiresDoc: true },
-    ART: { label: 'Análisis de Riesgos en Terreno', icon: '⚠️', requiresDoc: true },
-    PROCEDIMIENTO: { label: 'Procedimiento de Trabajo', icon: '📋', requiresDoc: true },
-    INSPECCION: { label: 'Inspección de Seguridad', icon: '🔍', requiresDoc: false },
-    REGLAMENTO: { label: 'Reglamento Interno', icon: '📖', requiresDoc: true },
-    DOCUMENTO: { label: 'Documento DS44', icon: '📄', requiresDoc: true },
-    OTRO: { label: 'Otro', icon: '📝', requiresDoc: false },
+    CHARLA_5MIN: { label: 'Charla de 5 Minutos', icon: 'chat', requiresDoc: false },
+    CAPACITACION: { label: 'Capacitación', icon: 'book', requiresDoc: true },
+    INDUCCION: { label: 'Inducción', icon: 'graduation', requiresDoc: true },
+    ENTREGA_EPP: { label: 'Entrega de EPP', icon: 'shield', requiresDoc: true },
+    ART: { label: 'Análisis de Riesgos en Terreno', icon: 'warning', requiresDoc: true },
+    PROCEDIMIENTO: { label: 'Procedimiento de Trabajo', icon: 'clipboard', requiresDoc: true },
+    INSPECCION: { label: 'Inspección de Seguridad', icon: 'search', requiresDoc: false },
+    REGLAMENTO: { label: 'Reglamento Interno', icon: 'document', requiresDoc: true },
+    DOCUMENTO: { label: 'Documento DS44', icon: 'file', requiresDoc: true },
+    OTRO: { label: 'Otro', icon: 'edit', requiresDoc: false },
+    INVESTIGACION_ACCIDENTE: { label: 'Investigación de Accidente / EP', icon: 'search', requiresDoc: true },
+    
 };
 
 /**
@@ -129,6 +131,7 @@ module.exports.create = async (event) => {
 
             // Metadata
             ubicacion: body.ubicacion || null,
+            obraId: body.obraId || null,
             tenantId: body.tenantId || solicitante.tenantId || 'default',
 
             // Estado
@@ -172,11 +175,11 @@ module.exports.create = async (event) => {
 
 /**
  * GET /signature-requests - Listar solicitudes de firma
- * Query params: tenantId, estado, solicitanteId, tipo
+ * Query params: tenantId, estado, solicitanteId, tipo, obraId
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId, estado, solicitanteId, tipo } = event.queryStringParameters || {};
+        const { tenantId, estado, solicitanteId, tipo, obraId } = event.queryStringParameters || {};
 
         if (tenantId) {
             // Use GSI query for tenant isolation
@@ -186,6 +189,7 @@ module.exports.list = async (event) => {
             if (estado) { filterParts.push('estado = :estado'); expressionAttributeValues[':estado'] = estado; }
             if (solicitanteId) { filterParts.push('solicitanteId = :solicitanteId'); expressionAttributeValues[':solicitanteId'] = solicitanteId; }
             if (tipo) { filterParts.push('tipo = :tipo'); expressionAttributeValues[':tipo'] = tipo; }
+            if (obraId) { filterParts.push('obraId = :obraId'); expressionAttributeValues[':obraId'] = obraId; }
 
             const params = {
                 TableName: TABLE_NAME,
@@ -211,6 +215,7 @@ module.exports.list = async (event) => {
         if (estado) { filterParts2.push('estado = :estado'); exprVals[':estado'] = estado; }
         if (solicitanteId) { filterParts2.push('solicitanteId = :solicitanteId'); exprVals[':solicitanteId'] = solicitanteId; }
         if (tipo) { filterParts2.push('tipo = :tipo'); exprVals[':tipo'] = tipo; }
+        if (obraId) { filterParts2.push('obraId = :obraId'); exprVals[':obraId'] = obraId; }
         if (filterParts2.length > 0) {
             scanParams.FilterExpression = filterParts2.join(' AND ');
             scanParams.ExpressionAttributeValues = exprVals;

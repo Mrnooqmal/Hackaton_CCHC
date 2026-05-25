@@ -10,11 +10,11 @@ const obraService = new ObraService();
 
 module.exports.obrasHandler = async (event) => {
     const method = event.requestContext?.http?.method || event.httpMethod;
-    const path = event.rawPath || event.path || '';
-
-    const segments = path.replace(/^\/obras\/?/, '').split('/').filter(Boolean);
-    const obraId = segments[0] || null;
-    const action = segments[1] || null;
+    const path = (event.rawPath || event.path || event.requestContext?.http?.path || '').split('?')[0];
+    const pathParts = path.split('/').filter(Boolean);
+    const obrasIndex = pathParts.indexOf('obras');
+    const obraId = obrasIndex !== -1 ? pathParts[obrasIndex + 1] || null : null;
+    const action = obrasIndex !== -1 ? pathParts[obrasIndex + 2] || null : null;
 
     // tenantId debe venir del JWT o query param (temporalmente)
     const tenantId = event.queryStringParameters?.tenantId

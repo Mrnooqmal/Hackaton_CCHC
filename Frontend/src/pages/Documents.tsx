@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import {
     FiPlus,
@@ -16,7 +16,9 @@ import {
     FiUserCheck,
     FiAlertCircle,
     FiCalendar,
-    FiPenTool
+    FiPenTool,
+    FiChevronDown,
+    FiChevronUp
 } from 'react-icons/fi';
 import { documentsApi, workersApi, uploadsApi, inboxApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -29,9 +31,12 @@ import { Modal } from '../components/ui';
 const DOCUMENT_TYPES: Record<string, { label: string; color: string; category: string }> = {
     IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)', category: 'normativo' },
     POLITICA_SSO: { label: 'Política SSO', color: 'var(--info-500)', category: 'normativo' },
+    DIAGNOSTICO_LEGAL: { label: 'Matriz Legal aplicable', color: 'var(--warning-500)', category: 'normativo' },
     REGLAMENTO_INTERNO: { label: 'Reglamento Interno', color: 'var(--warning-500)', category: 'normativo' },
     PROCEDIMIENTO_TRABAJO: { label: 'Procedimiento de Trabajo', color: 'var(--success-500)', category: 'normativo' },
     MATRIZ_MIPPER: { label: 'Matriz MIPPER', color: 'var(--danger-500)', category: 'normativo' },
+    MIPER: { label: 'MIPER', color: 'var(--danger-500)', category: 'normativo' },
+    MAPA_RIESGOS: { label: 'Mapa de Riesgos', color: 'var(--info-500)', category: 'normativo' },
     ENTREGA_EPP: { label: 'Entrega EPP', color: 'var(--success-500)', category: 'diario' },
     CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)', category: 'diario' },
     CHARLA_5_MIN: { label: 'Charla 5 Minutos', color: 'var(--warning-500)', category: 'diario' },
@@ -42,6 +47,7 @@ export default function Documents() {
     const { selectedObraId } = useObraContext();
     const { isOnline, pendingCount, signDocument, syncPendingSignatures } = useOfflineSignature();
     const [activeTab, setActiveTab] = useState<'normativos' | 'diarios'>('normativos');
+    const activeCategory = activeTab === 'normativos' ? 'normativo' : 'diario';
     const [documents, setDocuments] = useState<Document[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
@@ -52,6 +58,7 @@ export default function Documents() {
     const [showSignModal, setShowSignModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('');
+    const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
     const [uploading, setUploading] = useState(false);
     const [creating, setCreating] = useState(false);
     const [assigning, setAssigning] = useState(false);
@@ -380,12 +387,20 @@ export default function Documents() {
         );
     };
 
+    const toggleRow = (documentId: string) => {
+        setExpandedRows((prev) => ({
+            ...prev,
+            [documentId]: !prev[documentId]
+        }));
+    };
+
     // Get unique cargos from workers
     const uniqueCargos = [...new Set(workers.map(w => w.cargo).filter(Boolean))] as string[];
 
     const filteredDocuments = documents.filter((doc) => {
+        if ((doc as any).clasificacion === 'repositorio') return false;
         const typeInfo = DOCUMENT_TYPES[doc.tipo];
-        const categoryMatch = typeInfo ? typeInfo.category === activeTab : activeTab === 'normativos';
+        const categoryMatch = typeInfo ? typeInfo.category === activeCategory : activeTab === 'normativos';
         const matchesSearch = doc.titulo.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesType = !filterType || doc.tipo === filterType;
 
@@ -534,7 +549,7 @@ export default function Documents() {
                                 >
                                     <option value="">Todos los tipos</option>
                                     {Object.entries(DOCUMENT_TYPES)
-                                        .filter(([, info]) => info.category === activeTab)
+                                        .filter(([, info]) => info.category === activeCategory)
                                         .map(([key, { label }]) => (
                                         <option key={key} value={key}>{label}</option>
                                     ))}
@@ -617,7 +632,7 @@ export default function Documents() {
                     </div>
                 </div>
 
-                {/* Documents Grid */}
+                {/* Documents List */}
                 {filteredDocuments.length === 0 ? (
                     <div className="card empty-state" style={{ padding: 'var(--space-12)' }}>
                         <div className="empty-state-icon-container" style={{
@@ -649,106 +664,148 @@ export default function Documents() {
                         )}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-3">
-                        {filteredDocuments.map((doc) => {
-                            const docType = DOCUMENT_TYPES[doc.tipo] || { label: doc.tipo, color: 'var(--text-muted)' };
-                            const pendingCount = doc.asignaciones?.filter(a => a.estado === 'pendiente').length || 0;
-                            const signedCount = doc.asignaciones?.filter(a => a.estado === 'firmado').length || 0;
-                            const totalAssigned = doc.asignaciones?.length || 0;
+                    <div className="table-container">
+                        <table className="table table-compact" style={{ minWidth: '960px' }}>
+                            <thead>
+                                <tr>
+                                    <th style={{ width: '36%' }}>Documento</th>
+                                    <th style={{ width: '14%' }}>Tipo</th>
+                                    <th style={{ width: '18%' }}>Asignaciones</th>
+                                    <th style={{ width: '16%' }}>Fecha</th>
+                                    <th style={{ width: '16%' }}>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredDocuments.map((doc) => {
+                                    const docType = DOCUMENT_TYPES[doc.tipo] || { label: doc.tipo, color: 'var(--text-muted)' };
+                                    const pendingCount = doc.asignaciones?.filter(a => a.estado === 'pendiente').length || 0;
+                                    const signedCount = doc.asignaciones?.filter(a => a.estado === 'firmado').length || 0;
+                                    const totalAssigned = doc.asignaciones?.length || 0;
 
-                            // Estado para el usuario actual
-                            const myAssignment = user?.workerId ? doc.asignaciones?.find(a => a.workerId === user.workerId) : null;
-                            const isPendingForMe = myAssignment?.estado === 'pendiente';
-                            const isSignedByMe = myAssignment?.estado === 'firmado';
+                                    const myAssignment = user?.workerId ? doc.asignaciones?.find(a => a.workerId === user.workerId) : null;
+                                    const isPendingForMe = myAssignment?.estado === 'pendiente';
+                                    const isSignedByMe = myAssignment?.estado === 'firmado';
+                                    const isExpanded = Boolean(expandedRows[doc.documentId]);
+                                    const myStatusLabel = myAssignment
+                                        ? myAssignment.estado === 'firmado'
+                                            ? 'Firmado'
+                                            : 'Pendiente'
+                                        : 'No asignado';
 
-                            return (
-                                <div key={doc.documentId} className="card">
-                                    <div className="flex items-start justify-between mb-3">
-                                        <div className="avatar" style={{ background: docType.color }}>
-                                            <FiFileText />
-                                        </div>
-                                        {doc.archivoUrl && (
-                                            <button
-                                                className="btn btn-ghost btn-icon btn-sm"
-                                                onClick={() => handleDownloadFile(doc.archivoUrl!)}
-                                                title="Descargar archivo"
-                                            >
-                                                <FiDownload />
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    <h4 className="font-semibold mb-1">{doc.titulo}</h4>
-                                    <span className="badge badge-neutral mb-2">{docType.label}</span>
-                                    <p className="text-sm text-muted mb-4" style={{
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        display: '-webkit-box',
-                                        WebkitLineClamp: 2,
-                                        WebkitBoxOrient: 'vertical'
-                                    }}>
-                                        {doc.descripcion || 'Sin descripción'}
-                                    </p>
-
-                                    <div className="flex gap-4 mb-4 text-sm">
-                                        <div className="flex items-center gap-1">
-                                            <FiUsers size={14} className="text-muted" />
-                                            <span>{totalAssigned} asignados</span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <FiCheck size={14} className="text-success-500" />
-                                            <span>{signedCount} firmados</span>
-                                        </div>
-                                        {pendingCount > 0 && (
-                                            <div className="flex items-center gap-1">
-                                                <FiClock size={14} className="text-warning-500" />
-                                                <span>{pendingCount} pendientes</span>
-                                            </div>
-                                        )}
-                                        <div className="flex items-center gap-2 text-xs text-muted">
-                                            <FiCalendar size={12} />
-                                            <span>{formatDateTime(doc.createdAt)}</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex gap-2">
-                                        <button
-                                            className="btn btn-secondary btn-sm"
-                                            style={{ flex: 1 }}
-                                            onClick={() => handleViewDetails(doc)}
-                                        >
-                                            <FiEye size={14} />
-                                            Ver Detalles
-                                        </button>
-                                        <button
-                                            className="btn btn-primary btn-sm"
-                                            style={{ flex: 1 }}
-                                            onClick={() => handleOpenAssignModal(doc)}
-                                        >
-                                            <FiUserCheck size={14} />
-                                            Asignar
-                                        </button>
-
-
-                                        {isPendingForMe && (
-                                            <button
-                                                className="btn btn-success btn-sm"
-                                                style={{ flex: 1, background: 'var(--success-600)', borderColor: 'var(--success-600)', color: 'white' }}
-                                                onClick={() => handleOpenSignModal(doc)}
-                                            >
-                                                <FiPenTool size={14} />
-                                                Firmar
-                                            </button>
-                                        )}
-                                        {isSignedByMe && (
-                                            <span className="badge badge-success flex items-center justify-center" style={{ flex: 1 }}>
-                                                <FiCheck className="mr-1" /> Firmado
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                    return (
+                                        <Fragment key={doc.documentId}>
+                                            <tr>
+                                                <td>
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="avatar avatar-sm" style={{ background: docType.color }}>
+                                                            <FiFileText />
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-semibold">{doc.titulo}</div>
+                                                            <div
+                                                                className="text-xs text-muted"
+                                                                style={{
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis',
+                                                                    display: '-webkit-box',
+                                                                    WebkitLineClamp: 1,
+                                                                    WebkitBoxOrient: 'vertical',
+                                                                    maxWidth: 420
+                                                                }}
+                                                            >
+                                                                {doc.descripcion || 'Sin descripción'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span className="badge badge-neutral">{docType.label}</span>
+                                                </td>
+                                                <td>
+                                                    <div className="text-sm">{signedCount}/{totalAssigned} firmados</div>
+                                                    {pendingCount > 0 && (
+                                                        <div className="text-xs text-muted">{pendingCount} pendientes</div>
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    <div className="text-sm">{formatDateTime(doc.createdAt)}</div>
+                                                </td>
+                                                <td>
+                                                    <div className="flex flex-wrap gap-2" style={{ alignItems: 'center' }}>
+                                                        {doc.archivoUrl && (
+                                                            <button
+                                                                className="btn btn-ghost btn-icon btn-sm"
+                                                                onClick={() => handleDownloadFile(doc.archivoUrl!)}
+                                                                title="Descargar archivo"
+                                                            >
+                                                                <FiDownload />
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            className="btn btn-secondary btn-sm"
+                                                            onClick={() => handleViewDetails(doc)}
+                                                        >
+                                                            <FiEye size={14} />
+                                                            Ver
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-primary btn-sm"
+                                                            onClick={() => handleOpenAssignModal(doc)}
+                                                        >
+                                                            <FiUserCheck size={14} />
+                                                            Asignar
+                                                        </button>
+                                                        {isPendingForMe && (
+                                                            <button
+                                                                className="btn btn-success btn-sm"
+                                                                style={{ background: 'var(--success-600)', borderColor: 'var(--success-600)', color: 'white' }}
+                                                                onClick={() => handleOpenSignModal(doc)}
+                                                            >
+                                                                <FiPenTool size={14} />
+                                                                Firmar
+                                                            </button>
+                                                        )}
+                                                        {isSignedByMe && (
+                                                            <span className="badge badge-success flex items-center" style={{ height: 28 }}>
+                                                                <FiCheck className="mr-1" /> Firmado
+                                                            </span>
+                                                        )}
+                                                        <button
+                                                            className="btn btn-ghost btn-icon btn-sm"
+                                                            onClick={() => toggleRow(doc.documentId)}
+                                                            aria-expanded={isExpanded}
+                                                            title={isExpanded ? 'Ocultar detalles' : 'Mostrar detalles'}
+                                                        >
+                                                            {isExpanded ? <FiChevronUp /> : <FiChevronDown />}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {isExpanded && (
+                                                <tr className="table-expand-row">
+                                                    <td colSpan={5}>
+                                                        <div className="table-expand-content">
+                                                            <div>
+                                                                <strong>Descripción:</strong> {doc.descripcion || 'Sin descripción'}
+                                                            </div>
+                                                            <div>
+                                                                <strong>Archivo:</strong> {doc.archivoNombre || 'Sin archivo'}
+                                                            </div>
+                                                            <div>
+                                                                <strong>Asignaciones:</strong> {signedCount}/{totalAssigned} firmados · {pendingCount} pendientes
+                                                            </div>
+                                                            <div>
+                                                                <strong>Mi estado:</strong> {myStatusLabel}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </Fragment>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
                 )}
 
@@ -778,7 +835,7 @@ export default function Documents() {
                                         >
                                             <option value="">Seleccione un tipo</option>
                                             {Object.entries(DOCUMENT_TYPES)
-                                                .filter(([, info]) => info.category === activeTab)
+                                                .filter(([, info]) => info.category === activeCategory)
                                                 .map(([key, { label }]) => (
                                                 <option key={key} value={key}>{label}</option>
                                             ))}

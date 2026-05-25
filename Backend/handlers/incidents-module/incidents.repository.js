@@ -201,7 +201,76 @@ class IncidentsRepository {
                 jefeDirecto: null,
                 comiteParitario: null
             },
-            estado: 'reportado',
+            estado: 'reportado', // abierto | en_investigacion | cerrado | archivado
+
+            // ─── DS44 Art. 71 — Cabecera del Informe ──────────────────────────────────
+            realizadoPor: data.realizadoPor || {
+                personaId: null,
+                nombre: '',
+                cargo: ''
+            },
+            dirigidoA: data.dirigidoA || {
+                personaId: null,
+                nombre: '',
+                cargo: '',
+                direccionCentroTrabajo: ''
+            },
+
+            // ─── DS44 — Afectado extendido ────────────────────────────────────────────
+            afectado: data.afectado || {
+                personaId: null,
+                nombreCompleto: data.trabajador?.nombre || '',
+                rut: data.trabajador?.rut || '',
+                fechaNacimiento: null,
+                genero: data.trabajador?.genero || '',
+                nacionalidad: '',
+                edad: null,
+                telefono: '',
+                mail: '',
+                cargo: data.trabajador?.cargo || '',
+                categoriaOcupacional: '',  // 'trabajador_dependiente' | 'independiente' | 'empleador'
+                antiguedadEmpresa: '',
+                puestoAlMomentoAccidente: '',
+                experienciaPuesto: '',
+                turno: false,
+                tipoTurno: ''
+            },
+
+            // ─── DS44 — Datos del accidente extendido ─────────────────────────────────
+            diaSemana: data.diaSemana || '',
+            horasTrabajadas: data.horasTrabajadas || null,
+            direccionAccidente: data.direccionAccidente || data.centroTrabajo || '',
+            comunaAccidente: data.comunaAccidente || '',
+            regionAccidente: data.regionAccidente || '',
+            esFatal: data.esFatal || false,
+            fechaDefuncion: data.fechaDefuncion || null,
+            lugarDefuncion: data.lugarDefuncion || null,
+
+            // ─── DS44 — Investigación (Árbol de Causas) ───────────────────────────────
+            entrevistados: data.entrevistados || [],         // [{ nombre, rut, cargo }]
+            relatoAccidente: data.relatoAccidente || '',
+            antecedentesConsiderados: data.antecedentesConsiderados || [], // [{ tipo, descripcion, documentoId? }]
+            listaHechos: data.listaHechos || [],             // [{ numero, descripcion }]
+            arbolCausasUrl: data.arbolCausasUrl || null,     // S3 URL del diagrama
+            causasRaiz: data.causasRaiz || [],               // [{ descripcion }]
+
+            // ─── DS44 — Medidas correctivas ───────────────────────────────────────────
+            medidasCorrectivas: data.medidasCorrectivas || [],
+            // [{ numero, causaRaiz, medida, responsableId, responsableNombre, fechaMaxEjecucion, estado:'pendiente'|'en_proceso'|'completada' }]
+
+            // ─── DS44 — Colaboradores del proceso investigativo ───────────────────────
+            colaboradores: data.colaboradores || [],         // [{ nombre, rut, cargo, tipoColaboracion }]
+
+            // ─── DS44 — Firmas del informe (solo investigadores, NO todos los trabajadores) ─
+            firmas: data.firmas || [],
+            // [{ personaId, nombre, cargo, rol:'prevencionista'|'supervisor'|'cphs'|'colaborador', firmado:false, fechaFirma:null, signatureId:null }]
+
+            // ─── DS44 — Seguimiento de medidas ────────────────────────────────────────
+            fechaVerificacionMedidas: data.fechaVerificacionMedidas || null,
+            medidasVerificadas: data.medidasVerificadas || false,
+            fechaRealizacion: data.fechaRealizacion || now,
+            fechaCierre: data.fechaCierre || null,
+
             reportadoPor: data.reportadoPor || 'sistema',
             tenantId: data.tenantId || 'default',
             obraId: data.obraId || null,

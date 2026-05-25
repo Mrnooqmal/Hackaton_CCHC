@@ -1539,6 +1539,34 @@
   border-bottom: none;
 }
 
+.table-compact th,
+.table-compact td {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.table-compact th {
+  font-size: var(--text-xs);
+}
+
+.table-expand-row td {
+  background: var(--surface-elevated);
+}
+
+.table-expand-content {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.table-expand-content strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 /* Badges */
 .badge {
   display: inline-flex;
