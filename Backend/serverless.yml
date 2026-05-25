@@ -1,4 +1,4 @@
-service: hackatonbackendv2
+service: hackatonbackendv2-testeo
 
 plugins:
   - serverless-prune-plugin

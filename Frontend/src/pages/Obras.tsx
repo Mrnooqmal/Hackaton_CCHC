@@ -5,8 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
   LuBuilding2,
-  LuPlus,
-  LuMapPin
+  LuPlus
 } from 'react-icons/lu';
 import { FiAlertTriangle } from 'react-icons/fi';
 import { Modal } from '../components/ui';
