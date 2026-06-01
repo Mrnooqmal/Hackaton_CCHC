@@ -187,7 +187,7 @@ export default function Workers() {
                                     <tbody>
                                         {filteredWorkers.map((worker) => (
                                             <tr
-                                                key={worker.workerId}
+                                                key={worker.personaId}
                                                 style={{ cursor: 'pointer' }}
                                                 onClick={() => openWorkerDetails(worker)}
                                             >

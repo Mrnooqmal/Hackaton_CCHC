@@ -24,7 +24,7 @@ export interface SignatureResult {
 export interface DigitalSignature {
     signatureId: string;
     token: string;
-    workerId: string;
+    personaId: string;
     workerRut: string;
     workerNombre: string;
     tipoFirma: 'enrolamiento' | 'documento' | 'actividad' | 'capacitacion';
@@ -51,7 +51,7 @@ export interface DigitalSignature {
 }
 
 export interface CreateSignatureData {
-    workerId: string;
+    personaId: string;
     pin: string;
     tipoFirma?: 'enrolamiento' | 'documento' | 'actividad' | 'capacitacion';
     referenciaId?: string;
@@ -95,9 +95,9 @@ export const signaturesApi = {
     get: (id: string) =>
         apiRequest<DigitalSignature>(`/signatures/${id}`),
 
-    getByWorker: (workerId: string) =>
-        apiRequest<{ workerId: string; totalFirmas: number; firmas: DigitalSignature[] }>(
-            `/signatures/worker/${workerId}`
+    getByWorker: (personaId: string) =>
+        apiRequest<{ personaId: string; totalFirmas: number; firmas: DigitalSignature[] }>(
+            `/signatures/worker/${personaId}`
         ),
 
     dispute: (id: string, data: DisputeData) =>

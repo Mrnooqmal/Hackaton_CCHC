@@ -7,7 +7,10 @@ export interface Obra {
   tenantId: string;
   nombre: string;
   codigo?: string;
+  // Eje fisico (informativo). Canonico: etapaConstructivaActual; etapaActual es alias legacy.
+  etapaConstructivaActual?: string;
   etapaActual: string;
+  // Eje normativo (cumplimiento DS44)
   faseDeming?: string;
   estado: string;
   fasesConfig?: any;

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
-import { useAuth } from '../context/AuthContext';
 import {
     LuChevronLeft,
     LuUser,
@@ -66,16 +65,14 @@ export default function WorkerDetail() {
     const { rut } = useParams<{ rut: string }>();
     const navigate = useNavigate();
     const { selectedObraId } = useObraContext();
-    const { user } = useAuth();
 
     const [worker, setWorker] = useState<WorkerWithRole | null>(null);
     const [stats, setStats] = useState<WorkerStats | null>(null);
     const [signatures, setSignatures] = useState<DigitalSignature[]>([]);
     const [compliance, setCompliance] = useState({ completed: 0, assigned: 0 });
-    const [ds44Checklist, setDs44Checklist] = useState<{ completed: number; total: number; items: Array<{ key: string; label: string; articulo?: string; kind?: string; tipo?: string; status: 'ok' | 'pending' | 'na' }> } | null>(null);
+    const [ds44Checklist, setDs44Checklist] = useState<{ completed: number; total: number; items: Array<{ key: string; label: string; articulo?: string; kind?: string; tipo?: string; actionLabel?: string; status: 'ok' | 'pending' | 'na' | 'subido' }> } | null>(null);
     const [docRecordMap, setDocRecordMap] = useState<Record<string, { documentId: string; s3Key: string | null; archivoNombre: string | null }>>({});
     const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
-    const [markingDone, setMarkingDone] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
@@ -139,9 +136,9 @@ export default function WorkerDetail() {
                 ? (workerRes.data as any).onboardingDS44?.[targetObraId]?.items || {}
                 : {};
             const [signaturesRes, , historyRes, docsRes] = await Promise.all([
-                signaturesApi.getByWorker(workerRes.data.workerId),
-                signatureRequestsApi.getPendingByWorker(workerRes.data.workerId),
-                signatureRequestsApi.getHistoryByWorker(workerRes.data.workerId),
+                signaturesApi.getByWorker(workerRes.data.personaId),
+                signatureRequestsApi.getPendingByWorker(workerRes.data.personaId),
+                signatureRequestsApi.getHistoryByWorker(workerRes.data.personaId),
                 targetObraId ? documentsApi.list({ obraId: targetObraId } as any) : Promise.resolve({ success: false })
             ]);
 
@@ -180,20 +177,19 @@ export default function WorkerDetail() {
             const docs = docsRes && (docsRes as any).success && (docsRes as any).data
                 ? (docsRes as any).data.documents || []
                 : [];
-            const docStatus = new Map<string, boolean>();
+            // Tri-estado por tipo: firmado (ok) vs subido-sin-firma (subido) vs nada (pending).
+            // "ok" SOLO con firma real del trabajador; subir el archivo NO completa.
+            const docSigned = new Map<string, boolean>();
+            const docHasFile = new Map<string, boolean>();
             const newDocRecordMap: Record<string, { documentId: string; s3Key: string | null; archivoNombre: string | null }> = {};
             docs.forEach((doc: any) => {
                 const hasFile = Boolean(doc.s3Key || doc.archivoUrl);
                 (doc.asignaciones || []).forEach((asig: any) => {
-                    const personaId = asig.personaId || asig.workerId;
-                    if (personaId !== workerRes.data.workerId) return;
+                    const personaId = asig.personaId;
+                    if (personaId !== workerRes.data.personaId) return;
                     if (!doc.tipo) return;
-                    // Track sign status — file uploaded also counts as done
-                    if (asig.estado === 'firmado' || asig.fechaFirma || hasFile) {
-                        docStatus.set(doc.tipo, true);
-                    } else if (!docStatus.has(doc.tipo)) {
-                        docStatus.set(doc.tipo, false);
-                    }
+                    if (asig.estado === 'firmado' || asig.fechaFirma) docSigned.set(doc.tipo, true);
+                    if (hasFile) docHasFile.set(doc.tipo, true);
                     // Track document record for upload
                     if (!newDocRecordMap[doc.tipo]) {
                         newDocRecordMap[doc.tipo] = { documentId: doc.documentId, s3Key: doc.s3Key || null, archivoNombre: doc.archivoNombre || null };
@@ -209,10 +205,11 @@ export default function WorkerDetail() {
                 const manualDone = Boolean((manualOverrides as any)[item.tipo]);
 
                 if (item.kind === 'document') {
-                    const signed = docStatus.get(item.tipo) || false;
-                    const done = signed || manualDone;
-                    if (done) ds44Completed += 1;
-                    return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status: done ? 'ok' as const : 'pending' as const };
+                    const signed = docSigned.get(item.tipo) || manualDone;
+                    const subido = docHasFile.get(item.tipo) || false;
+                    if (signed) ds44Completed += 1;
+                    const status = signed ? 'ok' as const : subido ? 'subido' as const : 'pending' as const;
+                    return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status };
                 }
 
                 if (item.kind === 'signature') {
@@ -297,49 +294,6 @@ Generado por PrevencionApp
             console.error('Error subiendo documento del trabajador:', err);
         } finally {
             setUploadingDocType(null);
-        }
-    };
-
-    const handleMarkOnboardingItem = async (tipo?: string) => {
-        if (!worker || !tipo) return;
-        const targetObraId = resolveTargetObraId(worker);
-        if (!targetObraId) {
-            alert('Este trabajador no tiene una obra asociada para registrar onboarding.');
-            return;
-        }
-
-        const key = `${worker.workerId}:${tipo}`;
-        setMarkingDone(key);
-        try {
-            const now = new Date().toISOString();
-            const current = (worker as any).onboardingDS44 || {};
-            const obraEntry = current[targetObraId] || {};
-            const items = { ...(obraEntry.items || {}) };
-            items[tipo] = {
-                doneAt: now,
-                doneBy: user?.userId,
-                source: 'manual'
-            };
-
-            const nextOnboarding = {
-                ...current,
-                [targetObraId]: {
-                    ...obraEntry,
-                    items,
-                    updatedAt: now
-                }
-            };
-
-            const res = await workersApi.update(worker.workerId, { onboardingDS44: nextOnboarding } as any);
-            if (res.success) {
-                const updated = (res.data as any)?.persona;
-                setWorker((prev) => prev ? { ...prev, onboardingDS44: updated?.onboardingDS44 || nextOnboarding } : prev);
-                await loadWorkerData();
-            }
-        } catch (err) {
-            console.error('Error marcando onboarding como listo:', err);
-        } finally {
-            setMarkingDone(null);
         }
     };
 
@@ -479,7 +433,7 @@ Generado por PrevencionApp
                                                                 ? <LuCircleCheck size={15} style={{ color: '#10b981' }} />
                                                                 : item.status === 'na'
                                                                 ? <LuCircleMinus size={15} style={{ color: 'var(--text-muted)' }} />
-                                                                : <LuClock size={15} style={{ color: 'var(--text-muted)' }} />
+                                                                : <LuClock size={15} style={{ color: item.status === 'subido' ? '#f59e0b' : 'var(--text-muted)' }} />
                                                             }
                                                         </span>
                                                         <div style={{ minWidth: 0 }}>
@@ -489,9 +443,10 @@ Generado por PrevencionApp
                                                             <div className="text-muted" style={{ fontSize: '0.72rem' }}>{(item as any).articulo}</div>
                                                         </div>
                                                     </div>
+                                                    {/* Documento sin archivo: subir (no completa, queda pendiente de firma) */}
                                                     {item.status === 'pending' && item.kind === 'document' ? (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente</span>
+                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de subir</span>
                                                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                                                                 {uploadingDocType === item.tipo
                                                                     ? <><LuClock size={11} /> Subiendo...</>
@@ -503,18 +458,23 @@ Generado por PrevencionApp
                                                                 />
                                                             </label>
                                                         </div>
-                                                    ) : item.status === 'pending' ? (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Pendiente</span>
-                                                            <button
-                                                                className="btn btn-secondary"
-                                                                style={{ padding: '2px 10px', fontSize: '0.72rem', flexShrink: 0 }}
-                                                                disabled={markingDone === `${worker.workerId}:${item.tipo}`}
-                                                                onClick={() => handleMarkOnboardingItem(item.tipo)}
-                                                            >
-                                                                {markingDone === `${worker.workerId}:${item.tipo}` ? '...' : 'Marcar listo'}
-                                                            </button>
+                                                    ) : item.status === 'subido' ? (
+                                                        /* Documento subido, falta la firma del trabajador (firma asistida desde la obra) */
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Pendiente de firma</span>
+                                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                                                                {uploadingDocType === item.tipo
+                                                                    ? <><LuClock size={11} /> Subiendo...</>
+                                                                    : <><LuDownload size={11} /> Reemplazar</>
+                                                                }
+                                                                <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }}
+                                                                    disabled={!!uploadingDocType}
+                                                                    onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }}
+                                                                />
+                                                            </label>
                                                         </div>
+                                                    ) : item.status === 'pending' ? (
+                                                        <span className="badge badge-warning" style={{ fontSize: '0.7rem', whiteSpace: 'nowrap', flexShrink: 0 }}>Pendiente de firma</span>
                                                     ) : null}
                                                     {item.status === 'ok' && (
                                                         <LuCircleCheck size={14} style={{ color: '#10b981', flexShrink: 0 }} />

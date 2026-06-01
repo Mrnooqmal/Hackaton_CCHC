@@ -24,12 +24,12 @@ module.exports.create = async (event) => {
         const body = JSON.parse(event.body || '{}');
 
         // Validar campos requeridos
-        const validation = validateRequired(body, ['workerId', 'pin', 'requestId']);
+        const validation = validateRequired(body, ['personaId', 'pin', 'requestId']);
         if (!validation.valid) {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
-        const { workerId: inputPersonaId, pin, requestId, metadata } = body;
+        const { personaId: inputPersonaId, pin, requestId, metadata } = body;
 
         // Obtener persona
         const personaService = new PersonaService();
@@ -74,7 +74,7 @@ module.exports.create = async (event) => {
         }
 
         // Verificar que el trabajador está en la lista de la solicitud
-        const trabajadorEnSolicitud = request.trabajadores.find(t => t.personaId === inputPersonaId || t.workerId === inputPersonaId);
+        const trabajadorEnSolicitud = request.trabajadores.find(t => t.personaId === inputPersonaId);
         if (!trabajadorEnSolicitud) {
             return error('No estás incluido en esta solicitud de firma', 403);
         }
@@ -156,7 +156,7 @@ module.exports.create = async (event) => {
                 if (docResult.Item) {
                     const nowIso = new Date().toISOString();
                     const asignaciones = (docResult.Item.asignaciones || []).map((a) => {
-                        if ((a.personaId === inputPersonaId || a.workerId === inputPersonaId) && a.estado !== 'firmado') {
+                        if (a.personaId === inputPersonaId && a.estado !== 'firmado') {
                             return { ...a, estado: 'firmado', fechaFirma: nowIso };
                         }
                         return a;
@@ -212,16 +212,16 @@ module.exports.createEnrollment = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
 
-        const validation = validateRequired(body, ['workerId', 'pin']);
+        const validation = validateRequired(body, ['personaId', 'pin']);
         if (!validation.valid) {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
-        const { workerId, pin, signatureData } = body;
+        const { personaId, pin, signatureData } = body;
 
         // Obtener persona
         const personaService = new PersonaService();
-        const persona = await personaService.getById(workerId);
+        const persona = await personaService.getById(personaId);
 
         if (!persona) {
             return error('Persona no encontrada', 404);
@@ -243,7 +243,7 @@ module.exports.createEnrollment = async (event) => {
             requestId: null, // Sin solicitud asociada
 
             // Información del firmante
-            personaId: workerId,
+            personaId: personaId,
             workerRut: persona.rut,
             workerNombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
             workerCargo: persona.cargo,

@@ -4,9 +4,11 @@
  * Router para endpoints de gestión de obras/proyectos.
  */
 const { ObraService } = require('../../lib/services/ObraService');
+const { RegistroService } = require('../../lib/services/RegistroService');
 const { success, error, created, cors } = require('../../lib/utils/response');
 
 const obraService = new ObraService();
+const registroService = new RegistroService();
 
 module.exports.obrasHandler = async (event) => {
     const method = event.requestContext?.http?.method || event.httpMethod;
@@ -15,6 +17,7 @@ module.exports.obrasHandler = async (event) => {
     const obrasIndex = pathParts.indexOf('obras');
     const obraId = obrasIndex !== -1 ? pathParts[obrasIndex + 1] || null : null;
     const action = obrasIndex !== -1 ? pathParts[obrasIndex + 2] || null : null;
+    const subAction = obrasIndex !== -1 ? pathParts[obrasIndex + 3] || null : null;
 
     // tenantId debe venir del JWT o query param (temporalmente)
     const tenantId = event.queryStringParameters?.tenantId
@@ -82,6 +85,45 @@ module.exports.obrasHandler = async (event) => {
                 message: `Fase Deming avanzada a: ${obra.faseDeming}`,
                 obra: obra.toSafeFormat()
             });
+        }
+
+        // POST /obras/{id}/registros/at-ep — Generar y firmar Registro AT/EP (Arts. 71-72)
+        if (method === 'POST' && obraId && action === 'registros' && subAction === 'at-ep') {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+            if (!body.firmante?.personaId) {
+                return error('firmante.personaId es requerido');
+            }
+            const contexto = {
+                ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
+                userAgent: event.headers?.['user-agent'] || event.headers?.['User-Agent'] || 'unknown'
+            };
+            const resultado = await registroService.generarRegistroATEP({
+                tenantId,
+                obraId,
+                periodo: body.periodo || {},
+                firmante: body.firmante,
+                metodo: body.metodo || 'PIN',
+                firmaManuscrita: body.firmaManuscrita,
+                masaLaboral: body.masaLaboral,
+                contexto
+            });
+            return created({
+                message: 'Registro AT/EP generado y firmado',
+                ...resultado
+            });
+        }
+
+        // GET /obras/{id}/check/consolidado — Read-model consolidado de la Fase CHECK
+        if (method === 'GET' && obraId && action === 'check' && subAction === 'consolidado') {
+            if (!tenantId) return error('tenantId es requerido');
+            const { desde, hasta } = event.queryStringParameters || {};
+            const consolidado = await registroService.consolidarCheck({
+                tenantId,
+                obraId,
+                periodo: { desde, hasta }
+            });
+            return success(consolidado);
         }
 
         return error('Ruta no encontrada', 404);

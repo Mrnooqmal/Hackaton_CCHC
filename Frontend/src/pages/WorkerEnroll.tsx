@@ -78,7 +78,7 @@ export default function WorkerEnroll() {
             const response = await workersApi.create(formData);
 
             if (response.success && response.data) {
-                setWorkerId(response.data.workerId);
+                setWorkerId(response.data.personaId);
                 setStep('create-pin');
             } else {
                 setError(response.error || 'Error al registrar trabajador');

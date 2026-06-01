@@ -28,6 +28,17 @@ const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React
     INSPECCION: { label: 'Inspección', color: 'var(--accent-500)', icon: <FiSearch /> },
 };
 
+// Subtipos de CAPACITACION segun el DS44 (deben coincidir con CAPACITACION_SUBTIPOS del backend).
+const CAPACITACION_SUBTIPOS: Record<string, string> = {
+    PRL_8H: 'Prevención de Riesgos Laborales (8h) — Art. 16',
+    EPP: 'Uso y mantención de EPP — Art. 13',
+    CPHS_ORIENTACION: 'Orientación CPHS (8h) — Art. 32',
+    CPHS_20H: 'Curso 20h CPHS — Art. 32',
+    DELEGADO: 'Capacitación Delegado SST — Art. 66',
+    ENCARGADO: 'Encargado Gestión del Riesgo — Art. 65',
+    OTRA: 'Otra capacitación',
+};
+
 export default function Activities() {
     const { user } = useAuth();
     const { isOnline, pendingCount, signActivity, syncPendingSignatures } = useOfflineSignature();
@@ -47,12 +58,13 @@ export default function Activities() {
     const [selfSignActivity, setSelfSignActivity] = useState<Activity | null>(null);
 
     // Check if user is a worker (can self-sign)
-    const canSelfSign = user?.rol === 'trabajador' && user?.workerId;
+    const canSelfSign = user?.rol === 'trabajador' && user?.personaId;
     // Check if user can manage (prevencionista/admin)
     const canManage = user?.rol === 'admin' || user?.rol === 'prevencionista';
 
     const [newActivity, setNewActivity] = useState({
         tipo: 'CHARLA_5MIN',
+        subtipo: '',
         titulo: '',
         descripcion: '',
         relatorId: '',
@@ -98,11 +110,14 @@ export default function Activities() {
         e.preventDefault();
 
         try {
-            const response = await activitiesApi.create(newActivity);
+            const payload = { ...newActivity };
+            // El subtipo solo aplica a capacitaciones.
+            if (payload.tipo !== 'CAPACITACION') delete (payload as any).subtipo;
+            const response = await activitiesApi.create(payload);
             if (response.success && response.data) {
                 setActivities([response.data, ...activities]);
                 setShowModal(false);
-                setNewActivity({ tipo: 'CHARLA_5MIN', titulo: '', descripcion: '', relatorId: '' });
+                setNewActivity({ tipo: 'CHARLA_5MIN', subtipo: '', titulo: '', descripcion: '', relatorId: '' });
             }
         } catch (error) {
             console.error('Error creating activity:', error);
@@ -116,7 +131,7 @@ export default function Activities() {
         // Offline-first: if no connection, save each worker's attendance locally
         if (!navigator.onLine) {
             for (const workerId of selectedWorkers) {
-                const worker = workers.find(w => w.workerId === workerId);
+                const worker = workers.find(w => w.personaId === workerId);
                 await signActivity(
                     selectedActivity.activityId,
                     selectedActivity.titulo,
@@ -152,7 +167,7 @@ export default function Activities() {
                 const errMsg = (response.error || '').toLowerCase();
                 if (errMsg.includes('fetch') || errMsg.includes('network')) {
                     for (const workerId of selectedWorkers) {
-                        const worker = workers.find(w => w.workerId === workerId);
+                        const worker = workers.find(w => w.personaId === workerId);
                         await signActivity(
                             selectedActivity.activityId,
                             selectedActivity.titulo,
@@ -175,7 +190,7 @@ export default function Activities() {
             const msg = (error?.message || '').toLowerCase();
             if (msg.includes('fetch') || msg.includes('network') || !navigator.onLine) {
                 for (const workerId of selectedWorkers) {
-                    const worker = workers.find(w => w.workerId === workerId);
+                    const worker = workers.find(w => w.personaId === workerId);
                     await signActivity(
                         selectedActivity.activityId,
                         selectedActivity.titulo,
@@ -203,13 +218,13 @@ export default function Activities() {
 
     // Self-sign handler for workers
     const handleSelfSign = async (pin: string) => {
-        if (!selfSignActivity || !user?.workerId) return;
+        if (!selfSignActivity || !user?.personaId) return;
         setSignatureError('');
         try {
             const result = await signActivity(
                 selfSignActivity.activityId,
                 selfSignActivity.titulo,
-                user.workerId,
+                user.personaId,
                 user.nombre || 'Trabajador',
                 pin
             );
@@ -249,7 +264,7 @@ export default function Activities() {
         if (selectedWorkers.length === workers.length) {
             setSelectedWorkers([]);
         } else {
-            setSelectedWorkers(workers.map(w => w.workerId));
+            setSelectedWorkers(workers.map(w => w.personaId));
         }
     };
 
@@ -477,7 +492,9 @@ export default function Activities() {
                                             <div>
                                                 <div className="font-bold">{activity.titulo}</div>
                                                 <div className="text-sm text-muted">
-                                                    {typeInfo.label} • {activity.horaInicio}
+                                                    {typeInfo.label}
+                                                    {activity.subtipo && ` · ${activity.subtipoDescripcion || CAPACITACION_SUBTIPOS[activity.subtipo] || activity.subtipo}`}
+                                                    {' • '}{activity.horaInicio}
                                                     {activity.horaFin && ` - ${activity.horaFin}`}
                                                 </div>
                                             </div>
@@ -499,7 +516,7 @@ export default function Activities() {
                                             {activity.estado !== 'completada' && (
                                                 <div className="flex items-center gap-2">
                                                     {/* Worker self-sign button */}
-                                                    {canSelfSign && !activity.asistentes.some(a => a.workerId === user?.workerId) && (
+                                                    {canSelfSign && !activity.asistentes.some(a => a.workerId === user?.personaId) && (
                                                         <button
                                                             className="btn btn-secondary btn-sm"
                                                             onClick={() => openSelfSignModal(activity)}
@@ -568,6 +585,11 @@ export default function Activities() {
                                                 >
                                                     {typeInfo.label}
                                                 </span>
+                                                {activity.subtipo && (
+                                                    <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                                                        {activity.subtipoDescripcion || CAPACITACION_SUBTIPOS[activity.subtipo] || activity.subtipo}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td>{new Date(activity.fecha).toLocaleDateString('es-CL')}</td>
                                             <td>{activity.horaInicio}</td>
@@ -619,6 +641,23 @@ export default function Activities() {
                             </select>
                         </div>
 
+                        {newActivity.tipo === 'CAPACITACION' && (
+                            <div className="form-group">
+                                <label className="form-label">Tipo de capacitación (DS44) *</label>
+                                <select
+                                    value={newActivity.subtipo}
+                                    onChange={(e) => setNewActivity({ ...newActivity, subtipo: e.target.value })}
+                                    className="form-input form-select"
+                                    required
+                                >
+                                    <option value="">Seleccione el tipo de capacitación</option>
+                                    {Object.entries(CAPACITACION_SUBTIPOS).map(([key, label]) => (
+                                        <option key={key} value={key}>{label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
                         <div className="form-group">
                             <label className="form-label">Título *</label>
                             <input
@@ -653,7 +692,7 @@ export default function Activities() {
                             >
                                 <option value="">Seleccione un relator</option>
                                 {workers.map((worker) => (
-                                    <option key={worker.workerId} value={worker.workerId}>
+                                    <option key={worker.personaId} value={worker.personaId}>
                                         {worker.nombre} {worker.apellido} - {worker.cargo}
                                     </option>
                                 ))}
@@ -694,11 +733,11 @@ export default function Activities() {
 
                             <div className="flex flex-col gap-2" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                                 {workers.map((worker) => {
-                                    const isSelected = selectedWorkers.includes(worker.workerId);
-                                    const alreadyAttended = selectedActivity.asistentes.some(a => a.workerId === worker.workerId);
+                                    const isSelected = selectedWorkers.includes(worker.personaId);
+                                    const alreadyAttended = selectedActivity.asistentes.some(a => a.workerId === worker.personaId);
                                     return (
                                         <div
-                                            key={worker.workerId}
+                                            key={worker.personaId}
                                             className={`flex items-center justify-between ${alreadyAttended ? '' : 'cursor-pointer'}`}
                                             style={{
                                                 padding: 'var(--space-3)',
@@ -707,7 +746,7 @@ export default function Activities() {
                                                 border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
                                                 opacity: alreadyAttended ? 0.5 : 1
                                             }}
-                                            onClick={() => !alreadyAttended && toggleWorkerSelection(worker.workerId)}
+                                            onClick={() => !alreadyAttended && toggleWorkerSelection(worker.personaId)}
                                         >
                                             <div className="flex items-center gap-3">
                                                 <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>

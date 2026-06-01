@@ -244,7 +244,7 @@ export default function Surveys() {
     const assignedSurveys = useMemo(() => {
         if (!currentWorker) return [] as Array<{ survey: Survey; recipient: SurveyRecipient }>;
         return surveys.reduce<Array<{ survey: Survey; recipient: SurveyRecipient }>>((acc, survey) => {
-            const recipient = survey.recipients?.find((r) => r.workerId === currentWorker.workerId);
+            const recipient = survey.recipients?.find((r) => r.workerId === currentWorker.personaId);
             if (recipient) {
                 acc.push({ survey, recipient });
             }
@@ -363,7 +363,7 @@ export default function Surveys() {
 
     const handleAddRut = () => {
         if (!form.selectedWorkerId) return;
-        const worker = workers.find((w) => w.workerId === form.selectedWorkerId);
+        const worker = workers.find((w) => w.personaId === form.selectedWorkerId);
         if (!worker) return;
         if (form.selectedRuts.includes(worker.rut)) return;
         setForm((prev) => ({
@@ -1435,7 +1435,7 @@ export default function Surveys() {
                                                     >
                                                         <option value="">Seleccionar trabajador</option>
                                                         {workers.map((worker) => (
-                                                            <option key={worker.workerId} value={worker.workerId}>
+                                                            <option key={worker.personaId} value={worker.personaId}>
                                                                 {worker.nombre} {worker.apellido} - {worker.rut}
                                                             </option>
                                                         ))}

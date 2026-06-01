@@ -1,20 +1,28 @@
 // Shared Types
+
+// Roles alineados con el modelo backend (Persona.js ROLES)
+export type PersonaRol = 'admin' | 'jefe_obra' | 'supervisor' | 'prevencionista' | 'trabajador';
+
 export interface User {
-    userId: string;
-    personaId?: string;
-    tenantId?: string;
+    personaId: string;
+    tenantId: string;
     rut: string;
     nombre: string;
     apellido: string;
-    rol: 'admin' | 'prevencionista' | 'trabajador';
+    rol: PersonaRol;
+    permisos?: string[];
     email?: string;
-    estado: 'pendiente' | 'activo' | 'suspendido';
+    // 'suspendido' se mantiene mientras la UI lo ofrezca; el backend trabaja con
+    // 'pendiente' | 'activo' | 'inactivo'. Confirmar efecto normativo (duda experto #9).
+    estado: 'pendiente' | 'activo' | 'inactivo' | 'suspendido';
     habilitado: boolean;
     passwordTemporal?: boolean;
     ultimoAcceso?: string;
     creadoPor?: string;
-    workerId?: string;
-    empresaId?: string;
+    // alias legacy - retirar junto con personaAlias.js (backend) cuando la UI use solo personaId/tenantId
+    /** @deprecated usar personaId */ userId?: string;
+    /** @deprecated usar personaId */ workerId?: string;
+    /** @deprecated usar tenantId */ empresaId?: string;
 }
 
 export interface Ds44OnboardingOverrides {

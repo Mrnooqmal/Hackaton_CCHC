@@ -209,7 +209,7 @@ export default function SignatureRequests() {
                     if (recipientsRes.success && recipientsRes.data) {
                         const allRecipients = recipientsRes.data.recipients;
                         // Map worker IDs to their RUTs, then find matching Inbox Recipients to extract userIds
-                        const assignedRuts = workers.filter(w => selectedWorkers.includes(w.workerId)).map(w => w.rut);
+                        const assignedRuts = workers.filter(w => selectedWorkers.includes(w.personaId)).map(w => w.rut);
                         const recipientUserIds = allRecipients.filter(r => assignedRuts.includes(r.rut)).map(r => r.userId);
                         
                         if (recipientUserIds.length > 0) {
@@ -271,7 +271,7 @@ export default function SignatureRequests() {
         if (selectedWorkers.length === workers.length) {
             setSelectedWorkers([]);
         } else {
-            setSelectedWorkers(workers.map(w => w.workerId));
+            setSelectedWorkers(workers.map(w => w.personaId));
         }
     };
 
@@ -1329,10 +1329,10 @@ export default function SignatureRequests() {
                                         }}
                                     >
                                         {workers.map((worker) => {
-                                            const isSelected = selectedWorkers.includes(worker.workerId);
+                                            const isSelected = selectedWorkers.includes(worker.personaId);
                                             return (
                                                 <label
-                                                    key={worker.workerId}
+                                                    key={worker.personaId}
                                                     style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -1365,7 +1365,7 @@ export default function SignatureRequests() {
                                                     <input
                                                         type="checkbox"
                                                         checked={isSelected}
-                                                        onChange={() => toggleWorkerSelection(worker.workerId)}
+                                                        onChange={() => toggleWorkerSelection(worker.personaId)}
                                                         style={{ display: 'none' }}
                                                     />
                                                     <div style={{ flex: 1, minWidth: 0 }}>

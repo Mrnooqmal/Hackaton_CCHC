@@ -20,6 +20,19 @@ const ACTIVITY_TYPES = {
     INSPECCION: 'Inspección de Seguridad',
 };
 
+// Subtipos de CAPACITACION segun el DS44 (Excel de Elementos). Permiten
+// distinguir de forma estricta cada capacitacion exigida en la fase DO,
+// en vez de adivinar por palabras del titulo.
+const CAPACITACION_SUBTIPOS = {
+    PRL_8H: 'Prevención de Riesgos Laborales (8h) — Art. 16',
+    EPP: 'Uso y mantención de EPP — Art. 13',
+    CPHS_ORIENTACION: 'Orientación CPHS (8h) — Art. 32',
+    CPHS_20H: 'Curso 20h CPHS — Art. 32',
+    DELEGADO: 'Capacitación Delegado SST — Art. 66',
+    ENCARGADO: 'Encargado Gestión del Riesgo — Art. 65',
+    OTRA: 'Otra capacitación',
+};
+
 /**
  * POST /activities - Crear nueva actividad
  */
@@ -38,6 +51,15 @@ module.exports.create = async (event) => {
             return error(`Tipo de actividad inválido. Tipos válidos: ${Object.keys(ACTIVITY_TYPES).join(', ')}`);
         }
 
+        // El subtipo solo aplica a CAPACITACION; si viene, debe ser valido.
+        let subtipo = null;
+        if (body.tipo === 'CAPACITACION') {
+            subtipo = body.subtipo || 'OTRA';
+            if (!CAPACITACION_SUBTIPOS[subtipo]) {
+                return error(`Subtipo de capacitación inválido. Válidos: ${Object.keys(CAPACITACION_SUBTIPOS).join(', ')}`);
+            }
+        }
+
         const now = new Date().toISOString();
         const activityId = uuidv4();
 
@@ -47,6 +69,8 @@ module.exports.create = async (event) => {
             obraId: body.obraId || null,
             tipo: body.tipo,
             tipoDescripcion: ACTIVITY_TYPES[body.tipo],
+            subtipo,
+            subtipoDescripcion: subtipo ? CAPACITACION_SUBTIPOS[subtipo] : null,
             titulo: body.titulo,
             descripcion: body.descripcion || '',
             fecha: body.fecha || now.split('T')[0],
@@ -136,7 +160,7 @@ module.exports.list = async (event) => {
             new Date(b.createdAt) - new Date(a.createdAt)
         );
 
-        return success({ activities, types: ACTIVITY_TYPES });
+        return success({ activities, types: ACTIVITY_TYPES, capacitacionSubtipos: CAPACITACION_SUBTIPOS });
     } catch (err) {
         console.error('Error listing activities:', err);
         return error(err.message, 500);
@@ -209,9 +233,7 @@ module.exports.registerAttendance = async (event) => {
 
         // Registrar cada persona
         for (const pid of personas) {
-            const yaRegistrado = (activity.asistentes || []).some(a => 
-                a.personaId === pid || a.workerId === pid
-            );
+            const yaRegistrado = (activity.asistentes || []).some(a => a.personaId === pid);
             if (yaRegistrado) continue;
 
             const persona = await personaService.getById(pid);

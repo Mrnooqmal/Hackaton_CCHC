@@ -40,7 +40,7 @@ export default function UserManagement() {
         apellido: '',
         email: '',
         cargo: '',
-        estado: '' as 'pendiente' | 'activo' | 'suspendido'
+        estado: '' as 'pendiente' | 'activo' | 'inactivo' | 'suspendido'
     });
 
     // Confirmation Modal State
@@ -157,7 +157,7 @@ export default function UserManagement() {
 
         setLoading(true);
         try {
-            const response = await usersApi.update(editingUser.userId, editForm);
+            const response = await usersApi.update(editingUser.personaId, editForm);
             if (response.success) {
                 setShowEditModal(false);
                 setEditingUser(null);
@@ -336,7 +336,7 @@ export default function UserManagement() {
                                                 <button
                                                     className="btn btn-secondary btn-sm"
                                                     title="Reset Contraseña"
-                                                    onClick={() => handleResetPassword(u.userId)}
+                                                    onClick={() => handleResetPassword(u.personaId)}
                                                 >
                                                     <FiLock />
                                                 </button>

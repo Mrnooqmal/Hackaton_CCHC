@@ -363,6 +363,13 @@ functions:
           path: /documents/{id}/sign-bulk
           method: POST
 
+  signAssistedDocument:
+    handler: handlers/documents/handler.signAssisted
+    events:
+      - httpApi:
+          path: /documents/{id}/sign-assisted
+          method: POST
+
   # ========================================
   # SIGNATURES (Firmas Digitales)
   # ========================================

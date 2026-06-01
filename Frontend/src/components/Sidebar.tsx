@@ -273,8 +273,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             return;
         }
 
-        if (user?.workerId) {
-            setWorkerId(user.workerId);
+        if (user?.personaId) {
+            setWorkerId(user.personaId);
             return;
         }
 
@@ -308,7 +308,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
         return () => {
             cancelled = true;
         };
-    }, [canRespondSurveys, user?.workerId, user?.rut]);
+    }, [canRespondSurveys, user?.personaId, user?.rut]);
 
     useEffect(() => {
         if (!canRespondSurveys || !workerId) {

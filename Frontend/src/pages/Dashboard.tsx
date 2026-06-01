@@ -159,7 +159,7 @@ export default function Dashboard() {
                 }
 
                 total += 1;
-                const key = `${worker.workerId}:${item.tipo}`;
+                const key = `${worker.personaId}:${item.tipo}`;
                 if (item.kind === 'document') {
                     if (docStatus.get(key)) completed += 1;
                 } else if (item.kind === 'signature') {
@@ -272,9 +272,9 @@ export default function Dashboard() {
 
         if (surveysResult.status === 'fulfilled') {
             const surveysRes = surveysResult.value;
-            if (surveysRes?.success && surveysRes.data?.surveys && user?.workerId) {
+            if (surveysRes?.success && surveysRes.data?.surveys && user?.personaId) {
                 const mySurveys = surveysRes.data.surveys.filter(s =>
-                    s.recipients?.some(r => r.workerId === user.workerId && r.estado !== 'respondida')
+                    s.recipients?.some(r => r.workerId === user.personaId && r.estado !== 'respondida')
                 );
 
                 mySurveys.forEach(survey => {
@@ -288,7 +288,7 @@ export default function Dashboard() {
                 });
 
                 const completedSurveys = surveysRes.data.surveys.filter(s =>
-                    s.recipients?.some(r => r.workerId === user.workerId && r.estado === 'respondida')
+                    s.recipients?.some(r => r.workerId === user.personaId && r.estado === 'respondida')
                 ).length;
 
                 completedCount += completedSurveys;
@@ -325,7 +325,7 @@ export default function Dashboard() {
     const loadPrevencionistaDashboard = async () => {
         const [workersResult, ownPendingResult, sigStatsResult, docsResult, incidentsResult, activitiesResult] = await Promise.allSettled([
             workersApi.list({ obraId: selectedObraId || undefined }),
-            user?.workerId ? signatureRequestsApi.getPendingByWorker(user.workerId) : Promise.resolve(null),
+            user?.personaId ? signatureRequestsApi.getPendingByWorker(user.personaId) : Promise.resolve(null),
             signatureRequestsApi.getStats(),
             documentsApi.list({ obraId: selectedObraId || undefined }),
             incidentsApi.list(),

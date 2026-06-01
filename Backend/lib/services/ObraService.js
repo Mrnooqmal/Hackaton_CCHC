@@ -41,6 +41,10 @@ class ObraService {
             region: data.region,
             mandante: data.mandante,
             imagenKey: data.imagenKey,
+            // Flags que definen que elementos del DO aplican (DS44 Excel).
+            faenaCompartida: data.faenaCompartida,
+            tieneMaquinaria: data.tieneMaquinaria,
+            agentesFQB: data.agentesFQB,
             fasesObligatorias: data.fasesObligatorias
         });
 
@@ -104,7 +108,9 @@ class ObraService {
      */
     async actualizar(tenantId, obraId, updates) {
         const allowedFields = ['nombre', 'codigo', 'direccion', 'comuna',
-            'region', 'mandante', 'estado', 'etapaActual', 'fasesConfig', 'faseDeming', 'cumplimientoDS44', 'imagenKey'];
+            'region', 'mandante', 'estado', 'etapaConstructivaActual', 'etapaActual',
+            'faenaCompartida', 'tieneMaquinaria', 'agentesFQB',
+            'fasesConfig', 'faseDeming', 'cumplimientoDS44', 'imagenKey'];
 
         const updateExpressions = [];
         const expressionNames = {};
@@ -186,12 +192,14 @@ class ObraService {
         const faseSiguiente = obra.getFaseSiguiente();
         if (!faseSiguiente) throw new Error('La obra ya está en la última fase');
 
-        // Marcar fase actual como completada
+        // Marcar etapa constructiva actual como completada (informativo, no DS44)
         const fasesConfig = { ...obra.fasesConfig };
-        fasesConfig[obra.etapaActual].completada = true;
+        if (fasesConfig[obra.etapaConstructivaActual]) {
+            fasesConfig[obra.etapaConstructivaActual].completada = true;
+        }
 
         return this.actualizar(tenantId, obraId, {
-            etapaActual: faseSiguiente,
+            etapaConstructivaActual: faseSiguiente,
             fasesConfig
         });
     }

@@ -91,9 +91,9 @@ export default function DocumentsRepository() {
     };
 
     const isAssignedToUser = (doc: RepoDocument) =>
-        Boolean(user?.workerId && doc.asignaciones?.some(a => a.workerId === user.workerId));
+        Boolean(user?.personaId && doc.asignaciones?.some(a => a.workerId === user.personaId));
 
-    const personalDocuments = useMemo(() => documents.filter(isAssignedToUser), [documents, user?.workerId]);
+    const personalDocuments = useMemo(() => documents.filter(isAssignedToUser), [documents, user?.personaId]);
     const generalDocuments = useMemo(
         () => documents.filter(doc => doc.clasificacion !== 'diario'),
         [documents]

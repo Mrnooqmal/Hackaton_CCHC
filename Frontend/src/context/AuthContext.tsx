@@ -31,13 +31,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const response = await authApi.me(token);
             if (response.success && response.data) {
                 const userData = response.data.user;
-                // Map personaId → userId for backward compatibility
                 const enrichedUser = {
                     ...userData,
-                    personaId: (userData as any).personaId || userData.userId,
-                    userId: userData.userId || (userData as any).personaId,
-                    workerId: userData.workerId || (userData as any).personaId || userData.userId,
-                    empresaId: userData.empresaId || (userData as any).tenantId || (response.data as any).tenantId,
+                    personaId: (userData as any).personaId,
                     tenantId: (userData as any).tenantId || (response.data as any).tenantId,
                 };
                 setUser(enrichedUser);
@@ -79,13 +75,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     localStorage.setItem('tenant_id', (userData as any).tenantId);
                 }
 
-                // Map personaId → userId for backward compatibility
                 const enrichedUser = {
                     ...userData,
-                    personaId: (userData as any).personaId || userData.userId,
-                    userId: userData.userId || (userData as any).personaId,
-                    workerId: userData.workerId || (userData as any).personaId || userData.userId,
-                    empresaId: userData.empresaId || (userData as any).tenantId,
+                    personaId: (userData as any).personaId,
                     tenantId: (userData as any).tenantId,
                 };
 

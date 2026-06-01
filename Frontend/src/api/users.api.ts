@@ -19,7 +19,11 @@ export interface UserListParams {
     estado?: string;
 }
 
-// Users API (Legacy mapping to Personas)
+/**
+ * Users API (fachada legacy sobre Personas).
+ * @deprecated Migrar las paginas a `personasApi` directamente. Esta fachada
+ * existe solo para compatibilidad mientras se completa la migracion Persona.
+ */
 export const usersApi = {
     create: (user: CreateUserData) => {
         const tenantId = user.empresaId || localStorage.getItem('tenant_id') || '';
@@ -36,12 +40,7 @@ export const usersApi = {
         const tenantId = params?.empresaId || localStorage.getItem('tenant_id') || '';
         const res = await personasApi.list(tenantId, params as any);
         if (res.success && res.data) {
-            const mapped = res.data.personas.map(p => ({
-                ...p,
-                userId: p.personaId,
-                empresaId: p.tenantId
-            }));
-            return { success: true, data: { total: res.data.total, users: mapped as unknown as User[], roles: {} } };
+            return { success: true, data: { total: res.data.total, users: res.data.personas as unknown as User[], roles: {} } };
         }
         return res as any;
     },
@@ -49,7 +48,7 @@ export const usersApi = {
     get: async (id: string) => {
         const res = await personasApi.get(id);
         if (res.success && res.data) {
-            return { success: true, data: { ...res.data, userId: res.data.personaId, empresaId: res.data.tenantId } as unknown as User };
+            return { success: true, data: res.data as unknown as User };
         }
         return res as any;
     },
@@ -58,7 +57,7 @@ export const usersApi = {
         const tenantId = localStorage.getItem('tenant_id') || '';
         const res = await personasApi.getByRut(tenantId, rut);
         if (res.success && res.data) {
-            return { success: true, data: { ...res.data, userId: res.data.personaId, empresaId: res.data.tenantId } as unknown as User };
+            return { success: true, data: res.data as unknown as User };
         }
         return res as any;
     },

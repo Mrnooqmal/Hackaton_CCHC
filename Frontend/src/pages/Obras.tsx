@@ -5,8 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
   LuBuilding2,
-  LuPlus,
-  LuMapPin
+  LuPlus
 } from 'react-icons/lu';
 import { FiAlertTriangle } from 'react-icons/fi';
 import { Modal } from '../components/ui';
@@ -18,11 +17,14 @@ interface Obra {
   direccion: string;
   comuna: string;
   region: string;
-  etapaActual: string;
   mandante: string;
   estado: string;
   trabajadoresAprobados?: string[];
   imagenKey?: string;
+  // Flags DS44 que definen que elementos del DO aplican a la obra.
+  faenaCompartida?: boolean;
+  tieneMaquinaria?: boolean;
+  agentesFQB?: boolean;
 }
 
 const REQUIRED_DS44 = [
@@ -81,10 +83,12 @@ export const Obras: React.FC = () => {
     direccion: '',
     comuna: '',
     region: '',
-    etapaActual: 'excavacion',
     mandante: '',
     estado: 'activa',
-    trabajadoresAprobados: []
+    trabajadoresAprobados: [],
+    faenaCompartida: false,
+    tieneMaquinaria: true,
+    agentesFQB: false
   });
 
   const fetchData = async () => {
@@ -213,8 +217,9 @@ export const Obras: React.FC = () => {
   }, [companyName, user?.tenantId]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type } = e.target as HTMLInputElement;
+    const checked = (e.target as HTMLInputElement).checked;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   useEffect(() => {
@@ -294,10 +299,12 @@ export const Obras: React.FC = () => {
           direccion: '',
           comuna: '',
           region: '',
-          etapaActual: 'excavacion',
           mandante: '',
           estado: 'activa',
-          trabajadoresAprobados: []
+          trabajadoresAprobados: [],
+          faenaCompartida: false,
+          tieneMaquinaria: true,
+          agentesFQB: false
         });
         setObraImageFile(null);
         setObraImagePreview('');
@@ -608,16 +615,6 @@ export const Obras: React.FC = () => {
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Etapa actual</label>
-                    <select name="etapaActual" value={formData.etapaActual} onChange={handleInputChange} className="form-input form-select">
-                      <option value="excavacion">Excavación / Fundaciones</option>
-                      <option value="obra_gruesa">Obra Gruesa</option>
-                      <option value="terminaciones">Terminaciones</option>
-                      <option value="entrega">Entrega / Cierre</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group">
                     <label className="form-label">Estado</label>
                     <select name="estado" value={formData.estado} onChange={handleInputChange} className="form-input form-select">
                       <option value="activa">Activa</option>
@@ -625,6 +622,22 @@ export const Obras: React.FC = () => {
                       <option value="finalizada">Finalizada</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Características de la obra (DS44 — definen qué aplica)</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', cursor: 'pointer' }}>
+                    <input type="checkbox" name="faenaCompartida" checked={Boolean(formData.faenaCompartida)} onChange={handleInputChange} />
+                    <span>Comparte sitio con otra(s) entidad(es) — faena compartida (Art. 20)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', cursor: 'pointer' }}>
+                    <input type="checkbox" name="tieneMaquinaria" checked={Boolean(formData.tieneMaquinaria)} onChange={handleInputChange} />
+                    <span>Hay máquinas/herramientas motrices (Art. 10)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', cursor: 'pointer' }}>
+                    <input type="checkbox" name="agentesFQB" checked={Boolean(formData.agentesFQB)} onChange={handleInputChange} />
+                    <span>Existen agentes físicos/químicos/biológicos (Art. 2 N°14 c)</span>
+                  </label>
                 </div>
 
                 <div className="form-group">

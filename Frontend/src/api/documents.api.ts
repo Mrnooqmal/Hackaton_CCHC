@@ -136,4 +136,25 @@ export const documentsApi = {
             method: 'POST',
             body: JSON.stringify(data),
         }),
+
+    // Firma asistida: un admin/jefe_obra/supervisor/prevencionista inicia la firma
+    // y el TRABAJADOR teclea su PIN. La firma queda con personaId del trabajador y
+    // metadata.asistidoPor para trazabilidad.
+    signAssisted: (
+        id: string,
+        data: {
+            firmanteId: string;
+            asistidoPor: string;
+            metodo?: 'PIN' | 'PRESENCIAL';
+            pin?: string;
+            firmaManuscrita?: string;
+        }
+    ) =>
+        apiRequest<{ message: string; firma: DocumentSignature; signatureId: string; token: string }>(
+            `/documents/${id}/sign-assisted`,
+            {
+                method: 'POST',
+                body: JSON.stringify(data),
+            }
+        ),
 };

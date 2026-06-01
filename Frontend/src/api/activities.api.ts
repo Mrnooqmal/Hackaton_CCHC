@@ -5,6 +5,8 @@ export interface Activity {
     activityId: string;
     tipo: string;
     tipoDescripcion: string;
+    subtipo?: string | null;
+    subtipoDescripcion?: string | null;
     titulo: string;
     descripcion?: string;
     fecha: string;
@@ -35,6 +37,7 @@ export interface Attendee {
 
 export interface CreateActivityData {
     tipo: string;
+    subtipo?: string;
     titulo: string;
     descripcion?: string;
     fecha?: string;

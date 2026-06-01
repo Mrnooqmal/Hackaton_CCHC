@@ -10,25 +10,27 @@ const ROLES = {
         nombre: 'Administrador Empresa',
         permisos: ['crear_usuarios', 'editar_usuarios', 'ver_usuarios', 'reset_pin',
                    'ver_reportes', 'gestionar_empresa', 'resolver_disputas',
-                   'gestionar_obras', 'crear_obras', 'editar_obras', 'eliminar_obras']
+                   'gestionar_obras', 'crear_obras', 'editar_obras', 'eliminar_obras',
+                   'firmar_asistido']
     },
     jefe_obra: {
         nombre: 'Jefe de Obra',
         permisos: ['ver_trabajadores', 'crear_usuarios', 'editar_usuarios',
                    'gestionar_obras', 'editar_obras',
                    'crear_actividades', 'asignar_documentos',
-                   'ver_reportes', 'firmar_relator', 'crear_capacitaciones']
+                   'ver_reportes', 'firmar_relator', 'crear_capacitaciones',
+                   'firmar_asistido']
     },
     supervisor: {
         nombre: 'Supervisor',
         permisos: ['firmar_relator', 'ver_trabajadores',
                    'registrar_asistencia', 'ver_reportes',
-                   'gestionar_incidentes']
+                   'gestionar_incidentes', 'firmar_asistido']
     },
     prevencionista: {
         nombre: 'Prevencionista',
         permisos: ['crear_actividades', 'asignar_documentos', 'ver_trabajadores',
-                   'ver_reportes', 'crear_capacitaciones']
+                   'ver_reportes', 'crear_capacitaciones', 'firmar_asistido']
     },
     trabajador: {
         nombre: 'Trabajador',
@@ -189,54 +191,6 @@ class Persona {
             vigilanciaSalud: this.vigilanciaSalud,
             restriccionLaboral: this.restriccionLaboral,
             preferencias: this.preferencias,
-            createdAt: this.createdAt,
-            updatedAt: this.updatedAt,
-            ultimoAcceso: this.ultimoAcceso
-        };
-    }
-
-    /**
-     * Formato compatible con legacy worker response (para transición)
-     */
-    toLegacyWorkerFormat() {
-        return {
-            workerId: this.personaId,
-            rut: this.rut,
-            nombre: this.nombre,
-            apellido: this.apellido,
-            email: this.email,
-            telefono: this.telefono,
-            cargo: this.cargo,
-            empresaId: this.tenantId,
-            estado: this.estado === 'activo' ? 'activo' : this.estado,
-            habilitado: this.habilitado,
-            pinCreatedAt: this.pinCreatedAt,
-            firmaEnrolamiento: this.firmaEnrolamiento,
-            onboardingDS44: this.onboardingDS44,
-            createdAt: this.createdAt,
-            updatedAt: this.updatedAt
-        };
-    }
-
-    /**
-     * Formato compatible con legacy user response (para transición)
-     */
-    toLegacyUserFormat() {
-        return {
-            userId: this.personaId,
-            rut: this.rut,
-            nombre: this.nombre,
-            apellido: this.apellido,
-            email: this.email,
-            telefono: this.telefono,
-            rol: this.rol,
-            permisos: this.permisos,
-            cargo: this.cargo,
-            empresaId: this.tenantId,
-            habilitado: this.habilitado,
-            estado: this.estado,
-            workerId: this.personaId,
-            onboardingDS44: this.onboardingDS44,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
             ultimoAcceso: this.ultimoAcceso

@@ -54,7 +54,6 @@ export default function ObraProgressCard({
             border: '1px solid var(--danger-500)'
         }
     };
-    const stageLabel = obra.etapaActual ? obra.etapaActual.replace('_', ' ') : '-';
     const faseDemingKey = obra.faseDeming || 'plan';
     const faseDemingLabel = DS44_PHASE_LABELS[faseDemingKey] || faseDemingKey.toUpperCase();
     const faseDemingStyle = DS44_PHASE_STYLES[faseDemingKey] || {
@@ -76,12 +75,6 @@ export default function ObraProgressCard({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-3)' }}>
                 <div>
                     <h3 className="font-bold text-lg">{obra.nombre}</h3>
-                    <div
-                        className="text-xs text-muted"
-                        style={{ textTransform: 'capitalize', marginTop: 2, opacity: 0.7, fontSize: '0.72rem' }}
-                    >
-                        Etapa obra: {stageLabel}
-                    </div>
                 </div>
                 <span className={`badge badge-${statusVariant}`} style={{ textTransform: 'capitalize' }}>
                     {statusLabel}

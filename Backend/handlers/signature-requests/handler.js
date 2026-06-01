@@ -302,7 +302,7 @@ module.exports.getPendingByWorker = async (event) => {
 
         // Filtrar las que incluyen al trabajador y no ha firmado
         const pendientes = (result.Items || []).filter(request => {
-            const trabajador = request.trabajadores.find(t => t.personaId === workerId || t.workerId === workerId);
+            const trabajador = request.trabajadores.find(t => t.personaId === workerId);
             return trabajador && !trabajador.firmado;
         }).map(request => ({
             ...request,
@@ -495,7 +495,7 @@ module.exports.updateOnSignature = async (requestId, workerId, signatureId) => {
 
         // Actualizar el trabajador en la lista
         const trabajadores = request.trabajadores.map(t => {
-            if (t.personaId === workerId || t.workerId === workerId) {
+            if (t.personaId === workerId) {
                 return {
                     ...t,
                     firmado: true,

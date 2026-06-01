@@ -5,7 +5,7 @@ import type { SignData, Signature, SignatureResult } from './signatures.api';
 
 export interface EnrollmentResult {
     message: string;
-    workerId: string;
+    personaId: string;
     habilitado: boolean;
     firma: {
         token: string;
@@ -15,14 +15,14 @@ export interface EnrollmentResult {
 }
 
 export interface Worker {
-    workerId: string;
+    personaId: string;
+    tenantId: string;
     rut: string;
     nombre: string;
     apellido?: string;
     email?: string;
     telefono?: string;
     cargo: string;
-    empresaId: string;
     fechaEnrolamiento: string;
     signatureToken: string;
     estado: 'activo' | 'inactivo';
@@ -48,7 +48,7 @@ export interface CreateWorkerData {
     email?: string;
     telefono?: string;
     cargo: string;
-    empresaId?: string;
+    tenantId?: string;
     obraIds?: string[];
 }
 
@@ -62,13 +62,7 @@ export const workersApi = {
         }
         const res = await apiRequest<{ total: number; personas: any[] }>(query);
         if (res.success && res.data) {
-            // Map Personas to legacy Worker structure expected by components
-            const mapped = res.data.personas.map(p => ({
-                ...p,
-                workerId: p.personaId,
-                empresaId: p.tenantId
-            }));
-            return { success: true, data: mapped as unknown as Worker[] };
+            return { success: true, data: res.data.personas as unknown as Worker[] };
         }
         return res as any;
     },
@@ -76,7 +70,7 @@ export const workersApi = {
     get: async (id: string) => {
         const res = await personasApi.get(id);
         if (res.success && res.data) {
-            return { success: true, data: { ...res.data, workerId: res.data.personaId, empresaId: res.data.tenantId } as unknown as Worker };
+            return { success: true, data: res.data as unknown as Worker };
         }
         return res as any;
     },
@@ -85,7 +79,7 @@ export const workersApi = {
         const tenantId = localStorage.getItem('tenant_id') || '';
         const res = await personasApi.getByRut(tenantId, rut);
         if (res.success && res.data) {
-            return { success: true, data: { ...res.data, workerId: res.data.personaId, empresaId: res.data.tenantId } as unknown as Worker };
+            return { success: true, data: res.data as unknown as Worker };
         }
         return res as any;
     },

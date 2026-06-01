@@ -30,19 +30,31 @@ const DOCUMENT_TYPES = {
     EXAMEN_OCUPACIONAL: 'Registro de Examen Ocupacional (Art. 68)',
     INVESTIGACION_ACCIDENTE: 'Investigación de Accidente / EP',
     RESTRICCION_LABORAL: 'Restricción o Traslado por EP',
-    // Fase HACER (ciclo Deming) — subprocesos operativos permanentes
-    PLAN_CAPACITACION: 'Plan de Capacitación (Art. 16)',
-    INFO_RIESGOS_LABORALES: 'Información de Riesgos Laborales (Art. 15)',
+    // Fase HACER (ciclo Deming) — procedimientos operativos de obra (DS44 Excel)
     PROCEDIMIENTO_EPP: 'Procedimiento de Provisión y Uso de EPP (Art. 13)',
     OPERACION_MAQUINAS: 'Operación Segura de Máquinas y Herramientas (Art. 10)',
-    PLAN_EMERGENCIAS: 'Plan de Gestión de Emergencias (Art. 19)',
-    VIGILANCIA_AMBIENTAL: 'Vigilancia Ambiental y de Salud (Art. 67)',
+    PROCEDIMIENTO_AGENTES: 'Utilización de Agentes Físicos, Químicos y Biológicos (Art. 2 N°14 c)',
+    PLAN_EMERGENCIAS: 'Plan de Gestión y Respuesta ante Emergencias (Art. 19)',
+    PROCEDIMIENTO_RIESGO_GRAVE: 'Procedimiento ante Riesgo Grave o Inminente (Art. 18)',
+    PROCEDIMIENTO_EVACUACION: 'Evacuación y Traslado de Personas Afectadas (Art. 19)',
+    PROCEDIMIENTO_INVESTIGACION: 'Investigación de Accidentes (Árbol de Causas) (Art. 71)',
+    GESTION_CAMBIOS: 'Gestión de Cambios en Procesos/Tecnologías/Materiales (Art. 12)',
     COORDINACION_ENTIDADES: 'Coordinación con Otras Entidades en Faena (Art. 20)',
-    CONSULTA_REPRESENTANTES: 'Consulta a Representantes de Trabajadores (Art. 17)',
+    CONSULTA_REPRESENTANTES: 'Consulta y Participación de Trabajadores (Arts. 17, 37, 71)',
+    // Tipos historicos (compatibilidad con datos previos)
+    PLAN_CAPACITACION: 'Plan de Capacitación (Art. 16)',
+    INFO_RIESGOS_LABORALES: 'Información de Riesgos Laborales (Art. 15)',
+    VIGILANCIA_AMBIENTAL: 'Vigilancia Ambiental y de Salud (Art. 67)',
     // Fase HACER — eventos sobrevinientes
     REGISTRO_RIESGO_GRAVE: 'Registro de Riesgo Grave e Inminente (Art. 18)',
     REGISTRO_AT_EP: 'Registro AT, EP e Incidentes Peligrosos (Arts. 71-72)',
     TRASLADO_PUESTO: 'Traslado de Puesto por EP Diagnosticada (Art. 69)',
+    // Fase VERIFICAR (CHECK)
+    EVALUACION_DESEMPENO: 'Evaluación de Desempeño del SGSST (Arts. 14, 22.4)',
+    INFORME_ANUAL_GESTION: 'Informe Anual de Gestión Preventiva (Art. 52.15)',
+    REGISTRO_DESVIACIONES: 'Registro de Desviaciones / Incumplimientos (CHECK)',
+    // Fase ACTUAR (ACT)
+    PLAN_MEJORA: 'Plan de Mejora / Medidas Correctivas (Art. 2.16, Art. 14)',
     OTRO: 'Documento General',
 };
 
@@ -254,8 +266,7 @@ module.exports.assign = async (event) => {
 
         if (!id) return error('ID de documento requerido');
 
-        // Acepta personaIds o workerIds (legacy)
-        const personaIds = body.personaIds || body.workerIds;
+        const personaIds = body.personaIds;
         const { fechaLimite, notificar, assignedBy, assignerName, replace } = body;
 
         if (!personaIds || !Array.isArray(personaIds) || personaIds.length === 0) {
@@ -341,7 +352,7 @@ module.exports.sign = async (event) => {
 
         if (!id) return error('ID de documento requerido');
 
-        const signerPersonaId = body.personaId || body.workerId;
+        const signerPersonaId = body.personaId;
         if (!signerPersonaId || !body.tipoFirma) {
             return error('personaId y tipoFirma son requeridos');
         }
@@ -384,7 +395,7 @@ module.exports.sign = async (event) => {
         const firmas = [...(documentData.firmas || []), firmaEmbebida];
 
         const asignaciones = (documentData.asignaciones || []).map((a) => {
-            if ((a.personaId === signerPersonaId || a.workerId === signerPersonaId) && a.estado === 'pendiente') {
+            if (a.personaId === signerPersonaId && a.estado === 'pendiente') {
                 return { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() };
             }
             return a;
@@ -414,6 +425,120 @@ module.exports.sign = async (event) => {
 };
 
 /**
+ * POST /documents/{id}/sign-assisted - Firma asistida por un tercero.
+ *
+ * Un admin/jefe_obra/supervisor/prevencionista inicia la firma de un documento
+ * en su dispositivo, y el TRABAJADOR teclea su propio PIN para firmar. La firma
+ * queda con personaId del trabajador (no del asistente) y metadata.asistidoPor
+ * para trazabilidad/defensa legal.
+ *
+ * Body: { tenantId, firmanteId, pin, asistidoPor, metodo: 'PIN'|'PRESENCIAL', firmaManuscrita? }
+ */
+module.exports.signAssisted = async (event) => {
+    try {
+        const { id } = event.pathParameters || {};
+        const body = JSON.parse(event.body || '{}');
+        if (!id) return error('ID de documento requerido');
+
+        const { firmanteId, asistidoPor, metodo = 'PIN' } = body;
+        if (!firmanteId) return error('firmanteId (trabajador) es requerido');
+        if (!asistidoPor) return error('asistidoPor (quien asiste la firma) es requerido');
+
+        const personaService = new PersonaService();
+
+        // 1. El asistente debe tener permiso 'firmar_asistido'
+        const asistente = await personaService.getById(asistidoPor);
+        if (!asistente) return error('Asistente no encontrado', 404);
+        if (!asistente.tienePermiso('firmar_asistido')) {
+            return error('No tienes permiso para iniciar una firma asistida', 403);
+        }
+
+        // 2. Documento existe y el firmante esta asignado a el
+        const docResult = await docClient.send(new GetCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id }
+        }));
+        if (!docResult.Item) return error('Documento no encontrado', 404);
+        const documentData = docResult.Item;
+
+        const asignacionFirmante = (documentData.asignaciones || []).find(
+            (a) => a.personaId === firmanteId
+        );
+        if (!asignacionFirmante) {
+            return error('El trabajador no esta asignado a este documento', 400);
+        }
+
+        // 3. Firmante pertenece al tenant y esta enrolado/habilitado
+        const firmante = await personaService.getById(firmanteId);
+        if (!firmante) return error('Trabajador no encontrado', 404);
+        if (asistente.tenantId !== firmante.tenantId) {
+            return error('El trabajador no pertenece a tu organizacion', 403);
+        }
+        if (!firmante.habilitado) {
+            return error('El trabajador no ha completado su enrolamiento', 400);
+        }
+
+        // 4. Firmar (metodo PIN valida el PIN del TRABAJADOR, no del asistente)
+        const contexto = {
+            ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
+            userAgent: event.headers?.['user-agent'] || 'unknown'
+        };
+        const credencial = metodo === 'PIN'
+            ? (body.pin || {})
+            : { firmaManuscrita: body.firmaManuscrita || null };
+
+        let firmaResult;
+        try {
+            firmaResult = await FirmaService.crear({
+                personaId: firmanteId,
+                tenantId: firmante.tenantId,
+                metodo,
+                credencial,
+                tipoFirma: 'documento',
+                referenciaId: id,
+                referenciaTipo: 'document',
+                contexto,
+                metadata: { asistidoPor, modalidad: 'firma_asistida' },
+                persona: firmante
+            });
+        } catch (firmaErr) {
+            return error(firmaErr.message, 400);
+        }
+
+        const firmaEmbebida = FirmaService.toDocumentFirmaFormat(firmaResult);
+        const firmas = [...(documentData.firmas || []), firmaEmbebida];
+        const now = new Date().toISOString();
+        const asignaciones = (documentData.asignaciones || []).map((a) => {
+            if (a.personaId === firmanteId && a.estado === 'pendiente') {
+                return { ...a, estado: 'firmado', fechaFirma: now, asistidoPor };
+            }
+            return a;
+        });
+
+        await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id },
+            UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':firmas': firmas,
+                ':asignaciones': asignaciones,
+                ':updatedAt': now
+            }
+        }));
+
+        return success({
+            message: 'Documento firmado (firma asistida)',
+            firma: firmaEmbebida,
+            signatureId: firmaResult.signatureId,
+            token: firmaResult.token
+        });
+    } catch (err) {
+        console.error('Error in assisted signing:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
  * POST /documents/{id}/sign-bulk - Firma masiva de documento
  */
 module.exports.signBulk = async (event) => {
@@ -423,7 +548,7 @@ module.exports.signBulk = async (event) => {
 
         if (!id) return error('ID de documento requerido');
 
-        const personaIds = body.personaIds || body.workerIds;
+        const personaIds = body.personaIds;
         const { tipoFirma, pin } = body;
 
         if (!personaIds || !Array.isArray(personaIds) || personaIds.length === 0) {
@@ -457,7 +582,7 @@ module.exports.signBulk = async (event) => {
         const firmas = [...(documentData.firmas || []), ...nuevasFirmas];
 
         const asignaciones = (documentData.asignaciones || []).map((a) => {
-            const firmado = personaIds.includes(a.personaId) || personaIds.includes(a.workerId);
+            const firmado = personaIds.includes(a.personaId);
             if (firmado && a.estado === 'pendiente') {
                 return { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() };
             }

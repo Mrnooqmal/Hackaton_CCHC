@@ -5,9 +5,21 @@
  * Contiene las fases y documentos obligatorios por fase (DS 44).
  */
 
-// Documentos obligatorios por fase según DS 44
+// ─────────────────────────────────────────────────────────────────────────────
+// Dos dimensiones independientes (ver Plan DS44 Fase B):
+//
+//   1. Eje NORMATIVO — ciclo Deming. UNICA fuente de verdad del cumplimiento DS44.
+//   2. Eje FISICO — etapa constructiva. Atributo INFORMATIVO; NO altera el
+//      cumplimiento DS44 de una fase Deming.
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Documentos obligatorios DS44 - Fase PLAN
+// Eje normativo (ciclo Deming) — define el cumplimiento DS44
+const FASES_DEMING = ['plan', 'hacer', 'verificar', 'actuar'];
+
+// Eje fisico (avance de obra) — atributo paralelo, informativo
+const ETAPAS_CONSTRUCTIVAS = ['excavacion', 'obra_gruesa', 'terminaciones', 'entrega'];
+
+// Documentos obligatorios DS44 - Fase PLAN (subconjunto del eje Deming)
 const DOCS_OBLIGATORIOS_PLAN = [
     'POLITICA_SSO',
     'DIAGNOSTICO_LEGAL',
@@ -15,6 +27,20 @@ const DOCS_OBLIGATORIOS_PLAN = [
     'MAPA_RIESGOS',
     'REGLAMENTO_INTERNO'
 ];
+
+// Documentos obligatorios POR FASE DEMING — UNICA fuente de verdad del
+// cumplimiento DS44. 'hacer' se completa con los subprocesos operativos
+// (Fase E1), 'verificar'/'actuar' con CHECK/ACT (Fases E2/E3).
+const DOCS_OBLIGATORIOS_DEMING = {
+    plan: DOCS_OBLIGATORIOS_PLAN,
+    hacer: [],      // subprocesos operativos DO — ver DS44_DO_SUBPROCESOS (frontend) / Fase E1
+    verificar: [],  // informe anual condicional + evaluacion desempeño — Fase E2
+    actuar: []      // actualizaciones / plan de mejora — Fase E3
+};
+
+// DEPRECATED como fuente de cumplimiento: mapa de la etapa constructiva.
+// Se conserva SOLO como filtro informativo secundario (que documentos
+// operativos aplican segun avance fisico), NUNCA como llave de cumplimiento DS44.
 const DOCS_OBLIGATORIOS_POR_FASE = {
     excavacion: ['IRL', 'POLITICA_SSO', 'REGLAMENTO_INTERNO', 'MAPA_RIESGOS'],
     obra_gruesa: ['PROCEDIMIENTO_TRABAJO', 'ENTREGA_EPP', 'CAPACITACION'],
@@ -22,7 +48,8 @@ const DOCS_OBLIGATORIOS_POR_FASE = {
     entrega: ['IRL', 'CAPACITACION']
 };
 
-const FASES_ORDEN = ['excavacion', 'obra_gruesa', 'terminaciones', 'entrega'];
+// Orden del eje constructivo (informativo). Alias historico: FASES_ORDEN.
+const FASES_ORDEN = ETAPAS_CONSTRUCTIVAS;
 
 class Obra {
     constructor(data) {
@@ -33,10 +60,18 @@ class Obra {
         this.direccion = data.direccion || '';
         this.comuna = data.comuna || '';
         this.region = data.region || '';
-        this.etapaActual = data.etapaActual || 'excavacion';
+        // Eje fisico (informativo). Ya NO se captura en la creacion de obra (cambia
+        // constantemente y nadie lo mantiene). Se conserva el campo solo por
+        // compatibilidad con datos previos; null cuando no aplica.
+        this.etapaConstructivaActual = data.etapaConstructivaActual || data.etapaActual || null;
+        this.etapaActual = this.etapaConstructivaActual; // alias de lectura
         this.mandante = data.mandante || '';
         this.estado = data.estado || 'activa';
         this.imagenKey = data.imagenKey || '';
+        // Flags que condicionan que elementos del DO aplican a esta obra (DS44 Excel).
+        this.faenaCompartida = data.faenaCompartida || false;   // Art. 20 (faena compartida)
+        this.tieneMaquinaria = data.tieneMaquinaria !== undefined ? data.tieneMaquinaria : true; // Art. 10 (construccion: true por defecto)
+        this.agentesFQB = data.agentesFQB; // Art. 2 N°14 c — sin default: undefined => "verificar aplicabilidad"
 
         // Tracking cumplimiento DS44 (PLAN/DO/CHECK)
         this.cumplimientoDS44 = data.cumplimientoDS44 || {
@@ -120,10 +155,14 @@ class Obra {
             direccion: this.direccion,
             comuna: this.comuna,
             region: this.region,
-            etapaActual: this.etapaActual,
+            etapaConstructivaActual: this.etapaConstructivaActual,
+            etapaActual: this.etapaConstructivaActual, // alias legacy
             mandante: this.mandante,
             estado: this.estado,
             imagenKey: this.imagenKey,
+            faenaCompartida: this.faenaCompartida,
+            tieneMaquinaria: this.tieneMaquinaria,
+            agentesFQB: this.agentesFQB,
             fasesConfig: this.fasesConfig,
             faseDeming: this.faseDeming,
             cumplimientoDS44: this.cumplimientoDS44,
@@ -149,10 +188,17 @@ class Obra {
             direccion: this.direccion,
             comuna: this.comuna,
             region: this.region,
+            // Eje fisico (informativo) — expuesto al frontend; antes faltaba (bug).
+            etapaConstructivaActual: this.etapaConstructivaActual,
+            etapaActual: this.etapaConstructivaActual, // alias legacy
             mandante: this.mandante,
             estado: this.estado,
             imagenKey: this.imagenKey,
+            faenaCompartida: this.faenaCompartida,
+            tieneMaquinaria: this.tieneMaquinaria,
+            agentesFQB: this.agentesFQB,
             fasesConfig: this.fasesConfig,
+            // Eje normativo (cumplimiento DS44)
             faseDeming: this.faseDeming,
             cumplimientoDS44: this.cumplimientoDS44,
             createdAt: this.createdAt,
@@ -161,4 +207,12 @@ class Obra {
     }
 }
 
-module.exports = { Obra, DOCS_OBLIGATORIOS_POR_FASE, DOCS_OBLIGATORIOS_PLAN, FASES_ORDEN };
+module.exports = {
+    Obra,
+    DOCS_OBLIGATORIOS_DEMING,
+    DOCS_OBLIGATORIOS_POR_FASE,
+    DOCS_OBLIGATORIOS_PLAN,
+    FASES_DEMING,
+    ETAPAS_CONSTRUCTIVAS,
+    FASES_ORDEN
+};

@@ -42,22 +42,22 @@ export default function MySignatures() {
     const [error, setError] = useState('');
 
     useEffect(() => {
-        if (user?.workerId) {
+        if (user?.personaId) {
             loadData();
         } else {
             // Si no hay workerId, no hay datos que cargar
             setLoading(false);
         }
-    }, [user?.workerId]);
+    }, [user?.personaId]);
 
     const loadData = async () => {
-        if (!user?.workerId) return;
+        if (!user?.personaId) return;
 
         setLoading(true);
         try {
             const [pendingRes, historyRes] = await Promise.all([
-                signatureRequestsApi.getPendingByWorker(user.workerId),
-                signatureRequestsApi.getHistoryByWorker(user.workerId),
+                signatureRequestsApi.getPendingByWorker(user.personaId),
+                signatureRequestsApi.getHistoryByWorker(user.personaId),
             ]);
 
             if (pendingRes.success && pendingRes.data) {
@@ -74,14 +74,14 @@ export default function MySignatures() {
     };
 
     const handleSign = async () => {
-        if (!selectedRequest || !user?.workerId || pin.length !== 4) return;
+        if (!selectedRequest || !user?.personaId || pin.length !== 4) return;
 
         setSigning(true);
         setError('');
 
         try {
             const response = await signaturesApi.create({
-                workerId: user.workerId,
+                personaId: user.personaId,
                 pin,
                 requestId: selectedRequest.requestId,
             });
@@ -133,7 +133,7 @@ export default function MySignatures() {
         );
     }
 
-    if (!user?.workerId) {
+    if (!user?.personaId) {
         return (
             <>
                 <Header title="Mis Firmas" />

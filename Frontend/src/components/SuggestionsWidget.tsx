@@ -151,7 +151,7 @@ export default function SuggestionsWidget() {
         try {
             const payload = {
                 message: message.trim(),
-                userId: user.userId || user.workerId || '',
+                userId: user.personaId || '',
                 userName: `${user.nombre || ''} ${user.apellido || ''}`.trim(),
                 tenantId: user.tenantId || null,
             };

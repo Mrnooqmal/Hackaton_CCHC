@@ -250,11 +250,11 @@ export default function Documents() {
         let workerIdsToAssign: string[] = [];
 
         if (assignmentType === 'todos') {
-            workerIdsToAssign = workers.filter(w => w.habilitado).map(w => w.workerId);
+            workerIdsToAssign = workers.filter(w => w.habilitado).map(w => w.personaId);
         } else if (assignmentType === 'cargo') {
             workerIdsToAssign = workers
                 .filter(w => w.habilitado && w.cargo?.toLowerCase() === selectedCargo.toLowerCase())
-                .map(w => w.workerId);
+                .map(w => w.personaId);
         } else {
             workerIdsToAssign = selectedWorkerIds;
         }
@@ -279,7 +279,7 @@ export default function Documents() {
                     if (recipientsRes.success && recipientsRes.data) {
                         const allRecipients = recipientsRes.data.recipients;
                         // Map worker IDs to their RUTs, then find matching Inbox Recipients to extract userIds
-                        const assignedRuts = workers.filter(w => workerIdsToAssign.includes(w.workerId)).map(w => w.rut);
+                        const assignedRuts = workers.filter(w => workerIdsToAssign.includes(w.personaId)).map(w => w.rut);
                         const recipientUserIds = allRecipients.filter(r => assignedRuts.includes(r.rut)).map(r => r.userId);
                         
                         if (recipientUserIds.length > 0) {
@@ -322,14 +322,14 @@ export default function Documents() {
     };
 
     const handleSign = async (pin: string) => {
-        if (!selectedDocument || !user?.workerId) return;
+        if (!selectedDocument || !user?.personaId) return;
 
         setSigning(true);
         try {
             const result = await signDocument(
                 selectedDocument.documentId,
                 selectedDocument.titulo,
-                user.workerId,
+                user.personaId,
                 user.nombre || 'Usuario',
                 pin
             );
@@ -407,7 +407,7 @@ export default function Documents() {
         // Si no es admin/prevencionista, ver solo si está asignado
         const isWorkerOrSupervisor = user?.rol === 'trabajador';
         if (isWorkerOrSupervisor) {
-            const isAssigned = doc.asignaciones?.some(a => a.workerId === user?.workerId);
+            const isAssigned = doc.asignaciones?.some(a => a.workerId === user?.personaId);
             return categoryMatch && matchesSearch && matchesType && isAssigned;
         }
 
@@ -682,7 +682,7 @@ export default function Documents() {
                                     const signedCount = doc.asignaciones?.filter(a => a.estado === 'firmado').length || 0;
                                     const totalAssigned = doc.asignaciones?.length || 0;
 
-                                    const myAssignment = user?.workerId ? doc.asignaciones?.find(a => a.workerId === user.workerId) : null;
+                                    const myAssignment = user?.personaId ? doc.asignaciones?.find(a => a.workerId === user.personaId) : null;
                                     const isPendingForMe = myAssignment?.estado === 'pendiente';
                                     const isSignedByMe = myAssignment?.estado === 'firmado';
                                     const isExpanded = Boolean(expandedRows[doc.documentId]);
@@ -929,7 +929,7 @@ export default function Documents() {
                     size="lg"
                     footer={
                         <>
-                            {(user?.workerId && selectedDocument?.asignaciones?.some(a => a.workerId === user!.workerId && a.estado === 'pendiente')) && (
+                            {(user?.personaId && selectedDocument?.asignaciones?.some(a => a.workerId === user!.personaId && a.estado === 'pendiente')) && (
                                 <button className="btn btn-success" style={{ background: 'var(--success-600)', color: 'white', marginRight: 'auto' }} onClick={() => { setShowDetailModal(false); setShowSignModal(true); }}>
                                     <FiPenTool className="inline mr-2" />Firmar Documento
                                 </button>
@@ -1095,19 +1095,19 @@ export default function Documents() {
                                             <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
                                                 {workers.filter(w => w.habilitado).map(worker => (
                                                     <label
-                                                        key={worker.workerId}
+                                                        key={worker.personaId}
                                                         className="flex items-center gap-2"
                                                         style={{
                                                             padding: 'var(--space-2) var(--space-3)',
                                                             cursor: 'pointer',
                                                             borderBottom: '1px solid var(--surface-border)',
-                                                            background: selectedWorkerIds.includes(worker.workerId) ? 'var(--primary-500/10)' : 'transparent'
+                                                            background: selectedWorkerIds.includes(worker.personaId) ? 'var(--primary-500/10)' : 'transparent'
                                                         }}
                                                     >
                                                         <input
                                                             type="checkbox"
-                                                            checked={selectedWorkerIds.includes(worker.workerId)}
-                                                            onChange={() => toggleWorkerSelection(worker.workerId)}
+                                                            checked={selectedWorkerIds.includes(worker.personaId)}
+                                                            onChange={() => toggleWorkerSelection(worker.personaId)}
                                                         />
                                                         <span>{worker.nombre} {worker.apellido}</span>
                                                         <span className="text-sm text-muted">- {worker.cargo}</span>

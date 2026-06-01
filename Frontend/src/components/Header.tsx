@@ -176,7 +176,9 @@ export default function Header({ title }: HeaderProps) {
                                                     }} />
                                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0 }}>
                                                         <span style={{ fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{obra.nombre}</span>
-                                                        <span style={{ fontSize: '11px', color: isSelected ? 'var(--primary-400)' : 'var(--text-muted)', textTransform: 'capitalize' }}>{obra.etapaActual}</span>
+                                                        {obra.codigo && (
+                                                          <span style={{ fontSize: '11px', color: isSelected ? 'var(--primary-400)' : 'var(--text-muted)' }}>{obra.codigo}</span>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </button>
