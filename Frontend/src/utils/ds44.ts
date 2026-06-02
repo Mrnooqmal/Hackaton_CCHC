@@ -83,7 +83,7 @@ export const DS44_ONBOARDING_ITEMS: Ds44OnboardingItem[] = [
         articulo: 'Art. 16',
         kind: 'actividad',          // grupal — se trackea por actividades, no por SignatureRequest individual
         actionLabel: 'Ver actividades',
-        actionRoute: '/actividades'
+        actionRoute: '/activities'
     },
     {
         key: 'REGLAMENTO_INTERNO',
@@ -162,6 +162,14 @@ export type Ds44DoElemento = {
     subtipo?: string;
     // Para fuente 'readmodel': ruta del modulo que alimenta el registro.
     modulo?: string;
+    // Accion del registro de gestion en el panel:
+    //  'incidentes'  -> ver + reportar (modulo existente)
+    //  'simulacro'   -> programar actividad SIMULACRO inline
+    //  'investigaciones' -> ver investigaciones (proceso sobre incidente)
+    //  'consulta'    -> solo enlace de consulta (dato en Persona.vigilanciaSalud)
+    accion?: 'incidentes' | 'simulacro' | 'investigaciones' | 'consulta';
+    // true => el modulo aun no existe; mostrar badge "Modulo pendiente", sin crear.
+    moduloPendiente?: boolean;
     // true => cuenta en el % de cumplimiento HACER de la obra.
     cuenta?: boolean;
 };
@@ -216,12 +224,12 @@ export const DS44_DO_CAPACITACIONES: Ds44DoElemento[] = [
 // D) REGISTROS DE GESTIÓN — read-models que leen de modulos existentes.
 // NO cuentan en el % (reflejan datos del sistema, no son documentos a "completar").
 export const DS44_DO_REGISTROS_GESTION: Ds44DoElemento[] = [
-    { key: 'REG_INCIDENTES', tipo: 'INCIDENTES', titulo: 'Incidentes / sucesos peligrosos', articulo: 'Art. 73', fuente: 'readmodel', condicion: 'siempre', modulo: '/incidents' },
-    { key: 'REG_VIGILANCIA', tipo: 'VIGILANCIA', titulo: 'Personas en vigilancia de la salud', articulo: 'Art. 73', fuente: 'readmodel', condicion: 'siempre', modulo: '/workers' },
-    { key: 'REG_EXAMENES', tipo: 'EXAMENES', titulo: 'Mediciones ambientales / exámenes ocupacionales', articulo: 'Arts. 67-68', fuente: 'readmodel', condicion: 'siempre', modulo: '/workers' },
-    { key: 'REG_INVESTIGACIONES', tipo: 'INVESTIGACIONES', titulo: 'Investigaciones de accidentes y EP', articulo: 'Art. 71', fuente: 'readmodel', condicion: 'siempre', modulo: '/incidents' },
-    { key: 'REG_ENSAYO_EMERGENCIA', tipo: 'SIMULACRO', titulo: 'Prueba/ensayo anual del plan de emergencias', articulo: 'Art. 19', fuente: 'readmodel', condicion: 'siempre', modulo: '/actividades' },
-    { key: 'REG_ACTAS_CPHS', tipo: 'ACTAS_CPHS', titulo: 'Actas CPHS, acuerdos y entrega de documentación', articulo: 'Arts. 36-46', fuente: 'readmodel', condicion: 'cphs', modulo: '/actividades' }
+    { key: 'REG_INCIDENTES', tipo: 'INCIDENTES', titulo: 'Incidentes / sucesos peligrosos', articulo: 'Art. 73', fuente: 'readmodel', condicion: 'siempre', modulo: '/incidents', accion: 'incidentes' },
+    { key: 'REG_INVESTIGACIONES', tipo: 'INVESTIGACIONES', titulo: 'Investigaciones de accidentes y EP', articulo: 'Art. 71', fuente: 'readmodel', condicion: 'siempre', modulo: '/incidents', accion: 'investigaciones' },
+    { key: 'REG_ENSAYO_EMERGENCIA', tipo: 'SIMULACRO', titulo: 'Prueba/ensayo anual del plan de emergencias', articulo: 'Art. 19', fuente: 'readmodel', condicion: 'siempre', modulo: '/activities', accion: 'simulacro' },
+    { key: 'REG_VIGILANCIA', tipo: 'VIGILANCIA', titulo: 'Personas en vigilancia de la salud', articulo: 'Art. 73', fuente: 'readmodel', condicion: 'siempre', modulo: '/personas', accion: 'consulta', moduloPendiente: true },
+    { key: 'REG_EXAMENES', tipo: 'EXAMENES', titulo: 'Mediciones ambientales / exámenes ocupacionales', articulo: 'Arts. 67-68', fuente: 'readmodel', condicion: 'siempre', modulo: '/personas', accion: 'consulta', moduloPendiente: true },
+    { key: 'REG_ACTAS_CPHS', tipo: 'ACTAS_CPHS', titulo: 'Actas CPHS, acuerdos y entrega de documentación', articulo: 'Arts. 36-46', fuente: 'readmodel', condicion: 'cphs', modulo: '/activities', accion: 'consulta', moduloPendiente: true }
 ];
 
 // Eventos sobrevinientes: se crean SOLO ante el hecho. NO cuentan como faltante

@@ -8,6 +8,7 @@ import {
     LuIdCard,
     LuTrendingUp,
     LuFileText,
+    LuActivity,
     LuCircleCheck,
     LuCircleAlert,
     LuDownload,
@@ -75,6 +76,10 @@ export default function WorkerDetail() {
     const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    // Vigilancia de salud (Art. 67/73) — editable desde la ficha del trabajador
+    const [vigForm, setVigForm] = useState({ enVigilancia: false, protocolos: '', fechaUltimoExamen: '', aptitudLaboral: '', restricciones: '' });
+    const [vigEditing, setVigEditing] = useState(false);
+    const [vigSaving, setVigSaving] = useState(false);
 
     const getLatestOverrideObraId = (overrides?: Record<string, { items?: Record<string, { doneAt: string }>; updatedAt?: string }>) => {
         if (!overrides) return null;
@@ -115,6 +120,42 @@ export default function WorkerDetail() {
             loadWorkerData();
         }
     }, [rut, selectedObraId]);
+
+    // Sincroniza el formulario de vigilancia con los datos del trabajador.
+    useEffect(() => {
+        const v = (worker as any)?.vigilanciaSalud;
+        if (!v) return;
+        setVigForm({
+            enVigilancia: Boolean(v.enVigilancia),
+            protocolos: Array.isArray(v.protocolos) ? v.protocolos.join(', ') : (v.protocolos || ''),
+            fechaUltimoExamen: v.fechaUltimoExamen ? String(v.fechaUltimoExamen).slice(0, 10) : '',
+            aptitudLaboral: v.aptitudLaboral || '',
+            restricciones: Array.isArray(v.restricciones) ? v.restricciones.join(', ') : (v.restricciones || ''),
+        });
+    }, [worker]);
+
+    const handleSaveVigilancia = async () => {
+        if (!worker) return;
+        setVigSaving(true);
+        try {
+            const vigilanciaSalud = {
+                enVigilancia: vigForm.enVigilancia,
+                protocolos: vigForm.protocolos.split(',').map((s) => s.trim()).filter(Boolean),
+                fechaUltimoExamen: vigForm.fechaUltimoExamen || null,
+                aptitudLaboral: vigForm.aptitudLaboral || null,
+                restricciones: vigForm.restricciones.split(',').map((s) => s.trim()).filter(Boolean),
+            };
+            const res = await workersApi.update(worker.personaId, { vigilanciaSalud } as any);
+            if (res.success) {
+                setVigEditing(false);
+                await loadWorkerData();
+            }
+        } catch (err) {
+            console.error('Error guardando vigilancia de salud:', err);
+        } finally {
+            setVigSaving(false);
+        }
+    };
 
     const loadWorkerData = async () => {
         if (!rut) return;
@@ -547,6 +588,52 @@ Generado por PrevencionApp
                             </div>
                         </div>
                     )}
+
+                    {/* Vigilancia de Salud (Art. 67/73) */}
+                    <div className="lg:col-span-2">
+                        <div className="card" style={{ padding: 'var(--space-4)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                                <h3 className="font-bold flex items-center gap-2 m-0">
+                                    <LuActivity className="text-primary-500" />
+                                    Vigilancia de Salud <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(Art. 67/73)</span>
+                                </h3>
+                                {!vigEditing ? (
+                                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => setVigEditing(true)}>Editar</button>
+                                ) : (
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setVigEditing(false); }}>Cancelar</button>
+                                        <button className="btn btn-primary btn-sm" type="button" disabled={vigSaving} onClick={handleSaveVigilancia}>{vigSaving ? 'Guardando…' : 'Guardar'}</button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {!vigEditing ? (
+                                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '6px 12px', fontSize: '0.88rem' }}>
+                                    <div className="text-muted">En vigilancia</div>
+                                    <div>
+                                        <span className={`badge ${vigForm.enVigilancia ? 'badge-warning' : 'badge-secondary'}`}>{vigForm.enVigilancia ? 'Sí' : 'No'}</span>
+                                    </div>
+                                    <div className="text-muted">Protocolos</div><div>{vigForm.protocolos || '—'}</div>
+                                    <div className="text-muted">Último examen</div><div>{vigForm.fechaUltimoExamen || '—'}</div>
+                                    <div className="text-muted">Aptitud laboral</div><div>{vigForm.aptitudLaboral || '—'}</div>
+                                    <div className="text-muted">Restricciones</div><div>{vigForm.restricciones || '—'}</div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <input type="checkbox" checked={vigForm.enVigilancia} onChange={(e) => setVigForm({ ...vigForm, enVigilancia: e.target.checked })} />
+                                        <span>En programa de vigilancia de la salud</span>
+                                    </label>
+                                    <div className="form-group"><label className="form-label">Protocolos</label><input type="text" className="form-input" placeholder="Ej: PLANESI, Ruido, Sílice" value={vigForm.protocolos} onChange={(e) => setVigForm({ ...vigForm, protocolos: e.target.value })} /><span className="form-hint">Separar con coma</span></div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="form-group"><label className="form-label">Último examen</label><input type="date" className="form-input" value={vigForm.fechaUltimoExamen} onChange={(e) => setVigForm({ ...vigForm, fechaUltimoExamen: e.target.value })} /></div>
+                                        <div className="form-group"><label className="form-label">Aptitud laboral</label><input type="text" className="form-input" placeholder="apto / apto con restricciones / no apto" value={vigForm.aptitudLaboral} onChange={(e) => setVigForm({ ...vigForm, aptitudLaboral: e.target.value })} /></div>
+                                    </div>
+                                    <div className="form-group"><label className="form-label">Restricciones</label><input type="text" className="form-input" placeholder="Ej: No trabajo en altura" value={vigForm.restricciones} onChange={(e) => setVigForm({ ...vigForm, restricciones: e.target.value })} /><span className="form-hint">Separar con coma</span></div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
 
                     {/* Historial de Cumplimiento - Segunda fila, segunda columna */}
                     <div className="lg:col-span-2">

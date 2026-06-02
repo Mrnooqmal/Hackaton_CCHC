@@ -53,4 +53,23 @@ export const obrasApi = {
         const qs = q.toString();
         return apiRequest<any>(`/obras/${id}/check/consolidado${qs ? `?${qs}` : ''}`);
     },
+    // Read-model de medidas correctivas (Art. 71) de la obra, aplanadas desde las
+    // investigaciones de incidentes. Insumo de la Fase ACT.
+    getMedidasCorrectivas: (id: string, estado?: string) => {
+        const qs = estado ? `?estado=${encodeURIComponent(estado)}` : '';
+        return apiRequest<{ medidas: any[]; resumen: { total: number; pendientes: number; enProceso: number; completadas: number; verificadas: number; vencidas: number } }>(
+            `/obras/${id}/medidas-correctivas${qs}`
+        );
+    },
+    // Genera y firma el Informe de Investigación (Art. 71) de un incidente y cierra
+    // la investigación. Devuelve el documento firmado con hash verificable.
+    cerrarInvestigacion: (
+        obraId: string,
+        incidentId: string,
+        data: { firmante: { personaId: string; pin?: string }; metodo?: 'PIN' | 'PRESENCIAL'; firmaManuscrita?: string }
+    ) =>
+        apiRequest<{ documentId: string; token: string; hash: string; s3Key: string | null }>(
+            `/obras/${obraId}/investigaciones/${incidentId}/cerrar`,
+            { method: 'POST', body: JSON.stringify(data) }
+        ),
 };

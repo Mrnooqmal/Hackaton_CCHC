@@ -51,6 +51,7 @@ export default function ObraDetalle() {
   const [tenantSize, setTenantSize] = useState<number | null>(null); // cantidadTrabajadores de la entidad (condicionales DO)
   const [firmaAsistidaOpen, setFirmaAsistidaOpen] = useState(false);
   const [firmaAsistidaWorkerId, setFirmaAsistidaWorkerId] = useState<string | undefined>(undefined);
+  const [firmaAsistidaTipo, setFirmaAsistidaTipo] = useState<string | undefined>(undefined);
   // Modal inline de creacion DO (procedimiento/evento => documento; capacitacion => actividad)
   const [doCreateModal, setDoCreateModal] = useState<{ mode: 'documento' | 'actividad'; el: any } | null>(null);
   const [doCreateForm, setDoCreateForm] = useState<{ titulo: string; descripcion: string; fecha: string; relatorId: string; file: File | null }>({ titulo: '', descripcion: '', fecha: '', relatorId: '', file: null });
@@ -58,7 +59,17 @@ export default function ObraDetalle() {
   const [doCreateError, setDoCreateError] = useState<string | null>(null);
   const [savingObraFlag, setSavingObraFlag] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0); // bump para recargar datos de la obra
+  const [obraToast, setObraToast] = useState<string | null>(null); // confirmacion breve de acciones inline
   const [checkConsolidado, setCheckConsolidado] = useState<any | null>(null);
+  const [medidas, setMedidas] = useState<any | null>(null); // read-model medidas correctivas (ACT)
+  const [loadingMedidas, setLoadingMedidas] = useState(false);
+  const [savingMedida, setSavingMedida] = useState<string | null>(null);
+  // Cierre de investigacion Art. 71 (genera informe firmado)
+  const [cerrarInvModal, setCerrarInvModal] = useState<{ incidentId: string; descripcion: string } | null>(null);
+  const [cerrarInvPin, setCerrarInvPin] = useState('');
+  const [cerrarInvSaving, setCerrarInvSaving] = useState(false);
+  const [cerrarInvError, setCerrarInvError] = useState<string | null>(null);
+  const [cerrarInvResult, setCerrarInvResult] = useState<{ token: string; hash: string } | null>(null);
   const [loadingCheck, setLoadingCheck] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [isDs44ModalOpen, setIsDs44ModalOpen] = useState(false);
@@ -252,8 +263,10 @@ export default function ObraDetalle() {
   const estadoCapacitacion = (el: Ds44DoElemento): { matches: any[]; estado: 'faltante' | 'pendiente_firma' | 'completo' } => {
     const matches = actividades.filter((a: any) => {
       if (!(el.actividadTipos || []).includes(a.tipo)) return false;
-      // Match estricto por subtipo (no por palabras del titulo).
-      if (el.subtipo) return a.subtipo === el.subtipo;
+      // Vincula por subtipo (preciso) o, como respaldo, por titulo exacto
+      // (el modal pre-llena el titulo con el del elemento) para que funcione
+      // aunque el backend aun no persista el subtipo.
+      if (el.subtipo) return a.subtipo === el.subtipo || a.titulo === el.titulo;
       return true;
     });
     const ejecutada = matches.some((a: any) => a.estado === 'completada' && (a.asistentes?.length || 0) > 0);
@@ -402,6 +415,12 @@ export default function ObraDetalle() {
     setSelectedDemingPhase(faseDeming);
   }, [faseDeming]);
 
+  useEffect(() => {
+    if (!obraToast) return;
+    const t = setTimeout(() => setObraToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [obraToast]);
+
   const reloadDocs = useCallback(async () => {
     if (!obraId) return;
     const docsObraRes = await documentsApi.list({ obraId, clasificacion: 'obra' } as any);
@@ -426,6 +445,71 @@ export default function ObraDetalle() {
 
   // Recarga completa de la obra (documentos, asignaciones, firmas, etc.).
   const reloadObraData = useCallback(() => setReloadTick((t) => t + 1), []);
+
+  // Read-model de medidas correctivas (Art. 71) — insumo de la Fase ACT.
+  const loadMedidas = useCallback(async () => {
+    if (!obraId) return;
+    setLoadingMedidas(true);
+    try {
+      const res = await obrasApi.getMedidasCorrectivas(obraId);
+      if (res.success && res.data) setMedidas(res.data);
+    } catch (err) {
+      console.error('Error cargando medidas correctivas:', err);
+    } finally {
+      setLoadingMedidas(false);
+    }
+  }, [obraId]);
+
+  // Cargar medidas al entrar a la fase ACT.
+  useEffect(() => {
+    if (selectedDemingPhase === 'actuar' && medidas === null) loadMedidas();
+  }, [selectedDemingPhase, medidas, loadMedidas]);
+
+  // Avanza el estado de una medida correctiva (seguimiento ACT).
+  const avanzarMedida = async (incidentId: string, numero: string | number, estado: 'pendiente' | 'en_proceso' | 'completada' | 'verificada') => {
+    const key = `${incidentId}:${numero}`;
+    setSavingMedida(key);
+    try {
+      const res = await incidentsApi.updateMedidaEstado(incidentId, numero, estado);
+      if (res.success) {
+        await loadMedidas();
+        setObraToast('Medida correctiva actualizada.');
+      }
+    } catch (err) {
+      console.error('Error actualizando medida:', err);
+    } finally {
+      setSavingMedida(null);
+    }
+  };
+
+  // Cierra la investigacion (Art. 71): genera y firma el informe, lo guarda como
+  // documento de la obra y marca el incidente como cerrado.
+  const handleCerrarInvestigacion = async () => {
+    if (!cerrarInvModal || !obraId) return;
+    const firmanteId = user?.personaId;
+    if (!firmanteId) { setCerrarInvError('No se pudo identificar al firmante.'); return; }
+    if (!cerrarInvPin || cerrarInvPin.length < 4) { setCerrarInvError('Ingresa tu PIN para firmar el informe.'); return; }
+    setCerrarInvSaving(true);
+    setCerrarInvError(null);
+    try {
+      const res = await obrasApi.cerrarInvestigacion(obraId, cerrarInvModal.incidentId, {
+        firmante: { personaId: firmanteId, pin: cerrarInvPin },
+        metodo: 'PIN',
+      });
+      if (!res.success || !res.data) {
+        setCerrarInvError(res.error || 'No se pudo cerrar la investigación. Verifica tu PIN.');
+        return;
+      }
+      setCerrarInvResult(res.data);
+      setCerrarInvPin('');
+      reloadObraData();
+    } catch (err) {
+      console.error('Error cerrando investigación:', err);
+      setCerrarInvError('Error de conexión.');
+    } finally {
+      setCerrarInvSaving(false);
+    }
+  };
 
   // Persiste un flag de la obra (faenaCompartida/tieneMaquinaria/agentesFQB) desde
   // la micro-pregunta de aplicabilidad. Resuelve la visibilidad sin volver a preguntar.
@@ -466,13 +550,17 @@ export default function ObraDetalle() {
     try {
       if (mode === 'actividad') {
         if (!doCreateForm.relatorId) { setDoCreateError('Selecciona un relator.'); setDoCreateSaving(false); return; }
+        const tipoAct = el.activityTipo || 'CAPACITACION';
         const r = await activitiesApi.create({
-          tipo: 'CAPACITACION', subtipo: el.subtipo, titulo: doCreateForm.titulo,
+          tipo: tipoAct,
+          subtipo: tipoAct === 'CAPACITACION' ? el.subtipo : undefined,
+          titulo: doCreateForm.titulo,
           fecha: doCreateForm.fecha, relatorId: doCreateForm.relatorId,
           obraId, tenantId: obra.tenantId,
         } as any);
         if (!r.success) { setDoCreateError(r.error || 'No se pudo crear la actividad.'); return; }
         await reloadActividades();
+        setObraToast(el.activityTipo === 'SIMULACRO' ? 'Simulacro programado.' : 'Capacitación programada. Queda pendiente de firmas de asistencia.');
       } else {
         let s3Key: string | undefined;
         let archivoNombre: string | undefined;
@@ -496,6 +584,7 @@ export default function ObraDetalle() {
         } as any);
         if (!r.success) { setDoCreateError(r.error || 'No se pudo crear el documento.'); return; }
         await reloadDocs();
+        setObraToast('Documento creado.');
       }
       setDoCreateModal(null);
     } catch (err) {
@@ -1840,20 +1929,47 @@ export default function ObraDetalle() {
                   Se nutren de los datos del sistema; no son documentos a subir y no afectan el %.
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-                  {doRegistros.map(({ el, aplicabilidad }) => (
-                    <div key={el.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
-                        <div className="text-muted" style={{ fontSize: '0.78rem' }}>{el.articulo}</div>
+                  {doRegistros.map(({ el }) => {
+                    // Conteo/estado real segun la naturaleza del registro.
+                    const incCount = incidentes.length;
+                    const invPend = incidentes.filter((i: any) => ['grave', 'fatal'].includes(i.gravedad) && i.estado !== 'cerrado').length;
+                    const hasSimulacro = actividades.some((a: any) => a.tipo === 'SIMULACRO');
+                    const enVigilancia = trabajadores.filter((w: any) => w.vigilanciaSalud?.enVigilancia).length;
+                    return (
+                      <div key={el.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                            {el.articulo}
+                            {el.accion === 'incidentes' && ` · ${incCount} incidente(s)`}
+                            {el.accion === 'investigaciones' && ` · ${invPend} investigación(es) pendiente(s)`}
+                            {el.accion === 'simulacro' && ` · ${hasSimulacro ? 'Ensayo registrado' : 'Sin ensayo en el periodo'}`}
+                            {el.key === 'REG_VIGILANCIA' && ` · ${enVigilancia} en vigilancia`}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
+                          {el.moduloPendiente && <span className="badge badge-warning">Módulo pendiente</span>}
+                          {el.accion === 'incidentes' && (
+                            <>
+                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver incidentes</button>
+                              <button className="btn btn-primary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}&nuevo=1`)}>Reportar</button>
+                            </>
+                          )}
+                          {el.accion === 'investigaciones' && (
+                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}&tab=investigaciones`)}>Ver investigaciones</button>
+                          )}
+                          {el.accion === 'simulacro' && (
+                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => openDoCreate('actividad', { titulo: 'Ensayo anual del plan de emergencias', activityTipo: 'SIMULACRO', tipo: 'SIMULACRO' })}>
+                              Programar simulacro
+                            </button>
+                          )}
+                          {el.accion === 'consulta' && (
+                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => el.modulo && navigate(el.modulo)}>Ver</button>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
-                        {aplicabilidad === 'verificar' && <span className="badge badge-warning">Verificar aplicabilidad</span>}
-                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => el.modulo && navigate(el.modulo)}>
-                          Ver módulo
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* ── Sección: Eventos sobrevinientes ── */}
@@ -1883,33 +1999,57 @@ export default function ObraDetalle() {
 
             {isCheckPhase && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {/* Consolidado del periodo (read-model) */}
+                {/* Consolidado del periodo */}
                 <div className="card" style={{ padding: 'var(--space-4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
                     <div className="font-medium">Consolidado del periodo (Arts. 14, 22.4)</div>
                     <button className="btn btn-secondary btn-sm" type="button" onClick={loadCheckConsolidado} disabled={loadingCheck}>
-                      {loadingCheck ? 'Cargando…' : checkConsolidado ? 'Actualizar' : 'Consolidar periodo'}
+                      {loadingCheck ? 'Cargando…' : checkConsolidado ? 'Actualizar' :'Consolidar periodo'}
                     </button>
                   </div>
                   {checkConsolidado ? (
-                    <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                      <div style={{ flex: 1, minWidth: '130px' }}>
-                        <div className="text-muted" style={{ fontSize: '0.78rem' }}>Accidentes</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.indicadores?.numeroAccidentes ?? 0}</div>
+                    <>
+                      <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: '120px' }}>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>Accidentes</div>
+                          <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.indicadores?.numeroAccidentes ?? 0}</div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: '120px' }}>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>Tasa frecuencia</div>
+                          <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.indicadores?.tasaFrecuencia ?? 0}</div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: '120px' }}>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>Investigaciones (pend./cerr.)</div>
+                          <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>
+                            <span style={{ color: (checkConsolidado.investigacionesATEP?.pendientes ?? 0) > 0 ? '#f59e0b' : undefined }}>{checkConsolidado.investigacionesATEP?.pendientes ?? 0}</span>
+                            {' / '}{checkConsolidado.investigacionesATEP?.cerradas ?? 0}
+                          </div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: '120px' }}>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>Medidas vencidas</div>
+                          <div style={{ fontSize: '1.3rem', fontWeight: 700, color: (checkConsolidado.medidasCorrectivas?.vencidas ?? 0) > 0 ? '#ef4444' : undefined }}>{checkConsolidado.medidasCorrectivas?.vencidas ?? 0}</div>
+                        </div>
+                        <div style={{ flex: 1, minWidth: '120px' }}>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>En vigilancia salud</div>
+                          <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.vigilancia?.enVigilancia ?? 0}</div>
+                        </div>
                       </div>
-                      <div style={{ flex: 1, minWidth: '130px' }}>
-                        <div className="text-muted" style={{ fontSize: '0.78rem' }}>Tasa frecuencia</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.indicadores?.tasaFrecuencia ?? 0}</div>
-                      </div>
-                      <div style={{ flex: 1, minWidth: '130px' }}>
-                        <div className="text-muted" style={{ fontSize: '0.78rem' }}>Investigaciones AT/EP</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.investigacionesATEP?.total ?? 0}</div>
-                      </div>
-                      <div style={{ flex: 1, minWidth: '130px' }}>
-                        <div className="text-muted" style={{ fontSize: '0.78rem' }}>En vigilancia salud</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.vigilancia?.enVigilancia ?? 0}</div>
-                      </div>
-                    </div>
+                      {(checkConsolidado.medidasCorrectivas?.total ?? 0) > 0 && (
+                        <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: 'var(--space-2)' }}>
+                          Medidas correctivas: {checkConsolidado.medidasCorrectivas.implementadas}/{checkConsolidado.medidasCorrectivas.total} implementadas · {checkConsolidado.medidasCorrectivas.verificadas} verificadas
+                        </div>
+                      )}
+                      {(checkConsolidado.causasRecurrentes?.length ?? 0) > 0 && (
+                        <div style={{ marginTop: 'var(--space-2)', padding: '8px 12px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', fontSize: '0.8rem', color: '#92400e' }}>
+                          <strong>Causas raíz recurrentes (desviación sistémica):</strong>
+                          <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
+                            {checkConsolidado.causasRecurrentes.map((c: any, i: number) => (
+                              <li key={i}>{c.descripcion} <span className="text-muted">({c.incidentes} incidentes)</span></li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="text-muted" style={{ fontSize: '0.85rem' }}>
                       Consolida los indicadores de siniestralidad, investigaciones y vigilancia del periodo.
@@ -1917,10 +2057,41 @@ export default function ObraDetalle() {
                   )}
                 </div>
 
+                {/* ── Investigaciones AT/EP pendientes (Art. 71) — cerrar + firmar informe ── */}
+                {(() => {
+                  const pendientes = incidentes.filter((i: any) => (['grave', 'fatal'].includes(i.gravedad) || i.esFatal) && i.estado !== 'cerrado');
+                  if (pendientes.length === 0) return null;
+                  return (
+                    <div className="card" style={{ padding: 'var(--space-4)' }}>
+                      <div className="font-medium" style={{ marginBottom: 'var(--space-1)' }}>Investigaciones AT/EP pendientes (Art. 71)</div>
+                      <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 'var(--space-2)' }}>
+                        Obligatorias para incidentes graves/fatales. Cerrar genera el informe firmado (árbol de causas) como respaldo del Registro Art. 72.
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                        {pendientes.map((inc: any) => (
+                          <div key={inc.incidentId} className="card" style={{ padding: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div className="font-medium" style={{ fontSize: '0.9rem' }}>{inc.descripcion || inc.incidentId}</div>
+                              <div className="text-muted" style={{ fontSize: '0.78rem' }}>{inc.fecha || ''} · {inc.gravedad}{inc.esFatal ? ' (fatal)' : ''} · {(inc.medidasCorrectivas || []).length} medida(s)</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
+                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver / investigar</button>
+                              <button className="btn btn-primary btn-sm" type="button" onClick={() => { setCerrarInvModal({ incidentId: inc.incidentId, descripcion: inc.descripcion || inc.incidentId }); setCerrarInvPin(''); setCerrarInvError(null); setCerrarInvResult(null); }}>
+                                Cerrar y firmar informe
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Documentos de la Fase CHECK */}
                 {DS44_CHECK_DOCS.map((doc) => {
                   const aplica = doc.condicional !== 'mas_100_trabajadores' || activeWorkers.length > 100;
                   if (!aplica) return null;
+
                   const existing = obraDocs.find((d: any) => d.tipo === doc.tipo);
                   const subido = Boolean(existing?.s3Key || existing?.archivoUrl) || Boolean(existing);
                   return (
@@ -1934,7 +2105,7 @@ export default function ObraDetalle() {
                           {subido ? 'Registrado' : doc.obligatorio ? 'Pendiente' : 'Opcional'}
                         </span>
                         <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/documents?obraId=${obraId}&tipo=${doc.tipo}`)}>
-                          Gestionar
+                          Gestionar  
                         </button>
                       </div>
                     </div>
@@ -1949,6 +2120,56 @@ export default function ObraDetalle() {
                   ACT consume las desviaciones del CHECK y genera medidas de mejora. Las
                   actualizaciones enlazan al documento de origen, cerrando el ciclo hacia PLAN.
                 </div>
+
+                {/* ── Medidas correctivas de investigaciones (Art. 71) — seguimiento ── */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  <div className="font-medium">Medidas correctivas (de investigaciones AT/EP)</div>
+                  {medidas?.resumen && (
+                    <div className="text-muted" style={{ fontSize: '0.8rem' }}>
+                      {medidas.resumen.verificadas}/{medidas.resumen.total} verificadas
+                      {medidas.resumen.vencidas > 0 && ` · ${medidas.resumen.vencidas} vencida(s)`}
+                    </div>
+                  )}
+                </div>
+                {loadingMedidas ? (
+                  <div className="text-muted" style={{ fontSize: '0.85rem' }}>Cargando medidas…</div>
+                ) : !medidas || medidas.medidas.length === 0 ? (
+                  <div className="text-muted" style={{ fontSize: '0.85rem' }}>
+                    No hay medidas correctivas registradas en investigaciones de esta obra.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                    {medidas.medidas.map((m: any) => {
+                      const nextEstado: Record<string, 'en_proceso' | 'completada' | 'verificada'> = { pendiente: 'en_proceso', en_proceso: 'completada', completada: 'verificada' };
+                      const next = nextEstado[m.estado as string];
+                      const nextLabel: Record<string, string> = { en_proceso: 'Marcar en proceso', completada: 'Marcar implementada', verificada: 'Marcar verificada' };
+                      const estadoLabel: Record<string, string> = { pendiente: 'Pendiente', en_proceso: 'En proceso', completada: 'Implementada', verificada: 'Verificada' };
+                      const estadoClass = m.estado === 'verificada' ? 'badge-success' : m.vencida ? 'badge-danger' : m.estado === 'completada' ? 'badge-info' : 'badge-warning';
+                      const key = `${m.incidentId}:${m.numero}`;
+                      return (
+                        <div key={key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div className="font-medium" style={{ fontSize: '0.9rem' }}>{m.medida || '(sin descripción)'}</div>
+                            <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                              Causa raíz: {m.causaRaiz || '—'}
+                              {m.responsableNombre && ` · Responsable: ${m.responsableNombre}`}
+                              {m.fechaMaxEjecucion && ` · Plazo: ${m.fechaMaxEjecucion}`}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
+                            <span className={`badge ${estadoClass}`}>{m.vencida && m.estado !== 'verificada' ? 'Vencida' : estadoLabel[m.estado]}</span>
+                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)} title="Ver incidente origen">Ver origen</button>
+                            {next && (
+                              <button className="btn btn-primary btn-sm" type="button" disabled={savingMedida === key} onClick={() => avanzarMedida(m.incidentId, m.numero, next)}>
+                                {savingMedida === key ? '...' : nextLabel[next]}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Documentos de la Fase ACT */}
                 {DS44_ACT_DOCS.map((doc) => {
@@ -1984,7 +2205,7 @@ export default function ObraDetalle() {
                   </div>
                 ))}
 
-                {/* Proceso externo al SGSST — solo nota informativa */}
+                {/* Proceso externo al SGSST — solo nota informativa*/}
                 <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', fontSize: '0.8rem' }} className="text-muted">
                   Nota: la evaluación OAL de cotización adicional (DS67/1999) es un proceso
                   externo al SGSST; no se modela como documento obligatorio del sistema.
@@ -2092,7 +2313,7 @@ export default function ObraDetalle() {
                                         <button
                                           className="btn btn-primary"
                                           style={{ padding: '2px 10px', fontSize: '0.78rem' }}
-                                          onClick={() => { setFirmaAsistidaWorkerId(worker.workerId); setFirmaAsistidaOpen(true); }}
+                                          onClick={() => { setFirmaAsistidaWorkerId(worker.workerId); setFirmaAsistidaTipo(item.tipo); setFirmaAsistidaOpen(true); }}
                                         >
                                           Firma asistida
                                         </button>
@@ -2106,7 +2327,7 @@ export default function ObraDetalle() {
                                         <button
                                           className="btn btn-secondary"
                                           style={{ padding: '2px 10px', fontSize: '0.78rem' }}
-                                          onClick={() => navigate('/actividades')}
+                                          onClick={() => navigate('/activities')}
                                         >
                                           {estado === 'pendiente_firma' ? 'Ver actividad' : 'Programar'}
                                         </button>
@@ -2127,6 +2348,21 @@ export default function ObraDetalle() {
                   </div>
                 )}
           </div>
+
+          {/* Toast flotante: confirmacion de acciones inline (crear/programar) */}
+          {obraToast && (
+            <div style={{
+              position: 'fixed', top: '24px', right: '24px', zIndex: 9999,
+              background: 'linear-gradient(135deg,#10b981,#059669)', color: 'white',
+              padding: '14px 20px', borderRadius: '12px', boxShadow: '0 4px 24px rgba(16,185,129,0.4)',
+              display: 'flex', alignItems: 'center', gap: '10px',
+              animation: 'fadeInRight 0.3s ease',
+              maxWidth: '340px', fontSize: '0.9rem', fontWeight: 500
+            }}>
+              <LuCircleCheck size={20} style={{ flexShrink: 0 }} />
+              <div>{obraToast}</div>
+            </div>
+          )}
 
           {/* Toast flotante: PLAN completado (3 segundos) */}
           {planToast && (
@@ -2178,27 +2414,6 @@ export default function ObraDetalle() {
                   <div key={item.incidentId} className="card" style={{ padding: 'var(--space-3)' }}>
                     <div className="stat-value">{item.tipo}</div>
                     <div className="stat-label">{item.estado}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Documentos de Prevencion</div>
-              <LuFileText className="text-muted" />
-            </div>
-            {documentosPrevencion.length === 0 ? (
-              <div className="text-muted">No hay documentos diarios asociados.</div>
-            ) : (
-              <div style={{ maxHeight: '280px', overflowY: 'auto', paddingRight: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {documentosPrevencion.map((doc) => (
-                  <div key={doc.documentId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div className="font-medium">{doc.titulo}</div>
-                    </div>
-                    <span className="badge badge-neutral">{doc.estado || 'activo'}</span>
                   </div>
                 ))}
               </div>
@@ -2384,11 +2599,12 @@ export default function ObraDetalle() {
       {obraId && user?.personaId && (
         <FirmaAsistidaModal
           isOpen={firmaAsistidaOpen}
-          onClose={() => { setFirmaAsistidaOpen(false); setFirmaAsistidaWorkerId(undefined); }}
+          onClose={() => { setFirmaAsistidaOpen(false); setFirmaAsistidaWorkerId(undefined); setFirmaAsistidaTipo(undefined); }}
           obraId={obraId}
           workers={trabajadores}
           asistidoPor={user.personaId}
           initialWorkerId={firmaAsistidaWorkerId}
+          initialTipo={firmaAsistidaTipo}
           onSigned={() => { reloadObraData(); }}
         />
       )}
@@ -2397,7 +2613,7 @@ export default function ObraDetalle() {
       <Modal
         isOpen={!!doCreateModal}
         onClose={() => setDoCreateModal(null)}
-        title={doCreateModal?.mode === 'actividad' ? 'Programar capacitación' : 'Crear / subir documento'}
+        title={doCreateModal?.mode === 'actividad' ? (doCreateModal?.el?.activityTipo === 'SIMULACRO' ? 'Programar simulacro' : 'Programar capacitación') : 'Crear / subir documento'}
         subtitle={doCreateModal ? `${doCreateModal.el.titulo} · ${doCreateModal.el.articulo}` : ''}
         size="md"
         footer={
@@ -2436,7 +2652,7 @@ export default function ObraDetalle() {
                 </select>
               </div>
               <div className="text-muted" style={{ fontSize: '0.8rem' }}>
-                La capacitación queda "Programada" hasta que los asistentes firmen su asistencia. Recién ahí cuenta como ejecutada.
+                La actividad queda "Programada" hasta que los asistentes firmen su asistencia. Recién ahí cuenta como ejecutada.
               </div>
             </>
           ) : (
@@ -2450,6 +2666,61 @@ export default function ObraDetalle() {
                 <input type="file" className="form-input" accept="application/pdf,image/*" onChange={(e) => setDoCreateForm((p) => ({ ...p, file: e.target.files?.[0] || null }))} />
               </div>
             </>
+          )}
+        </div>
+      </Modal>
+
+      {/* ── Modal: Cerrar investigación Art. 71 (genera informe firmado) ── */}
+      <Modal
+        isOpen={!!cerrarInvModal}
+        onClose={() => { setCerrarInvModal(null); setCerrarInvPin(''); setCerrarInvError(null); setCerrarInvResult(null); }}
+        title="Cerrar investigación (Art. 71)"
+        subtitle={cerrarInvModal?.descripcion}
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
+            <button className="btn btn-secondary" onClick={() => { setCerrarInvModal(null); setCerrarInvPin(''); setCerrarInvError(null); setCerrarInvResult(null); }}>
+              {cerrarInvResult ? 'Cerrar' : 'Cancelar'}
+            </button>
+            {!cerrarInvResult && (
+              <button className="btn btn-primary" onClick={handleCerrarInvestigacion} disabled={cerrarInvSaving}>
+                {cerrarInvSaving ? 'Firmando…' : 'Cerrar y firmar informe'}
+              </button>
+            )}
+          </div>
+        }
+      >
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <p style={{ fontSize: '0.87rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Se genera el informe de investigación (árbol de causas) con los datos registrados,
+            firmado con tu PIN y con hash verificable. El incidente queda <strong>cerrado</strong> y
+            el informe se guarda como documento de la obra (respaldo del Registro Art. 72).
+          </p>
+          {!cerrarInvResult && (
+            <div>
+              <label className="text-muted" style={{ fontSize: '0.82rem', display: 'block', marginBottom: '4px' }}>Tu PIN de firma</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                className="form-input"
+                value={cerrarInvPin}
+                onChange={(e) => { setCerrarInvPin(e.target.value.replace(/\D/g, '')); setCerrarInvError(null); }}
+                placeholder="••••"
+                maxLength={8}
+                autoComplete="off"
+              />
+            </div>
+          )}
+          {cerrarInvError && (
+            <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', fontSize: '0.82rem', color: '#b91c1c' }}>
+              {cerrarInvError}
+            </div>
+          )}
+          {cerrarInvResult && (
+            <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', fontSize: '0.78rem', color: '#065f46', wordBreak: 'break-all' }}>
+              Investigación cerrada e informe firmado. Token: <strong>{cerrarInvResult.token}</strong><br />
+              Hash: {cerrarInvResult.hash}
+            </div>
           )}
         </div>
       </Modal>

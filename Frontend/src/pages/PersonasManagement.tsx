@@ -12,6 +12,11 @@ import {
     FiBriefcase, FiStar, FiSearch, FiEye, FiUpload, FiDownload
 } from 'react-icons/fi';
 
+// Opciones de ficha (selects en vez de texto libre)
+const NIVELES_ESCOLAR = ['Básica incompleta', 'Básica completa', 'Media incompleta', 'Media completa', 'Técnico', 'Universitaria', 'Postgrado'];
+const RELACIONES_EMERGENCIA = ['Cónyuge', 'Pareja', 'Padre/Madre', 'Hijo/a', 'Hermano/a', 'Otro familiar', 'Amigo/a', 'Otro'];
+const CURSOS_COMUNES = ['Manejo de extintores', 'Trabajo en altura', 'Espacios confinados', 'Primeros auxilios', 'Manejo de sustancias peligrosas', 'Operación de equipos/grúa', 'Bloqueo y etiquetado (LOTO)'];
+
 const ROLE_CONFIG: Record<string, { label: string; color: string; icon: any; desc: string }> = {
     admin: { label: 'Administrador', color: 'var(--primary-500)', icon: FiStar, desc: 'Acceso completo al sistema' },
     jefe_obra: { label: 'Jefe de Obra', color: 'var(--success-500)', icon: FiBriefcase, desc: 'Gestiona su(s) obra(s) asignadas' },
@@ -41,7 +46,10 @@ export default function PersonasManagement() {
     const [showCreate, setShowCreate] = useState(false);
     const [newPersona, setNewPersona] = useState({
         rut: '', nombre: '', apellido: '', email: '', cargo: '',
-        rol: 'trabajador' as string, tieneAccesoWeb: false
+        rol: 'trabajador' as string, tieneAccesoWeb: false,
+        // Ficha del colaborador
+        nivelEscolar: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '',
+        contactoEmergenciaRelacion: '', cursos: ''
     });
     const [createResult, setCreateResult] = useState<{ password?: string; persona: any } | null>(null);
 
@@ -100,18 +108,35 @@ export default function PersonasManagement() {
         setLoading(true);
         try {
             const obraIds = isObraScoped && selectedObraId ? [selectedObraId] : undefined;
+            const cursos = newPersona.cursos
+                .split(/[;,]/)
+                .map((c) => c.trim())
+                .filter(Boolean)
+                .map((nombre) => ({ nombre }));
             const res = await personasApi.create(tenantId, {
-                ...newPersona,
+                rut: newPersona.rut,
+                nombre: newPersona.nombre,
+                apellido: newPersona.apellido,
+                email: newPersona.email,
+                cargo: newPersona.cargo,
+                rol: newPersona.rol,
                 obraIds,
+                nivelEscolar: newPersona.nivelEscolar,
+                contactoEmergencia: {
+                    nombre: newPersona.contactoEmergenciaNombre,
+                    telefono: newPersona.contactoEmergenciaTelefono,
+                    relacion: newPersona.contactoEmergenciaRelacion
+                },
+                cursos,
                 tieneAccesoWeb: newPersona.tieneAccesoWeb || newPersona.rol === 'admin' || newPersona.rol === 'jefe_obra' || newPersona.rol === 'prevencionista'
-            });
+            } as any);
             if (res.success && res.data) {
                 setCreateResult({
                     password: typeof res.data.passwordTemporal === 'string' ? res.data.passwordTemporal : undefined,
                     persona: res.data.persona
                 });
                 setShowCreate(false);
-                setNewPersona({ rut: '', nombre: '', apellido: '', email: '', cargo: '', rol: 'trabajador', tieneAccesoWeb: false });
+                setNewPersona({ rut: '', nombre: '', apellido: '', email: '', cargo: '', rol: 'trabajador', tieneAccesoWeb: false, nivelEscolar: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '', contactoEmergenciaRelacion: '', cursos: '' });
                 fetchPersonas();
             } else { setError(res.error || 'Error al crear persona'); }
         } catch { setError('Error de conexión'); }
@@ -205,7 +230,8 @@ export default function PersonasManagement() {
             const res = await personasApi.bulkUpload(tenantId, {
                 fileBase64,
                 fileName: uploadFile.name,
-                sendWelcomeEmail
+                sendWelcomeEmail,
+                obraId: isObraScoped && selectedObraId ? selectedObraId : undefined
             });
 
             if (res.success && res.data) {
@@ -563,6 +589,50 @@ export default function PersonasManagement() {
                                 {newPersona.rol === 'trabajador' && (
                                     <div className="form-group"><label className="form-label"><FiBriefcase size={14} /> Cargo</label><input type="text" className="form-input" placeholder="Ej: Operador, Jefe de Obra..." value={newPersona.cargo} onChange={e => setNewPersona({ ...newPersona, cargo: e.target.value })} /></div>
                                 )}
+
+                                <h3 className="form-section-title" style={{ marginTop: 'var(--space-3)' }}>Ficha del colaborador <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(opcional)</span></h3>
+                                <div className="form-group">
+                                    <label className="form-label">Nivel escolar</label>
+                                    <select className="form-input form-select" value={newPersona.nivelEscolar} onChange={e => setNewPersona({ ...newPersona, nivelEscolar: e.target.value })}>
+                                        <option value="">Seleccione…</option>
+                                        {NIVELES_ESCOLAR.map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="form-group"><label className="form-label">Contacto emergencia — Nombre</label><input type="text" className="form-input" value={newPersona.contactoEmergenciaNombre} onChange={e => setNewPersona({ ...newPersona, contactoEmergenciaNombre: e.target.value })} /></div>
+                                    <div className="form-group"><label className="form-label">Teléfono</label><input type="text" className="form-input" placeholder="+569..." value={newPersona.contactoEmergenciaTelefono} onChange={e => setNewPersona({ ...newPersona, contactoEmergenciaTelefono: e.target.value })} /></div>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Relación del contacto</label>
+                                    <select className="form-input form-select" value={newPersona.contactoEmergenciaRelacion} onChange={e => setNewPersona({ ...newPersona, contactoEmergenciaRelacion: e.target.value })}>
+                                        <option value="">Seleccione…</option>
+                                        {RELACIONES_EMERGENCIA.map(r => <option key={r} value={r}>{r}</option>)}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Cursos / certificaciones</label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                        {CURSOS_COMUNES.map(curso => {
+                                            const seleccionados = newPersona.cursos.split(';').map(c => c.trim()).filter(Boolean);
+                                            const checked = seleccionados.includes(curso);
+                                            return (
+                                                <label key={curso} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--surface-border)', cursor: 'pointer', fontSize: '0.82rem', background: checked ? 'var(--primary-500)' : 'var(--surface-elevated)', color: checked ? 'white' : 'var(--text-primary)' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={() => {
+                                                            const next = checked ? seleccionados.filter(c => c !== curso) : [...seleccionados, curso];
+                                                            setNewPersona({ ...newPersona, cursos: next.join('; ') });
+                                                        }}
+                                                        style={{ display: 'none' }}
+                                                    />
+                                                    {curso}
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                    <span className="form-hint">Marca los cursos que tiene el colaborador</span>
+                                </div>
                             </div>
                             <div className="modal-footer">
                                 <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancelar</button>

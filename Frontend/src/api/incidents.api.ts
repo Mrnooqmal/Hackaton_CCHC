@@ -265,6 +265,14 @@ export const incidentsApi = {
         return apiRequest<AnalyticsData>(`/incidents/analytics${query ? `?${query}` : ''}`);
     },
 
+    // Seguimiento del estado de una medida correctiva (Art. 71): pendiente ->
+    // en_proceso -> completada -> verificada. Insumo de la Fase ACT.
+    updateMedidaEstado: (incidentId: string, numero: string | number, estado: 'pendiente' | 'en_proceso' | 'completada' | 'verificada') =>
+        apiRequest<{ incident: Incident; medidas: any[] }>(`/incidents/${incidentId}/medidas/${encodeURIComponent(String(numero))}`, {
+            method: 'PUT',
+            body: JSON.stringify({ estado }),
+        }),
+
     quickReport: (data: QuickReportData) =>
         apiRequest<QRReportResponse>('/incidents/quick-report', {
             method: 'POST',

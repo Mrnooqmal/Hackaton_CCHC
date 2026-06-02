@@ -9,11 +9,13 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { ObraService } = require('../../lib/services/ObraService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
 
 const personaService = new PersonaService();
+const obraService = new ObraService();
 
 const TEMPLATE_HEADERS = [
     'rut',
@@ -23,20 +25,29 @@ const TEMPLATE_HEADERS = [
     'telefono',
     'rol',
     'cargo',
+    'obra',
+    'nivelEscolar',
+    'contactoEmergenciaNombre',
+    'contactoEmergenciaTelefono',
+    'contactoEmergenciaRelacion',
+    'cursos',
     'tieneAccesoWeb'
 ];
 
 const TEMPLATE_EXAMPLE_ROWS = [
-    ['12.345.678-9', 'Juan', 'Perez', 'jperez@empresa.cl', '56912345678', 'trabajador', 'Operador', 'no'],
-    ['11.111.111-1', 'Maria', 'Lopez', 'mlopez@empresa.cl', '56987654321', 'admin', 'Administradora', 'si']
+    ['12.345.678-9', 'Juan', 'Perez', 'jperez@empresa.cl', '56912345678', 'trabajador', 'Operador', 'OBRA-001', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura', 'no'],
+    ['11.111.111-1', 'Maria', 'Lopez', 'mlopez@empresa.cl', '56987654321', 'admin', 'Administradora', '', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', '', 'si']
 ];
 
 const TEMPLATE_INSTRUCTIONS = [
     '1. Las columnas rut, nombre y rol son obligatorias.',
     '2. El rol debe ser admin, prevencionista, supervisor o trabajador.',
-    '3. tieneAccesoWeb acepta si/no, true/false, 1/0.',
-    '4. Si tieneAccesoWeb es si y el email es valido, se genera password temporal.',
-    '5. Elimine las filas de ejemplo antes de cargar el archivo.'
+    '3. obra: codigo de la obra (ej. OBRA-001). Si se deja vacio y la carga se hace desde una obra, se asigna a esa obra.',
+    '4. tieneAccesoWeb acepta si/no, true/false, 1/0.',
+    '5. Si tieneAccesoWeb es si y el email es valido, se genera password temporal.',
+    '6. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
+    '7. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
+    '8. Elimine las filas de ejemplo antes de cargar el archivo.'
 ];
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
@@ -104,6 +115,16 @@ const headerAliases = {
     phone: 'telefono',
     rol: 'rol',
     cargo: 'cargo',
+    obra: 'obra',
+    codigoobra: 'obra',
+    obracodigo: 'obra',
+    nivelescolar: 'nivelEscolar',
+    escolaridad: 'nivelEscolar',
+    contactoemergencianombre: 'contactoEmergenciaNombre',
+    contactoemergenciatelefono: 'contactoEmergenciaTelefono',
+    contactoemergenciarelacion: 'contactoEmergenciaRelacion',
+    cursos: 'cursos',
+    capacitaciones: 'cursos',
     tieneaccesoweb: 'tieneAccesoWeb',
     accesoweb: 'tieneAccesoWeb'
 };
@@ -339,6 +360,14 @@ module.exports.personasHandler = async (event) => {
                 return error(`Faltan columnas obligatorias: ${missingHeaders.join(', ')}`);
             }
 
+            // Obra por defecto del lote (carga hecha desde una obra) + mapa codigo->obraId
+            const obraIdBatch = body.obraId || null;
+            const obrasTenant = await obraService.listByTenant(tenantId).catch(() => []);
+            const obraPorCodigo = {};
+            (obrasTenant || []).forEach((o) => {
+                if (o.codigo) obraPorCodigo[String(o.codigo).trim().toLowerCase()] = o.obraId;
+            });
+
             const resultados = { creados: [], errores: [], duplicados: [], totalProcesados: 0 };
             const seenRut = new Set();
 
@@ -365,6 +394,21 @@ module.exports.personasHandler = async (event) => {
                 const telefono = getCell('telefono');
                 const rol = getCell('rol').toLowerCase();
                 const cargo = getCell('cargo');
+                // Obra: por codigo en la fila; si no, la obra del lote (carga desde obra).
+                const obraCodigo = getCell('obra').trim().toLowerCase();
+                const obraIdFila = obraCodigo ? obraPorCodigo[obraCodigo] : obraIdBatch;
+                const obraIds = obraIdFila ? [obraIdFila] : [];
+                const nivelEscolar = getCell('nivelEscolar');
+                const contactoEmergencia = {
+                    nombre: getCell('contactoEmergenciaNombre'),
+                    telefono: getCell('contactoEmergenciaTelefono'),
+                    relacion: getCell('contactoEmergenciaRelacion')
+                };
+                const cursos = getCell('cursos')
+                    .split(';')
+                    .map((c) => c.trim())
+                    .filter(Boolean)
+                    .map((nombre) => ({ nombre }));
                 const tieneAccesoWeb = parseBoolean(getCell('tieneAccesoWeb'));
 
                 if (!rut || !nombre || !rol) {
@@ -388,6 +432,10 @@ module.exports.personasHandler = async (event) => {
                         telefono,
                         rol,
                         cargo,
+                        obraIds,
+                        nivelEscolar,
+                        contactoEmergencia,
+                        cursos,
                         tieneAccesoWeb
                     });
 

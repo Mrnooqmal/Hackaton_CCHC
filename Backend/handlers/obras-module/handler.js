@@ -5,10 +5,12 @@
  */
 const { ObraService } = require('../../lib/services/ObraService');
 const { RegistroService } = require('../../lib/services/RegistroService');
+const { IncidentsRepository } = require('../incidents-module/incidents.repository');
 const { success, error, created, cors } = require('../../lib/utils/response');
 
 const obraService = new ObraService();
 const registroService = new RegistroService();
+const incidentsRepo = new IncidentsRepository();
 
 module.exports.obrasHandler = async (event) => {
     const method = event.requestContext?.http?.method || event.httpMethod;
@@ -18,6 +20,7 @@ module.exports.obrasHandler = async (event) => {
     const obraId = obrasIndex !== -1 ? pathParts[obrasIndex + 1] || null : null;
     const action = obrasIndex !== -1 ? pathParts[obrasIndex + 2] || null : null;
     const subAction = obrasIndex !== -1 ? pathParts[obrasIndex + 3] || null : null;
+    const subSubAction = obrasIndex !== -1 ? pathParts[obrasIndex + 4] || null : null;
 
     // tenantId debe venir del JWT o query param (temporalmente)
     const tenantId = event.queryStringParameters?.tenantId
@@ -124,6 +127,52 @@ module.exports.obrasHandler = async (event) => {
                 periodo: { desde, hasta }
             });
             return success(consolidado);
+        }
+
+        // GET /obras/{id}/medidas-correctivas — Read-model de medidas (Art. 71) para ACT
+        if (method === 'GET' && obraId && action === 'medidas-correctivas') {
+            if (!tenantId) return error('tenantId es requerido');
+            const { estado } = event.queryStringParameters || {};
+            const resultado = await incidentsRepo.getMedidasByObra(tenantId, obraId, estado);
+            return success(resultado);
+        }
+
+        // POST /obras/{id}/investigaciones/{incidentId}/cerrar — Genera y firma el
+        // Informe Art. 71 (arbol de causas) y cierra la investigacion del incidente.
+        if (method === 'POST' && obraId && action === 'investigaciones' && subAction && subSubAction === 'cerrar') {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+            if (!body.firmante?.personaId) return error('firmante.personaId es requerido');
+
+            const incident = await incidentsRepo.get(subAction);
+            if (!incident) return error('Incidente no encontrado', 404);
+            if ((incident.obraId || null) !== obraId) return error('El incidente no pertenece a esta obra', 400);
+
+            const contexto = {
+                ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
+                userAgent: event.headers?.['user-agent'] || event.headers?.['User-Agent'] || 'unknown'
+            };
+            const resultado = await registroService.generarInformeInvestigacion({
+                tenantId,
+                obraId,
+                incident,
+                firmante: body.firmante,
+                metodo: body.metodo || 'PIN',
+                firmaManuscrita: body.firmaManuscrita,
+                contexto
+            });
+
+            // Cerrar la investigacion y enlazar el informe generado.
+            await incidentsRepo.update(subAction, {
+                estado: 'cerrado',
+                fechaCierre: new Date().toISOString(),
+                informeDocumentId: resultado.documentId
+            });
+
+            return created({
+                message: 'Investigación cerrada y informe Art. 71 firmado',
+                ...resultado
+            });
         }
 
         return error('Ruta no encontrada', 404);

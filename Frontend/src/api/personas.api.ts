@@ -59,7 +59,7 @@ export const personasApi = {
             method: 'POST',
         }),
 
-    bulkUpload: (tenantId: string, data: { fileBase64: string; fileName: string; sendWelcomeEmail?: boolean }) =>
+    bulkUpload: (tenantId: string, data: { fileBase64: string; fileName: string; sendWelcomeEmail?: boolean; obraId?: string }) =>
         apiRequest<{ mensaje: string; resultados: any }>(`/personas/carga-masiva?tenantId=${tenantId}`, {
             method: 'POST',
             body: JSON.stringify(data),

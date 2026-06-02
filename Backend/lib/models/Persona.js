@@ -58,6 +58,13 @@ class Persona {
         this.cargo = data.cargo || '';
         this.obraIds = data.obraIds || [];
 
+        // Ficha del colaborador (datos relevantes para SSO/DS44)
+        this.contactoEmergencia = data.contactoEmergencia || { nombre: '', telefono: '', relacion: '' };
+        this.nivelEscolar = data.nivelEscolar || '';
+        // Cursos/certificaciones del colaborador (ej. manejo de extintores, altura fisica)
+        // [{ nombre, institucion?, fecha?, vencimiento? }]
+        this.cursos = data.cursos || [];
+
         // Acceso y autenticacion
         this.tieneAccesoWeb = data.tieneAccesoWeb || false;
         this._passwordHash = data.passwordHash || null;
@@ -139,6 +146,9 @@ class Persona {
             permisos: this.permisos,
             cargo: this.cargo,
             obraIds: this.obraIds,
+            contactoEmergencia: this.contactoEmergencia,
+            nivelEscolar: this.nivelEscolar,
+            cursos: this.cursos,
             tieneAccesoWeb: this.tieneAccesoWeb,
             passwordHash: this._passwordHash,
             pinHash: this._pinHash,
@@ -181,6 +191,9 @@ class Persona {
             permisos: this.permisos,
             cargo: this.cargo,
             obraIds: this.obraIds,
+            contactoEmergencia: this.contactoEmergencia,
+            nivelEscolar: this.nivelEscolar,
+            cursos: this.cursos,
             tieneAccesoWeb: this.tieneAccesoWeb,
             habilitado: this.habilitado,
             pinConfigurado: this.tienePinConfigurado(),

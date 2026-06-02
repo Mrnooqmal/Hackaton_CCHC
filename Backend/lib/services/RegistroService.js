@@ -354,6 +354,192 @@ class RegistroService {
     }
 
     /**
+     * Render HTML del Informe de Investigacion (Art. 71, arbol de causas).
+     */
+    static renderInvestigacionHtml(snapshot, firma) {
+        const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+        ));
+        const af = snapshot.afectado || {};
+        const ac = snapshot.accidente || {};
+        const hechos = (snapshot.listaHechos || []).map((h) => `<li>${esc(h.descripcion || h)}</li>`).join('');
+        const causas = (snapshot.causasRaiz || []).map((c) => `<li>${esc(c.descripcion || c)}</li>`).join('');
+        const entrev = (snapshot.entrevistados || []).map((e) => `<li>${esc(e.nombre)} ${e.cargo ? '— ' + esc(e.cargo) : ''} ${e.rut ? '(' + esc(e.rut) + ')' : ''}</li>`).join('');
+        const filasMed = (snapshot.medidasCorrectivas || []).map((m) => `
+            <tr><td>${esc(m.causaRaiz)}</td><td>${esc(m.medida)}</td><td>${esc(m.responsableNombre)}</td>
+            <td>${esc(m.fechaMaxEjecucion)}</td><td>${esc(m.estado || 'pendiente')}</td></tr>`).join('');
+
+        return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<title>Informe de Investigación de Accidente (Art. 71)</title>
+<style>
+ body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:32px;font-size:13px}
+ h1{font-size:18px;margin-bottom:4px} h2{font-size:14px;margin-top:22px;border-bottom:1px solid #ccc;padding-bottom:4px}
+ table{border-collapse:collapse;width:100%;margin-top:8px} th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:12px}
+ .muted{color:#666;font-size:12px} .firma{margin-top:24px;padding:12px;border:1px solid #999;border-radius:6px;background:#f7f7f7}
+ .hash{font-family:monospace;font-size:11px;word-break:break-all} dl{display:grid;grid-template-columns:200px 1fr;gap:4px 12px}
+ dt{color:#666} ul{margin:6px 0;padding-left:20px}
+</style></head><body>
+<h1>Informe de Investigación de Accidente / EP</h1>
+<div class="muted">Art. 71 DS44 · Metodología Árbol de Causas · Generado ${esc(snapshot.generadoEn)}</div>
+
+<h2>Trabajador afectado</h2>
+<dl>
+ <dt>Nombre</dt><dd>${esc(af.nombreCompleto || af.nombre)}</dd>
+ <dt>RUT</dt><dd>${esc(af.rut)}</dd>
+ <dt>Cargo</dt><dd>${esc(af.cargo)}</dd>
+ <dt>Puesto al momento</dt><dd>${esc(af.puestoAlMomentoAccidente)}</dd>
+</dl>
+
+<h2>Datos del accidente</h2>
+<dl>
+ <dt>Fecha / hora</dt><dd>${esc(ac.fecha)} ${esc(ac.hora)}</dd>
+ <dt>Gravedad</dt><dd>${esc(ac.gravedad)}${ac.esFatal ? ' (fatal)' : ''}</dd>
+ <dt>Días perdidos</dt><dd>${esc(ac.diasPerdidos)}</dd>
+ <dt>Lugar</dt><dd>${esc(ac.direccion)}</dd>
+</dl>
+<p>${esc(ac.descripcion)}</p>
+
+<h2>Relato del accidente</h2>
+<p>${esc(snapshot.relatoAccidente) || '<span class="muted">Sin relato registrado.</span>'}</p>
+
+<h2>Lista de hechos</h2>
+<ul>${hechos || '<li class="muted">Sin hechos registrados.</li>'}</ul>
+
+<h2>Causas raíz</h2>
+<ul>${causas || '<li class="muted">Sin causas raíz registradas.</li>'}</ul>
+${snapshot.arbolCausasUrl ? `<p class="muted">Diagrama árbol de causas adjunto.</p>` : ''}
+
+<h2>Medidas correctivas</h2>
+<table><tr><th>Causa raíz</th><th>Medida</th><th>Responsable</th><th>Plazo</th><th>Estado</th></tr>
+${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></tr>'}</table>
+
+<h2>Entrevistados</h2>
+<ul>${entrev || '<li class="muted">Sin entrevistados registrados.</li>'}</ul>
+
+<div class="firma">
+ <strong>Firma electrónica</strong><br>
+ Firmante: ${esc(firma?.personaNombre)} (${esc(firma?.personaRut)})<br>
+ Método: ${esc(firma?.metodoValidacion)} · Fecha: ${esc(firma?.fecha)} ${esc(firma?.horario)}<br>
+ Token: <span class="hash">${esc(firma?.token)}</span><br>
+ Hash del contenido (SHA-256): <span class="hash">${esc(snapshot.hash || '')}</span>
+</div>
+</body></html>`;
+    }
+
+    /**
+     * Genera y firma el Informe de Investigacion (Art. 71) de un incidente, y lo
+     * persiste como documento INVESTIGACION_ACCIDENTE de la obra (respaldo del
+     * Registro maestro Art. 72). Snapshot inmutable + hash + firma real.
+     *
+     * @param {Object} p { tenantId, obraId, incident, firmante:{personaId,pin}, metodo, firmaManuscrita?, contexto? }
+     */
+    async generarInformeInvestigacion(p) {
+        const { tenantId, obraId, incident, firmante, metodo = 'PIN', firmaManuscrita, contexto = {} } = p;
+        if (!tenantId) throw new Error('tenantId es requerido');
+        if (!incident) throw new Error('Incidente no encontrado');
+        if (!firmante?.personaId) throw new Error('firmante.personaId es requerido');
+
+        const persona = await this.personaService.getById(firmante.personaId);
+        if (!persona) throw new Error('Firmante no encontrado');
+        if (persona.tenantId !== tenantId) throw new Error('El firmante no pertenece al tenant');
+
+        const generadoEn = new Date().toISOString();
+        const documentId = uuidv4();
+
+        const snapshot = {
+            tipoRegistro: 'INVESTIGACION_ACCIDENTE',
+            articulos: 'Art. 71',
+            tenantId,
+            obraId,
+            incidentId: incident.incidentId,
+            generadoEn,
+            afectado: {
+                nombreCompleto: incident.afectado?.nombreCompleto || incident.trabajador?.nombre || '',
+                rut: incident.afectado?.rut || incident.trabajador?.rut || '',
+                cargo: incident.afectado?.cargo || incident.trabajador?.cargo || '',
+                puestoAlMomentoAccidente: incident.afectado?.puestoAlMomentoAccidente || ''
+            },
+            accidente: {
+                fecha: incident.fecha || null,
+                hora: incident.hora || null,
+                gravedad: incident.gravedad || 'leve',
+                esFatal: incident.esFatal || false,
+                diasPerdidos: incident.diasPerdidos || 0,
+                direccion: incident.direccionAccidente || incident.centroTrabajo || '',
+                descripcion: incident.descripcion || ''
+            },
+            relatoAccidente: incident.relatoAccidente || '',
+            listaHechos: incident.listaHechos || [],
+            causasRaiz: incident.causasRaiz || [],
+            arbolCausasUrl: incident.arbolCausasUrl || null,
+            medidasCorrectivas: incident.medidasCorrectivas || [],
+            entrevistados: incident.entrevistados || []
+        };
+
+        const hash = RegistroService.hashSnapshot(snapshot);
+
+        const credencial = metodo === 'PIN'
+            ? (firmante.pin || {})
+            : { firmaManuscrita: firmaManuscrita || null };
+
+        const firma = await FirmaService.crear({
+            personaId: persona.personaId,
+            tenantId,
+            metodo,
+            credencial,
+            tipoFirma: 'documento',
+            referenciaId: documentId,
+            referenciaTipo: 'document',
+            contexto,
+            metadata: { tipoRegistro: 'INVESTIGACION_ACCIDENTE', incidentId: incident.incidentId, hash },
+            persona
+        });
+
+        const s3Key = `tenants/${tenantId}/obras/${obraId}/investigaciones/${documentId}.html`;
+        let s3Persistido = false;
+        try {
+            const html = RegistroService.renderInvestigacionHtml({ ...snapshot, hash }, firma);
+            await s3Client.send(new PutObjectCommand({
+                Bucket: DOCUMENTS_BUCKET,
+                Key: s3Key,
+                Body: html,
+                ContentType: 'text/html; charset=utf-8'
+            }));
+            s3Persistido = true;
+        } catch (s3Err) {
+            console.error('No se pudo persistir el informe Art.71 en S3:', s3Err.message);
+        }
+
+        const document = {
+            documentId,
+            tenantId,
+            obraId,
+            clasificacion: 'obra',
+            fase: 'hacer',
+            tipo: 'INVESTIGACION_ACCIDENTE',
+            tipoDescripcion: 'Investigación de Accidente / EP (Art. 71)',
+            obligatorio: true,
+            titulo: `Informe investigación AT/EP — ${(incident.descripcion || incident.incidentId || '').slice(0, 60)}`,
+            contenido: JSON.stringify(snapshot),
+            snapshot,
+            hash,
+            s3Key: s3Persistido ? s3Key : null,
+            firmas: [FirmaService.toDocumentFirmaFormat(firma)],
+            asignaciones: [],
+            estado: 'activo',
+            version: 1,
+            createdBy: persona.personaId,
+            creatorName: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+            createdAt: generadoEn,
+            updatedAt: generadoEn
+        };
+
+        await docClient.send(new PutCommand({ TableName: DOCUMENTS_TABLE, Item: document }));
+
+        return { documentId, token: firma.token, hash, s3Key: document.s3Key };
+    }
+
+    /**
      * CHECK (Fase VERIFICAR): read-model consolidado del periodo.
      *
      * Consolida la evidencia del DO (Arts. 14 y 22.4): indicadores de
@@ -377,8 +563,40 @@ class RegistroService {
         const actividades = await this.consolidarActividades({ tenantId, obraId, periodo });
         const indicadores = this.calcularIndicadores(incidentes, masaLaboral);
 
-        const investigaciones = incidentes.filter(i => i.investigacion || i.tipo === 'accidente');
         const enVigilancia = activos.filter(p => p.vigilanciaSalud?.enVigilancia).length;
+
+        // ─── Investigaciones Art. 71 (causas raiz + medidas correctivas) ──────────
+        // Obligatorias para incidentes graves/fatales; insumo de CHECK y ACT.
+        const requierenInvestigacion = incidentes.filter(i => ['grave', 'fatal'].includes(i.gravedad) || i.esFatal);
+        const investigCerradas = requierenInvestigacion.filter(i => i.estado === 'cerrado');
+        const investigPendientes = requierenInvestigacion.filter(i => i.estado !== 'cerrado');
+
+        // Medidas correctivas aplanadas desde todas las investigaciones del periodo.
+        const hoy = new Date().toISOString().slice(0, 10);
+        const medidas = [];
+        for (const inc of incidentes) {
+            for (const m of (inc.medidasCorrectivas || [])) {
+                const estado = m.estado || 'pendiente';
+                const cerrada = estado === 'completada' || estado === 'verificada';
+                const fechaMax = m.fechaMaxEjecucion ? String(m.fechaMaxEjecucion).slice(0, 10) : null;
+                medidas.push({ estado, vencida: !cerrada && !!fechaMax && fechaMax < hoy });
+            }
+        }
+
+        // Causas raiz recurrentes (misma causa en >=2 incidentes): desviacion sistemica.
+        const causaCount = {};
+        for (const inc of incidentes) {
+            const vistas = new Set();
+            for (const c of (inc.causasRaiz || [])) {
+                const k = (c.descripcion || '').trim().toLowerCase();
+                if (!k || vistas.has(k)) continue;
+                vistas.add(k);
+                causaCount[k] = (causaCount[k] || 0) + 1;
+            }
+        }
+        const causasRecurrentes = Object.entries(causaCount)
+            .filter(([, n]) => n >= 2)
+            .map(([descripcion, incidentes]) => ({ descripcion, incidentes }));
 
         return {
             tenantId,
@@ -388,9 +606,17 @@ class RegistroService {
             masaLaboral,
             indicadores,
             investigacionesATEP: {
-                total: investigaciones.length,
-                conInvestigacion: incidentes.filter(i => i.investigacion).length
+                requeridas: requierenInvestigacion.length,
+                cerradas: investigCerradas.length,
+                pendientes: investigPendientes.length
             },
+            medidasCorrectivas: {
+                total: medidas.length,
+                implementadas: medidas.filter(m => m.estado === 'completada' || m.estado === 'verificada').length,
+                verificadas: medidas.filter(m => m.estado === 'verificada').length,
+                vencidas: medidas.filter(m => m.vencida).length
+            },
+            causasRecurrentes,
             vigilancia: {
                 enVigilancia,
                 totalActivos: masaLaboral

@@ -30,6 +30,7 @@ router
     .put('/incidents/:id', update)
     .post('/incidents/:id/viewed', markViewed)
     .post('/incidents/:id/investigations', addInvestigation)
+    .put('/incidents/:id/medidas/:numero', updateMedidaEstado)
     .post('/incidents/:id/documents', uploadDocument)
     .get('/incidents/:id/documents', getDocuments);
 
@@ -182,6 +183,20 @@ async function addInvestigation(request) {
     try {
         const body = parseBody(request.event);
         const result = await incidentsRepo.addInvestigation(request.params.id, body);
+        return jsonResponse(result);
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+async function updateMedidaEstado(request) {
+    try {
+        const body = parseBody(request.event);
+        const result = await incidentsRepo.updateMedidaEstado(
+            request.params.id,
+            decodeURIComponent(request.params.numero),
+            body.estado
+        );
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);

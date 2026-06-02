@@ -60,6 +60,9 @@ class PersonaService {
             permisos: ROLES[data.rol].permisos,
             cargo: data.cargo || ROLES[data.rol].nombre,
             obraIds: data.obraIds || [],
+            contactoEmergencia: data.contactoEmergencia || { nombre: '', telefono: '', relacion: '' },
+            nivelEscolar: data.nivelEscolar || '',
+            cursos: Array.isArray(data.cursos) ? data.cursos : [],
             tieneAccesoWeb,
             habilitado: false,
             estado: 'pendiente',
@@ -178,7 +181,8 @@ class PersonaService {
      */
     async actualizar(tenantId, personaId, updates) {
         const allowedFields = ['nombre', 'apellido', 'email', 'telefono',
-            'cargo', 'estado', 'preferencias', 'obraIds', 'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44'];
+            'cargo', 'estado', 'preferencias', 'obraIds', 'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44',
+            'contactoEmergencia', 'nivelEscolar', 'cursos'];
 
         const updateExpressions = [];
         const expressionNames = {};

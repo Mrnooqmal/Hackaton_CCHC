@@ -353,6 +353,85 @@ class IncidentsRepository {
         return { items, total: items.length };
     }
 
+    // ─── DS44 Art. 71 — Read-model de medidas correctivas por obra ──────────────
+    // Aplana las medidas de TODAS las investigaciones de incidentes de la obra,
+    // cada una con su origen (incidentId), causa raiz, responsable, plazo y estado.
+    // Insumo directo de la Fase ACT (seguimiento) y de CHECK (consolidado).
+    async getMedidasByObra(tenantId, obraId, estadoFilter) {
+        const { items } = await this.list({ tenantId });
+        const incidentes = items.filter((i) => !obraId || i.obraId === obraId);
+        const hoy = new Date().toISOString().slice(0, 10);
+
+        const medidas = [];
+        for (const inc of incidentes) {
+            for (const m of (inc.medidasCorrectivas || [])) {
+                const estado = m.estado || 'pendiente';
+                const cerrada = estado === 'completada' || estado === 'verificada';
+                const fechaMax = m.fechaMaxEjecucion ? String(m.fechaMaxEjecucion).slice(0, 10) : null;
+                const vencida = !cerrada && !!fechaMax && fechaMax < hoy;
+                medidas.push({
+                    incidentId: inc.incidentId,
+                    incidenteDescripcion: inc.descripcion || '',
+                    gravedad: inc.gravedad || 'leve',
+                    numero: m.numero,
+                    causaRaiz: m.causaRaiz || '',
+                    medida: m.medida || '',
+                    responsableId: m.responsableId || null,
+                    responsableNombre: m.responsableNombre || '',
+                    fechaMaxEjecucion: m.fechaMaxEjecucion || null,
+                    estado,
+                    vencida
+                });
+            }
+        }
+
+        const filtered = estadoFilter
+            ? medidas.filter((m) => estadoFilter === 'vencida' ? m.vencida : m.estado === estadoFilter)
+            : medidas;
+
+        const resumen = {
+            total: medidas.length,
+            pendientes: medidas.filter((m) => m.estado === 'pendiente').length,
+            enProceso: medidas.filter((m) => m.estado === 'en_proceso').length,
+            completadas: medidas.filter((m) => m.estado === 'completada').length,
+            verificadas: medidas.filter((m) => m.estado === 'verificada').length,
+            vencidas: medidas.filter((m) => m.vencida).length
+        };
+
+        return { medidas: filtered, resumen };
+    }
+
+    // ─── DS44 Art. 71 — Seguimiento del estado de una medida correctiva ─────────
+    async updateMedidaEstado(incidentId, numero, estado) {
+        const estadosValidos = ['pendiente', 'en_proceso', 'completada', 'verificada'];
+        if (!estadosValidos.includes(estado)) {
+            throw new Error(`Estado inválido. Válidos: ${estadosValidos.join(', ')}`);
+        }
+        const res = await this.dynamo.send(new GetCommand({
+            TableName: this.incidentsTable,
+            Key: { incidentId }
+        }));
+        if (!res.Item) throw new Error('Incidente no encontrado');
+
+        const now = new Date().toISOString();
+        const medidas = (res.Item.medidasCorrectivas || []).map((m) =>
+            String(m.numero) === String(numero)
+                ? { ...m, estado, fechaActualizacionEstado: now }
+                : m
+        );
+        const todasVerificadas = medidas.length > 0 && medidas.every((m) => m.estado === 'verificada');
+
+        const result = await this.dynamo.send(new UpdateCommand({
+            TableName: this.incidentsTable,
+            Key: { incidentId },
+            UpdateExpression: 'SET medidasCorrectivas = :m, medidasVerificadas = :mv, updatedAt = :u',
+            ExpressionAttributeValues: { ':m': medidas, ':mv': todasVerificadas, ':u': now },
+            ReturnValues: 'ALL_NEW'
+        }));
+
+        return { incident: result.Attributes, medidas };
+    }
+
     // GET
     async get(id) {
         console.log('[GET] Repo.get called for ID:', id);
@@ -411,6 +490,14 @@ class IncidentsRepository {
         if (data.evidencias) {
             updateExpression += ', evidencias = :evidencias';
             expressionAttributeValues[':evidencias'] = data.evidencias;
+        }
+        if (data.fechaCierre !== undefined) {
+            updateExpression += ', fechaCierre = :fechaCierre';
+            expressionAttributeValues[':fechaCierre'] = data.fechaCierre;
+        }
+        if (data.informeDocumentId !== undefined) {
+            updateExpression += ', informeDocumentId = :informeDocumentId';
+            expressionAttributeValues[':informeDocumentId'] = data.informeDocumentId;
         }
 
         const result = await this.dynamo.send(new UpdateCommand({

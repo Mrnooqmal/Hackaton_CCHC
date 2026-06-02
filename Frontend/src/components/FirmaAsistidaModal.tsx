@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './ui';
-import { documentsApi } from '../api/client';
+import { documentsApi, uploadsApi } from '../api/client';
 
 /**
  * Firma asistida desde el perfil del admin/supervisor/prevencionista.
@@ -22,13 +22,15 @@ interface FirmaAsistidaModalProps {
     asistidoPor: string;
     /** Si viene, abre directamente en los documentos pendientes de ese trabajador. */
     initialWorkerId?: string;
+    /** Si viene (junto con initialWorkerId), preselecciona el documento de ese tipo. */
+    initialTipo?: string;
     /** Se llama tras una firma exitosa para refrescar el estado del padre. */
     onSigned?: () => void;
 }
 
 type Step = 'worker' | 'document';
 
-export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, asistidoPor, initialWorkerId, onSigned }: FirmaAsistidaModalProps) {
+export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, asistidoPor, initialWorkerId, initialTipo, onSigned }: FirmaAsistidaModalProps) {
     const [step, setStep] = useState<Step>('worker');
     const [filtro, setFiltro] = useState('');
     const [selectedWorker, setSelectedWorker] = useState<any | null>(null);
@@ -40,6 +42,12 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [okMsg, setOkMsg] = useState<string | null>(null);
+    const [viewing, setViewing] = useState(false);
+
+    // En modo directo (se abrió desde un ítem concreto del onboarding) no se
+    // muestra el listado de documentos: se va directo a firmar ese documento.
+    const directMode = Boolean(initialTipo);
+    const selectedDoc = docs.find((d) => d.documentId === selectedDocId);
 
     const reset = () => {
         setStep('worker');
@@ -67,7 +75,7 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
         );
     }, [workers, filtro]);
 
-    const selectWorker = async (w: any) => {
+    const selectWorker = async (w: any, preferTipo?: string) => {
         setSelectedWorker(w);
         setStep('document');
         setError(null);
@@ -84,6 +92,11 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
                 )
             );
             setDocs(pendientes);
+            // Si se pidió un tipo concreto, preselecciona ese documento (firma directa).
+            if (preferTipo) {
+                const match = pendientes.find((d: any) => d.tipo === preferTipo);
+                if (match) setSelectedDocId(match.documentId);
+            }
         } catch {
             setError('No se pudieron cargar los documentos del trabajador.');
         } finally {
@@ -91,14 +104,15 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
         }
     };
 
-    // Si se abre con un trabajador preseleccionado, salta directo a sus pendientes.
+    // Si se abre con un trabajador preseleccionado, salta directo a sus pendientes
+    // (y preselecciona el documento si se indicó initialTipo).
     useEffect(() => {
         if (isOpen && initialWorkerId && !selectedWorker) {
             const w = (workers || []).find((x) => x.personaId === initialWorkerId);
-            if (w) selectWorker(w);
+            if (w) selectWorker(w, initialTipo);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, initialWorkerId]);
+    }, [isOpen, initialWorkerId, initialTipo]);
 
     const handleSign = async () => {
         if (!selectedWorker || !selectedDocId) return;
@@ -129,6 +143,26 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
             setError('Error de conexión al firmar.');
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    // Abre el documento (PDF/imagen) para revisarlo antes de firmar.
+    const verDocumento = async () => {
+        const fileKey = selectedDoc?.s3Key || selectedDoc?.archivoUrl;
+        if (!fileKey) { setError('Este documento aún no tiene archivo subido.'); return; }
+        setViewing(true);
+        setError(null);
+        try {
+            const res = await uploadsApi.getDownloadUrl(fileKey);
+            if (res.success && res.data?.downloadUrl) {
+                window.open(res.data.downloadUrl, '_blank');
+            } else {
+                setError('No se pudo abrir el documento.');
+            }
+        } catch {
+            setError('No se pudo abrir el documento.');
+        } finally {
+            setViewing(false);
         }
     };
 
@@ -202,38 +236,63 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
                             <div className="text-muted" style={{ fontSize: '0.8rem' }}>{selectedWorker.rut}</div>
                         </div>
 
-                        <div className="text-muted" style={{ fontSize: '0.85rem' }}>Documentos pendientes de firma</div>
                         {loadingDocs ? (
                             <div className="text-muted" style={{ textAlign: 'center', padding: 'var(--space-3)' }}>Cargando…</div>
                         ) : docs.length === 0 ? (
                             <div className="text-muted" style={{ textAlign: 'center', padding: 'var(--space-3)' }}>
-                                Este trabajador no tiene documentos pendientes.
+                                Este trabajador no tiene documentos pendientes de firma.
                             </div>
+                        ) : directMode ? (
+                            /* Modo directo: ya viene el documento seleccionado, no se muestra el listado. */
+                            selectedDoc ? (
+                                <div className="card" style={{ padding: 'var(--space-3)' }}>
+                                    <div className="font-medium" style={{ fontSize: '0.9rem' }}>{selectedDoc.titulo}</div>
+                                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>{selectedDoc.tipoDescripcion || selectedDoc.tipo}</div>
+                                </div>
+                            ) : (
+                                <div className="text-muted" style={{ textAlign: 'center', padding: 'var(--space-3)' }}>
+                                    Este documento aún no está disponible para firmar (¿falta subirlo?).
+                                </div>
+                            )
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                {docs.map((d) => (
-                                    <label
-                                        key={d.documentId}
-                                        className="card"
-                                        style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer' }}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="assisted-doc"
-                                            checked={selectedDocId === d.documentId}
-                                            onChange={() => { setSelectedDocId(d.documentId); setError(null); }}
-                                        />
-                                        <div>
-                                            <div className="font-medium" style={{ fontSize: '0.9rem' }}>{d.titulo}</div>
-                                            <div className="text-muted" style={{ fontSize: '0.78rem' }}>{d.tipoDescripcion || d.tipo}</div>
-                                        </div>
-                                    </label>
-                                ))}
-                            </div>
+                            /* Selector: lista de pendientes deduplicada por tipo. */
+                            <>
+                                <div className="text-muted" style={{ fontSize: '0.85rem' }}>Documentos pendientes de firma</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                    {Array.from(new Map(docs.map((d) => [d.tipo, d])).values()).map((d) => (
+                                        <label
+                                            key={d.documentId}
+                                            className="card"
+                                            style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer' }}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="assisted-doc"
+                                                checked={selectedDocId === d.documentId}
+                                                onChange={() => { setSelectedDocId(d.documentId); setError(null); }}
+                                            />
+                                            <div>
+                                                <div className="font-medium" style={{ fontSize: '0.9rem' }}>{d.titulo}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.78rem' }}>{d.tipoDescripcion || d.tipo}</div>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                            </>
                         )}
 
-                        {selectedDocId && (
+                        {selectedDoc && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    style={{ alignSelf: 'flex-start' }}
+                                    onClick={verDocumento}
+                                    disabled={viewing}
+                                >
+                                    {viewing ? 'Abriendo…' : 'Ver documento'}
+                                </button>
+
                                 <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                                     <button
                                         type="button"

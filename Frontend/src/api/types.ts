@@ -48,6 +48,9 @@ export interface PersonaResponse {
     enrolado: boolean;
     permisos: string[];
     obraIds: string[];
+    contactoEmergencia?: { nombre?: string; telefono?: string; relacion?: string };
+    nivelEscolar?: string;
+    cursos?: Array<{ nombre: string; institucion?: string; fecha?: string; vencimiento?: string }>;
     onboardingDS44?: Ds44OnboardingOverrides;
     createdAt: string;
     updatedAt: string;
