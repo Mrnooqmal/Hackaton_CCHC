@@ -610,11 +610,6 @@ export const Obras: React.FC = () => {
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Código interno</label>
-                    <input required name="codigo" value={formData.codigo} onChange={handleInputChange} className="form-input" />
-                  </div>
-
-                  <div className="form-group">
                     <label className="form-label">Estado</label>
                     <select name="estado" value={formData.estado} onChange={handleInputChange} className="form-input form-select">
                       <option value="activa">Activa</option>
@@ -626,18 +621,32 @@ export const Obras: React.FC = () => {
 
                 <div className="form-group">
                   <label className="form-label">Características de la obra (DS44 — definen qué aplica)</label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', cursor: 'pointer' }}>
-                    <input type="checkbox" name="faenaCompartida" checked={Boolean(formData.faenaCompartida)} onChange={handleInputChange} />
-                    <span>Comparte sitio con otra(s) entidad(es) — faena compartida (Art. 20)</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', cursor: 'pointer' }}>
-                    <input type="checkbox" name="tieneMaquinaria" checked={Boolean(formData.tieneMaquinaria)} onChange={handleInputChange} />
-                    <span>Hay máquinas/herramientas motrices (Art. 10)</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', cursor: 'pointer' }}>
-                    <input type="checkbox" name="agentesFQB" checked={Boolean(formData.agentesFQB)} onChange={handleInputChange} />
-                    <span>Existen agentes físicos/químicos/biológicos (Art. 2 N°14 c)</span>
-                  </label>
+                  <div style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
+                    {[
+                      { name: 'faenaCompartida', label: 'Comparte sitio con otra(s) entidad(es) — faena compartida (Art. 20)', checked: Boolean(formData.faenaCompartida) },
+                      { name: 'tieneMaquinaria', label: 'Hay máquinas/herramientas motrices (Art. 10)', checked: Boolean(formData.tieneMaquinaria) },
+                      { name: 'agentesFQB', label: 'Existen agentes físicos/químicos/biológicos (Art. 2 N°14 c)', checked: Boolean(formData.agentesFQB) },
+                    ].map((item, index, arr) => (
+                      <label
+                        key={item.name}
+                        className="checkbox-row"
+                        style={{
+                          padding: 'var(--space-2) var(--space-3)',
+                          cursor: 'pointer',
+                          borderBottom: index === arr.length - 1 ? 'none' : '1px solid var(--surface-border)',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          name={item.name}
+                          checked={item.checked}
+                          onChange={handleInputChange}
+                          className="checkbox-input custom-checkbox"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="form-group">

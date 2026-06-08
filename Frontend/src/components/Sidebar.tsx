@@ -64,6 +64,12 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                     ]
                 },
                 {
+                    section: 'Cumplimiento',
+                    items: [
+                        { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
+                    ]
+                },
+                {
                     section: 'Sistema',
                     items: [
                         { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },

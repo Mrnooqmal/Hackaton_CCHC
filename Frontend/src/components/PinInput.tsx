@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { FiLock, FiEye, FiEyeOff, FiAlertCircle, FiCheck } from 'react-icons/fi';
+import { FiLock, FiEye, FiEyeOff, FiAlertCircle } from 'react-icons/fi';
 
 interface PinInputProps {
     onComplete: (pin: string) => void;
@@ -180,13 +180,6 @@ export default function PinInput({
                 <div className="pin-error">
                     <FiAlertCircle size={16} />
                     <span>{error}</span>
-                </div>
-            )}
-
-            {isComplete && !error && (
-                <div className="pin-success">
-                    <FiCheck size={16} />
-                    <span>PIN ingresado correctamente</span>
                 </div>
             )}
 

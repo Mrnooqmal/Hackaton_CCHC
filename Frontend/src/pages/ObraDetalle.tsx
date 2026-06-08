@@ -229,6 +229,15 @@ export default function ObraDetalle() {
   }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, obraId]);
 
   const getSignatureStats = (doc: any) => {
+    // Prefer obraSignatureRequests (live data) over doc.asignaciones (may be absent in list responses)
+    if (doc?.documentId) {
+      const req = obraSignatureRequests.find(
+        (r: any) => r.referenciaId === doc.documentId || r.documentId === doc.documentId
+      );
+      if (req) {
+        return { firmadas: req.totalFirmados, total: req.totalRequeridos, asignaciones: req.trabajadores || [] };
+      }
+    }
     const asignaciones = doc?.asignaciones || [];
     const firmadas = asignaciones.filter((asignacion: any) => asignacion.estado === 'firmado' || asignacion.fechaFirma).length;
     return { firmadas, total: asignaciones.length, asignaciones };
@@ -310,10 +319,9 @@ export default function ObraDetalle() {
   }, [doProcedimientos, doCapacitaciones, registroMaestroGenerado]);
 
   const indicadores = useMemo(() => {
-    const pendientesFirma = documentosPrevencion.reduce((total, doc) => {
-      const pendientes = (doc.asignaciones || []).filter((a: any) => a.estado !== 'firmado').length;
-      return total + pendientes;
-    }, 0);
+    const pendientesFirma = obraSignatureRequests
+      .filter((r) => ['pendiente', 'en_proceso'].includes(r.estado))
+      .reduce((total, r) => total + (r.totalRequeridos - r.totalFirmados), 0);
     const ds44Pendientes = faseDeming === 'hacer'
       ? Math.max(onboardingSummary.total - onboardingSummary.completed, 0)
       : ds44Docs.filter((doc) => !doc.archivoSubido).length;
@@ -328,7 +336,7 @@ export default function ObraDetalle() {
       { label: 'Actividades del mes', value: String(actividadesMes) },
       { label: 'Incidentes abiertos', value: String(incidentesAbiertos) }
     ];
-  }, [documentosPrevencion, ds44Docs, actividades, incidentes, faseDeming, onboardingSummary]);
+  }, [obraSignatureRequests, ds44Docs, actividades, incidentes, faseDeming, onboardingSummary]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -423,7 +431,11 @@ export default function ObraDetalle() {
 
   const reloadDocs = useCallback(async () => {
     if (!obraId) return;
-    const docsObraRes = await documentsApi.list({ obraId, clasificacion: 'obra' } as any);
+    const tenantId = localStorage.getItem('tenant_id') || '';
+    const [docsObraRes, sigRes] = await Promise.all([
+      documentsApi.list({ obraId, clasificacion: 'obra' } as any),
+      signatureRequestsApi.list({ empresaId: tenantId, obraId }),
+    ]);
     if (docsObraRes.success && docsObraRes.data) {
       const docsObra = docsObraRes.data.documents || [];
       const mappedDs44 = DS44_PLAN_DOCS.map((required) => {
@@ -433,6 +445,9 @@ export default function ObraDetalle() {
       });
       setDs44Docs(mappedDs44);
       setObraDocs(docsObra);
+    }
+    if (sigRes.success && sigRes.data) {
+      setObraSignatureRequests(sigRes.data.requests || []);
     }
   }, [obraId]);
 
@@ -999,7 +1014,7 @@ export default function ObraDetalle() {
   const openDs44Modal = async (doc: Ds44Item) => {
     setSelectedDs44Doc(doc);
     setSelectedDs44Detail(doc.document || null);
-    setSelectedWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.personaId));
+    setSelectedWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.personaId || a.workerId).filter(Boolean));
     const docExpiry = getDocExpiryDate(doc.document);
     setSelectedExpiryDate(toDateInputValue(docExpiry));
     setExpiryApplicable(Boolean(!doc.document || docExpiry));
@@ -1012,7 +1027,7 @@ export default function ObraDetalle() {
         const res = await documentsApi.get(doc.documentId);
         if (res.success && res.data) {
           setSelectedDs44Detail(res.data);
-          setSelectedWorkerIds((res.data.asignaciones || []).map((a: any) => a.personaId));
+          setSelectedWorkerIds((res.data.asignaciones || []).map((a: any) => a.personaId || a.workerId).filter(Boolean));
           const fetchedExpiry = getDocExpiryDate(res.data);
           setSelectedExpiryDate(toDateInputValue(fetchedExpiry));
           setExpiryApplicable(Boolean(fetchedExpiry));
@@ -1145,6 +1160,7 @@ export default function ObraDetalle() {
             solicitanteId: user?.userId || '',
             fechaLimite: expiryValue || undefined,
             empresaId: obra?.tenantId,
+            obraId,
             referenciaId: documentId,
             referenciaTipo: 'document',
             documentId,
@@ -1701,82 +1717,58 @@ export default function ObraDetalle() {
                     </div>
                   )}
                 </div>
-                <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                    {ds44Docs.map((doc) => {
-                      const { firmadas, total } = getSignatureStats(doc.document);
-                      const fechaCaducidad = getDocExpiryDate(doc.document);
-                      const isExpired = Boolean(fechaCaducidad && new Date(fechaCaducidad) < new Date());
-                      const showSignatureDetails = total > 0;
-                      const firmasCompletas = total > 0 && firmadas === total;
-                      const firmasClass = total === 0
-                        ? 'signature-counter signature-counter-neutral'
-                        : firmasCompletas
-                          ? 'signature-counter signature-counter-complete'
-                          : 'signature-counter signature-counter-pending';
-                      return (
-                        <div key={doc.key} className="card" style={{ padding: 'var(--space-3)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
-                            <div>
-                              <div className="font-medium">{doc.titulo}</div>
-                              <div className="text-muted">{doc.estadoFirma}</div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-                                <span className={`ds44-card-status ${doc.archivoSubido ? 'ds44-card-status-ok' : 'ds44-card-status-danger'}`}>
-                                  <span className="ds44-card-status-dot" />
-                                  {doc.archivoSubido ? 'Archivo cargado' : 'Documento obligatorio ausente'}
-                                </span>
-                                {fechaCaducidad && (
-                                  <span className={`ds44-card-status ${isExpired ? 'ds44-card-status-danger' : 'ds44-card-status-ok'}`}>
-                                    <span className="ds44-card-status-dot" />
-                                    {isExpired ? 'Vencido' : 'Caduca'}: {formatDate(fechaCaducidad)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-2)' }}>
-                              <span className={`badge ${doc.archivoSubido ? 'badge-success' : 'badge-danger'}`}>
-                                {doc.archivoSubido ? 'Cargado' : 'Pendiente'}
-                              </span>
-                              {isExpired && (
-                                <span className="badge badge-danger">Vencido</span>
-                              )}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-3)' }}>
-                            <div className={firmasClass}>
-                              Firmas: {firmadas}/{total}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-                            <button
-                              className={doc.archivoSubido ? 'btn btn-secondary' : 'btn btn-primary'}
-                              type="button"
-                              onClick={() => openDs44Modal(doc)}
-                            >
-                              {doc.archivoSubido ? 'Actualizar documento' : 'Subir documento'}
-                            </button>
-                            <button
-                              className="btn btn-secondary"
-                              type="button"
-                              disabled={!doc.archivoSubido || ds44Previewing}
-                              onClick={() => handlePreviewDocumentFromCard(doc)}
-                            >
-                              Ver documento
-                            </button>
-                            {showSignatureDetails && (
-                              <button
-                                className="btn btn-secondary"
-                                type="button"
-                                onClick={() => openSignatureModal(doc)}
-                              >
-                                Detalle de firmas
-                              </button>
-                            )}
+                <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  {ds44Docs.map((doc) => {
+                    const { firmadas, total } = getSignatureStats(doc.document);
+                    const fechaCaducidad = getDocExpiryDate(doc.document);
+                    const isExpired = Boolean(fechaCaducidad && new Date(fechaCaducidad) < new Date());
+                    const firmasCompletas = total > 0 && firmadas === total;
+                    const badgeClass = isExpired ? 'badge-danger' : firmasCompletas ? 'badge-success' : doc.archivoSubido ? 'badge-warning' : 'badge-danger';
+                    const badgeLabel = isExpired ? 'Vencido' : firmasCompletas ? 'Completo' : doc.archivoSubido ? 'Pendiente de firma' : 'Sin documento';
+                    return (
+                      <div key={doc.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="font-medium" style={{ fontSize: '0.9rem' }}>{doc.titulo}</div>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                            {doc.estadoFirma}
+                            {total > 0 && ` · Firmas: ${firmadas}/${total}`}
+                            {fechaCaducidad && ` · ${isExpired ? 'Vencido' : 'Caduca'}: ${formatDate(fechaCaducidad)}`}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
+                          <span className={`badge ${badgeClass}`}>{badgeLabel}</span>
+                          <button
+                            className={doc.archivoSubido ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
+                            type="button"
+                            onClick={() => openDs44Modal(doc)}
+                          >
+                            {doc.archivoSubido ? 'Actualizar' : 'Subir'}
+                          </button>
+                          {doc.archivoSubido && (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              type="button"
+                              disabled={ds44Previewing}
+                              onClick={() => handlePreviewDocumentFromCard(doc)}
+                            >
+                              Ver
+                            </button>
+                          )}
+                          {total > 0 && (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              type="button"
+                              onClick={() => openSignatureModal(doc)}
+                            >
+                              Firmas
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
                 </div>
               </>
             )}
@@ -1998,7 +1990,7 @@ export default function ObraDetalle() {
 
 
             {isCheckPhase && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 {/* Consolidado del periodo */}
                 <div className="card" style={{ padding: 'var(--space-4)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
@@ -2115,59 +2107,60 @@ export default function ObraDetalle() {
             )}
 
             {isActPhase && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                <div className="text-muted" style={{ fontSize: '0.85rem' }}>
-                  ACT consume las desviaciones del CHECK y genera medidas de mejora. Las
-                  actualizaciones enlazan al documento de origen, cerrando el ciclo hacia PLAN.
-                </div>
+              <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
 
-                {/* ── Medidas correctivas de investigaciones (Art. 71) — seguimiento ── */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                  <div className="font-medium">Medidas correctivas (de investigaciones AT/EP)</div>
-                  {medidas?.resumen && (
-                    <div className="text-muted" style={{ fontSize: '0.8rem' }}>
-                      {medidas.resumen.verificadas}/{medidas.resumen.total} verificadas
-                      {medidas.resumen.vencidas > 0 && ` · ${medidas.resumen.vencidas} vencida(s)`}
-                    </div>
-                  )}
-                </div>
-                {loadingMedidas ? (
-                  <div className="text-muted" style={{ fontSize: '0.85rem' }}>Cargando medidas…</div>
-                ) : !medidas || medidas.medidas.length === 0 ? (
-                  <div className="text-muted" style={{ fontSize: '0.85rem' }}>
-                    No hay medidas correctivas registradas en investigaciones de esta obra.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                    {medidas.medidas.map((m: any) => {
-                      const nextEstado: Record<string, 'en_proceso' | 'completada' | 'verificada'> = { pendiente: 'en_proceso', en_proceso: 'completada', completada: 'verificada' };
-                      const next = nextEstado[m.estado as string];
-                      const nextLabel: Record<string, string> = { en_proceso: 'Marcar en proceso', completada: 'Marcar implementada', verificada: 'Marcar verificada' };
-                      const estadoLabel: Record<string, string> = { pendiente: 'Pendiente', en_proceso: 'En proceso', completada: 'Implementada', verificada: 'Verificada' };
-                      const estadoClass = m.estado === 'verificada' ? 'badge-success' : m.vencida ? 'badge-danger' : m.estado === 'completada' ? 'badge-info' : 'badge-warning';
-                      const key = `${m.incidentId}:${m.numero}`;
-                      return (
-                        <div key={key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div className="font-medium" style={{ fontSize: '0.9rem' }}>{m.medida || '(sin descripción)'}</div>
-                            <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                              Causa raíz: {m.causaRaiz || '—'}
-                              {m.responsableNombre && ` · Responsable: ${m.responsableNombre}`}
-                              {m.fechaMaxEjecucion && ` · Plazo: ${m.fechaMaxEjecucion}`}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
-                            <span className={`badge ${estadoClass}`}>{m.vencida && m.estado !== 'verificada' ? 'Vencida' : estadoLabel[m.estado]}</span>
-                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)} title="Ver incidente origen">Ver origen</button>
-                            {next && (
-                              <button className="btn btn-primary btn-sm" type="button" disabled={savingMedida === key} onClick={() => avanzarMedida(m.incidentId, m.numero, next)}>
-                                {savingMedida === key ? '...' : nextLabel[next]}
-                              </button>
-                            )}
-                          </div>
+                {/* Medidas correctivas — solo visible cuando hay datos o está cargando */}
+                {(loadingMedidas || (medidas?.medidas?.length ?? 0) > 0) && (
+                  <div className="card" style={{ padding: 'var(--space-4)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: loadingMedidas ? 0 : 'var(--space-3)' }}>
+                      <div>
+                        <div className="font-medium">Medidas correctivas</div>
+                        <div className="text-muted" style={{ fontSize: '0.78rem' }}>De investigaciones AT/EP · Art. 71</div>
+                      </div>
+                      {medidas?.resumen && (
+                        <div className="text-muted" style={{ fontSize: '0.8rem', flexShrink: 0 }}>
+                          {medidas.resumen.verificadas}/{medidas.resumen.total} verificadas
+                          {medidas.resumen.vencidas > 0 && ` · ${medidas.resumen.vencidas} vencida(s)`}
                         </div>
-                      );
-                    })}
+                      )}
+                    </div>
+                    {loadingMedidas ? (
+                      <div className="text-muted" style={{ fontSize: '0.85rem' }}>Cargando medidas…</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {medidas!.medidas.map((m: any, idx: number) => {
+                          const nextEstado: Record<string, 'en_proceso' | 'completada' | 'verificada'> = { pendiente: 'en_proceso', en_proceso: 'completada', completada: 'verificada' };
+                          const next = nextEstado[m.estado as string];
+                          const nextLabel: Record<string, string> = { en_proceso: 'Marcar en proceso', completada: 'Marcar implementada', verificada: 'Marcar verificada' };
+                          const estadoLabel: Record<string, string> = { pendiente: 'Pendiente', en_proceso: 'En proceso', completada: 'Implementada', verificada: 'Verificada' };
+                          const estadoClass = m.estado === 'verificada' ? 'badge-success' : m.vencida ? 'badge-danger' : m.estado === 'completada' ? 'badge-info' : 'badge-warning';
+                          const key = `${m.incidentId}:${m.numero}`;
+                          return (
+                            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-2) 0', borderBottom: idx < medidas!.medidas.length - 1 ? '1px solid var(--surface-border)' : 'none', flexWrap: 'wrap' }}>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '2px', flexWrap: 'wrap' }}>
+                                  <span className={`badge ${estadoClass}`}>{m.vencida && m.estado !== 'verificada' ? 'Vencida' : estadoLabel[m.estado]}</span>
+                                  <div className="font-medium" style={{ fontSize: '0.9rem' }}>{m.medida || '(sin descripción)'}</div>
+                                </div>
+                                <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                                  Causa raíz: {m.causaRaiz || '—'}
+                                  {m.responsableNombre && ` · Responsable: ${m.responsableNombre}`}
+                                  {m.fechaMaxEjecucion && ` · Plazo: ${m.fechaMaxEjecucion}`}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
+                                <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver origen</button>
+                                {next && (
+                                  <button className="btn btn-primary btn-sm" type="button" disabled={savingMedida === key} onClick={() => avanzarMedida(m.incidentId, m.numero, next)}>
+                                    {savingMedida === key ? '...' : nextLabel[next]}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2192,23 +2185,24 @@ export default function ObraDetalle() {
                 })}
 
                 {/* Actualizaciones condicionales que cierran el ciclo Deming */}
-                <div className="font-medium" style={{ marginTop: 'var(--space-2)' }}>Actualizaciones (cierre de ciclo hacia PLAN)</div>
-                {DS44_ACT_ACTUALIZACIONES.map((act) => (
-                  <div key={act.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div className="font-medium" style={{ fontSize: '0.88rem' }}>{act.titulo}</div>
-                      <div className="text-muted" style={{ fontSize: '0.78rem' }}>{act.articulo}</div>
-                    </div>
-                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/documents?obraId=${obraId}&tipo=${act.tipoOrigen}`)}>
-                      Revisar documento
-                    </button>
+                <div className="card" style={{ padding: 'var(--space-4)' }}>
+                  <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>Actualizaciones (cierre de ciclo hacia PLAN)</div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {DS44_ACT_ACTUALIZACIONES.map((act, idx) => (
+                      <div key={act.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-2) 0', borderBottom: idx < DS44_ACT_ACTUALIZACIONES.length - 1 ? '1px solid var(--surface-border)' : 'none', flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="font-medium" style={{ fontSize: '0.88rem' }}>{act.titulo}</div>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>{act.articulo}</div>
+                        </div>
+                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/documents?obraId=${obraId}&tipo=${act.tipoOrigen}`)}>
+                          Revisar documento
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-
-                {/* Proceso externo al SGSST — solo nota informativa*/}
-                <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', fontSize: '0.8rem' }} className="text-muted">
-                  Nota: la evaluación OAL de cotización adicional (DS67/1999) es un proceso
-                  externo al SGSST; no se modela como documento obligatorio del sistema.
+                  <div style={{ marginTop: 'var(--space-3)', padding: '8px 12px', borderRadius: '6px', background: 'var(--surface-base)', border: '1px solid var(--surface-border)', fontSize: '0.78rem' }} className="text-muted">
+                    Nota: la evaluación OAL de cotización adicional (DS67/1999) es un proceso externo al SGSST; no se modela como documento obligatorio del sistema.
+                  </div>
                 </div>
               </div>
             )}
