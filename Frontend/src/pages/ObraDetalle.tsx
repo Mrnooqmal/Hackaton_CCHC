@@ -104,7 +104,7 @@ export default function ObraDetalle() {
   const [doWorkerIds, setDoWorkerIds] = useState<string[]>([]);
   const [doPreviewing, setDoPreviewing] = useState(false);
   const doFileInputRef = useRef<HTMLInputElement | null>(null);
-  const autoAdvanceRef = useRef(false);
+  const autoAdvanceRef = useRef<string | null>(null); // fase desde la que ya se auto-avanzó
   // Panel DO: workers expandidos
   const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set());
   const [planToast, setPlanToast] = useState(false);
@@ -646,6 +646,25 @@ export default function ObraDetalle() {
       }
     } catch (err) {
       console.error('Error activando fase HACER:', err);
+    } finally {
+      setActivatingFaseDeming(false);
+    }
+  }, [obraId, reloadDocs]);
+
+  // Avance manual de fase del ciclo Deming (HACER→VERIFICAR, VERIFICAR→ACTUAR).
+  // A diferencia de PLAN (auto), estas fases las cierra explícitamente el gestor.
+  const handleAvanzarFaseDeming = useCallback(async () => {
+    if (!obraId) return;
+    setActivatingFaseDeming(true);
+    try {
+      const res = await obrasApi.avanzarFaseDeming(obraId);
+      if (res.success && res.data?.obra) {
+        setObra(res.data.obra);
+        await reloadDocs();
+        setObraToast('Fase completada. Avanzaste a la siguiente fase del ciclo.');
+      }
+    } catch (err) {
+      console.error('Error avanzando fase Deming:', err);
     } finally {
       setActivatingFaseDeming(false);
     }
@@ -1276,6 +1295,16 @@ export default function ObraDetalle() {
 
   // PLAN completo: todos los documentos subidos Y firmados (gating por firma).
   const planCompleto = ds44Docs.length > 0 && ds44Docs.every(docFaseCompleto);
+
+  // DO completo: el cumplimiento de la obra (procedimientos + capacitaciones
+  // aplicables + registro maestro) llegó al 100%.
+  const doCompleto = doCumplimiento.total > 0 && doCumplimiento.progress === 100;
+
+  // CHECK completo: todos los documentos CHECK obligatorios aplicables están registrados.
+  const checkCompleto = DS44_CHECK_DOCS
+    .filter((d) => d.obligatorio && (d.condicional !== 'mas_100_trabajadores' || activeWorkers.length > 100))
+    .every((d) => obraDocs.some((od: any) => od.tipo === d.tipo));
+
   const doPendientes = doDocs.filter((doc) => !doc.archivoSubido);
   const doTotal = doDocs.length;
   const doUploaded = doTotal - doPendientes.length;
@@ -1295,17 +1324,23 @@ export default function ObraDetalle() {
   ];
   const idxFaseDeming = FASES_DEMING.findIndex(f => f.key === faseDeming);
 
+  // Auto-avance del ciclo Deming: en cuanto una fase queda completa, pasa sola a
+  // la siguiente (PLAN→HACER→VERIFICAR→ACTUAR). Se dispara una sola vez por fase
+  // (autoAdvanceRef guarda la fase ya avanzada). ACTUAR no avanza (última fase).
   useEffect(() => {
-    if (!obraId) return;
-    if (faseDeming !== 'plan' || !planCompleto) {
-      autoAdvanceRef.current = false;
-      return;
-    }
-    if (activatingFaseDeming || autoAdvanceRef.current) return;
+    if (!obraId || activatingFaseDeming) return;
+    const completo =
+      faseDeming === 'plan' ? planCompleto
+        : faseDeming === 'hacer' ? doCompleto
+          : faseDeming === 'verificar' ? checkCompleto
+            : false;
+    if (!completo) return;
+    if (autoAdvanceRef.current === faseDeming) return; // ya disparado para esta fase
 
-    autoAdvanceRef.current = true;
-    handleActivarFaseHacer();
-  }, [obraId, faseDeming, planCompleto, activatingFaseDeming, handleActivarFaseHacer]);
+    autoAdvanceRef.current = faseDeming;
+    if (faseDeming === 'plan') handleActivarFaseHacer();
+    else handleAvanzarFaseDeming();
+  }, [obraId, faseDeming, planCompleto, doCompleto, checkCompleto, activatingFaseDeming, handleActivarFaseHacer, handleAvanzarFaseDeming]);
 
   if (loading) {
     return (
@@ -2106,7 +2141,7 @@ export default function ObraDetalle() {
                           {subido ? 'Registrado' : doc.obligatorio ? 'Pendiente' : 'Opcional'}
                         </span>
                         <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/documents?obraId=${obraId}&tipo=${doc.tipo}`)}>
-                          Gestionar  
+                          Gestionar
                         </button>
                       </div>
                     </div>
