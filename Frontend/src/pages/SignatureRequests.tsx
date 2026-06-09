@@ -295,6 +295,7 @@ export default function SignatureRequests() {
         try {
             const response = await signaturesApi.create({
                 personaId: user.personaId,
+                workerId: user.personaId,
                 pin,
                 requestId: selectedRequest.requestId,
             });

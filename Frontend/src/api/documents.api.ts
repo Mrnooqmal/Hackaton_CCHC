@@ -70,6 +70,7 @@ export interface DocumentListResponse {
 
 export interface AssignDocumentData {
     workerIds: string[];
+    personaIds?: string[];
     fechaLimite?: string;
     notificar?: boolean;
     assignedBy?: string;
@@ -83,6 +84,7 @@ export interface AssignResult {
 
 export interface SignDocumentData {
     workerId: string;
+    personaId?: string;
     tipoFirma: string;
     pin?: string;
 }

@@ -203,7 +203,7 @@ export default function Documents() {
                 ...newDoc,
                 archivoUrl: fileKey || undefined,
                 archivoNombre: selectedFile?.name || undefined,
-                createdBy: user?.userId,
+                createdBy: user?.personaId,
                 creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
             });
 
@@ -268,14 +268,15 @@ export default function Documents() {
         try {
             const response = await documentsApi.assign(selectedDocument.documentId, {
                 workerIds: workerIdsToAssign,
-                assignedBy: user?.userId,
+                personaIds: workerIdsToAssign,
+                assignedBy: user?.personaId,
                 assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
             });
 
             if (response.success) {
                 // FIXED MISSING NOTIFICATIONS (Frontend explicit push)
                 try {
-                    const recipientsRes = await inboxApi.getRecipients(user?.userId || '', user?.empresaId || '');
+                    const recipientsRes = await inboxApi.getRecipients(user?.personaId || '', user?.empresaId || '');
                     if (recipientsRes.success && recipientsRes.data) {
                         const allRecipients = recipientsRes.data.recipients;
                         // Map worker IDs to their RUTs, then find matching Inbox Recipients to extract userIds
@@ -284,7 +285,7 @@ export default function Documents() {
                         
                         if (recipientUserIds.length > 0) {
                             await inboxApi.send({
-                                senderId: user?.userId || 'system',
+                                senderId: user?.personaId || 'system',
                                 senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'Gestor SST',
                                 senderRol: user?.rol || 'system',
                                 recipientIds: recipientUserIds,

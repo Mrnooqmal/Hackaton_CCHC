@@ -82,6 +82,7 @@ export default function MySignatures() {
         try {
             const response = await signaturesApi.create({
                 personaId: user.personaId,
+                workerId: user.personaId,
                 pin,
                 requestId: selectedRequest.requestId,
             });

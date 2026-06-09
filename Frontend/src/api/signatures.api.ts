@@ -52,6 +52,7 @@ export interface DigitalSignature {
 
 export interface CreateSignatureData {
     personaId: string;
+    workerId?: string;
     pin: string;
     tipoFirma?: 'enrolamiento' | 'documento' | 'actividad' | 'capacitacion';
     referenciaId?: string;

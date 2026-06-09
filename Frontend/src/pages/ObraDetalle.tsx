@@ -710,7 +710,7 @@ export default function ObraDetalle() {
           archivoUrl: fileKey,
           archivoNombre: fileName,
           fechaCaducidad: expiryValue,
-          createdBy: user?.userId,
+          createdBy: user?.personaId,
           creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
         } as any);
         documentId = (createRes as any)?.data?.documentId || documentId;
@@ -719,10 +719,11 @@ export default function ObraDetalle() {
       if (documentId && doWorkerIds.length > 0) {
         await documentsApi.assign(documentId, {
           workerIds: doWorkerIds,
+          personaIds: doWorkerIds,
           fechaLimite: expiryValue,
           notificar: true,
           replace: true,
-          assignedBy: user?.userId,
+          assignedBy: user?.personaId,
           assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
         } as any);
       }
@@ -1125,7 +1126,7 @@ export default function ObraDetalle() {
           archivoUrl: fileKey,
           archivoNombre: fileName,
           fechaCaducidad: expiryValue,
-          createdBy: user?.userId,
+          createdBy: user?.personaId,
           creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
         } as any);
         documentId = (createRes as any)?.data?.documentId || (createRes as any)?.data?.id || documentId;
@@ -1134,37 +1135,45 @@ export default function ObraDetalle() {
       if (documentId && targetSignerIds.length > 0) {
         await documentsApi.assign(documentId, {
           workerIds: targetSignerIds,
+          personaIds: targetSignerIds,
           fechaLimite: expiryValue,
           notificar: true,
           replace: true,
-          assignedBy: user?.userId,
+          assignedBy: user?.personaId,
           assignerName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
         } as any);
 
-        // Also create a SignatureRequest so workers see it in "Mis Firmas"
+        // Also create a SignatureRequest so workers see it in "Mis Firmas".
+        // Evita duplicados: solo crea si no existe ya una solicitud activa para este documento.
         try {
-          const docTitle = selectedDs44Doc.titulo || 'Documento DS44';
-          const docAttachments = fileKey ? [{
-            nombre: fileName || docTitle,
-            url: fileKey,
-            tipo: 'application/pdf',
-            tamaño: pendingDs44File?.size || 0
-          }] : [];
+          const yaExiste = obraSignatureRequests.some(
+            (r: any) => (r.referenciaId === documentId || r.documentId === documentId)
+              && ['pendiente', 'en_proceso'].includes(r.estado)
+          );
+          if (!yaExiste) {
+            const docTitle = selectedDs44Doc.titulo || 'Documento DS44';
+            const docAttachments = fileKey ? [{
+              nombre: fileName || docTitle,
+              url: fileKey,
+              tipo: 'application/pdf',
+              tamaño: pendingDs44File?.size || 0
+            }] : [];
 
-          await signatureRequestsApi.create({
-            tipo: 'DOCUMENTO',
-            titulo: `Firma requerida: ${docTitle}`,
-            descripcion: `Se requiere su firma para el documento DS44 "${docTitle}" de la obra.`,
-            documentos: docAttachments,
-            trabajadoresIds: targetSignerIds,
-            solicitanteId: user?.userId || '',
-            fechaLimite: expiryValue || undefined,
-            empresaId: obra?.tenantId,
-            obraId,
-            referenciaId: documentId,
-            referenciaTipo: 'document',
-            documentId,
-          } as any);
+            await signatureRequestsApi.create({
+              tipo: 'DOCUMENTO',
+              titulo: `Firma requerida: ${docTitle}`,
+              descripcion: `Se requiere su firma para el documento DS44 "${docTitle}" de la obra.`,
+              documentos: docAttachments,
+              trabajadoresIds: targetSignerIds,
+              solicitanteId: user?.personaId || '',
+              fechaLimite: expiryValue || undefined,
+              empresaId: obra?.tenantId,
+              obraId,
+              referenciaId: documentId,
+              referenciaTipo: 'document',
+              documentId,
+            } as any);
+          }
         } catch (sigReqError) {
           console.warn('No se pudo crear solicitud de firma (los trabajadores podrían no ver la firma pendiente):', sigReqError);
         }
@@ -3000,7 +3009,11 @@ export default function ObraDetalle() {
           {!signatureModalDoc?.asignaciones?.length ? (
             <div className="text-muted">No hay firmantes asignados.</div>
           ) : (
-            signatureModalDoc.asignaciones.map((asignacion: any) => (
+            signatureModalDoc.asignaciones.map((asignacion: any) => {
+              // El estado de firma puede venir de dos formas: document.asignaciones
+              // usa `estado: 'firmado'`; request.trabajadores usa `firmado: boolean`.
+              const haFirmado = asignacion.estado === 'firmado' || asignacion.firmado === true || Boolean(asignacion.fechaFirma);
+              return (
               <div
                 key={asignacion.personaId || asignacion.workerId}
                 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
@@ -3010,8 +3023,8 @@ export default function ObraDetalle() {
                   <div className="text-muted">{asignacion.rut || ''}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div className={`badge ${asignacion.estado === 'firmado' ? 'badge-success' : 'badge-warning'}`}>
-                    {asignacion.estado === 'firmado' ? 'Firmado' : 'Pendiente'}
+                  <div className={`badge ${haFirmado ? 'badge-success' : 'badge-warning'}`}>
+                    {haFirmado ? 'Firmado' : 'Pendiente'}
                   </div>
                   {asignacion.fechaFirma && (
                     <div className="text-muted" style={{ marginTop: 'var(--space-1)' }}>
@@ -3020,7 +3033,8 @@ export default function ObraDetalle() {
                   )}
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </Modal>
