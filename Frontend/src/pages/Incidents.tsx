@@ -11,7 +11,7 @@ import {
 import { incidentsApi, aiApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData, IncidentLocation } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Modal } from '../components/ui';
+import { Modal, Select } from '../components/ui';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
 
@@ -147,7 +147,7 @@ export default function Incidents() {
     const loadAnalytics = async () => {
         try {
             const response = await incidentsApi.getAnalytics({
-                empresaId: user?.userId
+                empresaId: user?.tenantId || user?.empresaId
             });
             if (response.success && response.data) {
                 setAnalytics(response.data);
@@ -522,15 +522,16 @@ export default function Incidents() {
 
         try {
             // Mark as viewed in background if not already seen
-            if (user?.userId && (!incident.viewedBy || !incident.viewedBy.includes(user.userId))) {
-                incidentsApi.markAsViewed(incident.incidentId, user.userId).catch(err =>
+            const uid = user?.personaId || user?.userId;
+            if (uid && (!incident.viewedBy || !incident.viewedBy.includes(uid))) {
+                incidentsApi.markAsViewed(incident.incidentId, uid).catch(err =>
                     console.error('Error marking incident as viewed:', err)
                 );
 
                 // Update local list to hide "New" badge immediately
                 setIncidents(prev => prev.map(i =>
                     i.incidentId === incident.incidentId
-                        ? { ...i, viewedBy: [...(i.viewedBy || []), user.userId!] }
+                        ? { ...i, viewedBy: [...(i.viewedBy || []), uid] }
                         : i
                 ));
             }
@@ -587,8 +588,9 @@ export default function Incidents() {
 
     // Check if incident is new (unseen by current user)
     const isNewIncident = (incident: Incident) => {
-        if (!user?.userId) return false;
-        return !incident.viewedBy || (Array.isArray(incident.viewedBy) && !incident.viewedBy.includes(user.userId));
+        const uid = user?.personaId || user?.userId;
+        if (!uid) return false;
+        return !incident.viewedBy || (Array.isArray(incident.viewedBy) && !incident.viewedBy.includes(uid));
     };
 
     // Generate calendar data for a specific month
@@ -1559,60 +1561,58 @@ export default function Incidents() {
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="form-group">
                                                     <label className="form-label">Clasificación *</label>
-                                                    <select
-                                                        className="form-input"
+                                                    <Select
+                                                        ariaLabel="Clasificación"
                                                         value={formData.clasificacion}
-                                                        onChange={(e) => setFormData({ ...formData, clasificacion: e.target.value as any })}
-                                                        required
-                                                    >
-                                                        <option value="hallazgo">Hallazgo</option>
-                                                        <option value="incidente">Incidente</option>
-                                                    </select>
+                                                        onChange={(v) => setFormData({ ...formData, clasificacion: v as any })}
+                                                        options={[
+                                                            { value: 'hallazgo', label: 'Hallazgo' },
+                                                            { value: 'incidente', label: 'Incidente' },
+                                                        ]}
+                                                    />
                                                     <span className="form-hint">Hallazgo: observación preventiva. Incidente: evento ocurrido.</span>
                                                 </div>
 
                                                 {formData.clasificacion === 'hallazgo' && (
                                                     <div className="form-group">
                                                         <label className="form-label">Tipo de Hallazgo *</label>
-                                                        <select
-                                                            className="form-input"
+                                                        <Select
+                                                            ariaLabel="Tipo de hallazgo"
                                                             value={formData.tipoHallazgo}
-                                                            onChange={(e) => setFormData({ ...formData, tipoHallazgo: e.target.value as any })}
-                                                            required
-                                                        >
-                                                            <option value="accion">Acción Subestándar</option>
-                                                            <option value="condicion">Condición Subestándar</option>
-                                                        </select>
+                                                            onChange={(v) => setFormData({ ...formData, tipoHallazgo: v as any })}
+                                                            options={[
+                                                                { value: 'accion', label: 'Acción Subestándar' },
+                                                                { value: 'condicion', label: 'Condición Subestándar' },
+                                                            ]}
+                                                        />
                                                         <span className="form-hint">Acción: comportamiento inseguro. Condición: estado físico peligroso.</span>
                                                     </div>
                                                 )}
 
                                                 <div className="form-group">
                                                     <label className="form-label">Etapa Constructiva</label>
-                                                    <select
-                                                        className="form-input"
+                                                    <Select
+                                                        ariaLabel="Etapa constructiva"
+                                                        placeholder="Seleccionar etapa…"
+                                                        searchable
                                                         value={formData.etapaConstructiva}
-                                                        onChange={(e) => setFormData({ ...formData, etapaConstructiva: e.target.value })}
-                                                    >
-                                                        <option value="">Seleccionar etapa...</option>
-                                                        {ETAPAS_CONSTRUCTIVAS.map((etapa) => (
-                                                            <option key={etapa} value={etapa}>{etapa}</option>
-                                                        ))}
-                                                    </select>
+                                                        onChange={(v) => setFormData({ ...formData, etapaConstructiva: v })}
+                                                        options={ETAPAS_CONSTRUCTIVAS.map((etapa) => ({ value: etapa, label: etapa }))}
+                                                    />
                                                 </div>
 
                                                 <div className="form-group">
                                                     <label className="form-label">Tipo de Evento *</label>
-                                                    <select
-                                                        className="form-input"
+                                                    <Select
+                                                        ariaLabel="Tipo de evento"
                                                         value={formData.tipo}
-                                                        onChange={(e) => setFormData({ ...formData, tipo: e.target.value as any })}
-                                                        required
-                                                    >
-                                                        <option value="incidente">Incidente</option>
-                                                        <option value="accidente">Accidente</option>
-                                                        <option value="condicion_subestandar">Condición Subestándar</option>
-                                                    </select>
+                                                        onChange={(v) => setFormData({ ...formData, tipo: v as any })}
+                                                        options={[
+                                                            { value: 'incidente', label: 'Incidente' },
+                                                            { value: 'accidente', label: 'Accidente' },
+                                                            { value: 'condicion_subestandar', label: 'Condición Subestándar' },
+                                                        ]}
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
@@ -1635,15 +1635,16 @@ export default function Incidents() {
 
                                                 <div className="form-group">
                                                     <label className="form-label">Gravedad</label>
-                                                    <select
-                                                        className="form-input"
+                                                    <Select
+                                                        ariaLabel="Gravedad"
                                                         value={formData.gravedad}
-                                                        onChange={(e) => setFormData({ ...formData, gravedad: e.target.value as any })}
-                                                    >
-                                                        <option value="leve">Leve</option>
-                                                        <option value="grave">Grave</option>
-                                                        <option value="fatal">Fatal</option>
-                                                    </select>
+                                                        onChange={(v) => setFormData({ ...formData, gravedad: v as any })}
+                                                        options={[
+                                                            { value: 'leve', label: 'Leve' },
+                                                            { value: 'grave', label: 'Grave' },
+                                                            { value: 'fatal', label: 'Fatal' },
+                                                        ]}
+                                                    />
                                                 </div>
 
                                                 <div className="form-group">
@@ -1757,19 +1758,20 @@ export default function Incidents() {
 
                                                 <div className="form-group">
                                                     <label className="form-label">Género</label>
-                                                    <select
-                                                        className="form-input"
+                                                    <Select
+                                                        ariaLabel="Género"
+                                                        placeholder="Seleccionar"
                                                         value={formData.trabajador.genero}
-                                                        onChange={(e) => setFormData({
+                                                        onChange={(v) => setFormData({
                                                             ...formData,
-                                                            trabajador: { ...formData.trabajador, genero: e.target.value }
+                                                            trabajador: { ...formData.trabajador, genero: v }
                                                         })}
-                                                    >
-                                                        <option value="">Seleccionar</option>
-                                                        <option value="M">Masculino</option>
-                                                        <option value="F">Femenino</option>
-                                                        <option value="Otro">Otro</option>
-                                                    </select>
+                                                        options={[
+                                                            { value: 'M', label: 'Masculino' },
+                                                            { value: 'F', label: 'Femenino' },
+                                                            { value: 'Otro', label: 'Otro' },
+                                                        ]}
+                                                    />
                                                 </div>
 
                                                 <div className="form-group">

@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi } from '../api/client';
 import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle } from 'react-icons/fi';
-import { Modal } from '../components/ui';
+import { Modal, Select, SegmentedControl } from '../components/ui';
 import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import type { SignatureRequest } from '../api/client';
@@ -1412,7 +1412,7 @@ export default function ObraDetalle() {
         await workersApi.update(worker.personaId, {
           obraIds: [...obraIds, obraId],
           estado: 'activo',
-          solicitanteId: user?.userId
+          solicitanteId: user?.personaId || user?.userId
         } as any);
       }
       const refreshed = await workersApi.list();
@@ -1441,7 +1441,7 @@ export default function ObraDetalle() {
           await workersApi.update(worker.personaId, {
             obraIds: [...obraIds, obraId],
             estado: 'activo',
-            solicitanteId: user?.userId
+            solicitanteId: user?.personaId || user?.userId
           } as any);
         }
       }
@@ -1498,7 +1498,7 @@ export default function ObraDetalle() {
       const updated = {
         estado: 'activo',
         obraIds: obraIds.includes(obraId) ? obraIds : [...obraIds, obraId],
-        solicitanteId: user?.userId
+        solicitanteId: user?.personaId || user?.userId
       } as any;
       await workersApi.update(worker.personaId, updated);
       const refreshed = await workersApi.list();
@@ -2682,12 +2682,18 @@ export default function ObraDetalle() {
               </div>
               <div className="form-group">
                 <label className="form-label">Relator</label>
-                <select className="form-input form-select" value={doCreateForm.relatorId} onChange={(e) => setDoCreateForm((p) => ({ ...p, relatorId: e.target.value }))}>
-                  <option value="">Seleccione un relator</option>
-                  {activeWorkers.map((w) => (
-                    <option key={w.personaId} value={w.personaId}>{w.nombre} {w.apellido || ''} {w.cargo ? `- ${w.cargo}` : ''}</option>
-                  ))}
-                </select>
+                <Select
+                  ariaLabel="Relator"
+                  placeholder="Seleccione un relator"
+                  searchable
+                  value={doCreateForm.relatorId}
+                  onChange={(v) => setDoCreateForm((p) => ({ ...p, relatorId: v }))}
+                  options={activeWorkers.map((w) => ({
+                    value: w.personaId,
+                    label: `${w.nombre} ${w.apellido || ''}`.trim(),
+                    description: w.cargo || undefined,
+                  }))}
+                />
               </div>
               <div className="text-muted" style={{ fontSize: '0.8rem' }}>
                 La actividad queda "Programada" hasta que los asistentes firmen su asistencia. Recién ahí cuenta como ejecutada.
@@ -3185,11 +3191,16 @@ export default function ObraDetalle() {
           </div>
           <div className="form-group">
             <label className="form-label">Estado</label>
-            <select className="form-input form-select" name="estado" value={editData?.estado || 'activa'} onChange={handleEditChange}>
-              <option value="activa">Activa</option>
-              <option value="pausada">Pausada</option>
-              <option value="finalizada">Finalizada</option>
-            </select>
+            <SegmentedControl
+              ariaLabel="Estado de la obra"
+              value={editData?.estado || 'activa'}
+              onChange={(v) => setEditData((prev: any) => ({ ...prev, estado: v }))}
+              options={[
+                { value: 'activa', label: 'Activa' },
+                { value: 'pausada', label: 'Pausada' },
+                { value: 'finalizada', label: 'Finalizada' },
+              ]}
+            />
           </div>
           <div className="form-group">
             <label className="form-label">Características DO (definen qué elementos aplican)</label>

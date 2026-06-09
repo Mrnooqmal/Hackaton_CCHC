@@ -34,7 +34,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import SignatureModal from '../components/SignatureModal';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
-import { Modal } from '../components/ui';
+import { Modal, Select } from '../components/ui';
 
 interface QuestionDraft {
     id: string;
@@ -254,9 +254,10 @@ export default function Surveys() {
 
     // Filter surveys created by the current user
     const mySurveys = useMemo(() => {
-        if (!user?.userId) return surveys;
-        return surveys.filter((survey) => survey.createdBy === user.userId);
-    }, [surveys, user?.userId]);
+        const uid = user?.personaId || user?.userId;
+        if (!uid) return surveys;
+        return surveys.filter((survey) => survey.createdBy === uid);
+    }, [surveys, user?.personaId, user?.userId]);
 
     // Get filtered surveys based on active tab, filter, and search
     const formatDateTime = (value?: string | null) => {
@@ -426,7 +427,7 @@ export default function Surveys() {
                 cargo: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
                 ruts: form.audienceType === 'personalizado' ? form.selectedRuts : undefined,
             },
-            createdBy: user?.userId,
+            createdBy: user?.personaId || user?.userId,
             creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined,
         };
 
@@ -437,7 +438,7 @@ export default function Surveys() {
             if (response.success && response.data) {
                 // FIXED MISSING NOTIFICATIONS (Frontend explicit push)
                 try {
-                    const recipientsRes = await inboxApi.getRecipients(user?.userId || '', user?.empresaId || '');
+                    const recipientsRes = await inboxApi.getRecipients(user?.personaId || user?.userId || '', user?.tenantId || user?.empresaId || '');
                     if (recipientsRes.success && recipientsRes.data) {
                         const allRecipients = recipientsRes.data.recipients;
                         let assignedRuts: string[] = [];
@@ -455,7 +456,7 @@ export default function Surveys() {
                         
                         if (recipientUserIds.length > 0) {
                             await inboxApi.send({
-                                senderId: user?.userId || 'system',
+                                senderId: user?.personaId || user?.userId || 'system',
                                 senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'PrevencionApp',
                                 senderRol: 'system',
                                 recipientIds: recipientUserIds,
@@ -1409,17 +1410,14 @@ export default function Surveys() {
                                         {form.audienceType === 'cargo' && (
                                             <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
                                                 <label className="form-label">Cargo destino *</label>
-                                                <select
-                                                    className="form-input form-select"
+                                                <Select
+                                                    ariaLabel="Cargo destino"
+                                                    placeholder="Seleccione un cargo"
+                                                    searchable
                                                     value={form.cargoDestino}
-                                                    onChange={(e) => setForm({ ...form, cargoDestino: e.target.value })}
-                                                    required
-                                                >
-                                                    <option value="">Seleccione un cargo</option>
-                                                    {cargoOptions.map((cargo) => (
-                                                        <option key={cargo} value={cargo}>{cargo}</option>
-                                                    ))}
-                                                </select>
+                                                    onChange={(v) => setForm({ ...form, cargoDestino: v })}
+                                                    options={cargoOptions.map((cargo) => ({ value: cargo, label: cargo }))}
+                                                />
                                             </div>
                                         )}
 
@@ -1427,19 +1425,18 @@ export default function Surveys() {
                                             <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
                                                 <label className="form-label">Seleccionar por RUT *</label>
                                                 <div className="option-input-row">
-                                                    <select
-                                                        className="form-input"
+                                                    <Select
+                                                        ariaLabel="Trabajador"
+                                                        placeholder="Seleccionar trabajador"
+                                                        searchable
                                                         value={form.selectedWorkerId}
-                                                        onChange={(e) => setForm({ ...form, selectedWorkerId: e.target.value })}
-                                                        style={{ minWidth: '240px' }}
-                                                    >
-                                                        <option value="">Seleccionar trabajador</option>
-                                                        {workers.map((worker) => (
-                                                            <option key={worker.personaId} value={worker.personaId}>
-                                                                {worker.nombre} {worker.apellido} - {worker.rut}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                                        onChange={(v) => setForm({ ...form, selectedWorkerId: v })}
+                                                        options={workers.map((worker) => ({
+                                                            value: worker.personaId,
+                                                            label: `${worker.nombre} ${worker.apellido}`,
+                                                            description: worker.rut,
+                                                        }))}
+                                                    />
                                                     <button type="button" className="btn btn-secondary" onClick={handleAddRut}>
                                                         <FiPlus />
                                                         Agregar
@@ -1506,16 +1503,18 @@ export default function Surveys() {
                                                     />
 
                                                     <div className="flex gap-3 mb-3" style={{ flexWrap: 'wrap' }}>
-                                                        <select
-                                                            className="form-input form-select"
-                                                            value={question.tipo}
-                                                            onChange={(e) => handleQuestionTypeChange(question.id, e.target.value as SurveyQuestionType)}
-                                                            style={{ minWidth: '220px' }}
-                                                        >
-                                                            <option value="multiple">Selección múltiple</option>
-                                                            <option value="escala">Escala (1 a N)</option>
-                                                            <option value="abierta">Pregunta abierta</option>
-                                                        </select>
+                                                        <div style={{ minWidth: '220px' }}>
+                                                            <Select
+                                                                ariaLabel="Tipo de pregunta"
+                                                                value={question.tipo}
+                                                                onChange={(v) => handleQuestionTypeChange(question.id, v as SurveyQuestionType)}
+                                                                options={[
+                                                                    { value: 'multiple', label: 'Selección múltiple' },
+                                                                    { value: 'escala', label: 'Escala (1 a N)' },
+                                                                    { value: 'abierta', label: 'Pregunta abierta' },
+                                                                ]}
+                                                            />
+                                                        </div>
 
                                                         <label className="flex items-center gap-2" style={{ cursor: 'pointer' }}>
                                                             <input

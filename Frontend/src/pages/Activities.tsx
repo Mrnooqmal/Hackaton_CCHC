@@ -15,7 +15,7 @@ import {
 } from 'react-icons/fi';
 import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
-import { Modal } from '../components/ui';
+import { Modal, Select } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
@@ -629,32 +629,32 @@ export default function Activities() {
                     <form id="create-activity-form" onSubmit={handleCreateActivity}>
                         <div className="form-group">
                             <label className="form-label">Tipo de Actividad *</label>
-                            <select
+                            <Select
+                                ariaLabel="Tipo de actividad"
                                 value={newActivity.tipo}
-                                onChange={(e) => setNewActivity({ ...newActivity, tipo: e.target.value })}
-                                className="form-input form-select"
-                                required
-                            >
-                                {Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => (
-                                    <option key={key} value={key}>{label}</option>
-                                ))}
-                            </select>
+                                onChange={(v) => setNewActivity({ ...newActivity, tipo: v })}
+                                options={Object.entries(ACTIVITY_TYPES).map(([key, { label, icon }]) => ({
+                                    value: key,
+                                    label,
+                                    icon,
+                                }))}
+                            />
                         </div>
 
                         {newActivity.tipo === 'CAPACITACION' && (
                             <div className="form-group">
                                 <label className="form-label">Tipo de capacitación (DS44) *</label>
-                                <select
+                                <Select
+                                    ariaLabel="Tipo de capacitación DS44"
+                                    placeholder="Seleccione el tipo de capacitación"
+                                    searchable
                                     value={newActivity.subtipo}
-                                    onChange={(e) => setNewActivity({ ...newActivity, subtipo: e.target.value })}
-                                    className="form-input form-select"
-                                    required
-                                >
-                                    <option value="">Seleccione el tipo de capacitación</option>
-                                    {Object.entries(CAPACITACION_SUBTIPOS).map(([key, label]) => (
-                                        <option key={key} value={key}>{label}</option>
-                                    ))}
-                                </select>
+                                    onChange={(v) => setNewActivity({ ...newActivity, subtipo: v })}
+                                    options={Object.entries(CAPACITACION_SUBTIPOS).map(([key, label]) => ({
+                                        value: key,
+                                        label,
+                                    }))}
+                                />
                             </div>
                         )}
 
@@ -684,19 +684,18 @@ export default function Activities() {
 
                         <div className="form-group">
                             <label className="form-label">Relator *</label>
-                            <select
+                            <Select
+                                ariaLabel="Relator"
+                                placeholder="Seleccione un relator"
+                                searchable
                                 value={newActivity.relatorId}
-                                onChange={(e) => setNewActivity({ ...newActivity, relatorId: e.target.value })}
-                                className="form-input form-select"
-                                required
-                            >
-                                <option value="">Seleccione un relator</option>
-                                {workers.map((worker) => (
-                                    <option key={worker.personaId} value={worker.personaId}>
-                                        {worker.nombre} {worker.apellido} - {worker.cargo}
-                                    </option>
-                                ))}
-                            </select>
+                                onChange={(v) => setNewActivity({ ...newActivity, relatorId: v })}
+                                options={workers.map((worker) => ({
+                                    value: worker.personaId,
+                                    label: `${worker.nombre} ${worker.apellido}`,
+                                    description: worker.cargo,
+                                }))}
+                            />
                         </div>
                     </form>
                 </Modal>

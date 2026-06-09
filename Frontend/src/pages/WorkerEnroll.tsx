@@ -5,6 +5,7 @@ import PinInput from '../components/PinInput';
 import { FiUser, FiMail, FiPhone, FiBriefcase, FiCheck, FiArrowRight, FiArrowLeft, FiLock, FiShield, FiMapPin } from 'react-icons/fi';
 import { workersApi, type CreateWorkerData } from '../api/client';
 import { useObraContext } from '../context/ObraContext';
+import { Select } from '../components/ui';
 
 type Step = 'data' | 'create-pin' | 'confirm-pin' | 'sign' | 'complete';
 
@@ -285,22 +286,14 @@ export default function WorkerEnroll() {
                                     <p className="text-sm text-muted mb-3">
                                         Seleccione la obra a la que será asignado inicialmente. Puede modificar esto más adelante.
                                     </p>
-                                    <select
-                                        name="obraIds"
+                                    <Select
+                                        ariaLabel="Asignación a obra"
+                                        placeholder="Sin asignar a obra específica por ahora"
+                                        searchable
                                         value={formData.obraIds?.[0] || ''}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setFormData(prev => ({ ...prev, obraIds: val ? [val] : [] }));
-                                        }}
-                                        className="form-input form-select"
-                                    >
-                                        <option value="">Sin asignar a obra específica por ahora</option>
-                                        {obras.map(obra => (
-                                            <option key={obra.obraId} value={obra.obraId}>
-                                                {obra.nombre}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        onChange={(val) => setFormData(prev => ({ ...prev, obraIds: val ? [val] : [] }))}
+                                        options={obras.map(obra => ({ value: obra.obraId, label: obra.nombre }))}
+                                    />
                                 </div>
                             )}
 
@@ -364,17 +357,15 @@ export default function WorkerEnroll() {
                                     <FiBriefcase style={{ display: 'inline', marginRight: '8px' }} />
                                     Cargo *
                                 </label>
-                                <select
-                                    name="cargo"
+                                <Select
+                                    ariaLabel="Cargo"
+                                    placeholder="Seleccione un cargo"
+                                    searchable
+                                    className={errors.cargo ? 'error' : ''}
                                     value={formData.cargo}
-                                    onChange={handleChange}
-                                    className={`form-input form-select ${errors.cargo ? 'error' : ''}`}
-                                >
-                                    <option value="">Seleccione un cargo</option>
-                                    {cargos.map((cargo) => (
-                                        <option key={cargo} value={cargo}>{cargo}</option>
-                                    ))}
-                                </select>
+                                    onChange={(v) => setFormData(prev => ({ ...prev, cargo: v }))}
+                                    options={cargos.map((cargo) => ({ value: cargo, label: cargo }))}
+                                />
                                 {errors.cargo && <div className="form-error">{errors.cargo}</div>}
                             </div>
 

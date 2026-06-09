@@ -5,7 +5,7 @@ import { apiBaseUrl, personasApi, type PersonaResponse } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import ConfirmModal from '../components/ConfirmModal';
-import { AlertBanner, CredentialCard } from '../components/ui';
+import { AlertBanner, CredentialCard, Modal, Select, SegmentedControl } from '../components/ui';
 import {
     FiUserPlus, FiShield, FiEdit2, FiAlertCircle,
     FiArrowRight, FiUsers, FiLock, FiX, FiSave,
@@ -443,17 +443,24 @@ export default function PersonasManagement() {
             </div>
 
             {/* Bulk Upload Modal */}
-            {showBulkUpload && canBulkUpload && (
-                <div className="modal-overlay">
-                    <div className="modal-content" style={{ maxWidth: 600 }}>
-                        <div className="modal-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div className="modal-header-icon" style={{ background: 'var(--info-500)', marginBottom: 0 }}><FiUpload size={24} /></div>
-                                <h2 className="modal-title" style={{ marginBottom: 0 }}>Carga masiva de personas</h2>
-                            </div>
-                            <p className="modal-subtitle" style={{ marginTop: 0 }}>Descargue la plantilla, complete los datos y suba el Excel</p>
-                        </div>
-                        <form onSubmit={handleBulkUpload} className="modal-body">
+            <Modal
+                isOpen={showBulkUpload && canBulkUpload}
+                onClose={() => setShowBulkUpload(false)}
+                title="Carga masiva de personas"
+                subtitle="Descargue la plantilla, complete los datos y suba el Excel"
+                icon={<FiUpload size={24} />}
+                size="lg"
+                preventClose={uploading}
+                footer={
+                    <>
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowBulkUpload(false)}>Cancelar</button>
+                        <button type="submit" form="bulk-upload-form" className="btn btn-primary" disabled={uploading || !uploadFile}>
+                            {uploading ? <div className="spinner" /> : <><FiUpload /> Cargar archivo</>}
+                        </button>
+                    </>
+                }
+            >
+                        <form id="bulk-upload-form" onSubmit={handleBulkUpload}>
                             <div className="form-section">
                                 <h3 className="form-section-title">Plantilla</h3>
                                 <p className="text-sm" style={{ marginBottom: 12 }}>Use la plantilla oficial para evitar errores en la carga.</p>
@@ -530,31 +537,28 @@ export default function PersonasManagement() {
                                 </div>
                             </div>
 
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setShowBulkUpload(false)}>Cancelar</button>
-                                <button type="submit" className="btn btn-primary" disabled={uploading || !uploadFile}>
-                                    {uploading ? <div className="spinner" /> : <><FiUpload /> Cargar archivo</>}
-                                </button>
-                            </div>
                         </form>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             {/* Create Modal */}
-            {showCreate && canCreatePersonas && (
-                <div className="modal-overlay">
-                    <div className="modal-content" style={{ maxWidth: 560 }}>
-                        <div className="modal-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div className="modal-header-icon" style={{ background: 'var(--primary-500)', marginBottom: 0 }}><FiUserPlus size={24} /></div>
-                                <h2 className="modal-title" style={{ marginBottom: 0 }}>Nueva Persona</h2>
-                            </div>
-                            <p className="modal-subtitle" style={{ marginTop: 0 }}>
-                                {isObraScoped ? 'Agregue un nuevo miembro a la obra seleccionada' : 'Agregue un nuevo miembro a su empresa'}
-                            </p>
-                        </div>
-                        <form onSubmit={handleCreate} className="modal-body">
+            <Modal
+                isOpen={showCreate && canCreatePersonas}
+                onClose={() => setShowCreate(false)}
+                title="Nueva Persona"
+                subtitle={isObraScoped ? 'Agregue un nuevo miembro a la obra seleccionada' : 'Agregue un nuevo miembro a su empresa'}
+                icon={<FiUserPlus size={24} />}
+                size="lg"
+                preventClose={loading}
+                footer={
+                    <>
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancelar</button>
+                        <button type="submit" form="create-persona-form" className="btn btn-primary" disabled={loading || !newPersona.nombre || !newPersona.rut}>
+                            {loading ? <div className="spinner" /> : <><FiUserPlus /> Crear Persona</>}
+                        </button>
+                    </>
+                }
+            >
+                        <form id="create-persona-form" onSubmit={handleCreate}>
                             <div className="form-section">
                                 <h3 className="form-section-title">Rol en el Sistema</h3>
                                 <div className="role-selector">
@@ -567,7 +571,7 @@ export default function PersonasManagement() {
                                                 <span className="role-card-desc">{cfg.desc}</span>
                                             </button>
                                         );
-                                    })}o
+                                    })}
                                 </div>
                             </div>
                             {newPersona.rol === 'trabajador' && (
@@ -593,10 +597,13 @@ export default function PersonasManagement() {
                                 <h3 className="form-section-title" style={{ marginTop: 'var(--space-3)' }}>Ficha del colaborador <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(opcional)</span></h3>
                                 <div className="form-group">
                                     <label className="form-label">Nivel escolar</label>
-                                    <select className="form-input form-select" value={newPersona.nivelEscolar} onChange={e => setNewPersona({ ...newPersona, nivelEscolar: e.target.value })}>
-                                        <option value="">Seleccione…</option>
-                                        {NIVELES_ESCOLAR.map(n => <option key={n} value={n}>{n}</option>)}
-                                    </select>
+                                    <Select
+                                        ariaLabel="Nivel escolar"
+                                        placeholder="Seleccione…"
+                                        value={newPersona.nivelEscolar}
+                                        onChange={v => setNewPersona({ ...newPersona, nivelEscolar: v })}
+                                        options={NIVELES_ESCOLAR.map(n => ({ value: n, label: n }))}
+                                    />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="form-group"><label className="form-label">Contacto emergencia — Nombre</label><input type="text" className="form-input" value={newPersona.contactoEmergenciaNombre} onChange={e => setNewPersona({ ...newPersona, contactoEmergenciaNombre: e.target.value })} /></div>
@@ -604,10 +611,13 @@ export default function PersonasManagement() {
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Relación del contacto</label>
-                                    <select className="form-input form-select" value={newPersona.contactoEmergenciaRelacion} onChange={e => setNewPersona({ ...newPersona, contactoEmergenciaRelacion: e.target.value })}>
-                                        <option value="">Seleccione…</option>
-                                        {RELACIONES_EMERGENCIA.map(r => <option key={r} value={r}>{r}</option>)}
-                                    </select>
+                                    <Select
+                                        ariaLabel="Relación del contacto"
+                                        placeholder="Seleccione…"
+                                        value={newPersona.contactoEmergenciaRelacion}
+                                        onChange={v => setNewPersona({ ...newPersona, contactoEmergenciaRelacion: v })}
+                                        options={RELACIONES_EMERGENCIA.map(r => ({ value: r, label: r }))}
+                                    />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Cursos / certificaciones</label>
@@ -634,25 +644,26 @@ export default function PersonasManagement() {
                                     <span className="form-hint">Marca los cursos que tiene el colaborador</span>
                                 </div>
                             </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancelar</button>
-                                <button type="submit" className="btn btn-primary" disabled={loading || !newPersona.nombre || !newPersona.rut}>{loading ? <div className="spinner" /> : <><FiUserPlus /> Crear Persona</>}</button>
-                            </div>
                         </form>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             {/* Edit Modal */}
-            {showEdit && editing && (
-                <div className="modal-overlay">
-                    <div className="modal-content" style={{ maxWidth: 480 }}>
-                        <div className="modal-header">
-                            <div className="modal-header-icon" style={{ background: 'linear-gradient(135deg, var(--info-500), var(--info-600))' }}><FiEdit2 size={24} /></div>
-                            <h2 className="modal-title">Editar Persona</h2>
-                            <p className="modal-subtitle">{editing.nombre} {editing.apellido} — {rolBadge(editing.rol)}</p>
-                        </div>
-                        <form onSubmit={handleUpdate} className="modal-body">
+            <Modal
+                isOpen={!!(showEdit && editing)}
+                onClose={() => { setShowEdit(false); setEditing(null); }}
+                title="Editar Persona"
+                subtitle={editing ? `${editing.nombre} ${editing.apellido}` : undefined}
+                icon={<FiEdit2 size={24} />}
+                size="md"
+                preventClose={loading}
+                footer={
+                    <>
+                        <button type="button" className="btn btn-secondary" onClick={() => { setShowEdit(false); setEditing(null); }}><FiX /> Cancelar</button>
+                        <button type="submit" form="edit-persona-form" className="btn btn-primary" disabled={loading}>{loading ? <div className="spinner" /> : <><FiSave /> Guardar</>}</button>
+                    </>
+                }
+            >
+                        <form id="edit-persona-form" onSubmit={handleUpdate}>
                             <div className="form-section">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="form-group"><label className="form-label">Nombre</label><input type="text" className="form-input" value={editForm.nombre} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} required /></div>
@@ -661,19 +672,20 @@ export default function PersonasManagement() {
                                 <div className="form-group"><label className="form-label">Email</label><input type="email" className="form-input" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
                                 <div className="form-group"><label className="form-label">Cargo</label><input type="text" className="form-input" value={editForm.cargo} onChange={e => setEditForm({ ...editForm, cargo: e.target.value })} /></div>
                                 <div className="form-group"><label className="form-label">Estado</label>
-                                    <select className="form-input" value={editForm.estado} onChange={e => setEditForm({ ...editForm, estado: e.target.value })}>
-                                        <option value="pendiente">Pendiente</option><option value="activo">Activo</option><option value="suspendido">Suspendido</option>
-                                    </select>
+                                    <SegmentedControl
+                                        ariaLabel="Estado"
+                                        value={editForm.estado}
+                                        onChange={v => setEditForm({ ...editForm, estado: v })}
+                                        options={[
+                                            { value: 'pendiente', label: 'Pendiente' },
+                                            { value: 'activo', label: 'Activo' },
+                                            { value: 'suspendido', label: 'Suspendido' },
+                                        ]}
+                                    />
                                 </div>
                             </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => { setShowEdit(false); setEditing(null); }}><FiX /> Cancelar</button>
-                                <button type="submit" className="btn btn-primary" disabled={loading}>{loading ? <div className="spinner" /> : <><FiSave /> Guardar</>}</button>
-                            </div>
                         </form>
-                    </div>
-                </div>
-            )}
+            </Modal>
 
             <ConfirmModal isOpen={confirmModal.isOpen} title={confirmModal.title} message={confirmModal.message} confirmLabel="Resetear Contraseña" variant="warning" onConfirm={confirmReset} onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))} />
 
@@ -685,16 +697,6 @@ export default function PersonasManagement() {
                 .role-card-icon { font-size: 28px; margin-bottom: 8px; }
                 .role-card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
                 .role-card-desc { font-size: 10px; color: var(--text-muted); line-height: 1.4; }
-                .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: fadeIn .2s; }
-                @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-                .modal-content { background: var(--surface-card); border-radius: var(--radius-xl); border: 1px solid var(--surface-border); box-shadow: 0 25px 50px -12px rgba(0,0,0,.5); width: 100%; max-height: 90vh; overflow-y: auto; animation: slideUp .3s; }
-                @keyframes slideUp { from { opacity: 0; transform: translateY(20px) } to { opacity: 1; transform: translateY(0) } }
-                .modal-header { text-align: center; padding: 24px; border-bottom: 1px solid var(--surface-border); background: var(--surface-elevated); }
-                .modal-header-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; color: #fff; }
-                .modal-title { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
-                .modal-subtitle { font-size: 13px; color: var(--text-muted); }
-                .modal-body { padding: 24px; }
-                .modal-footer { display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--surface-border); margin-top: 16px; }
                 .form-section { margin-bottom: 24px; }
                 .form-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--surface-border); }
                 .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block; }

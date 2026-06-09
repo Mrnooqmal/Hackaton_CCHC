@@ -26,7 +26,7 @@ import { useToast } from '../context/ToastContext';
 import { useObraContext } from '../context/ObraContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import SignatureModal from '../components/SignatureModal';
-import { Modal } from '../components/ui';
+import { Modal, Select } from '../components/ui';
 
 const DOCUMENT_TYPES: Record<string, { label: string; color: string; category: string }> = {
     IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)', category: 'normativo' },
@@ -828,19 +828,16 @@ export default function Documents() {
                     <form id="create-doc-form" onSubmit={handleCreateDocument}>
                         <div className="form-group">
                                         <label className="form-label">Tipo de Documento *</label>
-                                        <select
+                                        <Select
+                                            ariaLabel="Tipo de documento"
+                                            placeholder="Seleccione un tipo"
+                                            searchable
                                             value={newDoc.tipo}
-                                            onChange={(e) => setNewDoc({ ...newDoc, tipo: e.target.value })}
-                                            className="form-input form-select"
-                                            required
-                                        >
-                                            <option value="">Seleccione un tipo</option>
-                                            {Object.entries(DOCUMENT_TYPES)
+                                            onChange={(v) => setNewDoc({ ...newDoc, tipo: v })}
+                                            options={Object.entries(DOCUMENT_TYPES)
                                                 .filter(([, info]) => info.category === activeCategory)
-                                                .map(([key, { label }]) => (
-                                                <option key={key} value={key}>{label}</option>
-                                            ))}
-                                        </select>
+                                                .map(([key, { label }]) => ({ value: key, label }))}
+                                        />
                                     </div>
 
                                     <div className="form-group">
@@ -1075,16 +1072,14 @@ export default function Documents() {
                                     {assignmentType === 'cargo' && (
                                         <div className="form-group">
                                             <label className="form-label">Seleccionar Cargo</label>
-                                            <select
+                                            <Select
+                                                ariaLabel="Cargo"
+                                                placeholder="Seleccione un cargo"
+                                                searchable
                                                 value={selectedCargo}
-                                                onChange={(e) => setSelectedCargo(e.target.value)}
-                                                className="form-input form-select"
-                                            >
-                                                <option value="">Seleccione un cargo</option>
-                                                {uniqueCargos.map(cargo => (
-                                                    <option key={cargo} value={cargo}>{cargo}</option>
-                                                ))}
-                                            </select>
+                                                onChange={setSelectedCargo}
+                                                options={uniqueCargos.map(cargo => ({ value: cargo, label: cargo }))}
+                                            />
                                         </div>
                                     )}
 

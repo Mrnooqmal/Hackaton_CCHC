@@ -1,6 +1,12 @@
 export { default as Modal } from './Modal';
 export type { ModalProps, ModalSize } from './Modal';
 
+export { default as Select } from './Select';
+export type { SelectProps, SelectOption } from './Select';
+
+export { default as SegmentedControl } from './SegmentedControl';
+export type { SegmentedControlProps, SegmentOption } from './SegmentedControl';
+
 export { default as Toast } from './Toast';
 
 export { default as EmptyState } from './EmptyState';

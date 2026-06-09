@@ -22,6 +22,7 @@ import type { OfflineRequest } from '../services/offlineStore';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { useAuth } from '../context/AuthContext';
 import { REQUEST_TYPES } from '../api/client';
+import { Select } from '../components/ui';
 import ConfirmModal from '../components/ConfirmModal';
 
 type ViewMode = 'list' | 'create' | 'collect';
@@ -89,7 +90,7 @@ export default function OfflineSignatures() {
                 titulo: newRequest.titulo || REQUEST_TYPES[newRequest.tipo]?.label || 'Solicitud Offline',
                 descripcion: newRequest.descripcion,
                 ubicacion: newRequest.ubicacion,
-                solicitanteId: user?.userId || 'unknown',
+                solicitanteId: user?.personaId || user?.userId || 'unknown',
                 solicitanteNombre: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'Usuario Offline',
                 firmas: [],
             });
@@ -480,21 +481,20 @@ export default function OfflineSignatures() {
                         <div className="flex flex-col gap-4">
                             <div>
                                 <label className="form-label">Tipo de Solicitud *</label>
-                                <select
-                                    className="form-input"
+                                <Select
+                                    ariaLabel="Tipo de solicitud"
                                     value={newRequest.tipo}
-                                    onChange={(e) => setNewRequest(prev => ({
+                                    onChange={(v) => setNewRequest(prev => ({
                                         ...prev,
-                                        tipo: e.target.value,
-                                        titulo: prev.titulo || REQUEST_TYPES[e.target.value]?.label || '',
+                                        tipo: v,
+                                        titulo: prev.titulo || REQUEST_TYPES[v]?.label || '',
                                     }))}
-                                >
-                                    {Object.entries(REQUEST_TYPES).map(([key, value]) => (
-                                        <option key={key} value={key}>
-                                            {value.icon} {value.label}
-                                        </option>
-                                    ))}
-                                </select>
+                                    options={Object.entries(REQUEST_TYPES).map(([key, value]) => ({
+                                        value: key,
+                                        label: value.label,
+                                        icon: value.icon,
+                                    }))}
+                                />
                             </div>
 
                             <div>

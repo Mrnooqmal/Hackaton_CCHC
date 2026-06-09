@@ -189,7 +189,8 @@ export default function SignatureRequests() {
             return;
         }
 
-        if (!user?.userId) {
+        const currentUserId = user?.personaId || user?.userId;
+        if (!currentUserId) {
             alert('No hay usuario autenticado');
             return;
         }
@@ -202,7 +203,7 @@ export default function SignatureRequests() {
                 descripcion: newRequest.descripcion,
                 documentos: uploadedDocs,
                 trabajadoresIds: selectedWorkers,
-                solicitanteId: user.userId,
+                solicitanteId: currentUserId,
                 fechaLimite: newRequest.fechaLimite || undefined,
                 ubicacion: newRequest.ubicacion || undefined,
             });
@@ -210,7 +211,7 @@ export default function SignatureRequests() {
             if (response.success && response.data) {
                 // FIXED MISSING NOTIFICATIONS (Frontend explicit push)
                 try {
-                    const recipientsRes = await inboxApi.getRecipients(user?.userId || '', user?.empresaId || '');
+                    const recipientsRes = await inboxApi.getRecipients(currentUserId, user?.tenantId || user?.empresaId || '');
                     if (recipientsRes.success && recipientsRes.data) {
                         const allRecipients = recipientsRes.data.recipients;
                         // Map worker IDs to their RUTs, then find matching Inbox Recipients to extract userIds
@@ -220,7 +221,7 @@ export default function SignatureRequests() {
                         if (recipientUserIds.length > 0) {
                             const isUrgent = newRequest.fechaLimite && new Date(newRequest.fechaLimite) <= new Date(Date.now() + 48 * 60 * 60 * 1000); // <48hrs
                             await inboxApi.send({
-                                senderId: user?.userId || 'system',
+                                senderId: currentUserId || 'system',
                                 senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'PrevencionApp',
                                 senderRol: 'system',
                                 recipientIds: recipientUserIds,

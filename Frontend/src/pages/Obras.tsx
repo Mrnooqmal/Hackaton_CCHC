@@ -8,7 +8,7 @@ import {
   LuPlus
 } from 'react-icons/lu';
 import { FiAlertTriangle } from 'react-icons/fi';
-import { Modal } from '../components/ui';
+import { Modal, Select, SegmentedControl } from '../components/ui';
 
 interface Obra {
   obraId?: string;
@@ -572,35 +572,27 @@ export const Obras: React.FC = () => {
                   <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
                     <div style={{ flex: 1 }} className="form-group">
                       <label className="form-label">Región</label>
-                      <select
-                        name="region"
+                      <Select
+                        ariaLabel="Región"
+                        placeholder="Selecciona una región"
+                        searchable
                         value={formData.region}
-                        onChange={(event) => handleRegionChange(event.target.value)}
-                        className="form-input form-select"
-                        required
-                      >
-                        <option value="">Selecciona una región</option>
-                        {Object.keys(REGION_COMUNAS).map(region => (
-                          <option key={region} value={region}>{region}</option>
-                        ))}
-                      </select>
+                        onChange={handleRegionChange}
+                        options={Object.keys(REGION_COMUNAS).map(region => ({ value: region, label: region }))}
+                      />
                     </div>
 
                     <div style={{ flex: 1 }} className="form-group">
                       <label className="form-label">Comuna</label>
-                      <select
-                        name="comuna"
-                        value={formData.comuna}
-                        onChange={handleInputChange}
-                        className="form-input form-select"
-                        required
+                      <Select
+                        ariaLabel="Comuna"
+                        placeholder="Selecciona una comuna"
+                        searchable
                         disabled={!formData.region}
-                      >
-                        <option value="">Selecciona una comuna</option>
-                        {(REGION_COMUNAS[formData.region] || []).map(comuna => (
-                          <option key={comuna} value={comuna}>{comuna}</option>
-                        ))}
-                      </select>
+                        value={formData.comuna}
+                        onChange={(v) => setFormData(prev => ({ ...prev, comuna: v }))}
+                        options={(REGION_COMUNAS[formData.region] || []).map(comuna => ({ value: comuna, label: comuna }))}
+                      />
                     </div>
                   </div>
 
@@ -611,11 +603,16 @@ export const Obras: React.FC = () => {
 
                   <div className="form-group">
                     <label className="form-label">Estado</label>
-                    <select name="estado" value={formData.estado} onChange={handleInputChange} className="form-input form-select">
-                      <option value="activa">Activa</option>
-                      <option value="pausada">Pausada</option>
-                      <option value="finalizada">Finalizada</option>
-                    </select>
+                    <SegmentedControl
+                      ariaLabel="Estado de la obra"
+                      value={formData.estado}
+                      onChange={(v) => setFormData(prev => ({ ...prev, estado: v as Obra['estado'] }))}
+                      options={[
+                        { value: 'activa', label: 'Activa' },
+                        { value: 'pausada', label: 'Pausada' },
+                        { value: 'finalizada', label: 'Finalizada' },
+                      ]}
+                    />
                   </div>
                 </div>
 

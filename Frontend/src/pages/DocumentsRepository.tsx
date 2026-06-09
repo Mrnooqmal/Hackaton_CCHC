@@ -17,7 +17,7 @@ import { documentsApi, uploadsApi, type Document } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { useToast } from '../context/ToastContext';
-import { AlertBanner } from '../components/ui';
+import { AlertBanner, Select } from '../components/ui';
 
 type RepoDocument = Document & {
     clasificacion?: string;
@@ -202,7 +202,7 @@ export default function DocumentsRepository() {
                 archivoNombre: selectedFile?.name || undefined,
                 obraId: selectedObraId,
                 clasificacion: 'repositorio',
-                createdBy: user?.userId,
+                createdBy: user?.personaId || user?.userId,
                 creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
             } as any);
 
@@ -363,17 +363,14 @@ export default function DocumentsRepository() {
                             <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
                                 <div className="form-group">
                                     <label className="form-label">Tipo de Documento *</label>
-                                    <select
-                                        className="form-input form-select"
+                                    <Select
+                                        ariaLabel="Tipo de documento"
+                                        placeholder="Selecciona un tipo"
+                                        searchable
                                         value={newDoc.tipo}
-                                        onChange={(e) => setNewDoc(prev => ({ ...prev, tipo: e.target.value }))}
-                                        required
-                                    >
-                                        <option value="">Selecciona un tipo</option>
-                                        {Object.entries(documentTypes).map(([key, label]) => (
-                                            <option key={key} value={key}>{label}</option>
-                                        ))}
-                                    </select>
+                                        onChange={(v) => setNewDoc(prev => ({ ...prev, tipo: v }))}
+                                        options={Object.entries(documentTypes).map(([key, label]) => ({ value: key, label: label as string }))}
+                                    />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Titulo *</label>

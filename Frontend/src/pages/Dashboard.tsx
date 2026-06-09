@@ -267,7 +267,7 @@ export default function Dashboard() {
 
         const [surveysResult, inboxResult] = await Promise.allSettled([
             surveysApi.list(),
-            user?.userId ? inboxApi.getUnreadCount(user.userId) : Promise.resolve(null)
+            (user?.personaId || user?.userId) ? inboxApi.getUnreadCount((user?.personaId || user?.userId)!) : Promise.resolve(null)
         ]);
 
         if (surveysResult.status === 'fulfilled') {

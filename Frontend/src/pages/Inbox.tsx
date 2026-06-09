@@ -8,13 +8,17 @@ import {
 } from 'react-icons/fi';
 import { inboxApi, type InboxMessage, type InboxRecipient, type SendMessageData, type MessageType, type MessagePriority } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Modal } from '../components/ui';
+import { Modal, Select, SegmentedControl } from '../components/ui';
 
 type TabType = 'inbox' | 'sent' | 'archived';
 type FilterType = 'all' | 'unread' | 'archived';
 
 export default function Inbox() {
     const { user } = useAuth();
+    // Id canonico de la persona. El backend (inbox) indexa por personaId;
+    // userId es alias legacy y, cuando existe, es identico a personaId.
+    const currentUserId = user?.personaId || user?.userId;
+    const currentTenantId = user?.tenantId || user?.empresaId;
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<TabType>('inbox');
     const [messages, setMessages] = useState<InboxMessage[]>([]);
@@ -38,23 +42,23 @@ export default function Inbox() {
     });
 
     useEffect(() => {
-        if (user?.userId) {
+        if (currentUserId) {
             loadMessages();
             loadUnreadCount();
         }
-    }, [user?.userId, activeTab, filter]);
+    }, [currentUserId, activeTab, filter]);
 
     const loadMessages = async () => {
-        if (!user?.userId) return;
+        if (!currentUserId) return;
         setLoading(true);
         try {
             let response;
             if (activeTab === 'inbox') {
-                response = await inboxApi.getInbox(user.userId, filter);
+                response = await inboxApi.getInbox(currentUserId, filter);
             } else if (activeTab === 'sent') {
-                response = await inboxApi.getSent(user.userId);
+                response = await inboxApi.getSent(currentUserId);
             } else {
-                response = await inboxApi.getInbox(user.userId, 'archived');
+                response = await inboxApi.getInbox(currentUserId, 'archived');
             }
 
             if (response.success && response.data) {
@@ -68,9 +72,9 @@ export default function Inbox() {
     };
 
     const loadUnreadCount = async () => {
-        if (!user?.userId) return;
+        if (!currentUserId) return;
         try {
-            const response = await inboxApi.getUnreadCount(user.userId);
+            const response = await inboxApi.getUnreadCount(currentUserId);
             if (response.success && response.data) {
                 setUnreadCount(response.data.unreadCount);
             }
@@ -80,10 +84,10 @@ export default function Inbox() {
     };
 
     const loadRecipients = async () => {
-        if (!user?.userId) return;
+        if (!currentUserId) return;
         setLoadingRecipients(true);
         try {
-            const response = await inboxApi.getRecipients(user.userId, user.empresaId);
+            const response = await inboxApi.getRecipients(currentUserId, currentTenantId);
             if (response.success && response.data) {
                 setRecipients(response.data.recipients);
             }
@@ -96,8 +100,8 @@ export default function Inbox() {
 
     const handleOpenMessage = async (message: InboxMessage) => {
         setSelectedMessage(message);
-        if (!message.read && user?.userId) {
-            await inboxApi.markAsRead(message.messageId, user.userId);
+        if (!message.read && currentUserId) {
+            await inboxApi.markAsRead(message.messageId, currentUserId);
             setMessages(prev => prev.map(m =>
                 m.messageId === message.messageId ? { ...m, read: true } : m
             ));
@@ -106,9 +110,9 @@ export default function Inbox() {
     };
 
     const handleArchive = async (messageId: string) => {
-        if (!user?.userId) return;
+        if (!currentUserId) return;
         try {
-            await inboxApi.archive(messageId, user.userId);
+            await inboxApi.archive(messageId, currentUserId);
             setMessages(prev => prev.filter(m => m.messageId !== messageId));
             setSelectedMessage(null);
         } catch (error) {
@@ -117,10 +121,10 @@ export default function Inbox() {
     };
 
     const handleDelete = async (messageId: string) => {
-        if (!user?.userId) return;
+        if (!currentUserId) return;
         if (!confirm('¿Eliminar este mensaje?')) return;
         try {
-            await inboxApi.delete(messageId, user.userId);
+            await inboxApi.delete(messageId, currentUserId);
             setMessages(prev => prev.filter(m => m.messageId !== messageId));
             setSelectedMessage(null);
         } catch (error) {
@@ -129,9 +133,9 @@ export default function Inbox() {
     };
 
     const handleMarkAllAsRead = async () => {
-        if (!user?.userId) return;
+        if (!currentUserId) return;
         try {
-            await inboxApi.markAllAsRead(user.userId);
+            await inboxApi.markAllAsRead(currentUserId);
             setMessages(prev => prev.map(m => ({ ...m, read: true })));
             setUnreadCount(0);
         } catch (error) {
@@ -152,7 +156,7 @@ export default function Inbox() {
     };
 
     const handleSend = async () => {
-        if (!user?.userId || composeData.recipientIds.length === 0 || !composeData.subject || !composeData.content) {
+        if (!currentUserId || composeData.recipientIds.length === 0 || !composeData.subject || !composeData.content) {
             alert('Por favor completa todos los campos');
             return;
         }
@@ -160,7 +164,7 @@ export default function Inbox() {
         setComposing(true);
         try {
             const sendData: SendMessageData = {
-                senderId: user.userId,
+                senderId: currentUserId,
                 senderName: `${user.nombre} ${user.apellido || ''}`.trim(),
                 senderRol: user.rol || 'trabajador',
                 ...composeData
@@ -203,23 +207,24 @@ export default function Inbox() {
     // Get navigation route from linked entity
     const getLinkedEntityRoute = (linkedEntity: { type: string; id: string } | null | undefined): string | null => {
         if (!linkedEntity) return null;
-        switch (linkedEntity.type) {
+        // Normalizar: el backend puede enviar 'signature-request' o 'signature_request'
+        switch (linkedEntity.type.replace(/_/g, '-')) {
             case 'survey': return '/surveys';
             case 'activity': return '/activities';
             case 'document': return '/documents';
             case 'incident': return '/incidents';
-            case 'signature_request': return '/my-signatures';
+            case 'signature-request': return '/my-signatures';
             default: return null;
         }
     };
 
     const getLinkedEntityLabel = (type: string): string => {
-        switch (type) {
+        switch (type.replace(/_/g, '-')) {
             case 'survey': return 'Ver Encuesta';
             case 'activity': return 'Ver Actividad';
             case 'document': return 'Ver Documento';
             case 'incident': return 'Ver Incidente';
-            case 'signature_request': return 'Ver Firma';
+            case 'signature-request': return 'Ver Firma';
             default: return 'Ver Detalle';
         }
     };
@@ -231,6 +236,15 @@ export default function Inbox() {
             normal: 'badge-secondary'
         };
         return badges[priority] || 'badge-secondary';
+    };
+
+    const getPriorityLabel = (priority: string): string => {
+        const labels: Record<string, string> = {
+            urgent: 'Urgente',
+            high: 'Alta',
+            normal: 'Normal'
+        };
+        return labels[priority] || priority;
     };
 
     const formatDate = (date: string) => {
@@ -730,18 +744,20 @@ export default function Inbox() {
                                                 <span className="inbox-message-sender">
                                                     {activeTab === 'sent' && (message as InboxMessage & { recipientCount?: number }).recipientCount && (message as InboxMessage & { recipientCount?: number }).recipientCount! > 1
                                                         ? `Para: ${(message as InboxMessage & { recipientCount?: number }).recipientCount} destinatarios`
-                                                        : `De: ${message.senderName}`}
+                                                        : `De: ${message.senderName || 'Desconocido'}`}
                                                 </span>
                                                 <span className="inbox-message-time">{formatDate(message.createdAt)}</span>
                                             </div>
-                                            <div className="inbox-message-subject">{message.subject}</div>
+                                            <div className="inbox-message-subject">{message.subject || '(Sin asunto)'}</div>
                                             <div className="inbox-message-preview">
-                                                {(message.content || '').substring(0, 80)}...
+                                                {message.content
+                                                    ? `${message.content.substring(0, 80)}${message.content.length > 80 ? '…' : ''}`
+                                                    : 'Sin contenido'}
                                             </div>
                                         </div>
                                         {message.priority !== 'normal' && (
                                             <span className={`badge ${getPriorityBadge(message.priority)}`}>
-                                                {message.priority}
+                                                {getPriorityLabel(message.priority)}
                                             </span>
                                         )}
                                     </div>
@@ -768,13 +784,13 @@ export default function Inbox() {
                             </div>
 
                             <div className="inbox-detail-content">
-                                <h2 className="inbox-detail-subject">{selectedMessage.subject}</h2>
+                                <h2 className="inbox-detail-subject">{selectedMessage.subject || '(Sin asunto)'}</h2>
                                 <div className="inbox-detail-meta">
                                     <div className="inbox-detail-sender">
                                         <div className="avatar avatar-sm">{(selectedMessage.senderName || 'S').charAt(0)}</div>
                                         <div>
-                                            <div className="font-semibold">{selectedMessage.senderName}</div>
-                                            <div className="text-sm text-muted">{selectedMessage.senderRol}</div>
+                                            <div className="font-semibold">{selectedMessage.senderName || 'Desconocido'}</div>
+                                            <div className="text-sm text-muted">{selectedMessage.senderRol || ''}</div>
                                         </div>
                                     </div>
                                     <div className="text-sm text-muted">
@@ -850,28 +866,30 @@ export default function Inbox() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="form-group">
                                     <label className="form-label">Tipo</label>
-                                    <select
-                                        className="form-input"
+                                    <Select
+                                        ariaLabel="Tipo de mensaje"
                                         value={composeData.type}
-                                        onChange={(e) => setComposeData({ ...composeData, type: e.target.value as MessageType })}
-                                    >
-                                        <option value="message">Mensaje</option>
-                                        <option value="notification">Notificación</option>
-                                        <option value="alert">Alerta</option>
-                                        <option value="task">Tarea</option>
-                                    </select>
+                                        onChange={(v) => setComposeData({ ...composeData, type: v as MessageType })}
+                                        options={[
+                                            { value: 'message', label: 'Mensaje', icon: <FiMail /> },
+                                            { value: 'notification', label: 'Notificación', icon: <FiBell /> },
+                                            { value: 'alert', label: 'Alerta', icon: <FiAlertCircle /> },
+                                            { value: 'task', label: 'Tarea', icon: <FiCheckCircle /> },
+                                        ]}
+                                    />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Prioridad</label>
-                                    <select
-                                        className="form-input"
+                                    <SegmentedControl
+                                        ariaLabel="Prioridad del mensaje"
                                         value={composeData.priority}
-                                        onChange={(e) => setComposeData({ ...composeData, priority: e.target.value as MessagePriority })}
-                                    >
-                                        <option value="normal">Normal</option>
-                                        <option value="high">Alta</option>
-                                        <option value="urgent">Urgente</option>
-                                    </select>
+                                        onChange={(v) => setComposeData({ ...composeData, priority: v as MessagePriority })}
+                                        options={[
+                                            { value: 'normal', label: 'Normal' },
+                                            { value: 'high', label: 'Alta' },
+                                            { value: 'urgent', label: 'Urgente' },
+                                        ]}
+                                    />
                                 </div>
                             </div>
 
@@ -984,6 +1002,7 @@ export default function Inbox() {
                     flex-direction: column;
                     overflow: hidden;
                     width: 100%;
+                    min-height: 0;
                 }
 
                 .inbox-list-header {
@@ -1016,6 +1035,7 @@ export default function Inbox() {
                     flex: 1;
                     overflow-y: auto;
                     width: 100%;
+                    min-height: 0;
                 }
 
                 .inbox-empty {
@@ -1102,6 +1122,7 @@ export default function Inbox() {
                     border-left: 1px solid var(--surface-border);
                     width: 100%;
                     height: 100%;
+                    min-height: 0;
                 }
 
                 .inbox-detail-header {

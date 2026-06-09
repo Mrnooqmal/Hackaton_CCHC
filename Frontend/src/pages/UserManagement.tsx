@@ -17,7 +17,7 @@ import {
     FiStar
 } from 'react-icons/fi';
 import ConfirmModal from '../components/ConfirmModal';
-import { Modal } from '../components/ui';
+import { Modal, SegmentedControl } from '../components/ui';
 
 export default function UserManagement() {
     const [users, setUsers] = useState<User[]>([]);
@@ -461,11 +461,16 @@ export default function UserManagement() {
                         </div>
                         <div className="form-group">
                             <label className="form-label">Estado</label>
-                            <select className="form-input" value={editForm.estado} onChange={(e) => setEditForm({ ...editForm, estado: e.target.value as any })}>
-                                <option value="pendiente">Pendiente</option>
-                                <option value="activo">Activo</option>
-                                <option value="suspendido">Suspendido</option>
-                            </select>
+                            <SegmentedControl
+                                ariaLabel="Estado"
+                                value={editForm.estado}
+                                onChange={(v) => setEditForm({ ...editForm, estado: v as any })}
+                                options={[
+                                    { value: 'pendiente', label: 'Pendiente' },
+                                    { value: 'activo', label: 'Activo' },
+                                    { value: 'suspendido', label: 'Suspendido' },
+                                ]}
+                            />
                         </div>
                     </div>
                 </form>
