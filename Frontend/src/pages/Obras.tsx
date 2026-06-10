@@ -498,7 +498,71 @@ export const Obras: React.FC = () => {
           <div className="modal-body p-0">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                   <div className="form-group">
-                    <label className="form-label">Imagen de referencia</label>
+                    <label className="form-label">Nombre de obra *</label>
+                    <input required name="nombre" value={formData.nombre} onChange={handleInputChange} className="form-input" />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Mandante</label>
+                    <input
+                      required
+                      name="mandante"
+                      value={resolvedCompanyName || formData.mandante}
+                      onChange={handleInputChange}
+                      className="form-input"
+                      placeholder={resolvedCompanyName || 'Empresa mandante'}
+                      disabled
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
+                    <div style={{ flex: 1 }} className="form-group">
+                      <label className="form-label">Región *</label>
+                      <Select
+                        ariaLabel="Región"
+                        placeholder="Selecciona una región"
+                        searchable
+                        value={formData.region}
+                        onChange={handleRegionChange}
+                        options={Object.keys(REGION_COMUNAS).map(region => ({ value: region, label: region }))}
+                      />
+                    </div>
+
+                    <div style={{ flex: 1 }} className="form-group">
+                      <label className="form-label">Comuna *</label>
+                      <Select
+                        ariaLabel="Comuna"
+                        placeholder="Selecciona una comuna"
+                        searchable
+                        disabled={!formData.region}
+                        value={formData.comuna}
+                        onChange={(v) => setFormData(prev => ({ ...prev, comuna: v }))}
+                        options={(REGION_COMUNAS[formData.region] || []).map(comuna => ({ value: comuna, label: comuna }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Dirección *</label>
+                    <input required name="direccion" value={formData.direccion} onChange={handleInputChange} className="form-input" />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Estado</label>
+                    <SegmentedControl
+                      ariaLabel="Estado de la obra"
+                      value={formData.estado}
+                      onChange={(v) => setFormData(prev => ({ ...prev, estado: v as Obra['estado'] }))}
+                      options={[
+                        { value: 'activa', label: 'Activa' },
+                        { value: 'pausada', label: 'Pausada' },
+                        { value: 'finalizada', label: 'Finalizada' },
+                      ]}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Imagen de referencia <span className="text-muted" style={{ fontWeight: 400 }}>(opcional)</span></label>
                     <div
                       style={{
                         border: '1px dashed var(--surface-border)',
@@ -526,93 +590,16 @@ export const Obras: React.FC = () => {
                         onChange={handleImageChange}
                         style={{ display: 'none' }}
                       />
-                      <div style={{ marginTop: '10px', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
-                        {obraImagePreview ? (
+                      {obraImagePreview && (
+                        <div style={{ marginTop: '10px', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
                           <img
                             src={obraImagePreview}
                             alt="Vista previa obra"
                             style={{ width: '100%', height: '160px', objectFit: 'cover', display: 'block' }}
                           />
-                        ) : (
-                          <div
-                            style={{
-                              height: '160px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: 'var(--text-muted)',
-                              fontSize: '0.9rem'
-                            }}
-                          >
-                            Sube una imagen para mostrarla aqui
-                          </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Nombre de obra</label>
-                    <input required name="nombre" value={formData.nombre} onChange={handleInputChange} className="form-input" />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Mandante</label>
-                    <input
-                      required
-                      name="mandante"
-                      value={resolvedCompanyName || formData.mandante}
-                      onChange={handleInputChange}
-                      className="form-input"
-                      placeholder={resolvedCompanyName || 'Empresa mandante'}
-                      disabled
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
-                    <div style={{ flex: 1 }} className="form-group">
-                      <label className="form-label">Región</label>
-                      <Select
-                        ariaLabel="Región"
-                        placeholder="Selecciona una región"
-                        searchable
-                        value={formData.region}
-                        onChange={handleRegionChange}
-                        options={Object.keys(REGION_COMUNAS).map(region => ({ value: region, label: region }))}
-                      />
-                    </div>
-
-                    <div style={{ flex: 1 }} className="form-group">
-                      <label className="form-label">Comuna</label>
-                      <Select
-                        ariaLabel="Comuna"
-                        placeholder="Selecciona una comuna"
-                        searchable
-                        disabled={!formData.region}
-                        value={formData.comuna}
-                        onChange={(v) => setFormData(prev => ({ ...prev, comuna: v }))}
-                        options={(REGION_COMUNAS[formData.region] || []).map(comuna => ({ value: comuna, label: comuna }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Dirección</label>
-                    <input required name="direccion" value={formData.direccion} onChange={handleInputChange} className="form-input" />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Estado</label>
-                    <SegmentedControl
-                      ariaLabel="Estado de la obra"
-                      value={formData.estado}
-                      onChange={(v) => setFormData(prev => ({ ...prev, estado: v as Obra['estado'] }))}
-                      options={[
-                        { value: 'activa', label: 'Activa' },
-                        { value: 'pausada', label: 'Pausada' },
-                        { value: 'finalizada', label: 'Finalizada' },
-                      ]}
-                    />
                   </div>
                 </div>
 

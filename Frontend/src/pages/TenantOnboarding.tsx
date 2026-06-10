@@ -30,6 +30,7 @@ export default function TenantOnboarding() {
   const [currentStep, setCurrentStep] = useState<Step>('empresa');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
   const [result, setResult] = useState<TenantSetupResponse | null>(null);
   const [passwordTemp, setPasswordTemp] = useState('');
@@ -40,37 +41,63 @@ export default function TenantOnboarding() {
 
   const stepIndex = STEPS.indexOf(currentStep);
 
-  const validateEmpresa = () => {
-    if (!empresa.nombre.trim()) return 'El nombre de la empresa es requerido';
-    if (!empresa.rutEmpresa.trim()) return 'El RUT de la empresa es requerido';
-    if (empresa.cantidadTrabajadores < 1) return 'La cantidad de trabajadores debe ser mayor a 0';
-    return '';
+  // Validación que recolecta TODOS los campos faltantes a la vez (no de a uno).
+  const FIELD_LABELS: Record<string, string> = {
+    nombre: 'Razón social', rutEmpresa: 'RUT empresa', cantidadTrabajadores: 'Cantidad de trabajadores',
+    rut: 'RUT', adminNombre: 'Nombre', email: 'Email',
   };
 
-  const validateAdmin = () => {
-    if (!admin.rut.trim()) return 'El RUT del administrador es requerido';
-    if (!admin.nombre.trim()) return 'El nombre del administrador es requerido';
-    if (!admin.email.trim()) return 'El email del administrador es requerido';
-    if (!/\S+@\S+\.\S+/.test(admin.email)) return 'El email no tiene un formato válido';
-    return '';
+  const validateEmpresa = (): string[] => {
+    const f: string[] = [];
+    if (!empresa.nombre.trim()) f.push('nombre');
+    if (!empresa.rutEmpresa.trim()) f.push('rutEmpresa');
+    if (empresa.cantidadTrabajadores < 1) f.push('cantidadTrabajadores');
+    return f;
+  };
+
+  const validateAdmin = (): string[] => {
+    const f: string[] = [];
+    if (!admin.rut.trim()) f.push('rut');
+    if (!admin.nombre.trim()) f.push('adminNombre');
+    if (!admin.email.trim()) f.push('email');
+    else if (!/\S+@\S+\.\S+/.test(admin.email)) f.push('emailFormato');
+    return f;
+  };
+
+  const buildMessage = (fields: string[]): string => {
+    if (fields.includes('emailFormato')) {
+      const others = fields.filter(x => x !== 'emailFormato').map(x => FIELD_LABELS[x]);
+      const base = others.length ? `Completa: ${others.join(', ')}. ` : '';
+      return `${base}El email no tiene un formato válido.`;
+    }
+    return `Completa los campos requeridos: ${fields.map(x => FIELD_LABELS[x] || x).join(', ')}`;
   };
 
   const next = () => {
     setError('');
+    setFieldErrors(new Set());
     if (currentStep === 'empresa') {
-      const err = validateEmpresa();
-      if (err) { setError(err); return; }
+      const fields = validateEmpresa();
+      if (fields.length) { setFieldErrors(new Set(fields)); setError(buildMessage(fields)); return; }
     }
     if (currentStep === 'admin') {
-      const err = validateAdmin();
-      if (err) { setError(err); return; }
+      const fields = validateAdmin();
+      if (fields.length) { setFieldErrors(new Set(fields)); setError(buildMessage(fields)); return; }
     }
     const i = stepIndex + 1;
     if (i < STEPS.length) setCurrentStep(STEPS[i]);
   };
 
+  const clearField = (key: string) => {
+    setFieldErrors(prev => {
+      if (!prev.has(key)) return prev;
+      const n = new Set(prev); n.delete(key); return n;
+    });
+  };
+
   const prev = () => {
     setError('');
+    setFieldErrors(new Set());
     const i = stepIndex - 1;
     if (i >= 0) setCurrentStep(STEPS[i]);
   };
@@ -215,15 +242,15 @@ export default function TenantOnboarding() {
                 <div className="onb-grid">
                   <div className="onb-field full">
                     <label>RAZÓN SOCIAL *</label>
-                    <input placeholder="Constructora Demo SpA" value={empresa.nombre} onChange={e => setEmpresa({ ...empresa, nombre: e.target.value })} />
+                    <input className={fieldErrors.has('nombre') ? 'onb-input-err' : ''} placeholder="Constructora Demo SpA" value={empresa.nombre} onChange={e => { setEmpresa({ ...empresa, nombre: e.target.value }); clearField('nombre'); }} />
                   </div>
                   <div className="onb-field">
                     <label>RUT EMPRESA *</label>
-                    <input placeholder="76.123.456-7" value={empresa.rutEmpresa} onChange={e => setEmpresa({ ...empresa, rutEmpresa: e.target.value })} />
+                    <input className={fieldErrors.has('rutEmpresa') ? 'onb-input-err' : ''} placeholder="76.123.456-7" value={empresa.rutEmpresa} onChange={e => { setEmpresa({ ...empresa, rutEmpresa: e.target.value }); clearField('rutEmpresa'); }} />
                   </div>
                   <div className="onb-field">
                     <label>CANTIDAD TRABAJADORES *</label>
-                    <input type="number" min={1} value={empresa.cantidadTrabajadores} onChange={e => setEmpresa({ ...empresa, cantidadTrabajadores: parseInt(e.target.value) || 1 })} />
+                    <input className={fieldErrors.has('cantidadTrabajadores') ? 'onb-input-err' : ''} type="number" min={1} value={empresa.cantidadTrabajadores} onChange={e => { setEmpresa({ ...empresa, cantidadTrabajadores: parseInt(e.target.value) || 1 }); clearField('cantidadTrabajadores'); }} />
                   </div>
                   <div className="onb-field">
                     <label>EMAIL CORPORATIVO</label>
@@ -268,11 +295,11 @@ export default function TenantOnboarding() {
                 <div className="onb-grid">
                   <div className="onb-field full">
                     <label>RUT *</label>
-                    <input placeholder="12.345.678-9" value={admin.rut} onChange={e => setAdmin({ ...admin, rut: e.target.value })} />
+                    <input className={fieldErrors.has('rut') ? 'onb-input-err' : ''} placeholder="12.345.678-9" value={admin.rut} onChange={e => { setAdmin({ ...admin, rut: e.target.value }); clearField('rut'); }} />
                   </div>
                   <div className="onb-field">
                     <label>NOMBRE *</label>
-                    <input placeholder="Juan" value={admin.nombre} onChange={e => setAdmin({ ...admin, nombre: e.target.value })} />
+                    <input className={fieldErrors.has('adminNombre') ? 'onb-input-err' : ''} placeholder="Juan" value={admin.nombre} onChange={e => { setAdmin({ ...admin, nombre: e.target.value }); clearField('adminNombre'); }} />
                   </div>
                   <div className="onb-field">
                     <label>APELLIDO</label>
@@ -280,7 +307,7 @@ export default function TenantOnboarding() {
                   </div>
                   <div className="onb-field full">
                     <label>EMAIL *</label>
-                    <input type="email" placeholder="admin@empresa.cl" value={admin.email} onChange={e => setAdmin({ ...admin, email: e.target.value })} />
+                    <input className={(fieldErrors.has('email') || fieldErrors.has('emailFormato')) ? 'onb-input-err' : ''} type="email" placeholder="admin@empresa.cl" value={admin.email} onChange={e => { setAdmin({ ...admin, email: e.target.value }); clearField('email'); clearField('emailFormato'); }} />
                   </div>
                 </div>
               </div>
@@ -374,6 +401,7 @@ const onbStyles = (
 .onb-field label{display:block;font-size:.68rem;font-weight:800;color:var(--text-muted);letter-spacing:.1em;margin-bottom:6px}
 .onb-field input,.onb-field select{width:100%;padding:10px 14px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;font-size:.92rem;transition:all .2s}
 .onb-field input:focus,.onb-field select:focus{background:rgba(255,255,255,.08);border-color:var(--primary-500);outline:none;box-shadow:0 0 0 3px rgba(76,175,80,.15)}
+.onb-field input.onb-input-err{border-color:rgba(239,68,68,.6);box-shadow:0 0 0 3px rgba(239,68,68,.12)}
 /* plans */
 .onb-plans{display:flex;flex-direction:column;gap:12px}
 .onb-plan-card{position:relative;text-align:left;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:20px;cursor:pointer;transition:all .25s}

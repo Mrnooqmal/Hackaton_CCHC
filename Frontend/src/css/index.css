@@ -36,6 +36,8 @@
   --danger-700: #d32f2f;
   --danger-800: #c62828;
   --danger-900: #b71c1c;
+  /* Alias usado por algunas pantallas (firma offline, MySignatures, etc.) */
+  --error-500: var(--danger-500);
 
   /* Colores de éxito */
   --success-500: #22c55e;

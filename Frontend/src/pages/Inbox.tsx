@@ -249,6 +249,7 @@ export default function Inbox() {
 
     const formatDate = (date: string) => {
         const d = new Date(date);
+        if (isNaN(d.getTime())) return '—';
         const now = new Date();
         const diff = now.getTime() - d.getTime();
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -794,7 +795,7 @@ export default function Inbox() {
                                         </div>
                                     </div>
                                     <div className="text-sm text-muted">
-                                        <FiClock size={12} /> {new Date(selectedMessage.createdAt).toLocaleString('es-CL')}
+                                        <FiClock size={12} /> {isNaN(new Date(selectedMessage.createdAt).getTime()) ? '—' : new Date(selectedMessage.createdAt).toLocaleString('es-CL')}
                                     </div>
                                 </div>
                                 <div className="inbox-detail-body">

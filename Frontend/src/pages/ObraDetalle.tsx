@@ -1180,7 +1180,9 @@ export default function ObraDetalle() {
 
             await signatureRequestsApi.create({
               tipo: 'DOCUMENTO',
-              titulo: `Firma requerida: ${docTitle}`,
+              // El título es el nombre del documento; el backend ya antepone "Firma requerida:"
+              // al notificar (evita el doble prefijo "Firma requerida: Firma requerida:").
+              titulo: docTitle,
               descripcion: `Se requiere su firma para el documento DS44 "${docTitle}" de la obra.`,
               documentos: docAttachments,
               trabajadoresIds: targetSignerIds,

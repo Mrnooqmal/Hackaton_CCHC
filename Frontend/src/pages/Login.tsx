@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { FiArrowRight, FiUser, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 
 export default function Login() {
-    const { login, error: authError } = useAuth();
+    const { login } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -12,6 +12,7 @@ export default function Login() {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [slowHint, setSlowHint] = useState(false);
     const [error, setError] = useState('');
 
     const from = (location.state as any)?.from?.pathname || '/';
@@ -22,16 +23,22 @@ export default function Login() {
         if (!password)   { setError('La contraseña es requerida'); return; }
         setLoading(true);
         setError('');
+        setSlowHint(false);
+        // Aviso de cold-start: si tarda más de ~1.2s mostramos un microcopy.
+        const slowTimer = setTimeout(() => setSlowHint(true), 1200);
 
         const result = await login(rut.trim(), password);
+        clearTimeout(slowTimer);
 
         if (result.success) {
             if (result.requiresChangePassword) navigate('/change-password');
             else if (result.requiresEnrollment) navigate('/enroll-me');
             else navigate(from, { replace: true });
         } else {
-            setError(authError || 'RUT o contraseña incorrectos');
+            // Usar el error del intento actual (no el estado del contexto, que llega un render tarde).
+            setError(result.error || 'RUT o contraseña incorrectos');
             setLoading(false);
+            setSlowHint(false);
         }
     };
 
@@ -103,6 +110,10 @@ export default function Login() {
                                 : <><span>Iniciar sesión</span><FiArrowRight size={15} /></>
                             }
                         </button>
+
+                        {loading && slowHint && (
+                            <p className="lp-slow-hint">Esto puede tardar unos segundos la primera vez…</p>
+                        )}
                     </form>
 
                     <div className="lp-sep" />
@@ -262,6 +273,14 @@ export default function Login() {
                     background: rgba(239,68,68,0.08);
                     border: 1px solid rgba(239,68,68,0.18);
                     border-radius: 8px;
+                }
+
+                .lp-slow-hint {
+                    text-align: center;
+                    font-size: 0.8rem;
+                    color: var(--text-muted);
+                    margin: var(--space-3) 0 0;
+                    animation: lp-in 0.3s ease-out both;
                 }
 
                 /* ── Submit ── */

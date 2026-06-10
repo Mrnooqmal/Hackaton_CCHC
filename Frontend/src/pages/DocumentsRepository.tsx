@@ -11,13 +11,15 @@ import {
     FiX,
     FiUsers,
     FiChevronDown,
-    FiChevronUp
+    FiChevronUp,
+    FiEye
 } from 'react-icons/fi';
 import { documentsApi, uploadsApi, type Document } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { useToast } from '../context/ToastContext';
 import { AlertBanner, Select } from '../components/ui';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
 
 type RepoDocument = Document & {
     clasificacion?: string;
@@ -222,6 +224,8 @@ export default function DocumentsRepository() {
         }
     };
 
+    const [preview, setPreview] = useState<{ url: string | null; name: string; doc: RepoDocument } | null>(null);
+
     const handleDownload = async (doc: RepoDocument) => {
         const fileKey = doc.s3Key || doc.archivoUrl;
         if (!fileKey) return;
@@ -235,6 +239,26 @@ export default function DocumentsRepository() {
         } catch (err) {
             console.error('Download error:', err);
             toast.error('No se pudo descargar el archivo');
+        }
+    };
+
+    const handlePreview = async (doc: RepoDocument) => {
+        const fileKey = doc.s3Key || doc.archivoUrl;
+        if (!fileKey) return;
+        // Abrimos el modal en estado de carga mientras se obtiene la URL presignada.
+        setPreview({ url: null, name: doc.archivoNombre || doc.titulo || 'documento', doc });
+        try {
+            const response = await uploadsApi.getDownloadUrl(fileKey);
+            if (response.success && response.data?.downloadUrl) {
+                setPreview((prev) => prev ? { ...prev, url: response.data!.downloadUrl } : prev);
+            } else {
+                toast.error('No se pudo abrir la vista previa');
+                setPreview(null);
+            }
+        } catch (err) {
+            console.error('Preview error:', err);
+            toast.error('No se pudo abrir la vista previa');
+            setPreview(null);
         }
     };
 
@@ -589,13 +613,22 @@ export default function DocumentsRepository() {
                                                 <td>
                                                     <div className="flex items-center gap-2">
                                                         {fileKey ? (
-                                                            <button
-                                                                className="btn btn-ghost btn-icon btn-sm"
-                                                                onClick={() => handleDownload(doc)}
-                                                                title="Descargar archivo"
-                                                            >
-                                                                <FiDownload />
-                                                            </button>
+                                                            <>
+                                                                <button
+                                                                    className="btn btn-ghost btn-icon btn-sm"
+                                                                    onClick={() => handlePreview(doc)}
+                                                                    title="Previsualizar"
+                                                                >
+                                                                    <FiEye />
+                                                                </button>
+                                                                <button
+                                                                    className="btn btn-ghost btn-icon btn-sm"
+                                                                    onClick={() => handleDownload(doc)}
+                                                                    title="Descargar archivo"
+                                                                >
+                                                                    <FiDownload />
+                                                                </button>
+                                                            </>
                                                         ) : (
                                                             <span className="text-xs text-muted">-</span>
                                                         )}
@@ -639,6 +672,14 @@ export default function DocumentsRepository() {
                     </div>
                 )}
             </div>
+
+            <DocumentPreviewModal
+                isOpen={!!preview}
+                onClose={() => setPreview(null)}
+                url={preview?.url ?? null}
+                fileName={preview?.name}
+                onDownload={preview ? () => handleDownload(preview.doc) : undefined}
+            />
         </>
     );
 }

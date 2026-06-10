@@ -6,7 +6,7 @@ interface AuthContextType {
     session: SessionInfo | null;
     loading: boolean;
     error: string | null;
-    login: (rut: string, password: string) => Promise<{ success: boolean; requiresChangePassword?: boolean; requiresEnrollment?: boolean }>;
+    login: (rut: string, password: string) => Promise<{ success: boolean; error?: string; requiresChangePassword?: boolean; requiresEnrollment?: boolean }>;
     logout: () => Promise<void>;
     updateUser: (userData: Partial<User>) => void;
     hasPermission: (permission: string) => boolean;
@@ -94,12 +94,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     requiresEnrollment: requiereEnrolamiento
                 };
             } else {
-                setError(response.error || 'Error al iniciar sesión');
-                return { success: false };
+                const msg = response.error || 'Error al iniciar sesión';
+                setError(msg);
+                return { success: false, error: msg };
             }
         } catch (err) {
-            setError('Error de conexión');
-            return { success: false };
+            const msg = 'Error de conexión';
+            setError(msg);
+            return { success: false, error: msg };
         }
     };
 

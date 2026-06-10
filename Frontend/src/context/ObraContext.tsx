@@ -53,14 +53,16 @@ export const ObraProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const isAdminTenant = user?.rol === 'admin';
 
         if (!isAdminTenant) {
-          // Solo auto-seleccionar para prevencionista/supervisor/trabajador
+          // Auto-seleccionar para prevencionista/supervisor/trabajador.
+          // Prioridad: última obra guardada (si sigue siendo válida) > primera obra disponible.
+          // Así nunca quedan en el estado vacío "Seleccionar obra" cuando ya tienen acceso a alguna.
           const savedObraId = localStorage.getItem('selectedObraId');
           if (savedObraId && obrasArray.some((o: Obra) => o.obraId === savedObraId)) {
             setSelectedObraIdState(savedObraId);
-          } else if (obrasArray.length === 1) {
+          } else if (obrasArray.length >= 1) {
             setSelectedObraIdState(obrasArray[0].obraId);
             localStorage.setItem('selectedObraId', obrasArray[0].obraId);
-          } else if (obrasArray.length === 0) {
+          } else {
             setSelectedObraIdState(null);
             localStorage.removeItem('selectedObraId');
           }

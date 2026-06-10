@@ -14,6 +14,7 @@ import Inbox from './pages/Inbox';
 import Login from './pages/Login';
 // Legacy UserManagement replaced by PersonasManagement
 import ChangePassword from './pages/ChangePassword';
+import Settings from './pages/Settings';
 import EnrollMe from './pages/EnrollMe';
 import Unauthorized from './pages/Unauthorized';
 import RegisterAdmin from './pages/RegisterAdmin';
@@ -159,6 +160,12 @@ function AppContent() {
           <Route path="/change-password" element={
             <ProtectedRoute>
               <ChangePassword />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/settings" element={
+            <ProtectedRoute>
+              <Settings />
             </ProtectedRoute>
           } />
 
