@@ -381,14 +381,21 @@ export default function PersonasManagement() {
                             <input type="text" placeholder="Buscar por nombre o RUT..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="form-input" style={{ paddingLeft: 40 }} />
                             <FiSearch style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                         </div>
-                        <select className="form-input" style={{ width: 180 }} value={filterRol} onChange={e => setFilterRol(e.target.value)}>
-                            <option value="">Todos los roles</option>
-                            <option value="admin">Administrador</option>
-                            <option value="jefe_obra">Jefe de Obra</option>
-                            <option value="prevencionista">Prevencionista</option>
-                            <option value="supervisor">Supervisor</option>
-                            <option value="trabajador">Trabajador</option>
-                        </select>
+                        <div style={{ width: 180 }}>
+                            <Select
+                                ariaLabel="Filtrar por rol"
+                                value={filterRol}
+                                onChange={setFilterRol}
+                                options={[
+                                    { value: '', label: 'Todos los roles' },
+                                    { value: 'admin', label: 'Administrador' },
+                                    { value: 'jefe_obra', label: 'Jefe de Obra' },
+                                    { value: 'prevencionista', label: 'Prevencionista' },
+                                    { value: 'supervisor', label: 'Supervisor' },
+                                    { value: 'trabajador', label: 'Trabajador' },
+                                ]}
+                            />
+                        </div>
                     </div>
                 </div>
 

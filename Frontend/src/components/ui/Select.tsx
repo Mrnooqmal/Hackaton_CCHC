@@ -24,6 +24,8 @@ export interface SelectProps {
     disabled?: boolean;
     /** Muestra un buscador dentro del panel (util para listas largas) */
     searchable?: boolean;
+    /** Icono fijo a la izquierda del trigger (util para filtros) */
+    leadingIcon?: ReactNode;
     /** Etiqueta accesible cuando no hay <label> asociado */
     ariaLabel?: string;
     id?: string;
@@ -40,6 +42,7 @@ export default function Select({
     placeholder = 'Seleccionar…',
     disabled = false,
     searchable = false,
+    leadingIcon,
     ariaLabel,
     id,
     className = '',
@@ -227,6 +230,7 @@ export default function Select({
                 onClick={() => !disabled && setOpen((o) => !o)}
                 onKeyDown={onKeyDown}
             >
+                {leadingIcon && <span className="ui-select-leading">{leadingIcon}</span>}
                 {selected?.icon && <span className="ui-select-value-icon">{selected.icon}</span>}
                 <span className="ui-select-value">{selected ? selected.label : placeholder}</span>
                 <FiChevronDown className="ui-select-caret" size={18} />

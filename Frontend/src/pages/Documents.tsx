@@ -541,28 +541,18 @@ export default function Documents() {
                                 />
                             </div>
 
-                            <div style={{ position: 'relative' }}>
-                                <select
+                            <div style={{ minWidth: '200px' }}>
+                                <Select
+                                    ariaLabel="Filtrar por tipo"
+                                    leadingIcon={<FiFilter />}
                                     value={filterType}
-                                    onChange={(e) => setFilterType(e.target.value)}
-                                    className="form-input form-select"
-                                    style={{ paddingLeft: '40px', minWidth: '200px' }}
-                                >
-                                    <option value="">Todos los tipos</option>
-                                    {Object.entries(DOCUMENT_TYPES)
-                                        .filter(([, info]) => info.category === activeCategory)
-                                        .map(([key, { label }]) => (
-                                        <option key={key} value={key}>{label}</option>
-                                    ))}
-                                </select>
-                                <FiFilter
-                                    style={{
-                                        position: 'absolute',
-                                        left: '12px',
-                                        top: '50%',
-                                        transform: 'translateY(-50%)',
-                                        color: 'var(--text-muted)'
-                                    }}
+                                    onChange={setFilterType}
+                                    options={[
+                                        { value: '', label: 'Todos los tipos' },
+                                        ...Object.entries(DOCUMENT_TYPES)
+                                            .filter(([, info]) => info.category === activeCategory)
+                                            .map(([key, { label }]) => ({ value: key, label })),
+                                    ]}
                                 />
                             </div>
                         </div>

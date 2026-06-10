@@ -272,18 +272,17 @@ export default function DocumentsRepository() {
                     </div>
                     <div className="page-header-actions" style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                         {canSelectObra && (
-                            <select
-                                className="form-input form-select"
-                                value={selectedObraId || ''}
-                                onChange={(e) => setSelectedObraId(e.target.value || null)}
-                                disabled={isLoadingObras || obras.length === 0}
-                                style={{ minWidth: '220px' }}
-                            >
-                                <option value="">Selecciona una obra</option>
-                                {obras.map((obra) => (
-                                    <option key={obra.obraId} value={obra.obraId}>{obra.nombre}</option>
-                                ))}
-                            </select>
+                            <div style={{ minWidth: '220px' }}>
+                                <Select
+                                    ariaLabel="Seleccionar obra"
+                                    placeholder="Selecciona una obra"
+                                    searchable
+                                    disabled={isLoadingObras || obras.length === 0}
+                                    value={selectedObraId || ''}
+                                    onChange={(v) => setSelectedObraId(v || null)}
+                                    options={obras.map((obra) => ({ value: obra.obraId, label: obra.nombre }))}
+                                />
+                            </div>
                         )}
                         {canUpload && selectedObraId && (
                             <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)}>
@@ -471,26 +470,16 @@ export default function DocumentsRepository() {
                                         }}
                                     />
                                 </div>
-                                <div style={{ position: 'relative' }}>
-                                    <select
+                                <div style={{ minWidth: '220px' }}>
+                                    <Select
+                                        ariaLabel="Filtrar por tipo"
+                                        leadingIcon={<FiFilter />}
                                         value={filterType}
-                                        onChange={(e) => setFilterType(e.target.value)}
-                                        className="form-input form-select"
-                                        style={{ paddingLeft: '40px', minWidth: '220px' }}
-                                    >
-                                        <option value="">Todos los tipos</option>
-                                        {Object.entries(documentTypes).map(([key, label]) => (
-                                            <option key={key} value={key}>{label}</option>
-                                        ))}
-                                    </select>
-                                    <FiFilter
-                                        style={{
-                                            position: 'absolute',
-                                            left: '12px',
-                                            top: '50%',
-                                            transform: 'translateY(-50%)',
-                                            color: 'var(--text-muted)'
-                                        }}
+                                        onChange={setFilterType}
+                                        options={[
+                                            { value: '', label: 'Todos los tipos' },
+                                            ...Object.entries(documentTypes).map(([key, label]) => ({ value: key, label: label as string })),
+                                        ]}
                                     />
                                 </div>
                             </div>

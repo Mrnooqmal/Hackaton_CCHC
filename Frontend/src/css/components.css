@@ -576,6 +576,13 @@
     color: var(--text-secondary);
 }
 
+.ui-select-leading {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
 .ui-select-caret {
     color: var(--text-muted);
     flex-shrink: 0;

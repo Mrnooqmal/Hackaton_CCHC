@@ -362,39 +362,16 @@ export default function Activities() {
                             style={{ border: 'none', background: 'transparent', padding: 0, boxShadow: 'none', color: 'var(--text-primary)' }}
                         />
                     </div>
-                    <div style={{ position: 'relative', minWidth: '200px' }}>
-                        <select
+                    <div style={{ minWidth: '200px' }}>
+                        <Select
+                            ariaLabel="Filtrar por tipo"
+                            leadingIcon={<FiFilter size={18} />}
                             value={filterType}
-                            onChange={(e) => setFilterType(e.target.value)}
-                            className="form-input"
-                            style={{
-                                paddingLeft: '48px',
-                                paddingRight: '16px',
-                                height: '44px',
-                                borderRadius: '12px',
-                                cursor: 'pointer',
-                                appearance: 'none',
-                                background: 'var(--surface-elevated)',
-                                border: '1px solid var(--surface-border)',
-                                color: 'var(--text-primary)',
-                                fontWeight: 500,
-                            }}
-                        >
-                            <option value="">Todos los tipos</option>
-                            {Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => (
-                                <option key={key} value={key}>{label}</option>
-                            ))}
-                        </select>
-                        <FiFilter
-                            size={18}
-                            style={{
-                                position: 'absolute',
-                                left: '16px',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                color: 'var(--text-muted)',
-                                pointerEvents: 'none',
-                            }}
+                            onChange={setFilterType}
+                            options={[
+                                { value: '', label: 'Todos los tipos' },
+                                ...Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => ({ value: key, label })),
+                            ]}
                         />
                     </div>
                 </div>

@@ -935,16 +935,17 @@ export default function Incidents() {
                                     <h3 className="font-semibold flex items-center gap-2">
                                         <FiTrendingUp /> Evolución {getMetricLabel()}
                                     </h3>
-                                    <div className="chart-controls">
-                                        <select
-                                            className="chart-select"
+                                    <div className="chart-controls" style={{ minWidth: '160px' }}>
+                                        <Select
+                                            ariaLabel="Métrica del gráfico"
                                             value={chartMetric}
-                                            onChange={(e) => setChartMetric(e.target.value as 'total' | 'accidentes' | 'incidentes')}
-                                        >
-                                            <option value="total">Total</option>
-                                            <option value="accidentes">Accidentes</option>
-                                            <option value="incidentes">Incidentes</option>
-                                        </select>
+                                            onChange={(v) => setChartMetric(v as 'total' | 'accidentes' | 'incidentes')}
+                                            options={[
+                                                { value: 'total', label: 'Total' },
+                                                { value: 'accidentes', label: 'Accidentes' },
+                                                { value: 'incidentes', label: 'Incidentes' },
+                                            ]}
+                                        />
                                     </div>
                                 </div>
                                 <div className="chart-container">
@@ -1201,29 +1202,31 @@ export default function Incidents() {
                                 <div className="flex gap-4 flex-wrap">
                                     <div className="form-group flex-1 min-w-[180px]">
                                         <label className="form-label">Tipo</label>
-                                        <select
-                                            className="form-input"
+                                        <Select
+                                            ariaLabel="Filtrar por tipo"
                                             value={filters.tipo}
-                                            onChange={(e) => setFilters({ ...filters, tipo: e.target.value })}
-                                        >
-                                            <option value="">Todos los tipos</option>
-                                            <option value="accidente">Accidente</option>
-                                            <option value="incidente">Incidente</option>
-                                            <option value="condicion_subestandar">Condición Subestándar</option>
-                                        </select>
+                                            onChange={(v) => setFilters({ ...filters, tipo: v })}
+                                            options={[
+                                                { value: '', label: 'Todos los tipos' },
+                                                { value: 'accidente', label: 'Accidente' },
+                                                { value: 'incidente', label: 'Incidente' },
+                                                { value: 'condicion_subestandar', label: 'Condición Subestándar' },
+                                            ]}
+                                        />
                                     </div>
                                     <div className="form-group flex-1 min-w-[180px]">
                                         <label className="form-label">Estado</label>
-                                        <select
-                                            className="form-input"
+                                        <Select
+                                            ariaLabel="Filtrar por estado"
                                             value={filters.estado}
-                                            onChange={(e) => setFilters({ ...filters, estado: e.target.value })}
-                                        >
-                                            <option value="">Todos los estados</option>
-                                            <option value="reportado">Reportado</option>
-                                            <option value="en_investigacion">En Investigación</option>
-                                            <option value="cerrado">Cerrado</option>
-                                        </select>
+                                            onChange={(v) => setFilters({ ...filters, estado: v })}
+                                            options={[
+                                                { value: '', label: 'Todos los estados' },
+                                                { value: 'reportado', label: 'Reportado' },
+                                                { value: 'en_investigacion', label: 'En Investigación' },
+                                                { value: 'cerrado', label: 'Cerrado' },
+                                            ]}
+                                        />
                                     </div>
                                     <div className="form-group flex-1 min-w-[180px]">
                                         <label className="form-label">Fecha Inicio</label>
