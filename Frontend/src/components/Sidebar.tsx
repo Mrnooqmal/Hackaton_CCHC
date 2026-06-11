@@ -14,8 +14,7 @@ import {
     FiMail,
     FiBell,
     FiX,
-    FiMoon,
-    FiSun
+    FiLogOut
 } from 'react-icons/fi';
 import { surveysApi, workersApi, type InboxMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -245,15 +244,9 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) {
     const location = useLocation();
-    const { user, hasPermission } = useAuth();
+    const { user, hasPermission, logout } = useAuth();
     const { selectedObraId } = useObraContext();
     const hasObraContext = Boolean(selectedObraId);
-    const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-        if (typeof window !== 'undefined') {
-            return window.localStorage.getItem('theme') === 'light' ? 'light' : 'dark';
-        }
-        return 'dark';
-    });
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
     const [workerId, setWorkerId] = useState<string | null>(null);
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
@@ -364,16 +357,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
         };
     }, [workerId, canRespondSurveys]);
 
-    useEffect(() => {
-        if (typeof document === 'undefined') return;
-        const root = document.documentElement;
-        root.classList.toggle('theme-light', theme === 'light');
-        localStorage.setItem('theme', theme);
-    }, [theme]);
-
-    const toggleTheme = () => {
-        setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-    };
 
     const handleLinkClick = () => {
         if (onClose) {
@@ -402,16 +385,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                         <FiX />
                     </button>
                 )}
-
-                <div className="sidebar-header">
-                    <div className="sidebar-logo">
-                        <div className="sidebar-logo-text" aria-label="Build and Serve">
-                            <span className="sidebar-logo-primary">Build</span>
-                            <span className="sidebar-logo-amp">&</span>
-                            <span className="sidebar-logo-secondary">Serve</span>
-                        </div>
-                    </div>
-                </div>
 
                 <nav className="sidebar-nav">
                     {getNavItemsByRole(user?.rol || '', hasObraContext).map((section: NavSection) => {
@@ -508,21 +481,41 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                     </button>
                 )}
 
-                <div className="sidebar-theme-toggle">
-                    <button className="btn btn-ghost" onClick={toggleTheme}>
-                        {theme === 'dark' ? (
-                            <>
-                                <FiSun />
-                                Modo claro
-                            </>
-                        ) : (
-                            <>
-                                <FiMoon />
-                                Modo oscuro
-                            </>
-                        )}
-                    </button>
-                </div>
+                {user && (() => {
+                    const initials = [user.nombre, user.apellido]
+                        .filter(Boolean)
+                        .map((s) => s[0].toUpperCase())
+                        .join('');
+                    const roleLabels: Record<string, string> = {
+                        admin: 'Administrador',
+                        jefe_obra: 'Jefe de Obra',
+                        supervisor: 'Supervisor',
+                        prevencionista: 'Prevencionista',
+                        trabajador: 'Trabajador',
+                    };
+                    const roleLabel = roleLabels[user.rol] ?? user.rol;
+                    return (
+                        <div className="sidebar-footer">
+                            <div className="sidebar-user">
+                                <div className="sidebar-user-avatar">{initials}</div>
+                                <div className="sidebar-user-meta">
+                                    <span className="sidebar-user-name">
+                                        {user.nombre} {user.apellido}
+                                    </span>
+                                    <span className="sidebar-user-role">{roleLabel}</span>
+                                </div>
+                                <button
+                                    className="sidebar-user-logout"
+                                    onClick={logout}
+                                    title="Cerrar sesión"
+                                    aria-label="Cerrar sesión"
+                                >
+                                    <FiLogOut />
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 <style>{`
                 /* Attention badge styles */

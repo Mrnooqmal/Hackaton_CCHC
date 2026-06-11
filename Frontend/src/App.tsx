@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
 import PersonasManagement from './pages/PersonasManagement';
 import WorkerDetail from './pages/WorkerDetail';
@@ -34,15 +35,17 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import './css/index.css';
 import './css/App.css';
 import './css/components.css';
+import './css/dashboard.css';
 
 function AppContent() {
   const { user } = useAuth();
-  const { isMobileMenuOpen, closeMobileMenu } = useLayout();
+  const { isMobileMenuOpen, closeMobileMenu, isSidebarCollapsed } = useLayout();
 
   return (
-    <div className={`app-layout ${!user ? 'auth-mode' : ''}`}>
+    <div className={`app-layout ${!user ? 'auth-mode' : ''} ${user && isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {user && <Sidebar isOpen={isMobileMenuOpen} onClose={closeMobileMenu} />}
       <main className={user ? 'main-content' : 'auth-content'}>
+        {user && <Header />}
         {user && <OfflineBanner />}
         <Routes>
 

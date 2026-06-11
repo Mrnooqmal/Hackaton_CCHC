@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import Header from '../components/Header';
 import {
     FiWifiOff,
     FiWifi,
@@ -250,7 +249,6 @@ export default function OfflineSignatures() {
 
     return (
         <>
-            <Header title="Firmas Offline" />
 
             <div className="page-content">
                 {/* Status Banner */}

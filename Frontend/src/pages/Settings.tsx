@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
 import { FiUser, FiMail, FiCreditCard, FiShield, FiLock, FiClock, FiTool } from 'react-icons/fi';
 
@@ -20,7 +19,6 @@ export default function Settings() {
 
     return (
         <>
-            <Header title="Configuración" />
 
             <div className="page-content">
                 <div className="page-header">

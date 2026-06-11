@@ -1,161 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
-import { FiMessageSquare, FiX, FiSend } from 'react-icons/fi';
+import { useState } from 'react';
+import { FiMessageCircle, FiX, FiSend } from 'react-icons/fi';
 import { suggestionsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
-const DEFAULT_OFFSET = 24;
-const STORAGE_KEY = 'suggestionsWidgetPosition';
-
 export default function SuggestionsWidget() {
     const { user } = useAuth();
     const { toast } = useToast();
-    const widgetRef = useRef<HTMLDivElement | null>(null);
     const [open, setOpen] = useState(false);
     const [message, setMessage] = useState('');
     const [sending, setSending] = useState(false);
-    const [dragging, setDragging] = useState(false);
-    const dragOffset = useRef({ x: 0, y: 0 });
-    const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-    const [panelOffset, setPanelOffset] = useState({ x: 0, y: 0 });
-
-    useEffect(() => {
-        if (position || typeof window === 'undefined') return;
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-                    setPosition(parsed);
-                    return;
-                }
-            } catch {
-                // ignore
-            }
-        }
-        const nextX = window.innerWidth - 72 - DEFAULT_OFFSET;
-        const nextY = window.innerHeight - 72 - DEFAULT_OFFSET;
-        setPosition({ x: Math.max(DEFAULT_OFFSET, nextX), y: Math.max(DEFAULT_OFFSET, nextY) });
-    }, [position]);
-
-    useEffect(() => {
-        if (!dragging) return;
-        const handleMove = (event: MouseEvent) => {
-            if (!widgetRef.current) return;
-            const rect = widgetRef.current.getBoundingClientRect();
-            const nextX = event.clientX - dragOffset.current.x;
-            const nextY = event.clientY - dragOffset.current.y;
-            const maxX = window.innerWidth - rect.width - DEFAULT_OFFSET;
-            const maxY = window.innerHeight - rect.height - DEFAULT_OFFSET;
-            const clampedX = Math.min(Math.max(DEFAULT_OFFSET, nextX), Math.max(DEFAULT_OFFSET, maxX));
-            const clampedY = Math.min(Math.max(DEFAULT_OFFSET, nextY), Math.max(DEFAULT_OFFSET, maxY));
-            setPosition({ x: clampedX, y: clampedY });
-        };
-        const handleUp = () => {
-            setDragging(false);
-        };
-        const handleTouchMove = (event: TouchEvent) => {
-            if (!widgetRef.current) return;
-            const touch = event.touches[0];
-            if (!touch) return;
-            const rect = widgetRef.current.getBoundingClientRect();
-            const nextX = touch.clientX - dragOffset.current.x;
-            const nextY = touch.clientY - dragOffset.current.y;
-            const maxX = window.innerWidth - rect.width - DEFAULT_OFFSET;
-            const maxY = window.innerHeight - rect.height - DEFAULT_OFFSET;
-            const clampedX = Math.min(Math.max(DEFAULT_OFFSET, nextX), Math.max(DEFAULT_OFFSET, maxX));
-            const clampedY = Math.min(Math.max(DEFAULT_OFFSET, nextY), Math.max(DEFAULT_OFFSET, maxY));
-            setPosition({ x: clampedX, y: clampedY });
-        };
-        const handleTouchEnd = () => {
-            setDragging(false);
-        };
-        window.addEventListener('mousemove', handleMove);
-        window.addEventListener('mouseup', handleUp);
-        window.addEventListener('touchmove', handleTouchMove, { passive: true });
-        window.addEventListener('touchend', handleTouchEnd);
-        return () => {
-            window.removeEventListener('mousemove', handleMove);
-            window.removeEventListener('mouseup', handleUp);
-            window.removeEventListener('touchmove', handleTouchMove);
-            window.removeEventListener('touchend', handleTouchEnd);
-        };
-    }, [dragging]);
-
-    useEffect(() => {
-        if (!position) return;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(position));
-    }, [position]);
-
-    const startDrag = (event: React.MouseEvent) => {
-        if (!widgetRef.current) return;
-        const rect = widgetRef.current.getBoundingClientRect();
-        dragOffset.current = {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-        };
-        setDragging(true);
-    };
-
-    const startDragTouch = (event: React.TouchEvent) => {
-        if (!widgetRef.current) return;
-        const touch = event.touches[0];
-        if (!touch) return;
-        const rect = widgetRef.current.getBoundingClientRect();
-        dragOffset.current = {
-            x: touch.clientX - rect.left,
-            y: touch.clientY - rect.top,
-        };
-        setDragging(true);
-    };
-
-    useEffect(() => {
-        if (!position) return;
-        const handleResize = () => {
-            // Clamp position using the button dimension (64px) so that resizing 
-            // the window doesn't shift the anchor permanently while the panel is open.
-            const maxX = window.innerWidth - 64 - DEFAULT_OFFSET;
-            const maxY = window.innerHeight - 64 - DEFAULT_OFFSET;
-            const clampedX = Math.min(Math.max(DEFAULT_OFFSET, position.x), Math.max(DEFAULT_OFFSET, maxX));
-            const clampedY = Math.min(Math.max(DEFAULT_OFFSET, position.y), Math.max(DEFAULT_OFFSET, maxY));
-            if (clampedX !== position.x || clampedY !== position.y) {
-                setPosition({ x: clampedX, y: clampedY });
-            }
-        };
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, [position]);
-
-    useEffect(() => {
-        if (!open) {
-            setPanelOffset({ x: 0, y: 0 });
-            return;
-        }
-        const frame = requestAnimationFrame(() => {
-            if (!widgetRef.current) return;
-            const rect = widgetRef.current.getBoundingClientRect();
-            const overflowRight = rect.right - (window.innerWidth - DEFAULT_OFFSET);
-            const overflowLeft = DEFAULT_OFFSET - rect.left;
-            const overflowBottom = rect.bottom - (window.innerHeight - DEFAULT_OFFSET);
-            const overflowTop = DEFAULT_OFFSET - rect.top;
-            const offsetX = overflowRight > 0 ? -overflowRight : overflowLeft > 0 ? overflowLeft : 0;
-            const offsetY = overflowBottom > 0 ? -overflowBottom : overflowTop > 0 ? overflowTop : 0;
-            setPanelOffset({ x: offsetX, y: offsetY });
-        });
-        return () => cancelAnimationFrame(frame);
-    }, [open, position]);
 
     const handleSubmit = async () => {
         if (!user || !message.trim()) return;
         setSending(true);
         try {
-            const payload = {
+            const res = await suggestionsApi.create({
                 message: message.trim(),
                 userId: user.personaId || '',
                 userName: `${user.nombre || ''} ${user.apellido || ''}`.trim(),
                 tenantId: user.tenantId || null,
-            };
-            const res = await suggestionsApi.create(payload);
+            });
             if (!res.success) throw new Error(res.error || 'Error enviando sugerencia');
             toast.success('Gracias, recibimos tu sugerencia.');
             setMessage('');
@@ -168,116 +33,350 @@ export default function SuggestionsWidget() {
         }
     };
 
-    if (!user || !position) return null;
+    if (!user) return null;
 
     return (
-        <div
-            ref={widgetRef}
-            style={{
-                position: 'fixed',
-                left: position.x,
-                top: position.y,
-                zIndex: 1100,
-                width: open ? 320 : 64,
-                transform: `translate(${panelOffset.x}px, ${panelOffset.y}px)`,
-            }}
-        >
-            {open ? (
+        <>
+            {/* ── FAB fijo abajo-derecha ── */}
+            <button
+                type="button"
+                className="sw-fab"
+                onClick={() => setOpen(true)}
+                aria-label="Déjanos tu sugerencia"
+            >
+                <FiMessageCircle size={17} />
+                <span>Déjanos tu sugerencia</span>
+            </button>
+
+            {/* ── Modal ── */}
+            {open && (
                 <div
-                    style={{
-                        background: 'var(--surface-card)',
-                        borderRadius: '16px',
-                        border: '1px solid var(--surface-border)',
-                        boxShadow: '0 16px 32px rgba(15,23,42,0.18)',
-                        overflow: 'hidden',
-                    }}
+                    className="sw-backdrop"
+                    onClick={() => setOpen(false)}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Formulario de sugerencia"
                 >
-                    <div
-                        onMouseDown={startDrag}
-                        onTouchStart={startDragTouch}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '12px 14px',
-                            background: 'var(--gradient-primary)',
-                            color: 'white',
-                            cursor: 'grab',
-                        }}
-                    >
-                        <div style={{ fontWeight: 700 }}>Sugerencias</div>
-                        <button
-                            type="button"
-                            onClick={() => setOpen(false)}
-                            style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: 'white',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                            }}
-                            aria-label="Cerrar sugerencias"
-                        >
-                            <FiX />
-                        </button>
-                    </div>
-                    <div style={{ padding: '12px 14px', display: 'grid', gap: '10px' }}>
-                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                            Comparte una idea o problema. Esto se envia al equipo.
+                    <div className="sw-modal" onClick={(e) => e.stopPropagation()}>
+
+                        {/* Header */}
+                        <div className="sw-header">
+                            <div className="sw-header-icon">
+                                <FiMessageCircle size={20} />
+                            </div>
+                            <div className="sw-header-copy">
+                                <h2 className="sw-title">Déjanos tu sugerencia</h2>
+                                <p className="sw-subtitle">Tu opinión nos ayuda a mejorar la plataforma.</p>
+                            </div>
+                            <button
+                                type="button"
+                                className="sw-close"
+                                onClick={() => setOpen(false)}
+                                aria-label="Cerrar"
+                            >
+                                <FiX size={18} />
+                            </button>
                         </div>
-                        <textarea
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            rows={4}
-                            placeholder="Escribe tu sugerencia..."
-                            style={{
-                                width: '100%',
-                                resize: 'none',
-                                borderRadius: '10px',
-                                border: '1px solid var(--surface-border)',
-                                padding: '10px',
-                                fontSize: '0.9rem',
-                                background: 'var(--surface-elevated)',
-                                color: 'var(--text-primary)',
-                            }}
-                        />
-                        <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={handleSubmit}
-                            disabled={sending || !message.trim()}
-                            style={{ justifySelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                        >
-                            <FiSend /> {sending ? 'Enviando...' : 'Enviar'}
-                        </button>
+
+                        {/* Body */}
+                        <div className="sw-body">
+                            <label className="sw-label" htmlFor="sw-msg">
+                                Tu mensaje
+                            </label>
+                            <textarea
+                                id="sw-msg"
+                                className="sw-textarea"
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                rows={5}
+                                placeholder="Escribe tu idea, problema o comentario…"
+                                autoFocus
+                                maxLength={500}
+                            />
+                            <div className="sw-char-count">{message.length} / 500</div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="sw-footer">
+                            <button
+                                type="button"
+                                className="sw-btn-cancel"
+                                onClick={() => setOpen(false)}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                className="sw-btn-send"
+                                onClick={handleSubmit}
+                                disabled={sending || !message.trim()}
+                            >
+                                {sending ? (
+                                    <span className="sw-spinner" />
+                                ) : (
+                                    <FiSend size={14} />
+                                )}
+                                {sending ? 'Enviando…' : 'Enviar'}
+                            </button>
+                        </div>
                     </div>
                 </div>
-            ) : (
-                <button
-                    type="button"
-                    onClick={() => setOpen(true)}
-                    onMouseDown={startDrag}
-                    onTouchStart={startDragTouch}
-                    aria-label="Abrir sugerencias"
-                    style={{
-                        width: '64px',
-                        height: '64px',
-                        borderRadius: '50%',
-                        background: 'var(--gradient-primary)',
-                        color: 'white',
-                        border: 'none',
-                        cursor: 'pointer',
-                        boxShadow: 'var(--shadow-glow-primary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '24px',
-                    }}
-                >
-                    <FiMessageSquare />
-                </button>
             )}
-        </div>
+
+            <style>{`
+                /* ── FAB ── */
+                .sw-fab {
+                    position: fixed;
+                    bottom: 28px;
+                    right: 28px;
+                    z-index: 1100;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 0 18px 0 14px;
+                    height: 44px;
+                    background: #002855;
+                    color: #fff;
+                    border: none;
+                    border-radius: 22px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    font-family: inherit;
+                    cursor: pointer;
+                    letter-spacing: 0.01em;
+                    box-shadow: 0 4px 14px rgba(0, 40, 85, 0.35);
+                    transition: background 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
+                }
+                .sw-fab:hover {
+                    background: #003f7a;
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 20px rgba(0, 40, 85, 0.4);
+                }
+                .sw-fab:active {
+                    transform: translateY(0);
+                }
+
+                /* ── Backdrop ── */
+                .sw-backdrop {
+                    position: fixed;
+                    inset: 0;
+                    z-index: 1200;
+                    background: rgba(0, 20, 50, 0.55);
+                    backdrop-filter: blur(3px);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                    animation: sw-fade-in 0.18s ease;
+                }
+                @keyframes sw-fade-in {
+                    from { opacity: 0; }
+                    to   { opacity: 1; }
+                }
+
+                /* ── Modal card ── */
+                .sw-modal {
+                    width: 100%;
+                    max-width: 460px;
+                    background: var(--surface-card);
+                    border-radius: 18px;
+                    overflow: hidden;
+                    box-shadow:
+                        0 2px 4px rgba(0,0,0,0.08),
+                        0 12px 32px rgba(0,0,0,0.22),
+                        0 40px 80px rgba(0,0,0,0.18);
+                    animation: sw-rise 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+                }
+                @keyframes sw-rise {
+                    from { opacity: 0; transform: translateY(18px) scale(0.97); }
+                    to   { opacity: 1; transform: translateY(0) scale(1); }
+                }
+
+                /* ── Header ── */
+                .sw-header {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 14px;
+                    padding: 22px 22px 18px;
+                    background: #002855;
+                    position: relative;
+                }
+                .sw-header::after {
+                    content: '';
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    height: 2px;
+                    background: linear-gradient(90deg, #006edc 0%, #df3601 100%);
+                }
+
+                .sw-header-icon {
+                    width: 38px;
+                    height: 38px;
+                    flex-shrink: 0;
+                    border-radius: 10px;
+                    background: rgba(255,255,255,0.12);
+                    color: #fff;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-top: 1px;
+                }
+
+                .sw-header-copy {
+                    flex: 1;
+                    min-width: 0;
+                }
+
+                .sw-title {
+                    font-size: 17px;
+                    font-weight: 700;
+                    color: #fff;
+                    margin: 0 0 3px;
+                    letter-spacing: -0.01em;
+                }
+
+                .sw-subtitle {
+                    font-size: 12.5px;
+                    color: rgba(255,255,255,0.65);
+                    margin: 0;
+                    line-height: 1.4;
+                }
+
+                .sw-close {
+                    width: 32px;
+                    height: 32px;
+                    flex-shrink: 0;
+                    background: rgba(255,255,255,0.1);
+                    border: none;
+                    border-radius: 8px;
+                    color: rgba(255,255,255,0.8);
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: background 0.15s;
+                    margin-top: 2px;
+                }
+                .sw-close:hover {
+                    background: rgba(255,255,255,0.2);
+                    color: #fff;
+                }
+
+                /* ── Body ── */
+                .sw-body {
+                    padding: 20px 22px 14px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
+
+                .sw-label {
+                    font-size: 11px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
+                    color: var(--text-muted);
+                }
+
+                .sw-textarea {
+                    width: 100%;
+                    resize: none;
+                    border-radius: 10px;
+                    border: 1.5px solid var(--surface-border);
+                    padding: 12px 14px;
+                    font-size: 14px;
+                    font-family: inherit;
+                    line-height: 1.55;
+                    background: var(--surface-elevated, var(--surface-bg));
+                    color: var(--text-primary);
+                    outline: none;
+                    transition: border-color 0.15s, box-shadow 0.15s;
+                    box-sizing: border-box;
+                }
+                .sw-textarea::placeholder { color: var(--text-muted); opacity: 0.7; }
+                .sw-textarea:focus {
+                    border-color: #006edc;
+                    box-shadow: 0 0 0 3px rgba(0, 110, 220, 0.12);
+                }
+
+                .sw-char-count {
+                    font-size: 11px;
+                    color: var(--text-muted);
+                    text-align: right;
+                    opacity: 0.7;
+                }
+
+                /* ── Footer ── */
+                .sw-footer {
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-end;
+                    gap: 10px;
+                    padding: 14px 22px 20px;
+                    border-top: 1px solid var(--surface-border);
+                }
+
+                .sw-btn-cancel {
+                    height: 38px;
+                    padding: 0 16px;
+                    background: transparent;
+                    border: 1.5px solid var(--surface-border);
+                    border-radius: 8px;
+                    color: var(--text-muted);
+                    font-size: 13px;
+                    font-family: inherit;
+                    cursor: pointer;
+                    transition: border-color 0.15s, color 0.15s;
+                }
+                .sw-btn-cancel:hover {
+                    border-color: var(--text-muted);
+                    color: var(--text-primary);
+                }
+
+                .sw-btn-send {
+                    height: 38px;
+                    padding: 0 18px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 7px;
+                    background: #002855;
+                    color: #fff;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    font-family: inherit;
+                    cursor: pointer;
+                    transition: background 0.15s, transform 0.12s;
+                }
+                .sw-btn-send:not(:disabled):hover {
+                    background: #003f7a;
+                    transform: translateY(-1px);
+                }
+                .sw-btn-send:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+
+                /* ── Spinner ── */
+                .sw-spinner {
+                    width: 14px;
+                    height: 14px;
+                    border: 2px solid rgba(255,255,255,0.3);
+                    border-top-color: #fff;
+                    border-radius: 50%;
+                    animation: sw-spin 0.7s linear infinite;
+                }
+                @keyframes sw-spin { to { transform: rotate(360deg); } }
+
+                /* ── Responsive ── */
+                @media (max-width: 500px) {
+                    .sw-fab span { display: none; }
+                    .sw-fab { padding: 0; width: 48px; height: 48px; border-radius: 50%; justify-content: center; }
+                }
+            `}</style>
+        </>
     );
 }

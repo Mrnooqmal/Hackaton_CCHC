@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
 import {
     FiMail, FiSend, FiInbox, FiArchive, FiSearch,
     FiCheck, FiCheckCircle, FiAlertCircle, FiBell, FiClock,
@@ -309,7 +308,6 @@ export default function Inbox() {
 
     return (
         <>
-            <Header title="Bandeja de Entrada" />
 
             <div className="page-content">
                 <div className="page-header">

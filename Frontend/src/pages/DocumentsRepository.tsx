@@ -1,5 +1,4 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import Header from '../components/Header';
 import {
     FiFileText,
     FiFolder,
@@ -281,7 +280,6 @@ export default function DocumentsRepository() {
 
     return (
         <>
-            <Header title="Repositorio de Documentos" />
 
             <div className="page-content">
                 <div className="page-header">

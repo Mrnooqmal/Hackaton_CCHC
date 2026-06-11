@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import Header from '../components/Header';
 import { usersApi, type User } from '../api/client';
 import {
     FiUserPlus,
@@ -174,7 +173,6 @@ export default function UserManagement() {
 
     return (
         <>
-            <Header title="Gestión de Usuarios" />
             <div className="page-content">
                 <div className="page-header">
                     <div className="page-header-info">

@@ -1,238 +1,234 @@
 import { useEffect, useRef, useState } from 'react';
-import { FiLogOut, FiUser, FiMenu, FiChevronDown, FiMapPin } from 'react-icons/fi';
-import { useAuth } from '../context/AuthContext';
+import { Link, useLocation } from 'react-router-dom';
+import { FiMenu, FiChevronDown, FiChevronRight, FiBell, FiHome, FiSun, FiMoon } from 'react-icons/fi';
 import { useLayout } from '../context/LayoutContext';
 import { useObraContext } from '../context/ObraContext';
-import ConfirmModal from './ConfirmModal';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../hooks/useTheme';
 
-interface HeaderProps {
-    title: string;
+interface Crumb {
+    label: string;
+    to?: string;
+    home?: boolean;
 }
 
-const getRoleLabel = (role?: string) => {
-    if (role === 'admin') return 'Administrador';
-    if (role === 'jefe_obra') return 'Jefe de Obra';
-    if (role === 'supervisor') return 'Supervisor';
-    if (role === 'prevencionista') return 'Prevencionista';
-    if (role === 'trabajador') return 'Trabajador';
-    return 'Usuario';
+// Etiqueta de cada sección de primer nivel para las migas de pan
+const SECTION: Record<string, { label: string; path?: string }> = {
+    personas: { label: 'Personas', path: '/personas' },
+    workers: { label: 'Personas', path: '/personas' },
+    users: { label: 'Personas', path: '/personas' },
+    obras: { label: 'Obras', path: '/obras' },
+    documents: { label: 'Documentos', path: '/documents' },
+    surveys: { label: 'Encuestas', path: '/surveys' },
+    incidents: { label: 'Incidentes', path: '/incidents' },
+    activities: { label: 'Actividades', path: '/activities' },
+    'my-signatures': { label: 'Firmas', path: '/my-signatures' },
+    'offline-signatures': { label: 'Firmas offline', path: '/offline-signatures' },
+    'signature-requests': { label: 'Firmas', path: '/my-signatures' },
+    inbox: { label: 'Notificaciones', path: '/inbox' },
+    'ai-assistant': { label: 'Asistente IA', path: '/ai-assistant' },
+    settings: { label: 'Configuración' },
+    'change-password': { label: 'Cambiar contraseña' },
+    'enroll-me': { label: 'Mi enrolamiento' },
 };
 
-export default function Header({ title }: HeaderProps) {
-    const { user, logout } = useAuth();
-    const { toggleMobileMenu } = useLayout();
+// Etiqueta de la hoja para páginas de detalle (rutas con id dinámico)
+const DETAIL_LEAF: Record<string, string> = {
+    workers: 'Detalle de persona',
+    personas: 'Detalle de persona',
+    obras: 'Detalle de obra',
+};
+
+function buildCrumbs(pathname: string): Crumb[] {
+    const segments = pathname.split('/').filter(Boolean);
+    const crumbs: Crumb[] = [{ label: 'Inicio', to: '/', home: true }];
+
+    if (segments.length === 0) {
+        return crumbs;
+    }
+
+    const first = segments[0];
+    const section = SECTION[first];
+    const isLeafSection = segments.length === 1;
+
+    crumbs.push({
+        label: section?.label ?? first.charAt(0).toUpperCase() + first.slice(1),
+        to: isLeafSection ? undefined : (section?.path ?? `/${first}`),
+    });
+
+    if (segments.length > 1) {
+        crumbs.push({ label: DETAIL_LEAF[first] ?? 'Detalle' });
+    }
+
+    // Elimina duplicados consecutivos
+    return crumbs.filter((c, i) => i === 0 || c.label !== crumbs[i - 1].label);
+}
+
+export default function Header() {
+    const { user } = useAuth();
+    const { toggleMobileMenu, toggleSidebarCollapsed } = useLayout();
     const { obras, selectedObraId, setSelectedObraId, isLoadingObras } = useObraContext();
-    const [menuOpen, setMenuOpen] = useState(false);
+    const { theme, toggleTheme } = useTheme();
+    const location = useLocation();
     const [obraMenuOpen, setObraMenuOpen] = useState(false);
-    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-    const userCardRef = useRef<HTMLDivElement | null>(null);
     const obraMenuRef = useRef<HTMLDivElement | null>(null);
 
-    const initials = `${user?.nombre?.[0] || ''}${user?.apellido?.[0] || ''}`.trim();
+    const crumbs = buildCrumbs(location.pathname);
 
-    const handleLogout = () => {
-        setMenuOpen(false);
-        setShowLogoutConfirm(true);
-    };
+    const selectedObra = selectedObraId
+        ? obras.find((o) => o.obraId === selectedObraId)?.nombre || 'Obra desconocida'
+        : 'Todas las obras';
 
-    const confirmLogout = () => {
-        logout();
-        setShowLogoutConfirm(false);
-    };
-
-    const toggleMenu = () => {
-        setMenuOpen((prev) => !prev);
+    // El botón hamburguesa colapsa el sidebar en escritorio y abre el overlay en móvil
+    const handleToggleSidebar = () => {
+        if (typeof window !== 'undefined' && window.innerWidth <= 1024) {
+            toggleMobileMenu();
+        } else {
+            toggleSidebarCollapsed();
+        }
     };
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (userCardRef.current && !userCardRef.current.contains(event.target as Node)) {
-                setMenuOpen(false);
-            }
             if (obraMenuRef.current && !obraMenuRef.current.contains(event.target as Node)) {
                 setObraMenuOpen(false);
             }
         };
-
-        if (menuOpen || obraMenuOpen) {
+        if (obraMenuOpen) {
             document.addEventListener('mousedown', handleClickOutside);
-        } else {
-            document.removeEventListener('mousedown', handleClickOutside);
         }
-
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [menuOpen, obraMenuOpen]);
+    }, [obraMenuOpen]);
+
+    const showObraSelector =
+        user && (user.rol === 'admin' || user.rol === 'prevencionista' || obras.length > 0);
 
     return (
         <header className="header">
-            {/* Mobile Menu Button */}
-            <button
-                className="mobile-menu-button"
-                onClick={toggleMobileMenu}
-                aria-label="Abrir menú de navegación"
-            >
-                <FiMenu />
-            </button>
-
-            <h1 className="header-title">{title}</h1>
-
-            <div className="header-actions" style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-4)' }}>
-                {/* Obra Selector — only for obra-contextual roles */}
-                {user && ['jefe_obra', 'supervisor', 'prevencionista'].includes(user.rol || '') && obras.length > 0 && (
-                    <div className="header-obra-wrapper" ref={obraMenuRef} style={{ position: 'relative' }}>
-                        <button
-                            type="button"
-                            className="btn"
-                            style={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: 'var(--space-2)',
-                                background: 'var(--surface-elevated)',
-                                border: '1.5px solid var(--text-primary)',
-                                color: 'var(--text-primary)',
-                                borderRadius: 'var(--radius-full)',
-                                padding: 'var(--space-2) var(--space-4)',
-                                height: '36px',
-                                fontSize: 'var(--text-xs)',
-                                fontWeight: 700,
-                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-                                cursor: 'pointer'
-                            }}
-                            onClick={() => setObraMenuOpen(!obraMenuOpen)}
-                            disabled={isLoadingObras}
-                            onMouseOver={(e) => {
-                                e.currentTarget.style.background = 'var(--surface-hover)';
-                                e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.15)';
-                                e.currentTarget.style.transform = 'translateY(-1px)';
-                            }}
-                            onMouseOut={(e) => {
-                                e.currentTarget.style.background = 'var(--surface-elevated)';
-                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
-                                e.currentTarget.style.transform = 'translateY(0)';
-                            }}
-                        >
-                            <FiMapPin style={{ color: 'var(--text-primary)' }} />
-                            <span style={{ maxWidth: '160px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {isLoadingObras ? 'Cargando...' : (
-                                    selectedObraId 
-                                        ? obras.find(o => o.obraId === selectedObraId)?.nombre || 'Obra Desconocida'
-                                        : 'Seleccionar Obra'
-                                )}
-                            </span>
-                            <FiChevronDown style={{ opacity: 0.8 }} />
-                        </button>
-                        
-                        {obraMenuOpen && (
-                            <div 
-                                className="header-user-dropdown" 
-                                style={{ 
-                                    minWidth: '260px', 
-                                    left: 0, 
-                                    right: 'auto',
-                                    background: 'var(--surface-card)',
-                                    border: '1.5px solid var(--surface-border)',
-                                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    padding: 'var(--space-2)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '4px',
-                                    animation: 'fadeIn 0.15s ease-out'
-                                }} 
-                                role="menu"
-                            >
-                                <div style={{ padding: '6px 12px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                    Seleccionar Obra
-                                </div>
-                                <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                    {obras.map(obra => {
-                                        const isSelected = selectedObraId === obra.obraId;
-                                        return (
-                                            <button
-                                                key={obra.obraId}
-                                                type="button"
-                                                className={`header-user-dropdown-item ${isSelected ? 'active' : ''}`}
-                                                onClick={() => { setSelectedObraId(obra.obraId); setObraMenuOpen(false); }}
-                                                style={{ 
-                                                    fontWeight: isSelected ? 'bold' : '500',
-                                                    background: isSelected ? 'rgba(76, 175, 80, 0.08)' : 'transparent',
-                                                    color: isSelected ? 'var(--primary-500)' : 'var(--text-primary)',
-                                                    borderRadius: 'var(--radius-md)',
-                                                    padding: '8px 12px',
-                                                    transition: 'all 0.15s ease',
-                                                    textAlign: 'left',
-                                                    width: '100%'
-                                                }}
-                                            >
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                                    <span style={{ 
-                                                        width: '8px', 
-                                                        height: '8px', 
-                                                        borderRadius: '50%', 
-                                                        background: isSelected ? 'var(--primary-500)' : 'transparent',
-                                                        border: isSelected ? 'none' : '1px solid var(--text-muted)',
-                                                        flexShrink: 0
-                                                    }} />
-                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0 }}>
-                                                        <span style={{ fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{obra.nombre}</span>
-                                                        {obra.codigo && (
-                                                          <span style={{ fontSize: '11px', color: isSelected ? 'var(--primary-400)' : 'var(--text-muted)' }}>{obra.codigo}</span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-                {user ? (
-                    <div className="header-user-wrapper" ref={userCardRef}>
-                        <button
-                            type="button"
-                            className="header-user-card"
-                            onClick={toggleMenu}
-                            aria-haspopup="true"
-                            aria-expanded={menuOpen}
-                        >
-                            <div className="avatar avatar-sm bg-primary-500">
-                                {initials || <FiUser />}
-                            </div>
-                            <div className="header-user-meta">
-                                <span className="header-user-name">{user.nombre} {user.apellido}</span>
-                                <span className={`user-role-badge role-${user.rol}`}>
-                                    {getRoleLabel(user.rol)}
-                                </span>
-                            </div>
-                        </button>
-                        {menuOpen && (
-                            <div className="header-user-dropdown" role="menu">
-                                <button type="button" className="header-user-dropdown-item" onClick={handleLogout}>
-                                    <FiLogOut />
-                                    Cerrar sesión
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="avatar">
-                        <FiUser />
-                    </div>
-                )}
+            {/* ── Franja institucional superior ── */}
+            <div className="header-topbar">
+                <span className="header-topbar-brand">
+                    Cámara Chilena de la Construcción
+                </span>
             </div>
-            <ConfirmModal
-                isOpen={showLogoutConfirm}
-                title="¿Cerrar sesión?"
-                message="Tu sesión actual terminará y tendrás que volver a ingresar para acceder al sistema."
-                confirmLabel="Cerrar Sesión"
-                cancelLabel="Mantener Sesión"
-                variant="danger"
-                onConfirm={confirmLogout}
-                onCancel={() => setShowLogoutConfirm(false)}
-            />
+
+            {/* ── Barra principal ── */}
+            <div className="header-mainbar">
+                <div className="header-mainbar-left">
+                    <button
+                        type="button"
+                        className="header-hamburger"
+                        onClick={handleToggleSidebar}
+                        aria-label="Mostrar u ocultar el menú lateral"
+                    >
+                        <FiMenu />
+                    </button>
+
+                    <Link to="/" className="header-brand" aria-label="Build & Serve — Inicio">
+                        <span className="header-brand-primary">Build</span>
+                        <span className="header-brand-amp">&amp;</span>
+                        <span className="header-brand-secondary">Serve</span>
+                    </Link>
+
+                    <span className="header-divider" aria-hidden="true" />
+
+                    <nav className="breadcrumbs" aria-label="Migas de pan">
+                        {crumbs.map((crumb, index) => {
+                            const isLast = index === crumbs.length - 1;
+                            return (
+                                <span className="breadcrumb-node" key={`${crumb.label}-${index}`}>
+                                    {index > 0 && (
+                                        <FiChevronRight className="breadcrumb-sep" aria-hidden="true" />
+                                    )}
+                                    {isLast ? (
+                                        <span className="breadcrumb-current" aria-current="page">
+                                            {crumb.label}
+                                        </span>
+                                    ) : crumb.to ? (
+                                        <Link to={crumb.to} className="breadcrumb-link">
+                                            {crumb.home ? <FiHome aria-label={crumb.label} /> : crumb.label}
+                                        </Link>
+                                    ) : (
+                                        <span className="breadcrumb-ancestor">{crumb.label}</span>
+                                    )}
+                                </span>
+                            );
+                        })}
+                    </nav>
+                </div>
+
+                <div className="header-mainbar-right">
+                    {showObraSelector && (
+                        <div className="header-obra" ref={obraMenuRef}>
+                            <button
+                                type="button"
+                                className="header-obra-trigger"
+                                onClick={() => setObraMenuOpen((prev) => !prev)}
+                                disabled={isLoadingObras}
+                                aria-haspopup="menu"
+                                aria-expanded={obraMenuOpen}
+                            >
+                                <span className="header-obra-label">
+                                    {isLoadingObras ? 'Cargando…' : selectedObra}
+                                </span>
+                                <FiChevronDown className="header-obra-caret" />
+                            </button>
+
+                            {obraMenuOpen && (
+                                <div className="header-dropdown" role="menu">
+                                    <button
+                                        type="button"
+                                        className={`header-dropdown-item ${!selectedObraId ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setSelectedObraId(null);
+                                            setObraMenuOpen(false);
+                                        }}
+                                    >
+                                        Todas las obras
+                                    </button>
+                                    {obras.length > 0 && <div className="header-dropdown-divider" />}
+                                    {obras.map((obra) => (
+                                        <button
+                                            key={obra.obraId}
+                                            type="button"
+                                            className={`header-dropdown-item ${selectedObraId === obra.obraId ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setSelectedObraId(obra.obraId);
+                                                setObraMenuOpen(false);
+                                            }}
+                                        >
+                                            <span className="header-dropdown-item-title">{obra.nombre}</span>
+                                            <span className="header-dropdown-item-sub">{obra.etapaActual}</span>
+                                        </button>
+                                    ))}
+                                    {obras.length === 0 && !isLoadingObras && (
+                                        <div className="header-dropdown-empty">No hay obras disponibles</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <button
+                        type="button"
+                        className="header-action"
+                        onClick={toggleTheme}
+                        aria-label={theme === 'dark' ? 'Activar modo claro' : 'Activar modo oscuro'}
+                        title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+                    >
+                        {theme === 'dark' ? <FiSun /> : <FiMoon />}
+                    </button>
+
+                    <Link
+                        to="/inbox"
+                        className={`header-action ${location.pathname === '/inbox' ? 'active' : ''}`}
+                        aria-label="Notificaciones"
+                        title="Notificaciones"
+                    >
+                        <FiBell />
+                    </Link>
+                </div>
+            </div>
         </header>
     );
 }

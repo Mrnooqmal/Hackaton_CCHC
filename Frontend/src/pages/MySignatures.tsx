@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import Header from '../components/Header';
 import PinInput from '../components/PinInput';
 import {
     FiCheck,
@@ -137,7 +136,6 @@ export default function MySignatures() {
     if (!user?.personaId) {
         return (
             <>
-                <Header title="Mis Firmas" />
                 <div className="main-content">
                     <div className="empty-state">
                         <div className="empty-state-icon"><FiAlertCircle size={48} style={{ color: 'var(--warning-500)' }} /></div>
@@ -153,7 +151,6 @@ export default function MySignatures() {
 
     return (
         <>
-            <Header title="Mis Firmas" />
 
             <div className="page-content">
                 {/* Hero Section */}

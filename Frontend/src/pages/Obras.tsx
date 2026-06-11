@@ -1,5 +1,4 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import Header from '../components/Header';
 import { documentsApi, obrasApi, tenantsApi, workersApi, uploadsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -326,7 +325,6 @@ export const Obras: React.FC = () => {
   if (!canViewObras) {
     return (
       <>
-        <Header title="Obras" />
         <div className="page-content">
           <div className="card">
             <div className="empty-state">
@@ -354,7 +352,6 @@ export const Obras: React.FC = () => {
 
   return (
     <>
-      <Header title="Obras" />
       <div className="page-content">
         <div className="page-header">
           <div className="page-header-info">

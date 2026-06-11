@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { IconType } from 'react-icons';
-import Header from '../components/Header';
 import {
     surveysApi,
     workersApi,
@@ -714,7 +713,6 @@ export default function Surveys() {
 
     return (
         <>
-            <Header title="Encuestas" />
 
             {notification && (
                 <div className={`notification notification-${notification.type}`} style={{

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import Header from '../components/Header';
 import {
     FiPlus,
     FiUsers,
@@ -444,7 +443,6 @@ export default function SignatureRequests() {
 
     return (
         <>
-            <Header title="Solicitudes de Firma" />
 
             <div className="page-content">
                 {error && (

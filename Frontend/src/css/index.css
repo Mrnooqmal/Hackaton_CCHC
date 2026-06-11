@@ -1,6 +1,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Roboto:wght@400;500;700&display=swap');
 
 :root {
+  /* ===== Identidad CChC (tokens reales de cchc.cl) ===== */
+  --cchc-navy: #002952;        /* primary-color-b-10 */
+  --cchc-navy-2: #003b75;      /* primary-color-b-20 */
+  --cchc-blue: #006edc;        /* primary-color-b-40 */
+  --cchc-blue-600: #0052a3;    /* primary-color-b-30 */
+  --cchc-blue-700: #003b75;    /* primary-color-b-20 */
+  --cchc-blue-tint: rgba(0, 110, 220, 0.10);
+  --cchc-blue-tint-strong: rgba(0, 110, 220, 0.16);
+  --cchc-red: #df3601;         /* primary-color-a */
+  --cchc-red-hover: #c12f01;
+  --cchc-accent-line: linear-gradient(90deg, var(--cchc-blue) 0%, var(--cchc-red) 100%);
+
+  /* Acentos semánticos: se invierten por tema para garantizar contraste.
+     Estos valores base son los del MODO OSCURO (azules más claros). */
+  --accent: #4d9fff;                       /* azul vivo legible sobre oscuro */
+  --accent-text: #8cc4ff;                  /* texto activo / migas / enlaces */
+  --accent-tint: rgba(77, 159, 255, 0.16); /* fondo tenue de hover/activo */
+  --brand-ink: #e8eefb;                    /* "Build" sobre header oscuro */
+
+  /* Tipografía institucional CChC: Lora (display) + Roboto (texto) */
+  --font-display: 'Lora', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
   /* Colores principales - Paleta profesional para seguridad */
   --primary-50: #e8f5e9;
   --primary-100: #c8e6c9;
@@ -118,7 +142,7 @@
   --space-16: 64px;
 
   /* Tipografía */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-logo: 'Space Grotesk', 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
@@ -133,8 +157,10 @@
   --text-5xl: 3rem;
 
   /* Layout */
-  --sidebar-width: 240px;
-  --header-height: 64px;
+  --sidebar-width: 212px;
+  --topbar-height: 34px;          /* franja institucional superior */
+  --mainbar-height: 60px;         /* barra principal: marca + migas + acciones */
+  --header-height: 94px;          /* topbar + mainbar */
   --max-content-width: 1400px;
 
   /* Breakpoints */
@@ -158,6 +184,12 @@
   --surface-border: #d4dee9;
   --header-bg: rgba(255, 255, 255, 0.9);
   --header-border: #e2e8f0;
+
+  /* Acentos para MODO CLARO: azules más profundos, legibles sobre blanco */
+  --accent: #006edc;
+  --accent-text: #0052a3;
+  --accent-tint: rgba(0, 110, 220, 0.10);
+  --brand-ink: #003b75;
 
   --text-primary: #0f172a;
   --text-secondary: #475569;
@@ -241,12 +273,12 @@ button {
 
 /* Focus visible */
 :focus-visible {
-  outline: 2px solid var(--primary-500);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 /* Selection */
 ::selection {
-  background: var(--primary-600);
+  background: var(--accent);
   color: white;
 }

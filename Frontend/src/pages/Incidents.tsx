@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { KeyboardEvent } from 'react';
-import Header from '../components/Header';
 import {
     FiPlus, FiAlertTriangle, FiFilter, FiX, FiUpload, FiImage,
     FiUser, FiMapPin, FiCalendar, FiTrendingUp, FiActivity,
@@ -819,7 +818,6 @@ export default function Incidents() {
 
     return (
         <>
-            <Header title="Incidentes y Accidentes" />
             <div className="page-content">
                 <div className="page-header">
                     <div className="page-header-info">

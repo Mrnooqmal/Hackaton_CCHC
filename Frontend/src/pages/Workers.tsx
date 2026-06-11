@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
 import {
     LuPlus, LuSearch, LuEye, LuArrowRight, LuUsers, LuShield
 } from 'react-icons/lu';
@@ -69,7 +68,6 @@ export default function Workers() {
     if (!canViewWorkers) {
         return (
             <>
-                <Header title="Trabajadores" />
                 <div className="page-content">
                     <div className="card">
                         <div className="empty-state">
@@ -97,7 +95,6 @@ export default function Workers() {
 
     return (
         <>
-            <Header title="Trabajadores" />
 
             <div className="page-content">
                 <div className="page-header">

@@ -1,343 +1,340 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FiArrowRight, FiUser, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
+import { FiArrowRight, FiUser, FiLock } from 'react-icons/fi';
 
 export default function Login() {
-    const { login } = useAuth();
+    const { login, error: authError } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
     const [rut, setRut] = useState('');
     const [password, setPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [slowHint, setSlowHint] = useState(false);
     const [error, setError] = useState('');
 
     const from = (location.state as any)?.from?.pathname || '/';
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!rut.trim()) { setError('El RUT es requerido'); return; }
-        if (!password)   { setError('La contraseña es requerida'); return; }
+        if (!rut) { setError('El RUT es requerido'); return; }
+        if (!password) { setError('La contraseña es requerida'); return; }
         setLoading(true);
         setError('');
-        setSlowHint(false);
-        // Aviso de cold-start: si tarda más de ~1.2s mostramos un microcopy.
-        const slowTimer = setTimeout(() => setSlowHint(true), 1200);
 
-        const result = await login(rut.trim(), password);
-        clearTimeout(slowTimer);
+        const result = await login(rut, password);
 
         if (result.success) {
-            if (result.requiresChangePassword) navigate('/change-password');
-            else if (result.requiresEnrollment) navigate('/enroll-me');
-            else navigate(from, { replace: true });
+            if (result.requiresChangePassword) {
+                navigate('/change-password');
+            } else if (result.requiresEnrollment) {
+                navigate('/enroll-me');
+            } else {
+                navigate(from, { replace: true });
+            }
         } else {
-            // Usar el error del intento actual (no el estado del contexto, que llega un render tarde).
-            setError(result.error || 'RUT o contraseña incorrectos');
+            setError(authError || 'Credenciales inválidas');
             setLoading(false);
-            setSlowHint(false);
         }
     };
 
     return (
-        <div className="lp-page">
-            {/* Fondo */}
-            <div className="lp-bg-glow" />
+        <div className="lp-root">
+            {/* Fondo fotografía */}
+            <div className="lp-bg" aria-hidden="true" />
 
-            <div className="lp-wrapper">
-                <div className="lp-card">
-                    <div className="lp-accent-bar" />
+            {/* Card centrado */}
+            <div className="lp-card" role="main">
+                {/* Logo */}
+                <div className="lp-logo" aria-label="Build and Serve">
+                    <span className="lp-logo-build">Build</span>
+                    <span className="lp-logo-amp">&amp;</span>
+                    <span className="lp-logo-serve">Serve</span>
+                </div>
 
-                    {/* Logo */}
-                    <div className="lp-logo-area">
-                        <div className="sidebar-logo-text lp-wordmark">
-                            <span className="sidebar-logo-primary">Build</span>
-                            <span className="sidebar-logo-amp">&amp;</span>
-                            <span className="sidebar-logo-secondary">Serve</span>
+                <div className="lp-divider" aria-hidden="true" />
+
+                <h1 className="lp-title">Iniciar sesión</h1>
+
+                <form className="lp-form" onSubmit={handleLogin} noValidate>
+                    <div className="lp-field">
+                        <label className="lp-label" htmlFor="lp-rut">RUT</label>
+                        <div className="lp-input-wrap">
+                            <span className="lp-input-icon"><FiUser size={14} /></span>
+                            <input
+                                id="lp-rut"
+                                type="text"
+                                className="lp-input"
+                                placeholder="12.345.678-9"
+                                value={rut}
+                                onChange={(e) => setRut(e.target.value)}
+                                autoComplete="username"
+                                autoFocus
+                            />
                         </div>
-                        <p className="lp-tagline">Gestión preventiva y firma digital para la construcción</p>
                     </div>
 
-                    {/* Formulario */}
-                    <form onSubmit={handleLogin} noValidate>
-                        <div className="lp-field">
-                            <label className="lp-label" htmlFor="lp-rut">RUT</label>
-                            <div className="lp-input-wrap">
-                                <FiUser className="lp-icon" size={15} />
-                                <input
-                                    id="lp-rut"
-                                    type="text"
-                                    className={`lp-input${error ? ' lp-input-err' : ''}`}
-                                    placeholder="12.345.678-9"
-                                    value={rut}
-                                    onChange={(e) => { setRut(e.target.value); setError(''); }}
-                                    autoFocus
-                                    disabled={loading}
-                                    autoComplete="username"
-                                />
-                            </div>
+                    <div className="lp-field">
+                        <label className="lp-label" htmlFor="lp-password">Contraseña</label>
+                        <div className="lp-input-wrap">
+                            <span className="lp-input-icon"><FiLock size={14} /></span>
+                            <input
+                                id="lp-password"
+                                type="password"
+                                className="lp-input"
+                                placeholder="••••••••"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                autoComplete="current-password"
+                            />
                         </div>
+                    </div>
 
-                        <div className="lp-field">
-                            <label className="lp-label" htmlFor="lp-password">Contraseña</label>
-                            <div className="lp-input-wrap">
-                                <FiLock className="lp-icon" size={15} />
-                                <input
-                                    id="lp-password"
-                                    type={showPassword ? 'text' : 'password'}
-                                    className={`lp-input lp-input-pr${error ? ' lp-input-err' : ''}`}
-                                    placeholder="••••••••"
-                                    value={password}
-                                    onChange={(e) => { setPassword(e.target.value); setError(''); }}
-                                    disabled={loading}
-                                    autoComplete="current-password"
-                                />
-                                <button type="button" className="lp-eye" tabIndex={-1}
-                                    onClick={() => setShowPassword(v => !v)}>
-                                    {showPassword ? <FiEyeOff size={15} /> : <FiEye size={15} />}
-                                </button>
-                            </div>
-                        </div>
+                    {error && <p className="lp-error" role="alert">{error}</p>}
 
-                        {error && <p className="lp-error">{error}</p>}
+                    <p className="lp-register-hint">
+                        ¿No perteneces a una empresa?{' '}
+                        <a href="/onboarding" className="lp-register-link">
+                            Registra tu empresa
+                        </a>
+                    </p>
 
-                        <button type="submit" className="lp-btn" disabled={loading}>
-                            {loading
-                                ? <span className="spinner" style={{ margin: '0 auto' }} />
-                                : <><span>Iniciar sesión</span><FiArrowRight size={15} /></>
-                            }
-                        </button>
-
-                        {loading && slowHint && (
-                            <p className="lp-slow-hint">Esto puede tardar unos segundos la primera vez…</p>
+                    <button type="submit" className="lp-submit" disabled={loading}>
+                        {loading ? (
+                            <div className="lp-spinner" />
+                        ) : (
+                            <>
+                                <span>Ingresar</span>
+                                <FiArrowRight size={15} />
+                            </>
                         )}
-                    </form>
-
-                    <div className="lp-sep" />
-
-                    <a href="/onboarding" className="lp-register">
-                        ¿No perteneces a ninguna empresa?&nbsp;<span>Registra tu empresa</span>
-                    </a>
-                </div>
+                    </button>
+                </form>
             </div>
 
             <style>{`
-                .lp-page {
+                /* ── Root — ocupa toda la pantalla ── */
+                .lp-root {
                     min-height: 100vh;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    padding: var(--space-4);
-                    background:
-                        radial-gradient(ellipse 80% 60% at 50% -10%, rgba(76,175,80,0.18) 0%, transparent 70%),
-                        radial-gradient(ellipse 60% 50% at 80% 100%, rgba(59,130,246,0.10) 0%, transparent 60%),
-                        linear-gradient(160deg, #0c110c 0%, #090d09 50%, #0a0c12 100%);
+                    padding: 24px 16px;
                     position: relative;
                     overflow: hidden;
                 }
 
-                /* Halo verde sutil detrás de la card */
-                .lp-bg-glow {
+                /* ── Fotografía de fondo ── */
+                .lp-bg {
                     position: absolute;
-                    width: 600px; height: 600px;
-                    border-radius: 50%;
-                    background: radial-gradient(circle, rgba(76,175,80,0.12) 0%, transparent 65%);
-                    top: 50%; left: 50%;
-                    transform: translate(-50%, -50%);
-                    pointer-events: none;
-                }
-
-                .lp-wrapper {
-                    position: relative;
-                    z-index: 1;
-                    width: 100%;
-                    max-width: 440px;
-                    animation: lp-in 0.4s ease-out both;
-                }
-
-                @keyframes lp-in {
-                    from { opacity: 0; transform: translateY(18px); }
-                    to   { opacity: 1; transform: translateY(0); }
+                    inset: 0;
+                    background: url('/fondoLogin.png') center center / cover no-repeat;
+                    z-index: 0;
                 }
 
                 /* ── Card ── */
                 .lp-card {
                     position: relative;
-                    background: rgba(22, 24, 22, 0.88);
-                    backdrop-filter: blur(20px);
-                    border: 1px solid rgba(255,255,255,0.08);
-                    border-radius: 18px;
-                    padding: 40px 40px 36px;
+                    z-index: 1;
+                    width: 100%;
+                    max-width: 440px;
+                    background: #ffffff;
+                    border-radius: 16px;
+                    padding: 48px 48px 44px;
                     box-shadow:
-                        0 0 0 1px rgba(255,255,255,0.04) inset,
-                        0 20px 56px rgba(0,0,0,0.55),
-                        0 0 80px rgba(76,175,80,0.06);
-                    overflow: hidden;
+                        0 2px 4px rgba(0,0,0,0.08),
+                        0 8px 24px rgba(0,0,0,0.18),
+                        0 32px 64px rgba(0,0,0,0.28);
+                    animation: lp-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+                    box-sizing: border-box;
                 }
 
-                /* Franja verde superior */
-                .lp-accent-bar {
-                    position: absolute;
-                    top: 0; left: 0; right: 0;
-                    height: 3px;
-                    background: linear-gradient(90deg, var(--primary-600) 0%, var(--primary-400) 55%, transparent 100%);
+                @keyframes lp-rise {
+                    from { opacity: 0; transform: translateY(20px) scale(0.98); }
+                    to   { opacity: 1; transform: translateY(0) scale(1); }
                 }
 
-                /* ── Logo / wordmark ── */
-                .lp-logo-area {
-                    text-align: center;
-                    margin-bottom: 36px;
-                }
-
-                .lp-wordmark {
-                    font-size: clamp(1.9rem, 5vw, 2.4rem) !important;
+                /* ── Logo ── */
+                .lp-logo {
+                    display: flex;
+                    align-items: baseline;
                     justify-content: center;
-                    margin-bottom: var(--space-2);
+                    gap: 6px;
+                    font-family: 'Lora', Georgia, serif;
+                    font-size: 2.25rem;
+                    font-weight: 600;
+                    line-height: 1;
+                    letter-spacing: -0.01em;
+                    margin-bottom: 20px;
                 }
 
-                .lp-tagline {
-                    font-size: 0.82rem;
-                    color: var(--text-muted);
-                    margin: 0;
-                    letter-spacing: 0.01em;
+                .lp-logo-build { color: #003b75; }
+                .lp-logo-amp   { color: #df3601; font-weight: 500; }
+                .lp-logo-serve { color: #006edc; }
+
+                /* ── Divisor ── */
+                .lp-divider {
+                    height: 1px;
+                    background: #e8edf3;
+                    margin-bottom: 24px;
                 }
 
-                /* ── Fields ── */
-                .lp-field { margin-bottom: var(--space-4); }
+                /* ── Título ── */
+                .lp-title {
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: #0f172a;
+                    margin: 0 0 24px 0;
+                    letter-spacing: -0.02em;
+                }
+
+                /* ── Formulario ── */
+                .lp-form {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 14px;
+                }
+
+                .lp-field {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 5px;
+                }
 
                 .lp-label {
-                    display: block;
-                    font-size: 0.8rem;
-                    font-weight: 500;
-                    color: var(--text-secondary);
-                    margin-bottom: var(--space-2);
-                    letter-spacing: 0.02em;
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: #64748b;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
                 }
 
-                .lp-input-wrap { position: relative; }
+                .lp-input-wrap {
+                    position: relative;
+                }
 
-                .lp-icon {
+                .lp-input-icon {
                     position: absolute;
-                    left: 13px; top: 50%;
+                    left: 11px;
+                    top: 50%;
                     transform: translateY(-50%);
-                    color: var(--text-muted);
+                    color: #94a3b8;
+                    display: flex;
+                    align-items: center;
                     pointer-events: none;
                     z-index: 1;
                 }
 
                 .lp-input {
                     width: 100%;
-                    padding: 11px 14px 11px 38px;
-                    background: rgba(255,255,255,0.04);
-                    border: 1px solid rgba(255,255,255,0.1);
-                    border-radius: 10px;
-                    color: var(--text-primary);
-                    font-size: 0.93rem;
-                    font-family: var(--font-sans);
+                    height: 40px;
+                    padding: 0 12px 0 34px;
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    color: #0f172a;
+                    font-size: 13.5px;
+                    font-family: inherit;
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
                     outline: none;
-                    transition: border-color 150ms, box-shadow 150ms, background 150ms;
                     box-sizing: border-box;
                 }
 
-                .lp-input::placeholder { color: rgba(160,160,160,0.45); }
+                .lp-input::placeholder { color: #b0bec5; }
 
                 .lp-input:focus {
-                    border-color: var(--primary-500);
-                    background: rgba(76,175,80,0.04);
-                    box-shadow: 0 0 0 3px rgba(76,175,80,0.14);
+                    border-color: #006edc;
+                    background: #fff;
+                    box-shadow: 0 0 0 3px rgba(0, 110, 220, 0.12);
                 }
-
-                .lp-input:disabled { opacity: 0.45; cursor: not-allowed; }
-                .lp-input-err { border-color: rgba(239,68,68,0.55) !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.1) !important; }
-                .lp-input-pr { padding-right: 40px; }
-
-                .lp-eye {
-                    position: absolute; right: 12px; top: 50%;
-                    transform: translateY(-50%);
-                    background: none; border: none;
-                    color: var(--text-muted); cursor: pointer;
-                    display: flex; align-items: center; padding: 2px;
-                    transition: color 150ms;
-                }
-                .lp-eye:hover { color: var(--text-primary); }
 
                 /* ── Error ── */
                 .lp-error {
-                    font-size: 0.83rem;
-                    color: #f07070;
-                    margin: calc(var(--space-1) * -1) 0 var(--space-3);
-                    padding: var(--space-2) var(--space-3);
-                    background: rgba(239,68,68,0.08);
-                    border: 1px solid rgba(239,68,68,0.18);
-                    border-radius: 8px;
+                    font-size: 12px;
+                    color: #df3601;
+                    font-weight: 500;
+                    margin: 0;
+                    padding: 8px 10px;
+                    background: rgba(223, 54, 1, 0.06);
+                    border-radius: 6px;
+                    border-left: 2px solid #df3601;
                 }
 
-                .lp-slow-hint {
-                    text-align: center;
-                    font-size: 0.8rem;
-                    color: var(--text-muted);
-                    margin: var(--space-3) 0 0;
-                    animation: lp-in 0.3s ease-out both;
+                /* ── Registro ── */
+                .lp-register-hint {
+                    font-size: 12px;
+                    color: #94a3b8;
+                    margin: 0;
+                    line-height: 1.4;
                 }
 
-                /* ── Submit ── */
-                .lp-btn {
+                .lp-register-link {
+                    color: #006edc;
+                    font-weight: 500;
+                    text-decoration: none;
+                    transition: color 0.15s ease;
+                }
+
+                .lp-register-link:hover {
+                    color: #0052a3;
+                    text-decoration: underline;
+                }
+
+                /* ── Botón ── */
+                .lp-submit {
+                    margin-top: 4px;
                     width: 100%;
-                    margin-top: var(--space-2);
-                    padding: 12px 20px;
-                    display: flex; align-items: center; justify-content: center;
-                    gap: var(--space-2);
-                    background: var(--primary-600);
+                    height: 42px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    background: #002855;
                     color: #fff;
                     border: none;
-                    border-radius: 10px;
-                    font-size: 0.93rem;
+                    border-radius: 8px;
+                    font-size: 13.5px;
                     font-weight: 600;
-                    font-family: var(--font-sans);
+                    font-family: inherit;
                     cursor: pointer;
-                    letter-spacing: 0.015em;
-                    transition: background 150ms, transform 150ms, box-shadow 150ms;
+                    letter-spacing: 0.02em;
+                    transition: background 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
                 }
 
-                .lp-btn:hover:not(:disabled) {
-                    background: var(--primary-500);
+                .lp-submit:not(:disabled):hover {
+                    background: #006edc;
                     transform: translateY(-1px);
-                    box-shadow: 0 8px 22px rgba(76,175,80,0.3);
+                    box-shadow: 0 6px 20px rgba(0, 110, 220, 0.3);
                 }
 
-                .lp-btn:active:not(:disabled) { transform: translateY(0); }
-                .lp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-                /* ── Separator + register ── */
-                .lp-sep {
-                    height: 1px;
-                    background: rgba(255,255,255,0.07);
-                    margin: 28px 0 20px;
+                .lp-submit:not(:disabled):active {
+                    transform: translateY(0);
+                    box-shadow: none;
                 }
 
-                .lp-register {
-                    display: block;
-                    text-align: center;
-                    font-size: 0.84rem;
-                    color: var(--text-muted);
-                    text-decoration: none;
-                    transition: color 150ms;
+                .lp-submit:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
                 }
 
-                .lp-register span {
-                    color: var(--primary-400);
-                    font-weight: 500;
-                    transition: color 150ms;
+                /* ── Spinner ── */
+                .lp-spinner {
+                    width: 17px;
+                    height: 17px;
+                    border: 2px solid rgba(255,255,255,0.3);
+                    border-top-color: #fff;
+                    border-radius: 50%;
+                    animation: lp-spin 0.7s linear infinite;
                 }
 
-                .lp-register:hover { color: var(--text-secondary); }
-                .lp-register:hover span { color: var(--primary-300); }
+                @keyframes lp-spin { to { transform: rotate(360deg); } }
 
-                @media (max-width: 480px) {
-                    .lp-card { padding: 32px 24px 28px; }
+                /* ── Responsive ── */
+                @media (max-width: 500px) {
+                    .lp-root { padding: 16px 12px; align-items: flex-start; padding-top: 40px; }
+                    .lp-card { padding: 36px 28px 32px; border-radius: 12px; }
+                    .lp-logo { font-size: 1.9rem; }
+                    .lp-title { font-size: 20px; }
                 }
             `}</style>
         </div>

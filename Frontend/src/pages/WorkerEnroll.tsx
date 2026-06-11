@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
 import PinInput from '../components/PinInput';
 import { FiUser, FiMail, FiPhone, FiBriefcase, FiCheck, FiArrowRight, FiArrowLeft, FiLock, FiShield, FiMapPin } from 'react-icons/fi';
 import { workersApi, type CreateWorkerData } from '../api/client';
@@ -185,7 +184,6 @@ export default function WorkerEnroll() {
 
     return (
         <>
-            <Header title="Enrolamiento de Trabajador" />
 
             <div className="page-content">
                 {/* Progress Steps */}

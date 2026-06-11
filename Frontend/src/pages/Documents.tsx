@@ -1,5 +1,4 @@
 import { Fragment, useState, useEffect, useRef } from 'react';
-import Header from '../components/Header';
 import {
     FiPlus,
     FiFileText,
@@ -425,7 +424,6 @@ export default function Documents() {
 
     return (
         <>
-            <Header title="Documentos" />
 
 
 

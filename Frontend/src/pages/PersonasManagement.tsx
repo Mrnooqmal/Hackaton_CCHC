@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import Header from '../components/Header';
 import { apiBaseUrl, personasApi, type PersonaResponse } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
@@ -287,7 +286,6 @@ export default function PersonasManagement() {
 
     return (
         <>
-            <Header title={isObraScoped ? 'Equipo de Obra' : 'Gestión de Personas'} />
             <div className="page-content">
                 <div className="page-header">
                     <div className="page-header-info">

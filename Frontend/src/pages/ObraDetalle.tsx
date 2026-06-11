@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi } from '../api/client';
 import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload } from 'react-icons/lu';
@@ -1355,7 +1354,6 @@ export default function ObraDetalle() {
   if (!obra) {
     return (
       <>
-        <Header title="Obras" />
         <div className="page-content">
           <div className="card">
             <div className="empty-state">
@@ -1518,7 +1516,6 @@ export default function ObraDetalle() {
 
   return (
     <>
-      <Header title="Obras" />
       <div className="page-content">
         <div className="page-header">
           <div className="page-header-info">

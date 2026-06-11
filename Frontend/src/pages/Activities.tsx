@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import Header from '../components/Header';
 import {
     FiPlus,
     FiUsers,
@@ -291,7 +290,6 @@ export default function Activities() {
 
     return (
         <>
-            <Header title="Actividades" />
 
 
 

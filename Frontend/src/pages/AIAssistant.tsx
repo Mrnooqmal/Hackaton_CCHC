@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import Header from '../components/Header';
 import RiskMatrixVisual from '../components/RiskMatrixVisual';
 import MIPERVisual from '../components/MIPERVisual';
 import {
@@ -542,7 +541,6 @@ ${data.normativaRelacionada ? `**Normativa:** ${data.normativaRelacionada.join('
 
     return (
         <>
-            <Header title="Asistente IA de Prevención" />
 
             <div className="page-content" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--header-height) - var(--space-12))' }}>
                 {/* Quick Actions */}

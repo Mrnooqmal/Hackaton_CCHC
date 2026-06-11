@@ -55,16 +55,8 @@ export default function RegisterAdmin() {
     if (successData) {
         return (
             <div className="register-page">
-                <div className="login-bg">
-                    <div className="login-bg-gradient login-bg-gradient-1"></div>
-                    <div className="login-bg-gradient login-bg-gradient-2"></div>
-                    <div className="login-bg-gradient login-bg-gradient-3"></div>
-                </div>
-
                 <div className="register-content">
                     <div className="register-card text-center">
-                        <div className="login-card-glow"></div>
-
                         <div className="success-icon">
                             <FiCheckCircle size={40} />
                         </div>
@@ -124,13 +116,6 @@ export default function RegisterAdmin() {
     ======================= */
     return (
         <div className="register-page">
-            {/* Fondo animado con gradientes (Igual que Login) */}
-            <div className="login-bg">
-                <div className="login-bg-gradient login-bg-gradient-1"></div>
-                <div className="login-bg-gradient login-bg-gradient-2"></div>
-                <div className="login-bg-gradient login-bg-gradient-3"></div>
-            </div>
-
             <div className="register-content">
                 <div className="register-header">
                     <div className="register-brand">
@@ -146,7 +131,6 @@ export default function RegisterAdmin() {
                 </div>
 
                 <div className="register-card">
-                    <div className="login-card-glow"></div>
                     <form onSubmit={handleSubmit} className="register-form">
                         <div className="form-grid">
                             <div className="form-group full-width">
@@ -230,31 +214,6 @@ const styles = (
     padding: var(--space-4);
 }
 
-/* Fondo animado (Keep Login consistency) */
-.login-bg {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-}
-
-.login-bg-gradient {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(100px);
-    opacity: 0.3;
-    animation: float 20s ease-in-out infinite;
-}
-
-.login-bg-gradient-1 { width: 600px; height: 600px; background: linear-gradient(135deg, var(--primary-600), var(--primary-400)); top: -200px; left: -200px; }
-.login-bg-gradient-2 { width: 500px; height: 500px; background: linear-gradient(135deg, var(--accent-500), var(--accent-700)); bottom: -150px; right: -150px; animation-delay: -7s; }
-.login-bg-gradient-3 { width: 400px; height: 400px; background: linear-gradient(135deg, var(--primary-500), var(--info-500)); top: 50%; left: 50%; transform: translate(-50%, -50%); animation-delay: -14s; }
-
-@keyframes float {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(50px, -50px) scale(1.1); }
-    66% { transform: translate(-30px, 30px) scale(0.9); }
-}
-
 .register-content {
     position: relative;
     z-index: 1;
@@ -315,16 +274,6 @@ const styles = (
     padding: 2.5rem;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     overflow: hidden;
-}
-
-.login-card-glow {
-    position: absolute;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
-    background: radial-gradient(circle, rgba(76, 175, 80, 0.1) 0%, transparent 70%);
-    pointer-events: none;
 }
 
 .register-form {

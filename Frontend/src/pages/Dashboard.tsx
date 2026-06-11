@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
 import ObraProgressCard from '../components/ObraProgressCard';
 import {
     FiUsers,
@@ -589,7 +588,6 @@ export default function Dashboard() {
 
     return (
         <>
-            <Header title="Dashboard" />
 
             <div className="page-content">
                 {/* Welcome Header */}
