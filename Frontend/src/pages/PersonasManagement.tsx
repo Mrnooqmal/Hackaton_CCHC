@@ -24,15 +24,7 @@ const ROLE_CONFIG: Record<string, { label: string; color: string; icon: any; des
     trabajador: { label: 'Trabajador', color: 'var(--gray-500)', icon: FiUsers, desc: 'Acceso básico para firmas y documentos' },
 };
 
-const AVATAR_TINTS = [
-    { bg: 'rgba(0, 110, 220, 0.12)',   fg: '#4d9fff', border: 'rgba(0, 110, 220, 0.25)'  },
-    { bg: 'rgba(99, 102, 241, 0.12)',  fg: '#818cf8', border: 'rgba(99, 102, 241, 0.25)' },
-    { bg: 'rgba(16, 185, 129, 0.12)',  fg: '#34d399', border: 'rgba(16, 185, 129, 0.25)' },
-    { bg: 'rgba(245, 158, 11, 0.12)',  fg: '#fbbf24', border: 'rgba(245, 158, 11, 0.25)' },
-    { bg: 'rgba(239, 68, 68, 0.12)',   fg: '#f87171', border: 'rgba(239, 68, 68, 0.25)'  },
-    { bg: 'rgba(139, 92, 246, 0.12)',  fg: '#a78bfa', border: 'rgba(139, 92, 246, 0.25)' },
-    { bg: 'rgba(6, 182, 212, 0.12)',   fg: '#22d3ee', border: 'rgba(6, 182, 212, 0.25)'  },
-];
+const AVATAR_TINT = { bg: 'rgba(0, 110, 220, 0.12)', fg: '#4d9fff', border: 'rgba(0, 110, 220, 0.25)' };
 
 export default function PersonasManagement() {
     const { user, hasPermission } = useAuth();
@@ -432,25 +424,21 @@ export default function PersonasManagement() {
                         </div>
                     ) : (
                         <div className="pdir-grid">
-                            {filtered.map((p, i) => {
-                                const tintIdx = (p.nombre.charCodeAt(0) + (p.apellido?.charCodeAt(0) ?? 0)) % AVATAR_TINTS.length;
-                                const tint = AVATAR_TINTS[tintIdx];
-                                return (
+                            {filtered.map((p, i) => (
                                     <Link
                                         key={p.personaId}
                                         to={`/personas/${p.rut}`}
                                         className="pdir-card"
                                         style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                                     >
-                                        <div className="pdir-avatar" style={{ background: tint.bg, color: tint.fg, borderColor: tint.border }}>
+                                        <div className="pdir-avatar" style={{ background: AVATAR_TINT.bg, color: AVATAR_TINT.fg, borderColor: AVATAR_TINT.border }}>
                                             {p.nombre[0]}{p.apellido?.[0] ?? p.nombre[1] ?? ''}
                                         </div>
                                         <span className="pdir-name">{p.nombre} {p.apellido}</span>
                                         <span className="pdir-rut">{p.rut}</span>
                                         <span className="pdir-cargo">{p.cargo || ROLE_CONFIG[p.rol]?.label || '—'}</span>
                                     </Link>
-                                );
-                            })}
+                            ))}
                         </div>
                     )}
                 </div>
@@ -746,10 +734,10 @@ export default function PersonasManagement() {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    font-family: var(--font-display);
+                    font-family: var(--font-ui);
                     font-size: 20px;
-                    font-weight: 600;
-                    letter-spacing: -0.01em;
+                    font-weight: 700;
+                    letter-spacing: 0.02em;
                     text-transform: uppercase;
                     margin-bottom: 14px;
                     flex-shrink: 0;
@@ -761,7 +749,7 @@ export default function PersonasManagement() {
                 }
 
                 .pdir-name {
-                    font-family: var(--font-display);
+                    font-family: var(--font-ui);
                     font-size: 13.5px;
                     font-weight: 600;
                     color: var(--text-primary);

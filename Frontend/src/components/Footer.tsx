@@ -37,7 +37,7 @@ export default function Footer() {
                             Plataforma digital para la gestión de obras, documentos, personas
                             y cumplimiento normativo en proyectos de construcción.
                         </p>
-                        <a href="#about" className="ft-col-link ft-col-link--cta">
+                        <a href="/about" target="_blank" rel="noopener noreferrer" className="ft-col-link ft-col-link--cta">
                             Conocer más →
                         </a>
                     </div>
