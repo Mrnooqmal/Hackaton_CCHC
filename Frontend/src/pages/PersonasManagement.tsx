@@ -7,7 +7,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { AlertBanner, CredentialCard, Modal, Select, SegmentedControl } from '../components/ui';
 import {
     FiUserPlus, FiShield, FiEdit2, FiAlertCircle,
-    FiArrowRight, FiUsers, FiLock, FiX, FiSave,
+    FiUsers, FiX, FiSave,
     FiBriefcase, FiStar, FiSearch, FiEye, FiUpload, FiDownload
 } from 'react-icons/fi';
 
@@ -23,6 +23,16 @@ const ROLE_CONFIG: Record<string, { label: string; color: string; icon: any; des
     supervisor: { label: 'Supervisor', color: 'var(--info-500)', icon: FiEye, desc: 'Supervisión de trabajadores y actividades' },
     trabajador: { label: 'Trabajador', color: 'var(--gray-500)', icon: FiUsers, desc: 'Acceso básico para firmas y documentos' },
 };
+
+const AVATAR_TINTS = [
+    { bg: 'rgba(0, 110, 220, 0.12)',   fg: '#4d9fff', border: 'rgba(0, 110, 220, 0.25)'  },
+    { bg: 'rgba(99, 102, 241, 0.12)',  fg: '#818cf8', border: 'rgba(99, 102, 241, 0.25)' },
+    { bg: 'rgba(16, 185, 129, 0.12)',  fg: '#34d399', border: 'rgba(16, 185, 129, 0.25)' },
+    { bg: 'rgba(245, 158, 11, 0.12)',  fg: '#fbbf24', border: 'rgba(245, 158, 11, 0.25)' },
+    { bg: 'rgba(239, 68, 68, 0.12)',   fg: '#f87171', border: 'rgba(239, 68, 68, 0.25)'  },
+    { bg: 'rgba(139, 92, 246, 0.12)',  fg: '#a78bfa', border: 'rgba(139, 92, 246, 0.25)' },
+    { bg: 'rgba(6, 182, 212, 0.12)',   fg: '#22d3ee', border: 'rgba(6, 182, 212, 0.25)'  },
+];
 
 export default function PersonasManagement() {
     const { user, hasPermission } = useAuth();
@@ -397,53 +407,52 @@ export default function PersonasManagement() {
                     </div>
                 </div>
 
-                {/* Table */}
+                {/* Cards */}
                 <div className="card">
                     <div className="card-header">
-                        <div><h2 className="card-title">Directorio de Personas</h2><p className="card-subtitle">{filtered.length} persona(s)</p></div>
+                        <div>
+                            <h2 className="card-title">Directorio de Personas</h2>
+                            <p className="card-subtitle">{filtered.length} persona(s)</p>
+                        </div>
                     </div>
-                    <div className="scroll-hint"><FiArrowRight /><span>Desliza para ver más</span></div>
-                    <div className="table-container">
-                        <table className="table">
-                            <thead><tr><th>Persona</th><th>Rol</th><th>Cargo</th><th>Estado</th><th>Acceso Web</th><th style={{ textAlign: 'right' }}>Acciones</th></tr></thead>
-                            <tbody>
-                                {loading && filtered.length === 0 ? (
-                                    <tr><td colSpan={6} className="text-center"><div className="spinner" style={{ margin: '16px auto' }} /></td></tr>
-                                ) : isMissingObra ? (
-                                    <tr><td colSpan={6} className="text-center text-muted" style={{ padding: 32 }}>Selecciona una obra para ver su equipo</td></tr>
-                                ) : filtered.length === 0 ? (
-                                    <tr><td colSpan={6} className="text-center text-muted" style={{ padding: 32 }}>No hay personas registradas</td></tr>
-                                ) : filtered.map(p => (
-                                    <tr key={p.personaId}>
-                                        <td>
-                                            <div className="flex items-center gap-3">
-                                                <div className="avatar avatar-sm" style={{ background: ROLE_CONFIG[p.rol]?.color || 'var(--gray-500)', color: '#fff' }}>{p.nombre[0]}{(p.apellido || p.nombre)[0]}</div>
-                                                <Link to={`/personas/${p.rut}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                                                    <div style={{ fontWeight: 600 }}>{p.nombre} {p.apellido}</div>
-                                                    <div className="text-muted" style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>{p.rut}</div>
-                                                </Link>
-                                            </div>
-                                        </td>
-                                        <td>{rolBadge(p.rol)}</td>
-                                        <td className="text-sm">{p.cargo || '-'}</td>
-                                        <td>
-                                            <div className="flex items-center gap-2">
-                                                {p.habilitado ? <FiShield style={{ color: 'var(--success-500)' }} /> : <FiAlertCircle style={{ color: 'var(--warning-500)' }} />}
-                                                <span className="text-sm">{p.estado}</span>
-                                            </div>
-                                        </td>
-                                        <td><span className={`badge badge-${p.tieneAccesoWeb ? 'success' : 'secondary'}`}>{p.tieneAccesoWeb ? 'Sí' : 'No'}</span></td>
-                                        <td style={{ textAlign: 'right' }}>
-                                            <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
-                                                {p.tieneAccesoWeb && <button className="btn btn-secondary btn-sm" title="Reset Contraseña" onClick={() => handleResetPw(p)}><FiLock /></button>}
-                                                <button className="btn btn-secondary btn-sm" title="Editar" onClick={() => openEdit(p)}><FiEdit2 /></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+
+                    {loading ? (
+                        <div className="flex items-center justify-center" style={{ padding: '48px 0' }}>
+                            <div className="spinner" />
+                        </div>
+                    ) : isMissingObra ? (
+                        <div className="empty-state">
+                            <FiUsers size={40} className="empty-state-icon" />
+                            <p className="empty-state-description">Selecciona una obra para ver su equipo</p>
+                        </div>
+                    ) : filtered.length === 0 ? (
+                        <div className="empty-state">
+                            <FiUsers size={40} className="empty-state-icon" />
+                            <p className="empty-state-description">No hay personas registradas</p>
+                        </div>
+                    ) : (
+                        <div className="pdir-grid">
+                            {filtered.map((p, i) => {
+                                const tintIdx = (p.nombre.charCodeAt(0) + (p.apellido?.charCodeAt(0) ?? 0)) % AVATAR_TINTS.length;
+                                const tint = AVATAR_TINTS[tintIdx];
+                                return (
+                                    <Link
+                                        key={p.personaId}
+                                        to={`/personas/${p.rut}`}
+                                        className="pdir-card"
+                                        style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                                    >
+                                        <div className="pdir-avatar" style={{ background: tint.bg, color: tint.fg, borderColor: tint.border }}>
+                                            {p.nombre[0]}{p.apellido?.[0] ?? p.nombre[1] ?? ''}
+                                        </div>
+                                        <span className="pdir-name">{p.nombre} {p.apellido}</span>
+                                        <span className="pdir-rut">{p.rut}</span>
+                                        <span className="pdir-cargo">{p.cargo || ROLE_CONFIG[p.rol]?.label || '—'}</span>
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -695,6 +704,94 @@ export default function PersonasManagement() {
             <ConfirmModal isOpen={confirmModal.isOpen} title={confirmModal.title} message={confirmModal.message} confirmLabel="Resetear Contraseña" variant="warning" onConfirm={confirmReset} onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))} />
 
             <style>{`
+                /* ── Directorio grid ── */
+                .pdir-grid {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 12px;
+                    padding: 16px 0 4px;
+                }
+
+                .pdir-card {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    text-align: center;
+                    padding: 28px 16px 16px;
+                    border-radius: 12px;
+                    border: 1px solid var(--surface-border);
+                    background: var(--surface-card);
+                    text-decoration: none;
+                    color: inherit;
+                    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s;
+                    animation: pdirIn 0.3s ease both;
+                }
+
+                @keyframes pdirIn {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to   { opacity: 1; transform: translateY(0); }
+                }
+
+                .pdir-card:hover {
+                    transform: translateY(-3px);
+                    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18);
+                    border-color: var(--primary-400);
+                }
+
+                .pdir-avatar {
+                    width: 64px;
+                    height: 64px;
+                    border-radius: 50%;
+                    border: 1.5px solid transparent;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-family: var(--font-display);
+                    font-size: 20px;
+                    font-weight: 600;
+                    letter-spacing: -0.01em;
+                    text-transform: uppercase;
+                    margin-bottom: 14px;
+                    flex-shrink: 0;
+                    transition: box-shadow 0.18s;
+                }
+
+                .pdir-card:hover .pdir-avatar {
+                    box-shadow: 0 0 0 4px var(--surface-bg), 0 0 0 6px currentColor;
+                }
+
+                .pdir-name {
+                    font-family: var(--font-display);
+                    font-size: 13.5px;
+                    font-weight: 600;
+                    color: var(--text-primary);
+                    line-height: 1.35;
+                    word-break: break-word;
+                    margin-bottom: 5px;
+                }
+
+                .pdir-rut {
+                    font-family: var(--font-mono);
+                    font-size: 10.5px;
+                    color: var(--text-muted);
+                    letter-spacing: 0.04em;
+                }
+
+                .pdir-cargo {
+                    font-size: 11px;
+                    color: var(--text-secondary);
+                    margin-top: 10px;
+                    padding-top: 10px;
+                    border-top: 1px solid var(--surface-border);
+                    width: 100%;
+                    word-break: break-word;
+                    line-height: 1.4;
+                }
+
+                @media (max-width: 900px) { .pdir-grid { grid-template-columns: repeat(3, 1fr); } }
+                @media (max-width: 580px) { .pdir-grid { grid-template-columns: repeat(2, 1fr); } }
+
+                /* ── Modales ── */
                 .role-selector { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
                 .role-card { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 16px; background: var(--surface-elevated); border: 2px solid var(--surface-border); border-radius: 12px; cursor: pointer; transition: all 0.2s; }
                 .role-card:hover { border-color: var(--primary-400); background: var(--surface-card); }

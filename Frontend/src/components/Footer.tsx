@@ -60,7 +60,7 @@ export default function Footer() {
                             Estudiantes de la Universidad del Desarrollo que combinan tecnología
                             e innovación para construir soluciones con impacto real en la industria.
                         </p>
-                        <a href="#team" className="ft-col-link ft-col-link--cta">
+                        <a href="/equipo" target="_blank" rel="noopener noreferrer" className="ft-col-link ft-col-link--cta">
                             Ver equipo →
                         </a>
                     </div>

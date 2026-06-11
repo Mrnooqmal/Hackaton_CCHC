@@ -342,75 +342,59 @@ export default function ObraDetalle() {
       if (!obraId) return;
       setLoading(true);
       try {
-        const [obraRes, docsObraRes, docsPrevRes, workersRes, incidentsRes, activitiesRes] = await Promise.all([
+        // Fase 1 — crítico: obra + workers para mostrar la UI de inmediato
+        const [obraRes, workersRes] = await Promise.all([
           obrasApi.getById(obraId),
-          documentsApi.list({ obraId, clasificacion: 'obra' } as any),
-          documentsApi.list({ obraId, clasificacion: 'diario' } as any),
           workersApi.list(),
-          incidentsApi.list(),
-          activitiesApi.list()
         ]);
 
         const obraData = obraRes.success ? obraRes.data : null;
         setObra(obraData || null);
 
+        const workers = workersRes.success && workersRes.data ? workersRes.data : [];
+        setAllWorkers(workers);
+        setTrabajadores(workers.filter((w: any) => Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
+
+        setLoading(false); // UI visible aquí
+
+        // Fase 2 — background paralelo: documentos, incidentes, actividades, firmas
+        const tenantId = obraData?.tenantId || localStorage.getItem('tenant_id') || '';
+        const [docsObraRes, docsPrevRes, incidentsRes, activitiesRes, sigRes] = await Promise.all([
+          documentsApi.list({ obraId, clasificacion: 'obra' } as any),
+          documentsApi.list({ obraId, clasificacion: 'diario' } as any),
+          incidentsApi.list(),
+          activitiesApi.list(),
+          signatureRequestsApi.list({ empresaId: tenantId, obraId }),
+        ]);
+
         const docsObra = docsObraRes.success && docsObraRes.data ? docsObraRes.data.documents || [] : [];
-        const mappedDs44 = DS44_PLAN_DOCS.map((required) => {
+        setDs44Docs(DS44_PLAN_DOCS.map((required) => {
           const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-          const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-          return {
-            ...required,
-            documentId: existing?.documentId,
-            archivoSubido: hasFile,
-            document: existing
-          };
-        });
-        setDs44Docs(mappedDs44);
+          return { ...required, documentId: existing?.documentId, archivoSubido: Boolean(existing?.s3Key || existing?.archivoUrl), document: existing };
+        }));
         setObraDocs(docsObra);
 
-
-        const docsPrevRaw = docsPrevRes.success && docsPrevRes.data ? docsPrevRes.data.documents || [] : [];
         const ds44Types = new Set([...DS44_ONBOARDING_ITEMS.map(i => i.tipo), ...DS44_PLAN_DOCS.flatMap(req => req.tipos)]);
-        const docsPrevFiltered = docsPrevRaw.filter((d: any) => d.clasificacion === 'diario' || (!ds44Types.has(d.tipo) && d.clasificacion !== 'obra' && d.clasificacion !== 'trabajador'));
-
         const uniqueDocsPrev: any[] = [];
         const seenIds = new Set();
-        for (const doc of docsPrevFiltered) {
+        for (const doc of (docsPrevRes.success && docsPrevRes.data ? docsPrevRes.data.documents || [] : [])
+          .filter((d: any) => d.clasificacion === 'diario' || (!ds44Types.has(d.tipo) && d.clasificacion !== 'obra' && d.clasificacion !== 'trabajador'))) {
           const key = doc.tipo || doc.titulo;
-          if (!seenIds.has(key)) {
-            seenIds.add(key);
-            uniqueDocsPrev.push(doc);
-          }
+          if (!seenIds.has(key)) { seenIds.add(key); uniqueDocsPrev.push(doc); }
         }
         setDocumentosPrevencion(uniqueDocsPrev);
 
-        const workers = workersRes.success && workersRes.data ? workersRes.data : [];
-        setAllWorkers(workers);
-        const asignados = workers.filter((worker: any) => Array.isArray(worker.obraIds) && worker.obraIds.includes(obraId));
-        setTrabajadores(asignados);
+        setIncidentes((incidentsRes.success && incidentsRes.data ? incidentsRes.data : []).filter((inc: any) => inc.obraId === obraId));
+        setActividades((activitiesRes.success && activitiesRes.data ? activitiesRes.data.activities || [] : []).filter((act: any) => act.obraId === obraId));
+        if (sigRes.success && sigRes.data) setObraSignatureRequests(sigRes.data.requests || []);
 
-        const incItems = incidentsRes.success && incidentsRes.data ? incidentsRes.data : [];
-        setIncidentes(incItems.filter((inc: any) => inc.obraId === obraId));
+        // Fase 3 — fire-and-forget: tamaño tenant (solo condicionales DO)
+        tenantsApi.get(tenantId).then(res => {
+          if (res.success && res.data) setTenantSize((res.data as any).cantidadTrabajadores ?? null);
+        }).catch(() => {});
 
-        const actItems = activitiesRes.success && activitiesRes.data ? activitiesRes.data.activities || [] : [];
-        setActividades(actItems.filter((act: any) => act.obraId === obraId));
-
-        const tenantId = obraData?.tenantId || localStorage.getItem('tenant_id') || '';
-        const sigRes = await signatureRequestsApi.list({ empresaId: tenantId, obraId });
-        if (sigRes.success && sigRes.data) {
-          setObraSignatureRequests(sigRes.data.requests || []);
-        }
-
-        // Tamaño de la entidad (define CPHS/Delegado/Depto. Prev. en los condicionales DO).
-        try {
-          const tenantRes = await tenantsApi.get(tenantId);
-          if (tenantRes.success && tenantRes.data) {
-            setTenantSize((tenantRes.data as any).cantidadTrabajadores ?? null);
-          }
-        } catch { /* condicionales caeran a 'verificar' si no hay dato */ }
       } catch (error) {
         console.error('Error loading obra detail:', error);
-      } finally {
         setLoading(false);
       }
     };

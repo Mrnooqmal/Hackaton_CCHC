@@ -177,7 +177,7 @@
 }
 
 :root.theme-light {
-  --surface-bg: #e2e8f0;
+  --surface-bg: #ffffff;
   --surface-card: #fefefe;
   --surface-elevated: #f7fafc;
   --surface-hover: #e9eff7;
@@ -192,8 +192,8 @@
   --brand-ink: #003b75;
 
   --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-secondary: #424b5a;
+  --text-muted: #64748b;
 
   --shadow-sm: 0 1px 2px 0 rgb(148 163 184 / 0.3);
   --shadow-md: 0 4px 6px -1px rgb(148 163 184 / 0.4), 0 2px 4px -2px rgb(148 163 184 / 0.3);

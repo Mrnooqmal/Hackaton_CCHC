@@ -1230,12 +1230,13 @@
 }
 
 .btn-primary {
-  background: var(--gradient-primary);
+  background: var(--primary-500);
   color: white;
   box-shadow: var(--shadow-md);
 }
 
 .btn-primary:hover:not(:disabled) {
+  background: var(--primary-600);
   transform: translateY(-1px);
   box-shadow: var(--shadow-glow-primary);
 }
@@ -2469,14 +2470,14 @@ select.form-input option {
 }
 
 .modal-header-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-lg);
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  color: var(--accent);
+  background: var(--accent-tint);
 }
 
 .modal-title {

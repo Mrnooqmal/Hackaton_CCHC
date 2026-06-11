@@ -77,7 +77,6 @@ export default function Dashboard() {
                 }
             } catch (error) {
                 console.error('Error loading dashboard:', error);
-            } finally {
                 if (activeRef.current) {
                     setLoading(false);
                 }
@@ -250,7 +249,7 @@ export default function Dashboard() {
         let completedCount = 0;
         let totalRequiredCount = 7; // Base requirements
 
-        // Check enrollment status
+        // Check enrollment status (sync — no API needed)
         if (user?.habilitado) {
             completedCount++;
         } else {
@@ -263,6 +262,9 @@ export default function Dashboard() {
                 urgent: true
             });
         }
+
+        // UI visible de inmediato; encuestas e inbox cargan en background
+        setLoading(false);
 
         const [surveysResult, inboxResult] = await Promise.allSettled([
             surveysApi.list(),
@@ -322,8 +324,17 @@ export default function Dashboard() {
     };
 
     const loadPrevencionistaDashboard = async () => {
-        const [workersResult, ownPendingResult, sigStatsResult, docsResult, incidentsResult, activitiesResult] = await Promise.allSettled([
-            workersApi.list({ obraId: selectedObraId || undefined }),
+        // Fase 1 — crítico: trabajadores para mostrar el stat principal de inmediato
+        const workersRes = await workersApi.list({ obraId: selectedObraId || undefined }).catch(() => null);
+        if (workersRes?.success && workersRes.data) {
+            setWorkers(workersRes.data);
+            const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
+            setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0, pendingSignatures: unenrolled }));
+        }
+        setLoading(false);
+
+        // Fase 2 — background paralelo: resto de stats
+        const [ownPendingResult, sigStatsResult, docsResult, incidentsResult, activitiesResult] = await Promise.allSettled([
             user?.personaId ? signatureRequestsApi.getPendingByWorker(user.personaId) : Promise.resolve(null),
             signatureRequestsApi.getStats(),
             documentsApi.list({ obraId: selectedObraId || undefined }),
@@ -332,18 +343,6 @@ export default function Dashboard() {
         ]);
 
         const nextStats: DashboardStats = {};
-
-        if (workersResult.status === 'fulfilled') {
-            const workersRes = workersResult.value;
-            if (workersRes.success && workersRes.data) {
-                setWorkers(workersRes.data);
-                const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
-                nextStats.totalWorkers = workersRes.data?.length || 0;
-                nextStats.pendingSignatures = unenrolled;
-            }
-        } else {
-            console.error('Error loading workers:', workersResult.reason);
-        }
 
         if (ownPendingResult.status === 'fulfilled') {
             const ownPendingRes = ownPendingResult.value;
@@ -406,8 +405,17 @@ export default function Dashboard() {
     };
 
     const loadJefeObraDashboard = async () => {
-        const [workersResult, docsResult, incidentsResult, activitiesResult, sigStatsResult] = await Promise.allSettled([
-            workersApi.list({ obraId: selectedObraId || undefined }),
+        // Fase 1 — crítico: trabajadores
+        const workersRes = await workersApi.list({ obraId: selectedObraId || undefined }).catch(() => null);
+        if (workersRes?.success && workersRes.data) {
+            setWorkers(workersRes.data);
+            const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
+            setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0, pendingSignatures: unenrolled }));
+        }
+        setLoading(false);
+
+        // Fase 2 — background paralelo
+        const [docsResult, incidentsResult, activitiesResult, sigStatsResult] = await Promise.allSettled([
             documentsApi.list({ obraId: selectedObraId || undefined }),
             incidentsApi.list(),
             activitiesApi.list({ obraId: selectedObraId || undefined }),
@@ -415,18 +423,6 @@ export default function Dashboard() {
         ]);
 
         const nextStats: DashboardStats = {};
-
-        if (workersResult.status === 'fulfilled') {
-            const workersRes = workersResult.value;
-            if (workersRes.success && workersRes.data) {
-                setWorkers(workersRes.data);
-                const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
-                nextStats.totalWorkers = workersRes.data?.length || 0;
-                nextStats.pendingSignatures = unenrolled;
-            }
-        } else {
-            console.error('Error loading workers:', workersResult.reason);
-        }
 
         if (docsResult.status === 'fulfilled') {
             const docsRes = docsResult.value;
@@ -481,23 +477,21 @@ export default function Dashboard() {
     };
 
     const loadSupervisorDashboard = async () => {
-        const [workersResult, activitiesResult, incidentsResult] = await Promise.allSettled([
-            workersApi.list({ obraId: selectedObraId || undefined }),
+        // Fase 1 — crítico: trabajadores
+        const workersRes = await workersApi.list({ obraId: selectedObraId || undefined }).catch(() => null);
+        if (workersRes?.success && workersRes.data) {
+            setWorkers(workersRes.data);
+            setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0 }));
+        }
+        setLoading(false);
+
+        // Fase 2 — background paralelo
+        const [activitiesResult, incidentsResult] = await Promise.allSettled([
             activitiesApi.list({ obraId: selectedObraId || undefined }),
             incidentsApi.list()
         ]);
 
         const nextStats: DashboardStats = {};
-
-        if (workersResult.status === 'fulfilled') {
-            const workersRes = workersResult.value;
-            if (workersRes.success && workersRes.data) {
-                setWorkers(workersRes.data);
-                nextStats.totalWorkers = workersRes.data?.length || 0;
-            }
-        } else {
-            console.error('Error loading workers:', workersResult.reason);
-        }
 
         if (activitiesResult.status === 'fulfilled') {
             const activitiesRes = activitiesResult.value;
@@ -524,24 +518,22 @@ export default function Dashboard() {
     };
 
     const loadAdminDashboard = async () => {
-        const [workersResult, activitiesResult, docsResult, incidentsResult] = await Promise.allSettled([
-            workersApi.list({ obraId: selectedObraId || undefined }),
+        // Fase 1 — crítico: trabajadores
+        const workersRes = await workersApi.list({ obraId: selectedObraId || undefined }).catch(() => null);
+        if (workersRes?.success && workersRes.data) {
+            setWorkers(workersRes.data);
+            setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0 }));
+        }
+        setLoading(false);
+
+        // Fase 2 — background paralelo
+        const [activitiesResult, docsResult, incidentsResult] = await Promise.allSettled([
             activitiesApi.list({ obraId: selectedObraId || undefined }),
             documentsApi.list({ obraId: selectedObraId || undefined }),
             incidentsApi.list()
         ]);
 
         const nextStats: DashboardStats = {};
-
-        if (workersResult.status === 'fulfilled') {
-            const workersRes = workersResult.value;
-            if (workersRes.success && workersRes.data) {
-                setWorkers(workersRes.data);
-                nextStats.totalWorkers = workersRes.data?.length || 0;
-            }
-        } else {
-            console.error('Error loading workers:', workersResult.reason);
-        }
 
         if (activitiesResult.status === 'fulfilled') {
             const activitiesRes = activitiesResult.value;

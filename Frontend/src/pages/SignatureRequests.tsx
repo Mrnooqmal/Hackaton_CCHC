@@ -114,16 +114,10 @@ export default function SignatureRequests() {
 
     const loadData = async () => {
         try {
-            const [requestsRes, workersRes] = await Promise.all([
-                signatureRequestsApi.list(),
-                workersApi.list(),
-            ]);
-
+            // Fase 1 — crítico: solo solicitudes para mostrar la lista
+            const requestsRes = await signatureRequestsApi.list();
             if (requestsRes.success && requestsRes.data) {
                 setRequests(requestsRes.data.requests);
-            }
-            if (workersRes.success && workersRes.data) {
-                setWorkers(workersRes.data);
             }
         } catch (error) {
             console.error('Error loading data:', error);
@@ -131,6 +125,14 @@ export default function SignatureRequests() {
             setLoading(false);
         }
     };
+
+    // Workers cargados lazy: solo cuando se abre el modal de crear solicitud
+    useEffect(() => {
+        if (!showModal || workers.length > 0) return;
+        workersApi.list().then(res => {
+            if (res.success && res.data) setWorkers(res.data);
+        }).catch(() => {});
+    }, [showModal]);
 
     const getMimeType = (file: File): string => {
         if (file.type) return file.type;
@@ -461,6 +463,27 @@ export default function SignatureRequests() {
                     />
                 )}
 
+                <div className="page-header">
+                    <div className="page-header-info">
+                        <h2 className="page-header-title">
+                            <FiClipboard className="text-primary-500" />
+                            Firma Electrónica
+                        </h2>
+                        <p className="page-header-description">
+                            Gestiona solicitudes de firma digital para documentos y actividades.
+                        </p>
+                    </div>
+                    <div className="page-header-actions">
+                        <button
+                            className="btn btn-primary"
+                            onClick={() => setShowModal(true)}
+                        >
+                            <FiPlus />
+                            Nueva Solicitud
+                        </button>
+                    </div>
+                </div>
+
                 {/* Tabs */}
                 <div
                     className="flex gap-3 mb-6"
@@ -666,21 +689,9 @@ export default function SignatureRequests() {
                                 {filteredRequests.length} solicitud{filteredRequests.length !== 1 ? 'es' : ''}
                             </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <button className="btn btn-ghost btn-sm" onClick={loadData} disabled={loading} title="Actualizar" style={{ padding: '8px' }}>
-                                <FiRefreshCw className={loading ? 'spin' : ''} size={16} />
-                            </button>
-                            {activeTab === 'pendientes' && (
-                                <button
-                                    className="btn btn-primary btn-sm"
-                                    onClick={() => setShowModal(true)}
-                                    style={{ boxShadow: 'var(--shadow-glow-primary)', padding: '8px 16px' }}
-                                >
-                                    <FiPlus size={16} />
-                                    Nueva Solicitud
-                                </button>
-                            )}
-                        </div>
+                        <button className="btn btn-ghost btn-sm" onClick={loadData} disabled={loading} title="Actualizar" style={{ padding: '8px' }}>
+                            <FiRefreshCw className={loading ? 'spin' : ''} size={16} />
+                        </button>
                     </div>
 
                     {filteredRequests.length === 0 ? (

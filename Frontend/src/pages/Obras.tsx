@@ -1,12 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { documentsApi, obrasApi, tenantsApi, workersApi, uploadsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useObraContext } from '../context/ObraContext';
 import { useNavigate } from 'react-router-dom';
 import {
   LuBuilding2,
   LuPlus
 } from 'react-icons/lu';
-import { FiAlertTriangle } from 'react-icons/fi';
+import { FiAlertTriangle, FiSearch } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
 
 interface Obra {
@@ -56,11 +57,13 @@ const REGION_COMUNAS: Record<string, string[]> = {
 export const Obras: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
-  const [obras, setObras] = useState<Obra[]>([]);
+  const { obras: contextObras, isLoadingObras, refreshObras } = useObraContext();
+  const obras = contextObras as unknown as Obra[];
+
   const [workers, setWorkers] = useState<any[]>([]);
   const [ds44Alerts, setDs44Alerts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
+  // Spinner solo si el contexto aún no cargó y no hay datos cacheados
+  const loading = isLoadingObras && obras.length === 0;
   const [obraImageFile, setObraImageFile] = useState<File | null>(null);
   const [obraImagePreview, setObraImagePreview] = useState<string>('');
   const [obraImageUrls, setObraImageUrls] = useState<Record<string, string>>({});
@@ -68,12 +71,27 @@ export const Obras: React.FC = () => {
   const imageCacheKey = 'obraImageCache';
   
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterEstado, setFilterEstado] = useState('');
   const canViewObras = user?.rol === 'admin';
   const [companyName, setCompanyName] = useState('');
   const resolvedCompanyName = useMemo(() => {
     const userAny = user as any;
     return companyName || userAny?.empresaNombre || userAny?.nombreEmpresa || userAny?.tenantNombre || userAny?.razonSocial || '';
   }, [companyName, user]);
+
+  const filteredObras = useMemo(() => {
+    const q = searchTerm.toLowerCase().trim();
+    return obras.filter(o => {
+      if (filterEstado && o.estado !== filterEstado) return false;
+      if (!q) return true;
+      return (
+        o.nombre?.toLowerCase().includes(q) ||
+        o.codigo?.toLowerCase().includes(q) ||
+        o.direccion?.toLowerCase().includes(q)
+      );
+    });
+  }, [obras, searchTerm, filterEstado]);
 
   // Form State
   const [formData, setFormData] = useState<Obra>({
@@ -90,130 +108,91 @@ export const Obras: React.FC = () => {
     agentesFQB: false
   });
 
-  const fetchData = async () => {
-    setLoading(true);
+  // Carga DS44 alerts en background, sin bloquear el render
+  const fetchDs44Alerts = async (obrasList: Obra[]) => {
+    if (obrasList.length === 0) { setDs44Alerts({}); return; }
     try {
-      const [obrasRes, workersRes, docsRes] = await Promise.all([
-        obrasApi.list(),
-        workersApi.list(),
-        documentsApi.list({ clasificacion: 'obra' })
-      ]);
+      const docsRes = await documentsApi.list({ clasificacion: 'obra' });
+      const allDocs = docsRes.success && docsRes.data ? (docsRes.data as any).documents || [] : [];
+      const alerts: Record<string, number> = {};
+      obrasList.forEach((obra) => {
+        if (!obra.obraId) return;
+        const docs = allDocs.filter((doc: any) => doc.obraId === obra.obraId);
+        const missingCount = REQUIRED_DS44.filter((required) => {
+          const existing = docs.find((doc: any) => required.tipos.includes(doc.tipo));
+          return !Boolean(existing?.s3Key || existing?.archivoUrl);
+        }).length;
+        alerts[obra.obraId] = missingCount;
+      });
+      setDs44Alerts(alerts);
+    } catch {}
+  };
 
-      let obrasList: Obra[] = [];
-      if (obrasRes.success && obrasRes.data) {
-        const data = obrasRes.data as any;
-        obrasList = Array.isArray(data) ? data : (data.obras || []);
-        setObras(obrasList);
-      }
-      
-      if (workersRes.success && workersRes.data) {
-        setWorkers((workersRes.data as any).personas || workersRes.data);
-      }
+  // Carga imágenes en background usando caché localStorage
+  const fetchObraImages = async (obrasList: Obra[]) => {
+    const imageKeys = obrasList
+      .map((o) => ({ obraId: o.obraId, imagenKey: o.imagenKey }))
+      .filter((e) => e.obraId && e.imagenKey) as { obraId: string; imagenKey: string }[];
+    if (imageKeys.length === 0) { setObraImageUrls({}); return; }
 
-      // Hide loading spinner as soon as the core structure is ready
-      setLoading(false);
+    const now = Date.now();
+    const cachedRaw = localStorage.getItem(imageCacheKey);
+    const cached: Record<string, { url: string; expiresAt: number }> = cachedRaw ? JSON.parse(cachedRaw) : {};
+    const needsFetch = new Set<string>();
+    const nextImages: Record<string, string> = {};
 
-      // Compute DS44 alerts in-memory instantly
-      if (obrasList.length > 0) {
-        const allDocs = docsRes.success && docsRes.data ? (docsRes.data as any).documents || [] : [];
-        const alerts: Record<string, number> = {};
-        obrasList.forEach((obra) => {
-          if (!obra.obraId) {
-            return;
-          }
-          const docs = allDocs.filter((doc: any) => doc.obraId === obra.obraId);
-          const missingCount = REQUIRED_DS44.filter((required) => {
-            const existing = docs.find((doc: any) => required.tipos.includes(doc.tipo));
-            const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-            return !hasFile;
-          }).length;
-          alerts[obra.obraId] = missingCount;
-        });
-        setDs44Alerts(alerts);
-      } else {
-        setDs44Alerts({});
-      }
+    imageKeys.forEach(({ obraId, imagenKey }) => {
+      const entry = cached[imagenKey];
+      if (entry && entry.expiresAt > now) nextImages[obraId] = entry.url;
+      else needsFetch.add(imagenKey);
+    });
 
-      // Load/fetch images progressively with persistent localStorage cache
-      const imageKeys = obrasList
-        .map((obra) => ({ obraId: obra.obraId, imagenKey: obra.imagenKey }))
-        .filter((entry) => entry.obraId && entry.imagenKey) as { obraId: string; imagenKey: string }[];
-      
-      if (imageKeys.length > 0) {
-        const now = Date.now();
-        const cachedRaw = localStorage.getItem(imageCacheKey);
-        const cached: Record<string, { url: string; expiresAt: number }> = cachedRaw ? JSON.parse(cachedRaw) : {};
-        const needsFetch = new Set<string>();
+    if (Object.keys(nextImages).length > 0) setObraImageUrls(prev => ({ ...prev, ...nextImages }));
 
-        // Set already cached and valid images immediately
-        const nextImages: Record<string, string> = {};
-        imageKeys.forEach(({ obraId, imagenKey }) => {
-          const cachedEntry = cached[imagenKey];
-          if (cachedEntry && cachedEntry.expiresAt > now) {
-            nextImages[obraId] = cachedEntry.url;
-          } else {
-            needsFetch.add(imagenKey);
-          }
-        });
-
-        if (Object.keys(nextImages).length > 0) {
-          setObraImageUrls(prev => ({ ...prev, ...nextImages }));
+    if (needsFetch.size > 0) {
+      try {
+        const res = await uploadsApi.getBatchDownloadUrls(Array.from(needsFetch));
+        if (res?.success && res.data?.urls) {
+          const expiresInMs = (res.data.expiresIn || 0) * 1000;
+          const updatedImages: Record<string, string> = {};
+          res.data.urls.forEach((item: any) => {
+            if (item.downloadUrl && item.fileKey) {
+              cached[item.fileKey] = { url: item.downloadUrl, expiresAt: now + expiresInMs };
+              imageKeys.forEach(({ obraId, imagenKey }) => {
+                if (imagenKey === item.fileKey) updatedImages[obraId] = item.downloadUrl;
+              });
+            }
+          });
+          localStorage.setItem(imageCacheKey, JSON.stringify(cached));
+          setObraImageUrls(prev => ({ ...prev, ...updatedImages }));
         }
-
-        // Fetch missing URLs in background
-        if (needsFetch.size > 0) {
-          const downloadResponse = await uploadsApi.getBatchDownloadUrls(Array.from(needsFetch));
-          if (downloadResponse?.success && downloadResponse.data?.urls) {
-            const expiresInMs = (downloadResponse.data.expiresIn || 0) * 1000;
-            const updatedImages: Record<string, string> = {};
-            
-            downloadResponse.data.urls.forEach((item: any) => {
-              if (item.downloadUrl && item.fileKey) {
-                cached[item.fileKey] = {
-                  url: item.downloadUrl,
-                  expiresAt: now + expiresInMs
-                };
-                
-                // Map back to all matching obras
-                imageKeys.forEach(({ obraId, imagenKey }) => {
-                  if (imagenKey === item.fileKey) {
-                    updatedImages[obraId] = item.downloadUrl;
-                  }
-                });
-              }
-            });
-            localStorage.setItem(imageCacheKey, JSON.stringify(cached));
-            setObraImageUrls(prev => ({ ...prev, ...updatedImages }));
-          }
-        }
-      } else {
-        setObraImageUrls({});
-      }
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      setLoading(false);
+      } catch {}
     }
   };
 
+  // Cuando el contexto tiene obras, carga DS44 alerts e imágenes en background
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (obras.length > 0) {
+      fetchDs44Alerts(obras);
+      fetchObraImages(obras);
+    }
+  }, [contextObras]);
 
+  // Workers cargados lazy: solo cuando se abre el modal de creación
   useEffect(() => {
-    const loadTenantName = async () => {
-      if (!user?.tenantId) return;
-      if (companyName) return;
-      try {
-        const res = await tenantsApi.get(user.tenantId);
-        if (res.success && res.data?.nombre) {
-          setCompanyName(res.data.nombre);
-        }
-      } catch (error) {
-        console.error('Error loading tenant name:', error);
-      }
-    };
-    loadTenantName();
-  }, [companyName, user?.tenantId]);
+    if (!isModalOpen || workers.length > 0) return;
+    workersApi.list().then(res => {
+      if (res.success && res.data) setWorkers((res.data as any).personas || res.data);
+    }).catch(() => {});
+  }, [isModalOpen]);
+
+  // Tenant name cargado lazy: solo al abrir el modal, no en el montaje inicial
+  useEffect(() => {
+    if (!isModalOpen || companyName || !user?.tenantId) return;
+    tenantsApi.get(user.tenantId).then(res => {
+      if (res.success && res.data?.nombre) setCompanyName(res.data.nombre);
+    }).catch(() => {});
+  }, [isModalOpen, companyName, user?.tenantId]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target as HTMLInputElement;
@@ -307,7 +286,7 @@ export const Obras: React.FC = () => {
         });
         setObraImageFile(null);
         setObraImagePreview('');
-        fetchData();
+        refreshObras();
       } else {
         alert("Error al crear obra");
       }
@@ -374,8 +353,8 @@ export const Obras: React.FC = () => {
           </div>
         </div>
 
-        <div className="card">
-          {obras.length === 0 ? (
+        {obras.length === 0 ? (
+          <div className="card">
             <div className="empty-state">
               <div className="empty-state-icon">
                 <LuBuilding2 size={48} className="text-muted" />
@@ -385,17 +364,59 @@ export const Obras: React.FC = () => {
                 Crea una obra para comenzar a asignar documentos y personal.
               </p>
             </div>
-          ) : (
-            <>
+          </div>
+        ) : (
+          <>
+            {/* Filtros */}
+            <div className="card mb-6">
+              <div className="flex items-center gap-4" style={{ flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre, código o dirección..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="form-input"
+                    style={{ paddingLeft: 40 }}
+                  />
+                  <FiSearch style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                </div>
+                <div style={{ width: 180 }}>
+                  <Select
+                    ariaLabel="Filtrar por estado"
+                    value={filterEstado}
+                    onChange={setFilterEstado}
+                    options={[
+                      { value: '', label: 'Todos los estados' },
+                      { value: 'activa', label: 'Activas' },
+                      { value: 'pausada', label: 'Pausadas' },
+                      { value: 'finalizada', label: 'Finalizadas' },
+                    ]}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Listado */}
+            <div className="card">
               <div className="card-header">
                 <div>
                   <h2 className="card-title">Listado de Obras</h2>
-                  <p className="card-subtitle">{obras.length} obras registradas</p>
+                  <p className="card-subtitle">
+                    {(searchTerm || filterEstado)
+                      ? `${filteredObras.length} de ${obras.length} obras`
+                      : `${obras.length} obras registradas`}
+                  </p>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 'var(--space-4)' }}>
-                {obras.map((obra) => {
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 'var(--space-4)', padding: 'var(--space-4)' }}>
+                {filteredObras.length === 0 ? (
+                  <p style={{ gridColumn: '1/-1', textAlign: 'center', padding: 'var(--space-10)', color: 'var(--text-muted)', fontSize: 14 }}>
+                    No hay obras que coincidan con los filtros aplicados
+                  </p>
+                ) : null}
+                {filteredObras.map((obra) => {
                   const obraKey = obra.obraId || obra.codigo;
                   const alertCount = obra.obraId ? (ds44Alerts[obra.obraId] ?? 0) : 0;
                   const imageUrl = obra.obraId ? obraImageUrls[obra.obraId] : '';
@@ -463,9 +484,9 @@ export const Obras: React.FC = () => {
                   );
                 })}
               </div>
-            </>
-          )}
-        </div>
+            </div>{/* /card listado */}
+          </>
+        )}
       </div>
 
       {/* Modal Crear Obra */}

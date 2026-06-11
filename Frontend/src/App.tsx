@@ -25,6 +25,7 @@ import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
 import ObraDetalle from './pages/ObraDetalle';
+import Equipo from './pages/Equipo';
 import OfflineBanner from './components/OfflineBanner';
 import SuggestionsWidget from './components/SuggestionsWidget';
 import Footer from './components/Footer';
@@ -54,6 +55,7 @@ function AppContent() {
           <Route path="/register-admin" element={<RegisterAdmin />} />
           <Route path="/onboarding" element={<TenantOnboarding />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
+          <Route path="/equipo" element={<Equipo />} />
 
           <Route path="/" element={
             <ProtectedRoute>
