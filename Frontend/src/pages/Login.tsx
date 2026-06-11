@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FiArrowRight, FiUser, FiLock } from 'react-icons/fi';
+import { FiArrowRight, FiUser, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 
 export default function Login() {
     const { login, error: authError } = useAuth();
@@ -12,6 +12,7 @@ export default function Login() {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     const from = (location.state as any)?.from?.pathname || '/';
 
@@ -80,13 +81,21 @@ export default function Login() {
                             <span className="lp-input-icon"><FiLock size={14} /></span>
                             <input
                                 id="lp-password"
-                                type="password"
-                                className="lp-input"
+                                type={showPassword ? 'text' : 'password'}
+                                className="lp-input lp-input--password"
                                 placeholder="••••••••"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 autoComplete="current-password"
                             />
+                            <button
+                                type="button"
+                                className="lp-eye-btn"
+                                onClick={() => setShowPassword(v => !v)}
+                                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                            >
+                                {showPassword ? <FiEyeOff size={14} /> : <FiEye size={14} />}
+                            </button>
                         </div>
                     </div>
 
@@ -240,6 +249,27 @@ export default function Login() {
                     box-sizing: border-box;
                 }
 
+                .lp-input--password { padding-right: 38px; }
+
+                .lp-eye-btn {
+                    position: absolute;
+                    right: 10px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    background: none;
+                    border: none;
+                    padding: 4px;
+                    cursor: pointer;
+                    color: #94a3b8;
+                    display: flex;
+                    align-items: center;
+                    border-radius: 4px;
+                    transition: color 0.15s ease;
+                    line-height: 0;
+                }
+
+                .lp-eye-btn:hover { color: #006edc; }
+
                 .lp-input::placeholder { color: #b0bec5; }
 
                 .lp-input:focus {
@@ -331,8 +361,8 @@ export default function Login() {
 
                 /* ── Responsive ── */
                 @media (max-width: 500px) {
-                    .lp-root { padding: 16px 12px; align-items: flex-start; padding-top: 40px; }
-                    .lp-card { padding: 36px 28px 32px; border-radius: 12px; }
+                    .lp-root { min-height: 100dvh; padding: 24px 16px; align-items: center; }
+                    .lp-card { padding: 36px 24px 32px; border-radius: 12px; }
                     .lp-logo { font-size: 1.9rem; }
                     .lp-title { font-size: 20px; }
                 }

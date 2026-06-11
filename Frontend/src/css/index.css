@@ -25,17 +25,17 @@
   --font-display: 'Lora', Georgia, 'Times New Roman', serif;
   --font-ui: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  /* Colores principales - Paleta profesional para seguridad */
-  --primary-50: #e8f5e9;
-  --primary-100: #c8e6c9;
-  --primary-200: #a5d6a7;
-  --primary-300: #81c784;
-  --primary-400: #66bb6a;
-  --primary-500: #4caf50;
-  --primary-600: #43a047;
-  --primary-700: #388e3c;
-  --primary-800: #2e7d32;
-  --primary-900: #1b5e20;
+  /* Colores principales - Paleta institucional CChC (azul) */
+  --primary-50: #e6f1ff;
+  --primary-100: #cce3ff;
+  --primary-200: #99c7ff;
+  --primary-300: #66aaf5;
+  --primary-400: #4d93e8;   /* enlaces / activos en modo oscuro */
+  --primary-500: #006edc;   /* azul CChC — acción principal */
+  --primary-600: #0052a3;   /* hover / estados activos */
+  --primary-700: #003b75;   /* navy-2 */
+  --primary-800: #002952;   /* navy */
+  --primary-900: #001a38;
 
   /* Colores de acento - Naranja para alertas */
   --accent-50: #fff3e0;
@@ -113,7 +113,7 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.5);
-  --shadow-glow-primary: 0 0 20px rgba(76, 175, 80, 0.3);
+  --shadow-glow-primary: 0 0 20px rgba(0, 110, 220, 0.3);
   --shadow-glow-accent: 0 0 20px rgba(255, 152, 0, 0.3);
   --shadow-glow-danger: 0 0 20px rgba(244, 67, 54, 0.3);
 
@@ -246,13 +246,13 @@ body {
 
 /* Links */
 a {
-  color: var(--primary-400);
+  color: var(--accent);
   text-decoration: none;
   transition: color var(--transition-fast);
 }
 
 a:hover {
-  color: var(--primary-300);
+  color: var(--accent-text);
 }
 
 /* Imágenes */

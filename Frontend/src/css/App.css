@@ -1373,7 +1373,7 @@
   margin: 0;
   vertical-align: middle;
   border-radius: 6px;
-  border: 2px solid var(--primary-500, #4caf50);
+  border: 2px solid var(--primary-500);
   background: transparent;
   position: relative;
   transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
@@ -1398,8 +1398,8 @@
 }
 
 .checkbox-input.custom-checkbox:checked {
-  background: var(--primary-500, #4caf50);
-  border-color: var(--primary-700, #388e3c);
+  background: var(--primary-500);
+  border-color: var(--primary-700);
 }
 
 .checkbox-input.custom-checkbox:checked::after {
