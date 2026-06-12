@@ -1,4 +1,15 @@
 import { apiRequest } from './client';
+import type { Ds44KitItem } from '../utils/ds44';
+
+// Cargo editable del catálogo del tenant (constructor de cargos). Lleva su kit
+// de onboarding embebido. Se persiste en Tenant.reglas.cargos.
+export interface TenantCargo {
+    codigo: string;
+    label: string;
+    legacy?: boolean;
+    seed?: boolean;          // proviene de la semilla EBCO (no editado aún)
+    kit: Ds44KitItem[];
+}
 
 // ========================================
 // TENANT TYPES
@@ -98,5 +109,16 @@ export const tenantsApi = {
         apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
+        }),
+
+    // Catálogo de cargos del tenant. `sembrado: true` ⇒ aún es la semilla EBCO
+    // (no persistida); el constructor la guarda con saveCargos.
+    getCargos: (id: string) =>
+        apiRequest<{ cargos: TenantCargo[]; sembrado: boolean }>(`/tenants/${id}/cargos`),
+
+    saveCargos: (id: string, cargos: TenantCargo[]) =>
+        apiRequest<{ message: string; cargos: TenantCargo[] }>(`/tenants/${id}/cargos`, {
+            method: 'PUT',
+            body: JSON.stringify({ cargos }),
         }),
 };

@@ -6,6 +6,7 @@
 const { TenantService } = require('../../lib/services/TenantService');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { success, error, created, cors } = require('../../lib/utils/response');
+const { buildDefaultCargoCatalog, sanitizeCargoCatalog } = require('../../lib/ds44');
 
 const tenantService = new TenantService();
 
@@ -91,6 +92,38 @@ module.exports.tenantsHandler = async (event) => {
             return success({
                 message: 'Tenant actualizado',
                 tenant: tenant.toSafeFormat()
+            });
+        }
+
+        // GET /tenants/{id}/cargos — Catálogo de cargos del tenant (constructor).
+        // Si el tenant aún no lo tiene, devuelve la semilla EBCO (no persiste
+        // hasta que el tenant guarde, para no escribir en cada lectura).
+        if (method === 'GET' && tenantId && action === 'cargos') {
+            const tenant = await tenantService.getById(tenantId);
+            if (!tenant) return error('Tenant no encontrado', 404);
+            const cargos = Array.isArray(tenant.reglas?.cargos) && tenant.reglas.cargos.length
+                ? tenant.reglas.cargos
+                : buildDefaultCargoCatalog();
+            return success({ cargos, sembrado: !(tenant.reglas?.cargos?.length) });
+        }
+
+        // PUT /tenants/{id}/cargos — Guardar catálogo de cargos. Mergea en
+        // reglas.cargos sin pisar el resto de reglas del tenant.
+        if (method === 'PUT' && tenantId && action === 'cargos') {
+            const body = JSON.parse(event.body || '{}');
+            let cargos;
+            try {
+                cargos = sanitizeCargoCatalog(body.cargos);
+            } catch (validationErr) {
+                return error(validationErr.message, 400);
+            }
+            const tenant = await tenantService.getById(tenantId);
+            if (!tenant) return error('Tenant no encontrado', 404);
+            const reglas = { ...(tenant.reglas || {}), cargos };
+            const updated = await tenantService.updateConfig(tenantId, { reglas });
+            return success({
+                message: 'Catálogo de cargos actualizado',
+                cargos: updated.reglas?.cargos || cargos
             });
         }
 

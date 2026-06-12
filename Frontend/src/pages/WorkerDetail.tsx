@@ -32,7 +32,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { Modal } from '../components/ui';
-import { DS44_ONBOARDING_ITEMS } from '../utils/ds44';
+import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
 
 interface WorkerStats {
     totalFirmas: number;
@@ -381,7 +381,7 @@ Fecha: ${new Date().toLocaleDateString('es-CL')}
 --------------------------------------------------
 
 DETALLES
-- Cargo: ${worker.cargo || 'N/A'}
+- Cargo: ${getCargoLabel(worker.cargo) || 'N/A'}
 - Email: ${worker.email || 'N/A'}
 - Estado: ${worker.habilitado ? 'Habilitado' : 'Pendiente'}
 
@@ -633,7 +633,7 @@ Generado por PrevencionApp
                                     <LuBriefcase className="icon" size={18} />
                                     <div className="content">
                                         <label>Cargo</label>
-                                        <span>{worker.cargo || 'No asignado'}</span>
+                                        <span>{getCargoLabel(worker.cargo) || 'No asignado'}</span>
                                     </div>
                                 </div>
                                 <div className="info-item">

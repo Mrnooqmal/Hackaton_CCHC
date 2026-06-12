@@ -10,6 +10,8 @@ import {
     FiUsers, FiX, FiSave,
     FiBriefcase, FiStar, FiSearch, FiEye, FiUpload, FiDownload
 } from 'react-icons/fi';
+import { getCargoLabel } from '../utils/ds44';
+import { useCargoCatalog } from '../hooks/useCargoCatalog';
 
 // Opciones de ficha (selects en vez de texto libre)
 const NIVELES_ESCOLAR = ['Básica incompleta', 'Básica completa', 'Media incompleta', 'Media completa', 'Técnico', 'Universitaria', 'Postgrado'];
@@ -29,6 +31,7 @@ const AVATAR_TINT = { bg: 'rgba(0, 110, 220, 0.12)', fg: '#4d9fff', border: 'rgb
 export default function PersonasManagement() {
     const { user, hasPermission } = useAuth();
     const { selectedObraId, selectedObra } = useObraContext();
+    const { options: cargoOptions } = useCargoCatalog();
     const tenantId = user?.tenantId || user?.empresaId || localStorage.getItem('tenant_id') || '';
     const isAdmin = user?.rol === 'admin';
     const isObraScoped = Boolean(user && !isAdmin);
@@ -417,7 +420,7 @@ export default function PersonasManagement() {
                                         </div>
                                         <span className="pdir-name">{p.nombre} {p.apellido}</span>
                                         <span className="pdir-rut">{p.rut}</span>
-                                        <span className="pdir-cargo">{p.cargo || ROLE_CONFIG[p.rol]?.label || '—'}</span>
+                                        <span className="pdir-cargo">{getCargoLabel(p.cargo) || ROLE_CONFIG[p.rol]?.label || '—'}</span>
                                     </Link>
                             ))}
                         </div>
@@ -574,7 +577,7 @@ export default function PersonasManagement() {
                                 <div className="form-group"><label className="form-label">RUT *</label><input type="text" className="form-input" placeholder="12.345.678-9" value={newPersona.rut} onChange={e => setNewPersona({ ...newPersona, rut: e.target.value })} required /></div>
                                 <div className="form-group"><label className="form-label">Email</label><input type="email" className="form-input" value={newPersona.email} onChange={e => setNewPersona({ ...newPersona, email: e.target.value })} /><span className="form-hint">Si tiene acceso web, recibirá credenciales por email</span></div>
                                 {newPersona.rol === 'trabajador' && (
-                                    <div className="form-group"><label className="form-label"><FiBriefcase size={14} /> Cargo</label><input type="text" className="form-input" placeholder="Ej: Operador, Jefe de Obra..." value={newPersona.cargo} onChange={e => setNewPersona({ ...newPersona, cargo: e.target.value })} /></div>
+                                    <div className="form-group"><label className="form-label"><FiBriefcase size={14} /> Cargo</label><Select value={newPersona.cargo} onChange={v => setNewPersona({ ...newPersona, cargo: v })} options={cargoOptions} placeholder="Seleccione un cargo" searchable ariaLabel="Cargo" /></div>
                                 )}
 
                                 <h3 className="form-section-title" style={{ marginTop: 'var(--space-3)' }}>Ficha del colaborador <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(opcional)</span></h3>
@@ -653,7 +656,7 @@ export default function PersonasManagement() {
                                     <div className="form-group"><label className="form-label">Apellido</label><input type="text" className="form-input" value={editForm.apellido} onChange={e => setEditForm({ ...editForm, apellido: e.target.value })} /></div>
                                 </div>
                                 <div className="form-group"><label className="form-label">Email</label><input type="email" className="form-input" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
-                                <div className="form-group"><label className="form-label">Cargo</label><input type="text" className="form-input" value={editForm.cargo} onChange={e => setEditForm({ ...editForm, cargo: e.target.value })} /></div>
+                                <div className="form-group"><label className="form-label">Cargo</label><Select value={editForm.cargo} onChange={v => setEditForm({ ...editForm, cargo: v })} options={cargoOptions} placeholder="Seleccione un cargo" searchable ariaLabel="Cargo" /></div>
                                 <div className="form-group"><label className="form-label">Estado</label>
                                     <SegmentedControl
                                         ariaLabel="Estado"

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi } from '../api/client';
-import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload } from 'react-icons/lu';
+import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
 import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
@@ -2286,7 +2286,13 @@ export default function ObraDetalle() {
                 <div className="card-title">Onboarding de trabajadores</div>
                 <div className="text-muted" style={{ fontSize: '0.85rem' }}>Track por persona, se dispara al vincular. Independiente de la fase y del cumplimiento DS44 de la obra.</div>
               </div>
-              <LuUsers className="text-muted" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {/* El kit que se asigna aquí se define en el catálogo de cargos (nivel empresa). */}
+                <button className="btn btn-secondary btn-sm" onClick={() => navigate('/cargos-onboarding')} title="Configurar los cargos y su kit de onboarding (aplica a todas las obras)">
+                  <LuSettings size={15} /> Configurar cargos y kits
+                </button>
+                <LuUsers className="text-muted" />
+              </div>
             </div>
                 {/* Barra global */}
                 <div style={{ height: '8px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', marginBottom: 'var(--space-3)' }}>

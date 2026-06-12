@@ -5,7 +5,8 @@ import { useObraContext } from '../context/ObraContext';
 import { useNavigate } from 'react-router-dom';
 import {
   LuBuilding2,
-  LuPlus
+  LuPlus,
+  LuSettings
 } from 'react-icons/lu';
 import { FiAlertTriangle, FiSearch } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
@@ -343,6 +344,15 @@ export const Obras: React.FC = () => {
             </p>
           </div>
           <div className="page-header-actions">
+            {/* Configurar el catálogo de cargos antes/alrededor de crear obras (DS44). */}
+            <button
+              onClick={() => navigate('/cargos-onboarding')}
+              className="btn btn-secondary"
+              title="Definir los cargos y su kit de onboarding (aplica a todas las obras)"
+            >
+              <LuSettings />
+              Cargos de onboarding
+            </button>
             <button
               onClick={() => setIsModalOpen(true)}
               className="btn btn-primary"

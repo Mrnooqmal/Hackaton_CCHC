@@ -25,6 +25,7 @@ import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
 import ObraDetalle from './pages/ObraDetalle';
+import CargosOnboarding from './pages/CargosOnboarding';
 import Equipo from './pages/Equipo';
 import About from './pages/About';
 import OfflineBanner from './components/OfflineBanner';
@@ -96,6 +97,13 @@ function AppContent() {
           <Route path="/obras/:obraId" element={
             <ProtectedRoute requiredPermission="gestionar_obras">
               <ObraDetalle />
+            </ProtectedRoute>
+          } />
+
+          {/* Constructor de cargos de onboarding (catálogo tenant). Admin + jefe de obra. */}
+          <Route path="/cargos-onboarding" element={
+            <ProtectedRoute requiredPermission="gestionar_obras">
+              <CargosOnboarding />
             </ProtectedRoute>
           } />
 

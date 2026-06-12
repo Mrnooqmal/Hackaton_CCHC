@@ -14,6 +14,7 @@ const { EppService, ROLES_VALIDADOR } = require('../../lib/services/EppService')
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
+const { normalizeCargoCodigo } = require('../../lib/ds44');
 
 const personaService = new PersonaService();
 const obraService = new ObraService();
@@ -432,7 +433,10 @@ module.exports.personasHandler = async (event) => {
                 const email = getCell('email');
                 const telefono = getCell('telefono');
                 const rol = getCell('rol').toLowerCase();
-                const cargo = getCell('cargo');
+                // Solo los trabajadores usan el catálogo de cargos (resuelve su
+                // kit de onboarding). El Excel trae texto libre → normalizar al
+                // código del catálogo (alias EBCO; cae a OTRO si no se reconoce).
+                const cargo = rol === 'trabajador' ? normalizeCargoCodigo(getCell('cargo')) : getCell('cargo');
                 // Obra: por codigo en la fila; si no, la obra del lote (carga desde obra).
                 const obraCodigo = getCell('obra').trim().toLowerCase();
                 const obraIdFila = obraCodigo ? obraPorCodigo[obraCodigo] : obraIdBatch;
