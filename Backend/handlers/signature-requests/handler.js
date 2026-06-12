@@ -518,9 +518,10 @@ module.exports.updateOnSignature = async (requestId, workerId, signatureId) => {
 
         // Actualizar el trabajador en la lista.
         // Solicitudes antiguas solo traen workerId, las nuevas personaId: aceptar ambos
-        // para que la firma siempre quede asignada al trabajador correcto.
+        // (mismo criterio que el find de signatures.create) para que la firma
+        // siempre quede asignada al trabajador correcto.
         const trabajadores = (request.trabajadores || []).map(t => {
-            if (t.personaId === workerId || (!t.personaId && t.workerId === workerId)) {
+            if (t.personaId === workerId || t.workerId === workerId) {
                 return {
                     ...t,
                     firmado: true,
