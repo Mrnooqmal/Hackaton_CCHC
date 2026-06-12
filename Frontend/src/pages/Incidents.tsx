@@ -119,6 +119,10 @@ export default function Incidents() {
     const [gobError, setGobError] = useState('');
     const [personasTenant, setPersonasTenant] = useState<any[]>([]);
 
+    // Autocomplete de trabajadores para hallazgo
+    const [trabajadorSearch, setTrabajadorSearch] = useState('');
+    const [showTrabajadorDropdown, setShowTrabajadorDropdown] = useState(false);
+
     const openGobernanza = async (inc: Incident) => {
         const g = (inc as any).gobernanza || {};
         setGobForm({
@@ -174,6 +178,15 @@ export default function Incidents() {
             loadAnalytics();
         }
     }, [activeTab]);
+
+    // Precarga trabajadores al abrir el modal (hallazgo e incidente)
+    useEffect(() => {
+        if (showModal && personasTenant.length === 0) {
+            workersApi.list().then(res => {
+                if (res.success && res.data) setPersonasTenant(res.data as any[]);
+            });
+        }
+    }, [showModal]);
 
     const loadIncidents = async () => {
         setLoading(true);
@@ -600,6 +613,8 @@ export default function Incidents() {
         setFlashAfectados([{ nombre: '', rut: '', cargo: '' }]);
         setFlashDescripcion('');
         setFlashUbicacion('');
+        setTrabajadorSearch('');
+        setShowTrabajadorDropdown(false);
     };
 
     const clearFilters = () => {
@@ -1756,6 +1771,22 @@ export default function Incidents() {
                                                         />
                                                     </div>
                                                 )}
+
+                                                {formData.clasificacion === 'incidente' && (
+                                                    <div className="form-group">
+                                                        <label className="form-label">Gravedad *</label>
+                                                        <Select
+                                                            ariaLabel="Gravedad"
+                                                            value={formData.gravedad}
+                                                            onChange={(v) => setFormData({ ...formData, gravedad: v as any })}
+                                                            options={[
+                                                                { value: 'leve', label: 'Leve' },
+                                                                { value: 'grave', label: 'Grave' },
+                                                                { value: 'fatal', label: 'Fatal' },
+                                                            ]}
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Subcategoria: Reporte Flash vs Completo (solo incidentes) */}
@@ -1832,193 +1863,113 @@ export default function Incidents() {
                                         )}
 
                                         {!(formData.clasificacion === 'incidente' && flashMode) && (<>
-                                        {/* Sección: Información General */}
-                                        <div className="form-section">
-                                            <h3 className="form-section-title">Información General</h3>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="form-group">
-                                                    <label className="form-label">Centro de Trabajo *</label>
-                                                    <input
-                                                        type="text"
-                                                        className="form-input"
-                                                        placeholder="Ej: Obra Los Pinos"
-                                                        value={formData.centroTrabajo}
-                                                        onChange={(e) => setFormData({ ...formData, centroTrabajo: e.target.value })}
-                                                        required
-                                                    />
-                                                </div>
 
-                                                <div className="form-group">
-                                                    <label className="form-label">Gravedad</label>
-                                                    <Select
-                                                        ariaLabel="Gravedad"
-                                                        value={formData.gravedad}
-                                                        onChange={(v) => setFormData({ ...formData, gravedad: v as any })}
-                                                        options={[
-                                                            { value: 'leve', label: 'Leve' },
-                                                            { value: 'grave', label: 'Grave' },
-                                                            { value: 'fatal', label: 'Fatal' },
-                                                        ]}
-                                                    />
-                                                </div>
-
-                                                <div className="form-group">
-                                                    <label className="form-label">Días Perdidos</label>
-                                                    <input
-                                                        type="number"
-                                                        className="form-input"
-                                                        value={formData.diasPerdidos}
-                                                        onChange={(e) => setFormData({ ...formData, diasPerdidos: parseInt(e.target.value) || 0 })}
-                                                        min="0"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Sección: Ubicación */}
-                                        <div className="form-section">
-                                            <h3 className="form-section-title flex items-center gap-2">
-                                                <FiMapPin /> Ubicación del Reporte
-                                            </h3>
-                                            <div className="location-box">
-                                                <div className="flex flex-wrap items-center justify-between gap-3">
-                                                    <div>
-                                                        <p className="text-sm text-muted">Capturamos tu ubicación actual al enviar el incidente.</p>
-                                                        {location && (
-                                                            <p className="text-xs text-primary-600 font-semibold mt-1">
-                                                                Coordenadas listas ({location.lat.toFixed(5)}, {location.lng.toFixed(5)})
-                                                                {location.accuracy ? ` · ±${location.accuracy}m` : ''}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-secondary btn-sm"
-                                                        onClick={() => requestLocation({ force: true })}
-                                                        disabled={isGettingLocation}
-                                                    >
-                                                        {isGettingLocation ? <><FiRefreshCw className="mr-2 animate-spin" /> Buscando GPS...</> : <><FiMapPin className="mr-2" /> Usar mi ubicación</>}
-                                                    </button>
-                                                </div>
-
-                                                {locationError && (
-                                                    <div className="location-error">
-                                                        <FiAlertCircle size={14} />
-                                                        <span>{locationError}</span>
-                                                    </div>
-                                                )}
-
-                                                {isGettingLocation && !location && (
-                                                    <div className="location-loading">
-                                                        <div className="spinner" />
-                                                        <span className="text-sm">Intentando obtener tu posición...</span>
-                                                    </div>
-                                                )}
-
-                                                {location ? (
-                                                    <div className="map-preview-frame mt-3">
-                                                        <iframe
-                                                            src={buildEmbedUrl(location.lat, location.lng)}
-                                                            loading="lazy"
-                                                            aria-label="Mapa de ubicación actual"
-                                                        />
-                                                        <a
-                                                            className="map-preview-overlay"
-                                                            href={buildMapsLink(location.lat, location.lng)}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                        >
-                                                            Abrir en Maps
-                                                        </a>
-                                                    </div>
-                                                ) : (!isGettingLocation && !locationError) && (
-                                                    <p className="text-xs text-muted mt-2">Aún no tenemos tu ubicación. Puedes intentar capturarla antes de enviar.</p>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Sección: Trabajador Afectado */}
+                                        {/* Sección: Trabajador Afectado — autocomplete para ambos tipos */}
                                         <div className="form-section">
                                             <h3 className="form-section-title">Trabajador Afectado</h3>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="form-group">
-                                                    <label className="form-label">Nombre Completo *</label>
+                                            <div className="form-group">
+                                                <label className="form-label">Buscar trabajador *</label>
+                                                <div style={{ position: 'relative' }}>
                                                     <input
                                                         type="text"
                                                         className="form-input"
-                                                        placeholder="Juan Pérez González"
-                                                        value={formData.trabajador.nombre}
-                                                        onChange={(e) => setFormData({
-                                                            ...formData,
-                                                            trabajador: { ...formData.trabajador, nombre: e.target.value }
-                                                        })}
-                                                        required
+                                                        placeholder="Escribe nombre o RUT…"
+                                                        value={trabajadorSearch}
+                                                        autoComplete="off"
+                                                        onChange={(e) => {
+                                                            setTrabajadorSearch(e.target.value);
+                                                            setShowTrabajadorDropdown(true);
+                                                            if (!e.target.value) setFormData({ ...formData, trabajador: { nombre: '', rut: '', genero: '', cargo: '' } });
+                                                        }}
+                                                        onFocus={() => setShowTrabajadorDropdown(true)}
+                                                        onBlur={() => setTimeout(() => setShowTrabajadorDropdown(false), 150)}
                                                     />
+                                                    {showTrabajadorDropdown && trabajadorSearch.length > 0 && (() => {
+                                                        const q = trabajadorSearch.toLowerCase();
+                                                        const filtered = personasTenant.filter(p => {
+                                                            const fullName = `${p.nombre || ''} ${p.apellido || ''}`.toLowerCase();
+                                                            return fullName.includes(q) || (p.rut && p.rut.toLowerCase().includes(q));
+                                                        });
+                                                        return (
+                                                            <div style={{
+                                                                position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+                                                                zIndex: 60, background: 'var(--surface-card)',
+                                                                border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)',
+                                                                boxShadow: 'var(--shadow-xl)', maxHeight: '220px', overflowY: 'auto'
+                                                            }}>
+                                                                {filtered.length === 0 ? (
+                                                                    <div style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                                                                        No se encontraron trabajadores
+                                                                    </div>
+                                                                ) : filtered.map((p: any) => (
+                                                                    <button
+                                                                        key={p.personaId || p.workerId}
+                                                                        type="button"
+                                                                        style={{
+                                                                            width: '100%', display: 'flex', flexDirection: 'column',
+                                                                            padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--surface-border)',
+                                                                            background: 'transparent', cursor: 'pointer', textAlign: 'left'
+                                                                        }}
+                                                                        onMouseDown={() => {
+                                                                            const nombre = `${p.nombre || ''} ${p.apellido || ''}`.trim();
+                                                                            setTrabajadorSearch(nombre);
+                                                                            setShowTrabajadorDropdown(false);
+                                                                            setFormData({
+                                                                                ...formData,
+                                                                                trabajador: {
+                                                                                    nombre,
+                                                                                    rut: p.rut || '',
+                                                                                    genero: p.genero || '',
+                                                                                    cargo: p.cargo || p.puesto || ''
+                                                                                }
+                                                                            });
+                                                                        }}
+                                                                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                                                                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                                                    >
+                                                                        <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                                                                            {p.nombre} {p.apellido || ''}
+                                                                        </span>
+                                                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                                                            {p.rut}{p.cargo ? ` · ${p.cargo}` : p.puesto ? ` · ${p.puesto}` : ''}
+                                                                        </span>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
-
-                                                <div className="form-group">
-                                                    <label className="form-label">RUT *</label>
-                                                    <input
-                                                        type="text"
-                                                        className="form-input"
-                                                        placeholder="12.345.678-9"
-                                                        value={formData.trabajador.rut}
-                                                        onChange={(e) => setFormData({
-                                                            ...formData,
-                                                            trabajador: { ...formData.trabajador, rut: e.target.value }
-                                                        })}
-                                                        required
-                                                    />
-                                                </div>
-
-                                                <div className="form-group">
-                                                    <label className="form-label">Género</label>
-                                                    <Select
-                                                        ariaLabel="Género"
-                                                        placeholder="Seleccionar"
-                                                        value={formData.trabajador.genero}
-                                                        onChange={(v) => setFormData({
-                                                            ...formData,
-                                                            trabajador: { ...formData.trabajador, genero: v }
-                                                        })}
-                                                        options={[
-                                                            { value: 'M', label: 'Masculino' },
-                                                            { value: 'F', label: 'Femenino' },
-                                                            { value: 'Otro', label: 'Otro' },
-                                                        ]}
-                                                    />
-                                                </div>
-
-                                                <div className="form-group">
-                                                    <label className="form-label">Cargo</label>
-                                                    <input
-                                                        type="text"
-                                                        className="form-input"
-                                                        placeholder="Ej: Operador de Grúa"
-                                                        value={formData.trabajador.cargo}
-                                                        onChange={(e) => setFormData({
-                                                            ...formData,
-                                                            trabajador: { ...formData.trabajador, cargo: e.target.value }
-                                                        })}
-                                                    />
-                                                </div>
+                                                {formData.trabajador.nombre && (
+                                                    <p className="form-hint" style={{ color: 'var(--primary-400)', marginTop: 'var(--space-2)' }}>
+                                                        <FiCheck style={{ display: 'inline', marginRight: '4px' }} />
+                                                        {formData.trabajador.nombre}{formData.trabajador.rut ? ` — ${formData.trabajador.rut}` : ''}{formData.trabajador.cargo ? ` · ${formData.trabajador.cargo}` : ''}
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
 
                                         {/* Sección: Descripción */}
                                         <div className="form-section">
-                                            <h3 className="form-section-title">Descripción del Incidente</h3>
+                                            <h3 className="form-section-title">
+                                                {formData.clasificacion === 'hallazgo' ? 'Descripción del Hallazgo' : 'Descripción del Incidente'}
+                                            </h3>
                                             <div className="form-group">
                                                 <label className="form-label">Detalle *</label>
                                                 <textarea
                                                     className="form-input"
                                                     rows={5}
-                                                    placeholder="Describa con detalle lo ocurrido, incluyendo circunstancias, lugar exacto, hora aproximada y cualquier información relevante..."
+                                                    placeholder={formData.clasificacion === 'hallazgo'
+                                                        ? 'Describa el hallazgo observado: condición o acción detectada, lugar exacto, posibles riesgos asociados…'
+                                                        : 'Describa con detalle lo ocurrido, incluyendo circunstancias, lugar exacto, hora aproximada y cualquier información relevante…'}
                                                     value={formData.descripcion}
                                                     onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
                                                     required
                                                 />
-                                                <span className="form-hint">Sea lo más específico posible para facilitar la investigación</span>
+                                                <span className="form-hint">
+                                                    {formData.clasificacion === 'hallazgo'
+                                                        ? 'Incluya toda la información que permita verificar y gestionar el hallazgo'
+                                                        : 'Sea lo más específico posible para facilitar la investigación'}
+                                                </span>
                                             </div>
                                         </div>
 
@@ -2075,34 +2026,61 @@ export default function Incidents() {
                                         </>)}
 
                                         {/* Sección: Confirmación de Envío */}
-                                        <div className="form-section confirmation-section">
-                                            <h3 className="form-section-title">
-                                                <FiCheck className="inline mr-2" />
+                                        <div className="form-section">
+                                            <h3 className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                                <FiCheck size={16} />
                                                 Confirmación de Envío
                                             </h3>
-                                            <div className="confirmation-box">
-                                                <div className="confirmation-info">
-                                                    <div className="confirmation-row">
-                                                        <span className="confirmation-label">Reportado por:</span>
-                                                        <span className="confirmation-value">{user?.nombre || 'Usuario'}</span>
+                                            <div style={{
+                                                background: 'var(--surface-elevated)',
+                                                border: '1px solid var(--surface-border)',
+                                                borderRadius: 'var(--radius-lg)',
+                                                overflow: 'hidden'
+                                            }}>
+                                                {/* Metadata del reporte */}
+                                                <div style={{
+                                                    display: 'flex', gap: 'var(--space-6)', flexWrap: 'wrap',
+                                                    padding: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)',
+                                                    background: 'var(--surface-card)'
+                                                }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                                        <FiUser size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Reportado por</span>
+                                                        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                            {user?.nombre} {(user as any)?.apellido || ''}
+                                                        </span>
                                                     </div>
-                                                    <div className="confirmation-row">
-                                                        <span className="confirmation-label">Fecha y hora:</span>
-                                                        <span className="confirmation-value">{new Date().toLocaleString('es-CL')}</span>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                                        <FiCalendar size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Fecha y hora</span>
+                                                        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                            {new Date().toLocaleString('es-CL')}
+                                                        </span>
                                                     </div>
                                                 </div>
-                                                <label className="confirmation-checkbox">
+                                                {/* Checkbox de declaración */}
+                                                <label style={{
+                                                    display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
+                                                    padding: 'var(--space-4)', cursor: 'pointer'
+                                                }}>
                                                     <input
                                                         type="checkbox"
                                                         checked={confirmaEnvio}
                                                         onChange={(e) => setConfirmaEnvio(e.target.checked)}
+                                                        style={{ marginTop: '3px', flexShrink: 0, accentColor: 'var(--primary-500)' }}
                                                         required
                                                     />
-                                                    <span> Confirmo que la información proporcionada es verídica y corresponde a los hechos ocurridos.</span>
+                                                    <div>
+                                                        <p style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)', margin: 0 }}>
+                                                            {formData.clasificacion === 'hallazgo'
+                                                                ? 'Declaro que el hallazgo reportado ha sido observado directamente y es comprobable en terreno.'
+                                                                : 'Declaro que la información proporcionada corresponde fielmente a los hechos ocurridos.'}
+                                                        </p>
+                                                        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-1)' }}>
+                                                            Esta declaración queda registrada con tu nombre y es verificable por cargos superiores.
+                                                        </p>
+                                                    </div>
                                                 </label>
-                                                <p className="form-hint" style={{ marginTop: 'var(--space-2)' }}>
-                                                    Esta confirmación sirve como registro de autoría del reporte.
-                                                </p>
                                             </div>
                                         </div>
 
@@ -2136,7 +2114,7 @@ export default function Incidents() {
                                                 ) : (
                                                     <>
                                                         <FiSave className="mr-2" />
-                                                        Reportar Incidente
+                                                        {formData.clasificacion === 'hallazgo' ? 'Reportar Hallazgo' : 'Reportar Incidente'}
                                                     </>
                                                 )}
                                             </button>

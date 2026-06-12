@@ -63,8 +63,8 @@
   position: fixed;
   left: 0;
   top: var(--header-height); /* arranca bajo el header (el header queda por encima) */
+  bottom: 0;
   width: var(--sidebar-width);
-  height: calc(100vh - var(--header-height));
   background: var(--surface-card);
   border-right: 1px solid var(--surface-border);
   display: flex;

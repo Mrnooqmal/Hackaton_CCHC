@@ -92,21 +92,27 @@ export default function Footer() {
             </div>
 
             <style>{`
-                /* ── Raíz: rompe el padding de .main-content para llegar a los bordes ── */
+                /* ── Raíz: rompe el padding de .main-content y se extiende bajo el sidebar ── */
                 .ft-root {
-                    /* Desktop: .main-content padding = var(--space-6) = 24px */
+                    /* Extiende hacia la izquierda hasta el borde del viewport (bajo el sidebar fijo) */
                     margin-top: 40px;
-                    margin-left: -24px;
+                    margin-left: calc(-1 * var(--sidebar-width) - 24px);
                     margin-right: -24px;
                     margin-bottom: -24px;
-                    width: calc(100% + 48px);
+                    width: calc(100% + var(--sidebar-width) + 48px);
                     background: #001428;
                     color: #e2e8f0;
                     font-family: var(--font-ui, 'Roboto', sans-serif);
                     box-sizing: border-box;
                 }
 
-                /* Tablet/móvil ≤1024px: .main-content padding lateral = var(--space-4) = 16px */
+                /* Sidebar colapsado en desktop: el main-content ya no tiene margin-left */
+                .sidebar-collapsed .ft-root {
+                    margin-left: -24px;
+                    width: calc(100% + 48px);
+                }
+
+                /* Tablet/móvil ≤1024px: sidebar fuera de flujo, padding lateral = 16px */
                 @media (max-width: 1024px) {
                     .ft-root {
                         margin-left: -16px;
