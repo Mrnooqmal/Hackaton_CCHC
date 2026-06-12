@@ -379,7 +379,7 @@ export default function ObraDetalle() {
           documentsApi.list({ obraId, clasificacion: 'diario' } as any),
           incidentsApi.list(),
           activitiesApi.list(),
-          signatureRequestsApi.list({ empresaId: tenantId, obraId }),
+          signatureRequestsApi.list({ tenantId, obraId }),
         ]);
 
         const docsObra = docsObraRes.success && docsObraRes.data ? docsObraRes.data.documents || [] : [];
@@ -432,7 +432,7 @@ export default function ObraDetalle() {
     const tenantId = localStorage.getItem('tenant_id') || '';
     const [docsObraRes, sigRes] = await Promise.all([
       documentsApi.list({ obraId, clasificacion: 'obra' } as any),
-      signatureRequestsApi.list({ empresaId: tenantId, obraId }),
+      signatureRequestsApi.list({ tenantId, obraId }),
     ]);
     if (docsObraRes.success && docsObraRes.data) {
       const docsObra = docsObraRes.data.documents || [];
@@ -1215,7 +1215,7 @@ export default function ObraDetalle() {
               trabajadoresIds: targetSignerIds,
               solicitanteId: user?.personaId || '',
               fechaLimite: expiryValue || undefined,
-              empresaId: obra?.tenantId,
+              tenantId: obra?.tenantId,
               obraId,
               referenciaId: documentId,
               referenciaTipo: 'document',

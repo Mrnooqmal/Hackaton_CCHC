@@ -76,11 +76,20 @@ module.exports.create = async (event) => {
         const solicitante = await personaService.getById(body.solicitanteId);
         if (!solicitante) return error('Solicitante no encontrado', 404);
 
-        // Obtener informacion de las personas asignadas
+        // El tenant lo define el solicitante: evita crear solicitudes cruzadas entre empresas
+        const requestTenantId = solicitante.tenantId || body.tenantId || body.empresaId || 'default';
+
+        // Obtener informacion de las personas asignadas (solo del mismo tenant)
         const trabajadoresInfo = [];
+        const trabajadoresOmitidos = [];
         for (const pid of body.trabajadoresIds) {
             const persona = await personaService.getById(pid);
             if (persona) {
+                if (persona.tenantId && persona.tenantId !== requestTenantId) {
+                    console.warn(`[SignatureRequests] Persona ${pid} pertenece a otro tenant (${persona.tenantId} != ${requestTenantId}), omitida`);
+                    trabajadoresOmitidos.push(pid);
+                    continue;
+                }
                 trabajadoresInfo.push({
                     personaId: persona.personaId,
                     workerId: persona.personaId, // backward compat
@@ -95,7 +104,9 @@ module.exports.create = async (event) => {
         }
 
         if (trabajadoresInfo.length === 0) {
-            return error('Ninguna de las personas especificadas fue encontrada');
+            return error(trabajadoresOmitidos.length > 0
+                ? 'Las personas especificadas no pertenecen a tu organización'
+                : 'Ninguna de las personas especificadas fue encontrada');
         }
 
         const now = new Date().toISOString();
@@ -138,7 +149,7 @@ module.exports.create = async (event) => {
             // Metadata
             ubicacion: body.ubicacion || null,
             obraId: body.obraId || null,
-            tenantId: body.tenantId || solicitante.tenantId || 'default',
+            tenantId: requestTenantId,
 
             // Estado
             estado: 'pendiente', // pendiente, en_proceso, completada, cancelada, vencida
@@ -185,48 +196,32 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId, estado, solicitanteId, tipo, obraId } = event.queryStringParameters || {};
+        const { tenantId: qsTenantId, empresaId, estado, solicitanteId, tipo, obraId } = event.queryStringParameters || {};
+        const tenantId = qsTenantId || empresaId;
 
-        if (tenantId) {
-            // Use GSI query for tenant isolation
-            let filterParts = [];
-            const expressionAttributeValues = { ':tenantId': tenantId };
-
-            if (estado) { filterParts.push('estado = :estado'); expressionAttributeValues[':estado'] = estado; }
-            if (solicitanteId) { filterParts.push('solicitanteId = :solicitanteId'); expressionAttributeValues[':solicitanteId'] = solicitanteId; }
-            if (tipo) { filterParts.push('tipo = :tipo'); expressionAttributeValues[':tipo'] = tipo; }
-            if (obraId) { filterParts.push('obraId = :obraId'); expressionAttributeValues[':obraId'] = obraId; }
-
-            const params = {
-                TableName: TABLE_NAME,
-                IndexName: 'tenantId-index',
-                KeyConditionExpression: 'tenantId = :tenantId',
-                ExpressionAttributeValues: expressionAttributeValues,
-            };
-            if (filterParts.length > 0) params.FilterExpression = filterParts.join(' AND ');
-
-            const result = await docClient.send(new QueryCommand(params));
-
-            const requests = (result.Items || []).sort((a, b) =>
-                new Date(b.createdAt) - new Date(a.createdAt)
-            );
-
-            return success({ requests, total: requests.length, types: REQUEST_TYPES });
+        // Sin tenant no se listan solicitudes: un Scan global filtraría datos de otras empresas
+        if (!tenantId) {
+            return error('tenantId es requerido', 400);
         }
 
-        // Fallback: Scan without tenant filter
-        const scanParams = { TableName: TABLE_NAME };
-        let filterParts2 = [];
-        const exprVals = {};
-        if (estado) { filterParts2.push('estado = :estado'); exprVals[':estado'] = estado; }
-        if (solicitanteId) { filterParts2.push('solicitanteId = :solicitanteId'); exprVals[':solicitanteId'] = solicitanteId; }
-        if (tipo) { filterParts2.push('tipo = :tipo'); exprVals[':tipo'] = tipo; }
-        if (obraId) { filterParts2.push('obraId = :obraId'); exprVals[':obraId'] = obraId; }
-        if (filterParts2.length > 0) {
-            scanParams.FilterExpression = filterParts2.join(' AND ');
-            scanParams.ExpressionAttributeValues = exprVals;
-        }
-        const result = await docClient.send(new ScanCommand(scanParams));
+        // Use GSI query for tenant isolation
+        let filterParts = [];
+        const expressionAttributeValues = { ':tenantId': tenantId };
+
+        if (estado) { filterParts.push('estado = :estado'); expressionAttributeValues[':estado'] = estado; }
+        if (solicitanteId) { filterParts.push('solicitanteId = :solicitanteId'); expressionAttributeValues[':solicitanteId'] = solicitanteId; }
+        if (tipo) { filterParts.push('tipo = :tipo'); expressionAttributeValues[':tipo'] = tipo; }
+        if (obraId) { filterParts.push('obraId = :obraId'); expressionAttributeValues[':obraId'] = obraId; }
+
+        const params = {
+            TableName: TABLE_NAME,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :tenantId',
+            ExpressionAttributeValues: expressionAttributeValues,
+        };
+        if (filterParts.length > 0) params.FilterExpression = filterParts.join(' AND ');
+
+        const result = await docClient.send(new QueryCommand(params));
 
         const requests = (result.Items || []).sort((a, b) =>
             new Date(b.createdAt) - new Date(a.createdAt)
@@ -258,6 +253,12 @@ module.exports.get = async (event) => {
         );
 
         if (!result.Item) {
+            return error('Solicitud no encontrada', 404);
+        }
+
+        // Si el caller indica su tenant, no exponer solicitudes de otras empresas
+        const { tenantId: callerTenantId } = event.queryStringParameters || {};
+        if (callerTenantId && result.Item.tenantId && result.Item.tenantId !== callerTenantId) {
             return error('Solicitud no encontrada', 404);
         }
 
@@ -294,21 +295,41 @@ module.exports.getPendingByWorker = async (event) => {
             return error('ID de trabajador requerido');
         }
 
-        // Buscar solicitudes donde el trabajador está en la lista y no ha firmado
-        const result = await docClient.send(
-            new ScanCommand({
-                TableName: TABLE_NAME,
-                FilterExpression: 'estado IN (:pendiente, :enProceso)',
-                ExpressionAttributeValues: {
-                    ':pendiente': 'pendiente',
-                    ':enProceso': 'en_proceso',
-                },
-            })
-        );
+        // Buscar solicitudes donde el trabajador está en la lista y no ha firmado.
+        // Si el caller entrega tenantId se usa el GSI (más barato y aislado por empresa).
+        const { tenantId } = event.queryStringParameters || {};
+        let result;
+        if (tenantId) {
+            result = await docClient.send(
+                new QueryCommand({
+                    TableName: TABLE_NAME,
+                    IndexName: 'tenantId-index',
+                    KeyConditionExpression: 'tenantId = :tenantId',
+                    FilterExpression: 'estado IN (:pendiente, :enProceso)',
+                    ExpressionAttributeValues: {
+                        ':tenantId': tenantId,
+                        ':pendiente': 'pendiente',
+                        ':enProceso': 'en_proceso',
+                    },
+                })
+            );
+        } else {
+            result = await docClient.send(
+                new ScanCommand({
+                    TableName: TABLE_NAME,
+                    FilterExpression: 'estado IN (:pendiente, :enProceso)',
+                    ExpressionAttributeValues: {
+                        ':pendiente': 'pendiente',
+                        ':enProceso': 'en_proceso',
+                    },
+                })
+            );
+        }
 
-        // Filtrar las que incluyen al trabajador y no ha firmado
+        // Filtrar las que incluyen al trabajador y no ha firmado.
+        // Solicitudes antiguas solo traen workerId en la lista de trabajadores.
         const pendientes = (result.Items || []).filter(request => {
-            const trabajador = request.trabajadores.find(t => t.personaId === workerId);
+            const trabajador = (request.trabajadores || []).find(t => t.personaId === workerId || t.workerId === workerId);
             return trabajador && !trabajador.firmado;
         }).map(request => ({
             ...request,
@@ -421,31 +442,27 @@ module.exports.cancel = async (event) => {
  */
 module.exports.getStats = async (event) => {
     try {
-        const { tenantId, solicitanteId } = event.queryStringParameters || {};
+        const { tenantId: qsTenantId, empresaId, solicitanteId } = event.queryStringParameters || {};
+        const tenantId = qsTenantId || empresaId;
 
-        let filterExpression = '';
-        const expressionAttributeValues = {};
-
-        if (tenantId) {
-            filterExpression = 'tenantId = :tenantId';
-            expressionAttributeValues[':tenantId'] = tenantId;
-        }
-
-        if (solicitanteId) {
-            filterExpression += filterExpression ? ' AND solicitanteId = :solicitanteId' : 'solicitanteId = :solicitanteId';
-            expressionAttributeValues[':solicitanteId'] = solicitanteId;
+        // Sin tenant las estadísticas mezclarían datos de todas las empresas
+        if (!tenantId) {
+            return error('tenantId es requerido', 400);
         }
 
         const params = {
             TableName: TABLE_NAME,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :tenantId',
+            ExpressionAttributeValues: { ':tenantId': tenantId },
         };
 
-        if (filterExpression) {
-            params.FilterExpression = filterExpression;
-            params.ExpressionAttributeValues = expressionAttributeValues;
+        if (solicitanteId) {
+            params.FilterExpression = 'solicitanteId = :solicitanteId';
+            params.ExpressionAttributeValues[':solicitanteId'] = solicitanteId;
         }
 
-        const result = await docClient.send(new ScanCommand(params));
+        const result = await docClient.send(new QueryCommand(params));
         const requests = result.Items || [];
 
         const stats = {
@@ -499,9 +516,11 @@ module.exports.updateOnSignature = async (requestId, workerId, signatureId) => {
         const request = result.Item;
         const now = new Date().toISOString();
 
-        // Actualizar el trabajador en la lista
-        const trabajadores = request.trabajadores.map(t => {
-            if (t.personaId === workerId) {
+        // Actualizar el trabajador en la lista.
+        // Solicitudes antiguas solo traen workerId, las nuevas personaId: aceptar ambos
+        // para que la firma siempre quede asignada al trabajador correcto.
+        const trabajadores = (request.trabajadores || []).map(t => {
+            if (t.personaId === workerId || (!t.personaId && t.workerId === workerId)) {
                 return {
                     ...t,
                     firmado: true,

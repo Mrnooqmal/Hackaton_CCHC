@@ -73,8 +73,16 @@ module.exports.create = async (event) => {
             return error(`La solicitud está ${request.estado}`, 400);
         }
 
-        // Verificar que el trabajador está en la lista de la solicitud
-        const trabajadorEnSolicitud = request.trabajadores.find(t => t.personaId === inputPersonaId);
+        // La persona solo puede firmar solicitudes de su propia empresa
+        if (request.tenantId && persona.tenantId && request.tenantId !== persona.tenantId) {
+            return error('No estás incluido en esta solicitud de firma', 403);
+        }
+
+        // Verificar que el trabajador está en la lista de la solicitud.
+        // Solicitudes antiguas solo traen workerId en la lista: aceptar ambos.
+        const trabajadorEnSolicitud = (request.trabajadores || []).find(
+            t => t.personaId === inputPersonaId || t.workerId === inputPersonaId
+        );
         if (!trabajadorEnSolicitud) {
             return error('No estás incluido en esta solicitud de firma', 403);
         }
@@ -588,34 +596,22 @@ module.exports.listDisputes = async (event) => {
     try {
         const { tenantId } = event.queryStringParameters || {};
 
-        if (tenantId) {
-            // Query por GSI + filter
-            const result = await docClient.send(
-                new QueryCommand({
-                    TableName: SIGNATURES_TABLE,
-                    IndexName: 'tenantId-index',
-                    KeyConditionExpression: 'tenantId = :tenantId',
-                    FilterExpression: 'estado = :estado',
-                    ExpressionAttributeValues: {
-                        ':tenantId': tenantId,
-                        ':estado': 'disputada',
-                    },
-                })
-            );
-
-            const disputes = (result.Items || []).sort((a, b) =>
-                new Date(b.disputaInfo?.fechaReporte || 0) - new Date(a.disputaInfo?.fechaReporte || 0)
-            );
-
-            return success({ totalDisputas: disputes.length, disputas: disputes });
+        // Sin tenant un Scan expondría disputas de todas las empresas
+        if (!tenantId) {
+            return error('tenantId es requerido', 400);
         }
 
-        // Fallback: Scan (solo admin cross-tenant)
+        // Query por GSI + filter
         const result = await docClient.send(
-            new ScanCommand({
+            new QueryCommand({
                 TableName: SIGNATURES_TABLE,
+                IndexName: 'tenantId-index',
+                KeyConditionExpression: 'tenantId = :tenantId',
                 FilterExpression: 'estado = :estado',
-                ExpressionAttributeValues: { ':estado': 'disputada' },
+                ExpressionAttributeValues: {
+                    ':tenantId': tenantId,
+                    ':estado': 'disputada',
+                },
             })
         );
 

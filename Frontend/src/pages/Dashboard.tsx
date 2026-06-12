@@ -204,7 +204,7 @@ export default function Dashboard() {
                     const [workersRes, docsDiarioRes, requestsRes] = await Promise.all([
                         workersApi.list({ obraId: obra.obraId }),
                         documentsApi.list({ obraId: obra.obraId, clasificacion: 'diario' } as any),
-                        signatureRequestsApi.list({ empresaId: tenantId, obraId: obra.obraId })
+                        signatureRequestsApi.list({ tenantId, obraId: obra.obraId })
                     ]);
 
                     const workers = workersRes.success && workersRes.data ? (workersRes.data as Worker[]) : [];

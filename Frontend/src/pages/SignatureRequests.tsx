@@ -114,8 +114,10 @@ export default function SignatureRequests() {
 
     const loadData = async () => {
         try {
-            // Fase 1 — crítico: solo solicitudes para mostrar la lista
-            const requestsRes = await signatureRequestsApi.list();
+            // Fase 1 — crítico: solo solicitudes para mostrar la lista.
+            // Tenant explícito: sin él se verían solicitudes de otras empresas.
+            const tenantId = user?.tenantId || localStorage.getItem('tenant_id') || undefined;
+            const requestsRes = await signatureRequestsApi.list({ tenantId });
             if (requestsRes.success && requestsRes.data) {
                 setRequests(requestsRes.data.requests);
             }

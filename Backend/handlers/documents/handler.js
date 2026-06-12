@@ -281,13 +281,18 @@ module.exports.assign = async (event) => {
 
         if (!docResult.Item) return error('Documento no encontrado', 404);
 
-        // Lookup personas via PersonaService
+        // Lookup personas via PersonaService (solo del tenant del documento)
         const personaService = new PersonaService();
         const now = new Date().toISOString();
         const nuevasAsignaciones = [];
+        const documentTenantId = docResult.Item.tenantId || null;
 
         for (const pid of personaIds) {
             const persona = await personaService.getById(pid);
+            if (documentTenantId && persona?.tenantId && persona.tenantId !== documentTenantId) {
+                console.warn(`[Documents] Persona ${pid} pertenece a otro tenant (${persona.tenantId} != ${documentTenantId}), omitida de la asignación`);
+                continue;
+            }
             nuevasAsignaciones.push({
                 personaId: pid,
                 nombre: persona ? `${persona.nombre} ${persona.apellido || ''}`.trim() : pid,
@@ -297,6 +302,10 @@ module.exports.assign = async (event) => {
                 estado: 'pendiente',
                 notificado: notificar || false
             });
+        }
+
+        if (nuevasAsignaciones.length === 0) {
+            return error('Las personas especificadas no pertenecen a la organización del documento', 400);
         }
 
         const shouldReplace = Boolean(replace);
@@ -319,11 +328,12 @@ module.exports.assign = async (event) => {
             ExpressionAttributeValues: expressionAttributeValues
         }));
 
-        // Notificar asignados
+        // Notificar asignados (solo los que quedaron efectivamente asignados)
+        const assignedIds = nuevasAsignaciones.map(a => a.personaId);
         try {
             await eventBus.emit('document.assigned', {
                 documentId: id,
-                userIds: personaIds,
+                userIds: assignedIds,
                 assignedBy: assignedBy || 'system',
                 creatorName: assignerName || docResult.Item.creatorName || 'Gestor SST',
                 documentName: docResult.Item.titulo,
@@ -334,7 +344,7 @@ module.exports.assign = async (event) => {
         }
 
         return success({
-            message: `Documento asignado a ${personaIds.length} persona(s)`,
+            message: `Documento asignado a ${nuevasAsignaciones.length} persona(s)`,
             asignaciones: nuevasAsignaciones
         });
     } catch (err) {
@@ -368,6 +378,11 @@ module.exports.sign = async (event) => {
         const personaService = new PersonaService();
         const persona = await personaService.getById(signerPersonaId);
         if (!persona) return error('Persona no encontrada', 404);
+
+        // La persona solo puede firmar documentos de su propia empresa
+        if (documentData.tenantId && persona.tenantId && documentData.tenantId !== persona.tenantId) {
+            return error('El documento no pertenece a tu organización', 403);
+        }
 
         const esFirmaRelator = body.tipoFirma === 'relator';
         if (esFirmaRelator) {

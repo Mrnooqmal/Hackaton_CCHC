@@ -61,7 +61,7 @@ export interface CreateSignatureRequestData {
     solicitanteId: string;
     fechaLimite?: string;
     ubicacion?: string;
-    empresaId?: string;
+    tenantId?: string;
     obraId?: string;
     referenciaId?: string;
     referenciaTipo?: string;
@@ -161,8 +161,10 @@ export const signatureRequestsApi = {
             body: JSON.stringify(data),
         }),
 
-    list: (params?: { empresaId?: string; estado?: string; solicitanteId?: string; tipo?: string; obraId?: string }) => {
-        const query = params ? new URLSearchParams(params as Record<string, string>).toString() : '';
+    list: (params?: { tenantId?: string; estado?: string; solicitanteId?: string; tipo?: string; obraId?: string }) => {
+        // Omitir valores vacíos: un "tenantId=" vacío bloquearía el auto-append del client
+        const clean = Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v));
+        const query = new URLSearchParams(clean as Record<string, string>).toString();
         return apiRequest<{ requests: SignatureRequest[]; total: number; types: Record<string, SignatureRequestType> }>(
             `/signature-requests${query ? `?${query}` : ''}`
         );
@@ -185,8 +187,9 @@ export const signatureRequestsApi = {
             body: JSON.stringify({ motivo }),
         }),
 
-    getStats: (params?: { empresaId?: string; solicitanteId?: string }) => {
-        const query = params ? new URLSearchParams(params as Record<string, string>).toString() : '';
+    getStats: (params?: { tenantId?: string; solicitanteId?: string }) => {
+        const clean = Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v));
+        const query = new URLSearchParams(clean as Record<string, string>).toString();
         return apiRequest<SignatureRequestStats>(`/signature-requests/stats${query ? `?${query}` : ''}`);
     },
 };
