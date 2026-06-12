@@ -52,6 +52,12 @@ export default function ObraDetalle() {
   const [firmaAsistidaOpen, setFirmaAsistidaOpen] = useState(false);
   const [firmaAsistidaWorkerId, setFirmaAsistidaWorkerId] = useState<string | undefined>(undefined);
   const [firmaAsistidaTipo, setFirmaAsistidaTipo] = useState<string | undefined>(undefined);
+  // Firma cruzada de relator (CAPACITACION_SST): el relator firma con su PIN
+  const [relatorSign, setRelatorSign] = useState<{ documentId: string; titulo: string } | null>(null);
+  const [relatorPin, setRelatorPin] = useState('');
+  const [relatorModalidad, setRelatorModalidad] = useState('');
+  const [relatorSaving, setRelatorSaving] = useState(false);
+  const [relatorError, setRelatorError] = useState<string | null>(null);
   // Modal inline de creacion DO (procedimiento/evento => documento; capacitacion => actividad)
   const [doCreateModal, setDoCreateModal] = useState<{ mode: 'documento' | 'actividad'; el: any } | null>(null);
   const [doCreateForm, setDoCreateForm] = useState<{ titulo: string; descripcion: string; fecha: string; relatorId: string; file: File | null }>({ titulo: '', descripcion: '', fecha: '', relatorId: '', file: null });
@@ -133,16 +139,22 @@ export default function ObraDetalle() {
 
     // Flujo secuencial por (persona, tipo): sin archivo (pendiente_asignar => Subir)
     // -> con archivo sin firmar (pendiente_firma => Firma asistida) -> firmado (completo).
-    // "Completo" SOLO con firma real del trabajador.
+    // "Completo" SOLO con firma real del trabajador. Si el documento exige firma
+    // cruzada (CAPACITACION_SST), tambien debe estar firmado por el relator.
     const docSigned = new Map<string, boolean>();
     const docHasFile = new Map<string, boolean>();
+    const docRelatorPendiente = new Map<string, boolean>();
+    const docIdPorKey = new Map<string, string>();
     documentosPrevencion.forEach((doc) => {
       const hasFile = Boolean(doc.s3Key || doc.archivoUrl);
+      const relatorPendiente = Boolean(doc.requiereFirmaRelator) && doc.firmaRelator?.estado !== 'firmado';
       (doc.asignaciones || []).forEach((asig: any) => {
         const personaId = asig.personaId;
         if (!personaId || !doc.tipo) return;
         const key = `${personaId}:${doc.tipo}`;
+        if (!docIdPorKey.has(key)) docIdPorKey.set(key, doc.documentId);
         if (hasFile) docHasFile.set(key, true);
+        if (relatorPendiente) docRelatorPendiente.set(key, true);
         if (asig.estado === 'firmado' || asig.fechaFirma) docSigned.set(key, true);
       });
     });
@@ -185,10 +197,13 @@ export default function ObraDetalle() {
         const key = `${workerId}:${item.tipo}`;
 
         let estado: 'pendiente_asignar' | 'pendiente_firma' | 'completo' = 'pendiente_asignar';
+        let firmaRelatorPendiente = false;
 
         if (item.kind === 'document') {
-          if (docSigned.get(key)) estado = 'completo';
-          else if (docHasFile.get(key)) estado = 'pendiente_firma';
+          const trabajadorFirmo = Boolean(docSigned.get(key));
+          firmaRelatorPendiente = Boolean(docRelatorPendiente.get(key));
+          if (trabajadorFirmo && !firmaRelatorPendiente) estado = 'completo';
+          else if (trabajadorFirmo || docHasFile.get(key)) estado = 'pendiente_firma';
           else estado = 'pendiente_asignar';
         } else if (item.kind === 'signature') {
           if (requestSigned.get(key)) estado = 'completo';
@@ -207,7 +222,7 @@ export default function ObraDetalle() {
         workerTotal += 1;
         if (done) workerCompleted += 1;
 
-        return { key: item.key, tipo: item.tipo, label: item.label, articulo: item.articulo, done, estado, kind: item.kind, actionLabel: item.actionLabel, actionRoute: item.actionRoute };
+        return { key: item.key, tipo: item.tipo, label: item.label, articulo: item.articulo, done, estado, firmaRelatorPendiente, trabajadorFirmo: Boolean(docSigned.get(key)), documentId: docIdPorKey.get(key) || null, kind: item.kind, actionLabel: item.actionLabel, actionRoute: item.actionRoute };
       });
 
       total += workerTotal;
@@ -460,6 +475,35 @@ export default function ObraDetalle() {
 
   // Recarga completa de la obra (documentos, asignaciones, firmas, etc.).
   const reloadObraData = useCallback(() => setReloadTick((t) => t + 1), []);
+
+  // Firma cruzada: el relator firma el certificado de capacitacion con su PIN.
+  const handleFirmaRelator = async () => {
+    if (!relatorSign || !user?.personaId) return;
+    if (!relatorPin || relatorPin.length < 4) { setRelatorError('Ingresa tu PIN para firmar.'); return; }
+    setRelatorSaving(true);
+    setRelatorError(null);
+    try {
+      const res = await documentsApi.sign(relatorSign.documentId, {
+        personaId: user.personaId,
+        tipoFirma: 'relator',
+        pin: relatorPin,
+        modalidad: relatorModalidad || undefined,
+      });
+      if (!res.success) {
+        setRelatorError(res.error || 'No se pudo registrar la firma. Verifica tu PIN.');
+        return;
+      }
+      setRelatorSign(null);
+      setRelatorPin('');
+      setObraToast('Firma de relator registrada.');
+      reloadObraData();
+    } catch (err) {
+      console.error('Error firmando como relator:', err);
+      setRelatorError('Error de conexion.');
+    } finally {
+      setRelatorSaving(false);
+    }
+  };
 
   // Read-model de medidas correctivas (Art. 71) — insumo de la Fase ACT.
   const loadMedidas = useCallback(async () => {
@@ -2306,7 +2350,11 @@ export default function ObraDetalle() {
                             <div style={{ borderTop: '1px solid var(--surface-border)', padding: 'var(--space-2) var(--space-3)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                               {((worker as any).itemDetail as any[]).map((item) => {
                                 const estado = item.estado as 'pendiente_asignar' | 'pendiente_firma' | 'completo';
-                                const estadoLabel = estado === 'completo' ? 'Completo' : estado === 'pendiente_firma' ? 'Pendiente de firma' : 'Pendiente de asignar';
+                                const soloFaltaRelator = estado === 'pendiente_firma' && item.firmaRelatorPendiente && item.trabajadorFirmo;
+                                const estadoLabel = estado === 'completo' ? 'Completo'
+                                  : soloFaltaRelator ? 'Pendiente firma relator'
+                                  : estado === 'pendiente_firma' ? 'Pendiente de firma'
+                                  : 'Pendiente de asignar';
                                 const estadoColor = estado === 'completo' ? '#10b981' : estado === 'pendiente_firma' ? '#f59e0b' : 'var(--text-muted)';
                                 return (
                                 <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--surface-border)', gap: 'var(--space-2)' }}>
@@ -2349,13 +2397,23 @@ export default function ObraDetalle() {
                                         </>
                                       )}
                                       {/* Paso 2 — pendiente de firma: el trabajador firma con su PIN (firma asistida) */}
-                                      {estado === 'pendiente_firma' && (item.kind === 'document' || item.kind === 'signature') && (
+                                      {estado === 'pendiente_firma' && !item.trabajadorFirmo && (item.kind === 'document' || item.kind === 'signature') && (
                                         <button
                                           className="btn btn-primary"
                                           style={{ padding: '2px 10px', fontSize: '0.78rem' }}
                                           onClick={() => { setFirmaAsistidaWorkerId(worker.workerId); setFirmaAsistidaTipo(item.tipo); setFirmaAsistidaOpen(true); }}
                                         >
                                           Firma asistida
+                                        </button>
+                                      )}
+                                      {/* Firma cruzada — el relator firma con su propio PIN (requiere permiso firmar_relator) */}
+                                      {estado === 'pendiente_firma' && item.firmaRelatorPendiente && item.documentId && user?.permisos?.includes('firmar_relator') && (
+                                        <button
+                                          className="btn btn-secondary"
+                                          style={{ padding: '2px 10px', fontSize: '0.78rem' }}
+                                          onClick={() => { setRelatorSign({ documentId: item.documentId, titulo: item.label }); setRelatorPin(''); setRelatorModalidad(''); setRelatorError(null); }}
+                                        >
+                                          Firmar como relator
                                         </button>
                                       )}
                                       {/* Firma sin asignar (no debería pasar: el onboarding crea la solicitud) */}
@@ -2712,6 +2770,58 @@ export default function ObraDetalle() {
                 <input type="file" className="form-input" accept="application/pdf,image/*" onChange={(e) => setDoCreateForm((p) => ({ ...p, file: e.target.files?.[0] || null }))} />
               </div>
             </>
+          )}
+        </div>
+      </Modal>
+
+      {/* ── Modal: Firma de relator (firma cruzada CAPACITACION_SST) ── */}
+      <Modal
+        isOpen={!!relatorSign}
+        onClose={() => { setRelatorSign(null); setRelatorPin(''); setRelatorError(null); }}
+        title="Firma de relator"
+        subtitle={relatorSign ? `${relatorSign.titulo} — Art. 16 DS44, firma cruzada` : ''}
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
+            <button className="btn btn-secondary" onClick={() => { setRelatorSign(null); setRelatorPin(''); setRelatorError(null); }}>Cancelar</button>
+            <button className="btn btn-primary" onClick={handleFirmaRelator} disabled={relatorSaving}>
+              {relatorSaving ? 'Firmando…' : 'Firmar como relator'}
+            </button>
+          </div>
+        }
+      >
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <p style={{ fontSize: '0.87rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Firmas como relator de la capacitación. El documento queda completo
+            cuando existen ambas firmas: la tuya y la del trabajador.
+          </p>
+          <div className="form-group">
+            <label className="form-label">Modalidad (informativo)</label>
+            <select className="form-input form-select" value={relatorModalidad} onChange={(e) => setRelatorModalidad(e.target.value)}>
+              <option value="">Sin especificar</option>
+              <option value="presencial">Presencial</option>
+              <option value="e-learning">E-learning</option>
+              <option value="mutualidad">Mutualidad</option>
+              <option value="streaming">Streaming</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Tu PIN de firma</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              className="form-input"
+              value={relatorPin}
+              onChange={(e) => { setRelatorPin(e.target.value.replace(/\D/g, '')); setRelatorError(null); }}
+              placeholder="••••"
+              maxLength={8}
+              autoComplete="off"
+            />
+          </div>
+          {relatorError && (
+            <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', fontSize: '0.82rem', color: '#b91c1c' }}>
+              {relatorError}
+            </div>
           )}
         </div>
       </Modal>

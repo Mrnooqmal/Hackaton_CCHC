@@ -4,6 +4,8 @@ export interface SignatureRequestType {
     label: string;
     icon: string;
     requiresDoc: boolean;
+    requiereFirmaRelator?: boolean;
+    descripcionLegal?: string;
 }
 
 export interface DocumentoAdjunto {
@@ -140,6 +142,13 @@ export const REQUEST_TYPES: Record<string, SignatureRequestType> = {
     REGLAMENTO: { label: 'Reglamento Interno', icon: '📖', requiresDoc: true },
     DOCUMENTO: { label: 'Documento DS44', icon: '📄', requiresDoc: true },
     OTRO: { label: 'Otro', icon: '📝', requiresDoc: false },
+    CAPACITACION_SST: {
+        label: 'Capacitación SST 8 horas',
+        icon: '',
+        requiresDoc: true,
+        requiereFirmaRelator: true,
+        descripcionLegal: 'Art. 16 DS 44 - Registro de asistencia con firma cruzada'
+    },
 };
 
 // ========================================

@@ -8,7 +8,7 @@ import {
     FiPieChart, FiList, FiBarChart2, FiCheck, FiArrowRight,
     FiMic, FiCamera, FiStopCircle, FiRefreshCw, FiPlay, FiZap
 } from 'react-icons/fi';
-import { incidentsApi, aiApi } from '../api/client';
+import { incidentsApi, aiApi, workersApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData, IncidentLocation } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Modal, Select } from '../components/ui';
@@ -99,6 +99,70 @@ export default function Incidents() {
     const [calendarMonth, setCalendarMonth] = useState(new Date());
     const [showSuccess, setShowSuccess] = useState(false);
     const [formError, setFormError] = useState('');
+
+    // ─── Reunion 2026-06-10: hallazgos vs incidentes ──────────────────────────
+    // Incidentes/accidentes: creacion restringida a supervisor y superiores.
+    const canCreateIncidente = ['admin', 'jefe_obra', 'supervisor', 'prevencionista'].includes(user?.rol || '');
+    const [listTab, setListTab] = useState<'hallazgos' | 'incidentes'>('incidentes');
+    const esHallazgo = (inc: Incident) =>
+        (inc as any).clasificacion === 'hallazgo' || ['condicion_subestandar', 'accion_subestandar'].includes(inc.tipo);
+
+    // Reporte flash (datos minimos, editable en investigacion)
+    const [flashMode, setFlashMode] = useState(false);
+    const [flashAfectados, setFlashAfectados] = useState<Array<{ nombre: string; rut: string; cargo: string }>>([{ nombre: '', rut: '', cargo: '' }]);
+    const [flashDescripcion, setFlashDescripcion] = useState('');
+    const [flashUbicacion, setFlashUbicacion] = useState('');
+
+    // Gobernanza de hallazgos (panel supervisor+)
+    const [gobIncident, setGobIncident] = useState<Incident | null>(null);
+    const [gobForm, setGobForm] = useState({ responsableId: '', plazoRespuestaISO: '', estadoCierre: 'abierto', comentarioCierre: '' });
+    const [gobSaving, setGobSaving] = useState(false);
+    const [gobError, setGobError] = useState('');
+    const [personasTenant, setPersonasTenant] = useState<any[]>([]);
+
+    const openGobernanza = async (inc: Incident) => {
+        const g = (inc as any).gobernanza || {};
+        setGobForm({
+            responsableId: g.responsableId || '',
+            plazoRespuestaISO: g.plazoRespuestaISO ? String(g.plazoRespuestaISO).slice(0, 10) : '',
+            estadoCierre: g.estadoCierre || 'abierto',
+            comentarioCierre: g.comentarioCierre || ''
+        });
+        setGobError('');
+        setGobIncident(inc);
+        if (personasTenant.length === 0) {
+            const res = await workersApi.list();
+            if (res.success && res.data) setPersonasTenant(res.data as any[]);
+        }
+    };
+
+    const handleSaveGobernanza = async () => {
+        if (!gobIncident || !user?.personaId) return;
+        if (gobForm.estadoCierre === 'cerrado' && !gobForm.comentarioCierre.trim()) {
+            setGobError('El comentario de cierre es requerido para cerrar el hallazgo.');
+            return;
+        }
+        setGobSaving(true);
+        setGobError('');
+        try {
+            const responsable = personasTenant.find((p: any) => p.personaId === gobForm.responsableId);
+            const res = await incidentsApi.updateGobernanza(gobIncident.incidentId, {
+                actorId: user.personaId,
+                responsableId: gobForm.responsableId || null,
+                responsableNombre: responsable ? `${responsable.nombre} ${responsable.apellido || ''}`.trim() : null,
+                plazoRespuestaISO: gobForm.plazoRespuestaISO || null,
+                estadoCierre: gobForm.estadoCierre as any,
+                comentarioCierre: gobForm.comentarioCierre || null
+            });
+            if (!res.success) { setGobError(res.error || 'No se pudo guardar la gobernanza.'); return; }
+            setGobIncident(null);
+            loadIncidents();
+        } catch {
+            setGobError('Error de conexion.');
+        } finally {
+            setGobSaving(false);
+        }
+    };
 
 
     useEffect(() => {
@@ -448,12 +512,41 @@ export default function Incidents() {
         const currentLocation = await requestLocation({ force: true });
 
         try {
-            const response = await incidentsApi.create({
+            const esHallazgoForm = formData.clasificacion === 'hallazgo';
+            const esFlashForm = !esHallazgoForm && flashMode;
+
+            // El tipo efectivo del hallazgo sale del selector accion/condicion.
+            const tipoEfectivo = esHallazgoForm
+                ? (formData.tipoHallazgo === 'accion' ? 'accion_subestandar' : 'condicion_subestandar')
+                : formData.tipo;
+
+            const payload: CreateIncidentData = {
                 ...formData,
+                tipo: tipoEfectivo as CreateIncidentData['tipo'],
+                solicitanteId: user?.personaId,
                 reportadoPor: user?.nombre || 'Usuario',
-                empresaId: user?.empresaId,
+                empresaId: (user as any)?.tenantId,
                 ubicacion: currentLocation || undefined
-            });
+            };
+
+            if (esFlashForm) {
+                const afectados = flashAfectados.filter((a) => a.nombre.trim() !== '');
+                if (afectados.length === 0) {
+                    setFormError('Indica al menos un afectado (nombre requerido).');
+                    setUploading(false);
+                    return;
+                }
+                payload.esFlash = true;
+                payload.afectados = afectados.map((a) => ({ nombre: a.nombre.trim(), rut: a.rut.trim() || null, cargo: a.cargo.trim() || null }));
+                payload.descripcionBreve = flashDescripcion.slice(0, 500);
+                payload.ubicacionReferencia = flashUbicacion;
+                // El backend completa trabajador/descripcion/centroTrabajo desde el flash.
+                payload.descripcion = payload.descripcion || flashDescripcion.slice(0, 500);
+                payload.trabajador = payload.trabajador?.nombre ? payload.trabajador : { nombre: afectados[0].nombre, rut: afectados[0].rut || '', genero: '', cargo: afectados[0].cargo || '' };
+                payload.centroTrabajo = payload.centroTrabajo || flashUbicacion || 'Por definir';
+            }
+
+            const response = await incidentsApi.create(payload);
 
             if (response.success && response.data) {
                 if (uploadedFiles.length > 0) {
@@ -504,6 +597,10 @@ export default function Incidents() {
         setLocation(null);
         setLocationError('');
         setIsGettingLocation(false);
+        setFlashMode(false);
+        setFlashAfectados([{ nombre: '', rut: '', cargo: '' }]);
+        setFlashDescripcion('');
+        setFlashUbicacion('');
     };
 
     const clearFilters = () => {
@@ -829,14 +926,23 @@ export default function Incidents() {
                         </h2>
                         <p className="page-header-description">Sistema de reporte, seguimiento y análisis estadístico de seguridad.</p>
                     </div>
-                    <div className="page-header-actions">
+                    <div className="page-header-actions" style={{ display: 'flex', gap: 'var(--space-2)' }}>
                         <button
-                            className="btn btn-primary"
-                            onClick={() => setShowModal(true)}
+                            className="btn btn-secondary"
+                            onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'hallazgo' })); setFlashMode(false); setShowModal(true); }}
                         >
                             <FiPlus className="mr-2" />
-                            Reportar Incidente
+                            Reportar hallazgo
                         </button>
+                        {canCreateIncidente && (
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'incidente' })); setShowModal(true); }}
+                            >
+                                <FiPlus className="mr-2" />
+                                Reportar Incidente
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -1252,6 +1358,24 @@ export default function Incidents() {
 
                         {/* Incidents Table */}
                         <div className="card">
+                            {/* Separacion hallazgos / incidentes (reunion 2026-06-10) */}
+                            <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                                <button
+                                    type="button"
+                                    className={`btn btn-sm ${listTab === 'hallazgos' ? 'btn-primary' : 'btn-secondary'}`}
+                                    onClick={() => setListTab('hallazgos')}
+                                >
+                                    Hallazgos ({incidents.filter(esHallazgo).length})
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`btn btn-sm ${listTab === 'incidentes' ? 'btn-primary' : 'btn-secondary'}`}
+                                    onClick={() => setListTab('incidentes')}
+                                >
+                                    Incidentes y Accidentes ({incidents.filter((i) => !esHallazgo(i)).length})
+                                </button>
+                            </div>
+
                             <div className="scroll-hint">
                                 <FiArrowRight />
                                 <span>Desliza para ver más</span>
@@ -1277,16 +1401,16 @@ export default function Incidents() {
                                                     <div className="spinner" style={{ margin: 'var(--space-4) auto' }} />
                                                 </td>
                                             </tr>
-                                        ) : incidents.length === 0 ? (
+                                        ) : incidents.filter((i) => listTab === 'hallazgos' ? esHallazgo(i) : !esHallazgo(i)).length === 0 ? (
                                             <tr>
                                                 <td colSpan={7} className="text-center text-muted" style={{ padding: 'var(--space-8)' }}>
                                                     <FiAlertTriangle size={48} style={{ margin: '0 auto var(--space-4)', opacity: 0.3 }} />
-                                                    <p>No hay incidentes registrados</p>
-                                                    <p className="text-sm">Los incidentes reportados aparecerán aquí</p>
+                                                    <p>{listTab === 'hallazgos' ? 'No hay hallazgos registrados' : 'No hay incidentes registrados'}</p>
+                                                    <p className="text-sm">{listTab === 'hallazgos' ? 'Cualquier trabajador puede reportar un hallazgo' : 'Los incidentes reportados aparecerán aquí'}</p>
                                                 </td>
                                             </tr>
                                         ) : (
-                                            incidents.map((incident) => (
+                                            incidents.filter((i) => listTab === 'hallazgos' ? esHallazgo(i) : !esHallazgo(i)).map((incident) => (
                                                 <tr key={incident.incidentId}>
                                                     <td>
                                                         <div className="flex items-center gap-2">
@@ -1339,17 +1463,33 @@ export default function Incidents() {
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        <span className={`badge ${getEstadoBadge(incident.estado)}`}>
-                                                            {incident.estado.replace('_', ' ')}
-                                                        </span>
+                                                        {esHallazgo(incident) && (incident as any).gobernanza ? (
+                                                            <span className={`badge ${(incident as any).gobernanza.estadoCierre === 'cerrado' ? 'badge-success' : (incident as any).gobernanza.estadoCierre === 'en_proceso' ? 'badge-info' : 'badge-warning'}`}>
+                                                                {String((incident as any).gobernanza.estadoCierre || 'abierto').replace('_', ' ')}
+                                                            </span>
+                                                        ) : (
+                                                            <span className={`badge ${getEstadoBadge(incident.estado)}`}>
+                                                                {incident.estado.replace('_', ' ')}
+                                                            </span>
+                                                        )}
                                                     </td>
                                                     <td style={{ textAlign: 'right' }}>
-                                                        <button
-                                                            className="btn btn-sm btn-secondary"
-                                                            onClick={() => openIncidentDetail(incident)}
-                                                        >
-                                                            Ver Detalle
-                                                        </button>
+                                                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                                            {esHallazgo(incident) && canCreateIncidente && (
+                                                                <button
+                                                                    className="btn btn-sm btn-secondary"
+                                                                    onClick={() => openGobernanza(incident)}
+                                                                >
+                                                                    Gestionar
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                className="btn btn-sm btn-secondary"
+                                                                onClick={() => openIncidentDetail(incident)}
+                                                            >
+                                                                Ver Detalle
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))
@@ -1604,22 +1744,96 @@ export default function Incidents() {
                                                     />
                                                 </div>
 
-                                                <div className="form-group">
-                                                    <label className="form-label">Tipo de Evento *</label>
-                                                    <Select
-                                                        ariaLabel="Tipo de evento"
-                                                        value={formData.tipo}
-                                                        onChange={(v) => setFormData({ ...formData, tipo: v as any })}
-                                                        options={[
-                                                            { value: 'incidente', label: 'Incidente' },
-                                                            { value: 'accidente', label: 'Accidente' },
-                                                            { value: 'condicion_subestandar', label: 'Condición Subestándar' },
-                                                        ]}
-                                                    />
-                                                </div>
+                                                {formData.clasificacion === 'incidente' && (
+                                                    <div className="form-group">
+                                                        <label className="form-label">Tipo de Evento *</label>
+                                                        <Select
+                                                            ariaLabel="Tipo de evento"
+                                                            value={formData.tipo === 'accidente' ? 'accidente' : 'incidente'}
+                                                            onChange={(v) => setFormData({ ...formData, tipo: v as any })}
+                                                            options={[
+                                                                { value: 'incidente', label: 'Incidente' },
+                                                                { value: 'accidente', label: 'Accidente' },
+                                                            ]}
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
+
+                                            {/* Subcategoria: Reporte Flash vs Completo (solo incidentes) */}
+                                            {formData.clasificacion === 'incidente' && (
+                                                <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+                                                    <button type="button" className={`btn btn-sm ${flashMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFlashMode(true)}>
+                                                        Reporte Flash
+                                                    </button>
+                                                    <button type="button" className={`btn btn-sm ${!flashMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFlashMode(false)}>
+                                                        Reporte Completo
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
+                                        {/* Reporte flash: datos minimos, se completa en la investigacion */}
+                                        {formData.clasificacion === 'incidente' && flashMode && (
+                                            <div className="form-section">
+                                                <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', fontSize: '0.82rem', color: '#92400e', marginBottom: 'var(--space-3)' }}>
+                                                    Reporte inicial - Informacion segun disponibilidad al momento del registro.
+                                                    Los datos seran completados durante la investigacion.
+                                                </div>
+
+                                                <h3 className="form-section-title">Afectados</h3>
+                                                {flashAfectados.map((afectado, idx) => (
+                                                    <div key={idx} className="grid grid-cols-3 gap-4" style={{ marginBottom: 'var(--space-2)' }}>
+                                                        <div className="form-group" style={{ margin: 0 }}>
+                                                            <input type="text" className="form-input" placeholder="Nombre *" value={afectado.nombre}
+                                                                onChange={(e) => setFlashAfectados(flashAfectados.map((a, i) => i === idx ? { ...a, nombre: e.target.value } : a))} />
+                                                        </div>
+                                                        <div className="form-group" style={{ margin: 0 }}>
+                                                            <input type="text" className="form-input" placeholder="RUT (opcional)" value={afectado.rut}
+                                                                onChange={(e) => setFlashAfectados(flashAfectados.map((a, i) => i === idx ? { ...a, rut: e.target.value } : a))} />
+                                                        </div>
+                                                        <div className="form-group" style={{ margin: 0, display: 'flex', gap: '6px' }}>
+                                                            <input type="text" className="form-input" placeholder="Cargo (opcional)" value={afectado.cargo}
+                                                                onChange={(e) => setFlashAfectados(flashAfectados.map((a, i) => i === idx ? { ...a, cargo: e.target.value } : a))} />
+                                                            {flashAfectados.length > 1 && (
+                                                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFlashAfectados(flashAfectados.filter((_, i) => i !== idx))}>X</button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFlashAfectados([...flashAfectados, { nombre: '', rut: '', cargo: '' }])}>
+                                                    Agregar afectado
+                                                </button>
+
+                                                <div className="form-group" style={{ marginTop: 'var(--space-3)' }}>
+                                                    <label className="form-label">Descripción breve * <span className="text-muted">({flashDescripcion.length}/500)</span></label>
+                                                    <textarea className="form-input" rows={3} maxLength={500} value={flashDescripcion}
+                                                        onChange={(e) => setFlashDescripcion(e.target.value)} required style={{ resize: 'vertical' }} />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="form-group">
+                                                        <label className="form-label">Severidad *</label>
+                                                        <Select
+                                                            ariaLabel="Severidad"
+                                                            value={formData.gravedad}
+                                                            onChange={(v) => setFormData({ ...formData, gravedad: v as any })}
+                                                            options={[
+                                                                { value: 'leve', label: 'Leve' },
+                                                                { value: 'grave', label: 'Grave' },
+                                                                { value: 'fatal', label: 'Fatal' },
+                                                            ]}
+                                                        />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Ubicación de referencia</label>
+                                                        <input type="text" className="form-input" placeholder="Ej: Piso 3, sector norte" value={flashUbicacion}
+                                                            onChange={(e) => setFlashUbicacion(e.target.value)} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!(formData.clasificacion === 'incidente' && flashMode) && (<>
                                         {/* Sección: Información General */}
                                         <div className="form-section">
                                             <h3 className="form-section-title">Información General</h3>
@@ -1860,6 +2074,8 @@ export default function Incidents() {
                                             </div>
                                         </div>
 
+                                        </>)}
+
                                         {/* Sección: Confirmación de Envío */}
                                         <div className="form-section confirmation-section">
                                             <h3 className="form-section-title">
@@ -1962,6 +2178,16 @@ export default function Incidents() {
                 >
                     {selectedIncident && (
                         <div className="modal-body">
+                                {/* Leyenda legal del reporte flash (inmutable, trazabilidad) */}
+                                {(selectedIncident as any).reporteFlash?.esFlash && (
+                                    <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', fontSize: '0.82rem', color: '#92400e', marginBottom: 'var(--space-4)' }}>
+                                        Reporte inicial - Informacion segun disponibilidad al momento del registro.
+                                        Los datos seran completados durante la investigacion.
+                                        {(selectedIncident as any).reporteFlash?.editadoEn && (
+                                            <span> Ultima actualizacion: {new Date((selectedIncident as any).reporteFlash.editadoEn).toLocaleString('es-CL')}.</span>
+                                        )}
+                                    </div>
+                                )}
                                 <div className="grid grid-cols-2 gap-6">
                                     {/* Columna Izquierda */}
                                     <div className="space-y-6">
@@ -2860,6 +3086,59 @@ export default function Incidents() {
                 }
             `}</style>
             </div >
+
+            {/* Modal: gobernanza de hallazgos (responsable, plazo, verificacion de cierre) */}
+            <Modal
+                isOpen={!!gobIncident}
+                onClose={() => setGobIncident(null)}
+                title="Gobernanza del hallazgo"
+                subtitle={gobIncident?.descripcion ? gobIncident.descripcion.slice(0, 80) : ''}
+                size="md"
+                footer={
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
+                        <button className="btn btn-secondary" onClick={() => setGobIncident(null)}>Cancelar</button>
+                        <button className="btn btn-primary" onClick={handleSaveGobernanza} disabled={gobSaving}>
+                            {gobSaving ? 'Guardando…' : 'Guardar gobernanza'}
+                        </button>
+                    </div>
+                }
+            >
+                <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    {gobError && (
+                        <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', fontSize: '0.82rem', color: '#b91c1c' }}>
+                            {gobError}
+                        </div>
+                    )}
+                    <div className="form-group">
+                        <label className="form-label">Responsable de cierre</label>
+                        <select className="form-input form-select" value={gobForm.responsableId} onChange={(e) => setGobForm({ ...gobForm, responsableId: e.target.value })}>
+                            <option value="">Seleccione…</option>
+                            {personasTenant.map((p: any) => (
+                                <option key={p.personaId} value={p.personaId}>{p.nombre} {p.apellido || ''} {p.cargo ? `- ${p.cargo}` : ''}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="form-group">
+                            <label className="form-label">Plazo de respuesta</label>
+                            <input type="date" className="form-input" value={gobForm.plazoRespuestaISO} onChange={(e) => setGobForm({ ...gobForm, plazoRespuestaISO: e.target.value })} />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Estado de cierre</label>
+                            <select className="form-input form-select" value={gobForm.estadoCierre} onChange={(e) => setGobForm({ ...gobForm, estadoCierre: e.target.value })}>
+                                <option value="abierto">Abierto</option>
+                                <option value="en_proceso">En proceso</option>
+                                <option value="cerrado">Cerrado</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Comentario de cierre {gobForm.estadoCierre === 'cerrado' && '*'}</label>
+                        <textarea className="form-input" rows={3} value={gobForm.comentarioCierre} onChange={(e) => setGobForm({ ...gobForm, comentarioCierre: e.target.value })} style={{ resize: 'vertical' }} />
+                        <span className="form-hint">El cierre queda verificado por ti ({user?.nombre || 'usuario actual'}).</span>
+                    </div>
+                </div>
+            </Modal>
         </>
     );
 }

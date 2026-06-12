@@ -77,13 +77,14 @@ export const DS44_ONBOARDING_ITEMS: Ds44OnboardingItem[] = [
         actionLabel: 'Asignar'
     },
     {
-        key: 'CAPACITACION',
+        // Decision reunion 2026-06-10: documento cargable con firma cruzada
+        // (relator + trabajador), independiente de la modalidad de imparticion.
+        key: 'CAPACITACION_SST',
         label: 'Capacitación SST 8 horas',
-        tipo: 'CAPACITACION',
+        tipo: 'CAPACITACION_SST',
         articulo: 'Art. 16',
-        kind: 'actividad',          // grupal — se trackea por actividades, no por SignatureRequest individual
-        actionLabel: 'Ver actividades',
-        actionRoute: '/activities'
+        kind: 'document',
+        actionLabel: 'Cargar certificado'
     },
     {
         key: 'REGLAMENTO_INTERNO',

@@ -59,6 +59,31 @@ export const personasApi = {
             method: 'POST',
         }),
 
+    // Historial dinamico de entregas/reposiciones de EPP (Art. 13)
+    getHistorialEpp: (tenantId: string, personaId: string) =>
+        apiRequest<{ entregas: any[]; total: number }>(`/personas/${personaId}/historial-epp?tenantId=${tenantId}`),
+
+    // Crear entrega/reposicion de EPP (solo instancia superior)
+    crearEntregaEpp: (tenantId: string, personaId: string, data: {
+        creadorId: string;
+        obraId?: string | null;
+        itemsEntregados: Array<{ descripcion: string; cantidad: number; talla?: string | null; fechaVencimiento?: string | null }>;
+        esReposicion?: boolean;
+        motivoReposicion?: string | null;
+        capacitacion?: { completada: boolean; duracionRealMinutos?: number | null; relatorId?: string | null };
+    }) =>
+        apiRequest<{ message: string; entrega: any }>(`/personas/${personaId}/epp?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    // Validar una entrega de EPP (instancia superior)
+    validarEntregaEpp: (tenantId: string, personaId: string, data: { entregaDocumentId: string; validadorId: string; observacion?: string | null }) =>
+        apiRequest<{ message: string; entrega: any }>(`/personas/${personaId}/epp/validar?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
     bulkUpload: (tenantId: string, data: { fileBase64: string; fileName: string; sendWelcomeEmail?: boolean; obraId?: string }) =>
         apiRequest<{ mensaje: string; resultados: any }>(`/personas/carga-masiva?tenantId=${tenantId}`, {
             method: 'POST',
