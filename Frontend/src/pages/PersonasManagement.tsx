@@ -6,7 +6,7 @@ import { useObraContext } from '../context/ObraContext';
 import ConfirmModal from '../components/ConfirmModal';
 import { AlertBanner, CredentialCard, Modal, Select, SegmentedControl } from '../components/ui';
 import {
-    FiUserPlus, FiShield, FiEdit2, FiAlertCircle,
+    FiUserPlus, FiShield, FiEdit2,
     FiUsers, FiX, FiSave,
     FiBriefcase, FiStar, FiSearch, FiEye, FiUpload, FiDownload
 } from 'react-icons/fi';
@@ -144,12 +144,6 @@ export default function PersonasManagement() {
         finally { setLoading(false); }
     };
 
-    const openEdit = (p: PersonaResponse) => {
-        setEditing(p);
-        setEditForm({ nombre: p.nombre, apellido: p.apellido || '', email: p.email || '', cargo: p.cargo || '', estado: p.estado });
-        setShowEdit(true);
-    };
-
     const handleUpdate = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editing) return;
@@ -160,14 +154,6 @@ export default function PersonasManagement() {
             else { setError(res.error || 'Error al actualizar'); }
         } catch { setError('Error de conexión'); }
         finally { setLoading(false); }
-    };
-
-    const handleResetPw = (p: PersonaResponse) => {
-        setConfirmModal({
-            isOpen: true, title: '¿Resetear contraseña?',
-            message: `Se generará una nueva contraseña temporal para ${p.nombre} ${p.apellido}.`,
-            personaId: p.personaId
-        });
     };
 
     const readFileAsBase64 = (file: File) => new Promise<string>((resolve, reject) => {
@@ -272,11 +258,6 @@ export default function PersonasManagement() {
             (p.apellido || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             rut.includes(s);
     });
-
-    const rolBadge = (rol: string) => {
-        const cfg = ROLE_CONFIG[rol] || ROLE_CONFIG.trabajador;
-        return <span style={{ background: cfg.color, color: '#fff', padding: '2px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const }}>{cfg.label}</span>;
-    };
 
     const pageTitle = isObraScoped ? 'Equipo de Obra' : 'Personas de la Empresa';
     const pageDescription = isObraScoped

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import {
     FiFileText, FiEdit3, FiUsers, FiBarChart2,
-    FiMessageSquare, FiFolder, FiAlertTriangle,
+    FiMessageSquare, FiAlertTriangle,
     FiMapPin, FiShield, FiCheckCircle, FiLayers, FiArrowRight
 } from 'react-icons/fi';
 
@@ -726,8 +726,6 @@ export default function About() {
                 <div className="ab-modules-grid">
                     {MODULES.map((mod, i) => {
                         const Icon = mod.icon;
-                        const bg = mod.color.replace(')', ', 0.1)').replace('rgb', 'rgba');
-                        const border = mod.color.replace(')', ', 0.22)').replace('rgb', 'rgba');
                         return (
                             <div
                                 key={mod.num}
