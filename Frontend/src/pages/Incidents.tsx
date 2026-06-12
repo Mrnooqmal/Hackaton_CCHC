@@ -92,7 +92,8 @@ export default function Incidents() {
     const [uploading, setUploading] = useState(false);
     const [location, setLocation] = useState<IncidentLocation | null>(null);
     const [isGettingLocation, setIsGettingLocation] = useState(false);
-    const [locationError, setLocationError] = useState('');
+    // El mensaje de error de ubicación ya no se muestra en la UI; se conserva el setter
+    const [, setLocationError] = useState('');
 
     const [chartMetric, setChartMetric] = useState<'total' | 'accidentes' | 'incidentes'>('total');
     const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -256,14 +257,6 @@ export default function Incidents() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
-
-    const buildMapsLink = (lat: number, lng: number) => `https://www.google.com/maps?q=${lat},${lng}&z=18`;
-
-    const buildEmbedUrl = (lat: number, lng: number) => {
-        const delta = 0.01;
-        const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
-        return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
-    };
 
     const requestLocation = useCallback(async (options?: { force?: boolean }) => {
         if (location && !options?.force) return location;
@@ -925,8 +918,6 @@ export default function Incidents() {
                 };
             }))
         : [];
-
-    const selectedIncidentLocation = selectedIncident?.ubicacion || null;
 
     return (
         <>
