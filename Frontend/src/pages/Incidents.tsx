@@ -2153,216 +2153,259 @@ export default function Incidents() {
                     }
                 >
                     {selectedIncident && (
-                        <div className="modal-body">
-                                {/* Leyenda legal del reporte flash (inmutable, trazabilidad) */}
-                                {(selectedIncident as any).reporteFlash?.esFlash && (
-                                    <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', fontSize: '0.82rem', color: '#92400e', marginBottom: 'var(--space-4)' }}>
-                                        Reporte inicial - Informacion segun disponibilidad al momento del registro.
-                                        Los datos seran completados durante la investigacion.
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+
+                            {/* Banner reporte flash */}
+                            {(selectedIncident as any).reporteFlash?.esFlash && (
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                                    <FiAlertCircle size={15} style={{ color: '#b45309', flexShrink: 0, marginTop: '2px' }} />
+                                    <p style={{ fontSize: 'var(--text-xs)', color: '#92400e', margin: 0, lineHeight: 1.5 }}>
+                                        Reporte inicial — información según disponibilidad al momento del registro. Los datos serán completados durante la investigación.
                                         {(selectedIncident as any).reporteFlash?.editadoEn && (
-                                            <span> Ultima actualizacion: {new Date((selectedIncident as any).reporteFlash.editadoEn).toLocaleString('es-CL')}.</span>
+                                            <> Última actualización: {new Date((selectedIncident as any).reporteFlash.editadoEn).toLocaleString('es-CL')}.</>
+                                        )}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Loading / Error inline */}
+                            {detailLoading && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                                    <FiActivity size={16} style={{ animation: 'spin 1s linear infinite', color: 'var(--primary-500)' }} />
+                                    Cargando detalle completo…
+                                </div>
+                            )}
+                            {detailError && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', color: 'var(--danger-500)' }}>
+                                    <FiAlertCircle size={15} />
+                                    {detailError}
+                                </div>
+                            )}
+
+                            {/* Fila de métricas rápidas */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 'var(--space-3)' }}>
+                                {[
+                                    {
+                                        label: 'Tipo',
+                                        value: getTipoLabel(selectedIncident.tipo),
+                                        icon: <FiAlertTriangle size={13} />,
+                                        accent: 'var(--warning-500)',
+                                    },
+                                    {
+                                        label: 'Estado',
+                                        value: <span className={`badge ${getEstadoBadge(selectedIncident.estado)}`} style={{ fontSize: '11px' }}>{selectedIncident.estado.replace('_', ' ')}</span>,
+                                        icon: <FiActivity size={13} />,
+                                        accent: 'var(--info-500)',
+                                    },
+                                    {
+                                        label: 'Gravedad',
+                                        value: <span className={`badge ${getGravedadBadge(selectedIncident.gravedad)}`} style={{ fontSize: '11px' }}>{selectedIncident.gravedad}</span>,
+                                        icon: <FiAlertCircle size={13} />,
+                                        accent: 'var(--danger-500)',
+                                    },
+                                    {
+                                        label: 'Fecha',
+                                        value: new Date(selectedIncident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' }),
+                                        icon: <FiCalendar size={13} />,
+                                        accent: 'var(--primary-500)',
+                                    },
+                                    ...(selectedIncident.hora ? [{
+                                        label: 'Hora',
+                                        value: selectedIncident.hora,
+                                        icon: <FiActivity size={13} />,
+                                        accent: 'var(--primary-400)',
+                                    }] : []),
+                                    ...(selectedIncident.diasPerdidos && selectedIncident.diasPerdidos > 0 ? [{
+                                        label: 'Días Perdidos',
+                                        value: `${selectedIncident.diasPerdidos} días`,
+                                        icon: <FiCalendar size={13} />,
+                                        accent: 'var(--danger-500)',
+                                    }] : []),
+                                ].map((item, i) => (
+                                    <div key={i} style={{
+                                        background: 'var(--surface-elevated)',
+                                        border: '1px solid var(--surface-border)',
+                                        borderRadius: 'var(--radius-md)',
+                                        padding: 'var(--space-3) var(--space-4)',
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', color: item.accent, marginBottom: 'var(--space-2)' }}>
+                                            {item.icon}
+                                            <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
+                                                {item.label}
+                                            </span>
+                                        </div>
+                                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                            {item.value}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Trabajador afectado */}
+                            <div style={{
+                                background: 'var(--surface-elevated)',
+                                border: '1px solid var(--surface-border)',
+                                borderRadius: 'var(--radius-lg)',
+                                overflow: 'hidden',
+                            }}>
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                                    padding: 'var(--space-3) var(--space-4)',
+                                    borderBottom: '1px solid var(--surface-border)',
+                                    background: 'var(--surface-card)',
+                                }}>
+                                    <FiUser size={13} style={{ color: 'var(--accent)' }} />
+                                    <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
+                                        Trabajador Afectado
+                                    </span>
+                                </div>
+                                <div style={{ padding: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+                                    <div className="avatar" style={{ background: 'rgba(239,68,68,0.12)', color: 'var(--danger-500)', width: '48px', height: '48px', fontSize: '1.2rem', fontWeight: 700, flexShrink: 0 }}>
+                                        {selectedIncident.trabajador.nombre.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: '140px' }}>
+                                        <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)', marginBottom: '2px' }}>
+                                            {selectedIncident.trabajador.nombre}
+                                        </div>
+                                        {selectedIncident.trabajador.rut && (
+                                            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                                {selectedIncident.trabajador.rut}
+                                            </div>
                                         )}
                                     </div>
-                                )}
-                                <div className="grid grid-cols-2 gap-6">
-                                    {/* Columna Izquierda */}
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h3 className="font-semibold mb-3 flex items-center gap-2 text-primary-400">
-                                                <FiAlertTriangle size={18} />
-                                                Información General
-                                            </h3>
-                                            <div className="space-y-2">
-                                                <div className="detail-row">
-                                                    <span className="detail-label">Tipo:</span>
-                                                    <span className="detail-value">{getTipoLabel(selectedIncident.tipo)}</span>
-                                                </div>
-                                                <div className="detail-row">
-                                                    <span className="detail-label">Estado:</span>
-                                                    <span className={`badge ${getEstadoBadge(selectedIncident.estado)}`}>
-                                                        {selectedIncident.estado.replace('_', ' ')}
-                                                    </span>
-                                                </div>
-                                                <div className="detail-row">
-                                                    <span className="detail-label">Gravedad:</span>
-                                                    <span className={`badge ${getGravedadBadge(selectedIncident.gravedad)}`}>
-                                                        {selectedIncident.gravedad}
-                                                    </span>
-                                                </div>
-                                                <div className="detail-row">
-                                                    <span className="detail-label">Fecha:</span>
-                                                    <span className="detail-value">
-                                                        {new Date(selectedIncident.fecha).toLocaleDateString('es-CL')}
-                                                    </span>
-                                                </div>
-                                                <div className="detail-row">
-                                                    <span className="detail-label">Hora:</span>
-                                                    <span className="detail-value">{selectedIncident.hora}</span>
-                                                </div>
-                                                {selectedIncident.diasPerdidos && selectedIncident.diasPerdidos > 0 && (
-                                                    <div className="detail-row">
-                                                        <span className="detail-label">Días Perdidos:</span>
-                                                        <span className="detail-value text-danger-400 font-semibold">
-                                                            {selectedIncident.diasPerdidos} días
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <h3 className="font-semibold mb-3 flex items-center gap-2 text-primary-400">
-                                                <FiMapPin size={18} />
-                                                Ubicación
-                                            </h3>
-                                            <div className="detail-row">
-                                                <span className="detail-label">Centro de Trabajo:</span>
-                                                <span className="detail-value">{selectedIncident.centroTrabajo}</span>
-                                            </div>
-                                            {selectedIncidentLocation &&
-                                                typeof selectedIncidentLocation.lat === 'number' &&
-                                                typeof selectedIncidentLocation.lng === 'number' && (
-                                                <div className="location-map-card mt-3">
-                                                    <div className="detail-row">
-                                                        <span className="detail-label">Coordenadas:</span>
-                                                        <span className="detail-value">
-                                                            {selectedIncidentLocation.lat.toFixed(5)}, {selectedIncidentLocation.lng.toFixed(5)}
-                                                            {selectedIncidentLocation.accuracy ? ` · ±${selectedIncidentLocation.accuracy}m` : ''}
-                                                        </span>
-                                                    </div>
-                                                    <div className="map-preview-frame">
-                                                        <iframe
-                                                            src={buildEmbedUrl(selectedIncidentLocation.lat, selectedIncidentLocation.lng)}
-                                                            loading="lazy"
-                                                            aria-label="Mapa de ubicación del incidente"
-                                                        />
-                                                        <a
-                                                            className="map-preview-overlay"
-                                                            href={buildMapsLink(selectedIncidentLocation.lat, selectedIncidentLocation.lng)}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                        >
-                                                            Abrir en Maps
-                                                        </a>
-                                                    </div>
+                                    {(selectedIncident.trabajador.cargo || selectedIncident.trabajador.genero) && (
+                                        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                                            {selectedIncident.trabajador.cargo && (
+                                                <div style={{ background: 'var(--surface-card)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', padding: '6px 12px' }}>
+                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Cargo</span>
+                                                    <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>{selectedIncident.trabajador.cargo}</span>
                                                 </div>
                                             )}
-                                        </div>
-                                    </div>
-
-                                    {/* Columna Derecha */}
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h3 className="font-semibold mb-3 flex items-center gap-2 text-primary-400">
-                                                <FiUser size={18} />
-                                                Trabajador Afectado
-                                            </h3>
-                                            <div className="flex items-center gap-3 mb-3">
-                                                <div className="avatar" style={{ background: 'rgba(244, 67, 54, 0.15)', color: 'var(--danger-500)' }}>
-                                                    {selectedIncident.trabajador.nombre.charAt(0)}
+                                            {selectedIncident.trabajador.genero && (
+                                                <div style={{ background: 'var(--surface-card)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', padding: '6px 12px' }}>
+                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Género</span>
+                                                    <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>{selectedIncident.trabajador.genero}</span>
                                                 </div>
-                                                <div>
-                                                    <div className="font-semibold">{selectedIncident.trabajador.nombre}</div>
-                                                    <div className="text-sm text-muted font-mono">{selectedIncident.trabajador.rut}</div>
-                                                </div>
-                                            </div>
-                                            <div className="space-y-2">
-                                                {selectedIncident.trabajador.cargo && (
-                                                    <div className="detail-row">
-                                                        <span className="detail-label">Cargo:</span>
-                                                        <span className="detail-value">{selectedIncident.trabajador.cargo}</span>
-                                                    </div>
-                                                )}
-                                                {selectedIncident.trabajador.genero && (
-                                                    <div className="detail-row">
-                                                        <span className="detail-label">Género:</span>
-                                                        <span className="detail-value">{selectedIncident.trabajador.genero}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {selectedIncident.reportadoPor && (
-                                            <div>
-                                                <h3 className="font-semibold mb-3 flex items-center gap-2 text-primary-400">
-                                                    <FiFileText size={18} />
-                                                    Reporte
-                                                </h3>
-                                                <div className="detail-row">
-                                                    <span className="detail-label">Reportado por:</span>
-                                                    <span className="detail-value">{selectedIncident.reportadoPor}</span>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-
-                                    {/* Loading & Error States */}
-                                    {detailLoading && (
-                                        <div className="col-span-2 incident-detail-loading">
-                                            <FiActivity className="animate-spin text-primary-500" size={24} />
-                                            <span>Cargando detalle completo...</span>
-                                        </div>
-                                    )}
-
-                                    {detailError && (
-                                        <div className="col-span-2 incident-detail-error">
-                                            <FiAlertCircle size={20} />
-                                            <span>{detailError}</span>
-                                        </div>
-                                    )}
-
-                                    {/* Descripción - Full Width */}
-                                    <div className="col-span-2">
-                                        <h3 className="font-semibold mb-3 flex items-center gap-2 text-primary-400">
-                                            <FiFileText size={18} />
-                                            Descripción del Incidente
-                                        </h3>
-                                        <div className="p-4 bg-surface-elevated rounded-lg text-sm leading-relaxed">
-                                            {selectedIncident.descripcion}
-                                        </div>
-                                    </div>
-
-                                    {/* Evidencias */}
-                                    {incidentEvidenceItems.length > 0 && (
-                                        <div className="col-span-2">
-                                            <h3 className="font-semibold mb-3 flex items-center gap-2 text-primary-400">
-                                                <FiImage size={18} />
-                                                Evidencias Fotográficas ({incidentEvidenceItems.length})
-                                            </h3>
-                                            <div className="grid grid-cols-4 gap-3">
-                                                {incidentEvidenceItems.map(item => (
-                                                    <div
-                                                        key={item.id}
-                                                        className="incident-evidence-card"
-                                                        onClick={() => item.url && setImagePreview({ url: item.url, title: item.title })}
-                                                        title={item.url ? 'Ver imagen' : 'Imagen no disponible'}
-                                                        role="button"
-                                                        tabIndex={0}
-                                                        onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-                                                            if (event.key === 'Enter' && item.url) {
-                                                                setImagePreview({ url: item.url, title: item.title });
-                                                            }
-                                                        }}
-                                                    >
-                                                        {item.url ? (
-                                                            <img src={item.url} alt={item.title} loading="lazy" />
-                                                        ) : (
-                                                            <div className="incident-evidence-placeholder">
-                                                                <FiImage size={24} />
-                                                            </div>
-                                                        )}
-                                                        <div className="incident-evidence-meta">
-                                                            <FiImage size={10} />
-                                                            <span>{item.label}</span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
                             </div>
+
+                            {/* Descripción */}
+                            <div style={{
+                                background: 'var(--surface-elevated)',
+                                border: '1px solid var(--surface-border)',
+                                borderRadius: 'var(--radius-lg)',
+                                overflow: 'hidden',
+                            }}>
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                                    padding: 'var(--space-3) var(--space-4)',
+                                    borderBottom: '1px solid var(--surface-border)',
+                                    background: 'var(--surface-card)',
+                                }}>
+                                    <FiFileText size={13} style={{ color: 'var(--accent)' }} />
+                                    <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
+                                        {esHallazgo(selectedIncident) ? 'Descripción del Hallazgo' : 'Descripción del Incidente'}
+                                    </span>
+                                </div>
+                                <p style={{ margin: 0, padding: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.7 }}>
+                                    {selectedIncident.descripcion || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin descripción registrada.</span>}
+                                </p>
+                            </div>
+
+                            {/* Trazabilidad */}
+                            {(selectedIncident.reportadoPor || selectedIncident.incidentId) && (
+                                <div style={{
+                                    background: 'var(--surface-elevated)',
+                                    border: '1px solid var(--surface-border)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    overflow: 'hidden',
+                                }}>
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                                        padding: 'var(--space-3) var(--space-4)',
+                                        borderBottom: '1px solid var(--surface-border)',
+                                        background: 'var(--surface-card)',
+                                    }}>
+                                        <FiFileText size={13} style={{ color: 'var(--accent)' }} />
+                                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
+                                            Trazabilidad
+                                        </span>
+                                    </div>
+                                    <div style={{ padding: 'var(--space-4)', display: 'flex', gap: 'var(--space-6)', flexWrap: 'wrap' }}>
+                                        {selectedIncident.reportadoPor && (
+                                            <div>
+                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Reportado por</span>
+                                                <p style={{ margin: '4px 0 0', fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>
+                                                    {selectedIncident.reportadoPor}
+                                                </p>
+                                            </div>
+                                        )}
+                                        <div>
+                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>ID del reporte</span>
+                                            <p style={{ margin: '4px 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                                                {selectedIncident.incidentId}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Evidencias fotográficas */}
+                            {incidentEvidenceItems.length > 0 && (
+                                <div style={{
+                                    background: 'var(--surface-elevated)',
+                                    border: '1px solid var(--surface-border)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    overflow: 'hidden',
+                                }}>
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+                                        padding: 'var(--space-3) var(--space-4)',
+                                        borderBottom: '1px solid var(--surface-border)',
+                                        background: 'var(--surface-card)',
+                                    }}>
+                                        <FiImage size={13} style={{ color: 'var(--accent)' }} />
+                                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
+                                            Evidencias Fotográficas
+                                        </span>
+                                        <span style={{ marginLeft: 'auto', background: 'var(--accent-tint)', color: 'var(--accent)', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+                                            {incidentEvidenceItems.length}
+                                        </span>
+                                    </div>
+                                    <div style={{ padding: 'var(--space-4)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 'var(--space-3)' }}>
+                                        {incidentEvidenceItems.map(item => (
+                                            <div
+                                                key={item.id}
+                                                className="incident-evidence-card"
+                                                onClick={() => item.url && setImagePreview({ url: item.url, title: item.title })}
+                                                title={item.url ? 'Ver imagen' : 'Imagen no disponible'}
+                                                role="button"
+                                                tabIndex={0}
+                                                onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+                                                    if (event.key === 'Enter' && item.url) setImagePreview({ url: item.url, title: item.title });
+                                                }}
+                                            >
+                                                {item.url ? (
+                                                    <img src={item.url} alt={item.title} loading="lazy" />
+                                                ) : (
+                                                    <div className="incident-evidence-placeholder">
+                                                        <FiImage size={24} />
+                                                    </div>
+                                                )}
+                                                <div className="incident-evidence-meta">
+                                                    <FiImage size={10} />
+                                                    <span>{item.label}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
                     )}
                 </Modal>
 

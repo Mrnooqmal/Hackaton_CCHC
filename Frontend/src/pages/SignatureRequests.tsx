@@ -501,9 +501,9 @@ export default function SignatureRequests() {
                             flex: 1,
                             padding: 'var(--space-4)',
                             borderRadius: 'var(--radius-lg)',
-                            border: activeTab === 'pendientes' ? '1px solid var(--warning-400)' : '1px solid transparent',
+                            border: activeTab === 'pendientes' ? '1px solid var(--primary-400)' : '1px solid transparent',
                             background: activeTab === 'pendientes'
-                                ? 'linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 193, 7, 0.05))'
+                                ? 'linear-gradient(135deg, rgba(0, 110, 220, 0.12), rgba(0, 110, 220, 0.04))'
                                 : 'transparent',
                             cursor: 'pointer',
                             transition: 'all var(--transition-fast)',
@@ -513,7 +513,7 @@ export default function SignatureRequests() {
                         <div
                             className="avatar"
                             style={{
-                                background: activeTab === 'pendientes' ? 'var(--warning-500)' : 'var(--surface-hover)',
+                                background: activeTab === 'pendientes' ? 'var(--primary-500)' : 'var(--surface-hover)',
                                 color: activeTab === 'pendientes' ? 'white' : 'var(--text-muted)',
                                 width: '44px',
                                 height: '44px',
@@ -523,15 +523,15 @@ export default function SignatureRequests() {
                             <FiClock size={20} />
                         </div>
                         <div style={{ textAlign: 'left' }}>
-                            <div style={{ fontWeight: 600, color: activeTab === 'pendientes' ? 'var(--warning-700)' : 'var(--text-secondary)', fontSize: 'var(--text-base)' }}>
+                            <div style={{ fontWeight: 600, color: activeTab === 'pendientes' ? 'var(--primary-600)' : 'var(--text-secondary)', fontSize: 'var(--text-base)' }}>
                                 Solicitudes Pendientes
                             </div>
-                            <div style={{ fontSize: 'var(--text-sm)', color: activeTab === 'pendientes' ? 'var(--warning-600)' : 'var(--text-muted)' }}>
+                            <div style={{ fontSize: 'var(--text-sm)', color: activeTab === 'pendientes' ? 'var(--primary-500)' : 'var(--text-muted)' }}>
                                 {activeRequests.length} solicitud{activeRequests.length !== 1 ? 'es' : ''} activa{activeRequests.length !== 1 ? 's' : ''}
                             </div>
                         </div>
                         {activeRequests.length > 0 && (
-                            <span className="badge" style={{ marginLeft: 'auto', background: 'var(--warning-500)', color: 'white', fontWeight: 600, minWidth: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-full)' }}>
+                            <span className="badge" style={{ marginLeft: 'auto', background: 'var(--primary-500)', color: 'white', fontWeight: 600, minWidth: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-full)' }}>
                                 {activeRequests.length}
                             </span>
                         )}
@@ -544,9 +544,9 @@ export default function SignatureRequests() {
                             flex: 1,
                             padding: 'var(--space-4)',
                             borderRadius: 'var(--radius-lg)',
-                            border: activeTab === 'historial' ? '1px solid var(--success-400)' : '1px solid transparent',
+                            border: activeTab === 'historial' ? '1px solid var(--primary-400)' : '1px solid transparent',
                             background: activeTab === 'historial'
-                                ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05))'
+                                ? 'linear-gradient(135deg, rgba(0, 110, 220, 0.12), rgba(0, 110, 220, 0.04))'
                                 : 'transparent',
                             cursor: 'pointer',
                             transition: 'all var(--transition-fast)',
@@ -556,7 +556,7 @@ export default function SignatureRequests() {
                         <div
                             className="avatar"
                             style={{
-                                background: activeTab === 'historial' ? 'var(--success-500)' : 'var(--surface-hover)',
+                                background: activeTab === 'historial' ? 'var(--primary-500)' : 'var(--surface-hover)',
                                 color: activeTab === 'historial' ? 'white' : 'var(--text-muted)',
                                 width: '44px',
                                 height: '44px',
@@ -566,15 +566,15 @@ export default function SignatureRequests() {
                             <FiCheck size={20} />
                         </div>
                         <div style={{ textAlign: 'left' }}>
-                            <div style={{ fontWeight: 600, color: activeTab === 'historial' ? 'var(--success-700)' : 'var(--text-secondary)', fontSize: 'var(--text-base)' }}>
+                            <div style={{ fontWeight: 600, color: activeTab === 'historial' ? 'var(--primary-600)' : 'var(--text-secondary)', fontSize: 'var(--text-base)' }}>
                                 Historial
                             </div>
-                            <div style={{ fontSize: 'var(--text-sm)', color: activeTab === 'historial' ? 'var(--success-600)' : 'var(--text-muted)' }}>
+                            <div style={{ fontSize: 'var(--text-sm)', color: activeTab === 'historial' ? 'var(--primary-500)' : 'var(--text-muted)' }}>
                                 {historicalRequests.length} solicitud{historicalRequests.length !== 1 ? 'es' : ''} completada{historicalRequests.length !== 1 ? 's' : ''}
                             </div>
                         </div>
                         {historicalRequests.length > 0 && (
-                            <span className="badge" style={{ marginLeft: 'auto', background: activeTab === 'historial' ? 'var(--success-500)' : 'var(--surface-hover)', color: activeTab === 'historial' ? 'white' : 'var(--text-muted)', fontWeight: 600, minWidth: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-full)', transition: 'all var(--transition-fast)' }}>
+                            <span className="badge" style={{ marginLeft: 'auto', background: activeTab === 'historial' ? 'var(--primary-500)' : 'var(--surface-hover)', color: activeTab === 'historial' ? 'white' : 'var(--text-muted)', fontWeight: 600, minWidth: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-full)', transition: 'all var(--transition-fast)' }}>
                                 {historicalRequests.length}
                             </span>
                         )}

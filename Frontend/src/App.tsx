@@ -136,7 +136,7 @@ function AppContent() {
           } />
 
           <Route path="/signature-requests" element={
-            <ProtectedRoute requiredPermission="crear_actividades">
+            <ProtectedRoute>
               <SignatureRequests />
             </ProtectedRoute>
           } />

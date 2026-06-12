@@ -6,7 +6,6 @@ import {
     FiFileText,
     FiCalendar,
     FiEdit3,
-    FiCheckSquare,
     FiMessageSquare,
     FiSettings,
     FiAlertTriangle,
@@ -210,7 +209,7 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                     items: [
                         { path: '/', icon: FiHome, label: 'Dashboard' },
                         { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                        { path: '/my-signatures', icon: FiCheckSquare, label: 'Mis Certificados' },
+                        { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
                     ]
                 },
                 {

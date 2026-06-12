@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../api/client';
-import { FiLock, FiCheckCircle } from 'react-icons/fi';
+import { FiLock, FiCheckCircle, FiEye, FiEyeOff } from 'react-icons/fi';
 
 export default function ChangePassword() {
     const { user, logout } = useAuth();
@@ -10,6 +10,7 @@ export default function ChangePassword() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
+    const [showPasswords, setShowPasswords] = useState({ actual: false, nuevo: false, confirmar: false });
     const [formData, setFormData] = useState({
         passwordActual: '',
         passwordNuevo: '',
@@ -92,36 +93,72 @@ export default function ChangePassword() {
                 <form className="space-y-4" onSubmit={handleSubmit}>
                     <div className="form-group">
                         <label className="form-label">Contraseña Actual</label>
-                        <input
-                            type="password"
-                            className="form-input"
-                            value={formData.passwordActual}
-                            onChange={(e) => setFormData({ ...formData, passwordActual: e.target.value })}
-                            required
-                        />
+                        <div style={{ position: 'relative' }}>
+                            <input
+                                type={showPasswords.actual ? 'text' : 'password'}
+                                className="form-input"
+                                style={{ paddingRight: '42px' }}
+                                value={formData.passwordActual}
+                                onChange={(e) => setFormData({ ...formData, passwordActual: e.target.value })}
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPasswords(s => ({ ...s, actual: !s.actual }))}
+                                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                                tabIndex={-1}
+                                aria-label={showPasswords.actual ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                            >
+                                {showPasswords.actual ? <FiEyeOff size={17} /> : <FiEye size={17} />}
+                            </button>
+                        </div>
                     </div>
 
                     <div className="form-group">
                         <label className="form-label">Nueva Contraseña</label>
-                        <input
-                            type="password"
-                            className="form-input"
-                            value={formData.passwordNuevo}
-                            onChange={(e) => setFormData({ ...formData, passwordNuevo: e.target.value })}
-                            placeholder="Mínimo 6 caracteres"
-                            required
-                        />
+                        <div style={{ position: 'relative' }}>
+                            <input
+                                type={showPasswords.nuevo ? 'text' : 'password'}
+                                className="form-input"
+                                style={{ paddingRight: '42px' }}
+                                value={formData.passwordNuevo}
+                                onChange={(e) => setFormData({ ...formData, passwordNuevo: e.target.value })}
+                                placeholder="Mínimo 6 caracteres"
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPasswords(s => ({ ...s, nuevo: !s.nuevo }))}
+                                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                                tabIndex={-1}
+                                aria-label={showPasswords.nuevo ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                            >
+                                {showPasswords.nuevo ? <FiEyeOff size={17} /> : <FiEye size={17} />}
+                            </button>
+                        </div>
                     </div>
 
                     <div className="form-group">
                         <label className="form-label">Confirmar Nueva Contraseña</label>
-                        <input
-                            type="password"
-                            className="form-input"
-                            value={formData.confirmarPassword}
-                            onChange={(e) => setFormData({ ...formData, confirmarPassword: e.target.value })}
-                            required
-                        />
+                        <div style={{ position: 'relative' }}>
+                            <input
+                                type={showPasswords.confirmar ? 'text' : 'password'}
+                                className="form-input"
+                                style={{ paddingRight: '42px' }}
+                                value={formData.confirmarPassword}
+                                onChange={(e) => setFormData({ ...formData, confirmarPassword: e.target.value })}
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPasswords(s => ({ ...s, confirmar: !s.confirmar }))}
+                                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                                tabIndex={-1}
+                                aria-label={showPasswords.confirmar ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                            >
+                                {showPasswords.confirmar ? <FiEyeOff size={17} /> : <FiEye size={17} />}
+                            </button>
+                        </div>
                     </div>
 
                     {error && (
