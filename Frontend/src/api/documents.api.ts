@@ -83,10 +83,12 @@ export interface AssignResult {
 }
 
 export interface SignDocumentData {
-    workerId: string;
-    personaId?: string;
+    personaId: string;
+    // 'documento' (firma del asignado) | 'relator' (firma cruzada, requiere permiso firmar_relator)
     tipoFirma: string;
     pin?: string;
+    // Modalidad informativa de la capacitacion (solo firma de relator CAPACITACION_SST)
+    modalidad?: string;
 }
 
 export interface BulkSignData {

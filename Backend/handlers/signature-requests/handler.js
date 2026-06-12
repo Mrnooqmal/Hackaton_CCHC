@@ -23,7 +23,13 @@ const REQUEST_TYPES = {
     DOCUMENTO: { label: 'Documento DS44', icon: 'file', requiresDoc: true },
     OTRO: { label: 'Otro', icon: 'edit', requiresDoc: false },
     INVESTIGACION_ACCIDENTE: { label: 'Investigación de Accidente / EP', icon: 'search', requiresDoc: true },
-    
+    CAPACITACION_SST: {
+        label: 'Capacitación SST 8 horas',
+        icon: 'book',
+        requiresDoc: true,
+        requiereFirmaRelator: true,
+        descripcionLegal: 'Art. 16 DS 44 - Registro de asistencia con firma cruzada'
+    }
 };
 
 /**

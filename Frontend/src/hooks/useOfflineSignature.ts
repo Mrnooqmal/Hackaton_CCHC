@@ -130,7 +130,6 @@ export function useOfflineSignature() {
 
         try {
             const response = await documentsApi.sign(documentId, {
-                workerId,
                 personaId: workerId,
                 tipoFirma: 'trabajador',
                 pin
@@ -248,7 +247,6 @@ export function useOfflineSignature() {
                 let response;
                 if (sig.type === 'documento') {
                     response = await documentsApi.sign(sig.targetId, {
-                        workerId: sig.workerId,
                         personaId: sig.workerId,
                         tipoFirma: 'trabajador',
                         pin: sig.pin

@@ -13,9 +13,36 @@ export interface IncidentEvidencePreview {
     url?: string;
 }
 
+// Gobernanza de hallazgos (reunion 2026-06-10): responsable, plazo y cierre verificado.
+export interface HallazgoGobernanza {
+    responsableId: string | null;
+    responsableNombre: string | null;
+    plazoRespuestaISO: string | null;
+    estadoCierre: 'abierto' | 'en_proceso' | 'cerrado';
+    verificadoPor: string | null;
+    fechaVerificacion: string | null;
+    comentarioCierre: string | null;
+}
+
+// Reporte flash: datos minimos al momento del registro, editable en investigacion.
+// esFlash y segunInformacionDisponible son inmutables (trazabilidad).
+export interface ReporteFlash {
+    esFlash: boolean;
+    segunInformacionDisponible: boolean;
+    afectados: { nombre: string; rut: string | null; cargo: string | null }[];
+    descripcionBreve: string;
+    severidad: 'leve' | 'grave' | 'fatal';
+    evidencias: string[];
+    ubicacionReferencia: string;
+    creadoEn: string;
+    editadoEn: string | null;
+}
+
 export interface Incident {
     incidentId: string;
-    tipo: 'accidente' | 'incidente' | 'condicion_subestandar';
+    tipo: 'accidente' | 'incidente' | 'condicion_subestandar' | 'accion_subestandar';
+    gobernanza?: HallazgoGobernanza | null;
+    reporteFlash?: ReporteFlash | null;
     centroTrabajo: string;
     trabajador: {
         nombre: string;
@@ -59,8 +86,19 @@ export interface Investigation {
 }
 
 export interface CreateIncidentData {
-    tipo: 'accidente' | 'incidente' | 'condicion_subestandar';
+    tipo: 'accidente' | 'incidente' | 'condicion_subestandar' | 'accion_subestandar';
     centroTrabajo: string;
+    // Quien reporta (el backend valida rol para clasificacion 'incidente')
+    solicitanteId?: string;
+    // Reporte flash (solo clasificacion 'incidente')
+    esFlash?: boolean;
+    afectados?: { nombre: string; rut?: string | null; cargo?: string | null }[];
+    descripcionBreve?: string;
+    ubicacionReferencia?: string;
+    // Gobernanza inicial del hallazgo
+    responsableId?: string;
+    responsableNombre?: string;
+    plazoRespuestaISO?: string;
     trabajador: {
         nombre: string;
         rut: string;
@@ -264,6 +302,20 @@ export const incidentsApi = {
         const query = new URLSearchParams(params as Record<string, string>).toString();
         return apiRequest<AnalyticsData>(`/incidents/analytics${query ? `?${query}` : ''}`);
     },
+
+    // Gobernanza de hallazgos: asignar responsable/plazo y verificar cierre (supervisor+).
+    updateGobernanza: (id: string, data: Partial<HallazgoGobernanza> & { actorId: string }) =>
+        apiRequest<{ incident: Incident; gobernanza: HallazgoGobernanza }>(`/incidents/${id}/gobernanza`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+
+    // Completa/corrige el reporte flash con la informacion de la investigacion (supervisor+).
+    completarFlash: (id: string, data: Partial<CreateIncidentData> & { actorId: string }) =>
+        apiRequest<{ incident: Incident }>(`/incidents/${id}/flash-completar`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
 
     // Seguimiento del estado de una medida correctiva (Art. 71): pendiente ->
     // en_proceso -> completada -> verificada. Insumo de la Fase ACT.

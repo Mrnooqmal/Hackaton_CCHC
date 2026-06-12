@@ -10,12 +10,14 @@ const { PutCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { ObraService } = require('../../lib/services/ObraService');
+const { EppService, ROLES_VALIDADOR } = require('../../lib/services/EppService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
 
 const personaService = new PersonaService();
 const obraService = new ObraService();
+const eppService = new EppService();
 
 const TEMPLATE_HEADERS = [
     'rut',
@@ -57,27 +59,43 @@ const ONBOARDING_DOCUMENTS = [
     {
         tipo: 'IRL',
         titulo: 'IRL — Información de Riesgos Laborales',
-        descripcion: 'Art. 15 — Documento de información y recepción por trabajador'
+        descripcion: 'Art. 15 — Documento de información y recepción por trabajador',
+        requiereFirmaRelator: false
+    },
+    {
+        // Decision reunion 2026-06-10: CAPACITACION_SST es un documento cargable
+        // con firma cruzada (relator + trabajador). El sistema se abstrae de la
+        // modalidad (presencial, e-learning, mutualidad, streaming); el certificado
+        // o registro de asistencia es la evidencia que cierra la brecha.
+        tipo: 'CAPACITACION_SST',
+        titulo: 'Capacitación SST 8 horas',
+        descripcion: 'Art. 16 — Registro o certificado de asistencia con firma cruzada (relator y trabajador)',
+        requiereFirmaRelator: true,
+        notaModalidad: 'El sistema acepta cualquier modalidad: presencial, e-learning, mutualidad o streaming'
     },
     {
         tipo: 'REGLAMENTO_INTERNO',
         titulo: 'Reglamento Interno (RIHS/RIOHS)',
-        descripcion: 'Art. 56 — Entrega y recepción firmada'
+        descripcion: 'Art. 56 — Entrega y recepción firmada',
+        requiereFirmaRelator: false
     },
     {
         tipo: 'PROCEDIMIENTO_TRABAJO',
         titulo: 'Procedimientos de Trabajo Seguro aplicables',
-        descripcion: 'Art. 10 — Recepción y firma del trabajador'
+        descripcion: 'Art. 10 — Recepción y firma del trabajador',
+        requiereFirmaRelator: false
     }
 ];
 
 const ONBOARDING_SIGNATURE_REQUESTS = [
-    // NOTA: CAPACITACION (Art. 16) es grupal — se crea como Actividad por el prevencionista,
-    // no como SignatureRequest individual. El sistema la trackea via actividades de la obra.
     {
         tipo: 'ENTREGA_EPP',
         titulo: 'Entrega y capacitación de EPP',
-        descripcion: 'Art. 13 — Entrega y firma de recepción'
+        descripcion: 'Art. 13 — Entrega, registro y firma de recepción. Requiere validación de instancia superior.',
+        requiereValidadorSuperior: true,
+        rolesValidadorPermitidos: ['admin', 'jefe_obra', 'supervisor', 'prevencionista'],
+        requiereCapacitacionUso: true,
+        duracionCapacitacionMinutos: 60
     },
     {
         tipo: 'INDUCCION',
@@ -178,6 +196,18 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
         asignaciones: [asignacion],
         estado: 'activo',
         version: 1,
+        // Firma cruzada (relator + trabajador). Solo aplica si el catalogo lo exige
+        // (CAPACITACION_SST). El documento se considera firmado cuando la asignacion
+        // del trabajador esta firmada Y firmaRelator.estado === 'firmado'.
+        requiereFirmaRelator: docConfig.requiereFirmaRelator || false,
+        firmaRelator: docConfig.requiereFirmaRelator ? {
+            personaId: null,
+            nombre: null,
+            timestamp: null,
+            estado: 'pendiente'
+        } : null,
+        notaModalidad: docConfig.notaModalidad || null,
+        modalidad: null,
         createdAt: now,
         updatedAt: now
     };
@@ -337,7 +367,16 @@ module.exports.personasHandler = async (event) => {
                 : fileBase64;
 
             const buffer = Buffer.from(base64, 'base64');
-            const workbook = XLSX.read(buffer, { type: 'buffer' });
+            let workbook;
+            try {
+                workbook = XLSX.read(buffer, { type: 'buffer' });
+            } catch (xlsxErr) {
+                console.error('Error parsing Excel workbook:', xlsxErr.message);
+                return error('No se pudo leer el archivo Excel. Verifique que sea un archivo .xlsx valido y no este protegido con contrasena.');
+            }
+            if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                return error('El archivo Excel no contiene hojas de trabajo.');
+            }
             const sheetName = workbook.SheetNames.includes('Personas')
                 ? 'Personas'
                 : workbook.SheetNames[0];
@@ -447,6 +486,20 @@ module.exports.personasHandler = async (event) => {
                         }
                     }
 
+                    // Generar onboarding DS44 para trabajadores creados con obra.
+                    // Antes solo se disparaba al asignar obra via PUT; la carga masiva
+                    // dejaba trabajadores sin documentos de onboarding (bug demo).
+                    if (persona.rol === 'trabajador' && Array.isArray(persona.obraIds)) {
+                        for (const oId of persona.obraIds) {
+                            try {
+                                await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null });
+                            } catch (onboardingErr) {
+                                console.error(`Onboarding fallido (fila ${rowNumber}, obra ${oId}):`, onboardingErr.message);
+                            }
+                        }
+                    }
+
+                    console.log(`Carga masiva: persona creada fila ${rowNumber} personaId=${persona.personaId}`);
                     resultados.creados.push({
                         fila: rowNumber,
                         personaId: persona.personaId,
@@ -474,6 +527,19 @@ module.exports.personasHandler = async (event) => {
             if (!tenantId) return error('tenantId es requerido');
             const body = JSON.parse(event.body || '{}');
             const { persona, passwordTemporal } = await personaService.crear(tenantId, body);
+
+            // Generar onboarding DS44 si el trabajador se crea ya asignado a obra(s).
+            if (persona.rol === 'trabajador' && Array.isArray(persona.obraIds) && persona.obraIds.length > 0) {
+                const solicitanteId = body.solicitanteId || null;
+                const solicitante = solicitanteId ? await personaService.getById(solicitanteId).catch(() => null) : null;
+                for (const oId of persona.obraIds) {
+                    try {
+                        await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante });
+                    } catch (onboardingErr) {
+                        console.error(`Onboarding fallido al crear persona (obra ${oId}):`, onboardingErr.message);
+                    }
+                }
+            }
 
             // Enviar email de bienvenida si tiene acceso web
             let emailSent = false;
@@ -560,6 +626,58 @@ module.exports.personasHandler = async (event) => {
                 message: 'Persona actualizada',
                 persona: persona.toSafeFormat()
             });
+        }
+
+        // GET /personas/{id}/historial-epp — Historial dinamico de entregas EPP (Art. 13)
+        if (method === 'GET' && personaId && action === 'historial-epp') {
+            if (!tenantId) return error('tenantId es requerido');
+            const historial = await eppService.getHistorial({ tenantId, personaId });
+            return success(historial);
+        }
+
+        // POST /personas/{id}/epp — Crear entrega/reposicion de EPP (solo instancia superior)
+        if (method === 'POST' && personaId && action === 'epp' && !segments[2]) {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+            if (!body.creadorId) return error('creadorId es requerido');
+
+            const creador = await personaService.getById(body.creadorId);
+            if (!creador) return error('Creador no encontrado', 404);
+            if (!ROLES_VALIDADOR.includes(creador.rol)) {
+                return error('Solo supervisor, prevencionista, jefe de obra o admin pueden registrar entregas de EPP', 403);
+            }
+            const persona = await personaService.getById(personaId);
+            if (!persona) return error('Trabajador no encontrado', 404);
+
+            const entrega = await eppService.crearEntrega({
+                tenantId,
+                obraId: body.obraId || null,
+                persona,
+                creador,
+                itemsEntregados: body.itemsEntregados,
+                esReposicion: body.esReposicion,
+                motivoReposicion: body.motivoReposicion,
+                capacitacion: body.capacitacion
+            });
+            return created({ message: 'Entrega de EPP registrada (pendiente de validacion)', entrega });
+        }
+
+        // POST /personas/{id}/epp/validar — Validar entrega (instancia superior)
+        if (method === 'POST' && personaId && action === 'epp' && segments[2] === 'validar') {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+            if (!body.entregaDocumentId) return error('entregaDocumentId es requerido');
+            if (!body.validadorId) return error('validadorId es requerido');
+
+            const validador = await personaService.getById(body.validadorId);
+            if (!validador) return error('Validador no encontrado', 404);
+
+            const entrega = await eppService.validarEntrega({
+                entregaDocumentId: body.entregaDocumentId,
+                validador,
+                observacion: body.observacion || null
+            });
+            return success({ message: 'Entrega de EPP validada', entrega });
         }
 
         // POST /personas/{id}/set-pin — Configurar PIN

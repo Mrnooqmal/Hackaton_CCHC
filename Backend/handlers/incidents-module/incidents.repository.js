@@ -182,6 +182,12 @@ class IncidentsRepository {
         const incident = {
             incidentId,
             tipo: data.tipo,
+            // Taxonomia reunion 2026-06-10: 'hallazgo' (abierto a todos, con
+            // gobernanza) | 'incidente' (creacion restringida a supervisor+).
+            clasificacion: data.clasificacion
+                || (['condicion_subestandar', 'accion_subestandar'].includes(data.tipo) ? 'hallazgo' : 'incidente'),
+            gobernanza: data.gobernanza || null,
+            reporteFlash: data.reporteFlash || null,
             centroTrabajo: data.centroTrabajo,
             trabajador: {
                 nombre: data.trabajador.nombre,
@@ -399,6 +405,88 @@ class IncidentsRepository {
         };
 
         return { medidas: filtered, resumen };
+    }
+
+    // ─── Gobernanza de hallazgos (reunion 2026-06-10) ────────────────────────────
+    // Actualiza responsable, plazo y estado de cierre SIN tocar el resto del registro.
+    async updateGobernanza(incidentId, data) {
+        const res = await this.dynamo.send(new GetCommand({
+            TableName: this.incidentsTable,
+            Key: { incidentId }
+        }));
+        if (!res.Item) throw new Error('Incidente no encontrado');
+        if (res.Item.clasificacion !== 'hallazgo') {
+            throw new Error('La gobernanza solo aplica a hallazgos');
+        }
+
+        const camposPermitidos = ['responsableId', 'responsableNombre', 'plazoRespuestaISO', 'estadoCierre', 'verificadoPor', 'fechaVerificacion', 'comentarioCierre'];
+        const estadosValidos = ['abierto', 'en_proceso', 'cerrado'];
+        if (data.estadoCierre && !estadosValidos.includes(data.estadoCierre)) {
+            throw new Error(`Estado de cierre invalido. Validos: ${estadosValidos.join(', ')}`);
+        }
+        if (data.estadoCierre === 'cerrado' && !data.comentarioCierre && !res.Item.gobernanza?.comentarioCierre) {
+            throw new Error('El comentario de cierre es requerido para cerrar un hallazgo');
+        }
+
+        const gobernanza = { ...(res.Item.gobernanza || {}) };
+        camposPermitidos.forEach((campo) => {
+            if (data[campo] !== undefined) gobernanza[campo] = data[campo];
+        });
+        if (data.estadoCierre === 'cerrado' && !gobernanza.fechaVerificacion) {
+            gobernanza.fechaVerificacion = new Date().toISOString();
+        }
+
+        const result = await this.dynamo.send(new UpdateCommand({
+            TableName: this.incidentsTable,
+            Key: { incidentId },
+            UpdateExpression: 'SET gobernanza = :g, updatedAt = :u',
+            ExpressionAttributeValues: { ':g': gobernanza, ':u': new Date().toISOString() },
+            ReturnValues: 'ALL_NEW'
+        }));
+        return { incident: result.Attributes, gobernanza };
+    }
+
+    // ─── Completar reporte flash (reunion 2026-06-10) ───────────────────────────
+    // Permite corregir/completar los datos una vez disponible la informacion real.
+    // esFlash y segunInformacionDisponible son INMUTABLES (trazabilidad legal).
+    async completarFlash(incidentId, data) {
+        const res = await this.dynamo.send(new GetCommand({
+            TableName: this.incidentsTable,
+            Key: { incidentId }
+        }));
+        if (!res.Item) throw new Error('Incidente no encontrado');
+        if (!res.Item.reporteFlash?.esFlash) {
+            throw new Error('El incidente no fue creado como reporte flash');
+        }
+
+        const now = new Date().toISOString();
+        const reporteFlash = {
+            ...res.Item.reporteFlash,
+            afectados: data.afectados !== undefined ? data.afectados : res.Item.reporteFlash.afectados,
+            descripcionBreve: data.descripcionBreve !== undefined ? String(data.descripcionBreve).slice(0, 500) : res.Item.reporteFlash.descripcionBreve,
+            severidad: data.gravedad || res.Item.reporteFlash.severidad,
+            ubicacionReferencia: data.ubicacionReferencia !== undefined ? data.ubicacionReferencia : res.Item.reporteFlash.ubicacionReferencia,
+            esFlash: true,
+            segunInformacionDisponible: true,
+            editadoEn: now
+        };
+
+        // Campos del incidente que se completan con la investigacion.
+        let updateExpression = 'SET reporteFlash = :rf, updatedAt = :u';
+        const values = { ':rf': reporteFlash, ':u': now };
+        if (data.descripcion) { updateExpression += ', descripcion = :d'; values[':d'] = data.descripcion; }
+        if (data.gravedad) { updateExpression += ', gravedad = :gr'; values[':gr'] = data.gravedad; }
+        if (data.trabajador) { updateExpression += ', trabajador = :t'; values[':t'] = data.trabajador; }
+        if (data.diasPerdidos !== undefined) { updateExpression += ', diasPerdidos = :dp'; values[':dp'] = data.diasPerdidos; }
+
+        const result = await this.dynamo.send(new UpdateCommand({
+            TableName: this.incidentsTable,
+            Key: { incidentId },
+            UpdateExpression: updateExpression,
+            ExpressionAttributeValues: values,
+            ReturnValues: 'ALL_NEW'
+        }));
+        return { incident: result.Attributes };
     }
 
     // ─── DS44 Art. 71 — Seguimiento del estado de una medida correctiva ─────────

@@ -24,11 +24,14 @@ import {
     uploadsApi,
     signaturesApi,
     signatureRequestsApi,
+    personasApi,
     type Worker as ApiWorker,
     type DigitalSignature,
     REQUEST_TYPES
 } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
+import { Modal } from '../components/ui';
 import { DS44_ONBOARDING_ITEMS } from '../utils/ds44';
 
 interface WorkerStats {
@@ -65,12 +68,16 @@ export default function WorkerDetail() {
     const { rut } = useParams<{ rut: string }>();
     const navigate = useNavigate();
     const { selectedObraId } = useObraContext();
+    const { user } = useAuth();
+    const authTenantId = user?.tenantId || localStorage.getItem('tenant_id') || '';
+    // Instancia superior autorizada a registrar/validar entregas de EPP (Art. 13)
+    const canValidarEpp = ['admin', 'jefe_obra', 'supervisor', 'prevencionista'].includes(user?.rol || '');
 
     const [worker, setWorker] = useState<WorkerWithRole | null>(null);
     const [stats, setStats] = useState<WorkerStats | null>(null);
     const [signatures, setSignatures] = useState<DigitalSignature[]>([]);
     const [compliance, setCompliance] = useState({ completed: 0, assigned: 0 });
-    const [ds44Checklist, setDs44Checklist] = useState<{ completed: number; total: number; items: Array<{ key: string; label: string; articulo?: string; kind?: string; tipo?: string; actionLabel?: string; status: 'ok' | 'pending' | 'na' | 'subido' }> } | null>(null);
+    const [ds44Checklist, setDs44Checklist] = useState<{ completed: number; total: number; items: Array<{ key: string; label: string; articulo?: string; kind?: string; tipo?: string; actionLabel?: string; firmaInfo?: string; status: 'ok' | 'pending' | 'na' | 'subido' }> } | null>(null);
     const [docRecordMap, setDocRecordMap] = useState<Record<string, { documentId: string; s3Key: string | null; archivoNombre: string | null }>>({});
     const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
@@ -79,6 +86,13 @@ export default function WorkerDetail() {
     const [vigForm, setVigForm] = useState({ enVigilancia: false, protocolos: '', fechaUltimoExamen: '', aptitudLaboral: '', restricciones: '' });
     const [vigEditing, setVigEditing] = useState(false);
     const [vigSaving, setVigSaving] = useState(false);
+    // Historial de EPP (Art. 13) — entregas/reposiciones validadas por instancia superior
+    const [eppHistorial, setEppHistorial] = useState<any[]>([]);
+    const [eppModalOpen, setEppModalOpen] = useState(false);
+    const [eppForm, setEppForm] = useState({ items: '', esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
+    const [eppSaving, setEppSaving] = useState(false);
+    const [eppError, setEppError] = useState('');
+    const [eppValidating, setEppValidating] = useState<string | null>(null);
 
     const getLatestOverrideObraId = (overrides?: Record<string, { items?: Record<string, { doneAt: string }>; updatedAt?: string }>) => {
         if (!overrides) return null;
@@ -156,6 +170,76 @@ export default function WorkerDetail() {
         }
     };
 
+    const loadEppHistorial = async (personaId: string) => {
+        try {
+            const res = await personasApi.getHistorialEpp(authTenantId, personaId);
+            if (res.success && res.data) setEppHistorial(res.data.entregas || []);
+        } catch (err) {
+            console.error('Error cargando historial EPP:', err);
+        }
+    };
+
+    useEffect(() => {
+        if (worker?.personaId) loadEppHistorial(worker.personaId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [worker?.personaId]);
+
+    const handleCrearEntregaEpp = async () => {
+        if (!worker || !user?.personaId) return;
+        const items = eppForm.items
+            .split(';')
+            .map((linea) => linea.trim())
+            .filter(Boolean)
+            .map((linea) => {
+                // Formato por item: "descripcion x cantidad talla:M"
+                const tallaMatch = linea.match(/talla:\s*(\S+)/i);
+                const cantMatch = linea.match(/x\s*(\d+)/i);
+                const descripcion = linea.replace(/x\s*\d+/i, '').replace(/talla:\s*\S+/i, '').trim();
+                return { descripcion, cantidad: cantMatch ? Number(cantMatch[1]) : 1, talla: tallaMatch ? tallaMatch[1] : null };
+            });
+        if (items.length === 0) { setEppError('Indica al menos un item (separados por ;).'); return; }
+        setEppSaving(true);
+        setEppError('');
+        try {
+            const res = await personasApi.crearEntregaEpp(authTenantId, worker.personaId, {
+                creadorId: user.personaId,
+                obraId: selectedObraId || worker.obraIds?.[0] || null,
+                itemsEntregados: items,
+                esReposicion: eppForm.esReposicion,
+                motivoReposicion: eppForm.esReposicion ? eppForm.motivoReposicion : null,
+                capacitacion: {
+                    completada: eppForm.capacitacionCompletada,
+                    duracionRealMinutos: Number(eppForm.capacitacionMinutos) || null,
+                    relatorId: user.personaId
+                }
+            });
+            if (!res.success) { setEppError(res.error || 'No se pudo registrar la entrega.'); return; }
+            setEppModalOpen(false);
+            setEppForm({ items: '', esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
+            await loadEppHistorial(worker.personaId);
+        } catch {
+            setEppError('Error de conexion.');
+        } finally {
+            setEppSaving(false);
+        }
+    };
+
+    const handleValidarEntrega = async (entregaDocumentId: string) => {
+        if (!worker || !user?.personaId) return;
+        setEppValidating(entregaDocumentId);
+        try {
+            const res = await personasApi.validarEntregaEpp(authTenantId, worker.personaId, {
+                entregaDocumentId,
+                validadorId: user.personaId
+            });
+            if (res.success) await loadEppHistorial(worker.personaId);
+        } catch (err) {
+            console.error('Error validando entrega EPP:', err);
+        } finally {
+            setEppValidating(null);
+        }
+    };
+
     const loadWorkerData = async () => {
         if (!rut) return;
         setLoading(true);
@@ -221,15 +305,19 @@ export default function WorkerDetail() {
             // "ok" SOLO con firma real del trabajador; subir el archivo NO completa.
             const docSigned = new Map<string, boolean>();
             const docHasFile = new Map<string, boolean>();
+            // Firma cruzada (CAPACITACION_SST): completo solo si relator + trabajador firmaron.
+            const docRelatorPendiente = new Map<string, boolean>();
             const newDocRecordMap: Record<string, { documentId: string; s3Key: string | null; archivoNombre: string | null }> = {};
             docs.forEach((doc: any) => {
                 const hasFile = Boolean(doc.s3Key || doc.archivoUrl);
+                const relatorPendiente = Boolean(doc.requiereFirmaRelator) && doc.firmaRelator?.estado !== 'firmado';
                 (doc.asignaciones || []).forEach((asig: any) => {
                     const personaId = asig.personaId;
                     if (personaId !== workerRes.data.personaId) return;
                     if (!doc.tipo) return;
                     if (asig.estado === 'firmado' || asig.fechaFirma) docSigned.set(doc.tipo, true);
                     if (hasFile) docHasFile.set(doc.tipo, true);
+                    if (relatorPendiente) docRelatorPendiente.set(doc.tipo, true);
                     // Track document record for upload
                     if (!newDocRecordMap[doc.tipo]) {
                         newDocRecordMap[doc.tipo] = { documentId: doc.documentId, s3Key: doc.s3Key || null, archivoNombre: doc.archivoNombre || null };
@@ -245,11 +333,16 @@ export default function WorkerDetail() {
                 const manualDone = Boolean((manualOverrides as any)[item.tipo]);
 
                 if (item.kind === 'document') {
-                    const signed = docSigned.get(item.tipo) || manualDone;
-                    const subido = docHasFile.get(item.tipo) || false;
+                    const trabajadorFirmo = docSigned.get(item.tipo) || false;
+                    const relatorPendiente = docRelatorPendiente.get(item.tipo) || false;
+                    const signed = (trabajadorFirmo && !relatorPendiente) || manualDone;
+                    const subido = docHasFile.get(item.tipo) || trabajadorFirmo;
                     if (signed) ds44Completed += 1;
                     const status = signed ? 'ok' as const : subido ? 'subido' as const : 'pending' as const;
-                    return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status };
+                    const firmaInfo = relatorPendiente && !signed
+                        ? `Trabajador: ${trabajadorFirmo ? 'firmado' : 'pendiente'} | Relator: pendiente`
+                        : undefined;
+                    return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status, firmaInfo };
                 }
 
                 if (item.kind === 'signature') {
@@ -479,7 +572,10 @@ Generado por PrevencionApp
                                                             <div style={{ fontSize: '0.83rem', fontWeight: item.status === 'ok' ? 400 : 500, color: item.status === 'ok' ? 'var(--text-muted)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                                 {item.label}
                                                             </div>
-                                                            <div className="text-muted" style={{ fontSize: '0.72rem' }}>{(item as any).articulo}</div>
+                                                            <div className="text-muted" style={{ fontSize: '0.72rem' }}>
+                                                                {(item as any).articulo}
+                                                                {(item as any).firmaInfo && <span style={{ color: '#f59e0b' }}> · {(item as any).firmaInfo}</span>}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     {/* Documento sin archivo: subir (no completa, queda pendiente de firma) */}
@@ -586,6 +682,67 @@ Generado por PrevencionApp
                             </div>
                         </div>
                     )}
+
+                    {/* Historial de EPP (Art. 13) — entregas y reposiciones validadas */}
+                    <div className="lg:col-span-2">
+                        <div className="card" style={{ padding: 'var(--space-4)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', marginBottom: 'var(--space-3)', flexWrap: 'wrap' }}>
+                                <h3 className="font-bold m-0">
+                                    Historial de EPP <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(Art. 13 — entregas y reposiciones)</span>
+                                </h3>
+                                {canValidarEpp && (
+                                    <button className="btn btn-primary btn-sm" type="button" onClick={() => { setEppModalOpen(true); setEppError(''); }}>
+                                        Nueva entrega / Reposición
+                                    </button>
+                                )}
+                            </div>
+                            {eppHistorial.length === 0 ? (
+                                <div className="text-muted" style={{ fontSize: '0.85rem' }}>Sin entregas de EPP registradas.</div>
+                            ) : (
+                                <div className="table-container" style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                                    <table className="table">
+                                        <thead>
+                                            <tr>
+                                                <th>Fecha</th><th>Items</th><th>Reposición</th><th>Validado por</th><th>Capacitación uso</th><th>Estado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {eppHistorial.map((e: any) => {
+                                                const validado = e.validacion?.estado === 'validado';
+                                                return (
+                                                    <tr key={e.documentId}>
+                                                        <td className="text-sm">{e.fecha ? new Date(e.fecha).toLocaleDateString('es-CL') : '-'}</td>
+                                                        <td className="text-sm">{(e.itemsEntregados || []).map((i: any) => `${i.descripcion} x${i.cantidad}${i.talla ? ` (${i.talla})` : ''}`).join(', ') || '-'}</td>
+                                                        <td className="text-sm">{e.esReposicion ? (e.motivoReposicion || 'Sí') : 'No'}</td>
+                                                        <td className="text-sm">{e.validacion?.validadoPor?.nombre || '-'}</td>
+                                                        <td className="text-sm">{e.capacitacionUso?.completada ? `${e.capacitacionUso.duracionRealMinutos || 60} min` : 'Pendiente'}</td>
+                                                        <td>
+                                                            {e.firmadoPorTrabajador
+                                                                ? <span className="badge badge-success">Firmado</span>
+                                                                : validado
+                                                                    ? <span className="badge badge-info">Validado, falta firma</span>
+                                                                    : (
+                                                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                                                            <span className="badge badge-warning">Pendiente validación</span>
+                                                                            {canValidarEpp && (
+                                                                                <button className="btn btn-secondary btn-sm" type="button"
+                                                                                    disabled={eppValidating === e.documentId}
+                                                                                    onClick={() => handleValidarEntrega(e.documentId)}>
+                                                                                    {eppValidating === e.documentId ? '...' : 'Validar entrega'}
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
 
                     {/* Vigilancia de Salud (Art. 67/73) */}
                     <div className="lg:col-span-2">
@@ -963,6 +1120,69 @@ Generado por PrevencionApp
                     }
                 }
             `}</style>
+
+            {/* Modal: nueva entrega / reposicion de EPP (solo instancia superior) */}
+            <Modal
+                isOpen={eppModalOpen}
+                onClose={() => setEppModalOpen(false)}
+                title="Nueva entrega / Reposición de EPP"
+                subtitle="Art. 13 DS44 — La entrega queda pendiente de validación y de firma del trabajador"
+                size="md"
+                footer={
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
+                        <button className="btn btn-secondary" onClick={() => setEppModalOpen(false)}>Cancelar</button>
+                        <button className="btn btn-primary" onClick={handleCrearEntregaEpp} disabled={eppSaving}>
+                            {eppSaving ? 'Guardando…' : 'Registrar entrega'}
+                        </button>
+                    </div>
+                }
+            >
+                <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    {eppError && (
+                        <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', fontSize: '0.82rem', color: '#b91c1c' }}>
+                            {eppError}
+                        </div>
+                    )}
+                    <div className="form-group">
+                        <label className="form-label">Items entregados</label>
+                        <textarea
+                            className="form-input"
+                            rows={3}
+                            placeholder="Casco x1 talla:M; Guantes x2 talla:L; Zapatos de seguridad x1 talla:42"
+                            value={eppForm.items}
+                            onChange={(e) => setEppForm({ ...eppForm, items: e.target.value })}
+                            style={{ resize: 'vertical' }}
+                        />
+                        <span className="form-hint">Separa items con punto y coma (;). Opcional: x cantidad y talla:valor</span>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input type="checkbox" checked={eppForm.esReposicion} onChange={(e) => setEppForm({ ...eppForm, esReposicion: e.target.checked })} />
+                        <span>Es reposición</span>
+                    </label>
+                    {eppForm.esReposicion && (
+                        <div className="form-group">
+                            <label className="form-label">Motivo de reposición</label>
+                            <select className="form-input form-select" value={eppForm.motivoReposicion} onChange={(e) => setEppForm({ ...eppForm, motivoReposicion: e.target.value })}>
+                                <option value="desgaste">Desgaste</option>
+                                <option value="perdida">Pérdida</option>
+                                <option value="accidente">Accidente</option>
+                                <option value="cambio_talla">Cambio de talla</option>
+                                <option value="otro">Otro</option>
+                            </select>
+                        </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-4">
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input type="checkbox" checked={eppForm.capacitacionCompletada} onChange={(e) => setEppForm({ ...eppForm, capacitacionCompletada: e.target.checked })} />
+                            <span>Capacitación de uso realizada</span>
+                        </label>
+                        <div className="form-group" style={{ margin: 0 }}>
+                            <label className="form-label">Duración (min, mínimo 60)</label>
+                            <input type="number" className="form-input" min={0} value={eppForm.capacitacionMinutos} onChange={(e) => setEppForm({ ...eppForm, capacitacionMinutos: e.target.value })} />
+                        </div>
+                    </div>
+                </div>
+            </Modal>
         </>
     );
 }

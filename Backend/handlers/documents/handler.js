@@ -23,6 +23,7 @@ const DOCUMENT_TYPES = {
     TEST_EVALUACION: 'Test de Evaluación',
     ENTREGA_EPP: 'Entrega de EPP',
     CAPACITACION: 'Capacitación',
+    CAPACITACION_SST: 'Capacitación SST 8 horas (Art. 16) — firma cruzada relator y trabajador',
     MAPA_RIESGOS: 'Mapa de Riesgos',
     REGISTRO_ACTIVIDAD: 'Registro de Actividad Preventiva (Art. 72)',
     INDUCCION_EMERGENCIA: 'Inducción Plan de Emergencia (Art. 19)',
@@ -368,6 +369,24 @@ module.exports.sign = async (event) => {
         const persona = await personaService.getById(signerPersonaId);
         if (!persona) return error('Persona no encontrada', 404);
 
+        const esFirmaRelator = body.tipoFirma === 'relator';
+        if (esFirmaRelator) {
+            if (!documentData.requiereFirmaRelator) {
+                return error('Este documento no requiere firma de relator', 400);
+            }
+            if (!persona.tienePermiso('firmar_relator')) {
+                return error('No tienes permiso para firmar como relator', 403);
+            }
+        }
+
+        // ENTREGA_EPP: el trabajador no puede firmar la recepcion hasta que una
+        // instancia superior valide la entrega (decision reunion 2026-06-10).
+        if (!esFirmaRelator && documentData.tipo === 'ENTREGA_EPP'
+            && documentData.validacion?.requerida
+            && documentData.validacion?.estado !== 'validado') {
+            return error('La entrega de EPP debe ser validada por una instancia superior antes de firmar la recepcion', 400);
+        }
+
         const contexto = {
             ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
             userAgent: event.headers?.['user-agent'] || 'unknown'
@@ -385,35 +404,53 @@ module.exports.sign = async (event) => {
                 referenciaId: id,
                 referenciaTipo: 'document',
                 contexto,
+                metadata: esFirmaRelator ? { rolFirma: 'relator', modalidad: body.modalidad || null } : null,
                 persona
             });
         } catch (firmaErr) {
             return error(firmaErr.message, 400);
         }
 
+        const now = new Date().toISOString();
         const firmaEmbebida = FirmaService.toDocumentFirmaFormat(firmaResult);
         const firmas = [...(documentData.firmas || []), firmaEmbebida];
 
-        const asignaciones = (documentData.asignaciones || []).map((a) => {
-            if (a.personaId === signerPersonaId && a.estado === 'pendiente') {
-                return { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() };
+        let updateExpression = 'SET firmas = :firmas, updatedAt = :updatedAt';
+        const expressionValues = { ':firmas': firmas, ':updatedAt': now };
+
+        if (esFirmaRelator) {
+            // La firma del relator no toca asignaciones: registra firmaRelator.
+            updateExpression += ', firmaRelator = :firmaRelator';
+            expressionValues[':firmaRelator'] = {
+                personaId: persona.personaId,
+                nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+                timestamp: now,
+                estado: 'firmado'
+            };
+            if (body.modalidad) {
+                updateExpression += ', modalidad = :modalidad';
+                expressionValues[':modalidad'] = String(body.modalidad);
             }
-            return a;
-        });
+        } else {
+            const asignaciones = (documentData.asignaciones || []).map((a) => {
+                if (a.personaId === signerPersonaId && a.estado === 'pendiente') {
+                    return { ...a, estado: 'firmado', fechaFirma: now };
+                }
+                return a;
+            });
+            updateExpression += ', asignaciones = :asignaciones';
+            expressionValues[':asignaciones'] = asignaciones;
+        }
 
         await docClient.send(new UpdateCommand({
             TableName: TABLE_NAME,
             Key: { documentId: id },
-            UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
-            ExpressionAttributeValues: {
-                ':firmas': firmas,
-                ':asignaciones': asignaciones,
-                ':updatedAt': new Date().toISOString()
-            }
+            UpdateExpression: updateExpression,
+            ExpressionAttributeValues: expressionValues
         }));
 
         return success({
-            message: 'Documento firmado exitosamente',
+            message: esFirmaRelator ? 'Firma de relator registrada' : 'Documento firmado exitosamente',
             firma: firmaEmbebida,
             signatureId: firmaResult.signatureId,
             token: firmaResult.token
@@ -466,6 +503,14 @@ module.exports.signAssisted = async (event) => {
         );
         if (!asignacionFirmante) {
             return error('El trabajador no esta asignado a este documento', 400);
+        }
+
+        // ENTREGA_EPP: la recepcion no puede firmarse sin validacion previa de
+        // una instancia superior (decision reunion 2026-06-10).
+        if (documentData.tipo === 'ENTREGA_EPP'
+            && documentData.validacion?.requerida
+            && documentData.validacion?.estado !== 'validado') {
+            return error('La entrega de EPP debe ser validada por una instancia superior antes de firmar la recepcion', 400);
         }
 
         // 3. Firmante pertenece al tenant y esta enrolado/habilitado

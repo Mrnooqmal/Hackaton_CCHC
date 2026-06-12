@@ -564,3 +564,12 @@ Registro de actividades y charlas de seguridad.
 ### Equipo de Desarrollo
 - **Frontend**: React + TypeScript
 - **Backend**: Serverless + AWS
+
+## Consultas legales pendientes
+
+- **Validez juridica del PIN como firma electronica ante fiscalizador (DS 44):**
+  pregunta abierta con la Direccion del Trabajo / proveedor de firma certificada.
+  No modificar la implementacion actual de `FirmaService` (PIN + token + IP +
+  timestamp en SignaturesTable) hasta tener respuesta. Aplica a firmas de
+  documentos, firma asistida, firma cruzada de relator (CAPACITACION_SST) y
+  validacion de entregas de EPP. (Acordado en reunion CChC 2026-06-10.)
