@@ -33,6 +33,7 @@ import {
     type DocumentoAdjunto,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { PERMISSIONS } from '../permissions';
 import ConfirmModal from '../components/ConfirmModal';
 import PinInput from '../components/PinInput';
 import { useOfflineSignature, type OfflinePendingSignature } from '../hooks/useOfflineSignature';
@@ -41,7 +42,8 @@ import { Modal, AlertBanner } from '../components/ui';
 type TabType = 'pendientes' | 'historial';
 
 export default function SignatureRequests() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canCrearSolicitud = hasPermission(PERMISSIONS.FIRMAS_CREAR);
     const { isOnline, pendingCount, syncPendingSignatures } = useOfflineSignature();
     const [activeTab, setActiveTab] = useState<TabType>('pendientes');
     const [requests, setRequests] = useState<SignatureRequest[]>([]);
@@ -475,15 +477,17 @@ export default function SignatureRequests() {
                             Gestiona solicitudes de firma digital para documentos y actividades.
                         </p>
                     </div>
-                    <div className="page-header-actions">
-                        <button
-                            className="btn btn-primary"
-                            onClick={() => setShowModal(true)}
-                        >
-                            <FiPlus />
-                            Nueva Solicitud
-                        </button>
-                    </div>
+                    {canCrearSolicitud && (
+                        <div className="page-header-actions">
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => setShowModal(true)}
+                            >
+                                <FiPlus />
+                                Nueva Solicitud
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Tabs */}
@@ -710,7 +714,7 @@ export default function SignatureRequests() {
                                     : 'Las solicitudes completadas, canceladas y vencidas aparecerán aquí.'
                                 }
                             </p>
-                            {activeTab === 'pendientes' && (
+                            {activeTab === 'pendientes' && canCrearSolicitud && (
                                 <button className="btn btn-primary" onClick={() => setShowModal(true)} style={{ marginTop: '16px' }}>
                                     <FiPlus /> Nueva Solicitud
                                 </button>

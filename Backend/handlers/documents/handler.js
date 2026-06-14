@@ -5,9 +5,18 @@ const { success, error, created } = require('../../lib/utils/response');
 const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { TenantService } = require('../../lib/services/TenantService');
+const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { eventBus } = require('../../lib/events/EventBus');
 
 const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
+
+// Permisos que habilitan subir/crear documentos (repositorio o documentos de obra).
+const PERMISOS_SUBIR_DOC = [
+    PERMISSIONS.REPOSITORIO_SUBIR,
+    PERMISSIONS.DOCUMENTOS_SUBIR,
+    PERMISSIONS.OBRA_SUBIR_DOCUMENTOS,
+];
 
 // Tipos de documentos según el DS 44
 const DOCUMENT_TYPES = {
@@ -75,6 +84,18 @@ module.exports.create = async (event) => {
 
         if (!DOCUMENT_TYPES[body.tipo]) {
             return error(`Tipo de documento inválido. Tipos válidos: ${Object.keys(DOCUMENT_TYPES).join(', ')}`);
+        }
+
+        // Enforcement por permiso cuando se identifica al creador.
+        if (body.createdBy) {
+            const personaService = new PersonaService();
+            const creador = await personaService.getById(body.createdBy).catch(() => null);
+            const tenant = await new TenantService().getById(tenantId).catch(() => null);
+            const tenantSafe = tenant ? tenant.toSafeFormat() : null;
+            const puede = creador && PERMISOS_SUBIR_DOC.some(p => personaPuede(creador, tenantSafe, p));
+            if (!puede) {
+                return error('No tienes permiso para subir documentos', 403);
+            }
         }
 
         const now = new Date().toISOString();

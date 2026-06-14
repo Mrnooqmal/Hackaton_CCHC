@@ -29,6 +29,7 @@ export interface TenantRole {
     id: string;
     nombre: string;
     descripcion?: string;
+    permisos?: string[];
 }
 
 export interface Tenant {

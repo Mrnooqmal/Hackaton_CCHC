@@ -10,6 +10,7 @@ import {
 import { FiAlertTriangle, FiSearch } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
 import AddressAutocomplete from '../components/AddressAutocomplete';
+import { PERMISSIONS } from '../permissions';
 
 interface Obra {
   obraId?: string;
@@ -56,7 +57,9 @@ const REGION_COMUNAS: Record<string, string[]> = {
 };
 
 export const Obras: React.FC = () => {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCrearObra = hasPermission(PERMISSIONS.OBRAS_CREAR);
+  const canVerDetalle = hasPermission(PERMISSIONS.OBRAS_DETALLE);
   const navigate = useNavigate();
   const { obras: contextObras, isLoadingObras, refreshObras } = useObraContext();
   const obras = contextObras as unknown as Obra[];
@@ -74,7 +77,7 @@ export const Obras: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterEstado, setFilterEstado] = useState('');
-  const canViewObras = user?.rol === 'admin';
+  const canViewObras = hasPermission(PERMISSIONS.OBRAS_VER);
   const [companyName, setCompanyName] = useState('');
   const resolvedCompanyName = useMemo(() => {
     const userAny = user as any;
@@ -343,15 +346,17 @@ export const Obras: React.FC = () => {
               Administra proyectos, documentos DS44 y asignaciones del personal.
             </p>
           </div>
-          <div className="page-header-actions">
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="btn btn-primary"
-            >
-              <LuPlus />
-              Crear nueva obra
-            </button>
-          </div>
+          {canCrearObra && (
+            <div className="page-header-actions">
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="btn btn-primary"
+              >
+                <LuPlus />
+                Crear nueva obra
+              </button>
+            </div>
+          )}
         </div>
 
         {obras.length === 0 ? (
@@ -427,8 +432,8 @@ export const Obras: React.FC = () => {
                     <div
                       key={obra.obraId || obra.codigo}
                       className="card"
-                      style={{ padding: 0, overflow: 'hidden', cursor: 'pointer' }}
-                      onClick={() => navigate(`/obras/${obraKey}`)}
+                      style={{ padding: 0, overflow: 'hidden', cursor: canVerDetalle ? 'pointer' : 'default' }}
+                      onClick={canVerDetalle ? () => navigate(`/obras/${obraKey}`) : undefined}
                     >
                       <div style={{ position: 'relative', height: '160px', background: 'var(--surface-elevated)' }}>
                         <img

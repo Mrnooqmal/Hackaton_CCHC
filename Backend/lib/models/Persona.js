@@ -5,6 +5,8 @@
  * Un solo ID (personaId), un solo pinHash, sin sincronización dual.
  */
 
+const { normalizeRol } = require('../utils/validation');
+
 const ROLES = {
     admin: {
         nombre: 'Administrador Empresa',
@@ -59,7 +61,7 @@ class Persona {
 
         // Rol y contexto laboral
         this.rol = data.rol || 'trabajador';
-        this.permisos = data.permisos || (ROLES[this.rol]?.permisos || []);
+        this.permisos = data.permisos || (ROLES[normalizeRol(this.rol)]?.permisos || []);
         this.cargo = data.cargo || '';
         this.obraIds = data.obraIds || [];
 

@@ -167,6 +167,34 @@ const generateTempPassword = (length = 10) => {
     return result;
 };
 
+// Mapeo canónico de nombres de rol a IDs del sistema.
+// Permite guardar "Jefe de Obra", "Prevencionista", etc. verbatim
+// sin romper los checks de autorización internos.
+const ROLE_CANONICAL = {
+    'admin': 'admin',
+    'administrador': 'admin',
+    'jefe_obra': 'jefe_obra',
+    'jefe de obra': 'jefe_obra',
+    'jefe_de_obra': 'jefe_obra',
+    'supervisor': 'supervisor',
+    'prevencionista': 'prevencionista',
+    'trabajador': 'trabajador',
+    'colaborador': 'trabajador',
+    'relator': 'relator',
+};
+
+/**
+ * Normaliza un nombre de rol al ID canónico del sistema.
+ * Permite comparar 'Prevencionista', 'prevencionista', 'Jefe de Obra', etc.
+ * @param {string} rol
+ * @returns {string}
+ */
+const normalizeRol = (rol) => {
+    if (!rol || typeof rol !== 'string') return '';
+    const lower = rol.toLowerCase().trim();
+    return ROLE_CANONICAL[lower] || lower.replace(/\s+/g, '_');
+};
+
 module.exports = {
     validateRut,
     validateRequired,
@@ -176,5 +204,6 @@ module.exports = {
     validatePin,
     hashPassword,
     verifyPassword,
-    generateTempPassword
+    generateTempPassword,
+    normalizeRol
 };

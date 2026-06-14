@@ -16,6 +16,7 @@ import { activitiesApi, workersApi, type Activity, type Worker } from '../api/cl
 import SignatureModal from '../components/SignatureModal';
 import { Modal, Select } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
+import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 
@@ -39,7 +40,8 @@ const CAPACITACION_SUBTIPOS: Record<string, string> = {
 };
 
 export default function Activities() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canCrearActividad = hasPermission(PERMISSIONS.ACTIVIDADES_CREAR);
     const { isOnline, pendingCount, signActivity, syncPendingSignatures } = useOfflineSignature();
     const { toast } = useToast();
     const [activities, setActivities] = useState<Activity[]>([]);
@@ -59,7 +61,7 @@ export default function Activities() {
     // Check if user is a worker (can self-sign)
     const canSelfSign = user?.rol === 'trabajador' && user?.personaId;
     // Check if user can manage (prevencionista/admin)
-    const canManage = user?.rol === 'admin' || user?.rol === 'prevencionista';
+    const canManage = canCrearActividad;
 
     const [newActivity, setNewActivity] = useState({
         tipo: 'CHARLA_5MIN',
@@ -375,6 +377,7 @@ export default function Activities() {
                 </div>
 
                 {/* Quick Actions */}
+                {canCrearActividad && (
                 <div className="grid grid-cols-4 mb-6">
                     {Object.entries(ACTIVITY_TYPES).slice(0, 4).map(([key, { label, color, icon }]) => (
                         <div
@@ -398,6 +401,7 @@ export default function Activities() {
                         </div>
                     ))}
                 </div>
+                )}
 
                 {/* Today's Activities */}
                 <div className="card mb-6">
@@ -413,10 +417,12 @@ export default function Activities() {
                                 })}
                             </p>
                         </div>
-                        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-                            <FiPlus />
-                            Nueva Actividad
-                        </button>
+                        {canCrearActividad && (
+                            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                                <FiPlus />
+                                Nueva Actividad
+                            </button>
+                        )}
                     </div>
 
                     {todayActivities.length === 0 ? (
@@ -426,16 +432,18 @@ export default function Activities() {
                             <p className="empty-state-description">
                                 Registra la primera actividad del día, como la charla de 5 minutos.
                             </p>
-                            <button
-                                className="btn btn-primary"
-                                onClick={() => {
-                                    setNewActivity({ ...newActivity, tipo: 'CHARLA_5MIN' });
-                                    setShowModal(true);
-                                }}
-                            >
-                                <FiMessageSquare />
-                                Registrar Charla 5 Min
-                            </button>
+                            {canCrearActividad && (
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={() => {
+                                        setNewActivity({ ...newActivity, tipo: 'CHARLA_5MIN' });
+                                        setShowModal(true);
+                                    }}
+                                >
+                                    <FiMessageSquare />
+                                    Registrar Charla 5 Min
+                                </button>
+                            )}
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3">

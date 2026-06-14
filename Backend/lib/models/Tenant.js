@@ -5,6 +5,8 @@
  * Contiene configuración, reglas de negocio y preferencias.
  */
 
+const { DEFAULT_ROLE_PRESETS } = require('../permissions');
+
 const PLANES = {
     starter: { nombre: 'Starter', limiteObras: 1, limiteTrabajadores: 25 },
     professional: { nombre: 'Professional', limiteObras: 5, limiteTrabajadores: 100 },
@@ -87,9 +89,9 @@ class Tenant {
      */
     static rolesPorDefecto() {
         return [
-            { id: 'prevencionista', nombre: 'Prevencionista', descripcion: 'Encargado de la prevención de riesgos y la seguridad en obra.' },
-            { id: 'jefe_obra', nombre: 'Jefe de Obra', descripcion: 'Responsable de la dirección y supervisión de la obra.' },
-            { id: 'colaborador', nombre: 'Colaborador', descripcion: 'Participa en las actividades diarias de la obra.' }
+            { id: 'prevencionista', nombre: 'Prevencionista', descripcion: 'Encargado de la prevención de riesgos y la seguridad en obra.', permisos: DEFAULT_ROLE_PRESETS.prevencionista },
+            { id: 'jefe_obra', nombre: 'Jefe de Obra', descripcion: 'Responsable de la dirección y supervisión de la obra.', permisos: DEFAULT_ROLE_PRESETS.jefe_obra },
+            { id: 'colaborador', nombre: 'Colaborador', descripcion: 'Participa en las actividades diarias de la obra.', permisos: DEFAULT_ROLE_PRESETS.colaborador }
         ];
     }
 
@@ -112,13 +114,14 @@ class Tenant {
      */
     static normalizarRol(rol) {
         if (typeof rol === 'string') {
-            return { id: Tenant.slugRol(rol), nombre: rol.trim(), descripcion: '' };
+            return { id: Tenant.slugRol(rol), nombre: rol.trim(), descripcion: '', permisos: [] };
         }
         const nombre = (rol?.nombre || '').trim();
         return {
             id: rol?.id || Tenant.slugRol(nombre),
             nombre,
-            descripcion: (rol?.descripcion || '').trim()
+            descripcion: (rol?.descripcion || '').trim(),
+            permisos: Array.isArray(rol?.permisos) ? rol.permisos : []
         };
     }
 

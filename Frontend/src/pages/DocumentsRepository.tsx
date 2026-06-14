@@ -16,6 +16,7 @@ import {
 import { documentsApi, uploadsApi, type Document } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
+import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { AlertBanner, Select } from '../components/ui';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
@@ -45,7 +46,7 @@ export default function DocumentsRepository() {
     const canSelectObra = user?.rol === 'admin';
     const [activeScope, setActiveScope] = useState<'general' | 'personal'>(canViewGeneral ? 'general' : 'personal');
 
-    const canUpload = hasPermission('asignar_documentos') || hasPermission('gestionar_obras');
+    const canUpload = hasPermission(PERMISSIONS.REPOSITORIO_SUBIR);
     const [showUploadForm, setShowUploadForm] = useState(false);
     const [creating, setCreating] = useState(false);
     const [uploading, setUploading] = useState(false);

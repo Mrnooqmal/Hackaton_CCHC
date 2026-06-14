@@ -19,10 +19,10 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, UpdateCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const { eventBus } = require('../events/EventBus');
+const { PERMISSIONS, personaPuede } = require('../permissions');
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 
-const ROLES_VALIDADOR = ['admin', 'jefe_obra', 'supervisor', 'prevencionista'];
 const MOTIVOS_REPOSICION = ['desgaste', 'perdida', 'accidente', 'cambio_talla', 'otro'];
 
 class EppService {
@@ -130,11 +130,11 @@ class EppService {
     /**
      * Valida una entrega de EPP. Solo roles de instancia superior.
      */
-    async validarEntrega({ entregaDocumentId, validador, observacion }) {
+    async validarEntrega({ entregaDocumentId, validador, observacion, tenant }) {
         if (!entregaDocumentId) throw new Error('entregaDocumentId es requerido');
         if (!validador) throw new Error('Validador no encontrado');
-        if (!ROLES_VALIDADOR.includes(validador.rol)) {
-            throw new Error('Solo supervisor, prevencionista, jefe de obra o admin pueden validar entregas de EPP');
+        if (!personaPuede(validador, tenant, PERMISSIONS.PERSONA_EPP)) {
+            throw new Error('No tienes permiso para validar entregas de EPP');
         }
 
         const res = await docClient.send(new GetCommand({
@@ -228,4 +228,4 @@ class EppService {
     }
 }
 
-module.exports = { EppService, ROLES_VALIDADOR, MOTIVOS_REPOSICION };
+module.exports = { EppService, MOTIVOS_REPOSICION };

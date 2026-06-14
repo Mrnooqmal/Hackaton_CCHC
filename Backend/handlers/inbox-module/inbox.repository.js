@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
+const { normalizeRol } = require('../../lib/utils/validation');
 
 const INBOX_TABLE = process.env.INBOX_TABLE || 'Inbox';
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
@@ -298,11 +299,11 @@ class InboxRepository {
             }));
 
         const grouped = {
-            admin: users.filter(u => u.rol === 'admin'),
-            prevencionista: users.filter(u => u.rol === 'prevencionista'),
-            supervisor: users.filter(u => u.rol === 'supervisor'),
-            trabajador: users.filter(u => u.rol === 'trabajador'),
-            relator: users.filter(u => u.rol === 'relator')
+            admin: users.filter(u => normalizeRol(u.rol) === 'admin'),
+            prevencionista: users.filter(u => normalizeRol(u.rol) === 'prevencionista'),
+            supervisor: users.filter(u => normalizeRol(u.rol) === 'supervisor'),
+            trabajador: users.filter(u => normalizeRol(u.rol) === 'trabajador'),
+            relator: users.filter(u => normalizeRol(u.rol) === 'relator')
         };
 
         return { recipients: users, grouped, total: users.length };

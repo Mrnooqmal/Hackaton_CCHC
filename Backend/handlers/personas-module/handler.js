@@ -10,14 +10,25 @@ const { PutCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { ObraService } = require('../../lib/services/ObraService');
-const { EppService, ROLES_VALIDADOR } = require('../../lib/services/EppService');
+const { EppService } = require('../../lib/services/EppService');
+const { TenantService } = require('../../lib/services/TenantService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
+const { normalizeRol } = require('../../lib/utils/validation');
+const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
 
 const personaService = new PersonaService();
 const obraService = new ObraService();
 const eppService = new EppService();
+const tenantService = new TenantService();
+
+// Resuelve el tenant (toSafeFormat) para evaluar permisos por persona.
+const tenantSafe = async (tenantId) => {
+    if (!tenantId) return null;
+    const tenant = await tenantService.getById(tenantId).catch(() => null);
+    return tenant ? tenant.toSafeFormat() : null;
+};
 
 const TEMPLATE_HEADERS = [
     'rut',
@@ -572,7 +583,7 @@ module.exports.personasHandler = async (event) => {
                     // Generar onboarding DS44 para trabajadores creados con obra.
                     // Antes solo se disparaba al asignar obra via PUT; la carga masiva
                     // dejaba trabajadores sin documentos de onboarding (bug demo).
-                    if (persona.rol === 'trabajador' && Array.isArray(persona.obraIds)) {
+                    if (normalizeRol(persona.rol) === 'trabajador' && Array.isArray(persona.obraIds)) {
                         for (const oId of persona.obraIds) {
                             try {
                                 await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null });
@@ -609,10 +620,21 @@ module.exports.personasHandler = async (event) => {
         if (method === 'POST' && !personaId) {
             if (!tenantId) return error('tenantId es requerido');
             const body = JSON.parse(event.body || '{}');
+
+            // Enforcement por permiso cuando se identifica al creador.
+            // (El onboarding inicial crea el admin sin creador y queda exento.)
+            const creadorId = body.creadorId || body.solicitanteId || null;
+            if (creadorId) {
+                const creadorPersona = await personaService.getById(creadorId).catch(() => null);
+                if (!creadorPersona || !personaPuede(creadorPersona, await tenantSafe(tenantId), PERMISSIONS.PERSONAS_CREAR)) {
+                    return error('No tienes permiso para crear personas', 403);
+                }
+            }
+
             const { persona, passwordTemporal } = await personaService.crear(tenantId, body);
 
             // Generar onboarding DS44 si el trabajador se crea ya asignado a obra(s).
-            if (persona.rol === 'trabajador' && Array.isArray(persona.obraIds) && persona.obraIds.length > 0) {
+            if (normalizeRol(persona.rol) === 'trabajador' && Array.isArray(persona.obraIds) && persona.obraIds.length > 0) {
                 const solicitanteId = body.solicitanteId || null;
                 const solicitante = solicitanteId ? await personaService.getById(solicitanteId).catch(() => null) : null;
                 for (const oId of persona.obraIds) {
@@ -692,7 +714,7 @@ module.exports.personasHandler = async (event) => {
             try {
                 const nextObraIds = Array.isArray(persona.obraIds) ? persona.obraIds : [];
                 const addedObras = nextObraIds.filter((id) => !previousObraIds.has(id));
-                const isWorker = persona.rol === 'trabajador';
+                const isWorker = normalizeRol(persona.rol) === 'trabajador';
 
                 if (isWorker && addedObras.length > 0) {
                     const solicitanteId = body.solicitanteId
@@ -736,8 +758,8 @@ module.exports.personasHandler = async (event) => {
 
             const creador = await personaService.getById(body.creadorId);
             if (!creador) return error('Creador no encontrado', 404);
-            if (!ROLES_VALIDADOR.includes(creador.rol)) {
-                return error('Solo supervisor, prevencionista, jefe de obra o admin pueden registrar entregas de EPP', 403);
+            if (!personaPuede(creador, await tenantSafe(creador.tenantId), PERMISSIONS.PERSONA_EPP)) {
+                return error('No tienes permiso para registrar entregas de EPP', 403);
             }
             const persona = await personaService.getById(personaId);
             if (!persona) return error('Trabajador no encontrado', 404);
@@ -768,7 +790,8 @@ module.exports.personasHandler = async (event) => {
             const entrega = await eppService.validarEntrega({
                 entregaDocumentId: body.entregaDocumentId,
                 validador,
-                observacion: body.observacion || null
+                observacion: body.observacion || null,
+                tenant: await tenantSafe(validador.tenantId)
             });
             return success({ message: 'Entrega de EPP validada', entrega });
         }

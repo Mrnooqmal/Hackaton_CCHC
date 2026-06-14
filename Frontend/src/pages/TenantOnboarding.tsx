@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { tenantsApi } from '../api/tenants.api';
 import { personasApi } from '../api/personas.api';
 import type { TenantSetupData, TenantSetupResponse } from '../api/tenants.api';
-import { FiArrowRight, FiArrowLeft, FiCheckCircle, FiCopy, FiCheck, FiUserPlus, FiX, FiUpload, FiDownload, FiAlertCircle, FiPlus, FiInfo } from 'react-icons/fi';
+import { FiArrowRight, FiArrowLeft, FiCheckCircle, FiCopy, FiCheck, FiUserPlus, FiX, FiUpload, FiDownload, FiAlertCircle, FiPlus, FiInfo, FiLock } from 'react-icons/fi';
+import { PERMISSION_GROUPS, DEFAULT_ROLE_PRESETS, ALL_PERMISSION_KEYS } from '../permissions';
 
 // ── RUT utilities ────────────────────────────────────────────────
 function rutFormat(raw: string): string {
@@ -42,24 +43,22 @@ const STEP_NUMS: Record<Step, string> = {
   empresa: '1', roles: '2', admin: '3', trabajadores: '4', confirmacion: '5',
 };
 // ── Roles por defecto de la empresa (editables / removibles) ──────
-interface RoleDraft { _id: string; nombre: string; descripcion: string; }
+// `locked` marca el rol Administrador: nombre/descripción editables, pero
+// no se puede eliminar ni modificar sus permisos (acceso total).
+interface RoleDraft { _id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; }
 const DEFAULT_ROLES: Array<Omit<RoleDraft, '_id'>> = [
-  { nombre: 'Prevencionista', descripcion: 'Encargado de la prevención de riesgos y la seguridad en obra.' },
-  { nombre: 'Jefe de Obra', descripcion: 'Responsable de la dirección y supervisión de la obra.' },
-  { nombre: 'Supervisor', descripcion: 'Supervisa el cumplimiento de tareas y coordina al equipo en terreno.' },
-  { nombre: 'Colaborador', descripcion: 'Participa en las actividades diarias de la obra.' },
+  { nombre: 'Prevencionista', descripcion: 'Encargado de la prevención de riesgos y la seguridad en obra.', permisos: DEFAULT_ROLE_PRESETS.prevencionista },
+  { nombre: 'Jefe de Obra', descripcion: 'Responsable de la dirección y supervisión de la obra.', permisos: DEFAULT_ROLE_PRESETS.jefe_obra },
+  { nombre: 'Supervisor', descripcion: 'Supervisa el cumplimiento de tareas y coordina al equipo en terreno.', permisos: DEFAULT_ROLE_PRESETS.supervisor },
+  { nombre: 'Colaborador', descripcion: 'Participa en las actividades diarias de la obra.', permisos: DEFAULT_ROLE_PRESETS.colaborador },
 ];
-
-function slugRole(nombre: string): string {
-  return nombre
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_')
-    .replace(/_+/g, '_');
-}
+const ADMIN_ROLE_DRAFT: RoleDraft = {
+  _id: 'role-admin',
+  nombre: 'Administrador',
+  descripcion: 'Acceso completo a la gestión de la empresa.',
+  permisos: ALL_PERMISSION_KEYS,
+  locked: true,
+};
 
 const CARGOS = ['Administrativo', 'Prevencionista', 'Supervisor', 'Carpintero', 'Jornal de aseo y acarreo', 'Maestro de terminaciones', 'Maestro albañil', 'Trazador'];
 
@@ -93,14 +92,15 @@ export default function TenantOnboarding() {
     nombre: '', rutEmpresa: '', cantidadTrabajadores: 10,
   });
   const [admin, setAdmin] = useState({ rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '', fechaNacimiento: '', email: '' });
-  const [roles, setRoles] = useState<RoleDraft[]>(() =>
-    DEFAULT_ROLES.map((r, i) => ({ ...r, _id: `role-${i}` }))
-  );
+  const [roles, setRoles] = useState<RoleDraft[]>(() => [
+    ADMIN_ROLE_DRAFT,
+    ...DEFAULT_ROLES.map((r, i) => ({ ...r, _id: `role-${i}` })),
+  ]);
   const [rolesInfoVisible, setRolesInfoVisible] = useState(true);
   const [workers, setWorkers] = useState<WorkerDraft[]>([]);
   const [wForm, setWForm] = useState(() => ({
     ...BLANK_WORKER,
-    rol: slugRole(DEFAULT_ROLES[0]?.nombre ?? ''),
+    rol: DEFAULT_ROLES[0]?.nombre.trim() ?? '',
   }));
   const [wErrors, setWErrors] = useState<Set<string>>(new Set());
   const [workerTab, setWorkerTab] = useState<'manual' | 'bulk'>('manual');
@@ -217,10 +217,18 @@ export default function TenantOnboarding() {
   const updateRole = (id: string, field: 'nombre' | 'descripcion', value: string) =>
     setRoles(p => p.map(r => (r._id === id ? { ...r, [field]: value } : r)));
 
-  const removeRole = (id: string) => setRoles(p => p.filter(r => r._id !== id));
+  // Mantiene el rol si no es el objetivo, o si está bloqueado (admin no removible).
+  const removeRole = (id: string) => setRoles(p => p.filter(r => r._id !== id || r.locked));
+
+  const togglePermiso = (id: string, permKey: string) =>
+    setRoles(p => p.map(r => {
+      if (r._id !== id || r.locked) return r;
+      const has = r.permisos.includes(permKey);
+      return { ...r, permisos: has ? r.permisos.filter(k => k !== permKey) : [...r.permisos, permKey] };
+    }));
 
   const addRole = () =>
-    setRoles(p => [...p, { _id: String(Date.now() + Math.random()), nombre: '', descripcion: '' }]);
+    setRoles(p => [...p, { _id: String(Date.now() + Math.random()), nombre: '', descripcion: '', permisos: [] }]);
 
   const addWorker = () => {
     const errs = new Set<string>();
@@ -233,7 +241,7 @@ export default function TenantOnboarding() {
     setWErrors(errs);
     if (errs.size) return;
     setWorkers(p => [...p, { ...wForm, _id: String(Date.now() + Math.random()) }]);
-    setWForm({ ...BLANK_WORKER, rol: slugRole(roles[0]?.nombre ?? '') });
+    setWForm({ ...BLANK_WORKER, rol: roles.find(r => !r.locked)?.nombre.trim() ?? '' });
     setWErrors(new Set());
   };
 
@@ -294,9 +302,10 @@ export default function TenantOnboarding() {
         cantidadTrabajadores: empresa.cantidadTrabajadores,
         plan: 'starter',
         roles: roles.map(r => ({
-          id: slugRole(r.nombre),
+          id: r.locked ? 'admin' : r.nombre.trim(),
           nombre: r.nombre.trim(),
           descripcion: r.descripcion.trim(),
+          permisos: r.locked ? ALL_PERMISSION_KEYS : r.permisos,
         })),
         admin: { rut: admin.rut, nombre: admin.nombre, apellidoPaterno: admin.apellidoPaterno, apellidoMaterno: admin.apellidoMaterno, fechaNacimiento: admin.fechaNacimiento || undefined, email: admin.email },
       };
@@ -507,35 +516,67 @@ export default function TenantOnboarding() {
             <div className="onb-roles-list">
               {roles.map((r, i) => (
                 <div key={r._id} className="onb-role-card">
-                  <span className="onb-role-index">{String(i + 1).padStart(2, '0')}</span>
-                  <div className="onb-role-fields">
-                    <div className="onb-role-field-group">
-                      <label className="onb-role-label">NOMBRE DEL ROL</label>
-                      <input
-                        className="onb-input onb-role-name"
-                        placeholder="Ej. Capataz"
-                        value={r.nombre}
-                        onChange={e => updateRole(r._id, 'nombre', e.target.value)}
-                      />
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <span className="onb-role-index">{r.locked ? <FiLock size={12} /> : String(i + 1).padStart(2, '0')}</span>
+                    <div className="onb-role-fields">
+                      <div className="onb-role-field-group">
+                        <label className="onb-role-label">NOMBRE DEL ROL</label>
+                        <input
+                          className="onb-input onb-role-name"
+                          placeholder="Ej. Capataz"
+                          value={r.nombre}
+                          onChange={e => updateRole(r._id, 'nombre', e.target.value)}
+                        />
+                      </div>
+                      <div className="onb-role-field-group">
+                        <label className="onb-role-label">DESCRIPCIÓN</label>
+                        <input
+                          className="onb-input onb-role-desc"
+                          placeholder="Responsabilidades del rol (opcional)"
+                          value={r.descripcion}
+                          onChange={e => updateRole(r._id, 'descripcion', e.target.value)}
+                        />
+                      </div>
                     </div>
-                    <div className="onb-role-field-group">
-                      <label className="onb-role-label">DESCRIPCIÓN</label>
-                      <input
-                        className="onb-input onb-role-desc"
-                        placeholder="Responsabilidades del rol (opcional)"
-                        value={r.descripcion}
-                        onChange={e => updateRole(r._id, 'descripcion', e.target.value)}
-                      />
+                    {!r.locked && (
+                      <button
+                        className="onb-role-remove"
+                        onClick={() => removeRole(r._id)}
+                        type="button"
+                        title="Eliminar rol"
+                      >
+                        <FiX size={13} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Selector de permisos por grupos */}
+                  <div className="onb-perms">
+                    <div className="onb-perms-head">
+                      PERMISOS{r.locked && <span className="onb-perms-lock"><FiLock size={10} /> Acceso total (no editable)</span>}
+                    </div>
+                    <div className="onb-perms-groups">
+                      {PERMISSION_GROUPS.map(group => (
+                        <div key={group.grupo} className="onb-perms-group">
+                          <div className="onb-perms-group-title">{group.grupo}</div>
+                          {group.permisos.map(perm => {
+                            const checked = r.locked || r.permisos.includes(perm.key);
+                            return (
+                              <label key={perm.key} className={`onb-perm-item${r.locked ? ' onb-perm-item--locked' : ''}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={r.locked}
+                                  onChange={() => togglePermiso(r._id, perm.key)}
+                                />
+                                <span>{perm.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <button
-                    className="onb-role-remove"
-                    onClick={() => removeRole(r._id)}
-                    type="button"
-                    title="Eliminar rol"
-                  >
-                    <FiX size={13} />
-                  </button>
                 </div>
               ))}
             </div>
@@ -705,8 +746,8 @@ export default function TenantOnboarding() {
                       value={wForm.rol}
                       onChange={e => setWForm({ ...wForm, rol: e.target.value })}
                     >
-                      {roles.map(r => {
-                        const id = slugRole(r.nombre);
+                      {roles.filter(r => !r.locked).map(r => {
+                        const id = r.nombre.trim();
                         return <option key={id} value={id}>{r.nombre}</option>;
                       })}
                     </select>
@@ -811,7 +852,7 @@ export default function TenantOnboarding() {
                       <div className="onb-worker-info">
                         <span className="onb-worker-name">{w.nombre} {w.apellidoPaterno} {w.apellidoMaterno}</span>
                         <span className="onb-worker-rut">{w.rut}</span>
-                        <span className="onb-worker-role">{roles.find(r => slugRole(r.nombre) === w.rol)?.nombre || w.rol}</span>
+                        <span className="onb-worker-role">{roles.find(r => r.nombre.trim() === w.rol)?.nombre || w.rol}</span>
                       </div>
                       <button className="onb-worker-remove" onClick={() => removeWorker(w._id)} type="button" title="Eliminar">
                         <FiX size={12} />
@@ -903,7 +944,7 @@ export default function TenantOnboarding() {
                         <span className="onb-confirm-worker-rut">{w.rut}</span>
                       </div>
                       <span className="onb-confirm-worker-rol">
-                        {roles.find(r => slugRole(r.nombre) === w.rol)?.nombre || w.rol}
+                        {roles.find(r => r.nombre.trim() === w.rol)?.nombre || w.rol}
                       </span>
                     </div>
                   ))}
@@ -1503,7 +1544,8 @@ const onbStyles = `
 
   .onb-role-card {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     gap: 14px;
     background: #fff;
     border: 1px solid #e2e8f0;
@@ -1512,6 +1554,56 @@ const onbStyles = `
     padding: 12px 14px 12px 16px;
     animation: onbRise 0.22s ease both;
     transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .onb-perms {
+    border-top: 1px dashed #e2e8f0;
+    padding-top: 10px;
+  }
+  .onb-perms-head {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .onb-perms-lock {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #002855;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .onb-perms-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px 18px;
+  }
+  .onb-perms-group-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 4px;
+  }
+  .onb-perm-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #334155;
+    padding: 2px 0;
+    cursor: pointer;
+  }
+  .onb-perm-item--locked {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .onb-perm-item input {
+    cursor: inherit;
   }
   .onb-role-card:hover {
     border-color: #c7d5e8;

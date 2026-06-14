@@ -12,7 +12,7 @@ const { docClient } = require('../clients/dynamodb');
 const { Persona, ROLES } = require('../models/Persona');
 const {
     validateRut, validateRequired, hashPin, verifyPin,
-    validatePin, generateSignatureToken, hashPassword, generateTempPassword
+    validatePin, generateSignatureToken, hashPassword, generateTempPassword, normalizeRol
 } = require('../utils/validation');
 
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
@@ -46,7 +46,8 @@ class PersonaService {
         const personaId = uuidv4();
         const now = new Date().toISOString();
         // Los roles del sistema tienen permisos predefinidos; los roles personalizados del tenant no.
-        const rolConfig = ROLES[data.rol];
+        // Se normaliza para admitir nombres con mayúsculas o espacios ("Jefe de Obra", "Prevencionista").
+        const rolConfig = ROLES[normalizeRol(data.rol)];
         const tieneAccesoWeb = data.tieneAccesoWeb !== undefined ? data.tieneAccesoWeb : Boolean(rolConfig);
         let passwordTemporal = null;
 

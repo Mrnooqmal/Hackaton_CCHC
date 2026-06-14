@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import ConfirmModal from '../components/ConfirmModal';
 import { AlertBanner, CredentialCard, Modal, Select, SegmentedControl } from '../components/ui';
+import { PERMISSIONS } from '../permissions';
 import {
     FiUserPlus, FiShield, FiEdit2,
     FiUsers, FiX, FiSave,
@@ -43,9 +44,10 @@ export default function PersonasManagement() {
     const isAdmin = user?.rol === 'admin';
     const isObraScoped = Boolean(user && !isAdmin);
     const isMissingObra = isObraScoped && !selectedObraId;
-    const canCreatePersonas = isAdmin;
-    const canBulkUpload = isAdmin;
-    const canManageObra = hasPermission('gestionar_obras');
+    const canCreatePersonas = hasPermission(PERMISSIONS.PERSONAS_CREAR);
+    const canBulkUpload = hasPermission(PERMISSIONS.PERSONAS_CREAR);
+    const canVerDetalle = hasPermission(PERMISSIONS.PERSONAS_DETALLE);
+    const canManageObra = hasPermission(PERMISSIONS.OBRAS_DETALLE);
 
     const [personas, setPersonas] = useState<PersonaResponse[]>([]);
     const [loading, setLoading] = useState(true);
@@ -59,7 +61,7 @@ export default function PersonasManagement() {
     const [newPersona, setNewPersona] = useState({
         rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '',
         fechaNacimiento: '', email: '', cargo: '',
-        rol: 'trabajador' as string, tieneAccesoWeb: true,
+        rol: '' as string, tieneAccesoWeb: true,
         nivelEscolar: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '',
         contactoEmergenciaRelacion: '', cursos: ''
     });
@@ -303,7 +305,7 @@ export default function PersonasManagement() {
             ? `Personas asignadas a ${selectedObra.nombre}.`
             : 'Selecciona una obra para ver el equipo asignado.'
         : 'Gestione todos los usuarios, roles y permisos desde un solo lugar.';
-        const showAdminActions = isAdmin;
+        const showAdminActions = canCreatePersonas || canBulkUpload;
 
     return (
         <>
@@ -450,13 +452,9 @@ export default function PersonasManagement() {
                         </div>
                     ) : (
                         <div className="pdir-grid">
-                            {filtered.map((p, i) => (
-                                    <Link
-                                        key={p.personaId}
-                                        to={`/personas/${p.rut}`}
-                                        className="pdir-card"
-                                        style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
-                                    >
+                            {filtered.map((p, i) => {
+                                const cardInner = (
+                                    <>
                                         <div className="pdir-avatar" style={p.fotoPerfil ? { padding: 0, overflow: 'hidden', borderColor: AVATAR_TINT.border } : { background: AVATAR_TINT.bg, color: AVATAR_TINT.fg, borderColor: AVATAR_TINT.border }}>
                                             {p.fotoPerfil
                                                 ? <img src={p.fotoPerfil} alt={p.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -465,8 +463,20 @@ export default function PersonasManagement() {
                                         <span className="pdir-name">{p.nombre} {p.apellido}</span>
                                         <span className="pdir-rut">{p.rut}</span>
                                         <span className="pdir-cargo">{p.cargo || ROLE_CONFIG[p.rol]?.label || '—'}</span>
+                                    </>
+                                );
+                                const cardStyle = { animationDelay: `${Math.min(i * 20, 400)}ms` };
+                                // Sin permiso de detalle, la tarjeta no es navegable.
+                                return canVerDetalle ? (
+                                    <Link key={p.personaId} to={`/personas/${p.rut}`} className="pdir-card" style={cardStyle}>
+                                        {cardInner}
                                     </Link>
-                            ))}
+                                ) : (
+                                    <div key={p.personaId} className="pdir-card" style={{ ...cardStyle, cursor: 'default' }}>
+                                        {cardInner}
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </div>

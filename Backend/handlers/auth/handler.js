@@ -13,12 +13,31 @@ const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error } = require('../../lib/utils/response');
 const { validateRut, validateRequired, hashPassword, verifyPassword } = require('../../lib/utils/validation');
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { TenantService } = require('../../lib/services/TenantService');
+const { resolvePersonaPermisos } = require('../../lib/permissions');
 const crypto = require('crypto');
 
 const SESSIONS_TABLE = process.env.SESSIONS_TABLE || 'Sessions';
 const SESSION_DURATION_HOURS = 24;
 
 const personaService = new PersonaService();
+const tenantService = new TenantService();
+
+/**
+ * Construye el payload de usuario con permisos resueltos dinámicamente
+ * desde la definición de rol del tenant (admin => todos).
+ */
+const buildUserPayload = async (persona) => {
+    let permisos = [];
+    try {
+        const tenant = await tenantService.getById(persona.tenantId);
+        permisos = resolvePersonaPermisos(persona, tenant ? tenant.toSafeFormat() : null);
+    } catch (permErr) {
+        console.error('Error resolviendo permisos:', permErr);
+        permisos = resolvePersonaPermisos(persona, null);
+    }
+    return { ...persona.toSafeFormat(), permisos };
+};
 
 const generateSessionToken = () => {
     return crypto.randomBytes(32).toString('hex');
@@ -134,7 +153,7 @@ module.exports.login = async (event) => {
             token,
             sessionId,
             expiresAt: expiresAt.toISOString(),
-            user: persona.toSafeFormat(),
+            user: await buildUserPayload(persona),
             tenantId: persona.tenantId,
             requiereCambioPassword: persona.passwordTemporal,
             requiereEnrolamiento: !persona.habilitado
@@ -268,7 +287,7 @@ module.exports.me = async (event) => {
         }));
 
         return success({
-            user: persona.toSafeFormat(),
+            user: await buildUserPayload(persona),
             tenantId: persona.tenantId,
             session: {
                 sessionId: session.sessionId,
