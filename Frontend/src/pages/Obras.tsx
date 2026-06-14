@@ -9,6 +9,7 @@ import {
 } from 'react-icons/lu';
 import { FiAlertTriangle, FiSearch } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 interface Obra {
   obraId?: string;
@@ -562,7 +563,11 @@ export const Obras: React.FC = () => {
 
                   <div className="form-group">
                     <label className="form-label">Dirección *</label>
-                    <input required name="direccion" value={formData.direccion} onChange={handleInputChange} className="form-input" />
+                    <AddressAutocomplete
+                        required
+                        value={formData.direccion}
+                        onChange={v => setFormData(prev => ({ ...prev, direccion: v }))}
+                    />
                   </div>
 
                   <div className="form-group">

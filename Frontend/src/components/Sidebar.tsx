@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     FiHome,
     FiUsers,
@@ -50,7 +50,6 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                     section: 'Empresa',
                     items: [
                         { path: '/', icon: FiHome, label: 'Inicio' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
                     ]
                 },
                 {
@@ -86,8 +85,7 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                         section: 'Mis Obras',
                         items: [
                             { path: '/obras', icon: FiHome, label: 'Seleccionar Obra' },
-                            { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                        ]
+                            ]
                     }
                 ];
             }
@@ -96,7 +94,6 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                     section: 'Obra Activa',
                     items: [
                         { path: '/', icon: FiHome, label: 'Resumen de Obra' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
                     ]
                 },
                 {
@@ -134,8 +131,7 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                         section: 'Mis Obras',
                         items: [
                             { path: '/obras', icon: FiHome, label: 'Seleccionar Obra' },
-                            { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                        ]
+                            ]
                     }
                 ];
             }
@@ -144,7 +140,6 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                     section: 'Obra Activa',
                     items: [
                         { path: '/', icon: FiHome, label: 'Dashboard' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
                     ]
                 },
                 {
@@ -168,8 +163,7 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                         section: 'Mis Obras',
                         items: [
                             { path: '/obras', icon: FiHome, label: 'Seleccionar Obra' },
-                            { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                        ]
+                            ]
                     }
                 ];
             }
@@ -178,7 +172,6 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                     section: 'Obra Activa',
                     items: [
                         { path: '/', icon: FiHome, label: 'Resumen de Obra' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
                     ]
                 },
                 {
@@ -208,7 +201,6 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
                     section: 'Mi Panel',
                     items: [
                         { path: '/', icon: FiHome, label: 'Dashboard' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
                         { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
                     ]
                 },
@@ -243,6 +235,7 @@ const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSe
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) {
     const location = useLocation();
+    const navigate = useNavigate();
     const { user, hasPermission, logout } = useAuth();
     const { selectedObraId } = useObraContext();
     const hasObraContext = Boolean(selectedObraId);
@@ -519,13 +512,23 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                     return (
                         <div className="sidebar-footer">
                             <div className="sidebar-user">
-                                <div className="sidebar-user-avatar">{initials}</div>
-                                <div className="sidebar-user-meta">
-                                    <span className="sidebar-user-name">
-                                        {user.nombre} {user.apellido}
-                                    </span>
-                                    <span className="sidebar-user-role">{roleLabel}</span>
-                                </div>
+                                <button
+                                    className="sidebar-user-profile-btn"
+                                    onClick={() => navigate('/settings')}
+                                    title="Ir a configuración"
+                                >
+                                    <div className="sidebar-user-avatar">
+                                        {user.fotoPerfil
+                                            ? <img src={user.fotoPerfil} alt={initials} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                                            : initials}
+                                    </div>
+                                    <div className="sidebar-user-meta">
+                                        <span className="sidebar-user-name">
+                                            {user.nombre} {user.apellido}
+                                        </span>
+                                        <span className="sidebar-user-role">{roleLabel}</span>
+                                    </div>
+                                </button>
                                 <button
                                     className="sidebar-user-logout"
                                     onClick={logout}
@@ -540,6 +543,23 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 })()}
 
                 <style>{`
+                .sidebar-user-profile-btn {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    flex: 1;
+                    min-width: 0;
+                    background: none;
+                    border: none;
+                    padding: 0;
+                    cursor: pointer;
+                    border-radius: var(--radius-md);
+                    transition: opacity 0.15s;
+                    text-align: left;
+                }
+                .sidebar-user-profile-btn:hover {
+                    opacity: 0.8;
+                }
                 /* Attention badge styles */
                 .inbox-badge,
                 .survey-badge {

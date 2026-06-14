@@ -490,9 +490,11 @@ Generado por PrevencionApp
                             <div className="flex flex-col items-center text-center mb-6">
                                 <div
                                     className="avatar mb-4"
-                                    style={{ width: 80, height: 80, fontSize: '2rem', background: 'var(--primary-100)', color: 'var(--primary-600)' }}
+                                    style={{ width: 80, height: 80, fontSize: '2rem', background: 'var(--primary-100)', color: 'var(--primary-600)', overflow: 'hidden', padding: (worker as any).fotoPerfil ? 0 : undefined }}
                                 >
-                                    {worker.nombre.charAt(0)}
+                                    {(worker as any).fotoPerfil
+                                        ? <img src={(worker as any).fotoPerfil} alt={worker.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        : worker.nombre.charAt(0)}
                                 </div>
                                 <h3 className="text-lg font-bold mb-1">{worker.nombre} {worker.apellido}</h3>
                                 <div className={`badge mt-2 mb-3 badge-${worker.habilitado ? 'success' : 'warning'}`}>

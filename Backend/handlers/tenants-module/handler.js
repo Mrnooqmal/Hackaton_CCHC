@@ -5,6 +5,7 @@
  */
 const { TenantService } = require('../../lib/services/TenantService');
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { sendWelcomeEmail } = require('../notifications/handler');
 const { success, error, created, cors } = require('../../lib/utils/response');
 
 const tenantService = new TenantService();
@@ -22,21 +23,54 @@ module.exports.tenantsHandler = async (event) => {
         // CORS preflight
         if (method === 'OPTIONS') return cors();
 
+        // GET /tenants/validate?nombre=...&rutEmpresa=... — Verificar unicidad antes de registrar
+        if (method === 'GET' && segments[0] === 'validate') {
+            const qs = event.queryStringParameters || {};
+            const conflictos = {};
+            if (qs.nombre) {
+                const slug = tenantService._generarSlug(qs.nombre);
+                const existente = await tenantService.getBySlug(slug);
+                if (existente) conflictos.nombre = `Ya existe una empresa con el nombre "${qs.nombre}"`;
+            }
+            if (qs.rutEmpresa) {
+                const existente = await tenantService.getByRutEmpresa(qs.rutEmpresa);
+                if (existente) conflictos.rutEmpresa = `El RUT ${qs.rutEmpresa} ya está registrado`;
+            }
+            return success({ conflictos, valido: Object.keys(conflictos).length === 0 });
+        }
+
         // POST /tenants/setup — Setup inicial de empresa
         if (method === 'POST' && segments[0] === 'setup') {
             const body = JSON.parse(event.body || '{}');
-            const tenant = await tenantService.setup(body);
+            const personaService = new PersonaService();
+
+            // Validar RUT del admin antes de crear el tenant
+            if (body.admin?.rut) {
+                const adminExistente = await personaService.getByRutGlobal(body.admin.rut);
+                if (adminExistente) {
+                    return error(`El RUT ${body.admin.rut} ya está registrado en el sistema`, 400);
+                }
+            }
+
+            let tenant;
+            try {
+                tenant = await tenantService.setup(body);
+            } catch (setupErr) {
+                return error(setupErr.message, 400);
+            }
 
             // Si se proporcionan datos del admin, crear persona admin
             let adminResult = null;
             let passwordTemporal = null;
             if (body.admin) {
                 try {
-                    const personaService = new PersonaService();
                     const { persona, passwordTemporal: pwd } = await personaService.crear(tenant.tenantId, {
                         rut: body.admin.rut,
                         nombre: body.admin.nombre,
+                        apellidoPaterno: body.admin.apellidoPaterno || '',
+                        apellidoMaterno: body.admin.apellidoMaterno || '',
                         apellido: body.admin.apellido || '',
+                        fechaNacimiento: body.admin.fechaNacimiento || null,
                         email: body.admin.email,
                         rol: 'admin',
                         tieneAccesoWeb: true
@@ -48,7 +82,15 @@ module.exports.tenantsHandler = async (event) => {
                     });
                     // Activar tenant
                     await tenantService.activar(tenant.tenantId);
-                    adminResult = persona.toSafeFormat();
+
+                    // Enviar email de bienvenida con credenciales
+                    let emailAdmin = { sent: false, reason: 'no_credentials' };
+                    if (persona.email && passwordTemporal) {
+                        const nombreCompleto = [persona.nombre, persona.apellido].filter(Boolean).join(' ');
+                        emailAdmin = await sendWelcomeEmail(persona.email, nombreCompleto, persona.rut, passwordTemporal);
+                        console.log('Admin welcome email result:', JSON.stringify(emailAdmin));
+                    }
+                    adminResult = { ...persona.toSafeFormat(), emailNotificado: emailAdmin?.sent || false };
                 } catch (adminErr) {
                     console.error('Error creating admin persona:', adminErr);
                 }

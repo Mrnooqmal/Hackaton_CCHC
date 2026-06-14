@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { apiBaseUrl, personasApi, type PersonaResponse } from '../api/client';
+import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import ConfirmModal from '../components/ConfirmModal';
@@ -8,10 +9,19 @@ import { AlertBanner, CredentialCard, Modal, Select, SegmentedControl } from '..
 import {
     FiUserPlus, FiShield, FiEdit2,
     FiUsers, FiX, FiSave,
-    FiBriefcase, FiStar, FiSearch, FiEye, FiUpload, FiDownload
+    FiBriefcase, FiStar, FiSearch, FiEye, FiUpload, FiDownload, FiCheckCircle
 } from 'react-icons/fi';
 
+const rutFormat = (raw: string) => {
+    const clean = raw.replace(/[^0-9kK]/g, '').toUpperCase();
+    if (clean.length < 2) return clean;
+    const body = clean.slice(0, -1);
+    const dv   = clean.slice(-1);
+    return body.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + '-' + dv;
+};
+
 // Opciones de ficha (selects en vez de texto libre)
+const CARGOS = ['Administrativo', 'Prevencionista', 'Supervisor', 'Carpintero', 'Jornal de aseo y acarreo', 'Maestro de terminaciones', 'Maestro albañil', 'Trazador'];
 const NIVELES_ESCOLAR = ['Básica incompleta', 'Básica completa', 'Media incompleta', 'Media completa', 'Técnico', 'Universitaria', 'Postgrado'];
 const RELACIONES_EMERGENCIA = ['Cónyuge', 'Pareja', 'Padre/Madre', 'Hijo/a', 'Hermano/a', 'Otro familiar', 'Amigo/a', 'Otro'];
 const CURSOS_COMUNES = ['Manejo de extintores', 'Trabajo en altura', 'Espacios confinados', 'Primeros auxilios', 'Manejo de sustancias peligrosas', 'Operación de equipos/grúa', 'Bloqueo y etiquetado (LOTO)'];
@@ -42,17 +52,27 @@ export default function PersonasManagement() {
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterRol, setFilterRol] = useState('');
+    const [filterCargo, setFilterCargo] = useState('');
 
     // Create modal
     const [showCreate, setShowCreate] = useState(false);
     const [newPersona, setNewPersona] = useState({
-        rut: '', nombre: '', apellido: '', email: '', cargo: '',
-        rol: 'trabajador' as string, tieneAccesoWeb: false,
-        // Ficha del colaborador
+        rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '',
+        fechaNacimiento: '', email: '', cargo: '',
+        rol: 'trabajador' as string, tieneAccesoWeb: true,
         nivelEscolar: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '',
         contactoEmergenciaRelacion: '', cursos: ''
     });
     const [createResult, setCreateResult] = useState<{ password?: string; persona: any } | null>(null);
+    const [telEmergenciaFocused, setTelEmergenciaFocused] = useState(false);
+
+    const handleEmergenciaTelefonoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const digits = e.target.value.replace(/\D/g, '').slice(0, 9);
+        let fmt = digits;
+        if (digits.length > 5) fmt = digits[0] + ' ' + digits.slice(1, 5) + ' ' + digits.slice(5);
+        else if (digits.length > 1) fmt = digits[0] + ' ' + digits.slice(1);
+        setNewPersona(p => ({ ...p, contactoEmergenciaTelefono: fmt }));
+    };
 
     // Edit modal
     const [showEdit, setShowEdit] = useState(false);
@@ -71,6 +91,18 @@ export default function PersonasManagement() {
     const [uploadFile, setUploadFile] = useState<File | null>(null);
     const [sendWelcomeEmail, setSendWelcomeEmail] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+    const [tenantRoles, setTenantRoles] = useState<TenantRole[]>([]);
+
+    useEffect(() => {
+        if (!tenantId) return;
+        tenantsApi.get(tenantId).then(res => {
+            if (res.success && res.data?.roles?.length) {
+                setTenantRoles(res.data.roles);
+                setNewPersona(p => ({ ...p, rol: p.rol || res.data!.roles[0].id }));
+            }
+        }).catch(() => {});
+    }, [tenantId]);
 
     const fetchPersonas = async () => {
         if (!tenantId) {
@@ -117,7 +149,9 @@ export default function PersonasManagement() {
             const res = await personasApi.create(tenantId, {
                 rut: newPersona.rut,
                 nombre: newPersona.nombre,
-                apellido: newPersona.apellido,
+                apellidoPaterno: newPersona.apellidoPaterno,
+                apellidoMaterno: newPersona.apellidoMaterno || undefined,
+                fechaNacimiento: newPersona.fechaNacimiento || undefined,
                 email: newPersona.email,
                 cargo: newPersona.cargo,
                 rol: newPersona.rol,
@@ -125,11 +159,13 @@ export default function PersonasManagement() {
                 nivelEscolar: newPersona.nivelEscolar,
                 contactoEmergencia: {
                     nombre: newPersona.contactoEmergenciaNombre,
-                    telefono: newPersona.contactoEmergenciaTelefono,
+                    telefono: newPersona.contactoEmergenciaTelefono
+                        ? `+56 ${newPersona.contactoEmergenciaTelefono}`
+                        : '',
                     relacion: newPersona.contactoEmergenciaRelacion
                 },
                 cursos,
-                tieneAccesoWeb: newPersona.tieneAccesoWeb || newPersona.rol === 'admin' || newPersona.rol === 'jefe_obra' || newPersona.rol === 'prevencionista'
+                tieneAccesoWeb: newPersona.tieneAccesoWeb
             } as any);
             if (res.success && res.data) {
                 setCreateResult({
@@ -137,7 +173,7 @@ export default function PersonasManagement() {
                     persona: res.data.persona
                 });
                 setShowCreate(false);
-                setNewPersona({ rut: '', nombre: '', apellido: '', email: '', cargo: '', rol: 'trabajador', tieneAccesoWeb: false, nivelEscolar: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '', contactoEmergenciaRelacion: '', cursos: '' });
+                setNewPersona({ rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '', fechaNacimiento: '', email: '', cargo: '', rol: tenantRoles[0]?.id || '', tieneAccesoWeb: true, nivelEscolar: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '', contactoEmergenciaRelacion: '', cursos: '' });
                 fetchPersonas();
             } else { setError(res.error || 'Error al crear persona'); }
         } catch { setError('Error de conexión'); }
@@ -254,9 +290,11 @@ export default function PersonasManagement() {
     const filtered = personas.filter(p => {
         const s = searchTerm.toLowerCase().replace(/[.-]/g, '');
         const rut = p.rut.toLowerCase().replace(/[.-]/g, '');
-        return p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        const matchesSearch = p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (p.apellido || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             rut.includes(s);
+        const matchesCargo = !filterCargo || p.cargo === filterCargo;
+        return matchesSearch && matchesCargo;
     });
 
     const pageTitle = isObraScoped ? 'Equipo de Obra' : 'Personas de la Empresa';
@@ -369,11 +407,18 @@ export default function PersonasManagement() {
                                 onChange={setFilterRol}
                                 options={[
                                     { value: '', label: 'Todos los roles' },
-                                    { value: 'admin', label: 'Administrador' },
-                                    { value: 'jefe_obra', label: 'Jefe de Obra' },
-                                    { value: 'prevencionista', label: 'Prevencionista' },
-                                    { value: 'supervisor', label: 'Supervisor' },
-                                    { value: 'trabajador', label: 'Trabajador' },
+                                    ...tenantRoles.map(r => ({ value: r.id, label: r.nombre })),
+                                ]}
+                            />
+                        </div>
+                        <div style={{ width: 200 }}>
+                            <Select
+                                ariaLabel="Filtrar por cargo"
+                                value={filterCargo}
+                                onChange={setFilterCargo}
+                                options={[
+                                    { value: '', label: 'Todos los cargos' },
+                                    ...CARGOS.map(c => ({ value: c, label: c })),
                                 ]}
                             />
                         </div>
@@ -412,8 +457,10 @@ export default function PersonasManagement() {
                                         className="pdir-card"
                                         style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                                     >
-                                        <div className="pdir-avatar" style={{ background: AVATAR_TINT.bg, color: AVATAR_TINT.fg, borderColor: AVATAR_TINT.border }}>
-                                            {p.nombre[0]}{p.apellido?.[0] ?? p.nombre[1] ?? ''}
+                                        <div className="pdir-avatar" style={p.fotoPerfil ? { padding: 0, overflow: 'hidden', borderColor: AVATAR_TINT.border } : { background: AVATAR_TINT.bg, color: AVATAR_TINT.fg, borderColor: AVATAR_TINT.border }}>
+                                            {p.fotoPerfil
+                                                ? <img src={p.fotoPerfil} alt={p.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                : <>{p.nombre[0]}{p.apellido?.[0] ?? p.nombre[1] ?? ''}</>}
                                         </div>
                                         <span className="pdir-name">{p.nombre} {p.apellido}</span>
                                         <span className="pdir-rut">{p.rut}</span>
@@ -535,7 +582,7 @@ export default function PersonasManagement() {
                 footer={
                     <>
                         <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancelar</button>
-                        <button type="submit" form="create-persona-form" className="btn btn-primary" disabled={loading || !newPersona.nombre || !newPersona.rut}>
+                        <button type="submit" form="create-persona-form" className="btn btn-primary" disabled={loading || !newPersona.nombre || !newPersona.apellidoPaterno || !newPersona.rut}>
                             {loading ? <div className="spinner" /> : <><FiUserPlus /> Crear Persona</>}
                         </button>
                     </>
@@ -543,41 +590,37 @@ export default function PersonasManagement() {
             >
                         <form id="create-persona-form" onSubmit={handleCreate}>
                             <div className="form-section">
-                                <h3 className="form-section-title">Rol en el Sistema</h3>
-                                <div className="role-selector">
-                                    {Object.entries(ROLE_CONFIG).map(([key, cfg]) => {
-                                        const Icon = cfg.icon;
-                                        return (
-                                            <button key={key} type="button" className={`role-card ${newPersona.rol === key ? 'selected' : ''}`} onClick={() => setNewPersona({ ...newPersona, rol: key, cargo: key === 'trabajador' ? newPersona.cargo : '', tieneAccesoWeb: key === 'admin' || key === 'jefe_obra' || key === 'prevencionista' || key === 'supervisor' })}>
-                                                <div className="role-card-icon"><Icon size={24} /></div>
-                                                <span className="role-card-title">{cfg.label}</span>
-                                                <span className="role-card-desc">{cfg.desc}</span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                            {newPersona.rol === 'trabajador' && (
-                                <div className="form-group">
-                                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <input type="checkbox" checked={newPersona.tieneAccesoWeb} onChange={e => setNewPersona({ ...newPersona, tieneAccesoWeb: e.target.checked })} />
-                                        Habilitar acceso web (login con contraseña)
-                                    </label>
-                                </div>
-                            )}
-                            <div className="form-section">
                                 <h3 className="form-section-title">Datos Personales</h3>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="form-group"><label className="form-label">Nombre *</label><input type="text" className="form-input" value={newPersona.nombre} onChange={e => setNewPersona({ ...newPersona, nombre: e.target.value })} required /></div>
-                                    <div className="form-group"><label className="form-label">Apellido</label><input type="text" className="form-input" value={newPersona.apellido} onChange={e => setNewPersona({ ...newPersona, apellido: e.target.value })} /></div>
+                                    <div className="form-group"><label className="form-label">Apellido paterno *</label><input type="text" className="form-input" value={newPersona.apellidoPaterno} onChange={e => setNewPersona({ ...newPersona, apellidoPaterno: e.target.value })} required /></div>
+                                    <div className="form-group"><label className="form-label">Apellido materno</label><input type="text" className="form-input" value={newPersona.apellidoMaterno} onChange={e => setNewPersona({ ...newPersona, apellidoMaterno: e.target.value })} /></div>
+                                    <div className="form-group"><label className="form-label">Fecha de nacimiento</label><input type="date" className="form-input" value={newPersona.fechaNacimiento} onChange={e => setNewPersona({ ...newPersona, fechaNacimiento: e.target.value })} /></div>
                                 </div>
-                                <div className="form-group"><label className="form-label">RUT *</label><input type="text" className="form-input" placeholder="12.345.678-9" value={newPersona.rut} onChange={e => setNewPersona({ ...newPersona, rut: e.target.value })} required /></div>
-                                <div className="form-group"><label className="form-label">Email</label><input type="email" className="form-input" value={newPersona.email} onChange={e => setNewPersona({ ...newPersona, email: e.target.value })} /><span className="form-hint">Si tiene acceso web, recibirá credenciales por email</span></div>
-                                {newPersona.rol === 'trabajador' && (
-                                    <div className="form-group"><label className="form-label"><FiBriefcase size={14} /> Cargo</label><input type="text" className="form-input" placeholder="Ej: Operador, Jefe de Obra..." value={newPersona.cargo} onChange={e => setNewPersona({ ...newPersona, cargo: e.target.value })} /></div>
-                                )}
-
-                                <h3 className="form-section-title" style={{ marginTop: 'var(--space-3)' }}>Ficha del colaborador <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(opcional)</span></h3>
+                                <div className="form-group"><label className="form-label">RUT *</label><input type="text" className="form-input" placeholder="12.345.678-9" value={newPersona.rut} onChange={e => setNewPersona({ ...newPersona, rut: rutFormat(e.target.value) })} required /></div>
+                                <div className="form-group">
+                                    <label className="form-label">Rol *</label>
+                                    <select
+                                        className="form-input"
+                                        value={newPersona.rol}
+                                        onChange={e => setNewPersona({ ...newPersona, rol: e.target.value })}
+                                        required
+                                    >
+                                        {tenantRoles.length === 0 && <option value="">Cargando roles…</option>}
+                                        {tenantRoles.map(r => (
+                                            <option key={r.id} value={r.id}>{r.nombre}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group"><label className="form-label">Email</label><input type="email" className="form-input" value={newPersona.email} onChange={e => setNewPersona({ ...newPersona, email: e.target.value })} /><span className="form-hint">Si tiene acceso web, recibirá sus credenciales por email automáticamente</span></div>
+                                <div className="form-group">
+                                    <label className="form-label"><FiBriefcase size={14} /> Cargo</label>
+                                    <select className="form-input" value={newPersona.cargo} onChange={e => setNewPersona({ ...newPersona, cargo: e.target.value })}>
+                                        <option value="">Seleccione un cargo…</option>
+                                        {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                <h3 className="form-section-title" style={{ marginTop: 'var(--space-3)' }}>Ficha del colaborador</h3>
                                 <div className="form-group">
                                     <label className="form-label">Nivel escolar</label>
                                     <Select
@@ -589,8 +632,60 @@ export default function PersonasManagement() {
                                     />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="form-group"><label className="form-label">Contacto emergencia — Nombre</label><input type="text" className="form-input" value={newPersona.contactoEmergenciaNombre} onChange={e => setNewPersona({ ...newPersona, contactoEmergenciaNombre: e.target.value })} /></div>
-                                    <div className="form-group"><label className="form-label">Teléfono</label><input type="text" className="form-input" placeholder="+569..." value={newPersona.contactoEmergenciaTelefono} onChange={e => setNewPersona({ ...newPersona, contactoEmergenciaTelefono: e.target.value })} /></div>
+                                    <div className="form-group"><label className="form-label">Contacto emergencia — Nombre Completo</label><input type="text" className="form-input" value={newPersona.contactoEmergenciaNombre} onChange={e => setNewPersona({ ...newPersona, contactoEmergenciaNombre: e.target.value })} /></div>
+                                    <div className="form-group">
+                                        <label className="form-label">Teléfono</label>
+                                        {(() => {
+                                            const complete = newPersona.contactoEmergenciaTelefono.replace(/\D/g, '').length === 9;
+                                            const borderColor = complete ? 'var(--success-500)' : telEmergenciaFocused ? 'var(--accent)' : 'var(--surface-border)';
+                                            return (
+                                                <div style={{
+                                                    display: 'flex', alignItems: 'center',
+                                                    border: `1.5px solid ${borderColor}`,
+                                                    borderRadius: 'var(--radius-md)',
+                                                    background: 'var(--surface-card)',
+                                                    overflow: 'hidden',
+                                                    transition: 'border-color 0.2s, box-shadow 0.2s',
+                                                    boxShadow: telEmergenciaFocused ? `0 0 0 3px ${complete ? 'rgba(34,197,94,0.15)' : 'rgba(0,110,220,0.12)'}` : 'none',
+                                                }}>
+                                                    <div style={{
+                                                        display: 'flex', alignItems: 'center', gap: '5px',
+                                                        padding: '0 10px', alignSelf: 'stretch',
+                                                        borderRight: '1.5px solid var(--surface-border)',
+                                                        background: 'var(--surface-elevated)',
+                                                        flexShrink: 0, userSelect: 'none',
+                                                    }}>
+                                                        <span style={{ fontSize: '12px', lineHeight: 1 }}>🇨🇱</span>
+                                                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>+56</span>
+                                                    </div>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        placeholder="9 1234 5678"
+                                                        value={newPersona.contactoEmergenciaTelefono}
+                                                        onFocus={() => setTelEmergenciaFocused(true)}
+                                                        onBlur={() => setTelEmergenciaFocused(false)}
+                                                        onChange={handleEmergenciaTelefonoChange}
+                                                        style={{
+                                                            flex: 1, border: 'none', outline: 'none',
+                                                            background: 'transparent', fontSize: 'var(--text-base)',
+                                                            color: 'var(--text-primary)',
+                                                            padding: 'var(--space-3) var(--space-2)',
+                                                            caretColor: 'var(--accent)',
+                                                        }}
+                                                    />
+                                                    <div style={{
+                                                        paddingRight: '10px', display: 'flex', alignItems: 'center',
+                                                        opacity: complete ? 1 : 0,
+                                                        transform: complete ? 'scale(1)' : 'scale(0.5)',
+                                                        transition: 'opacity 0.25s, transform 0.25s',
+                                                    }}>
+                                                        <FiCheckCircle size={14} style={{ color: 'var(--success-500)' }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Relación del contacto</label>
@@ -653,7 +748,13 @@ export default function PersonasManagement() {
                                     <div className="form-group"><label className="form-label">Apellido</label><input type="text" className="form-input" value={editForm.apellido} onChange={e => setEditForm({ ...editForm, apellido: e.target.value })} /></div>
                                 </div>
                                 <div className="form-group"><label className="form-label">Email</label><input type="email" className="form-input" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
-                                <div className="form-group"><label className="form-label">Cargo</label><input type="text" className="form-input" value={editForm.cargo} onChange={e => setEditForm({ ...editForm, cargo: e.target.value })} /></div>
+                                <div className="form-group">
+                                    <label className="form-label">Cargo</label>
+                                    <select className="form-input" value={editForm.cargo} onChange={e => setEditForm({ ...editForm, cargo: e.target.value })}>
+                                        <option value="">Seleccione un cargo…</option>
+                                        {CARGOS.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
                                 <div className="form-group"><label className="form-label">Estado</label>
                                     <SegmentedControl
                                         ariaLabel="Estado"

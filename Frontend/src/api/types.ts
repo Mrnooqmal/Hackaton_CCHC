@@ -12,6 +12,9 @@ export interface User {
     rol: PersonaRol;
     permisos?: string[];
     email?: string;
+    telefono?: string;
+    fotoPerfil?: string;
+    notificacionesSms?: boolean;
     // 'suspendido' se mantiene mientras la UI lo ofrezca; el backend trabaja con
     // 'pendiente' | 'activo' | 'inactivo'. Confirmar efecto normativo (duda experto #9).
     estado: 'pendiente' | 'activo' | 'inactivo' | 'suspendido';
@@ -39,6 +42,10 @@ export interface PersonaResponse {
     nombre: string;
     apellido: string;
     email: string;
+    telefono?: string;
+    fotoPerfil?: string;
+    notificacionesSms?: boolean;
+    fechaNacimiento?: string;
     rol: string;
     cargo: string;
     estado: string;

@@ -35,8 +35,8 @@ class PersonaService {
         const rutValidation = validateRut(data.rut);
         if (!rutValidation.valid) throw new Error('RUT invalido');
 
-        if (!ROLES[data.rol]) {
-            throw new Error(`Rol invalido. Roles validos: ${Object.keys(ROLES).join(', ')}`);
+        if (!data.rol || typeof data.rol !== 'string' || !data.rol.trim()) {
+            throw new Error('El campo rol es requerido');
         }
 
         // Verificar unicidad por RUT dentro del tenant (via GSI)
@@ -45,20 +45,29 @@ class PersonaService {
 
         const personaId = uuidv4();
         const now = new Date().toISOString();
-        const tieneAccesoWeb = data.tieneAccesoWeb || data.rol === 'admin' || data.rol === 'jefe_obra' || data.rol === 'prevencionista' || data.rol === 'supervisor';
+        // Los roles del sistema tienen permisos predefinidos; los roles personalizados del tenant no.
+        const rolConfig = ROLES[data.rol];
+        const tieneAccesoWeb = data.tieneAccesoWeb !== undefined ? data.tieneAccesoWeb : Boolean(rolConfig);
         let passwordTemporal = null;
+
+        const apellidoPaterno = data.apellidoPaterno || '';
+        const apellidoMaterno = data.apellidoMaterno || '';
+        const apellido = data.apellido || [apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ');
 
         const personaData = {
             personaId,
             tenantId,
             rut: rutValidation.formatted,
             nombre: data.nombre,
-            apellido: data.apellido || '',
+            apellidoPaterno,
+            apellidoMaterno,
+            apellido,
+            fechaNacimiento: data.fechaNacimiento || null,
             email: data.email || '',
             telefono: data.telefono || '',
             rol: data.rol,
-            permisos: ROLES[data.rol].permisos,
-            cargo: data.cargo || ROLES[data.rol].nombre,
+            permisos: rolConfig ? rolConfig.permisos : [],
+            cargo: data.cargo || (rolConfig ? rolConfig.nombre : data.rol),
             obraIds: data.obraIds || [],
             contactoEmergencia: data.contactoEmergencia || { nombre: '', telefono: '', relacion: '' },
             nivelEscolar: data.nivelEscolar || '',
@@ -96,6 +105,22 @@ class PersonaService {
             IndexName: 'personaId-index',
             KeyConditionExpression: 'personaId = :personaId',
             ExpressionAttributeValues: { ':personaId': personaId }
+        }));
+        if (!result.Items || result.Items.length === 0) return null;
+        return Persona.fromDynamoItem(result.Items[0]);
+    }
+
+    /**
+     * Buscar si un RUT ya existe en cualquier tenant (scan global)
+     */
+    async getByRutGlobal(rut) {
+        const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+        const rutValidation = validateRut(rut);
+        const rutFormatted = rutValidation.valid ? rutValidation.formatted : rut;
+        const result = await this.dynamo.send(new ScanCommand({
+            TableName: this.table,
+            FilterExpression: 'rut = :rut AND begins_with(SK, :prefix)',
+            ExpressionAttributeValues: { ':rut': rutFormatted, ':prefix': 'PERSONA#' }
         }));
         if (!result.Items || result.Items.length === 0) return null;
         return Persona.fromDynamoItem(result.Items[0]);
@@ -180,7 +205,7 @@ class PersonaService {
      * Actualizar datos de una persona
      */
     async actualizar(tenantId, personaId, updates) {
-        const allowedFields = ['nombre', 'apellido', 'email', 'telefono',
+        const allowedFields = ['nombre', 'apellido', 'email', 'telefono', 'fotoPerfil', 'notificacionesSms',
             'cargo', 'estado', 'preferencias', 'obraIds', 'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44',
             'contactoEmergencia', 'nivelEscolar', 'cursos'];
 

@@ -351,6 +351,89 @@ module.exports.personasHandler = async (event) => {
             };
         }
 
+        // POST /personas/parse-excel — Parsear Excel sin crear personas (para onboarding)
+        if (method === 'POST' && personaId === 'parse-excel') {
+            const body = JSON.parse(event.body || '{}');
+            const fileBase64 = body.fileBase64 || body.archivoBase64 || '';
+            const fileName = body.fileName || 'personas.xlsx';
+
+            if (!fileBase64) return error('No se proporcionó ningún archivo');
+            if (!fileName.toLowerCase().endsWith('.xlsx')) return error('El archivo debe ser un Excel (.xlsx)');
+
+            const base64 = fileBase64.includes('base64,') ? fileBase64.split('base64,')[1] : fileBase64;
+            const buffer = Buffer.from(base64, 'base64');
+            let workbook;
+            try {
+                workbook = XLSX.read(buffer, { type: 'buffer' });
+            } catch (xlsxErr) {
+                return error('No se pudo leer el archivo Excel. Verifique que sea un archivo .xlsx válido.');
+            }
+            if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                return error('El archivo Excel no contiene hojas de trabajo.');
+            }
+            const sheetName = workbook.SheetNames.includes('Personas') ? 'Personas' : workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+            if (!rows.length) return error('La plantilla no tiene filas de datos');
+
+            const rawHeaders = rows[0].map(normalizeHeader);
+            const headerMap = {};
+            rawHeaders.forEach((header, index) => {
+                const canonical = headerAliases[header];
+                if (canonical) headerMap[canonical] = index;
+            });
+
+            const missingHeaders = ['rut', 'nombre', 'rol'].filter(h => headerMap[h] === undefined);
+            if (missingHeaders.length > 0) {
+                return error(`Faltan columnas obligatorias: ${missingHeaders.join(', ')}`);
+            }
+
+            const trabajadores = [];
+            const errores = [];
+            const seenRut = new Set();
+
+            for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
+                const row = rows[rowIndex];
+                if (!row.some(cell => String(cell || '').trim() !== '')) continue;
+
+                const getCell = (key) => {
+                    const idx = headerMap[key];
+                    if (idx === undefined) return '';
+                    const value = row[idx];
+                    return value === undefined || value === null ? '' : String(value).trim();
+                };
+
+                const rut = getCell('rut');
+                const nombre = getCell('nombre');
+                const apellido = getCell('apellido');
+                const email = getCell('email');
+                const rol = getCell('rol').toLowerCase() || 'trabajador';
+                const cargo = getCell('cargo');
+                const tieneAccesoWeb = parseBoolean(getCell('tieneAccesoWeb'));
+
+                if (!rut || !nombre) {
+                    errores.push({ fila: rowIndex + 1, error: 'Faltan rut o nombre' });
+                    continue;
+                }
+
+                const rutKey = rut.replace(/[.\-]/g, '').toLowerCase();
+                if (seenRut.has(rutKey)) {
+                    errores.push({ fila: rowIndex + 1, error: `RUT ${rut} duplicado en el archivo` });
+                    continue;
+                }
+                seenRut.add(rutKey);
+
+                // Split apellido into paterno/materno if contains space
+                const apellidoParts = (apellido || '').split(/\s+/).filter(Boolean);
+                const apellidoPaterno = apellidoParts[0] || '';
+                const apellidoMaterno = apellidoParts.slice(1).join(' ') || '';
+
+                trabajadores.push({ rut, nombre, apellidoPaterno, apellidoMaterno, email, rol, cargo, tieneAccesoWeb, fechaNacimiento: '' });
+            }
+
+            return success({ trabajadores, errores, total: trabajadores.length });
+        }
+
         // POST /personas/carga-masiva — Procesar Excel
         if (method === 'POST' && personaId === 'carga-masiva') {
             if (!tenantId) return error('tenantId es requerido');
@@ -545,8 +628,9 @@ module.exports.personasHandler = async (event) => {
             let emailSent = false;
             if (persona.email && passwordTemporal) {
                 try {
+                    const nombreCompleto = [persona.nombre, persona.apellido].filter(Boolean).join(' ');
                     const emailResult = await sendWelcomeEmail(
-                        persona.email, persona.nombre, persona.rut, passwordTemporal
+                        persona.email, nombreCompleto, persona.rut, passwordTemporal
                     );
                     emailSent = emailResult?.sent || false;
                 } catch (emailErr) {
@@ -571,6 +655,15 @@ module.exports.personasHandler = async (event) => {
                 total: personas.length,
                 personas: personas.map(p => p.toSafeFormat())
             });
+        }
+
+        // GET /personas/validate?rut=... — Verificar si un RUT ya está registrado
+        if (method === 'GET' && personaId === 'validate') {
+            const rut = event.queryStringParameters?.rut;
+            if (!rut) return error('El parámetro rut es requerido', 400);
+            const existente = await personaService.getByRutGlobal(rut);
+            return success({ existe: !!existente, valido: !existente,
+                mensaje: existente ? `El RUT ${rut} ya está registrado en el sistema` : null });
         }
 
         // GET /personas/by-rut/{rut} — Buscar por RUT
