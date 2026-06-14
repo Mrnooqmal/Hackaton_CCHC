@@ -10,8 +10,11 @@ const { PutCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { ObraService } = require('../../lib/services/ObraService');
-const { EppService, ROLES_VALIDADOR } = require('../../lib/services/EppService');
+const { EppService } = require('../../lib/services/EppService');
+const { TenantService } = require('../../lib/services/TenantService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
+const { normalizeRol } = require('../../lib/utils/validation');
+const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
 const { normalizeCargoCodigo } = require('../../lib/ds44');
@@ -19,6 +22,14 @@ const { normalizeCargoCodigo } = require('../../lib/ds44');
 const personaService = new PersonaService();
 const obraService = new ObraService();
 const eppService = new EppService();
+const tenantService = new TenantService();
+
+// Resuelve el tenant (toSafeFormat) para evaluar permisos por persona.
+const tenantSafe = async (tenantId) => {
+    if (!tenantId) return null;
+    const tenant = await tenantService.getById(tenantId).catch(() => null);
+    return tenant ? tenant.toSafeFormat() : null;
+};
 
 const TEMPLATE_HEADERS = [
     'rut',
@@ -352,6 +363,89 @@ module.exports.personasHandler = async (event) => {
             };
         }
 
+        // POST /personas/parse-excel — Parsear Excel sin crear personas (para onboarding)
+        if (method === 'POST' && personaId === 'parse-excel') {
+            const body = JSON.parse(event.body || '{}');
+            const fileBase64 = body.fileBase64 || body.archivoBase64 || '';
+            const fileName = body.fileName || 'personas.xlsx';
+
+            if (!fileBase64) return error('No se proporcionó ningún archivo');
+            if (!fileName.toLowerCase().endsWith('.xlsx')) return error('El archivo debe ser un Excel (.xlsx)');
+
+            const base64 = fileBase64.includes('base64,') ? fileBase64.split('base64,')[1] : fileBase64;
+            const buffer = Buffer.from(base64, 'base64');
+            let workbook;
+            try {
+                workbook = XLSX.read(buffer, { type: 'buffer' });
+            } catch (xlsxErr) {
+                return error('No se pudo leer el archivo Excel. Verifique que sea un archivo .xlsx válido.');
+            }
+            if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                return error('El archivo Excel no contiene hojas de trabajo.');
+            }
+            const sheetName = workbook.SheetNames.includes('Personas') ? 'Personas' : workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+            if (!rows.length) return error('La plantilla no tiene filas de datos');
+
+            const rawHeaders = rows[0].map(normalizeHeader);
+            const headerMap = {};
+            rawHeaders.forEach((header, index) => {
+                const canonical = headerAliases[header];
+                if (canonical) headerMap[canonical] = index;
+            });
+
+            const missingHeaders = ['rut', 'nombre', 'rol'].filter(h => headerMap[h] === undefined);
+            if (missingHeaders.length > 0) {
+                return error(`Faltan columnas obligatorias: ${missingHeaders.join(', ')}`);
+            }
+
+            const trabajadores = [];
+            const errores = [];
+            const seenRut = new Set();
+
+            for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
+                const row = rows[rowIndex];
+                if (!row.some(cell => String(cell || '').trim() !== '')) continue;
+
+                const getCell = (key) => {
+                    const idx = headerMap[key];
+                    if (idx === undefined) return '';
+                    const value = row[idx];
+                    return value === undefined || value === null ? '' : String(value).trim();
+                };
+
+                const rut = getCell('rut');
+                const nombre = getCell('nombre');
+                const apellido = getCell('apellido');
+                const email = getCell('email');
+                const rol = getCell('rol').toLowerCase() || 'trabajador';
+                const cargo = getCell('cargo');
+                const tieneAccesoWeb = parseBoolean(getCell('tieneAccesoWeb'));
+
+                if (!rut || !nombre) {
+                    errores.push({ fila: rowIndex + 1, error: 'Faltan rut o nombre' });
+                    continue;
+                }
+
+                const rutKey = rut.replace(/[.\-]/g, '').toLowerCase();
+                if (seenRut.has(rutKey)) {
+                    errores.push({ fila: rowIndex + 1, error: `RUT ${rut} duplicado en el archivo` });
+                    continue;
+                }
+                seenRut.add(rutKey);
+
+                // Split apellido into paterno/materno if contains space
+                const apellidoParts = (apellido || '').split(/\s+/).filter(Boolean);
+                const apellidoPaterno = apellidoParts[0] || '';
+                const apellidoMaterno = apellidoParts.slice(1).join(' ') || '';
+
+                trabajadores.push({ rut, nombre, apellidoPaterno, apellidoMaterno, email, rol, cargo, tieneAccesoWeb, fechaNacimiento: '' });
+            }
+
+            return success({ trabajadores, errores, total: trabajadores.length });
+        }
+
         // POST /personas/carga-masiva — Procesar Excel
         if (method === 'POST' && personaId === 'carga-masiva') {
             if (!tenantId) return error('tenantId es requerido');
@@ -436,7 +530,10 @@ module.exports.personasHandler = async (event) => {
                 // Solo los trabajadores usan el catálogo de cargos (resuelve su
                 // kit de onboarding). El Excel trae texto libre → normalizar al
                 // código del catálogo (alias EBCO; cae a OTRO si no se reconoce).
-                const cargo = rol === 'trabajador' ? normalizeCargoCodigo(getCell('cargo')) : getCell('cargo');
+                // Cargo (opcional) → código del catálogo. Vacío queda vacío (sin
+                // onboarding de terreno); con texto, normaliza a código (alias EBCO).
+                const cargoRaw = getCell('cargo');
+                const cargo = cargoRaw ? normalizeCargoCodigo(cargoRaw) : '';
                 // Obra: por codigo en la fila; si no, la obra del lote (carga desde obra).
                 const obraCodigo = getCell('obra').trim().toLowerCase();
                 const obraIdFila = obraCodigo ? obraPorCodigo[obraCodigo] : obraIdBatch;
@@ -493,7 +590,7 @@ module.exports.personasHandler = async (event) => {
                     // Generar onboarding DS44 para trabajadores creados con obra.
                     // Antes solo se disparaba al asignar obra via PUT; la carga masiva
                     // dejaba trabajadores sin documentos de onboarding (bug demo).
-                    if (persona.rol === 'trabajador' && Array.isArray(persona.obraIds)) {
+                    if (normalizeRol(persona.rol) === 'trabajador' && Array.isArray(persona.obraIds)) {
                         for (const oId of persona.obraIds) {
                             try {
                                 await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null });
@@ -530,10 +627,21 @@ module.exports.personasHandler = async (event) => {
         if (method === 'POST' && !personaId) {
             if (!tenantId) return error('tenantId es requerido');
             const body = JSON.parse(event.body || '{}');
+
+            // Enforcement por permiso cuando se identifica al creador.
+            // (El onboarding inicial crea el admin sin creador y queda exento.)
+            const creadorId = body.creadorId || body.solicitanteId || null;
+            if (creadorId) {
+                const creadorPersona = await personaService.getById(creadorId).catch(() => null);
+                if (!creadorPersona || !personaPuede(creadorPersona, await tenantSafe(tenantId), PERMISSIONS.PERSONAS_CREAR)) {
+                    return error('No tienes permiso para crear personas', 403);
+                }
+            }
+
             const { persona, passwordTemporal } = await personaService.crear(tenantId, body);
 
             // Generar onboarding DS44 si el trabajador se crea ya asignado a obra(s).
-            if (persona.rol === 'trabajador' && Array.isArray(persona.obraIds) && persona.obraIds.length > 0) {
+            if (normalizeRol(persona.rol) === 'trabajador' && Array.isArray(persona.obraIds) && persona.obraIds.length > 0) {
                 const solicitanteId = body.solicitanteId || null;
                 const solicitante = solicitanteId ? await personaService.getById(solicitanteId).catch(() => null) : null;
                 for (const oId of persona.obraIds) {
@@ -549,8 +657,9 @@ module.exports.personasHandler = async (event) => {
             let emailSent = false;
             if (persona.email && passwordTemporal) {
                 try {
+                    const nombreCompleto = [persona.nombre, persona.apellido].filter(Boolean).join(' ');
                     const emailResult = await sendWelcomeEmail(
-                        persona.email, persona.nombre, persona.rut, passwordTemporal
+                        persona.email, nombreCompleto, persona.rut, passwordTemporal
                     );
                     emailSent = emailResult?.sent || false;
                 } catch (emailErr) {
@@ -575,6 +684,15 @@ module.exports.personasHandler = async (event) => {
                 total: personas.length,
                 personas: personas.map(p => p.toSafeFormat())
             });
+        }
+
+        // GET /personas/validate?rut=... — Verificar si un RUT ya está registrado
+        if (method === 'GET' && personaId === 'validate') {
+            const rut = event.queryStringParameters?.rut;
+            if (!rut) return error('El parámetro rut es requerido', 400);
+            const existente = await personaService.getByRutGlobal(rut);
+            return success({ existe: !!existente, valido: !existente,
+                mensaje: existente ? `El RUT ${rut} ya está registrado en el sistema` : null });
         }
 
         // GET /personas/by-rut/{rut} — Buscar por RUT
@@ -603,7 +721,7 @@ module.exports.personasHandler = async (event) => {
             try {
                 const nextObraIds = Array.isArray(persona.obraIds) ? persona.obraIds : [];
                 const addedObras = nextObraIds.filter((id) => !previousObraIds.has(id));
-                const isWorker = persona.rol === 'trabajador';
+                const isWorker = normalizeRol(persona.rol) === 'trabajador';
 
                 if (isWorker && addedObras.length > 0) {
                     const solicitanteId = body.solicitanteId
@@ -647,8 +765,8 @@ module.exports.personasHandler = async (event) => {
 
             const creador = await personaService.getById(body.creadorId);
             if (!creador) return error('Creador no encontrado', 404);
-            if (!ROLES_VALIDADOR.includes(creador.rol)) {
-                return error('Solo supervisor, prevencionista, jefe de obra o admin pueden registrar entregas de EPP', 403);
+            if (!personaPuede(creador, await tenantSafe(creador.tenantId), PERMISSIONS.PERSONA_EPP)) {
+                return error('No tienes permiso para registrar entregas de EPP', 403);
             }
             const persona = await personaService.getById(personaId);
             if (!persona) return error('Trabajador no encontrado', 404);
@@ -679,7 +797,8 @@ module.exports.personasHandler = async (event) => {
             const entrega = await eppService.validarEntrega({
                 entregaDocumentId: body.entregaDocumentId,
                 validador,
-                observacion: body.observacion || null
+                observacion: body.observacion || null,
+                tenant: await tenantSafe(validador.tenantId)
             });
             return success({ message: 'Entrega de EPP validada', entrega });
         }

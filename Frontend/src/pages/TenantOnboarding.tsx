@@ -1,33 +1,79 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { tenantsApi, personasApi } from '../api/client';
-import type { TenantSetupData, TenantSetupResponse } from '../api/client';
-import { FiArrowRight, FiArrowLeft, FiCheckCircle, FiCopy, FiCheck, FiUserPlus, FiX } from 'react-icons/fi';
+import { tenantsApi } from '../api/tenants.api';
+import { personasApi } from '../api/personas.api';
+import type { TenantSetupData, TenantSetupResponse } from '../api/tenants.api';
+import { FiArrowRight, FiArrowLeft, FiCheckCircle, FiCopy, FiCheck, FiUserPlus, FiX, FiUpload, FiDownload, FiAlertCircle, FiPlus, FiInfo, FiLock } from 'react-icons/fi';
+import { PERMISSION_GROUPS, DEFAULT_ROLE_PRESETS, ALL_PERMISSION_KEYS } from '../permissions';
+import { DS44_CARGOS } from '../utils/ds44';
 
-type Step = 'empresa' | 'admin' | 'trabajadores' | 'confirmacion';
-const STEPS: Step[] = ['empresa', 'admin', 'trabajadores', 'confirmacion'];
+// ── RUT utilities ────────────────────────────────────────────────
+function rutFormat(raw: string): string {
+  const clean = raw.replace(/[^0-9kK]/g, '').toUpperCase();
+  if (clean.length < 2) return clean;
+  const body = clean.slice(0, -1);
+  const dv   = clean.slice(-1);
+  return body.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + '-' + dv;
+}
+
+function rutValid(rut: string): boolean {
+  const clean = rut.replace(/[^0-9kK]/g, '').toUpperCase();
+  if (clean.length < 2) return false;
+  const body = clean.slice(0, -1);
+  const dv   = clean.slice(-1);
+  let sum = 0, mult = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += parseInt(body[i]) * mult;
+    mult = mult === 7 ? 2 : mult + 1;
+  }
+  const rem = 11 - (sum % 11);
+  return dv === (rem === 11 ? '0' : rem === 10 ? 'K' : String(rem));
+}
+// ─────────────────────────────────────────────────────────────────
+
+type Step = 'empresa' | 'roles' | 'admin' | 'trabajadores' | 'confirmacion';
+const STEPS: Step[] = ['empresa', 'roles', 'admin', 'trabajadores', 'confirmacion'];
 const STEP_LABELS: Record<Step, string> = {
   empresa: 'Empresa',
+  roles: 'Roles',
   admin: 'Administrador',
   trabajadores: 'Trabajadores',
   confirmacion: 'Confirmar',
 };
 const STEP_NUMS: Record<Step, string> = {
-  empresa: '1', admin: '2', trabajadores: '3', confirmacion: '4',
+  empresa: '1', roles: '2', admin: '3', trabajadores: '4', confirmacion: '5',
 };
-const ROL_LABELS: Record<string, string> = {
-  trabajador: 'Trabajador', supervisor: 'Supervisor',
-  jefe_obra: 'Jefe de Obra', prevencionista: 'Prevencionista',
+// ── Roles por defecto de la empresa (editables / removibles) ──────
+// `locked` marca el rol Administrador: nombre/descripción editables, pero
+// no se puede eliminar ni modificar sus permisos (acceso total).
+interface RoleDraft { _id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; }
+const DEFAULT_ROLES: Array<Omit<RoleDraft, '_id'>> = [
+  { nombre: 'Prevencionista', descripcion: 'Encargado de la prevención de riesgos y la seguridad en obra.', permisos: DEFAULT_ROLE_PRESETS.prevencionista },
+  { nombre: 'Jefe de Obra', descripcion: 'Responsable de la dirección y supervisión de la obra.', permisos: DEFAULT_ROLE_PRESETS.jefe_obra },
+  { nombre: 'Supervisor', descripcion: 'Supervisa el cumplimiento de tareas y coordina al equipo en terreno.', permisos: DEFAULT_ROLE_PRESETS.supervisor },
+  { nombre: 'Colaborador', descripcion: 'Participa en las actividades diarias de la obra.', permisos: DEFAULT_ROLE_PRESETS.colaborador },
+];
+const ADMIN_ROLE_DRAFT: RoleDraft = {
+  _id: 'role-admin',
+  nombre: 'Administrador',
+  descripcion: 'Acceso completo a la gestión de la empresa.',
+  permisos: ALL_PERMISSION_KEYS,
+  locked: true,
 };
 
+// Cargos = oficios DS44 (catálogo semilla). Los perfiles de acceso
+// (Administrativo/Prevencionista/Supervisor) son ROLES, viven en el paso "Roles".
+const CARGOS = DS44_CARGOS;
+
 const BLANK_WORKER = {
-  rut: '', nombre: '', apellido: '', email: '',
-  rol: 'trabajador', cargo: '', tieneAccesoWeb: false,
+  rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '',
+  fechaNacimiento: '', email: '', rol: 'trabajador', cargo: '', tieneAccesoWeb: true,
 };
 
 interface WorkerDraft {
-  _id: string; rut: string; nombre: string; apellido: string;
-  email: string; rol: string; cargo: string; tieneAccesoWeb: boolean;
+  _id: string; rut: string; nombre: string;
+  apellidoPaterno: string; apellidoMaterno: string;
+  fechaNacimiento: string; email: string; rol: string; cargo: string; tieneAccesoWeb: boolean;
 }
 interface WorkerResult {
   rut: string; nombre: string; apellido: string;
@@ -46,12 +92,25 @@ export default function TenantOnboarding() {
   const [workersResult, setWorkersResult] = useState<WorkerResult[]>([]);
 
   const [empresa, setEmpresa] = useState({
-    nombre: '', rutEmpresa: '', email: '', telefono: '', cantidadTrabajadores: 10,
+    nombre: '', rutEmpresa: '', cantidadTrabajadores: 10,
   });
-  const [admin, setAdmin] = useState({ rut: '', nombre: '', apellido: '', email: '' });
+  const [admin, setAdmin] = useState({ rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '', fechaNacimiento: '', email: '' });
+  const [roles, setRoles] = useState<RoleDraft[]>(() => [
+    ADMIN_ROLE_DRAFT,
+    ...DEFAULT_ROLES.map((r, i) => ({ ...r, _id: `role-${i}` })),
+  ]);
+  const [rolesInfoVisible, setRolesInfoVisible] = useState(true);
   const [workers, setWorkers] = useState<WorkerDraft[]>([]);
-  const [wForm, setWForm] = useState({ ...BLANK_WORKER });
+  const [wForm, setWForm] = useState(() => ({
+    ...BLANK_WORKER,
+    rol: DEFAULT_ROLES[0]?.nombre.trim() ?? '',
+  }));
   const [wErrors, setWErrors] = useState<Set<string>>(new Set());
+  const [workerTab, setWorkerTab] = useState<'manual' | 'bulk'>('manual');
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkErrors, setBulkErrors] = useState<Array<{ fila: number; error: string }>>([]);
+  const [bulkSuccess, setBulkSuccess] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const idx = STEPS.indexOf(currentStep);
 
@@ -64,6 +123,7 @@ export default function TenantOnboarding() {
     const f: string[] = [];
     if (!empresa.nombre.trim()) f.push('nombre');
     if (!empresa.rutEmpresa.trim()) f.push('rutEmpresa');
+    else if (!rutValid(empresa.rutEmpresa)) f.push('rutEmpresaFormato');
     if (empresa.cantidadTrabajadores < 1) f.push('cantidadTrabajadores');
     return f;
   };
@@ -71,7 +131,9 @@ export default function TenantOnboarding() {
   const validateAdmin = (): string[] => {
     const f: string[] = [];
     if (!admin.rut.trim()) f.push('rut');
+    else if (!rutValid(admin.rut)) f.push('rutFormato');
     if (!admin.nombre.trim()) f.push('adminNombre');
+    if (!admin.apellidoPaterno.trim()) f.push('adminApellidoPaterno');
     if (!admin.email.trim()) f.push('email');
     else if (!/\S+@\S+\.\S+/.test(admin.email)) f.push('emailFormato');
     return f;
@@ -81,24 +143,71 @@ export default function TenantOnboarding() {
     const LABELS: Record<string, string> = {
       nombre: 'Razón social', rutEmpresa: 'RUT empresa',
       cantidadTrabajadores: 'Cantidad de trabajadores',
-      rut: 'RUT', adminNombre: 'Nombre', email: 'Email',
+      rut: 'RUT', adminNombre: 'Nombre',
+      adminApellidoPaterno: 'Apellido paterno', email: 'Email',
     };
-    if (fields.includes('emailFormato')) {
-      const others = fields.filter(x => x !== 'emailFormato').map(x => LABELS[x]).filter(Boolean);
-      return (others.length ? `Completa: ${others.join(', ')}. ` : '') + 'El email no tiene un formato válido.';
-    }
-    return `Completa los campos requeridos: ${fields.map(x => LABELS[x] || x).join(', ')}`;
+    const msgs: string[] = [];
+    const required = fields.filter(f => !['rutEmpresaFormato','rutFormato','emailFormato'].includes(f));
+    if (required.length) msgs.push(`Completa: ${required.map(x => LABELS[x] || x).join(', ')}`);
+    if (fields.includes('rutEmpresaFormato') || fields.includes('rutFormato')) msgs.push('El RUT no es válido.');
+    if (fields.includes('emailFormato')) msgs.push('El email no tiene un formato válido.');
+    return msgs.join(' ');
   };
 
-  const next = () => {
+  const next = async () => {
     setError(''); setFieldErrors(new Set());
     if (currentStep === 'empresa') {
       const f = validateEmpresa();
       if (f.length) { setFieldErrors(new Set(f)); setError(buildMsg(f)); return; }
+      setLoading(true);
+      try {
+        const res = await tenantsApi.validate({ nombre: empresa.nombre, rutEmpresa: empresa.rutEmpresa });
+        if (res.success && res.data && !res.data.valido) {
+          const campos = new Set<string>();
+          const msgs: string[] = [];
+          if (res.data.conflictos.nombre) { campos.add('nombre'); msgs.push(res.data.conflictos.nombre); }
+          if (res.data.conflictos.rutEmpresa) { campos.add('rutEmpresa'); msgs.push(res.data.conflictos.rutEmpresa); }
+          setFieldErrors(campos);
+          setError(msgs.join(' '));
+          return;
+        }
+      } catch {
+        // si el servidor no responde, permitir continuar
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (currentStep === 'roles') {
+      if (roles.length === 0) {
+        setError('Debes mantener al menos un rol para la empresa.');
+        return;
+      }
+      if (roles.some(r => !r.nombre.trim())) {
+        setError('Cada rol debe tener un nombre.');
+        return;
+      }
+      const nombres = roles.map(r => r.nombre.trim().toLowerCase());
+      if (new Set(nombres).size !== nombres.length) {
+        setError('Hay roles con nombres duplicados.');
+        return;
+      }
     }
     if (currentStep === 'admin') {
       const f = validateAdmin();
       if (f.length) { setFieldErrors(new Set(f)); setError(buildMsg(f)); return; }
+      setLoading(true);
+      try {
+        const res = await personasApi.validateRut(admin.rut);
+        if (res.success && res.data && !res.data.valido) {
+          setFieldErrors(new Set(['rut']));
+          setError(res.data.mensaje || 'El RUT ya está registrado en el sistema');
+          return;
+        }
+      } catch {
+        // si el servidor no responde, permitir continuar
+      } finally {
+        setLoading(false);
+      }
     }
     if (idx + 1 < STEPS.length) setCurrentStep(STEPS[idx + 1]);
   };
@@ -108,18 +217,84 @@ export default function TenantOnboarding() {
     if (idx > 0) setCurrentStep(STEPS[idx - 1]);
   };
 
+  const updateRole = (id: string, field: 'nombre' | 'descripcion', value: string) =>
+    setRoles(p => p.map(r => (r._id === id ? { ...r, [field]: value } : r)));
+
+  // Mantiene el rol si no es el objetivo, o si está bloqueado (admin no removible).
+  const removeRole = (id: string) => setRoles(p => p.filter(r => r._id !== id || r.locked));
+
+  const togglePermiso = (id: string, permKey: string) =>
+    setRoles(p => p.map(r => {
+      if (r._id !== id || r.locked) return r;
+      const has = r.permisos.includes(permKey);
+      return { ...r, permisos: has ? r.permisos.filter(k => k !== permKey) : [...r.permisos, permKey] };
+    }));
+
+  const addRole = () =>
+    setRoles(p => [...p, { _id: String(Date.now() + Math.random()), nombre: '', descripcion: '', permisos: [] }]);
+
   const addWorker = () => {
     const errs = new Set<string>();
     if (!wForm.nombre.trim()) errs.add('wNombre');
+    if (!wForm.apellidoPaterno.trim()) errs.add('wApellidoPaterno');
     if (!wForm.rut.trim()) errs.add('wRut');
+    else if (!rutValid(wForm.rut)) errs.add('wRutFormato');
+    else if (wForm.rut.trim() === admin.rut.trim()) errs.add('wRutDupAdmin');
+    else if (workers.some(w => w.rut.trim() === wForm.rut.trim())) errs.add('wRutDup');
     setWErrors(errs);
     if (errs.size) return;
     setWorkers(p => [...p, { ...wForm, _id: String(Date.now() + Math.random()) }]);
-    setWForm({ ...BLANK_WORKER });
+    setWForm({ ...BLANK_WORKER, rol: roles.find(r => !r.locked)?.nombre.trim() ?? '' });
     setWErrors(new Set());
   };
 
   const removeWorker = (id: string) => setWorkers(p => p.filter(w => w._id !== id));
+
+  const handleBulkUpload = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      setBulkErrors([{ fila: 0, error: 'El archivo debe ser .xlsx' }]);
+      return;
+    }
+    setBulkLoading(true);
+    setBulkErrors([]);
+    setBulkSuccess(0);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64 = (e.target?.result as string).split('base64,')[1] || '';
+        const res = await personasApi.parseExcel({ fileBase64: base64, fileName: file.name });
+        if (!res.success || !res.data) {
+          setBulkErrors([{ fila: 0, error: res.error || 'Error al procesar el archivo' }]);
+          setBulkLoading(false);
+          return;
+        }
+        const { trabajadores, errores } = res.data;
+        const adminRutClean = admin.rut.replace(/[^0-9kK]/gi, '').toLowerCase();
+        const existingRuts = new Set(workers.map(w => w.rut.replace(/[^0-9kK]/gi, '').toLowerCase()));
+        const added: WorkerDraft[] = [];
+        const skipped: Array<{ fila: number; error: string }> = [...errores];
+        trabajadores.forEach((t, i) => {
+          const rutClean = t.rut.replace(/[^0-9kK]/gi, '').toLowerCase();
+          if (rutClean === adminRutClean) {
+            skipped.push({ fila: i + 2, error: `${t.rut}: mismo RUT que el administrador` });
+          } else if (existingRuts.has(rutClean)) {
+            skipped.push({ fila: i + 2, error: `${t.rut}: ya está en la lista` });
+          } else {
+            existingRuts.add(rutClean);
+            added.push({ ...t, _id: String(Date.now() + Math.random()) });
+          }
+        });
+        setWorkers(p => [...p, ...added]);
+        setBulkSuccess(added.length);
+        setBulkErrors(skipped);
+        setBulkLoading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setBulkErrors([{ fila: 0, error: 'Error al leer el archivo' }]);
+      setBulkLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setLoading(true); setError('');
@@ -128,10 +303,14 @@ export default function TenantOnboarding() {
         nombre: empresa.nombre,
         rutEmpresa: empresa.rutEmpresa,
         cantidadTrabajadores: empresa.cantidadTrabajadores,
-        email: empresa.email,
-        telefono: empresa.telefono,
         plan: 'starter',
-        admin: { rut: admin.rut, nombre: admin.nombre, apellido: admin.apellido, email: admin.email },
+        roles: roles.map(r => ({
+          id: r.locked ? 'admin' : r.nombre.trim(),
+          nombre: r.nombre.trim(),
+          descripcion: r.descripcion.trim(),
+          permisos: r.locked ? ALL_PERMISSION_KEYS : r.permisos,
+        })),
+        admin: { rut: admin.rut, nombre: admin.nombre, apellidoPaterno: admin.apellidoPaterno, apellidoMaterno: admin.apellidoMaterno, fechaNacimiento: admin.fechaNacimiento || undefined, email: admin.email },
       };
       const response = await tenantsApi.setup(payload);
       if (response.success && response.data) {
@@ -146,17 +325,19 @@ export default function TenantOnboarding() {
           for (const w of workers) {
             try {
               const wRes = await personasApi.create(tenantId, {
-                rut: w.rut, nombre: w.nombre, apellido: w.apellido,
+                rut: w.rut, nombre: w.nombre,
+                apellidoPaterno: w.apellidoPaterno, apellidoMaterno: w.apellidoMaterno,
+                fechaNacimiento: w.fechaNacimiento || undefined,
                 email: w.email, rol: w.rol, cargo: w.cargo,
-                tieneAccesoWeb: w.tieneAccesoWeb || w.rol !== 'trabajador',
+                tieneAccesoWeb: true,
               });
               if (wRes.success && wRes.data) {
-                results.push({ rut: w.rut, nombre: w.nombre, apellido: w.apellido, password: wRes.data.passwordTemporal });
+                results.push({ rut: w.rut, nombre: w.nombre, apellido: `${w.apellidoPaterno} ${w.apellidoMaterno}`.trim(), password: wRes.data.passwordTemporal });
               } else {
-                results.push({ rut: w.rut, nombre: w.nombre, apellido: w.apellido, error: wRes.error || 'Error al crear' });
+                results.push({ rut: w.rut, nombre: w.nombre, apellido: `${w.apellidoPaterno} ${w.apellidoMaterno}`.trim(), error: wRes.error || 'Error al crear' });
               }
             } catch {
-              results.push({ rut: w.rut, nombre: w.nombre, apellido: w.apellido, error: 'Error de conexión' });
+              results.push({ rut: w.rut, nombre: w.nombre, apellido: `${w.apellidoPaterno} ${w.apellidoMaterno}`.trim(), error: 'Error de conexión' });
             }
           }
           setWorkersResult(results);
@@ -293,10 +474,10 @@ export default function TenantOnboarding() {
               <div className="onb-field">
                 <label className="onb-label">RUT EMPRESA *</label>
                 <input
-                  className={`onb-input${fieldErrors.has('rutEmpresa') ? ' onb-input--err' : ''}`}
+                  className={`onb-input${(fieldErrors.has('rutEmpresa') || fieldErrors.has('rutEmpresaFormato')) ? ' onb-input--err' : ''}`}
                   placeholder="76.123.456-7"
                   value={empresa.rutEmpresa}
-                  onChange={e => { setEmpresa({ ...empresa, rutEmpresa: e.target.value }); clearField('rutEmpresa'); }}
+                  onChange={e => { setEmpresa({ ...empresa, rutEmpresa: rutFormat(e.target.value) }); clearField('rutEmpresa'); clearField('rutEmpresaFormato'); }}
                 />
               </div>
               <div className="onb-field">
@@ -308,25 +489,108 @@ export default function TenantOnboarding() {
                   onChange={e => { setEmpresa({ ...empresa, cantidadTrabajadores: parseInt(e.target.value) || 1 }); clearField('cantidadTrabajadores'); }}
                 />
               </div>
-              <div className="onb-field">
-                <label className="onb-label">EMAIL CORPORATIVO</label>
-                <input
-                  className="onb-input" type="email"
-                  placeholder="contacto@empresa.cl"
-                  value={empresa.email}
-                  onChange={e => setEmpresa({ ...empresa, email: e.target.value })}
-                />
-              </div>
-              <div className="onb-field">
-                <label className="onb-label">TELÉFONO</label>
-                <input
-                  className="onb-input"
-                  placeholder="+56 9 1234 5678"
-                  value={empresa.telefono}
-                  onChange={e => setEmpresa({ ...empresa, telefono: e.target.value })}
-                />
-              </div>
             </div>
+          </div>
+        )}
+
+        {/* Step: Roles */}
+        {currentStep === 'roles' && (
+          <div className="onb-anim">
+            <h2 className="onb-title">Roles de la Empresa</h2>
+
+            {rolesInfoVisible && (
+              <div className="onb-info-banner">
+                <FiInfo size={15} className="onb-info-icon" />
+                <p className="onb-info-text">
+                  Estos roles vienen creados por defecto. Puedes editarlos, eliminarlos o
+                  añadir los que necesites. Se guardarán en la configuración de tu empresa.
+                </p>
+                <button
+                  className="onb-info-close"
+                  onClick={() => setRolesInfoVisible(false)}
+                  type="button"
+                  title="Cerrar"
+                >
+                  <FiX size={13} />
+                </button>
+              </div>
+            )}
+
+            <div className="onb-roles-list">
+              {roles.map((r, i) => (
+                <div key={r._id} className="onb-role-card">
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <span className="onb-role-index">{r.locked ? <FiLock size={12} /> : String(i + 1).padStart(2, '0')}</span>
+                    <div className="onb-role-fields">
+                      <div className="onb-role-field-group">
+                        <label className="onb-role-label">NOMBRE DEL ROL</label>
+                        <input
+                          className="onb-input onb-role-name"
+                          placeholder="Ej. Capataz"
+                          value={r.nombre}
+                          onChange={e => updateRole(r._id, 'nombre', e.target.value)}
+                        />
+                      </div>
+                      <div className="onb-role-field-group">
+                        <label className="onb-role-label">DESCRIPCIÓN</label>
+                        <input
+                          className="onb-input onb-role-desc"
+                          placeholder="Responsabilidades del rol (opcional)"
+                          value={r.descripcion}
+                          onChange={e => updateRole(r._id, 'descripcion', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    {!r.locked && (
+                      <button
+                        className="onb-role-remove"
+                        onClick={() => removeRole(r._id)}
+                        type="button"
+                        title="Eliminar rol"
+                      >
+                        <FiX size={13} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Selector de permisos por grupos */}
+                  <div className="onb-perms">
+                    <div className="onb-perms-head">
+                      PERMISOS{r.locked && <span className="onb-perms-lock"><FiLock size={10} /> Acceso total (no editable)</span>}
+                    </div>
+                    <div className="onb-perms-groups">
+                      {PERMISSION_GROUPS.map(group => (
+                        <div key={group.grupo} className="onb-perms-group">
+                          <div className="onb-perms-group-title">{group.grupo}</div>
+                          {group.permisos.map(perm => {
+                            const checked = r.locked || r.permisos.includes(perm.key);
+                            return (
+                              <label key={perm.key} className={`onb-perm-item${r.locked ? ' onb-perm-item--locked' : ''}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={r.locked}
+                                  onChange={() => togglePermiso(r._id, perm.key)}
+                                />
+                                <span>{perm.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {roles.length === 0 && (
+              <p className="onb-roles-empty">No hay roles. Añade al menos uno para continuar.</p>
+            )}
+
+            <button className="onb-add-role-btn" onClick={addRole} type="button">
+              <FiPlus size={14} /><span>Añadir rol</span>
+            </button>
           </div>
         )}
 
@@ -339,10 +603,10 @@ export default function TenantOnboarding() {
               <div className="onb-field onb-full">
                 <label className="onb-label">RUT *</label>
                 <input
-                  className={`onb-input${fieldErrors.has('rut') ? ' onb-input--err' : ''}`}
+                  className={`onb-input${(fieldErrors.has('rut') || fieldErrors.has('rutFormato')) ? ' onb-input--err' : ''}`}
                   placeholder="12.345.678-9"
                   value={admin.rut}
-                  onChange={e => { setAdmin({ ...admin, rut: e.target.value }); clearField('rut'); }}
+                  onChange={e => { setAdmin({ ...admin, rut: rutFormat(e.target.value) }); clearField('rut'); clearField('rutFormato'); }}
                 />
               </div>
               <div className="onb-field">
@@ -355,12 +619,30 @@ export default function TenantOnboarding() {
                 />
               </div>
               <div className="onb-field">
-                <label className="onb-label">APELLIDO</label>
+                <label className="onb-label">APELLIDO PATERNO *</label>
+                <input
+                  className={`onb-input${fieldErrors.has('adminApellidoPaterno') ? ' onb-input--err' : ''}`}
+                  placeholder="Pérez"
+                  value={admin.apellidoPaterno}
+                  onChange={e => { setAdmin({ ...admin, apellidoPaterno: e.target.value }); clearField('adminApellidoPaterno'); }}
+                />
+              </div>
+              <div className="onb-field">
+                <label className="onb-label">APELLIDO MATERNO</label>
                 <input
                   className="onb-input"
-                  placeholder="Pérez"
-                  value={admin.apellido}
-                  onChange={e => setAdmin({ ...admin, apellido: e.target.value })}
+                  placeholder="González"
+                  value={admin.apellidoMaterno}
+                  onChange={e => setAdmin({ ...admin, apellidoMaterno: e.target.value })}
+                />
+              </div>
+              <div className="onb-field">
+                <label className="onb-label">FECHA DE NACIMIENTO</label>
+                <input
+                  className="onb-input"
+                  type="date"
+                  value={admin.fechaNacimiento}
+                  onChange={e => setAdmin({ ...admin, fechaNacimiento: e.target.value })}
                 />
               </div>
               <div className="onb-field onb-full">
@@ -383,81 +665,181 @@ export default function TenantOnboarding() {
             <h2 className="onb-title">Añadir Trabajadores</h2>
             <p className="onb-subtitle">Opcional — puedes agregar trabajadores ahora o más tarde desde el panel.</p>
 
-            <div className="onb-worker-form">
-              <div className="onb-grid">
-                <div className="onb-field">
-                  <label className="onb-label">NOMBRE *</label>
-                  <input
-                    className={`onb-input${wErrors.has('wNombre') ? ' onb-input--err' : ''}`}
-                    placeholder="Juan"
-                    value={wForm.nombre}
-                    onChange={e => { setWForm({ ...wForm, nombre: e.target.value }); setWErrors(p => { const n = new Set(p); n.delete('wNombre'); return n; }); }}
-                  />
-                </div>
-                <div className="onb-field">
-                  <label className="onb-label">APELLIDO</label>
-                  <input
-                    className="onb-input"
-                    placeholder="Pérez"
-                    value={wForm.apellido}
-                    onChange={e => setWForm({ ...wForm, apellido: e.target.value })}
-                  />
-                </div>
-                <div className="onb-field">
-                  <label className="onb-label">RUT *</label>
-                  <input
-                    className={`onb-input${wErrors.has('wRut') ? ' onb-input--err' : ''}`}
-                    placeholder="12.345.678-9"
-                    value={wForm.rut}
-                    onChange={e => { setWForm({ ...wForm, rut: e.target.value }); setWErrors(p => { const n = new Set(p); n.delete('wRut'); return n; }); }}
-                  />
-                </div>
-                <div className="onb-field">
-                  <label className="onb-label">EMAIL</label>
-                  <input
-                    className="onb-input" type="email"
-                    placeholder="trabajador@empresa.cl"
-                    value={wForm.email}
-                    onChange={e => setWForm({ ...wForm, email: e.target.value })}
-                  />
-                </div>
-                <div className="onb-field">
-                  <label className="onb-label">ROL</label>
-                  <select
-                    className="onb-input onb-select"
-                    value={wForm.rol}
-                    onChange={e => setWForm({ ...wForm, rol: e.target.value })}
-                  >
-                    <option value="trabajador">Trabajador</option>
-                    <option value="supervisor">Supervisor</option>
-                    <option value="jefe_obra">Jefe de Obra</option>
-                    <option value="prevencionista">Prevencionista</option>
-                  </select>
-                </div>
-                <div className="onb-field">
-                  <label className="onb-label">CARGO</label>
-                  <input
-                    className="onb-input"
-                    placeholder="Operador, Maestro..."
-                    value={wForm.cargo}
-                    onChange={e => setWForm({ ...wForm, cargo: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div className="onb-wform-footer">
-                <label className="onb-check-label">
-                  <input
-                    type="checkbox"
-                    checked={wForm.tieneAccesoWeb}
-                    onChange={e => setWForm({ ...wForm, tieneAccesoWeb: e.target.checked })}
-                  />
-                  <span>Habilitar acceso web (login con contraseña)</span>
-                </label>
-                <button className="onb-add-btn" onClick={addWorker} type="button">
-                  <FiUserPlus size={13} /><span>Agregar</span>
-                </button>
-              </div>
+            {/* Tab control */}
+            <div className="onb-tabs">
+              <button
+                className={`onb-tab${workerTab === 'manual' ? ' onb-tab--active' : ''}`}
+                onClick={() => setWorkerTab('manual')} type="button"
+              >
+                <FiUserPlus size={13} /> Agregar manualmente
+              </button>
+              <button
+                className={`onb-tab${workerTab === 'bulk' ? ' onb-tab--active' : ''}`}
+                onClick={() => setWorkerTab('bulk')} type="button"
+              >
+                <FiUpload size={13} /> Carga masiva
+              </button>
             </div>
+
+            {/* Manual tab */}
+            {workerTab === 'manual' && (
+              <div className="onb-worker-form">
+                <div className="onb-grid">
+                  <div className="onb-field">
+                    <label className="onb-label">NOMBRE *</label>
+                    <input
+                      className={`onb-input${wErrors.has('wNombre') ? ' onb-input--err' : ''}`}
+                      placeholder="Juan"
+                      value={wForm.nombre}
+                      onChange={e => { setWForm({ ...wForm, nombre: e.target.value }); setWErrors(p => { const n = new Set(p); n.delete('wNombre'); return n; }); }}
+                    />
+                  </div>
+                  <div className="onb-field">
+                    <label className="onb-label">APELLIDO PATERNO *</label>
+                    <input
+                      className={`onb-input${wErrors.has('wApellidoPaterno') ? ' onb-input--err' : ''}`}
+                      placeholder="Pérez"
+                      value={wForm.apellidoPaterno}
+                      onChange={e => { setWForm({ ...wForm, apellidoPaterno: e.target.value }); setWErrors(p => { const n = new Set(p); n.delete('wApellidoPaterno'); return n; }); }}
+                    />
+                  </div>
+                  <div className="onb-field">
+                    <label className="onb-label">APELLIDO MATERNO</label>
+                    <input
+                      className="onb-input"
+                      placeholder="González"
+                      value={wForm.apellidoMaterno}
+                      onChange={e => setWForm({ ...wForm, apellidoMaterno: e.target.value })}
+                    />
+                  </div>
+                  <div className="onb-field">
+                    <label className="onb-label">FECHA DE NACIMIENTO</label>
+                    <input
+                      className="onb-input"
+                      type="date"
+                      value={wForm.fechaNacimiento}
+                      onChange={e => setWForm({ ...wForm, fechaNacimiento: e.target.value })}
+                    />
+                  </div>
+                  <div className="onb-field">
+                    <label className="onb-label">RUT *</label>
+                    <input
+                      className={`onb-input${(wErrors.has('wRut') || wErrors.has('wRutFormato') || wErrors.has('wRutDup') || wErrors.has('wRutDupAdmin')) ? ' onb-input--err' : ''}`}
+                      placeholder="12.345.678-9"
+                      value={wForm.rut}
+                      onChange={e => { setWForm({ ...wForm, rut: rutFormat(e.target.value) }); setWErrors(p => { const n = new Set(p); n.delete('wRut'); n.delete('wRutFormato'); n.delete('wRutDup'); n.delete('wRutDupAdmin'); return n; }); }}
+                    />
+                    {wErrors.has('wRutFormato') && <span style={{ fontSize: 11, color: '#ef4444' }}>RUT no válido</span>}
+                    {wErrors.has('wRutDupAdmin') && <span style={{ fontSize: 11, color: '#ef4444' }}>Este RUT pertenece al administrador</span>}
+                    {wErrors.has('wRutDup') && <span style={{ fontSize: 11, color: '#ef4444' }}>Este RUT ya fue agregado</span>}
+                  </div>
+                  <div className="onb-field">
+                    <label className="onb-label">EMAIL</label>
+                    <input
+                      className="onb-input" type="email"
+                      placeholder="trabajador@empresa.cl"
+                      value={wForm.email}
+                      onChange={e => setWForm({ ...wForm, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="onb-field">
+                    <label className="onb-label">ROL</label>
+                    <select
+                      className="onb-input onb-select"
+                      value={wForm.rol}
+                      onChange={e => setWForm({ ...wForm, rol: e.target.value })}
+                    >
+                      {roles.filter(r => !r.locked).map(r => {
+                        const id = r.nombre.trim();
+                        return <option key={id} value={id}>{r.nombre}</option>;
+                      })}
+                    </select>
+                  </div>
+                  <div className="onb-field">
+                    <label className="onb-label">CARGO</label>
+                    <select
+                      className="onb-input onb-select"
+                      value={wForm.cargo}
+                      onChange={e => setWForm({ ...wForm, cargo: e.target.value })}
+                    >
+                      <option value="">Sin cargo (opcional)</option>
+                      {CARGOS.map(c => <option key={c.codigo} value={c.codigo}>{c.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="onb-wform-footer">
+                  <button className="onb-add-btn" onClick={addWorker} type="button">
+                    <FiUserPlus size={13} /><span>Agregar</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Bulk tab */}
+            {workerTab === 'bulk' && (
+              <div className="onb-bulk-panel">
+                <button
+                  className="onb-template-btn"
+                  type="button"
+                  onClick={() => personasApi.downloadTemplate()}
+                >
+                  <FiDownload size={13} /> Descargar plantilla Excel
+                </button>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleBulkUpload(file);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                />
+
+                <div
+                  className={`onb-dropzone${bulkLoading ? ' onb-dropzone--loading' : ''}`}
+                  onClick={() => !bulkLoading && fileInputRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('onb-dropzone--drag'); }}
+                  onDragLeave={e => e.currentTarget.classList.remove('onb-dropzone--drag')}
+                  onDrop={e => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('onb-dropzone--drag');
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) handleBulkUpload(file);
+                  }}
+                >
+                  {bulkLoading ? (
+                    <div className="onb-spinner" style={{ borderTopColor: '#006edc', borderColor: 'rgba(0,110,220,0.2)', width: 24, height: 24 }} />
+                  ) : (
+                    <>
+                      <FiUpload size={28} style={{ color: '#006edc', marginBottom: 10 }} />
+                      <span className="onb-dropzone-title">Arrastra el archivo aquí o haz clic para seleccionar</span>
+                      <span className="onb-dropzone-hint">Solo archivos .xlsx</span>
+                    </>
+                  )}
+                </div>
+
+                {bulkSuccess > 0 && (
+                  <div className="onb-bulk-success">
+                    <FiCheck size={14} /> {bulkSuccess} trabajador{bulkSuccess !== 1 ? 'es' : ''} importado{bulkSuccess !== 1 ? 's' : ''} correctamente
+                  </div>
+                )}
+
+                {bulkErrors.length > 0 && (
+                  <div className="onb-bulk-errors">
+                    <div className="onb-bulk-errors-title"><FiAlertCircle size={13} /> {bulkErrors.length} fila{bulkErrors.length !== 1 ? 's' : ''} con error</div>
+                    {bulkErrors.slice(0, 5).map((e, i) => (
+                      <div key={i} className="onb-bulk-error-row">
+                        {e.fila > 0 && <span className="onb-bulk-fila">Fila {e.fila}:</span>} {e.error}
+                      </div>
+                    ))}
+                    {bulkErrors.length > 5 && <div className="onb-bulk-error-row" style={{ color: '#94a3b8' }}>...y {bulkErrors.length - 5} más</div>}
+                  </div>
+                )}
+              </div>
+            )}
 
             {workers.length > 0 && (
               <div className="onb-workers-section">
@@ -468,12 +850,12 @@ export default function TenantOnboarding() {
                   {workers.map(w => (
                     <div key={w._id} className="onb-worker-card">
                       <div className="onb-worker-avatar">
-                        {w.nombre[0]?.toUpperCase()}{w.apellido?.[0]?.toUpperCase() ?? w.nombre[1]?.toUpperCase() ?? ''}
+                        {w.nombre[0]?.toUpperCase()}{w.apellidoPaterno?.[0]?.toUpperCase() ?? w.nombre[1]?.toUpperCase() ?? ''}
                       </div>
                       <div className="onb-worker-info">
-                        <span className="onb-worker-name">{w.nombre} {w.apellido}</span>
+                        <span className="onb-worker-name">{w.nombre} {w.apellidoPaterno} {w.apellidoMaterno}</span>
                         <span className="onb-worker-rut">{w.rut}</span>
-                        <span className="onb-worker-role">{ROL_LABELS[w.rol] || w.rol}</span>
+                        <span className="onb-worker-role">{roles.find(r => r.nombre.trim() === w.rol)?.nombre || w.rol}</span>
                       </div>
                       <button className="onb-worker-remove" onClick={() => removeWorker(w._id)} type="button" title="Eliminar">
                         <FiX size={12} />
@@ -491,32 +873,87 @@ export default function TenantOnboarding() {
           <div className="onb-anim">
             <h2 className="onb-title">Confirmar Registro</h2>
             <p className="onb-subtitle">Revisa los datos antes de crear la empresa.</p>
-            <div className="onb-summary">
-              <div className="onb-sum-section">
-                <div className="onb-sum-header">🏢 Empresa</div>
-                <div className="onb-sum-row"><span>Razón Social</span><strong>{empresa.nombre}</strong></div>
-                <div className="onb-sum-row"><span>RUT</span><strong>{empresa.rutEmpresa}</strong></div>
-                <div className="onb-sum-row"><span>Trabajadores</span><strong>{empresa.cantidadTrabajadores}</strong></div>
-                {empresa.email && <div className="onb-sum-row"><span>Email</span><strong>{empresa.email}</strong></div>}
+
+            <div className="onb-confirm-grid">
+              {/* Empresa */}
+              <div className="onb-confirm-card">
+                <div className="onb-confirm-card-header">
+                  <span className="onb-confirm-card-tag">Empresa</span>
+                </div>
+                <div className="onb-confirm-kv">
+                  <span className="onb-confirm-k">Razón Social</span>
+                  <span className="onb-confirm-v">{empresa.nombre}</span>
+                </div>
+                <div className="onb-confirm-kv">
+                  <span className="onb-confirm-k">RUT</span>
+                  <span className="onb-confirm-v onb-confirm-mono">{empresa.rutEmpresa}</span>
+                </div>
+                <div className="onb-confirm-kv">
+                  <span className="onb-confirm-k">Trabajadores</span>
+                  <span className="onb-confirm-v">{empresa.cantidadTrabajadores}</span>
+                </div>
               </div>
-              <div className="onb-sum-section">
-                <div className="onb-sum-header">👤 Administrador</div>
-                <div className="onb-sum-row"><span>Nombre</span><strong>{admin.nombre} {admin.apellido}</strong></div>
-                <div className="onb-sum-row"><span>RUT</span><strong>{admin.rut}</strong></div>
-                <div className="onb-sum-row"><span>Email</span><strong>{admin.email}</strong></div>
+
+              {/* Administrador */}
+              <div className="onb-confirm-card">
+                <div className="onb-confirm-card-header">
+                  <span className="onb-confirm-card-tag">Administrador</span>
+                </div>
+                <div className="onb-confirm-kv">
+                  <span className="onb-confirm-k">Nombre</span>
+                  <span className="onb-confirm-v">{[admin.nombre, admin.apellidoPaterno, admin.apellidoMaterno].filter(Boolean).join(' ')}</span>
+                </div>
+                <div className="onb-confirm-kv">
+                  <span className="onb-confirm-k">RUT</span>
+                  <span className="onb-confirm-v onb-confirm-mono">{admin.rut}</span>
+                </div>
+                <div className="onb-confirm-kv">
+                  <span className="onb-confirm-k">Email</span>
+                  <span className="onb-confirm-v onb-confirm-mono">{admin.email}</span>
+                </div>
               </div>
-              {workers.length > 0 && (
-                <div className="onb-sum-section">
-                  <div className="onb-sum-header">👷 Trabajadores ({workers.length})</div>
+            </div>
+
+            {/* Roles */}
+            {roles.length > 0 && (
+              <div className="onb-confirm-card onb-confirm-card--full">
+                <div className="onb-confirm-card-header">
+                  <span className="onb-confirm-card-tag">Roles</span>
+                  <span className="onb-confirm-card-count">{roles.length}</span>
+                </div>
+                <div className="onb-confirm-pills">
+                  {roles.map(r => (
+                    <span key={r._id} className="onb-confirm-pill">{r.nombre}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Trabajadores */}
+            {workers.length > 0 && (
+              <div className="onb-confirm-card onb-confirm-card--full">
+                <div className="onb-confirm-card-header">
+                  <span className="onb-confirm-card-tag">Trabajadores</span>
+                  <span className="onb-confirm-card-count">{workers.length}</span>
+                </div>
+                <div className="onb-confirm-workers">
                   {workers.map(w => (
-                    <div key={w._id} className="onb-sum-row">
-                      <span>{w.nombre} {w.apellido} — {w.rut}</span>
-                      <strong>{ROL_LABELS[w.rol]}</strong>
+                    <div key={w._id} className="onb-confirm-worker-row">
+                      <div className="onb-confirm-worker-avatar">
+                        {w.nombre[0]?.toUpperCase()}{w.apellidoPaterno?.[0]?.toUpperCase() ?? ''}
+                      </div>
+                      <div className="onb-confirm-worker-info">
+                        <span className="onb-confirm-worker-name">{w.nombre} {w.apellidoPaterno} {w.apellidoMaterno}</span>
+                        <span className="onb-confirm-worker-rut">{w.rut}</span>
+                      </div>
+                      <span className="onb-confirm-worker-rol">
+                        {roles.find(r => r.nombre.trim() === w.rol)?.nombre || w.rol}
+                      </span>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -531,8 +968,8 @@ export default function TenantOnboarding() {
           )}
           <div style={{ flex: 1 }} />
           {currentStep !== 'confirmacion' ? (
-            <button className="onb-submit" onClick={next} type="button">
-              <span>Siguiente</span> <FiArrowRight size={15} />
+            <button className="onb-submit" onClick={next} disabled={loading} type="button">
+              {loading ? <div className="onb-spinner" /> : <><span>Siguiente</span> <FiArrowRight size={15} /></>}
             </button>
           ) : (
             <button className="onb-submit" onClick={handleSubmit} disabled={loading} type="button">
@@ -621,17 +1058,19 @@ const onbStyles = `
     justify-content: center;
     margin-bottom: 20px;
     gap: 0;
+    overflow: hidden;
   }
 
   .onb-step-group {
     display: flex;
     align-items: center;
     gap: 0;
+    flex-shrink: 0;
   }
 
   .onb-step-dot {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     border: 2px solid #e2e8f0;
     background: #f8fafc;
@@ -639,7 +1078,7 @@ const onbStyles = `
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     flex-shrink: 0;
     transition: all 0.2s ease;
@@ -652,24 +1091,23 @@ const onbStyles = `
     font-weight: 600;
     color: #94a3b8;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-left: 6px;
+    letter-spacing: 0.05em;
+    margin-left: 5px;
     white-space: nowrap;
     display: none;
   }
-  .onb-step-lbl.active { color: #002855; }
+  /* Solo muestra la etiqueta del paso activo para que no se desborden los 5 pasos */
+  .onb-step-lbl.active { display: inline; color: #002855; }
 
   .onb-step-line {
-    width: 28px;
+    width: 18px;
     height: 2px;
     background: #e2e8f0;
-    margin: 0 6px;
+    margin: 0 4px;
     flex-shrink: 0;
     transition: background 0.2s;
   }
   .onb-step-line.done { background: #006edc; }
-
-  @media (min-width: 480px) { .onb-step-lbl { display: inline; } }
 
   /* ── Content ── */
   .onb-anim {
@@ -750,6 +1188,138 @@ const onbStyles = `
     padding-right: 30px;
   }
   .onb-select option { background: #fff; color: #0f172a; }
+
+  /* ── Tabs ── */
+  .onb-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #f8fafc;
+  }
+
+  .onb-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 38px;
+    background: none;
+    border: none;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    color: #64748b;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .onb-tab:not(:last-child) { border-right: 1px solid #e2e8f0; }
+  .onb-tab:hover:not(.onb-tab--active) { background: #f1f5f9; color: #334155; }
+  .onb-tab--active { background: #002855; color: #fff; }
+
+  /* ── Bulk panel ── */
+  .onb-bulk-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .onb-template-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 16px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color: #006edc;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    align-self: flex-start;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .onb-template-btn:hover { background: #f0f7ff; border-color: #bfdbfe; }
+
+  .onb-dropzone {
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 32px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: #f8fafc;
+    gap: 4px;
+    min-height: 120px;
+  }
+  .onb-dropzone:hover, .onb-dropzone--drag {
+    border-color: #006edc;
+    background: #f0f7ff;
+  }
+  .onb-dropzone--loading { cursor: default; }
+
+  .onb-dropzone-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+  }
+
+  .onb-dropzone-hint {
+    font-size: 11.5px;
+    color: #94a3b8;
+  }
+
+  .onb-bulk-success {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #16a34a;
+    padding: 8px 12px;
+    background: rgba(22,163,74,0.07);
+    border-radius: 8px;
+    border: 1px solid rgba(22,163,74,0.2);
+  }
+
+  .onb-bulk-errors {
+    padding: 10px 12px;
+    background: rgba(239,68,68,0.04);
+    border: 1px solid rgba(239,68,68,0.18);
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .onb-bulk-errors-title {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 700;
+    color: #ef4444;
+    margin-bottom: 6px;
+  }
+
+  .onb-bulk-error-row {
+    color: #475569;
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(239,68,68,0.08);
+    line-height: 1.5;
+  }
+  .onb-bulk-error-row:last-child { border-bottom: none; }
+
+  .onb-bulk-fila {
+    font-weight: 600;
+    color: #94a3b8;
+    margin-right: 4px;
+  }
 
   /* ── Worker form ── */
   .onb-worker-form {
@@ -916,35 +1486,401 @@ const onbStyles = `
   }
   .onb-worker-remove:hover { color: #ef4444; background: rgba(239,68,68,0.08); }
 
-  /* ── Summary ── */
-  .onb-summary { display: flex; flex-direction: column; gap: 10px; }
-
-  .onb-sum-section {
-    background: #f8fafc;
-    border: 1px solid #e8edf3;
-    border-radius: 10px;
-    padding: 14px 16px;
+  /* ── Info banner ── */
+  .onb-info-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-left: 3px solid #006edc;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
   }
 
-  .onb-sum-header {
+  .onb-info-icon {
+    color: #006edc;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .onb-info-text {
+    flex: 1;
     font-size: 12px;
+    color: #1e40af;
+    line-height: 1.55;
+    margin: 0;
+  }
+
+  .onb-info-close {
+    width: 22px;
+    height: 22px;
+    background: none;
+    border: none;
+    color: #93c5fd;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    flex-shrink: 0;
+    padding: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+  .onb-info-close:hover { color: #1e40af; background: rgba(37,99,235,0.08); }
+
+  /* ── Roles ── */
+  .onb-roles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .onb-roles-list::-webkit-scrollbar { width: 4px; }
+  .onb-roles-list::-webkit-scrollbar-track { background: transparent; }
+  .onb-roles-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+  .onb-roles-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+  .onb-role-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #002855;
+    border-radius: 10px;
+    padding: 12px 14px 12px 16px;
+    animation: onbRise 0.22s ease both;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .onb-perms {
+    border-top: 1px dashed #e2e8f0;
+    padding-top: 10px;
+  }
+  .onb-perms-head {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .onb-perms-lock {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #002855;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .onb-perms-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px 18px;
+  }
+  .onb-perms-group-title {
+    font-size: 11px;
     font-weight: 700;
     color: #0f172a;
+    margin-bottom: 4px;
+  }
+  .onb-perm-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #334155;
+    padding: 2px 0;
+    cursor: pointer;
+  }
+  .onb-perm-item--locked {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .onb-perm-item input {
+    cursor: inherit;
+  }
+  .onb-role-card:hover {
+    border-color: #c7d5e8;
+    border-left-color: #006edc;
+    box-shadow: 0 3px 12px -4px rgba(0,40,85,0.12);
+  }
+
+  .onb-role-index {
+    font-size: 11px;
+    font-weight: 800;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .onb-role-fields {
+    display: grid;
+    grid-template-columns: 1fr 1.6fr;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .onb-role-field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .onb-role-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .onb-role-name { font-weight: 600; font-size: 13px; }
+  .onb-role-desc { font-size: 12.5px; }
+
+  .onb-role-remove {
+    width: 26px;
+    height: 26px;
+    background: none;
+    border: none;
+    color: #cbd5e1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+  }
+  .onb-role-remove:hover { color: #ef4444; background: rgba(239,68,68,0.08); }
+
+  .onb-roles-empty {
+    font-size: 12.5px;
+    color: #94a3b8;
+    text-align: center;
+    padding: 14px;
+    margin: 0 0 12px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px;
+  }
+
+  .onb-add-role-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    height: 38px;
+    background: #fff;
+    border: 1.5px dashed #bfdbfe;
+    border-radius: 10px;
+    color: #006edc;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .onb-add-role-btn:hover { background: #f0f7ff; border-color: #006edc; }
+
+  @media (max-width: 480px) {
+    .onb-role-fields { grid-template-columns: 1fr; gap: 6px; }
+  }
+
+  /* ── Confirmation ── */
+  .onb-confirm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
     margin-bottom: 10px;
   }
 
-  .onb-sum-row {
+  .onb-confirm-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 13px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .onb-confirm-card--full {
+    grid-column: span 2;
+  }
+
+  .onb-confirm-card-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 11px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .onb-confirm-card-tag {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #002855;
+    background: rgba(0,40,85,0.07);
+    padding: 2px 7px;
+    border-radius: 99px;
+  }
+
+  .onb-confirm-card-count {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    background: #f1f5f9;
+    padding: 1px 6px;
+    border-radius: 99px;
+  }
+
+  .onb-confirm-kv {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    padding: 4px 0;
-    font-size: 12.5px;
-    border-bottom: 1px solid #f1f5f9;
-    gap: 12px;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid #f8fafc;
   }
-  .onb-sum-row:last-child { border-bottom: none; }
-  .onb-sum-row span { color: #64748b; white-space: nowrap; }
-  .onb-sum-row strong { color: #0f172a; font-weight: 600; text-align: right; word-break: break-word; }
+  .onb-confirm-kv:last-child { border-bottom: none; padding-bottom: 0; }
+
+  .onb-confirm-k {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .onb-confirm-v {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #0f172a;
+    text-align: right;
+    word-break: break-all;
+  }
+
+  .onb-confirm-mono {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: #334155;
+  }
+
+  /* Pills de roles */
+  .onb-confirm-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+
+  .onb-confirm-pill {
+    font-size: 12px;
+    font-weight: 600;
+    color: #002855;
+    background: rgba(0,40,85,0.06);
+    border: 1px solid rgba(0,40,85,0.12);
+    border-radius: 99px;
+    padding: 3px 11px;
+    white-space: nowrap;
+  }
+
+  /* Lista de trabajadores */
+  .onb-confirm-workers {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    margin: 0 -2px;
+    padding: 0 2px;
+  }
+  .onb-confirm-workers::-webkit-scrollbar { width: 4px; }
+  .onb-confirm-workers::-webkit-scrollbar-track { background: transparent; }
+  .onb-confirm-workers::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+  .onb-confirm-workers::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+  .onb-confirm-worker-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .onb-confirm-worker-row:last-child { border-bottom: none; }
+
+  .onb-confirm-worker-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #002855;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+  }
+
+  .onb-confirm-worker-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .onb-confirm-worker-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .onb-confirm-worker-rut {
+    font-size: 10.5px;
+    color: #94a3b8;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.02em;
+  }
+
+  .onb-confirm-worker-rol {
+    font-size: 11px;
+    font-weight: 600;
+    color: #006edc;
+    background: rgba(0,110,220,0.07);
+    border: 1px solid rgba(0,110,220,0.14);
+    border-radius: 99px;
+    padding: 2px 9px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 480px) {
+    .onb-confirm-grid { grid-template-columns: 1fr; }
+    .onb-confirm-card--full { grid-column: span 1; }
+  }
 
   /* ── Error ── */
   .onb-error {

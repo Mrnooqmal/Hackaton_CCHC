@@ -6,11 +6,16 @@
 const { ObraService } = require('../../lib/services/ObraService');
 const { RegistroService } = require('../../lib/services/RegistroService');
 const { IncidentsRepository } = require('../incidents-module/incidents.repository');
+const { PersonaService } = require('../../lib/services/PersonaService');
+const { TenantService } = require('../../lib/services/TenantService');
+const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
 
 const obraService = new ObraService();
 const registroService = new RegistroService();
 const incidentsRepo = new IncidentsRepository();
+const personaService = new PersonaService();
+const tenantService = new TenantService();
 
 module.exports.obrasHandler = async (event) => {
     const method = event.requestContext?.http?.method || event.httpMethod;
@@ -35,6 +40,17 @@ module.exports.obrasHandler = async (event) => {
         if (method === 'POST' && !obraId) {
             if (!tenantId) return error('tenantId es requerido');
             const body = JSON.parse(event.body || '{}');
+
+            // Enforcement por permiso cuando se identifica al creador.
+            const creadorId = body.creadorId || body.solicitanteId || null;
+            if (creadorId) {
+                const creador = await personaService.getById(creadorId).catch(() => null);
+                const tenant = await tenantService.getById(tenantId).catch(() => null);
+                if (!creador || !personaPuede(creador, tenant ? tenant.toSafeFormat() : null, PERMISSIONS.OBRAS_CREAR)) {
+                    return error('No tienes permiso para crear obras', 403);
+                }
+            }
+
             const obra = await obraService.crear(tenantId, body);
             return created({
                 message: 'Obra creada exitosamente',

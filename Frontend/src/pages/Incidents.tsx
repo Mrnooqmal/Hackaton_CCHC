@@ -10,6 +10,7 @@ import {
 import { incidentsApi, aiApi, workersApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData, IncidentLocation } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { PERMISSIONS } from '../permissions';
 import { Modal, Select } from '../components/ui';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
@@ -47,7 +48,7 @@ const ETAPAS_CONSTRUCTIVAS = [
 
 
 export default function Incidents() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
     const [incidents, setIncidents] = useState<Incident[]>([]);
     const [stats, setStats] = useState<IncidentStats | null>(null);
     const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
@@ -102,7 +103,9 @@ export default function Incidents() {
 
     // ─── Reunion 2026-06-10: hallazgos vs incidentes ──────────────────────────
     // Incidentes/accidentes: creacion restringida a supervisor y superiores.
-    const canCreateIncidente = ['admin', 'jefe_obra', 'supervisor', 'prevencionista'].includes(user?.rol || '');
+    const canCreateIncidente = hasPermission(PERMISSIONS.INCIDENTES_REPORTAR);
+    const canVerEstadisticas = hasPermission(PERMISSIONS.INCIDENTES_ESTADISTICAS);
+    const canVerHistorial = hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL);
     const [listTab, setListTab] = useState<'hallazgos' | 'incidentes'>('incidentes');
     const esHallazgo = (inc: Incident) =>
         (inc as any).clasificacion === 'hallazgo' || ['condicion_subestandar', 'accion_subestandar'].includes(inc.tipo);
@@ -179,6 +182,13 @@ export default function Incidents() {
             loadAnalytics();
         }
     }, [activeTab]);
+
+    // Si el usuario no puede ver el historial pero sí estadísticas, abre esa pestaña.
+    useEffect(() => {
+        if (activeTab === 'listado' && !canVerHistorial && canVerEstadisticas) {
+            setActiveTab('estadisticas');
+        }
+    }, [canVerHistorial, canVerEstadisticas, activeTab]);
 
     // Precarga trabajadores al abrir el modal (hallazgo e incidente)
     useEffect(() => {
@@ -950,26 +960,32 @@ export default function Incidents() {
                     </div>
                 </div>
 
-                {/* Tabs */}
-                <div className="incidents-tabs mb-6" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
-                    <button
-                        className={`incidents-tab ${activeTab === 'listado' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('listado')}
-                    >
-                        <FiList size={18} />
-                        Listado
-                    </button>
-                    <button
-                        className={`incidents-tab ${activeTab === 'estadisticas' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('estadisticas')}
-                    >
-                        <FiPieChart size={18} />
-                        Estadísticas
-                    </button>
-                </div>
+                {/* Tabs — cada pestaña requiere su permiso de vista */}
+                {(canVerHistorial || canVerEstadisticas) && (
+                    <div className="incidents-tabs mb-6" style={{ display: 'grid', gridTemplateColumns: canVerHistorial && canVerEstadisticas ? '1fr 1fr' : '1fr', gap: 'var(--space-2)' }}>
+                        {canVerHistorial && (
+                            <button
+                                className={`incidents-tab ${activeTab === 'listado' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('listado')}
+                            >
+                                <FiList size={18} />
+                                Listado
+                            </button>
+                        )}
+                        {canVerEstadisticas && (
+                            <button
+                                className={`incidents-tab ${activeTab === 'estadisticas' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('estadisticas')}
+                            >
+                                <FiPieChart size={18} />
+                                Estadísticas
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 {/* Statistics Dashboard Tab */}
-                {activeTab === 'estadisticas' && (
+                {activeTab === 'estadisticas' && canVerEstadisticas && (
                     <div className="stats-dashboard">
                         {/* Dashboard Header with Download Buttons */}
                         <div className="dashboard-header mb-6">
@@ -1239,7 +1255,7 @@ export default function Incidents() {
                 )}
 
                 {/* Listado Tab Content */}
-                {activeTab === 'listado' && (
+                {activeTab === 'listado' && canVerHistorial && (
                     <>
                         {/* Stats Cards for Listado View */}
                         {stats && (

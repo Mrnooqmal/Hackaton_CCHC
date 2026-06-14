@@ -10,6 +10,8 @@ import {
 } from 'react-icons/lu';
 import { FiAlertTriangle, FiSearch } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
+import AddressAutocomplete from '../components/AddressAutocomplete';
+import { PERMISSIONS } from '../permissions';
 
 interface Obra {
   obraId?: string;
@@ -56,7 +58,9 @@ const REGION_COMUNAS: Record<string, string[]> = {
 };
 
 export const Obras: React.FC = () => {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCrearObra = hasPermission(PERMISSIONS.OBRAS_CREAR);
+  const canVerDetalle = hasPermission(PERMISSIONS.OBRAS_DETALLE);
   const navigate = useNavigate();
   const { obras: contextObras, isLoadingObras, refreshObras } = useObraContext();
   const obras = contextObras as unknown as Obra[];
@@ -74,7 +78,7 @@ export const Obras: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterEstado, setFilterEstado] = useState('');
-  const canViewObras = user?.rol === 'admin';
+  const canViewObras = hasPermission(PERMISSIONS.OBRAS_VER);
   const [companyName, setCompanyName] = useState('');
   const resolvedCompanyName = useMemo(() => {
     const userAny = user as any;
@@ -344,22 +348,26 @@ export const Obras: React.FC = () => {
             </p>
           </div>
           <div className="page-header-actions">
-            {/* Configurar el catálogo de cargos antes/alrededor de crear obras (DS44). */}
-            <button
-              onClick={() => navigate('/cargos-onboarding')}
-              className="btn btn-secondary"
-              title="Definir los cargos y su kit de onboarding (aplica a todas las obras)"
-            >
-              <LuSettings />
-              Cargos de onboarding
-            </button>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="btn btn-primary"
-            >
-              <LuPlus />
-              Crear nueva obra
-            </button>
+            {/* Catálogo de cargos + kits DS44 (nivel empresa). Reutilizable antes/alrededor de crear obras. */}
+            {hasPermission(PERMISSIONS.CARGOS_GESTIONAR) && (
+              <button
+                onClick={() => navigate('/cargos-onboarding')}
+                className="btn btn-secondary"
+                title="Definir los cargos y su kit de onboarding (aplica a todas las obras)"
+              >
+                <LuSettings />
+                Cargos de onboarding
+              </button>
+            )}
+            {canCrearObra && (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="btn btn-primary"
+              >
+                <LuPlus />
+                Crear nueva obra
+              </button>
+            )}
           </div>
         </div>
 
@@ -436,8 +444,8 @@ export const Obras: React.FC = () => {
                     <div
                       key={obra.obraId || obra.codigo}
                       className="card"
-                      style={{ padding: 0, overflow: 'hidden', cursor: 'pointer' }}
-                      onClick={() => navigate(`/obras/${obraKey}`)}
+                      style={{ padding: 0, overflow: 'hidden', cursor: canVerDetalle ? 'pointer' : 'default' }}
+                      onClick={canVerDetalle ? () => navigate(`/obras/${obraKey}`) : undefined}
                     >
                       <div style={{ position: 'relative', height: '160px', background: 'var(--surface-elevated)' }}>
                         <img
@@ -572,7 +580,11 @@ export const Obras: React.FC = () => {
 
                   <div className="form-group">
                     <label className="form-label">Dirección *</label>
-                    <input required name="direccion" value={formData.direccion} onChange={handleInputChange} className="form-input" />
+                    <AddressAutocomplete
+                        required
+                        value={formData.direccion}
+                        onChange={v => setFormData(prev => ({ ...prev, direccion: v }))}
+                    />
                   </div>
 
                   <div className="form-group">

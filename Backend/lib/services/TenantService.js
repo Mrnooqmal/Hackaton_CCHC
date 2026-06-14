@@ -28,11 +28,17 @@ class TenantService {
             throw new Error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
-        // Verificar unicidad del slug
+        // Verificar unicidad del nombre (via slug)
         const slug = this._generarSlug(data.nombre);
-        const existente = await this.getBySlug(slug);
-        if (existente) {
-            throw new Error(`Ya existe un tenant con el slug: ${slug}`);
+        const existenteSlug = await this.getBySlug(slug);
+        if (existenteSlug) {
+            throw new Error(`Ya existe una empresa con el nombre "${data.nombre}"`);
+        }
+
+        // Verificar unicidad del RUT
+        const existenteRut = await this.getByRutEmpresa(data.rutEmpresa);
+        if (existenteRut) {
+            throw new Error(`Ya existe una empresa registrada con el RUT ${data.rutEmpresa}`);
         }
 
         const tenantId = uuidv4();
@@ -47,7 +53,8 @@ class TenantService {
             cantidadTrabajadores: data.cantidadTrabajadores,
             settings: data.settings,
             reglas: data.reglas,
-            preferencias: data.preferencias
+            preferencias: data.preferencias,
+            roles: data.roles
         });
 
         await this.dynamo.send(new PutCommand({
@@ -92,7 +99,12 @@ class TenantService {
     async updateConfig(tenantId, updates) {
         const allowedFields = ['nombre', 'email', 'telefono', 'plan',
             'cantidadTrabajadores', 'settings', 'reglas', 'preferencias',
-            'estado', 'adminPersonaId'];
+            'roles', 'estado', 'adminPersonaId'];
+
+        // Normalizar roles a { id, nombre, descripcion } antes de persistir
+        if (Array.isArray(updates.roles)) {
+            updates = { ...updates, roles: updates.roles.map(Tenant.normalizarRol) };
+        }
 
         const updateExpressions = [];
         const expressionNames = {};
@@ -170,6 +182,26 @@ class TenantService {
             ExpressionAttributeValues: { ':estado': estado }
         }));
         return (result.Items || []).map(item => Tenant.fromDynamoItem(item));
+    }
+
+    /**
+     * Buscar tenant por RUT de empresa (scan con filtro)
+     */
+    async getByRutEmpresa(rutEmpresa) {
+        const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+        const rutNormalizado = rutEmpresa.replace(/\./g, '').toLowerCase();
+        const result = await this.dynamo.send(new ScanCommand({
+            TableName: this.table,
+            FilterExpression: 'begins_with(PK, :pk) AND begins_with(SK, :sk)',
+            ExpressionAttributeValues: {
+                ':pk': 'TENANT#',
+                ':sk': 'METADATA#'
+            }
+        }));
+        const items = (result.Items || []).map(item => Tenant.fromDynamoItem(item));
+        return items.find(t => t && t.rutEmpresa &&
+            t.rutEmpresa.replace(/\./g, '').toLowerCase() === rutNormalizado
+        ) || null;
     }
 
     /**

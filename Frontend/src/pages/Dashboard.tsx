@@ -871,24 +871,6 @@ export default function Dashboard() {
                                 )}
                             </div>
 
-                            {/* Quick Actions */}
-                            <div className="card">
-                                <h2 className="card-title mb-4">Acciones Rápidas</h2>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                                    <Link to="/workers/enroll" className="btn btn-primary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiUsers /> Enrolar Trabajador
-                                    </Link>
-                                    <Link to="/activities" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiCalendar /> Nueva Actividad
-                                    </Link>
-                                    <Link to="/signature-requests" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiEdit3 /> Solicitud de Firma
-                                    </Link>
-                                    <Link to="/incidents" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiAlertTriangle /> Ver Incidentes
-                                    </Link>
-                                </div>
-                            </div>
                         </div>
                     </>
                 )}
@@ -1030,26 +1012,6 @@ export default function Dashboard() {
                                 )}
                             </div>
 
-                            <div className="card">
-                                <h2 className="card-title mb-4">Acciones Rápidas</h2>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                                    <Link to="/personas" className="btn btn-primary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiUsers /> Equipo de Obra
-                                    </Link>
-                                    <Link to="/documents" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiFileText /> Documentos
-                                    </Link>
-                                    <Link to="/activities" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiCalendar /> Actividades
-                                    </Link>
-                                    <Link to="/signature-requests" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiEdit3 /> Firma Electrónica
-                                    </Link>
-                                    <Link to="/incidents" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiAlertTriangle /> Incidentes
-                                    </Link>
-                                </div>
-                            </div>
                         </div>
                     </>
                 )}
@@ -1133,20 +1095,6 @@ export default function Dashboard() {
                                 )}
                             </div>
 
-                            <div className="card">
-                                <h2 className="card-title mb-4">Acciones Rápidas</h2>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                                    <Link to="/personas" className="btn btn-primary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiUsers /> Mi Equipo
-                                    </Link>
-                                    <Link to="/activities" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiCalendar /> Actividades
-                                    </Link>
-                                    <Link to="/incidents" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'flex-start' }}>
-                                        <FiAlertTriangle /> Incidentes
-                                    </Link>
-                                </div>
-                            </div>
                         </div>
                     </>
                 )}

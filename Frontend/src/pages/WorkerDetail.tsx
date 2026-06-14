@@ -30,6 +30,7 @@ import {
     REQUEST_TYPES
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { PERMISSIONS } from '../permissions';
 import { useObraContext } from '../context/ObraContext';
 import { Modal } from '../components/ui';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
@@ -68,10 +69,13 @@ export default function WorkerDetail() {
     const { rut } = useParams<{ rut: string }>();
     const navigate = useNavigate();
     const { selectedObraId } = useObraContext();
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
     const authTenantId = user?.tenantId || localStorage.getItem('tenant_id') || '';
-    // Instancia superior autorizada a registrar/validar entregas de EPP (Art. 13)
-    const canValidarEpp = ['admin', 'jefe_obra', 'supervisor', 'prevencionista'].includes(user?.rol || '');
+    // Permisos de la ficha del trabajador
+    const canValidarEpp = hasPermission(PERMISSIONS.PERSONA_EPP);
+    const canExportar = hasPermission(PERMISSIONS.PERSONA_EXPORTAR);
+    const canOnboarding = hasPermission(PERMISSIONS.PERSONA_ONBOARDING);
+    const canVigilancia = hasPermission(PERMISSIONS.PERSONA_VIGILANCIA_SALUD);
 
     const [worker, setWorker] = useState<WorkerWithRole | null>(null);
     const [stats, setStats] = useState<WorkerStats | null>(null);
@@ -476,11 +480,13 @@ Generado por PrevencionApp
                         </h2>
                         <p className="page-header-description">Vista detallada de perfil, estadísticas y cumplimiento.</p>
                     </div>
-                    <div className="page-header-actions">
-                        <button className="btn btn-secondary" onClick={downloadReport}>
-                            <LuDownload className="mr-2" /> Exportar Reporte
-                        </button>
-                    </div>
+                    {canExportar && (
+                        <div className="page-header-actions">
+                            <button className="btn btn-secondary" onClick={downloadReport}>
+                                <LuDownload className="mr-2" /> Exportar Reporte
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ gridTemplateRows: 'auto auto' }}>
@@ -490,9 +496,11 @@ Generado por PrevencionApp
                             <div className="flex flex-col items-center text-center mb-6">
                                 <div
                                     className="avatar mb-4"
-                                    style={{ width: 80, height: 80, fontSize: '2rem', background: 'var(--primary-100)', color: 'var(--primary-600)' }}
+                                    style={{ width: 80, height: 80, fontSize: '2rem', background: 'var(--primary-100)', color: 'var(--primary-600)', overflow: 'hidden', padding: (worker as any).fotoPerfil ? 0 : undefined }}
                                 >
-                                    {worker.nombre.charAt(0)}
+                                    {(worker as any).fotoPerfil
+                                        ? <img src={(worker as any).fotoPerfil} alt={worker.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        : worker.nombre.charAt(0)}
                                 </div>
                                 <h3 className="text-lg font-bold mb-1">{worker.nombre} {worker.apellido}</h3>
                                 <div className={`badge mt-2 mb-3 badge-${worker.habilitado ? 'success' : 'warning'}`}>
@@ -582,6 +590,7 @@ Generado por PrevencionApp
                                                     {item.status === 'pending' && item.kind === 'document' ? (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                                                             <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de subir</span>
+                                                            {canOnboarding && (
                                                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                                                                 {uploadingDocType === item.tipo
                                                                     ? <><LuClock size={11} /> Subiendo...</>
@@ -592,11 +601,13 @@ Generado por PrevencionApp
                                                                     onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }}
                                                                 />
                                                             </label>
+                                                            )}
                                                         </div>
                                                     ) : item.status === 'subido' ? (
                                                         /* Documento subido, falta la firma del trabajador (firma asistida desde la obra) */
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                                                             <span className="badge badge-warning" style={{ fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Pendiente de firma</span>
+                                                            {canOnboarding && (
                                                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                                                                 {uploadingDocType === item.tipo
                                                                     ? <><LuClock size={11} /> Subiendo...</>
@@ -607,6 +618,7 @@ Generado por PrevencionApp
                                                                     onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }}
                                                                 />
                                                             </label>
+                                                            )}
                                                         </div>
                                                     ) : item.status === 'pending' ? (
                                                         <span className="badge badge-warning" style={{ fontSize: '0.7rem', whiteSpace: 'nowrap', flexShrink: 0 }}>Pendiente de firma</span>
@@ -752,14 +764,14 @@ Generado por PrevencionApp
                                     <LuActivity className="text-primary-500" />
                                     Vigilancia de Salud <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(Art. 67/73)</span>
                                 </h3>
-                                {!vigEditing ? (
+                                {canVigilancia && (!vigEditing ? (
                                     <button className="btn btn-secondary btn-sm" type="button" onClick={() => setVigEditing(true)}>Editar</button>
                                 ) : (
                                     <div style={{ display: 'flex', gap: '6px' }}>
                                         <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setVigEditing(false); }}>Cancelar</button>
                                         <button className="btn btn-primary btn-sm" type="button" disabled={vigSaving} onClick={handleSaveVigilancia}>{vigSaving ? 'Guardando…' : 'Guardar'}</button>
                                     </div>
-                                )}
+                                ))}
                             </div>
 
                             {!vigEditing ? (

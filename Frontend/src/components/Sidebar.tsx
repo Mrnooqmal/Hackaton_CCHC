@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     FiHome,
     FiUsers,
@@ -17,7 +17,7 @@ import {
 } from 'react-icons/fi';
 import { surveysApi, workersApi, type InboxMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { useObraContext } from '../context/ObraContext';
+import { PERMISSIONS } from '../permissions';
 
 interface SidebarProps {
     isOpen?: boolean;
@@ -37,215 +37,85 @@ interface NavSection {
     items: NavItem[];
 }
 
-// Role-based navigation configuration
-const getNavItemsByRole = (role: string, hasObraContext: boolean = false): NavSection[] => {
-    switch (role) {
-
-        // ─────────────────────────────────────────
-        // ADMIN EMPRESA — siempre vista global
-        // ─────────────────────────────────────────
-        case 'admin':
-            return [
-                {
-                    section: 'Empresa',
-                    items: [
-                        { path: '/', icon: FiHome, label: 'Inicio' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                    ]
-                },
-                {
-                    section: 'Gestión',
-                    items: [
-                        { path: '/obras', icon: FiHome, label: 'Obras' },
-                        { path: '/personas', icon: FiUsers, label: 'Personas' },
-                        { path: '/documents-repository', icon: FiFileText, label: 'Archivos' },
-                    ]
-                },
-                {
-                    section: 'Cumplimiento',
-                    items: [
-                        { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
-                    ]
-                },
-                {
-                    section: 'Sistema',
-                    items: [
-                        { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
-                        { path: '/settings', icon: FiSettings, label: 'Configuración' },
-                    ]
-                }
-            ];
-
-        // ─────────────────────────────────────────
-        // JEFE DE OBRA — gestiona su(s) obra(s)
-        // ─────────────────────────────────────────
-        case 'jefe_obra':
-            if (!hasObraContext) {
-                return [
-                    {
-                        section: 'Mis Obras',
-                        items: [
-                            { path: '/obras', icon: FiHome, label: 'Seleccionar Obra' },
-                            { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                        ]
-                    }
-                ];
-            }
-            return [
-                {
-                    section: 'Obra Activa',
-                    items: [
-                        { path: '/', icon: FiHome, label: 'Resumen de Obra' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                    ]
-                },
-                {
-                    section: 'Gestión de Obra',
-                    items: [
-                        { path: '/personas', icon: FiUsers, label: 'Equipo de Obra' },
-                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
-                        { path: '/documents-repository', icon: FiFileText, label: 'Archivos' },
-                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
-                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
-                    ]
-                },
-                {
-                    section: 'Cumplimiento',
-                    items: [
-                        { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
-                        { path: '/surveys', icon: FiClipboard, label: 'Encuestas y Audits' },
-                    ]
-                },
-                {
-                    section: 'Sistema',
-                    items: [
-                        { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
-                    ]
-                }
-            ];
-
-        // ─────────────────────────────────────────
-        // SUPERVISOR — lidera en terreno
-        // ─────────────────────────────────────────
-        case 'supervisor':
-            if (!hasObraContext) {
-                return [
-                    {
-                        section: 'Mis Obras',
-                        items: [
-                            { path: '/obras', icon: FiHome, label: 'Seleccionar Obra' },
-                            { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                        ]
-                    }
-                ];
-            }
-            return [
-                {
-                    section: 'Obra Activa',
-                    items: [
-                        { path: '/', icon: FiHome, label: 'Dashboard' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                    ]
-                },
-                {
-                    section: 'Mi Equipo',
-                    items: [
-                        { path: '/personas', icon: FiUsers, label: 'Trabajadores' },
-                        { path: '/documents-repository', icon: FiFileText, label: 'Repositorio' },
-                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
-                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
-                    ]
-                }
-            ];
-
-        // ─────────────────────────────────────────
-        // PREVENCIONISTA — cumplimiento SST
-        // ─────────────────────────────────────────
-        case 'prevencionista':
-            if (!hasObraContext) {
-                return [
-                    {
-                        section: 'Mis Obras',
-                        items: [
-                            { path: '/obras', icon: FiHome, label: 'Seleccionar Obra' },
-                            { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                        ]
-                    }
-                ];
-            }
-            return [
-                {
-                    section: 'Obra Activa',
-                    items: [
-                        { path: '/', icon: FiHome, label: 'Resumen de Obra' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                    ]
-                },
-                {
-                    section: 'SST',
-                    items: [
-                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
-                        { path: '/documents-repository', icon: FiFileText, label: 'Repositorio' },
-                        { path: '/activities', icon: FiCalendar, label: 'Actividades' },
-                        { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
-                    ]
-                },
-                {
-                    section: 'Cumplimiento',
-                    items: [
-                        { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
-                        { path: '/surveys', icon: FiClipboard, label: 'Encuestas y Audits' },
-                    ]
-                }
-            ];
-
-        // ─────────────────────────────────────────
-        // TRABAJADOR — panel personal
-        // ─────────────────────────────────────────
-        case 'trabajador':
-            return [
-                {
-                    section: 'Mi Panel',
-                    items: [
-                        { path: '/', icon: FiHome, label: 'Dashboard' },
-                        { path: '/inbox', icon: FiBell, label: 'Notificaciones' },
-                        { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
-                    ]
-                },
-                {
-                    section: 'Mis Asignaciones',
-                    items: [
-                        { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
-                        { path: '/activities', icon: FiCalendar, label: 'Capacitaciones' },
-                        { path: '/documents', icon: FiFileText, label: 'Documentos' },
-                    ]
-                },
-                {
-                    section: 'Acciones',
-                    items: [
-                        { path: '/incidents', icon: FiAlertTriangle, label: 'Reportar Incidente' },
-                        { path: '/settings', icon: FiSettings, label: 'Configuración' },
-                    ]
-                }
-            ];
-
-        default:
-            return [
-                {
-                    section: 'Principal',
-                    items: [
-                        { path: '/', icon: FiHome, label: 'Dashboard' },
-                    ]
-                }
-            ];
+// ─────────────────────────────────────────────────────────────
+// Navegación basada en permisos.
+//
+// El ADMIN conserva su navegación global predefinida. Cualquier otro
+// rol usa GENERIC_NAV: cada ítem declara el permiso de vista que lo
+// habilita; el render filtra por hasPermission y oculta secciones vacías.
+// Los módulos siempre visibles (Inicio, Firma, Incidentes, Encuestas,
+// Configuración) no declaran permiso — sus subacciones se gatean en la página.
+// ─────────────────────────────────────────────────────────────
+const ADMIN_NAV: NavSection[] = [
+    {
+        section: 'Empresa',
+        items: [
+            { path: '/', icon: FiHome, label: 'Inicio' },
+        ]
+    },
+    {
+        section: 'Gestión',
+        items: [
+            { path: '/obras', icon: FiHome, label: 'Obras' },
+            { path: '/personas', icon: FiUsers, label: 'Personas' },
+            { path: '/documents-repository', icon: FiFileText, label: 'Archivos' },
+        ]
+    },
+    {
+        section: 'Cumplimiento',
+        items: [
+            { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
+        ]
+    },
+    {
+        section: 'Sistema',
+        items: [
+            { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
+            { path: '/settings', icon: FiSettings, label: 'Configuración' },
+        ]
     }
-};
+];
+
+const GENERIC_NAV: NavSection[] = [
+    {
+        section: 'Principal',
+        items: [
+            { path: '/', icon: FiHome, label: 'Inicio' },
+        ]
+    },
+    {
+        section: 'Gestión',
+        items: [
+            { path: '/obras', icon: FiHome, label: 'Obras', permission: PERMISSIONS.OBRAS_VER },
+            { path: '/personas', icon: FiUsers, label: 'Personas', permission: PERMISSIONS.PERSONAS_VER },
+            { path: '/documents-repository', icon: FiFileText, label: 'Archivos', permission: PERMISSIONS.REPOSITORIO_VER },
+            { path: '/documents', icon: FiFileText, label: 'Documentos', permission: PERMISSIONS.DOCUMENTOS_VER },
+            { path: '/activities', icon: FiCalendar, label: 'Actividades', permission: PERMISSIONS.ACTIVIDADES_VER },
+        ]
+    },
+    {
+        section: 'Cumplimiento',
+        items: [
+            { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
+            { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
+            { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
+        ]
+    },
+    {
+        section: 'Sistema',
+        items: [
+            { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA', permission: PERMISSIONS.IA_VER },
+            { path: '/settings', icon: FiSettings, label: 'Configuración' },
+        ]
+    }
+];
+
+const getNavItems = (role: string): NavSection[] => (role === 'admin' ? ADMIN_NAV : GENERIC_NAV);
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) {
     const location = useLocation();
+    const navigate = useNavigate();
     const { user, hasPermission, logout } = useAuth();
-    const { selectedObraId } = useObraContext();
-    const hasObraContext = Boolean(selectedObraId);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
     const sidebarRef = useRef<HTMLElement>(null);
     const [workerId, setWorkerId] = useState<string | null>(null);
@@ -409,7 +279,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 )}
 
                 <nav className="sidebar-nav">
-                    {getNavItemsByRole(user?.rol || '', hasObraContext).map((section: NavSection) => {
+                    {getNavItems(user?.rol || '').map((section: NavSection) => {
                         // Permissions are already filtered by role, but keep this for double-checking
                         const visibleItems = section.items.filter((item: NavItem) =>
                             !item.permission || hasPermission(item.permission)
@@ -519,13 +389,23 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                     return (
                         <div className="sidebar-footer">
                             <div className="sidebar-user">
-                                <div className="sidebar-user-avatar">{initials}</div>
-                                <div className="sidebar-user-meta">
-                                    <span className="sidebar-user-name">
-                                        {user.nombre} {user.apellido}
-                                    </span>
-                                    <span className="sidebar-user-role">{roleLabel}</span>
-                                </div>
+                                <button
+                                    className="sidebar-user-profile-btn"
+                                    onClick={() => navigate('/settings')}
+                                    title="Ir a configuración"
+                                >
+                                    <div className="sidebar-user-avatar">
+                                        {user.fotoPerfil
+                                            ? <img src={user.fotoPerfil} alt={initials} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                                            : initials}
+                                    </div>
+                                    <div className="sidebar-user-meta">
+                                        <span className="sidebar-user-name">
+                                            {user.nombre} {user.apellido}
+                                        </span>
+                                        <span className="sidebar-user-role">{roleLabel}</span>
+                                    </div>
+                                </button>
                                 <button
                                     className="sidebar-user-logout"
                                     onClick={logout}
@@ -540,6 +420,23 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 })()}
 
                 <style>{`
+                .sidebar-user-profile-btn {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    flex: 1;
+                    min-width: 0;
+                    background: none;
+                    border: none;
+                    padding: 0;
+                    cursor: pointer;
+                    border-radius: var(--radius-md);
+                    transition: opacity 0.15s;
+                    text-align: left;
+                }
+                .sidebar-user-profile-btn:hover {
+                    opacity: 0.8;
+                }
                 /* Attention badge styles */
                 .inbox-badge,
                 .survey-badge {

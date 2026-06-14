@@ -5,6 +5,8 @@
  * Contiene configuración, reglas de negocio y preferencias.
  */
 
+const { DEFAULT_ROLE_PRESETS } = require('../permissions');
+
 const PLANES = {
     starter: { nombre: 'Starter', limiteObras: 1, limiteTrabajadores: 25 },
     professional: { nombre: 'Professional', limiteObras: 5, limiteTrabajadores: 100 },
@@ -62,6 +64,11 @@ class Tenant {
             ...(data.preferencias || {})
         };
 
+        // Roles definidos por la empresa (editables durante el onboarding).
+        this.roles = (Array.isArray(data.roles) && data.roles.length > 0)
+            ? data.roles.map(Tenant.normalizarRol)
+            : Tenant.rolesPorDefecto();
+
         this.createdAt = data.createdAt || new Date().toISOString();
         this.updatedAt = data.updatedAt || new Date().toISOString();
     }
@@ -74,6 +81,48 @@ class Tenant {
         if (cantidad >= TAMANOS.mediana.min) return 'mediana';
         if (cantidad >= TAMANOS.pequena.min) return 'pequena';
         return 'micro';
+    }
+
+    /**
+     * Roles que se crean por defecto para una empresa nueva.
+     * Son editables y removibles desde el onboarding.
+     */
+    static rolesPorDefecto() {
+        return [
+            { id: 'prevencionista', nombre: 'Prevencionista', descripcion: 'Encargado de la prevención de riesgos y la seguridad en obra.', permisos: DEFAULT_ROLE_PRESETS.prevencionista },
+            { id: 'jefe_obra', nombre: 'Jefe de Obra', descripcion: 'Responsable de la dirección y supervisión de la obra.', permisos: DEFAULT_ROLE_PRESETS.jefe_obra },
+            { id: 'colaborador', nombre: 'Colaborador', descripcion: 'Participa en las actividades diarias de la obra.', permisos: DEFAULT_ROLE_PRESETS.colaborador }
+        ];
+    }
+
+    /**
+     * Genera un id URL-friendly a partir del nombre del rol.
+     */
+    static slugRol(nombre) {
+        return String(nombre || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '')
+            .replace(/[^a-z0-9\s-]/g, '')
+            .trim()
+            .replace(/\s+/g, '_')
+            .replace(/_+/g, '_');
+    }
+
+    /**
+     * Normaliza un rol recibido (string o objeto) a { id, nombre, descripcion }.
+     */
+    static normalizarRol(rol) {
+        if (typeof rol === 'string') {
+            return { id: Tenant.slugRol(rol), nombre: rol.trim(), descripcion: '', permisos: [] };
+        }
+        const nombre = (rol?.nombre || '').trim();
+        return {
+            id: rol?.id || Tenant.slugRol(nombre),
+            nombre,
+            descripcion: (rol?.descripcion || '').trim(),
+            permisos: Array.isArray(rol?.permisos) ? rol.permisos : []
+        };
     }
 
     /**
@@ -106,6 +155,7 @@ class Tenant {
             settings: this.settings,
             reglas: this.reglas,
             preferencias: this.preferencias,
+            roles: this.roles,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
@@ -138,6 +188,7 @@ class Tenant {
             settings: this.settings,
             reglas: this.reglas,
             preferencias: this.preferencias,
+            roles: this.roles,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };

@@ -22,6 +22,7 @@ export interface Worker {
     apellido?: string;
     email?: string;
     telefono?: string;
+    fotoPerfil?: string;
     cargo: string;
     fechaEnrolamiento: string;
     signatureToken: string;

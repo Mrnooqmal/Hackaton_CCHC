@@ -21,6 +21,7 @@ import {
 } from 'react-icons/fi';
 import { documentsApi, workersApi, uploadsApi, inboxApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { useObraContext } from '../context/ObraContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
@@ -42,7 +43,8 @@ const DOCUMENT_TYPES: Record<string, { label: string; color: string; category: s
 };
 
 export default function Documents() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const canSubirDocumento = hasPermission(PERMISSIONS.DOCUMENTOS_SUBIR);
     const { selectedObraId } = useObraContext();
     const { isOnline, pendingCount, signDocument, syncPendingSignatures } = useOfflineSignature();
     const [activeTab, setActiveTab] = useState<'normativos' | 'diarios'>('normativos');
@@ -555,10 +557,12 @@ export default function Documents() {
                             </div>
                         </div>
 
-                        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-                            <FiPlus />
-                            Nuevo Documento
-                        </button>
+                        {canSubirDocumento && (
+                            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                                <FiPlus />
+                                Nuevo Documento
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -646,7 +650,7 @@ export default function Documents() {
                                     ? 'No tienes documentos asignados pendiente de firma.'
                                     : 'Comienza subiendo polÃ­ticas, reglamentos o procedimientos para tu organizaciÃ³n.'}
                         </p>
-                        {!searchTerm && !filterType && (
+                        {!searchTerm && !filterType && canSubirDocumento && (
                             <button className="btn btn-primary" onClick={() => setShowModal(true)}>
                                 <FiPlus /> Crear primer documento
                             </button>

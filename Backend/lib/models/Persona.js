@@ -5,6 +5,8 @@
  * Un solo ID (personaId), un solo pinHash, sin sincronización dual.
  */
 
+const { normalizeRol } = require('../utils/validation');
+
 const ROLES = {
     admin: {
         nombre: 'Administrador Empresa',
@@ -48,13 +50,18 @@ class Persona {
         // Datos personales
         this.rut = data.rut;
         this.nombre = data.nombre;
-        this.apellido = data.apellido || '';
+        this.apellidoPaterno = data.apellidoPaterno || '';
+        this.apellidoMaterno = data.apellidoMaterno || '';
+        this.apellido = data.apellido || [this.apellidoPaterno, this.apellidoMaterno].filter(Boolean).join(' ');
+        this.fechaNacimiento = data.fechaNacimiento || null;
         this.email = data.email || '';
         this.telefono = data.telefono || '';
+        this.fotoPerfil = data.fotoPerfil || null;
+        this.notificacionesSms = data.notificacionesSms || false;
 
         // Rol y contexto laboral
         this.rol = data.rol || 'trabajador';
-        this.permisos = data.permisos || (ROLES[this.rol]?.permisos || []);
+        this.permisos = data.permisos || (ROLES[normalizeRol(this.rol)]?.permisos || []);
         this.cargo = data.cargo || '';
         this.obraIds = data.obraIds || [];
 
@@ -139,9 +146,14 @@ class Persona {
             tenantId: this.tenantId,
             rut: this.rut,
             nombre: this.nombre,
+            apellidoPaterno: this.apellidoPaterno,
+            apellidoMaterno: this.apellidoMaterno,
             apellido: this.apellido,
+            fechaNacimiento: this.fechaNacimiento,
             email: this.email,
             telefono: this.telefono,
+            fotoPerfil: this.fotoPerfil,
+            notificacionesSms: this.notificacionesSms,
             rol: this.rol,
             permisos: this.permisos,
             cargo: this.cargo,
@@ -184,9 +196,14 @@ class Persona {
             tenantId: this.tenantId,
             rut: this.rut,
             nombre: this.nombre,
+            apellidoPaterno: this.apellidoPaterno,
+            apellidoMaterno: this.apellidoMaterno,
             apellido: this.apellido,
+            fechaNacimiento: this.fechaNacimiento,
             email: this.email,
             telefono: this.telefono,
+            fotoPerfil: this.fotoPerfil,
+            notificacionesSms: this.notificacionesSms,
             rol: this.rol,
             permisos: this.permisos,
             cargo: this.cargo,

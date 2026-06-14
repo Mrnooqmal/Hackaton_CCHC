@@ -31,6 +31,7 @@ import {
     FiCalendar
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import { PERMISSIONS } from '../permissions';
 import SignatureModal from '../components/SignatureModal';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import { Modal, Select } from '../components/ui';
@@ -88,9 +89,9 @@ const audienceOptions: AudienceOption[] = [
 ];
 
 export default function Surveys() {
-    const { user } = useAuth();
+    const { user, hasPermission } = useAuth();
     const { isOnline, pendingCount, signSurvey, syncPendingSignatures } = useOfflineSignature();
-    const canManageSurveys = user?.rol === 'admin' || user?.rol === 'prevencionista';
+    const canManageSurveys = hasPermission(PERMISSIONS.ENCUESTAS_CREAR);
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
     const [surveys, setSurveys] = useState<Survey[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);

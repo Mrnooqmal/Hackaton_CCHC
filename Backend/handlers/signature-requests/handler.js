@@ -9,6 +9,8 @@ const { eventBus } = require('../../lib/events/EventBus');
 const TABLE_NAME = process.env.SIGNATURE_REQUESTS_TABLE || 'SignatureRequests';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { TenantService } = require('../../lib/services/TenantService');
+const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 
 // Tipos de solicitudes de firma
 const REQUEST_TYPES = {
@@ -75,6 +77,13 @@ module.exports.create = async (event) => {
         const personaService = new PersonaService();
         const solicitante = await personaService.getById(body.solicitanteId);
         if (!solicitante) return error('Solicitante no encontrado', 404);
+
+        // Enforcement: requiere permiso para crear solicitudes de firma.
+        const tenantSvc = new TenantService();
+        const tenantSolicitante = await tenantSvc.getById(solicitante.tenantId).catch(() => null);
+        if (!personaPuede(solicitante, tenantSolicitante ? tenantSolicitante.toSafeFormat() : null, PERMISSIONS.FIRMAS_CREAR)) {
+            return error('No tienes permiso para crear solicitudes de firma', 403);
+        }
 
         // El tenant lo define el solicitante: evita crear solicitudes cruzadas entre empresas
         const requestTenantId = solicitante.tenantId || body.tenantId || body.empresaId || 'default';

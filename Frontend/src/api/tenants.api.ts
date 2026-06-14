@@ -36,6 +36,13 @@ export interface TenantPreferencias {
     logoUrl?: string | null;
 }
 
+export interface TenantRole {
+    id: string;
+    nombre: string;
+    descripcion?: string;
+    permisos?: string[];
+}
+
 export interface Tenant {
     tenantId: string;
     slug: string;
@@ -51,6 +58,7 @@ export interface Tenant {
     settings: TenantSettings;
     reglas: TenantReglas;
     preferencias: TenantPreferencias;
+    roles: TenantRole[];
     createdAt: string;
     updatedAt: string;
 }
@@ -65,10 +73,13 @@ export interface TenantSetupData {
     settings?: Partial<TenantSettings>;
     reglas?: Partial<TenantReglas>;
     preferencias?: Partial<TenantPreferencias>;
+    roles?: TenantRole[];
     admin?: {
         rut: string;
         nombre: string;
-        apellido?: string;
+        apellidoPaterno?: string;
+        apellidoMaterno?: string;
+        fechaNacimiento?: string;
         email: string;
     };
 }
@@ -91,6 +102,13 @@ export interface TenantSetupResponse {
 // TENANTS API
 // ========================================
 export const tenantsApi = {
+    validate: (params: { nombre?: string; rutEmpresa?: string }) => {
+        const qs = new URLSearchParams();
+        if (params.nombre) qs.set('nombre', params.nombre);
+        if (params.rutEmpresa) qs.set('rutEmpresa', params.rutEmpresa);
+        return apiRequest<{ conflictos: Record<string, string>; valido: boolean }>(`/tenants/validate?${qs}`);
+    },
+
     setup: (data: TenantSetupData) =>
         apiRequest<TenantSetupResponse>('/tenants/setup', {
             method: 'POST',

@@ -10,6 +10,14 @@ export default function Login() {
 
     const [rut, setRut] = useState('');
     const [password, setPassword] = useState('');
+
+    const rutFormat = (raw: string) => {
+        const clean = raw.replace(/[^0-9kK]/g, '').toUpperCase();
+        if (clean.length < 2) return clean;
+        const body = clean.slice(0, -1);
+        const dv   = clean.slice(-1);
+        return body.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + '-' + dv;
+    };
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -68,7 +76,7 @@ export default function Login() {
                                 className="lp-input"
                                 placeholder="12.345.678-9"
                                 value={rut}
-                                onChange={(e) => setRut(e.target.value)}
+                                onChange={(e) => setRut(rutFormat(e.target.value))}
                                 autoComplete="username"
                                 autoFocus
                             />

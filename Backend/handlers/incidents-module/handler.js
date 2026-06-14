@@ -1,17 +1,26 @@
 const { Router } = require('itty-router');
 const { IncidentsRepository } = require('./incidents.repository');
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { TenantService } = require('../../lib/services/TenantService');
+const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 
 const incidentsRepo = new IncidentsRepository();
 const personaService = new PersonaService();
+const tenantService = new TenantService();
 const router = Router();
 
 // ─── Taxonomia reunion 2026-06-10: hallazgos vs incidentes ───────────────────
 // Hallazgos: reportables por cualquier trabajador, con marco de gobernanza.
-// Incidentes/accidentes: creacion restringida a supervisor y roles superiores.
+// Incidentes/accidentes: creacion restringida a quien tenga 'incidentes.reportar'.
 const TIPOS_HALLAZGO = ['condicion_subestandar', 'accion_subestandar'];
 const TIPOS_INCIDENTE = ['accidente', 'incidente'];
-const ROLES_CREACION_INCIDENTE = ['admin', 'jefe_obra', 'supervisor', 'prevencionista'];
+
+// Resuelve el tenant (toSafeFormat) de una persona para evaluar permisos.
+const tenantDe = async (persona) => {
+    if (!persona?.tenantId) return null;
+    const tenant = await tenantService.getById(persona.tenantId).catch(() => null);
+    return tenant ? tenant.toSafeFormat() : null;
+};
 
 // Deriva la clasificacion desde el tipo cuando el cliente no la envia.
 const derivarClasificacion = (tipo) => (TIPOS_HALLAZGO.includes(tipo) ? 'hallazgo' : 'incidente');
@@ -115,12 +124,12 @@ async function create(request) {
             return jsonResponse({ success: false, error: `Tipo invalido para incidente. Tipos validos: ${TIPOS_INCIDENTE.join(', ')}` }, 400);
         }
 
-        // Incidentes/accidentes: solo supervisor y roles superiores (sensibilidad legal).
+        // Incidentes/accidentes: requiere permiso 'incidentes.reportar' (sensibilidad legal).
         if (clasificacion === 'incidente') {
             const solicitanteId = body.solicitanteId || null;
             const solicitante = solicitanteId ? await personaService.getById(solicitanteId).catch(() => null) : null;
-            if (!solicitante || !ROLES_CREACION_INCIDENTE.includes(solicitante.rol)) {
-                return jsonResponse({ success: false, error: 'Solo supervisores y roles superiores pueden reportar incidentes y accidentes.' }, 403);
+            if (!solicitante || !personaPuede(solicitante, await tenantDe(solicitante), PERMISSIONS.INCIDENTES_REPORTAR)) {
+                return jsonResponse({ success: false, error: 'No tienes permiso para reportar incidentes y accidentes.' }, 403);
             }
         }
 
@@ -257,11 +266,11 @@ async function addInvestigation(request) {
     }
 }
 
-// Valida que el actor (body.actorId) tenga rol supervisor o superior.
+// Valida que el actor (body.actorId) tenga permiso para gestionar incidentes/hallazgos.
 async function validarActorSupervisor(body) {
     const actorId = body.actorId || null;
     const actor = actorId ? await personaService.getById(actorId).catch(() => null) : null;
-    if (!actor || !ROLES_CREACION_INCIDENTE.includes(actor.rol)) {
+    if (!actor || !personaPuede(actor, await tenantDe(actor), PERMISSIONS.INCIDENTES_REPORTAR)) {
         return null;
     }
     return actor;

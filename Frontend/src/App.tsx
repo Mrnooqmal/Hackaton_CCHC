@@ -36,6 +36,7 @@ import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ToastProvider } from './context/ToastContext';
 import { ObraProvider } from './context/ObraContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { PERMISSIONS } from './permissions';
 import './css/index.css';
 import './css/App.css';
 import './css/components.css';
@@ -67,13 +68,13 @@ function AppContent() {
           } />
 
           <Route path="/personas" element={
-            <ProtectedRoute requiredPermission="ver_trabajadores">
+            <ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_VER}>
               <PersonasManagement />
             </ProtectedRoute>
           } />
 
           <Route path="/personas/:rut" element={
-            <ProtectedRoute requiredPermission="ver_trabajadores">
+            <ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}>
               <WorkerDetail />
             </ProtectedRoute>
           } />
@@ -83,44 +84,44 @@ function AppContent() {
           <Route path="/users" element={<Navigate to="/personas" replace />} />
 
           <Route path="/workers/:rut" element={
-            <ProtectedRoute requiredPermission="ver_trabajadores">
+            <ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}>
               <WorkerDetail />
             </ProtectedRoute>
           } />
 
           <Route path="/obras" element={
-            <ProtectedRoute requiredPermission="gestionar_obras">
+            <ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_VER}>
               <Obras />
             </ProtectedRoute>
           } />
 
           <Route path="/obras/:obraId" element={
-            <ProtectedRoute requiredPermission="gestionar_obras">
+            <ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}>
               <ObraDetalle />
             </ProtectedRoute>
           } />
 
           {/* Constructor de cargos de onboarding (catálogo tenant). Admin + jefe de obra. */}
           <Route path="/cargos-onboarding" element={
-            <ProtectedRoute requiredPermission="gestionar_obras">
+            <ProtectedRoute requiredPermission={PERMISSIONS.CARGOS_GESTIONAR}>
               <CargosOnboarding />
             </ProtectedRoute>
           } />
 
           <Route path="/workers/enroll" element={
-            <ProtectedRoute requiredPermission="ver_trabajadores">
+            <ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}>
               <WorkerEnroll />
             </ProtectedRoute>
           } />
 
           <Route path="/documents" element={
-            <ProtectedRoute>
+            <ProtectedRoute requiredPermission={PERMISSIONS.DOCUMENTOS_VER}>
               <Documents />
             </ProtectedRoute>
           } />
 
           <Route path="/documents-repository" element={
-            <ProtectedRoute>
+            <ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}>
               <DocumentsRepository />
             </ProtectedRoute>
           } />
@@ -138,7 +139,7 @@ function AppContent() {
           } />
 
           <Route path="/activities" element={
-            <ProtectedRoute>
+            <ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_VER}>
               <Activities />
             </ProtectedRoute>
           } />
@@ -156,13 +157,13 @@ function AppContent() {
           } />
 
           <Route path="/offline-signatures" element={
-            <ProtectedRoute requiredPermission="crear_actividades">
+            <ProtectedRoute requiredPermission={PERMISSIONS.FIRMAS_CREAR}>
               <OfflineSignatures />
             </ProtectedRoute>
           } />
 
           <Route path="/ai-assistant" element={
-            <ProtectedRoute>
+            <ProtectedRoute requiredPermission={PERMISSIONS.IA_VER}>
               <AIAssistant />
             </ProtectedRoute>
           } />

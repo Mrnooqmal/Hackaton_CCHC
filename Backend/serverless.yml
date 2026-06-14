@@ -38,7 +38,7 @@ provider:
     INCIDENT_EVIDENCE_BUCKET: ${self:service}-evidence-${self:provider.stage}-${aws:accountId}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     # --- External ---
-    SES_SENDER_EMAIL: 'benjasncz@gmail.com'
+    SES_SENDER_EMAIL: 'thecodecookers2026@gmail.com'
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
 

@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { apiRequest, apiBaseUrl } from './client';
 import type { PersonaResponse } from './types';
 
 // ========================================
@@ -8,7 +8,9 @@ export const personasApi = {
     create: (tenantId: string, data: {
         rut: string;
         nombre: string;
-        apellido?: string;
+        apellidoPaterno?: string;
+        apellidoMaterno?: string;
+        fechaNacimiento?: string;
         email?: string;
         telefono?: string;
         rol: string;
@@ -32,6 +34,9 @@ export const personasApi = {
 
     get: (id: string) =>
         apiRequest<PersonaResponse>(`/personas/${id}`),
+
+    validateRut: (rut: string) =>
+        apiRequest<{ existe: boolean; valido: boolean; mensaje: string | null }>(`/personas/validate?rut=${encodeURIComponent(rut)}`),
 
     getByRut: (tenantId: string, rut: string) =>
         apiRequest<PersonaResponse>(`/personas/by-rut/${encodeURIComponent(rut)}?tenantId=${tenantId}`),
@@ -89,4 +94,21 @@ export const personasApi = {
             method: 'POST',
             body: JSON.stringify(data),
         }),
+
+    parseExcel: (data: { fileBase64: string; fileName: string }) =>
+        apiRequest<{
+            trabajadores: Array<{
+                rut: string; nombre: string; apellidoPaterno: string; apellidoMaterno: string;
+                email: string; rol: string; cargo: string; tieneAccesoWeb: boolean; fechaNacimiento: string;
+            }>;
+            errores: Array<{ fila: number; error: string }>;
+            total: number;
+        }>('/personas/parse-excel', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    downloadTemplate: () => {
+        window.open(`${apiBaseUrl}/personas/plantilla`, '_blank');
+    },
 };

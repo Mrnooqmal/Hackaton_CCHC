@@ -21,101 +21,121 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
 
     const htmlBody = `
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: #e0e0e0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #252525; border-radius: 16px; overflow: hidden; }
-        .header { background: linear-gradient(135deg, #4CAF50, #2E7D32); padding: 30px; text-align: center; }
-        .header h1 { color: white; margin: 0; font-size: 24px; }
-        .header p { color: rgba(255,255,255,0.8); margin: 10px 0 0; }
-        .content { padding: 30px; }
-        .credentials { background: #1a1a1a; border-radius: 12px; padding: 20px; margin: 20px 0; border-left: 4px solid #4CAF50; }
-        .credential-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #333; }
-        .credential-item:last-child { border-bottom: none; }
-        .credential-label { color: #888; }
-        .credential-value { color: #4CAF50; font-weight: bold; font-family: monospace; font-size: 18px; }
-        .steps { margin: 20px 0; }
-        .step { display: flex; gap: 15px; margin: 15px 0; }
-        .step-number { width: 30px; height: 30px; background: #4CAF50; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; }
-        .warning { background: #ff9800; color: #000; padding: 15px; border-radius: 8px; margin: 20px 0; }
-        .footer { padding: 20px; text-align: center; color: #666; font-size: 12px; border-top: 1px solid #333; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; padding: 0; background: #f0f4f8; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .wrapper { padding: 32px 16px; }
+    .card { max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.10); }
+    .header { background: linear-gradient(135deg, #002855 0%, #006edc 100%); padding: 36px 40px; text-align: center; }
+    .logo { font-size: 28px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; margin: 0; }
+    .logo-amp { color: #df3601; }
+    .logo-sub { font-size: 13px; color: rgba(255,255,255,0.70); margin: 6px 0 0; font-weight: 400; }
+    .body { padding: 36px 40px; }
+    .greeting { font-size: 16px; color: #0f172a; margin: 0 0 12px; }
+    .intro { font-size: 14px; color: #475569; line-height: 1.65; margin: 0 0 28px; }
+    .cred-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+                padding: 20px 24px; margin: 0 0 28px; }
+    .cred-title { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
+                  letter-spacing: 0.08em; margin: 0 0 14px; }
+    .cred-row { display: flex; justify-content: space-between; align-items: center;
+                padding: 10px 0; border-bottom: 1px solid #e8edf3; }
+    .cred-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .cred-label { font-size: 13px; color: #64748b; }
+    .cred-value { font-family: 'Courier New', Courier, monospace; font-size: 15px;
+                  font-weight: 700; color: #002855; letter-spacing: 0.04em; }
+    .alert { background: #fff8f0; border: 1px solid #fed7a0; border-left: 4px solid #df3601;
+             border-radius: 8px; padding: 14px 18px; margin: 0 0 28px; }
+    .alert p { margin: 0; font-size: 13px; color: #7c2d12; line-height: 1.55; }
+    .alert strong { color: #df3601; }
+    .steps-title { font-size: 13px; font-weight: 700; color: #0f172a; margin: 0 0 12px; }
+    .step { display: flex; gap: 14px; align-items: flex-start; margin: 10px 0; }
+    .step-num { width: 26px; height: 26px; border-radius: 50%; background: #002855; color: #fff;
+                font-size: 12px; font-weight: 700; display: flex; align-items: center;
+                justify-content: center; flex-shrink: 0; }
+    .step p { margin: 0; font-size: 13px; color: #475569; line-height: 1.55; padding-top: 3px; }
+    .footer { background: #f8fafc; border-top: 1px solid #e8edf3; padding: 20px 40px;
+              text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.6; }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🛡️ PrevencionApp</h1>
-            <p>Sistema de Gestión de Prevención de Riesgos</p>
+  <div class="wrapper">
+    <div class="card">
+      <div class="header">
+        <p class="logo">Build <span class="logo-amp">&amp;</span> Serve</p>
+        <p class="logo-sub">Plataforma de Gestión de Obras y Prevención de Riesgos</p>
+      </div>
+      <div class="body">
+        <p class="greeting">Hola, <strong>${nombre}</strong></p>
+        <p class="intro">
+          Has sido registrado en <strong>Build &amp; Serve</strong>. A continuación encontrarás
+          tus credenciales de acceso al sistema.
+        </p>
+
+        <div class="cred-box">
+          <p class="cred-title">Tus credenciales</p>
+          <div class="cred-row">
+            <span class="cred-label">RUT (usuario)</span>
+            <span class="cred-value">${rut}</span>
+          </div>
+          <div class="cred-row">
+            <span class="cred-label">Contraseña temporal</span>
+            <span class="cred-value">${passwordTemporal}</span>
+          </div>
         </div>
-        <div class="content">
-            <p>Hola <strong>${nombre}</strong>,</p>
-            <p>Se ha creado tu cuenta en el sistema. A continuación encontrarás tus credenciales de acceso:</p>
-            
-            <div class="credentials">
-                <div class="credential-item">
-                    <span class="credential-label">RUT (Usuario)</span>
-                    <span class="credential-value">${rut}</span>
-                </div>
-                <div class="credential-item">
-                    <span class="credential-label">Contraseña Temporal</span>
-                    <span class="credential-value">${passwordTemporal}</span>
-                </div>
-            </div>
-            
-            <h3>🔐 Pasos para activar tu cuenta:</h3>
-            <div class="steps">
-                <div class="step">
-                    <div class="step-number">1</div>
-                    <div>Ingresa a la plataforma con las credenciales anteriores</div>
-                </div>
-                <div class="step">
-                    <div class="step-number">2</div>
-                    <div>Cambia tu contraseña por una segura de tu elección</div>
-                </div>
-                <div class="step">
-                    <div class="step-number">3</div>
-                    <div>Completa el proceso de enrolamiento creando tu PIN de firma digital (4 dígitos)</div>
-                </div>
-            </div>
-            
-            <div class="warning">
-                ⚠️ <strong>IMPORTANTE:</strong> Esta contraseña es temporal y deberás cambiarla en tu primer acceso.
-            </div>
+
+        <div class="alert">
+          <p><strong>Importante:</strong> Al ingresar por primera vez al sistema, deberás cambiar
+          tu contraseña por seguridad. Esta contraseña temporal no podrá usarse después del
+          primer inicio de sesión.</p>
         </div>
-        <div class="footer">
-            PrevencionApp - Sistema de Gestión DS 44<br>
-            Este es un mensaje automático, no responder a este correo.
+
+        <p class="steps-title">Primeros pasos</p>
+        <div class="step">
+          <div class="step-num">1</div>
+          <p>Accede al sistema con el RUT y la contraseña temporal indicados arriba.</p>
         </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <p>Crea una contraseña nueva y segura cuando el sistema lo solicite.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <p>Completa tu perfil y el proceso de enrolamiento para habilitar tu firma digital.</p>
+        </div>
+      </div>
+      <div class="footer">
+        Build &amp; Serve &mdash; Plataforma de Gestión de Obras<br>
+        Este es un mensaje automático. Por favor no respondas a este correo.
+      </div>
     </div>
+  </div>
 </body>
-</html>
-    `.trim();
+</html>`.trim();
 
     const textBody = `
-¡Bienvenido a PrevencionApp!
-
 Hola ${nombre},
 
-Se ha creado tu cuenta en el Sistema de Gestión de Prevención de Riesgos.
+Has sido registrado en Build & Serve — Plataforma de Gestión de Obras y Prevención de Riesgos.
 
-📋 Tus credenciales de acceso:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RUT: ${rut}
-CONTRASEÑA TEMPORAL: ${passwordTemporal}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Tus credenciales de acceso:
+  RUT (usuario):       ${rut}
+  Contraseña temporal: ${passwordTemporal}
 
-🔐 Pasos para activar tu cuenta:
-1. Ingresa a la plataforma con las credenciales anteriores
-2. Cambia tu contraseña por una segura
-3. Completa el proceso de enrolamiento creando tu PIN de firma digital
+IMPORTANTE: Al ingresar por primera vez al sistema debes cambiar tu contraseña por seguridad.
+Esta contraseña temporal no podrá usarse después del primer inicio de sesión.
 
-⚠️ IMPORTANTE: Esta contraseña es temporal y deberás cambiarla en tu primer acceso.
+Primeros pasos:
+  1. Accede al sistema con el RUT y la contraseña temporal indicados arriba.
+  2. Crea una contraseña nueva y segura cuando el sistema lo solicite.
+  3. Completa tu perfil y el proceso de enrolamiento para habilitar tu firma digital.
 
 ---
-PrevencionApp - Sistema de Gestión DS 44
-Este es un mensaje automático, no responder a este correo.
+Build & Serve — Plataforma de Gestión de Obras
+Este es un mensaje automático. Por favor no respondas a este correo.
     `.trim();
 
     try {
@@ -126,7 +146,7 @@ Este es un mensaje automático, no responder a este correo.
             },
             Message: {
                 Subject: {
-                    Data: 'Bienvenido a PrevencionApp - Tus credenciales de acceso',
+                    Data: 'Bienvenido a Build & Serve — Tus credenciales de acceso',
                     Charset: 'UTF-8'
                 },
                 Body: {

@@ -8,6 +8,7 @@ import { Modal, Select, SegmentedControl } from '../components/ui';
 import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import type { SignatureRequest } from '../api/client';
+import { PERMISSIONS } from '../permissions';
 
 interface Ds44Item {
   key: string;
@@ -32,7 +33,10 @@ interface DoItem {
 }
 
 export default function ObraDetalle() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canAsignarTrabajadores = hasPermission(PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES);
+  const canSubirDocumentos = hasPermission(PERMISSIONS.OBRA_SUBIR_DOCUMENTOS);
+  const canFirmaAsistida = hasPermission(PERMISSIONS.OBRA_FIRMA_ASISTIDA);
   const navigate = useNavigate();
   const { obraId } = useParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1601,7 +1605,7 @@ export default function ObraDetalle() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
               <div className="text-muted">{trabajadores.length} trabajadores asociados</div>
               <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                {user?.permisos?.includes('firmar_asistido') && (
+                {canFirmaAsistida && (
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => setFirmaAsistidaOpen(true)}
@@ -1610,14 +1614,16 @@ export default function ObraDetalle() {
                     Firma asistida
                   </button>
                 )}
-                <button
-                  className="btn btn-sm"
-                  style={{ backgroundColor: 'var(--success-500, #10b981)', color: 'white', border: 'none' }}
-                  onClick={() => setIsWorkersModalOpen(true)}
-                >
-                  <LuUserPlus />
-                  Gestionar
-                </button>
+                {canAsignarTrabajadores && (
+                  <button
+                    className="btn btn-sm"
+                    style={{ backgroundColor: 'var(--success-500, #10b981)', color: 'white', border: 'none' }}
+                    onClick={() => setIsWorkersModalOpen(true)}
+                  >
+                    <LuUserPlus />
+                    Gestionar
+                  </button>
+                )}
               </div>
             </div>
             {trabajadores.length === 0 ? (
@@ -2288,9 +2294,11 @@ export default function ObraDetalle() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {/* El kit que se asigna aquí se define en el catálogo de cargos (nivel empresa). */}
-                <button className="btn btn-secondary btn-sm" onClick={() => navigate('/cargos-onboarding')} title="Configurar los cargos y su kit de onboarding (aplica a todas las obras)">
-                  <LuSettings size={15} /> Configurar cargos y kits
-                </button>
+                {hasPermission(PERMISSIONS.CARGOS_GESTIONAR) && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => navigate('/cargos-onboarding')} title="Configurar los cargos y su kit de onboarding (aplica a todas las obras)">
+                    <LuSettings size={15} /> Configurar cargos y kits
+                  </button>
+                )}
                 <LuUsers className="text-muted" />
               </div>
             </div>
@@ -2360,7 +2368,7 @@ export default function ObraDetalle() {
                                   {estado !== 'completo' && (
                                     <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                                       {/* Paso 1 — documento sin archivo: subir (no firma, queda pendiente de firma) */}
-                                      {item.kind === 'document' && estado === 'pendiente_asignar' && (
+                                      {item.kind === 'document' && estado === 'pendiente_asignar' && canSubirDocumentos && (
                                         <>
                                           <input
                                             type="file"
@@ -2384,7 +2392,7 @@ export default function ObraDetalle() {
                                         </>
                                       )}
                                       {/* Paso 2 — pendiente de firma: el trabajador firma con su PIN (firma asistida) */}
-                                      {estado === 'pendiente_firma' && !item.trabajadorFirmo && (item.kind === 'document' || item.kind === 'signature') && (
+                                      {estado === 'pendiente_firma' && !item.trabajadorFirmo && (item.kind === 'document' || item.kind === 'signature') && canFirmaAsistida && (
                                         <button
                                           className="btn btn-primary"
                                           style={{ padding: '2px 10px', fontSize: '0.78rem' }}
@@ -2620,14 +2628,16 @@ export default function ObraDetalle() {
             </div>
 
             <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-              <button
-                className="btn btn-primary"
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingKey === selectedDs44Doc?.key || ds44Loading}
-              >
-                {pendingDs44File ? 'Cambiar archivo' : selectedDs44Detail?.archivoUrl ? 'Actualizar archivo' : 'Seleccionar archivo'}
-              </button>
+              {canSubirDocumentos && (
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingKey === selectedDs44Doc?.key || ds44Loading}
+                >
+                  {pendingDs44File ? 'Cambiar archivo' : selectedDs44Detail?.archivoUrl ? 'Actualizar archivo' : 'Seleccionar archivo'}
+                </button>
+              )}
               <button
                 className="btn btn-secondary"
                 type="button"
@@ -3229,9 +3239,11 @@ export default function ObraDetalle() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-              <button className="btn btn-primary" type="button" onClick={() => doFileInputRef.current?.click()} disabled={doLoading}>
-                {pendingDoFile ? 'Cambiar archivo' : selectedDoDetail?.archivoUrl ? 'Actualizar archivo' : 'Seleccionar archivo'}
-              </button>
+              {canSubirDocumentos && (
+                <button className="btn btn-primary" type="button" onClick={() => doFileInputRef.current?.click()} disabled={doLoading}>
+                  {pendingDoFile ? 'Cambiar archivo' : selectedDoDetail?.archivoUrl ? 'Actualizar archivo' : 'Seleccionar archivo'}
+                </button>
+              )}
               <button className="btn btn-secondary" type="button" onClick={handlePreviewDoDocument} disabled={(!selectedDoDetail?.archivoUrl && !selectedDoDetail?.s3Key) || doPreviewing}>
                 <FiEye /> Ver documento
               </button>
