@@ -5,7 +5,8 @@ import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, worker
 import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
-import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
+import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
+import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import type { SignatureRequest } from '../api/client';
 import { PERMISSIONS } from '../permissions';
@@ -34,6 +35,7 @@ interface DoItem {
 
 export default function ObraDetalle() {
   const { user, hasPermission } = useAuth();
+  const { cargos: cargoCatalog } = useCargoCatalog();
   const canAsignarTrabajadores = hasPermission(PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES);
   const canSubirDocumentos = hasPermission(PERMISSIONS.OBRA_SUBIR_DOCUMENTOS);
   const canFirmaAsistida = hasPermission(PERMISSIONS.OBRA_FIRMA_ASISTIDA);
@@ -177,59 +179,57 @@ export default function ObraDetalle() {
     let total = 0;
     let completed = 0;
 
+    // Kit por código de cargo: del catálogo del tenant (con plantillas) y, si no,
+    // de la semilla. El onboarding ahora se rige por el KIT del cargo, no por una
+    // lista fija. Cada ítem se cierra con firma real (cruzada si aplica).
+    const kitDeCargo = (codigo?: string): any[] => {
+      if (!codigo) return [];
+      const fromCatalog = cargoCatalog.find((c) => c.codigo === codigo)?.kit;
+      return (fromCatalog && fromCatalog.length ? fromCatalog : resolveCargoKit(codigo)) as any[];
+    };
+
     const byWorker = activeWorkers.map((worker) => {
       const workerId = worker.personaId;
+      const kit = kitDeCargo(worker.cargo);
+      // Sin cargo/kit (personal de oficina/gestión) → no entra al onboarding de terreno.
+      if (!kit.length) return null;
       let workerTotal = 0;
       let workerCompleted = 0;
       const obraKey = obraId || '';
       const manualOverrides = obraKey ? (worker as any).onboardingDS44?.[obraKey]?.items || {} : {};
 
-      // Capacitacion grupal: completa solo si el trabajador asistio y firmo.
-      const hasCapacitacion = actividades.some(
-        (act: any) => (act.obraId === obraId || !obraId) &&
-          (act.tipo === 'CAPACITACION' || act.titulo?.toLowerCase().includes('capacitacion') || act.titulo?.toLowerCase().includes('capacitación')) &&
-          (act.asistentes || []).some((a: any) => (a.personaId) === workerId && a.asistio !== false)
-      );
-      const hasCapacitacionProgramada = actividades.some(
-        (act: any) => (act.obraId === obraId || !obraId) &&
-          (act.tipo === 'CAPACITACION' || act.titulo?.toLowerCase().includes('capacitacion') || act.titulo?.toLowerCase().includes('capacitación'))
-      );
-
-      const itemDetail = DS44_ONBOARDING_ITEMS.map((item) => {
+      const itemDetail = kit.map((item: any) => {
         const manualDone = Boolean(manualOverrides[item.tipo]);
         const key = `${workerId}:${item.tipo}`;
+        // Señal unificada: documento del onboarding (incl. ENTREGA_EPP) o, para
+        // datos legacy, solicitud de firma del mismo tipo.
+        const trabajadorFirmo = Boolean(docSigned.get(key)) || Boolean(requestSigned.get(key));
+        const firmaRelatorPendiente = Boolean(docRelatorPendiente.get(key));
+        const tieneArchivoOAsignado = Boolean(docHasFile.get(key)) || Boolean(requestAssigned.get(key));
 
         let estado: 'pendiente_asignar' | 'pendiente_firma' | 'completo' = 'pendiente_asignar';
-        let firmaRelatorPendiente = false;
-
-        if (item.kind === 'document') {
-          const trabajadorFirmo = Boolean(docSigned.get(key));
-          firmaRelatorPendiente = Boolean(docRelatorPendiente.get(key));
-          if (trabajadorFirmo && !firmaRelatorPendiente) estado = 'completo';
-          else if (trabajadorFirmo || docHasFile.get(key)) estado = 'pendiente_firma';
-          else estado = 'pendiente_asignar';
-        } else if (item.kind === 'signature') {
-          if (requestSigned.get(key)) estado = 'completo';
-          else if (requestAssigned.get(key)) estado = 'pendiente_firma';
-          else estado = 'pendiente_asignar';
-        } else if (item.kind === 'actividad') {
-          if (hasCapacitacion) estado = 'completo';
-          else if (hasCapacitacionProgramada) estado = 'pendiente_firma';
-          else estado = 'pendiente_asignar';
-        }
-
-        // Override manual persistido (firma en papel registrada previamente).
+        if (trabajadorFirmo && !firmaRelatorPendiente) estado = 'completo';
+        else if (trabajadorFirmo || tieneArchivoOAsignado) estado = 'pendiente_firma';
         if (manualDone) estado = 'completo';
 
         const done = estado === 'completo';
         workerTotal += 1;
         if (done) workerCompleted += 1;
 
-        return { key: item.key, tipo: item.tipo, label: item.label, articulo: item.articulo, done, estado, firmaRelatorPendiente, trabajadorFirmo: Boolean(docSigned.get(key)), documentId: docIdPorKey.get(key) || null, kind: item.kind, actionLabel: item.actionLabel, actionRoute: item.actionRoute };
+        return {
+          key: item.key, tipo: item.tipo, label: item.titulo, articulo: item.articulo || '',
+          done, estado, firmaRelatorPendiente, trabajadorFirmo,
+          documentId: docIdPorKey.get(key) || null,
+          kind: 'document' as const,
+          bloqueante: Boolean(item.bloqueante)
+        };
       });
 
       total += workerTotal;
       completed += workerCompleted;
+
+      // "Apto para ingresar a terreno": todos los ítems bloqueantes completos.
+      const bloqueantesPendientes = itemDetail.filter((i) => i.bloqueante && !i.done).length;
 
       return {
         workerId,
@@ -238,13 +238,15 @@ export default function ObraDetalle() {
         fechaIngreso: (worker.obraIds || []).length > 0 ? (worker.createdAt || null) : null,
         completed: workerCompleted,
         total: workerTotal,
+        bloqueantesPendientes,
+        aptoTerreno: bloqueantesPendientes === 0,
         itemDetail
       };
-    });
+    }).filter(Boolean) as any[];
 
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { completed, total, progress, byWorker };
-  }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, obraId]);
+  }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, obraId, cargoCatalog]);
 
   const getSignatureStats = (doc: any) => {
     // Prefer obraSignatureRequests (live data) over doc.asignaciones (may be absent in list responses)
@@ -2327,6 +2329,11 @@ export default function ObraDetalle() {
                               <div style={{ minWidth: 0 }}>
                                 <div className="font-medium" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>{worker.nombre}</div>
                                 <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>{(worker as any).cargo || 'Trabajador'}</div>
+                                {/* Apto para ingresar a terreno: gating informativo por ítems bloqueantes (IRL, examen de altura). No bloquea el registro. */}
+                                {(worker as any).aptoTerreno
+                                  ? <span style={{ fontSize: '0.72rem', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2 }}><LuCircleCheck size={12} /> Apto para ingresar a terreno</span>
+                                  : <span style={{ fontSize: '0.72rem', color: '#ef4444', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2 }}><LuShieldAlert size={12} /> {(worker as any).bloqueantesPendientes} bloqueante(s) pendiente(s)</span>
+                                }
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
                                 <div style={{ width: '80px', height: '6px', borderRadius: '999px', background: 'var(--surface-elevated)', overflow: 'hidden' }}>

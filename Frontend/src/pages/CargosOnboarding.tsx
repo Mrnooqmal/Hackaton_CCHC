@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiPlus, FiCopy, FiTrash2, FiEdit2, FiSave, FiArrowLeft, FiInfo, FiLock, FiAlertTriangle } from 'react-icons/fi';
+import { FiPlus, FiCopy, FiTrash2, FiEdit2, FiSave, FiArrowLeft, FiInfo, FiLock, FiAlertTriangle, FiUpload, FiFile, FiEye } from 'react-icons/fi';
 import { AlertBanner, Modal, Select, SegmentedControl } from '../components/ui';
+import { uploadsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tenantsApi, type TenantCargo } from '../api/tenants.api';
 import { invalidateCargoCatalog } from '../hooks/useCargoCatalog';
@@ -55,6 +56,8 @@ export default function CargosOnboarding() {
     const [newCargoOpen, setNewCargoOpen] = useState(false);
     const [newCargoLabel, setNewCargoLabel] = useState('');
     const [itemModal, setItemModal] = useState<{ idx: number | null; draft: Ds44KitItem } | null>(null);
+    // Subida de plantilla por ítem (key = índice del ítem en el kit actual).
+    const [uploadingItem, setUploadingItem] = useState<number | null>(null);
 
     useEffect(() => {
         if (!tenantId) { setLoading(false); return; }
@@ -121,6 +124,36 @@ export default function CargosOnboarding() {
 
     const removeItem = (idx: number) =>
         mutate((d) => d.map((c) => (c.codigo === selected ? { ...c, kit: c.kit.filter((_, i) => i !== idx), seed: false } : c)));
+
+    const setItemPlantilla = (idx: number, plantilla: Ds44KitItem['plantilla']) =>
+        mutate((d) => d.map((c) => {
+            if (c.codigo !== selected) return c;
+            const kit = c.kit.map((it, i) => (i === idx ? { ...it, plantilla } : it));
+            return { ...c, kit, seed: false };
+        }));
+
+    // Sube el archivo a S3 (flujo presigned existente) y deja la referencia en el
+    // ítem. Recuerda: se persiste al "Guardar cambios" del catálogo.
+    const uploadPlantilla = async (idx: number, file: File) => {
+        setUploadingItem(idx); setError('');
+        try {
+            const res = await uploadsApi.uploadFile(file, 'plantilla', tenantId, tenantId);
+            if (res.success && res.data) {
+                setItemPlantilla(idx, { fileKey: res.data.url, nombre: res.data.nombre, tipo: res.data.tipo, subidoEn: res.data.subidoEn || new Date().toISOString() });
+            } else {
+                setError(res.error || 'No se pudo subir la plantilla');
+            }
+        } catch { setError('Error de conexión al subir la plantilla'); }
+        finally { setUploadingItem(null); }
+    };
+
+    const previewPlantilla = async (fileKey: string) => {
+        try {
+            const res = await uploadsApi.getDownloadUrl(fileKey);
+            if (res.success && res.data?.downloadUrl) window.open(res.data.downloadUrl, '_blank');
+            else setError('No se pudo abrir la plantilla');
+        } catch { setError('No se pudo abrir la plantilla'); }
+    };
 
     const saveItem = () => {
         if (!itemModal) return;
@@ -213,6 +246,13 @@ export default function CargosOnboarding() {
                                                 {ACCION_LABEL[it.accion]}{it.notaMinima ? ` · ${it.notaMinima}%` : ''} · {ALCANCE_SHORT[it.alcancePlantilla]}
                                                 {it.accion === 'ENTREGA_EPP' && it.matrizEpp ? ` · ${it.matrizEpp.length} EPP` : ''}
                                             </div>
+                                            <PlantillaControl
+                                                item={it}
+                                                uploading={uploadingItem === idx}
+                                                onUpload={(file) => uploadPlantilla(idx, file)}
+                                                onPreview={() => it.plantilla && previewPlantilla(it.plantilla.fileKey)}
+                                                onRemove={() => setItemPlantilla(idx, undefined)}
+                                            />
                                         </div>
                                         <button className="btn btn-ghost btn-sm" onClick={() => setItemModal({ idx, draft: { ...it } })}><FiEdit2 /></button>
                                         <button className="btn btn-ghost btn-sm" onClick={() => removeItem(idx)} style={{ color: 'var(--danger-500)' }}><FiTrash2 /></button>
@@ -314,6 +354,44 @@ function EppMatrixEditor({ matriz, onChange }: { matriz: { descripcion: string; 
                 <input className="form-input" value={nuevo} onChange={(e) => setNuevo(e.target.value)} placeholder="Agregar EPP… (ej: Arnés de cuerpo completo)" onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), add())} style={{ flex: 1 }} />
                 <button className="btn btn-secondary" onClick={add}><FiPlus /></button>
             </div>
+        </div>
+    );
+}
+
+// ── Control de plantilla por ítem (según alcance) ────────────────────────────
+// alcance 'tenant' → se sube aquí (1 archivo para todas las obras).
+// alcance 'obra'   → se sube por obra (IRL/MIPER); aquí solo se informa.
+// alcance 'persona'→ evidencia individual; no hay plantilla.
+function PlantillaControl({ item, uploading, onUpload, onPreview, onRemove }: {
+    item: Ds44KitItem; uploading: boolean; onUpload: (file: File) => void; onPreview: () => void; onRemove: () => void;
+}) {
+    const inputRef = useRef<HTMLInputElement | null>(null);
+
+    if (item.alcancePlantilla === 'obra') {
+        return <div className="text-xs" style={{ marginTop: 4, color: 'var(--info-500)' }}>📄 Plantilla por obra (deriva del MIPER · se sube en cada obra)</div>;
+    }
+    if (item.alcancePlantilla === 'persona' || item.alcancePlantilla === 'ninguno') {
+        return <div className="text-xs text-muted" style={{ marginTop: 4 }}>Sin plantilla · {item.accion === 'ENTREGA_EPP' ? 'entrega individual' : 'evidencia individual'}</div>;
+    }
+    // alcance 'tenant'
+    return (
+        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <input ref={inputRef} type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = ''; }} />
+            {item.plantilla ? (
+                <>
+                    <span className="text-xs" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(47,170,91,0.12)', color: 'var(--success-500)', padding: '2px 8px', borderRadius: 6, maxWidth: 260, overflow: 'hidden' }}>
+                        <FiFile size={12} /> <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.plantilla.nombre}</span>
+                    </span>
+                    <button className="btn btn-ghost btn-sm" onClick={onPreview} title="Ver plantilla"><FiEye size={13} /></button>
+                    <button className="btn btn-ghost btn-sm" disabled={uploading} onClick={() => inputRef.current?.click()} title="Reemplazar">{uploading ? <div className="spinner" /> : <FiUpload size={13} />}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={onRemove} title="Quitar plantilla" style={{ color: 'var(--danger-500)' }}><FiTrash2 size={13} /></button>
+                </>
+            ) : (
+                <button className="btn btn-secondary btn-sm" disabled={uploading} onClick={() => inputRef.current?.click()}>
+                    {uploading ? <><div className="spinner" /> Subiendo…</> : <><FiUpload size={13} /> Subir plantilla</>}
+                </button>
+            )}
         </div>
     );
 }

@@ -260,7 +260,10 @@ const sanitizeCargoCatalog = (catalog) => {
                 notaMinima: it?.notaMinima === 90 ? 90 : (it?.notaMinima === 70 ? 70 : undefined),
                 requiereFirmaRelator: it?.requiereFirmaRelator ? true : undefined,
                 matrizEpp: Array.isArray(it?.matrizEpp) ? it.matrizEpp.map((e) => ({ descripcion: String(e?.descripcion || '').trim(), critico: Boolean(e?.critico) })).filter((e) => e.descripcion) : undefined,
-                protocolo: it?.protocolo ? String(it.protocolo) : undefined
+                protocolo: it?.protocolo ? String(it.protocolo) : undefined,
+                plantilla: (it?.plantilla && it.plantilla.fileKey)
+                    ? { fileKey: String(it.plantilla.fileKey), nombre: String(it.plantilla.nombre || 'plantilla'), tipo: it.plantilla.tipo ? String(it.plantilla.tipo) : undefined, subidoEn: it.plantilla.subidoEn ? String(it.plantilla.subidoEn) : undefined }
+                    : undefined
             };
         });
         return { codigo, label, legacy: Boolean(c?.legacy), seed: Boolean(c?.seed), kit: kitSan };

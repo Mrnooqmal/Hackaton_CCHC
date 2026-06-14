@@ -380,6 +380,10 @@ export type Ds44KitItem = {
     requiereFirmaRelator?: boolean;
     matrizEpp?: Ds44EppItem[];     // solo accion ENTREGA_EPP
     protocolo?: Ds44ProtocoloMinsal;
+    // Plantilla cargada (solo ítems de alcance 'tenant': PR-PO, RI, Política…).
+    // El archivo vive en S3; aquí se guarda la referencia. Para alcance 'obra'
+    // (IRL/MIPER) la plantilla se sube por obra (no aquí).
+    plantilla?: { fileKey: string; nombre: string; tipo?: string; subidoEn?: string };
 };
 
 // ─── Catálogo de cargos (nivel tenant) ───────────────────────────────────────

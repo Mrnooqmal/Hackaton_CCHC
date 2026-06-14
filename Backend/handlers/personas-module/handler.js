@@ -17,12 +17,14 @@ const { normalizeRol } = require('../../lib/utils/validation');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
-const { normalizeCargoCodigo } = require('../../lib/ds44');
+const { normalizeCargoCodigo, resolveCargoKitFromCatalog } = require('../../lib/ds44');
+const { InboxRepository } = require('../inbox-module/inbox.repository');
 
 const personaService = new PersonaService();
 const obraService = new ObraService();
 const eppService = new EppService();
 const tenantService = new TenantService();
+const inboxRepository = new InboxRepository();
 
 // Resuelve el tenant (toSafeFormat) para evaluar permisos por persona.
 const tenantSafe = async (tenantId) => {
@@ -198,9 +200,11 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
         contenido: '',
         descripcion: docConfig.descripcion || '',
         relatorId: null,
-        s3Key: null,
+        // Plantilla pegada (si el kit la trae): el ítem nace con archivo →
+        // queda listo para firma (pendiente_firma). Sin plantilla: pendiente_asignar.
+        s3Key: docConfig.plantilla?.fileKey || null,
         archivoUrl: null,
-        archivoNombre: null,
+        archivoNombre: docConfig.plantilla?.nombre || null,
         fechaCaducidad: null,
         createdBy: solicitante?.personaId || 'system',
         creatorName: solicitante ? `${solicitante.nombre} ${solicitante.apellido || ''}`.trim() : 'Sistema DS44',
@@ -220,6 +224,14 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
         } : null,
         notaModalidad: docConfig.notaModalidad || null,
         modalidad: null,
+        // Trazabilidad del kit del cargo que generó este ítem de onboarding.
+        kitItemKey: docConfig.kitItemKey || docConfig.tipo,
+        accion: docConfig.accion || null,
+        alcance: docConfig.alcance || null,
+        bloqueante: docConfig.bloqueante || false,
+        notaMinima: docConfig.notaMinima || null,
+        articulo: docConfig.articulo || null,
+        cargo: persona.cargo || null,
         createdAt: now,
         updatedAt: now
     };
@@ -307,14 +319,84 @@ const createSignatureRequest = async ({ tenantId, obraId, persona, solicitante, 
     return requestId;
 };
 
+// Aviso best-effort al solicitante: faltan plantillas para el cargo. No bloquea.
+const avisarFaltaPlantilla = async ({ solicitante, persona, obraId, faltantes }) => {
+    if (!solicitante?.personaId || faltantes.length === 0) return;
+    try {
+        await inboxRepository.sendMessage({
+            senderId: 'system',
+            senderName: 'Sistema DS44',
+            senderRol: 'sistema',
+            recipientIds: [solicitante.personaId],
+            type: 'alerta',
+            priority: 'alta',
+            subject: `Faltan plantillas de onboarding (${persona.cargo})`,
+            content: `Ingresó ${persona.nombre} ${persona.apellido || ''} con cargo ${persona.cargo}. Faltan plantillas para: ${faltantes.join(', ')}. Cárgalas en el catálogo de cargos (alcance empresa) o en la obra (IRL/MIPER).`,
+            linkedEntity: { tipo: 'onboarding', id: obraId || null }
+        });
+    } catch (err) {
+        console.error('Aviso de plantilla faltante falló:', err.message);
+    }
+};
+
+// Genera el onboarding DS44 según el KIT del cargo (catálogo del tenant).
+// - Sin cargo → no hay kit (personal de oficina/gestión).
+// - ENTREGA_EPP → EppService (Art. 13), matriz del cargo.
+// - Ítems con plantilla (tenant del catálogo / obra del MIPER) → doc con archivo
+//   pegado (pendiente_firma). Sin plantilla y se esperaba → doc vacío + aviso.
+// - Nunca bloquea el registro/vinculación (cada ítem va en su propio try/catch).
 const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) => {
-    for (const docConfig of ONBOARDING_DOCUMENTS) {
-        await createOnboardingDocument({ tenantId, obraId, persona, solicitante, docConfig });
+    if (!persona.cargo) return;
+
+    const tenant = await tenantService.getById(tenantId).catch(() => null);
+    const kit = resolveCargoKitFromCatalog(tenant?.reglas?.cargos, persona.cargo);
+    if (!Array.isArray(kit) || kit.length === 0) return;
+
+    const obra = obraId ? await obraService.getById(obraId).catch(() => null) : null;
+    const plantillasObra = (obra && obra.plantillasOnboarding && obra.plantillasOnboarding[persona.cargo]) || {};
+
+    const faltantes = [];
+
+    for (const item of kit) {
+        try {
+            if (item.accion === 'ENTREGA_EPP') {
+                const items = (item.matrizEpp || []).map((e) => ({ descripcion: e.descripcion, cantidad: 1 }));
+                if (items.length > 0) {
+                    await eppService.crearEntrega({ tenantId, obraId, persona, creador: solicitante, itemsEntregados: items });
+                }
+                continue;
+            }
+
+            let plantilla = null;
+            if (item.alcancePlantilla === 'tenant') plantilla = item.plantilla || null;
+            else if (item.alcancePlantilla === 'obra') plantilla = plantillasObra[item.key] || plantillasObra[item.tipo] || null;
+
+            if (!plantilla && (item.alcancePlantilla === 'tenant' || item.alcancePlantilla === 'obra')) {
+                faltantes.push(`${item.codigoEbco ? item.codigoEbco + ' · ' : ''}${item.titulo}`);
+            }
+
+            await createOnboardingDocument({
+                tenantId, obraId, persona, solicitante,
+                docConfig: {
+                    tipo: item.tipo,
+                    titulo: item.titulo,
+                    descripcion: item.articulo ? `${item.articulo} — ${item.titulo}` : item.titulo,
+                    requiereFirmaRelator: Boolean(item.requiereFirmaRelator),
+                    plantilla,
+                    kitItemKey: item.key,
+                    accion: item.accion,
+                    alcance: item.alcancePlantilla,
+                    bloqueante: Boolean(item.bloqueante),
+                    notaMinima: item.notaMinima || null,
+                    articulo: item.articulo || null
+                }
+            });
+        } catch (itemErr) {
+            console.error(`Onboarding: error en ítem ${item.key} (${persona.cargo}):`, itemErr.message);
+        }
     }
 
-    for (const requestConfig of ONBOARDING_SIGNATURE_REQUESTS) {
-        await createSignatureRequest({ tenantId, obraId, persona, solicitante, requestConfig });
-    }
+    await avisarFaltaPlantilla({ solicitante, persona, obraId, faltantes });
 };
 
 const createTemplateBuffer = () => {
