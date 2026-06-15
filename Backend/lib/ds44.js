@@ -87,8 +87,7 @@ const kitTransversal = (cargo) => [
     { key: 'POLITICA_SST', tipo: 'POLITICA_SSO', titulo: 'Política SST', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' },
     { key: 'PLAN_EMERGENCIAS', tipo: 'PLAN_EMERGENCIAS', codigoEbco: 'PR-PDO-07.01', titulo: 'Plan de Emergencias de la Obra', articulo: 'Art. 19', naturaleza: 'derivado_miper', alcancePlantilla: 'obra', accion: 'DIFUSION_FIRMA' },
     { key: 'IRL', tipo: 'IRL', titulo: 'IRL — Información de Riesgos Laborales del cargo', articulo: 'Art. 15', naturaleza: 'derivado_miper', alcancePlantilla: 'obra', accion: 'CAPACITACION_EVALUACION', notaMinima: 70, bloqueante: true },
-    itemEppDeCargo(cargo),
-    { key: 'ENCUESTA_PSICOSOCIAL', tipo: 'ENCUESTA_PSICOSOCIAL', titulo: 'Encuesta Psicosocial CEAL-SM / SUSESO', naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'ENCUESTA', protocolo: 'PSICOSOCIAL' }
+    itemEppDeCargo(cargo)
 ];
 
 const pp = (key, codigoEbco, titulo, articulo, notaMinima = 70) =>
@@ -97,9 +96,9 @@ const dif = (key, codigoEbco, titulo, articulo) =>
     ({ key, tipo: key, codigoEbco, titulo, articulo, naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' });
 const ext = (key, titulo, articulo, bloqueante = false) =>
     ({ key, tipo: key, titulo, articulo, naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'EVIDENCIA_EXTERNA', bloqueante });
-const minsal = (protocolo, titulo) =>
-    ({ key: `VIGILANCIA_${protocolo}`, tipo: `VIGILANCIA_${protocolo}`, titulo, articulo: 'Protocolo MINSAL', naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'INGRESO_VIGILANCIA', protocolo });
 
+// PoC: solo PR-PO con documento real + examen de altura bloqueante. Espejo de
+// Frontend/src/utils/ds44.ts (deben mantenerse iguales).
 const ESPECIFICOS = {
     CARPINTERO: [
         ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
@@ -109,19 +108,12 @@ const ESPECIFICOS = {
         pp('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Art. 16', 70),
         pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
         pp('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Anexo 8.5', 70),
-        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16'),
-        ext('CERT_MOLDAJES', 'Certificado proveedor de moldajes', 'Evidencia externa'),
-        ext('CAP_ALZAHOMBRE', 'Capacitación alzahombre (proveedor)', 'Evidencia externa'),
-        minsal('PREXOR', 'Vigilancia PREXOR'), minsal('TMERT', 'Vigilancia TMERT'),
-        minsal('MMC', 'Vigilancia MMC'), minsal('RUV', 'Vigilancia RUV')
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16')
     ],
     JORNAL_ASEO: [
         pp('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Anexo 8.1', 70),
         dif('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Difusión'),
-        dif('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Difusión'),
-        pp('PROC_DESCARGA_MIXER', 'PROC. ESPECÍFICO', 'Descarga de mixer', 'Procedimiento específico', 70),
-        pp('CAP_LEY_KARIN', 'LEY KARIN', 'Capacitación Ley Karin', 'Ley 21.643', 70),
-        minsal('RUV', 'Vigilancia RUV (PR-PMIN-12)'), minsal('TMERT', 'Vigilancia TMERT-MMC')
+        dif('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Difusión')
     ],
     MAESTRO_TERMINACIONES: [
         ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
@@ -130,10 +122,7 @@ const ESPECIFICOS = {
         pp('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Art. 16', 70),
         pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
         dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16'),
-        dif('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Difusión'),
-        dif('HDS_QUIMICOS', 'HDS', 'HDS + ficha técnica por producto químico', 'Crítico: EPP respiratorio'),
-        pp('CAP_HERRAMIENTAS', 'CAP. HERRAMIENTAS', 'Herramientas autorizadas (cuchillo retráctil)', 'Capacitación', 70),
-        minsal('RUV', 'Vigilancia RUV'), minsal('PSICOSOCIAL', 'Vigilancia Psicosocial')
+        dif('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Difusión')
     ],
     MAESTRO_ALBANIL: [
         ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
@@ -142,9 +131,7 @@ const ESPECIFICOS = {
         pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
         pp('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Distancia con maquinaria', 70),
         dif('PR_PO_23', 'PR-PO-23', 'Instalación de Sistemas de Seguridad (usuario)', 'Usuario de anclajes'),
-        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16'),
-        pp('CAP_LEY_KARIN', 'LEY KARIN', 'Capacitación Ley Karin', 'Ley 21.643', 70),
-        minsal('PSICOSOCIAL', 'Vigilancia Psicosocial'), minsal('MMC', 'Vigilancia MMC')
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16')
     ],
     TRAZADOR: [
         ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
@@ -153,10 +140,7 @@ const ESPECIFICOS = {
         pp('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Art. 16', 70),
         dif('PR_PO_23', 'PR-PO-23', 'Instalación de Sistemas de Seguridad (banderas/fase amarilla)', 'Usuario'),
         dif('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Difusión'),
-        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16'),
-        pp('FICHA_PORTAESTACAS', 'FICHA N°1', 'Portaestacas / guantes anticorte', 'Capacitación', 70),
-        dif('PR_PO_21_36_38', 'PR-PO-21/36/38', 'Vías despejadas, montaje pilares', 'Difusión'),
-        minsal('SILICE', 'Vigilancia SÍLICE (candidato PREXOR)'), minsal('RUV', 'Vigilancia RUV')
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16')
     ]
 };
 
@@ -229,6 +213,40 @@ const resolveCargoKitFromCatalog = (catalog, codigo) => {
     return resolveCargoKit(codigo);
 };
 
+// Merge de un ítem repetido entre cargos: se queda con lo MÁS ESTRICTO
+// (bloqueante OR, notaMinima MAX, firma relator OR) y conserva plantilla/EPP.
+const _mergeItemEstricto = (a, b) => ({
+    ...a,
+    bloqueante: Boolean(a.bloqueante || b.bloqueante),
+    notaMinima: (Math.max(a.notaMinima || 0, b.notaMinima || 0) || undefined),
+    requiereFirmaRelator: (a.requiereFirmaRelator || b.requiereFirmaRelator) ? true : undefined,
+    plantilla: a.plantilla || b.plantilla,
+    matrizEpp: a.matrizEpp || b.matrizEpp,
+    cargosOrigen: [...new Set([...(a.cargosOrigen || []), ...(b.cargosOrigen || [])])],
+});
+
+// Unión de kits de varios cargos (trabajador multi-cargo en una obra). Dedup por
+// `key`; ítems repetidos se mergean al criterio más estricto. Cada ítem queda con
+// `cargosOrigen` para trazabilidad/auditoría.
+const resolveKitUnion = (catalog, cargos) => {
+    const list = Array.isArray(cargos) ? cargos.filter(Boolean) : [];
+    const map = new Map();
+    for (const codigo of list) {
+        const kit = resolveCargoKitFromCatalog(catalog, codigo) || [];
+        for (const it of kit) {
+            const tagged = { ...it, cargosOrigen: [codigo] };
+            map.set(it.key, map.has(it.key) ? _mergeItemEstricto(map.get(it.key), tagged) : tagged);
+        }
+    }
+    return [...map.values()];
+};
+
+// Ítems cuya evidencia vive en la PERSONA y se reutiliza entre obras mientras esté
+// vigente (examen de altura físico, certificados externos, ingreso a vigilancia
+// MINSAL). No se re-piden por obra; se reusa la evidencia vigente de la persona.
+const esEvidenciaReutilizable = (item) =>
+    !!item && (item.accion === 'EVIDENCIA_EXTERNA' || item.accion === 'INGRESO_VIGILANCIA');
+
 // Saneo/validación mínima de un catálogo recibido del cliente (PUT cargos).
 // Garantiza forma consistente y evita persistir basura. Lanza Error si inválido.
 const sanitizeCargoCatalog = (catalog) => {
@@ -281,5 +299,7 @@ module.exports = {
     resolveCargoKit,
     buildDefaultCargoCatalog,
     resolveCargoKitFromCatalog,
+    resolveKitUnion,
+    esEvidenciaReutilizable,
     sanitizeCargoCatalog
 };

@@ -111,7 +111,7 @@ class ObraService {
             'region', 'mandante', 'estado', 'etapaConstructivaActual', 'etapaActual',
             'faenaCompartida', 'tieneMaquinaria', 'agentesFQB',
             'fasesConfig', 'faseDeming', 'cumplimientoDS44', 'imagenKey',
-            'plantillasOnboarding'];
+            'plantillasOnboarding', 'aplicabilidadKit'];
 
         const updateExpressions = [];
         const expressionNames = {};

@@ -5,10 +5,11 @@ import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, worker
 import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
-import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
+import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, unionKits, getCargoLabel, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
+import ObraAplicabilidadKit from '../components/ObraAplicabilidadKit';
 import type { SignatureRequest } from '../api/client';
 import { PERMISSIONS } from '../permissions';
 
@@ -37,6 +38,8 @@ interface DoItem {
 export default function ObraDetalle() {
   const { user, hasPermission } = useAuth();
   const { cargos: cargoCatalog } = useCargoCatalog();
+  // Cargos de terreno seleccionables al asignar (excluye legacy de texto libre).
+  const cargoOptions = cargoCatalog.filter((c) => !c.legacy).map((c) => ({ value: c.codigo, label: c.label }));
   const canAsignarTrabajadores = hasPermission(PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES);
   const canSubirDocumentos = hasPermission(PERMISSIONS.OBRA_SUBIR_DOCUMENTOS);
   const canFirmaAsistida = hasPermission(PERMISSIONS.OBRA_FIRMA_ASISTIDA);
@@ -101,6 +104,9 @@ export default function ObraDetalle() {
   const [isWorkersModalOpen, setIsWorkersModalOpen] = useState(false);
   const [updatingWorkers, setUpdatingWorkers] = useState<string | null>(null);
   const [selectedUnassignedWorkerIds, setSelectedUnassignedWorkerIds] = useState<string[]>([]);
+  // Cargos elegidos por trabajador al asignarlo a la obra (multi-cargo). El cargo
+  // de terreno vive en la asignación persona×obra, no en la persona.
+  const [assignCargos, setAssignCargos] = useState<Record<string, string[]>>({});
 
   // Fase 2 (DO/HACER) state — modal DO listo para conectar cuando se agregue lista de docs DO
   const [doDocs] = useState<DoItem[]>([]);
@@ -189,9 +195,23 @@ export default function ObraDetalle() {
       return (fromCatalog && fromCatalog.length ? fromCatalog : resolveCargoKit(codigo)) as any[];
     };
 
+    // Cargos que el trabajador ejecuta EN esta obra (asignación, multi-cargo).
+    // Fallback al cargo legacy global por compatibilidad con personas sin migrar.
+    const cargosEnObra = (worker: any): string[] => {
+      const asig = (worker.asignaciones || []).find((a: any) => a.obraId === (obraId || ''));
+      if (asig && Array.isArray(asig.cargos) && asig.cargos.length) return asig.cargos;
+      return worker.cargo ? [worker.cargo] : [];
+    };
+    const aplicabilidad = (obra?.aplicabilidadKit) || {};
+
     const byWorker = activeWorkers.map((worker) => {
       const workerId = worker.personaId;
-      const kit = kitDeCargo(worker.cargo);
+      const cargos = cargosEnObra(worker);
+      // Unión de kits de todos los cargos de la persona en la obra (dedup + estricto).
+      let kit: any[] = unionKits(cargos.map((c) => ({ cargo: c, kit: kitDeCargo(c) })));
+      // Aplicabilidad MIPER (manual): excluir ítems marcados 'no_aplica' para TODOS
+      // sus cargos de origen en esta obra (PR-PO excluidos según MIPER).
+      kit = kit.filter((it: any) => !(it.cargosOrigen || []).every((cg: string) => aplicabilidad?.[cg]?.[it.key] === 'no_aplica'));
       // Sin cargo/kit (personal de oficina/gestión) → no entra al onboarding de terreno.
       if (!kit.length) return null;
       let workerTotal = 0;
@@ -235,7 +255,7 @@ export default function ObraDetalle() {
       return {
         workerId,
         nombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
-        cargo: worker.cargo || '',
+        cargo: cargos.length ? cargos.map((c) => getCargoLabel(c)).join(', ') : (worker.cargo || ''),
         fechaIngreso: (worker.obraIds || []).length > 0 ? (worker.createdAt || null) : null,
         completed: workerCompleted,
         total: workerTotal,
@@ -247,7 +267,7 @@ export default function ObraDetalle() {
 
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { completed, total, progress, byWorker };
-  }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, obraId, cargoCatalog]);
+  }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, obraId, cargoCatalog, obra]);
 
   const getSignatureStats = (doc: any) => {
     // Prefer obraSignatureRequests (live data) over doc.asignaciones (may be absent in list responses)
@@ -1438,18 +1458,50 @@ export default function ObraDetalle() {
     setIsEditModalOpen(false);
   };
 
+  // Cargos efectivos a asignar: los elegidos en el modal, o el cargo legacy del
+  // trabajador como default (para no asignarlo "sin cargo" por accidente).
+  const cargosParaAsignar = (worker: any): string[] => {
+    const elegidos = assignCargos[worker.personaId];
+    if (Array.isArray(elegidos) && elegidos.length) return elegidos;
+    return worker.cargo ? [worker.cargo] : [];
+  };
+
+  // Cargos que el trabajador ya tiene en ESTA obra (para el editor de cargo).
+  const cargosActualesEnObra = (worker: any): string[] => {
+    const a = (worker.asignaciones || []).find((x: any) => x.obraId === obraId);
+    if (a && Array.isArray(a.cargos) && a.cargos.length) return a.cargos;
+    return worker.cargo ? [worker.cargo] : [];
+  };
+
+  // Editor de cargo para un trabajador YA asignado: actualiza los cargos de su
+  // asignación. El checklist de onboarding se recalcula solo (lee la asignación).
+  const handleUpdateCargos = async (worker: any) => {
+    if (!obraId) return;
+    setUpdatingWorkers(worker.personaId);
+    try {
+      const cargos = assignCargos[worker.personaId] ?? cargosActualesEnObra(worker);
+      await workersApi.setAsignacion(worker.personaId, obraId, cargos, user?.personaId || user?.userId);
+      const refreshed = await workersApi.list();
+      if (refreshed.success && refreshed.data) {
+        const workers = refreshed.data as any[];
+        setAllWorkers(workers);
+        setTrabajadores(workers.filter((w: any) => Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
+      }
+      setObraToast('Cargo actualizado');
+    } catch (error) {
+      console.error('Error updating cargo:', error);
+    } finally {
+      setUpdatingWorkers(null);
+    }
+  };
+
   const handleAddWorker = async (worker: any) => {
     if (!obraId) return;
     setUpdatingWorkers(worker.personaId);
     try {
-      const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
-      if (!obraIds.includes(obraId)) {
-        await workersApi.update(worker.personaId, {
-          obraIds: [...obraIds, obraId],
-          estado: 'activo',
-          solicitanteId: user?.personaId || user?.userId
-        } as any);
-      }
+      // El cargo se asigna EN la obra (asignación). Dispara el onboarding del kit.
+      await workersApi.setAsignacion(worker.personaId, obraId, cargosParaAsignar(worker), user?.personaId || user?.userId);
+      if (worker.estado === 'inactivo') await workersApi.update(worker.personaId, { estado: 'activo' } as any);
       const refreshed = await workersApi.list();
       if (refreshed.success && refreshed.data) {
         const workers = refreshed.data as any[];
@@ -1471,14 +1523,8 @@ export default function ObraDetalle() {
     setUpdatingWorkers('multiple');
     try {
       for (const worker of workersToAdd) {
-        const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
-        if (!obraIds.includes(obraId)) {
-          await workersApi.update(worker.personaId, {
-            obraIds: [...obraIds, obraId],
-            estado: 'activo',
-            solicitanteId: user?.personaId || user?.userId
-          } as any);
-        }
+        await workersApi.setAsignacion(worker.personaId, obraId, cargosParaAsignar(worker), user?.personaId || user?.userId);
+        if (worker.estado === 'inactivo') await workersApi.update(worker.personaId, { estado: 'activo' } as any);
       }
       const refreshed = await workersApi.list();
       if (refreshed.success && refreshed.data) {
@@ -1528,14 +1574,11 @@ export default function ObraDetalle() {
     if (!obraId) return;
     setUpdatingWorkers(worker.personaId);
     try {
-      // set worker as active; also ensure obraId present in obraIds
-      const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
-      const updated = {
-        estado: 'activo',
-        obraIds: obraIds.includes(obraId) ? obraIds : [...obraIds, obraId],
-        solicitanteId: user?.personaId || user?.userId
-      } as any;
-      await workersApi.update(worker.personaId, updated);
+      // Reactivar: asegurar asignación a la obra (con sus cargos previos) + estado activo.
+      const asig = (worker.asignaciones || []).find((a: any) => a.obraId === obraId);
+      const cargos = (asig && Array.isArray(asig.cargos) && asig.cargos.length) ? asig.cargos : (worker.cargo ? [worker.cargo] : []);
+      await workersApi.setAsignacion(worker.personaId, obraId, cargos, user?.personaId || user?.userId);
+      await workersApi.update(worker.personaId, { estado: 'activo' } as any);
       const refreshed = await workersApi.list();
       if (refreshed.success && refreshed.data) {
         const workers = refreshed.data as any[];
@@ -1860,6 +1903,16 @@ export default function ObraDetalle() {
                   initial={obra?.plantillasOnboarding || {}}
                   canEdit={canSubirDocumentos}
                   onSaved={(m) => setObra((o: any) => (o ? { ...o, plantillasOnboarding: m } : o))}
+                />
+
+                {/* Aplicabilidad MIPER (manual): excluir ítems del kit que no aplican
+                    en esta obra por cargo (ej. Jornal de aseo sin trabajo en altura). */}
+                <ObraAplicabilidadKit
+                  obraId={obraId!}
+                  cargos={cargoCatalog}
+                  initial={obra?.aplicabilidadKit || {}}
+                  canEdit={canSubirDocumentos}
+                  onSaved={(m) => setObra((o: any) => (o ? { ...o, aplicabilidadKit: m } : o))}
                 />
               </>
             )}
@@ -2339,8 +2392,8 @@ export default function ObraDetalle() {
                           >
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
                               <div style={{ minWidth: 0 }}>
-                                <div className="font-medium" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>{worker.nombre}</div>
-                                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>{(worker as any).cargo || 'Trabajador'}</div>
+                                <div className="font-medium" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)' }}>{worker.nombre}</div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{(worker as any).cargo || 'Trabajador'}</div>
                                 {/* Apto para ingresar a terreno: gating informativo por ítems bloqueantes (IRL, examen de altura). No bloquea el registro. */}
                                 {(worker as any).aptoTerreno
                                   ? <span style={{ fontSize: '0.72rem', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2 }}><LuCircleCheck size={12} /> Apto para ingresar a terreno</span>
@@ -3122,37 +3175,97 @@ export default function ObraDetalle() {
                       </div>
                     </div>
                     {isAssigned ? (
-                      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                        <span className={`badge ${isInactive ? 'badge-warning' : 'badge-success'}`}>
-                          {isInactive ? 'Baja' : 'Activo'}
-                        </span>
-                        {!isInactive ? (
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => handleDeactivateWorker(worker)}
-                            disabled={updatingWorkers === workerId || worker.rol === 'admin'}
-                            title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
-                          >
-                            Dar de baja
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => handleReactivateWorker(worker)}
-                            disabled={updatingWorkers === workerId}
-                          >
-                            Reactivar
-                          </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                        {/* Editor de cargo: cambia el/los cargo(s) del trabajador en la obra. */}
+                        {!isInactive && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end', maxWidth: 360 }}>
+                            {cargoOptions.map((opt) => {
+                              const actuales = assignCargos[workerId] ?? cargosActualesEnObra(worker);
+                              const sel = actuales.includes(opt.value);
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  className={`badge ${sel ? 'badge-success' : ''}`}
+                                  style={{ cursor: 'pointer', border: '1px solid var(--surface-border)', background: sel ? undefined : 'transparent' }}
+                                  onClick={() => setAssignCargos((prev) => {
+                                    const base = prev[workerId] ?? cargosActualesEnObra(worker);
+                                    const next = base.includes(opt.value) ? base.filter((c) => c !== opt.value) : [...base, opt.value];
+                                    return { ...prev, [workerId]: next };
+                                  })}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                          <span className={`badge ${isInactive ? 'badge-warning' : 'badge-success'}`}>
+                            {isInactive ? 'Baja' : 'Activo'}
+                          </span>
+                          {!isInactive && assignCargos[workerId] && (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleUpdateCargos(worker)}
+                              disabled={updatingWorkers === workerId}
+                              title="Guardar el/los cargo(s) del trabajador en esta obra"
+                            >
+                              Guardar cargo
+                            </button>
+                          )}
+                          {!isInactive ? (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleDeactivateWorker(worker)}
+                              disabled={updatingWorkers === workerId || worker.rol === 'admin'}
+                              title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
+                            >
+                              Dar de baja
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleReactivateWorker(worker)}
+                              disabled={updatingWorkers === workerId}
+                            >
+                              Reactivar
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ) : (
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={() => handleAddWorker(worker)}
-                        disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
-                      >
-                        Agregar a obra
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                        {/* Cargo(s) de terreno EN esta obra (multi-cargo). Define el kit. */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end', maxWidth: 360 }}>
+                          {cargoOptions.map((opt) => {
+                            const sel = (assignCargos[workerId] || (worker.cargo ? [worker.cargo] : [])).includes(opt.value);
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                className={`badge ${sel ? 'badge-success' : ''}`}
+                                style={{ cursor: 'pointer', border: '1px solid var(--surface-border)', background: sel ? undefined : 'transparent' }}
+                                onClick={() => setAssignCargos((prev) => {
+                                  const base = prev[workerId] || (worker.cargo ? [worker.cargo] : []);
+                                  const next = base.includes(opt.value) ? base.filter((c) => c !== opt.value) : [...base, opt.value];
+                                  return { ...prev, [workerId]: next };
+                                })}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => handleAddWorker(worker)}
+                          disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
+                          title="Asigna al trabajador a la obra con el/los cargo(s) marcados"
+                        >
+                          Agregar a obra
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

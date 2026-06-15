@@ -102,6 +102,11 @@ class Obra {
         // del MIPER). Estructura: { [cargoCodigo]: { [kitItemKey]: {fileKey,nombre,tipo} } }.
         this.plantillasOnboarding = data.plantillasOnboarding || {};
 
+        // Aplicabilidad MIPER (manual) del kit por cargo en ESTA obra: permite excluir
+        // ítems que no aplican según la MIPER (ej. Jornal de aseo sin trabajo en altura
+        // excluye PR-PO-08/23/41). Estructura: { [cargo]: { [kitItemKey]: 'aplica'|'no_aplica'|'verificar' } }.
+        this.aplicabilidadKit = data.aplicabilidadKit || {};
+
         this.createdAt = data.createdAt || new Date().toISOString();
         this.updatedAt = data.updatedAt || new Date().toISOString();
     }
@@ -171,6 +176,7 @@ class Obra {
             faseDeming: this.faseDeming,
             cumplimientoDS44: this.cumplimientoDS44,
             plantillasOnboarding: this.plantillasOnboarding,
+            aplicabilidadKit: this.aplicabilidadKit,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
@@ -207,6 +213,7 @@ class Obra {
             faseDeming: this.faseDeming,
             cumplimientoDS44: this.cumplimientoDS44,
             plantillasOnboarding: this.plantillasOnboarding,
+            aplicabilidadKit: this.aplicabilidadKit,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };

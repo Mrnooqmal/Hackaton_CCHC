@@ -96,6 +96,22 @@ export const workersApi = {
         return personasApi.update(tenantId, id, data as any);
     },
 
+    // Asigna al trabajador a una obra con sus cargos de terreno (multi-cargo).
+    setAsignacion: (id: string, obraId: string, cargos: string[], solicitanteId?: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.setAsignacion(tenantId, id, obraId, cargos, solicitanteId);
+    },
+
+    quitarAsignacion: (id: string, obraId: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.quitarAsignacion(tenantId, id, obraId);
+    },
+
+    addEvidencia: (id: string, evidencia: { tipo: string; fileKey?: string; nombre?: string; emitidoEn?: string; venceEn?: string; origenObraId?: string }) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.addEvidencia(tenantId, id, evidencia);
+    },
+
     sign: (id: string, signData: SignData) =>
         apiRequest<SignatureResult>(`/signatures/worker/${id}`, {
             method: 'POST',

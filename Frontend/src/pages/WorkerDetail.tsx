@@ -37,6 +37,7 @@ import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 import { useObraContext } from '../context/ObraContext';
 import { Modal } from '../components/ui';
+import WorkerEvidencias from '../components/WorkerEvidencias';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
 
 interface WorkerStats {
@@ -791,6 +792,14 @@ Generado por PrevencionApp
                             )}
                         </div>
                     </div>
+
+                    {/* Evidencias persona-level con vigencia (reutilizables entre obras) */}
+                    <WorkerEvidencias
+                        personaId={worker.personaId}
+                        tenantId={authTenantId}
+                        initial={(worker as any).evidencias || []}
+                        canEdit={canVigilancia}
+                    />
 
                     {/* Vigilancia de Salud (Art. 67/73) */}
                     <div className="lg:col-span-2">

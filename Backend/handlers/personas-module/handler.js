@@ -17,7 +17,7 @@ const { normalizeRol } = require('../../lib/utils/validation');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
-const { normalizeCargoCodigo, resolveCargoKitFromCatalog } = require('../../lib/ds44');
+const { normalizeCargoCodigo, resolveCargoKitFromCatalog, resolveKitUnion, esEvidenciaReutilizable } = require('../../lib/ds44');
 const { InboxRepository } = require('../inbox-module/inbox.repository');
 
 const personaService = new PersonaService();
@@ -197,6 +197,15 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
     const documentId = uuidv4();
     const asignacion = buildAssignment(persona);
 
+    // Evidencia persona-level reutilizada (examen altura/vigilancia vigente): el
+    // ítem nace COMPLETO porque la evidencia ya es válida y vigente en la persona.
+    const reuse = docConfig.evidenciaReuse || null;
+    if (reuse) {
+        asignacion.estado = 'firmado';
+        asignacion.fechaFirma = now;
+        asignacion.reutilizado = true;
+    }
+
     const document = {
         documentId,
         tenantId,
@@ -241,7 +250,14 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
         bloqueante: docConfig.bloqueante || false,
         notaMinima: docConfig.notaMinima || null,
         articulo: docConfig.articulo || null,
-        cargo: persona.cargo || null,
+        // Cargo(s) del kit que originaron este ítem (multi-cargo en la obra).
+        cargo: (Array.isArray(docConfig.cargosOrigen) && docConfig.cargosOrigen.length)
+            ? docConfig.cargosOrigen.join(', ')
+            : (persona.cargo || null),
+        cargosOrigen: docConfig.cargosOrigen || null,
+        // Reutilización de evidencia persona-level (trazabilidad de auditoría).
+        reutilizadoDe: reuse?.origenObraId || null,
+        vigenciaHasta: reuse?.venceEn || null,
         createdAt: now,
         updatedAt: now
     };
@@ -356,19 +372,33 @@ const avisarFaltaPlantilla = async ({ solicitante, persona, obraId, faltantes })
 //   pegado (pendiente_firma). Sin plantilla y se esperaba → doc vacío + aviso.
 // - Nunca bloquea el registro/vinculación (cada ítem va en su propio try/catch).
 const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) => {
-    if (!persona.cargo) return;
+    // El cargo vive en la ASIGNACIÓN a esta obra (multi-cargo). Fallback al cargo
+    // legacy global por compatibilidad con personas aún no migradas.
+    const cargosObra = typeof persona.cargosEnObra === 'function' ? persona.cargosEnObra(obraId) : [];
+    const cargos = (cargosObra && cargosObra.length) ? cargosObra : (persona.cargo ? [persona.cargo] : []);
+    if (cargos.length === 0) return; // sin cargo de terreno → sin kit (oficina/gestión)
 
     const tenant = await tenantService.getById(tenantId).catch(() => null);
-    const kit = resolveCargoKitFromCatalog(tenant?.reglas?.cargos, persona.cargo);
+    // Unión de kits de todos los cargos de la persona en la obra (dedup + estricto).
+    const kit = resolveKitUnion(tenant?.reglas?.cargos, cargos);
     if (!Array.isArray(kit) || kit.length === 0) return;
 
     const obra = obraId ? await obraService.getById(obraId).catch(() => null) : null;
-    const plantillasObra = (obra && obra.plantillasOnboarding && obra.plantillasOnboarding[persona.cargo]) || {};
+    const aplicabilidad = (obra && obra.aplicabilidadKit) || {};       // MIPER manual por obra+cargo
+    const plantillasPorCargo = (obra && obra.plantillasOnboarding) || {};
 
     const faltantes = [];
 
     for (const item of kit) {
         try {
+            const origenes = (item.cargosOrigen && item.cargosOrigen.length) ? item.cargosOrigen : cargos;
+
+            // Aplicabilidad MIPER (manual): se excluye solo si TODOS los cargos de
+            // origen lo marcan 'no_aplica' en esta obra (PR-PO excluidos según MIPER).
+            const excluido = origenes.every((cg) => aplicabilidad?.[cg]?.[item.key] === 'no_aplica');
+            if (excluido) continue;
+
+            // EPP (Art. 13): entrega física por obra (riesgos del sitio), no es PDF.
             if (item.accion === 'ENTREGA_EPP') {
                 const items = (item.matrizEpp || []).map((e) => ({ descripcion: e.descripcion, cantidad: 1 }));
                 if (items.length > 0) {
@@ -377,11 +407,26 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
                 continue;
             }
 
+            // Evidencia persona-level reutilizable (examen altura, vigilancia): si la
+            // persona tiene una vigente, se reutiliza y el ítem nace completo.
+            let evidenciaReuse = null;
+            if (esEvidenciaReutilizable(item) && typeof persona.evidenciaVigente === 'function') {
+                evidenciaReuse = persona.evidenciaVigente(item.tipo);
+            }
+
+            // Plantilla por alcance: tenant (del catálogo) u obra (IRL/MIPER, por cargo).
             let plantilla = null;
             if (item.alcancePlantilla === 'tenant') plantilla = item.plantilla || null;
-            else if (item.alcancePlantilla === 'obra') plantilla = plantillasObra[item.key] || plantillasObra[item.tipo] || null;
+            else if (item.alcancePlantilla === 'obra') {
+                for (const cg of origenes) {
+                    const m = plantillasPorCargo[cg] || {};
+                    plantilla = m[item.key] || m[item.tipo] || null;
+                    if (plantilla) break;
+                }
+            }
 
-            if (!plantilla && (item.alcancePlantilla === 'tenant' || item.alcancePlantilla === 'obra')) {
+            // Faltante solo si se esperaba plantilla, no hay, y no se reutilizó evidencia.
+            if (!plantilla && !evidenciaReuse && (item.alcancePlantilla === 'tenant' || item.alcancePlantilla === 'obra')) {
                 faltantes.push(`${item.codigoEbco ? item.codigoEbco + ' · ' : ''}${item.titulo}`);
             }
 
@@ -392,17 +437,23 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
                     titulo: item.titulo,
                     descripcion: item.articulo ? `${item.articulo} — ${item.titulo}` : item.titulo,
                     requiereFirmaRelator: Boolean(item.requiereFirmaRelator),
-                    plantilla,
+                    plantilla: evidenciaReuse
+                        ? { fileKey: evidenciaReuse.fileKey || null, nombre: evidenciaReuse.nombre || item.titulo }
+                        : plantilla,
                     kitItemKey: item.key,
                     accion: item.accion,
                     alcance: item.alcancePlantilla,
                     bloqueante: Boolean(item.bloqueante),
                     notaMinima: item.notaMinima || null,
-                    articulo: item.articulo || null
+                    articulo: item.articulo || null,
+                    cargosOrigen: origenes,
+                    evidenciaReuse: evidenciaReuse
+                        ? { origenObraId: evidenciaReuse.origenObraId || null, venceEn: evidenciaReuse.venceEn || null }
+                        : null
                 }
             });
         } catch (itemErr) {
-            console.error(`Onboarding: error en ítem ${item.key} (${persona.cargo}):`, itemErr.message);
+            console.error(`Onboarding: error en ítem ${item.key}:`, itemErr.message);
         }
     }
 
@@ -843,6 +894,47 @@ module.exports.personasHandler = async (event) => {
                 message: 'Persona actualizada',
                 persona: persona.toSafeFormat()
             });
+        }
+
+        // POST /personas/{id}/asignaciones — Asigna/actualiza cargos del trabajador
+        // en una obra (multi-cargo). Dispara onboarding por obra si la asignación es
+        // nueva. Body: { obraId, cargos: string[], solicitanteId? }
+        if (method === 'POST' && personaId && action === 'asignaciones' && !segments[2]) {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+            if (!body.obraId) return error('obraId es requerido');
+            const cargos = Array.isArray(body.cargos) ? body.cargos : (body.cargo ? [body.cargo] : []);
+            const { persona, esNueva } = await personaService.setAsignacionObra(tenantId, personaId, body.obraId, cargos);
+
+            try {
+                if (esNueva && normalizeRol(persona.rol) === 'trabajador') {
+                    const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
+                    const solicitante = solicitanteId ? await personaService.getById(solicitanteId) : null;
+                    await runOnboardingForObra({ tenantId, obraId: body.obraId, persona, solicitante });
+                }
+            } catch (onboardingError) {
+                console.error('Error creating onboarding tasks (asignación):', onboardingError);
+            }
+
+            return success({ message: 'Asignación guardada', persona: persona.toSafeFormat() });
+        }
+
+        // DELETE /personas/{id}/asignaciones/{obraId} — Quita al trabajador de una obra.
+        if (method === 'DELETE' && personaId && action === 'asignaciones' && segments[2]) {
+            if (!tenantId) return error('tenantId es requerido');
+            const persona = await personaService.quitarDeObra(tenantId, personaId, segments[2]);
+            return success({ message: 'Asignación eliminada', persona: persona.toSafeFormat() });
+        }
+
+        // POST /personas/{id}/evidencias — Registra evidencia persona-level con
+        // vigencia (examen altura, SPDC…), reutilizable entre obras.
+        // Body: { tipo, fileKey?, nombre?, emitidoEn?, venceEn?, origenObraId? }
+        if (method === 'POST' && personaId && action === 'evidencias') {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+            if (!body.tipo) return error('tipo es requerido');
+            const persona = await personaService.addEvidencia(tenantId, personaId, body);
+            return success({ message: 'Evidencia registrada', persona: persona.toSafeFormat() });
         }
 
         // GET /personas/{id}/historial-epp — Historial dinamico de entregas EPP (Art. 13)

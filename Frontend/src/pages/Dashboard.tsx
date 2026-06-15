@@ -64,19 +64,26 @@ export default function Dashboard() {
 
             setLoading(true);
             try {
-                if (user.rol === 'trabajador') {
-                    await loadWorkerDashboard();
-                } else if (user.rol === 'prevencionista') {
+                // Roles de gestión: cada uno tiene su dashboard. Cualquier otro rol
+                // (trabajador, colaborador, o roles personalizados del tenant) cae al
+                // dashboard de trabajador. Sin este fallback, un rol no contemplado
+                // dejaba el spinner colgado para siempre (no corría ningún loader).
+                const rol = (user.rol as string) || '';
+                if (rol === 'prevencionista') {
                     await loadPrevencionistaDashboard();
-                } else if ((user.rol as string) === 'jefe_obra') {
+                } else if (rol === 'jefe_obra') {
                     await loadJefeObraDashboard();
-                } else if ((user.rol as string) === 'supervisor') {
+                } else if (rol === 'supervisor') {
                     await loadSupervisorDashboard();
-                } else if (user.rol === 'admin') {
+                } else if (rol === 'admin') {
                     await loadAdminDashboard();
+                } else {
+                    await loadWorkerDashboard();
                 }
             } catch (error) {
                 console.error('Error loading dashboard:', error);
+            } finally {
+                // Garantiza que el spinner siempre se cierre, pase lo que pase.
                 if (activeRef.current) {
                     setLoading(false);
                 }

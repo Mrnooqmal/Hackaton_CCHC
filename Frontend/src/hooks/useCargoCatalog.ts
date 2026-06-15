@@ -13,6 +13,11 @@ const SEED_CATALOG: TenantCargo[] = DS44_CARGOS.map((c) => ({
     kit: DS44_CARGO_KITS[c.codigo] || DS44_KIT_GENERICO,
 }));
 
+// Copia profunda de la semilla, para que el constructor de cargos la edite sin
+// mutar el catálogo compartido. Fallback cuando el tenant aún no tiene catálogo.
+export const buildSeedCargoCatalog = (): TenantCargo[] =>
+    SEED_CATALOG.map((c) => ({ ...c, kit: c.kit.map((i) => ({ ...i })) }));
+
 let cache: TenantCargo[] | null = null;
 
 /**

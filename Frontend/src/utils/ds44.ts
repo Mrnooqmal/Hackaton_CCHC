@@ -464,8 +464,7 @@ const kitTransversal = (cargo: string): Ds44KitItem[] => [
     { key: 'POLITICA_SST', tipo: 'POLITICA_SSO', titulo: 'Política SST', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' },
     { key: 'PLAN_EMERGENCIAS', tipo: 'PLAN_EMERGENCIAS', codigoEbco: 'PR-PDO-07.01', titulo: 'Plan de Emergencias de la Obra', articulo: 'Art. 19', naturaleza: 'derivado_miper', alcancePlantilla: 'obra', accion: 'DIFUSION_FIRMA' },
     { key: 'IRL', tipo: 'IRL', titulo: 'IRL — Información de Riesgos Laborales del cargo', articulo: 'Art. 15', naturaleza: 'derivado_miper', alcancePlantilla: 'obra', accion: 'CAPACITACION_EVALUACION', notaMinima: 70, bloqueante: true },
-    itemEppDeCargo(cargo),
-    { key: 'ENCUESTA_PSICOSOCIAL', tipo: 'ENCUESTA_PSICOSOCIAL', titulo: 'Encuesta Psicosocial CEAL-SM / SUSESO', naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'ENCUESTA', protocolo: 'PSICOSOCIAL' }
+    itemEppDeCargo(cargo)
 ];
 
 // Atajos para procedimientos corporativos PR-PO (capacitación + evaluación).
@@ -475,10 +474,11 @@ const dif = (key: string, codigoEbco: string, titulo: string, articulo: string):
     ({ key, tipo: key, codigoEbco, titulo, articulo, naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' });
 const ext = (key: string, titulo: string, articulo: string, bloqueante = false): Ds44KitItem =>
     ({ key, tipo: key, titulo, articulo, naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'EVIDENCIA_EXTERNA', bloqueante });
-const minsal = (protocolo: Ds44ProtocoloMinsal, titulo: string): Ds44KitItem =>
-    ({ key: `VIGILANCIA_${protocolo}`, tipo: `VIGILANCIA_${protocolo}`, titulo, articulo: 'Protocolo MINSAL', naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'INGRESO_VIGILANCIA', protocolo });
 
-// ─── Kits específicos por cargo (fieles a las tablas EBCO) ────────────────────
+// ─── Kits específicos por cargo (PoC: solo los PR-PO con documento real + examen
+// de altura bloqueante). Simplificados respecto a la tabla EBCO completa: se omiten
+// los ítems sin plantilla (MINSAL/vigilancia, Ley Karin, encuestas de clima,
+// certificados de proveedor, HDS por producto) para no inflar el checklist. ────
 const ESPECIFICOS: Record<string, Ds44KitItem[]> = {
     CARPINTERO: [
         ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
@@ -488,19 +488,12 @@ const ESPECIFICOS: Record<string, Ds44KitItem[]> = {
         pp('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Art. 16', 70),
         pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
         pp('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Anexo 8.5', 70),
-        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16'),
-        ext('CERT_MOLDAJES', 'Certificado proveedor de moldajes', 'Evidencia externa'),
-        ext('CAP_ALZAHOMBRE', 'Capacitación alzahombre (proveedor)', 'Evidencia externa'),
-        minsal('PREXOR', 'Vigilancia PREXOR'), minsal('TMERT', 'Vigilancia TMERT'),
-        minsal('MMC', 'Vigilancia MMC'), minsal('RUV', 'Vigilancia RUV')
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16')
     ],
     JORNAL_ASEO: [
         pp('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Anexo 8.1', 70),
         dif('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Difusión'),
-        dif('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Difusión'),
-        pp('PROC_DESCARGA_MIXER', 'PROC. ESPECÍFICO', 'Descarga de mixer', 'Procedimiento específico', 70),
-        pp('CAP_LEY_KARIN', 'LEY KARIN', 'Capacitación Ley Karin', 'Ley 21.643', 70),
-        minsal('RUV', 'Vigilancia RUV (PR-PMIN-12)'), minsal('TMERT', 'Vigilancia TMERT-MMC')
+        dif('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Difusión')
     ],
     MAESTRO_TERMINACIONES: [
         ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
@@ -509,10 +502,7 @@ const ESPECIFICOS: Record<string, Ds44KitItem[]> = {
         pp('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Art. 16', 70),
         pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
         dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16'),
-        dif('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Difusión'),
-        dif('HDS_QUIMICOS', 'HDS', 'HDS + ficha técnica por producto químico', 'Crítico: EPP respiratorio'),
-        pp('CAP_HERRAMIENTAS', 'CAP. HERRAMIENTAS', 'Herramientas autorizadas (cuchillo retráctil)', 'Capacitación', 70),
-        minsal('RUV', 'Vigilancia RUV'), minsal('PSICOSOCIAL', 'Vigilancia Psicosocial')
+        dif('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Difusión')
     ],
     MAESTRO_ALBANIL: [
         ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
@@ -521,9 +511,7 @@ const ESPECIFICOS: Record<string, Ds44KitItem[]> = {
         pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
         pp('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Distancia con maquinaria', 70),
         dif('PR_PO_23', 'PR-PO-23', 'Instalación de Sistemas de Seguridad (usuario)', 'Usuario de anclajes'),
-        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16'),
-        pp('CAP_LEY_KARIN', 'LEY KARIN', 'Capacitación Ley Karin', 'Ley 21.643', 70),
-        minsal('PSICOSOCIAL', 'Vigilancia Psicosocial'), minsal('MMC', 'Vigilancia MMC')
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16')
     ],
     TRAZADOR: [
         ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
@@ -532,10 +520,7 @@ const ESPECIFICOS: Record<string, Ds44KitItem[]> = {
         pp('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Art. 16', 70),
         dif('PR_PO_23', 'PR-PO-23', 'Instalación de Sistemas de Seguridad (banderas/fase amarilla)', 'Usuario'),
         dif('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Difusión'),
-        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16'),
-        pp('FICHA_PORTAESTACAS', 'FICHA N°1', 'Portaestacas / guantes anticorte', 'Capacitación', 70),
-        dif('PR_PO_21_36_38', 'PR-PO-21/36/38', 'Vías despejadas, montaje pilares', 'Difusión'),
-        minsal('SILICE', 'Vigilancia SÍLICE (candidato PREXOR)'), minsal('RUV', 'Vigilancia RUV')
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16')
     ]
 };
 
@@ -605,4 +590,37 @@ export function isCargoLegacy(codigo?: string | null): boolean {
 export function resolveCargoKit(codigo?: string | null): Ds44KitItem[] {
     if (codigo && DS44_CARGO_KITS[codigo]) return DS44_CARGO_KITS[codigo];
     return DS44_KIT_GENERICO;
+}
+
+// Ítem de kit con trazabilidad del/los cargo(s) que lo originan (multi-cargo).
+export type Ds44KitItemUnion = Ds44KitItem & { cargosOrigen: string[] };
+
+// Une los kits de varios cargos (trabajador multi-cargo en una obra): dedup por
+// `key`, conservando el criterio MÁS ESTRICTO (bloqueante OR, notaMinima MAX) y
+// los cargosOrigen. Espejo de resolveKitUnion del backend.
+export function unionKits(kitsPorCargo: { cargo: string; kit: Ds44KitItem[] }[]): Ds44KitItemUnion[] {
+    const map = new Map<string, Ds44KitItemUnion>();
+    for (const { cargo, kit } of kitsPorCargo) {
+        for (const it of kit) {
+            const prev = map.get(it.key);
+            if (!prev) {
+                map.set(it.key, { ...it, cargosOrigen: [cargo] });
+            } else {
+                map.set(it.key, {
+                    ...prev,
+                    bloqueante: Boolean(prev.bloqueante || it.bloqueante),
+                    notaMinima: (Math.max(prev.notaMinima || 0, it.notaMinima || 0) || undefined) as Ds44KitItem['notaMinima'],
+                    requiereFirmaRelator: prev.requiereFirmaRelator || it.requiereFirmaRelator,
+                    cargosOrigen: [...new Set([...prev.cargosOrigen, cargo])],
+                });
+            }
+        }
+    }
+    return [...map.values()];
+}
+
+// Ítems cuya evidencia vive en la persona y se reutiliza entre obras mientras
+// esté vigente (examen de altura, certificados externos, ingreso a vigilancia).
+export function esEvidenciaReutilizable(item: Pick<Ds44KitItem, 'accion'>): boolean {
+    return !!item && (item.accion === 'EVIDENCIA_EXTERNA' || item.accion === 'INGRESO_VIGILANCIA');
 }

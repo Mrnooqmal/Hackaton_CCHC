@@ -47,6 +47,31 @@ export const personasApi = {
             body: JSON.stringify(data),
         }),
 
+    // Asigna/actualiza los cargos del trabajador EN una obra (multi-cargo). El
+    // cargo de terreno vive en la asignación (persona × obra), no en la persona.
+    // Dispara el onboarding de esa obra si la asignación es nueva.
+    setAsignacion: (tenantId: string, id: string, obraId: string, cargos: string[], solicitanteId?: string) =>
+        apiRequest<{ message: string; persona: PersonaResponse }>(`/personas/${id}/asignaciones?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify({ obraId, cargos, solicitanteId }),
+        }),
+
+    // Quita al trabajador de una obra (no borra evidencias persona-level).
+    quitarAsignacion: (tenantId: string, id: string, obraId: string) =>
+        apiRequest<{ message: string; persona: PersonaResponse }>(`/personas/${id}/asignaciones/${obraId}?tenantId=${tenantId}`, {
+            method: 'DELETE',
+        }),
+
+    // Registra evidencia persona-level con vigencia (examen altura, SPDC…),
+    // reutilizable entre obras mientras esté vigente.
+    addEvidencia: (tenantId: string, id: string, evidencia: {
+        tipo: string; fileKey?: string; nombre?: string; emitidoEn?: string; venceEn?: string; origenObraId?: string;
+    }) =>
+        apiRequest<{ message: string; persona: PersonaResponse }>(`/personas/${id}/evidencias?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify(evidencia),
+        }),
+
     setPin: (tenantId: string, id: string, pin: string, pinActual?: string) =>
         apiRequest<{ message: string; pinCreatedAt: string }>(`/personas/${id}/set-pin?tenantId=${tenantId}`, {
             method: 'POST',

@@ -62,8 +62,24 @@ class Persona {
         // Rol y contexto laboral
         this.rol = data.rol || 'trabajador';
         this.permisos = data.permisos || (ROLES[normalizeRol(this.rol)]?.permisos || []);
+        // Cargo "principal" (legacy / display). El cargo real de trabajo vive en
+        // cada asignación (persona × obra). Se conserva para los ~30 lugares que
+        // solo muestran "el cargo de esta persona" en snapshots/firmas.
         this.cargo = data.cargo || '';
-        this.obraIds = data.obraIds || [];
+
+        // Asignaciones por obra: { obraId, cargos: string[], fechaIngreso, estado }.
+        // Fuente de verdad del vínculo laboral. Soporta multi-cargo y multi-obra.
+        // Shim de compatibilidad: personas antiguas (sin asignaciones) se derivan
+        // de obraIds + cargo global; se materializan al primer guardado vía modelo.
+        this.asignaciones = Persona._deriveAsignaciones(data);
+        // obraIds queda como ESPEJO de las asignaciones (lo leen muchos sitios para
+        // saber en qué obras está la persona). Nunca se escribe a mano: se deriva.
+        this.obraIds = this.asignaciones.map((a) => a.obraId);
+
+        // Evidencias persona-level con vigencia (examen de altura, SPDC anual, etc.).
+        // Reutilizables entre obras mientras estén vigentes — no se re-piden por obra.
+        // [{ tipo, fileKey?, nombre?, emitidoEn?, venceEn?, origenObraId?, estado }]
+        this.evidencias = Array.isArray(data.evidencias) ? data.evidencias : [];
 
         // Ficha del colaborador (datos relevantes para SSO/DS44)
         this.contactoEmergencia = data.contactoEmergencia || { nombre: '', telefono: '', relacion: '' };
@@ -114,6 +130,49 @@ class Persona {
         this.ultimoAcceso = data.ultimoAcceso || null;
     }
 
+    // ─── Asignaciones / evidencias (helpers de modelo) ──────────────────────
+    static _normalizeCargos(val) {
+        if (Array.isArray(val)) return [...new Set(val.filter(Boolean))];
+        return val ? [val] : [];
+    }
+
+    // Construye las asignaciones desde data; si no existen, las deriva del par
+    // legacy obraIds + cargo (una asignación por obra, heredando el cargo global).
+    static _deriveAsignaciones(data) {
+        if (Array.isArray(data.asignaciones) && data.asignaciones.length) {
+            return data.asignaciones
+                .map((a) => ({
+                    obraId: a.obraId,
+                    cargos: Persona._normalizeCargos(a.cargos != null ? a.cargos : a.cargo),
+                    fechaIngreso: a.fechaIngreso || null,
+                    estado: a.estado || 'activa',
+                }))
+                .filter((a) => a.obraId);
+        }
+        return (data.obraIds || []).map((oid) => ({
+            obraId: oid,
+            cargos: data.cargo ? [data.cargo] : [],
+            fechaIngreso: null,
+            estado: 'activa',
+        }));
+    }
+
+    // Cargos que la persona ejecuta en una obra concreta (vacío si no asignada).
+    cargosEnObra(obraId) {
+        const a = this.asignaciones.find((x) => x.obraId === obraId);
+        return a ? a.cargos : [];
+    }
+
+    // Evidencia persona-level vigente de un tipo (o null). Sin venceEn => vigente.
+    evidenciaVigente(tipo, ref = new Date()) {
+        const refTime = ref instanceof Date ? ref.getTime() : new Date(ref).getTime();
+        return (
+            this.evidencias.find(
+                (e) => e.tipo === tipo && (!e.venceEn || new Date(e.venceEn).getTime() >= refTime)
+            ) || null
+        );
+    }
+
     tienePinConfigurado() {
         return !!this._pinHash;
     }
@@ -158,6 +217,8 @@ class Persona {
             permisos: this.permisos,
             cargo: this.cargo,
             obraIds: this.obraIds,
+            asignaciones: this.asignaciones,
+            evidencias: this.evidencias,
             contactoEmergencia: this.contactoEmergencia,
             nivelEscolar: this.nivelEscolar,
             cursos: this.cursos,
@@ -208,6 +269,8 @@ class Persona {
             permisos: this.permisos,
             cargo: this.cargo,
             obraIds: this.obraIds,
+            asignaciones: this.asignaciones,
+            evidencias: this.evidencias,
             contactoEmergencia: this.contactoEmergencia,
             nivelEscolar: this.nivelEscolar,
             cursos: this.cursos,

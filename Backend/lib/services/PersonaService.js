@@ -70,6 +70,10 @@ class PersonaService {
             permisos: rolConfig ? rolConfig.permisos : [],
             cargo: data.cargo || (rolConfig ? rolConfig.nombre : data.rol),
             obraIds: data.obraIds || [],
+            // Si vienen asignaciones explícitas (obra+cargos), priman; si no, el
+            // modelo las deriva de obraIds + cargo (shim de compatibilidad).
+            asignaciones: Array.isArray(data.asignaciones) ? data.asignaciones : undefined,
+            evidencias: Array.isArray(data.evidencias) ? data.evidencias : [],
             contactoEmergencia: data.contactoEmergencia || { nombre: '', telefono: '', relacion: '' },
             nivelEscolar: data.nivelEscolar || '',
             cursos: Array.isArray(data.cursos) ? data.cursos : [],
@@ -207,7 +211,8 @@ class PersonaService {
      */
     async actualizar(tenantId, personaId, updates) {
         const allowedFields = ['nombre', 'apellido', 'email', 'telefono', 'fotoPerfil', 'notificacionesSms',
-            'cargo', 'estado', 'preferencias', 'obraIds', 'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44',
+            'cargo', 'estado', 'preferencias', 'obraIds', 'asignaciones', 'evidencias',
+            'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44',
             'contactoEmergencia', 'nivelEscolar', 'cursos'];
 
         const updateExpressions = [];
@@ -241,6 +246,59 @@ class PersonaService {
         }));
 
         return Persona.fromDynamoItem(result.Attributes);
+    }
+
+    /**
+     * Persiste asignaciones + mantiene el espejo obraIds en el mismo update
+     * (DynamoDB UpdateCommand es parcial: hay que escribir ambos juntos para que
+     * no queden inconsistentes).
+     */
+    async _persistAsignaciones(tenantId, personaId, asignaciones) {
+        const obraIds = [...new Set(asignaciones.map((a) => a.obraId))];
+        return this.actualizar(tenantId, personaId, { asignaciones, obraIds });
+    }
+
+    /**
+     * Asigna (o reemplaza) los cargos de la persona en una obra. cargos es la
+     * lista COMPLETA de cargos en esa obra (multi-cargo). Devuelve la persona y
+     * los obraId nuevos (para que el caller dispare onboarding solo en esos).
+     */
+    async setAsignacionObra(tenantId, personaId, obraId, cargos = []) {
+        const persona = await this.getById(personaId);
+        if (!persona) throw new Error('Persona no encontrada');
+        const yaAsignada = persona.asignaciones.some((a) => a.obraId === obraId);
+        const prev = persona.asignaciones.find((a) => a.obraId === obraId);
+        const asignaciones = persona.asignaciones.filter((a) => a.obraId !== obraId);
+        asignaciones.push({
+            obraId,
+            cargos: Persona._normalizeCargos(cargos),
+            fechaIngreso: prev?.fechaIngreso || new Date().toISOString(),
+            estado: 'activa',
+        });
+        const actualizada = await this._persistAsignaciones(tenantId, personaId, asignaciones);
+        return { persona: actualizada, esNueva: !yaAsignada };
+    }
+
+    /** Quita la asignación de la persona a una obra (sin borrar evidencias persona-level). */
+    async quitarDeObra(tenantId, personaId, obraId) {
+        const persona = await this.getById(personaId);
+        if (!persona) throw new Error('Persona no encontrada');
+        const asignaciones = persona.asignaciones.filter((a) => a.obraId !== obraId);
+        return this._persistAsignaciones(tenantId, personaId, asignaciones);
+    }
+
+    /**
+     * Registra/actualiza una evidencia persona-level con vigencia (examen altura,
+     * SPDC…). Se guarda la última por tipo (la vigente que reutilizan las obras).
+     */
+    async addEvidencia(tenantId, personaId, evidencia) {
+        const persona = await this.getById(personaId);
+        if (!persona) throw new Error('Persona no encontrada');
+        const evidencias = [
+            ...persona.evidencias.filter((e) => e.tipo !== evidencia.tipo),
+            { ...evidencia, registradoEn: new Date().toISOString() },
+        ];
+        return this.actualizar(tenantId, personaId, { evidencias });
     }
 
     /**

@@ -5,7 +5,7 @@ import { AlertBanner, Modal, Select, SegmentedControl } from '../components/ui';
 import { uploadsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { tenantsApi, type TenantCargo } from '../api/tenants.api';
-import { invalidateCargoCatalog } from '../hooks/useCargoCatalog';
+import { invalidateCargoCatalog, buildSeedCargoCatalog } from '../hooks/useCargoCatalog';
 import type { Ds44KitItem, Ds44AccionTipo } from '../utils/ds44';
 
 const ACCION_OPTIONS: { value: Ds44AccionTipo; label: string }[] = [
@@ -63,11 +63,18 @@ export default function CargosOnboarding() {
         if (!tenantId) { setLoading(false); return; }
         tenantsApi.getCargos(tenantId)
             .then((res) => {
-                const list = res?.data?.cargos || [];
+                // Si el tenant aún no tiene catálogo (o el endpoint no responde),
+                // se parte de la semilla DS44 para que el editor nunca quede vacío.
+                const fetched = res?.success && Array.isArray(res?.data?.cargos) ? res.data!.cargos : [];
+                const list = fetched.length ? fetched : buildSeedCargoCatalog();
                 setCargos(list);
                 setSelected(list[0]?.codigo || '');
             })
-            .catch(() => setError('No se pudo cargar el catálogo de cargos'))
+            .catch(() => {
+                const seed = buildSeedCargoCatalog();
+                setCargos(seed);
+                setSelected(seed[0]?.codigo || '');
+            })
             .finally(() => setLoading(false));
     }, [tenantId]);
 
