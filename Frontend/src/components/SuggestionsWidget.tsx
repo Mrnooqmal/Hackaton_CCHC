@@ -20,6 +20,7 @@ export default function SuggestionsWidget() {
                 userId: user.personaId || '',
                 userName: `${user.nombre || ''} ${user.apellido || ''}`.trim(),
                 tenantId: user.tenantId || null,
+                source: window.location.pathname,
             });
             if (!res.success) throw new Error(res.error || 'Error enviando sugerencia');
             toast.success('Gracias, recibimos tu sugerencia.');
