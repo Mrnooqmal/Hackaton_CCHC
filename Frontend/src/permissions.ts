@@ -26,6 +26,7 @@ export const PERMISSIONS = {
     PERSONA_ONBOARDING: 'persona.onboarding',
     PERSONA_EPP: 'persona.epp',
     PERSONA_VIGILANCIA_SALUD: 'persona.vigilancia_salud',
+    PERSONA_DESVINCULAR: 'persona.desvincular',
     // Repositorio de archivos
     REPOSITORIO_VER: 'repositorio.ver',
     REPOSITORIO_SUBIR: 'repositorio.subir',
@@ -80,6 +81,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
             { key: PERMISSIONS.PERSONA_ONBOARDING, label: 'Actualizar documentos de onboarding' },
             { key: PERMISSIONS.PERSONA_EPP, label: 'Interactuar con historial EPP' },
             { key: PERMISSIONS.PERSONA_VIGILANCIA_SALUD, label: 'Editar vigilancia de salud' },
+            { key: PERMISSIONS.PERSONA_DESVINCULAR, label: 'Desvincular persona de la empresa' },
         ],
     },
     {
@@ -145,6 +147,7 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES, PERMISSIONS.OBRA_SUBIR_DOCUMENTOS, PERMISSIONS.OBRA_FIRMA_ASISTIDA,
         PERMISSIONS.PERSONAS_VER, PERMISSIONS.PERSONAS_CREAR, PERMISSIONS.PERSONAS_DETALLE,
         PERMISSIONS.PERSONA_EXPORTAR, PERMISSIONS.PERSONA_ONBOARDING, PERMISSIONS.PERSONA_EPP, PERMISSIONS.PERSONA_VIGILANCIA_SALUD,
+        PERMISSIONS.PERSONA_DESVINCULAR,
         PERMISSIONS.REPOSITORIO_VER, PERMISSIONS.REPOSITORIO_SUBIR,
         PERMISSIONS.FIRMAS_CREAR,
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,

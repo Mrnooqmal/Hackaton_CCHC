@@ -763,6 +763,13 @@ module.exports.personasHandler = async (event) => {
                 }
             }
 
+            // Cada persona creada por carga masiva aumenta el conteo del tenant.
+            if (resultados.creados.length > 0) {
+                await tenantService.ajustarCantidadTrabajadores(tenantId, resultados.creados.length).catch((countErr) => {
+                    console.error('No se pudo actualizar la cantidad de trabajadores del tenant (carga masiva):', countErr.message);
+                });
+            }
+
             return success({
                 mensaje: `Carga masiva completada. ${resultados.creados.length} personas creadas.`,
                 resultados
@@ -785,6 +792,11 @@ module.exports.personasHandler = async (event) => {
             }
 
             const { persona, passwordTemporal } = await personaService.crear(tenantId, body);
+
+            // Cada persona registrada aumenta automáticamente el conteo del tenant.
+            await tenantService.ajustarCantidadTrabajadores(tenantId, 1).catch((countErr) => {
+                console.error('No se pudo actualizar la cantidad de trabajadores del tenant:', countErr.message);
+            });
 
             // Generar onboarding DS44 si el trabajador se crea ya asignado a obra(s).
             if (normalizeRol(persona.rol) === 'trabajador' && Array.isArray(persona.obraIds) && persona.obraIds.length > 0) {
@@ -894,6 +906,37 @@ module.exports.personasHandler = async (event) => {
                 message: 'Persona actualizada',
                 persona: persona.toSafeFormat()
             });
+        }
+
+        // DELETE /personas/{id} — Desvincular (eliminar) persona de la empresa.
+        // Requiere el permiso PERSONA_DESVINCULAR del solicitante. No se permite
+        // desvincular al administrador. Decrementa el conteo del tenant.
+        if (method === 'DELETE' && personaId && !action) {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+
+            const solicitanteId = body.solicitanteId
+                || event.requestContext?.authorizer?.claims?.sub
+                || null;
+            if (solicitanteId) {
+                const solicitante = await personaService.getById(solicitanteId).catch(() => null);
+                if (!solicitante || !personaPuede(solicitante, await tenantSafe(tenantId), PERMISSIONS.PERSONA_DESVINCULAR)) {
+                    return error('No tienes permiso para desvincular personas de la empresa', 403);
+                }
+            }
+
+            const persona = await personaService.getById(personaId);
+            if (!persona) return error('Persona no encontrada', 404);
+            if (normalizeRol(persona.rol) === 'admin') {
+                return error('No se puede desvincular al administrador de la empresa', 400);
+            }
+
+            await personaService.eliminar(tenantId, personaId);
+            await tenantService.ajustarCantidadTrabajadores(tenantId, -1).catch((countErr) => {
+                console.error('No se pudo actualizar la cantidad de trabajadores del tenant (desvinculación):', countErr.message);
+            });
+
+            return success({ message: 'Persona desvinculada de la empresa', personaId });
         }
 
         // POST /personas/{id}/asignaciones — Asigna/actualiza cargos del trabajador

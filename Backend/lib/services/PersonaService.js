@@ -7,7 +7,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const { Persona, ROLES } = require('../models/Persona');
 const {
@@ -423,6 +423,22 @@ class PersonaService {
             passwordTemporal,
             personaId
         };
+    }
+
+    /**
+     * Desvincular (eliminar) una persona de la empresa. Borra el registro de la
+     * persona dentro del tenant. El ajuste del conteo de trabajadores del tenant
+     * lo realiza el handler (separación de responsabilidades).
+     */
+    async eliminar(tenantId, personaId) {
+        await this.dynamo.send(new DeleteCommand({
+            TableName: this.table,
+            Key: {
+                PK: `TENANT#${tenantId}`,
+                SK: `PERSONA#${personaId}`
+            }
+        }));
+        return { message: 'Persona desvinculada de la empresa', personaId };
     }
 }
 

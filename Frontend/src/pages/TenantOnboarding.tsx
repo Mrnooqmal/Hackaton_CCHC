@@ -91,8 +91,10 @@ export default function TenantOnboarding() {
   const [adminPassword, setAdminPassword] = useState('');
   const [workersResult, setWorkersResult] = useState<WorkerResult[]>([]);
 
+  // La empresa parte con tamaño 1 (solo el administrador) y crece automáticamente
+  // al registrar trabajadores; ya no se pide un número manual.
   const [empresa, setEmpresa] = useState({
-    nombre: '', rutEmpresa: '', cantidadTrabajadores: 10,
+    nombre: '', rutEmpresa: '',
   });
   const [admin, setAdmin] = useState({ rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '', fechaNacimiento: '', email: '' });
   const [roles, setRoles] = useState<RoleDraft[]>(() => [
@@ -124,7 +126,6 @@ export default function TenantOnboarding() {
     if (!empresa.nombre.trim()) f.push('nombre');
     if (!empresa.rutEmpresa.trim()) f.push('rutEmpresa');
     else if (!rutValid(empresa.rutEmpresa)) f.push('rutEmpresaFormato');
-    if (empresa.cantidadTrabajadores < 1) f.push('cantidadTrabajadores');
     return f;
   };
 
@@ -142,7 +143,6 @@ export default function TenantOnboarding() {
   const buildMsg = (fields: string[]) => {
     const LABELS: Record<string, string> = {
       nombre: 'Razón social', rutEmpresa: 'RUT empresa',
-      cantidadTrabajadores: 'Cantidad de trabajadores',
       rut: 'RUT', adminNombre: 'Nombre',
       adminApellidoPaterno: 'Apellido paterno', email: 'Email',
     };
@@ -302,7 +302,8 @@ export default function TenantOnboarding() {
       const payload: TenantSetupData = {
         nombre: empresa.nombre,
         rutEmpresa: empresa.rutEmpresa,
-        cantidadTrabajadores: empresa.cantidadTrabajadores,
+        // Tamaño inicial 1 (solo el administrador). El backend lo fuerza igualmente.
+        cantidadTrabajadores: 1,
         plan: 'starter',
         roles: roles.map(r => ({
           id: r.locked ? 'admin' : r.nombre.trim(),
@@ -471,22 +472,13 @@ export default function TenantOnboarding() {
                   onChange={e => { setEmpresa({ ...empresa, nombre: e.target.value }); clearField('nombre'); }}
                 />
               </div>
-              <div className="onb-field">
+              <div className="onb-field onb-full">
                 <label className="onb-label">RUT EMPRESA *</label>
                 <input
                   className={`onb-input${(fieldErrors.has('rutEmpresa') || fieldErrors.has('rutEmpresaFormato')) ? ' onb-input--err' : ''}`}
                   placeholder="76.123.456-7"
                   value={empresa.rutEmpresa}
                   onChange={e => { setEmpresa({ ...empresa, rutEmpresa: rutFormat(e.target.value) }); clearField('rutEmpresa'); clearField('rutEmpresaFormato'); }}
-                />
-              </div>
-              <div className="onb-field">
-                <label className="onb-label">CANT. TRABAJADORES *</label>
-                <input
-                  className={`onb-input${fieldErrors.has('cantidadTrabajadores') ? ' onb-input--err' : ''}`}
-                  type="number" min={1}
-                  value={empresa.cantidadTrabajadores}
-                  onChange={e => { setEmpresa({ ...empresa, cantidadTrabajadores: parseInt(e.target.value) || 1 }); clearField('cantidadTrabajadores'); }}
                 />
               </div>
             </div>
@@ -889,8 +881,8 @@ export default function TenantOnboarding() {
                   <span className="onb-confirm-v onb-confirm-mono">{empresa.rutEmpresa}</span>
                 </div>
                 <div className="onb-confirm-kv">
-                  <span className="onb-confirm-k">Trabajadores</span>
-                  <span className="onb-confirm-v">{empresa.cantidadTrabajadores}</span>
+                  <span className="onb-confirm-k">Personas iniciales</span>
+                  <span className="onb-confirm-v">{1 + workers.length} (1 admin{workers.length > 0 ? ` + ${workers.length} trabajador${workers.length !== 1 ? 'es' : ''}` : ''})</span>
                 </div>
               </div>
 

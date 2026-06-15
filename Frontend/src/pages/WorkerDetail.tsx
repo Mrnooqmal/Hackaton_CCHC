@@ -20,6 +20,7 @@ import {
     LuMinus,
     LuTrash2,
     LuShieldCheck,
+    LuTriangleAlert,
     LuBuilding2 as LuBuild
 } from 'react-icons/lu';
 import {
@@ -102,6 +103,7 @@ export default function WorkerDetail() {
     const canExportar = hasPermission(PERMISSIONS.PERSONA_EXPORTAR);
     const canOnboarding = hasPermission(PERMISSIONS.PERSONA_ONBOARDING);
     const canVigilancia = hasPermission(PERMISSIONS.PERSONA_VIGILANCIA_SALUD);
+    const canDesvincular = hasPermission(PERMISSIONS.PERSONA_DESVINCULAR);
 
     const [worker, setWorker] = useState<WorkerWithRole | null>(null);
     const [stats, setStats] = useState<WorkerStats | null>(null);
@@ -124,6 +126,11 @@ export default function WorkerDetail() {
     const [eppSaving, setEppSaving] = useState(false);
     const [eppError, setEppError] = useState('');
     const [eppValidating, setEppValidating] = useState<string | null>(null);
+    // Desvinculación de la persona de la empresa (acción crítica con confirmación escrita)
+    const [desvincularOpen, setDesvincularOpen] = useState(false);
+    const [desvincularText, setDesvincularText] = useState('');
+    const [desvinculando, setDesvinculando] = useState(false);
+    const [desvincularError, setDesvincularError] = useState('');
 
     const getLatestOverrideObraId = (overrides?: Record<string, { items?: Record<string, { doneAt: string }>; updatedAt?: string }>) => {
         if (!overrides) return null;
@@ -278,6 +285,34 @@ export default function WorkerDetail() {
             console.error('Error validando entrega EPP:', err);
         } finally {
             setEppValidating(null);
+        }
+    };
+
+    // Nombre completo y frase de autorización exigida para desvincular a la persona.
+    const nombreCompleto = worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : '';
+    const fraseAutorizacion = `Autorizo desvincular a ${nombreCompleto}`;
+
+    const closeDesvincular = () => {
+        setDesvincularOpen(false);
+        setDesvincularText('');
+        setDesvincularError('');
+    };
+
+    const handleDesvincular = async () => {
+        if (!worker || desvincularText.trim() !== fraseAutorizacion) return;
+        setDesvinculando(true);
+        setDesvincularError('');
+        try {
+            const res = await personasApi.remove(authTenantId, worker.personaId, user?.personaId);
+            if (res.success) {
+                navigate('/personas');
+            } else {
+                setDesvincularError(res.error || 'No se pudo desvincular a la persona.');
+            }
+        } catch {
+            setDesvincularError('Error de conexión con el servidor.');
+        } finally {
+            setDesvinculando(false);
         }
     };
 
@@ -700,6 +735,20 @@ Generado por PrevencionApp
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Zona crítica — desvincular a la persona de la empresa */}
+                            {canDesvincular && worker.rol !== 'admin' && (
+                                <div className="worker-danger-zone">
+                                    <button
+                                        type="button"
+                                        className="worker-danger-btn"
+                                        onClick={() => { setDesvincularError(''); setDesvincularText(''); setDesvincularOpen(true); }}
+                                    >
+                                        <LuTriangleAlert size={16} />
+                                        <span>Eliminar persona de la empresa</span>
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -984,6 +1033,33 @@ Generado por PrevencionApp
                     display: flex;
                     flex-direction: column;
                     gap: var(--space-4);
+                }
+
+                /* Zona crítica — desvincular persona de la empresa */
+                .worker-danger-zone {
+                    margin-top: var(--space-5);
+                    padding-top: var(--space-4);
+                    border-top: 1px solid var(--surface-border);
+                }
+                .worker-danger-btn {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    width: 100%;
+                    padding: 10px 14px;
+                    border-radius: var(--radius-md);
+                    border: 1px solid rgba(239, 68, 68, 0.35);
+                    background: rgba(239, 68, 68, 0.06);
+                    color: var(--danger-600, #dc2626);
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: background 0.15s, border-color 0.15s;
+                }
+                .worker-danger-btn:hover {
+                    background: rgba(239, 68, 68, 0.12);
+                    border-color: rgba(239, 68, 68, 0.55);
                 }
                 
                 .info-item {
@@ -1468,6 +1544,58 @@ Generado por PrevencionApp
                     /* ── Responsive ── */
                     @media (max-width: 520px) {
                         .epp-item-meta { grid-template-columns: 1fr 1fr; }
+                    }
+                `}</style>
+            </Modal>
+
+            {/* Modal: desvincular persona de la empresa (confirmación escrita) */}
+            <Modal
+                isOpen={desvincularOpen}
+                onClose={closeDesvincular}
+                title="Eliminar persona de la empresa"
+                subtitle="Esta acción desvincula a la persona de la empresa y no se puede deshacer."
+                size="sm"
+                footer={
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
+                        <button className="btn btn-secondary" onClick={closeDesvincular} disabled={desvinculando}>Cancelar</button>
+                        <button
+                            className="btn btn-danger"
+                            onClick={handleDesvincular}
+                            disabled={desvinculando || desvincularText.trim() !== fraseAutorizacion}
+                        >
+                            {desvinculando ? 'Eliminando…' : 'Aceptar'}
+                        </button>
+                    </div>
+                }
+            >
+                <div className="desv-modal">
+                    {desvincularError && (
+                        <div className="desv-alert" role="alert">
+                            <LuCircleAlert size={15} />
+                            <span>{desvincularError}</span>
+                        </div>
+                    )}
+                    <p className="desv-text">
+                        Por favor, escriba <strong>“{fraseAutorizacion}”</strong> para confirmar.
+                    </p>
+                    <input
+                        className="form-input"
+                        placeholder={fraseAutorizacion}
+                        value={desvincularText}
+                        onChange={(e) => setDesvincularText(e.target.value)}
+                        autoFocus
+                    />
+                </div>
+
+                <style>{`
+                    .desv-modal { display: flex; flex-direction: column; gap: var(--space-3); }
+                    .desv-text { font-size: 0.88rem; color: var(--text-primary); line-height: 1.5; margin: 0; }
+                    .desv-alert {
+                        display: flex; align-items: center; gap: 8px;
+                        padding: 10px 14px; border-radius: var(--radius-md);
+                        background: rgba(239, 68, 68, 0.08);
+                        border: 1px solid rgba(239, 68, 68, 0.25);
+                        color: var(--danger-600, #b91c1c); font-size: 0.82rem;
                     }
                 `}</style>
             </Modal>

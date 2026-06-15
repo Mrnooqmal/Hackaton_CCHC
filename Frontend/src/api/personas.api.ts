@@ -35,6 +35,14 @@ export const personasApi = {
     get: (id: string) =>
         apiRequest<PersonaResponse>(`/personas/${id}`),
 
+    // Desvincula (elimina) a la persona de la empresa. Requiere el permiso
+    // persona.desvincular del solicitante; decrementa el conteo del tenant.
+    remove: (tenantId: string, id: string, solicitanteId?: string) =>
+        apiRequest<{ message: string; personaId: string }>(`/personas/${id}?tenantId=${tenantId}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ solicitanteId }),
+        }),
+
     validateRut: (rut: string) =>
         apiRequest<{ existe: boolean; valido: boolean; mensaje: string | null }>(`/personas/validate?rut=${encodeURIComponent(rut)}`),
 

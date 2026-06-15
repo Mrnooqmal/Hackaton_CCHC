@@ -66,7 +66,9 @@ export interface Tenant {
 export interface TenantSetupData {
     nombre: string;
     rutEmpresa: string;
-    cantidadTrabajadores: number;
+    // La empresa parte con tamaño 1 (solo el administrador) y crece automáticamente
+    // al registrar trabajadores. El backend lo fuerza a 1 en el setup.
+    cantidadTrabajadores?: number;
     email?: string;
     telefono?: string;
     plan?: 'starter' | 'professional' | 'enterprise';
