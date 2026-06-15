@@ -16,6 +16,10 @@ import {
     LuShield,
     LuUsers,
     LuCircleMinus,
+    LuPlus,
+    LuMinus,
+    LuTrash2,
+    LuShieldCheck,
     LuBuilding2 as LuBuild
 } from 'react-icons/lu';
 import {
@@ -46,6 +50,27 @@ interface WorkerStats {
 interface WorkerWithRole extends ApiWorker {
     rol?: 'admin' | 'prevencionista' | 'trabajador';
     obraIds?: string[];
+}
+
+// EPP de uso frecuente — sugerencias para el selector de items (Art. 13 DS44)
+const EPP_COMUNES = [
+    'Casco de seguridad',
+    'Guantes de seguridad',
+    'Zapatos de seguridad',
+    'Lentes de seguridad',
+    'Protección auditiva',
+    'Mascarilla / Respirador',
+    'Arnés de seguridad',
+    'Chaleco reflectante',
+    'Protector facial',
+    'Ropa de trabajo',
+];
+
+// Item de EPP dentro del formulario de entrega
+interface EppItemDraft {
+    descripcion: string;
+    cantidad: number;
+    talla: string;
 }
 
 const getSigIcon = (sig: DigitalSignature) => {
@@ -93,7 +118,8 @@ export default function WorkerDetail() {
     // Historial de EPP (Art. 13) — entregas/reposiciones validadas por instancia superior
     const [eppHistorial, setEppHistorial] = useState<any[]>([]);
     const [eppModalOpen, setEppModalOpen] = useState(false);
-    const [eppForm, setEppForm] = useState({ items: '', esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
+    const [eppForm, setEppForm] = useState({ esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
+    const [eppItems, setEppItems] = useState<EppItemDraft[]>([{ descripcion: '', cantidad: 1, talla: '' }]);
     const [eppSaving, setEppSaving] = useState(false);
     const [eppError, setEppError] = useState('');
     const [eppValidating, setEppValidating] = useState<string | null>(null);
@@ -188,20 +214,30 @@ export default function WorkerDetail() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [worker?.personaId]);
 
+    const resetEppForm = () => {
+        setEppForm({ esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
+        setEppItems([{ descripcion: '', cantidad: 1, talla: '' }]);
+        setEppError('');
+    };
+
+    const addEppItem = () => setEppItems((prev) => [...prev, { descripcion: '', cantidad: 1, talla: '' }]);
+
+    const updateEppItem = (index: number, field: keyof EppItemDraft, value: string | number) =>
+        setEppItems((prev) => prev.map((it, i) => (i === index ? { ...it, [field]: value } : it)));
+
+    const removeEppItem = (index: number) =>
+        setEppItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : [{ descripcion: '', cantidad: 1, talla: '' }]));
+
     const handleCrearEntregaEpp = async () => {
         if (!worker || !user?.personaId) return;
-        const items = eppForm.items
-            .split(';')
-            .map((linea) => linea.trim())
-            .filter(Boolean)
-            .map((linea) => {
-                // Formato por item: "descripcion x cantidad talla:M"
-                const tallaMatch = linea.match(/talla:\s*(\S+)/i);
-                const cantMatch = linea.match(/x\s*(\d+)/i);
-                const descripcion = linea.replace(/x\s*\d+/i, '').replace(/talla:\s*\S+/i, '').trim();
-                return { descripcion, cantidad: cantMatch ? Number(cantMatch[1]) : 1, talla: tallaMatch ? tallaMatch[1] : null };
-            });
-        if (items.length === 0) { setEppError('Indica al menos un item (separados por ;).'); return; }
+        const items = eppItems
+            .map((it) => ({
+                descripcion: it.descripcion.trim(),
+                cantidad: Math.max(1, Number(it.cantidad) || 1),
+                talla: it.talla.trim() || null,
+            }))
+            .filter((it) => it.descripcion);
+        if (items.length === 0) { setEppError('Agrega al menos un ítem con su descripción.'); return; }
         setEppSaving(true);
         setEppError('');
         try {
@@ -219,7 +255,7 @@ export default function WorkerDetail() {
             });
             if (!res.success) { setEppError(res.error || 'No se pudo registrar la entrega.'); return; }
             setEppModalOpen(false);
-            setEppForm({ items: '', esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
+            resetEppForm();
             await loadEppHistorial(worker.personaId);
         } catch {
             setEppError('Error de conexion.');
@@ -703,7 +739,7 @@ Generado por PrevencionApp
                                     Historial de EPP <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(Art. 13 — entregas y reposiciones)</span>
                                 </h3>
                                 {canValidarEpp && (
-                                    <button className="btn btn-primary btn-sm" type="button" onClick={() => { setEppModalOpen(true); setEppError(''); }}>
+                                    <button className="btn btn-primary btn-sm" type="button" onClick={() => { resetEppForm(); setEppModalOpen(true); }}>
                                         Nueva entrega / Reposición
                                     </button>
                                 )}
@@ -1136,64 +1172,295 @@ Generado por PrevencionApp
             {/* Modal: nueva entrega / reposicion de EPP (solo instancia superior) */}
             <Modal
                 isOpen={eppModalOpen}
-                onClose={() => setEppModalOpen(false)}
+                onClose={() => { setEppModalOpen(false); resetEppForm(); }}
                 title="Nueva entrega / Reposición de EPP"
                 subtitle="Art. 13 DS44 — La entrega queda pendiente de validación y de firma del trabajador"
-                size="md"
+                size="lg"
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
-                        <button className="btn btn-secondary" onClick={() => setEppModalOpen(false)}>Cancelar</button>
+                        <button className="btn btn-secondary" onClick={() => { setEppModalOpen(false); resetEppForm(); }}>Cancelar</button>
                         <button className="btn btn-primary" onClick={handleCrearEntregaEpp} disabled={eppSaving}>
                             {eppSaving ? 'Guardando…' : 'Registrar entrega'}
                         </button>
                     </div>
                 }
             >
-                <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                <div className="epp-modal">
                     {eppError && (
-                        <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', fontSize: '0.82rem', color: '#b91c1c' }}>
-                            {eppError}
+                        <div className="epp-alert" role="alert">
+                            <LuCircleAlert size={15} />
+                            <span>{eppError}</span>
                         </div>
                     )}
-                    <div className="form-group">
-                        <label className="form-label">Items entregados</label>
-                        <textarea
-                            className="form-input"
-                            rows={3}
-                            placeholder="Casco x1 talla:M; Guantes x2 talla:L; Zapatos de seguridad x1 talla:42"
-                            value={eppForm.items}
-                            onChange={(e) => setEppForm({ ...eppForm, items: e.target.value })}
-                            style={{ resize: 'vertical' }}
-                        />
-                        <span className="form-hint">Separa items con punto y coma (;). Opcional: x cantidad y talla:valor</span>
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input type="checkbox" checked={eppForm.esReposicion} onChange={(e) => setEppForm({ ...eppForm, esReposicion: e.target.checked })} />
-                        <span>Es reposición</span>
-                    </label>
-                    {eppForm.esReposicion && (
-                        <div className="form-group">
-                            <label className="form-label">Motivo de reposición</label>
-                            <select className="form-input form-select" value={eppForm.motivoReposicion} onChange={(e) => setEppForm({ ...eppForm, motivoReposicion: e.target.value })}>
-                                <option value="desgaste">Desgaste</option>
-                                <option value="perdida">Pérdida</option>
-                                <option value="accidente">Accidente</option>
-                                <option value="cambio_talla">Cambio de talla</option>
-                                <option value="otro">Otro</option>
-                            </select>
+
+                    {/* ── Items entregados ── */}
+                    <section className="epp-section">
+                        <div className="epp-section-head">
+                            <div className="epp-section-title">
+                                <LuShieldCheck size={15} className="text-primary-500" />
+                                <span>Elementos entregados</span>
+                            </div>
+                            <span className="epp-count">{eppItems.filter(i => i.descripcion.trim()).length} ítem(s)</span>
                         </div>
-                    )}
-                    <div className="grid grid-cols-2 gap-4">
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <input type="checkbox" checked={eppForm.capacitacionCompletada} onChange={(e) => setEppForm({ ...eppForm, capacitacionCompletada: e.target.checked })} />
-                            <span>Capacitación de uso realizada</span>
+
+                        <datalist id="epp-comunes">
+                            {EPP_COMUNES.map((n) => <option key={n} value={n} />)}
+                        </datalist>
+
+                        <div className="epp-items">
+                            {eppItems.map((item, index) => (
+                                <div className="epp-item-card" key={index}>
+                                    <div className="epp-item-card-header">
+                                        <span className="epp-item-badge">Ítem {index + 1}</span>
+                                        <button
+                                            type="button"
+                                            className="epp-remove"
+                                            onClick={() => removeEppItem(index)}
+                                            title="Quitar ítem"
+                                            aria-label="Quitar ítem"
+                                        >
+                                            <LuTrash2 size={14} />
+                                        </button>
+                                    </div>
+                                    <div className="epp-item-desc">
+                                        <label className="epp-mini-label">Elemento de protección personal</label>
+                                        <input
+                                            className="form-input"
+                                            list="epp-comunes"
+                                            placeholder="Ej. Casco de seguridad"
+                                            value={item.descripcion}
+                                            onChange={(e) => updateEppItem(index, 'descripcion', e.target.value)}
+                                            autoFocus={index === 0 && !item.descripcion}
+                                        />
+                                    </div>
+                                    <div className="epp-item-meta">
+                                        <div className="epp-item-qty">
+                                            <label className="epp-mini-label">Cantidad</label>
+                                            <div className="epp-stepper">
+                                                <button
+                                                    type="button"
+                                                    className="epp-step-btn"
+                                                    onClick={() => updateEppItem(index, 'cantidad', Math.max(1, (Number(item.cantidad) || 1) - 1))}
+                                                    aria-label="Disminuir cantidad"
+                                                >
+                                                    <LuMinus size={13} />
+                                                </button>
+                                                <input
+                                                    className="epp-step-input"
+                                                    type="number"
+                                                    min={1}
+                                                    value={item.cantidad}
+                                                    onChange={(e) => updateEppItem(index, 'cantidad', Math.max(1, Number(e.target.value) || 1))}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="epp-step-btn"
+                                                    onClick={() => updateEppItem(index, 'cantidad', (Number(item.cantidad) || 1) + 1)}
+                                                    aria-label="Aumentar cantidad"
+                                                >
+                                                    <LuPlus size={13} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="epp-item-size">
+                                            <label className="epp-mini-label">Talla <span className="epp-opt">(opcional)</span></label>
+                                            <input
+                                                className="form-input"
+                                                placeholder="M, 42…"
+                                                value={item.talla}
+                                                onChange={(e) => updateEppItem(index, 'talla', e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <button type="button" className="epp-add-btn" onClick={addEppItem}>
+                            <LuPlus size={15} /> Agregar ítem
+                        </button>
+                    </section>
+
+                    {/* ── Reposición ── */}
+                    <section className="epp-section">
+                        <label className="epp-toggle">
+                            <input type="checkbox" checked={eppForm.esReposicion} onChange={(e) => setEppForm({ ...eppForm, esReposicion: e.target.checked })} />
+                            <span className="epp-toggle-text">
+                                <span className="epp-toggle-title">Es una reposición</span>
+                                <span className="epp-toggle-desc">Reemplazo de un EPP ya entregado</span>
+                            </span>
                         </label>
-                        <div className="form-group" style={{ margin: 0 }}>
-                            <label className="form-label">Duración (min, mínimo 60)</label>
-                            <input type="number" className="form-input" min={0} value={eppForm.capacitacionMinutos} onChange={(e) => setEppForm({ ...eppForm, capacitacionMinutos: e.target.value })} />
-                        </div>
-                    </div>
+                        {eppForm.esReposicion && (
+                            <div className="form-group epp-sub-field">
+                                <label className="form-label">Motivo de reposición</label>
+                                <select className="form-input form-select" value={eppForm.motivoReposicion} onChange={(e) => setEppForm({ ...eppForm, motivoReposicion: e.target.value })}>
+                                    <option value="desgaste">Desgaste</option>
+                                    <option value="perdida">Pérdida</option>
+                                    <option value="accidente">Accidente</option>
+                                    <option value="cambio_talla">Cambio de talla</option>
+                                    <option value="otro">Otro</option>
+                                </select>
+                            </div>
+                        )}
+                    </section>
+
+                    {/* ── Capacitación de uso ── */}
+                    <section className="epp-section">
+                        <label className="epp-toggle">
+                            <input type="checkbox" checked={eppForm.capacitacionCompletada} onChange={(e) => setEppForm({ ...eppForm, capacitacionCompletada: e.target.checked })} />
+                            <span className="epp-toggle-text">
+                                <span className="epp-toggle-title">Capacitación de uso realizada</span>
+                                <span className="epp-toggle-desc">Art. 13 — instrucción sobre el uso correcto del EPP</span>
+                            </span>
+                        </label>
+                        {eppForm.capacitacionCompletada && (
+                            <div className="form-group epp-sub-field">
+                                <label className="form-label">Duración de la capacitación (minutos)</label>
+                                <input type="number" className="form-input" min={0} value={eppForm.capacitacionMinutos} onChange={(e) => setEppForm({ ...eppForm, capacitacionMinutos: e.target.value })} />
+                                <span className="form-hint">Mínimo recomendado: 60 minutos.</span>
+                            </div>
+                        )}
+                    </section>
                 </div>
+
+                <style>{`
+                    /* ── EPP modal wrapper ── */
+                    .epp-modal {
+                        display: flex;
+                        flex-direction: column;
+                        gap: var(--space-4);
+                    }
+                    /* ── Alert ── */
+                    .epp-modal .epp-alert {
+                        display: flex; align-items: center; gap: 8px;
+                        padding: 10px 14px; border-radius: var(--radius-md);
+                        background: rgba(239, 68, 68, 0.08);
+                        border: 1px solid rgba(239, 68, 68, 0.25);
+                        color: var(--danger-600, #b91c1c); font-size: 0.82rem;
+                    }
+                    /* ── Section card ── */
+                    .epp-section {
+                        background: var(--surface-elevated);
+                        border: 1px solid var(--surface-border);
+                        border-radius: var(--radius-lg);
+                        padding: var(--space-5);
+                    }
+                    .epp-section-head {
+                        display: flex; align-items: center; justify-content: space-between;
+                        margin-bottom: var(--space-4);
+                    }
+                    .epp-section-title {
+                        display: flex; align-items: center; gap: 8px;
+                        font-weight: 600; font-size: 0.9rem; color: var(--text-primary);
+                    }
+                    .epp-count {
+                        font-size: 0.72rem; font-weight: 600;
+                        color: var(--text-muted);
+                        background: var(--surface-border);
+                        padding: 2px 8px; border-radius: var(--radius-full);
+                    }
+                    /* ── Item list ── */
+                    .epp-items { display: flex; flex-direction: column; gap: 10px; }
+                    /* ── Item card ── */
+                    .epp-item-card {
+                        background: var(--surface-card);
+                        border: 1px solid var(--surface-border);
+                        border-radius: var(--radius-md);
+                        padding: 14px 16px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                        transition: border-color 0.15s;
+                    }
+                    .epp-item-card:focus-within {
+                        border-color: var(--primary-400);
+                    }
+                    .epp-item-card-header {
+                        display: flex; align-items: center; justify-content: space-between;
+                    }
+                    .epp-item-badge {
+                        font-size: 0.68rem; font-weight: 700;
+                        text-transform: uppercase; letter-spacing: 0.06em;
+                        color: var(--text-muted);
+                    }
+                    .epp-item-desc { width: 100%; }
+                    /* ── Item meta row: qty + talla ── */
+                    .epp-item-meta {
+                        display: grid;
+                        grid-template-columns: 180px 1fr;
+                        gap: 12px;
+                        align-items: end;
+                    }
+                    /* ── Labels ── */
+                    .epp-mini-label {
+                        display: block; font-size: 0.7rem; font-weight: 600;
+                        text-transform: uppercase; letter-spacing: 0.03em;
+                        color: var(--text-muted); margin-bottom: 4px;
+                    }
+                    .epp-opt { font-weight: 400; text-transform: none; letter-spacing: 0; }
+                    /* ── Quantity stepper ── */
+                    .epp-stepper {
+                        display: flex; align-items: center;
+                        border: 1px solid var(--surface-border);
+                        border-radius: var(--radius-md);
+                        background: var(--surface-card);
+                        overflow: hidden; height: 38px;
+                    }
+                    .epp-step-btn {
+                        display: flex; align-items: center; justify-content: center;
+                        width: 36px; height: 100%; border: none; cursor: pointer; flex-shrink: 0;
+                        background: var(--surface-elevated); color: var(--text-primary);
+                        transition: background 0.15s;
+                    }
+                    .epp-step-btn:hover { background: var(--surface-hover); color: var(--primary-500); }
+                    .epp-step-input {
+                        flex: 1; min-width: 0; text-align: center; border: none; outline: none;
+                        background: transparent; color: var(--text-primary);
+                        font-size: 0.9rem; font-weight: 600;
+                        -moz-appearance: textfield;
+                    }
+                    .epp-step-input::-webkit-outer-spin-button,
+                    .epp-step-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+                    /* ── Remove button ── */
+                    .epp-remove {
+                        display: flex; align-items: center; justify-content: center;
+                        width: 30px; height: 30px; border-radius: var(--radius-md);
+                        border: 1px solid var(--surface-border); background: transparent;
+                        color: var(--text-muted); cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+                    }
+                    .epp-remove:hover {
+                        color: var(--danger-500, #ef4444);
+                        border-color: rgba(239, 68, 68, 0.35);
+                        background: rgba(239, 68, 68, 0.06);
+                    }
+                    /* ── Add item button ── */
+                    .epp-add-btn {
+                        display: flex; align-items: center; justify-content: center; gap: 6px;
+                        margin-top: 10px; padding: 9px 14px; width: 100%;
+                        border: 1px dashed var(--primary-400); border-radius: var(--radius-md);
+                        background: transparent; color: var(--primary-500);
+                        font-size: 0.83rem; font-weight: 600; cursor: pointer;
+                        transition: all 0.15s;
+                    }
+                    .epp-add-btn:hover {
+                        background: rgba(0, 110, 220, 0.06);
+                        border-color: var(--primary-500);
+                    }
+                    /* ── Toggle (checkbox + text) ── */
+                    .epp-toggle {
+                        display: flex; align-items: flex-start; gap: 12px; cursor: pointer;
+                    }
+                    .epp-toggle input { margin-top: 2px; width: 16px; height: 16px; flex-shrink: 0; cursor: pointer; }
+                    .epp-toggle-text { display: flex; flex-direction: column; gap: 3px; }
+                    .epp-toggle-title { font-weight: 600; font-size: 0.88rem; color: var(--text-primary); }
+                    .epp-toggle-desc { font-size: 0.76rem; color: var(--text-muted); line-height: 1.4; }
+                    /* ── Sub-field (conditional) ── */
+                    .epp-sub-field { margin: var(--space-4) 0 0; }
+                    /* ── Responsive ── */
+                    @media (max-width: 520px) {
+                        .epp-item-meta { grid-template-columns: 1fr 1fr; }
+                    }
+                `}</style>
             </Modal>
         </>
     );

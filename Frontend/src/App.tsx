@@ -51,6 +51,7 @@ function AppContent() {
       <main className={user ? 'main-content' : 'auth-content'}>
         {user && <Header />}
         {user && <OfflineBanner />}
+        <div className="route-outlet">
         <Routes>
 
           <Route path="/login" element={<Login />} />
@@ -186,6 +187,7 @@ function AppContent() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </div>
         {user && <SuggestionsWidget />}
         {user && <Footer />}
       </main>
