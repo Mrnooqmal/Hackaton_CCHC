@@ -36,7 +36,9 @@ const tenantSafe = async (tenantId) => {
 const TEMPLATE_HEADERS = [
     'rut',
     'nombre',
-    'apellido',
+    'apellidoPaterno',
+    'apellidoMaterno',
+    'fechaNacimiento',
     'email',
     'telefono',
     'rol',
@@ -46,24 +48,28 @@ const TEMPLATE_HEADERS = [
     'contactoEmergenciaNombre',
     'contactoEmergenciaTelefono',
     'contactoEmergenciaRelacion',
-    'cursos',
-    'tieneAccesoWeb'
+    'cursos'
 ];
 
+// Roles y cargos de ejemplo concordantes con los que trae por defecto la pagina
+// de registro de empresa (Prevencionista, Jefe de Obra, Supervisor, Colaborador)
+// y la lista de cargos sugeridos. Los roles reales pueden variar segun los defina
+// el administrador al registrar la empresa.
 const TEMPLATE_EXAMPLE_ROWS = [
-    ['12.345.678-9', 'Juan', 'Perez', 'jperez@empresa.cl', '56912345678', 'trabajador', 'Operador', 'OBRA-001', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura', 'no'],
-    ['11.111.111-1', 'Maria', 'Lopez', 'mlopez@empresa.cl', '56987654321', 'admin', 'Administradora', '', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', '', 'si']
+    ['12.345.678-9', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Colaborador', 'Carpintero', 'OBRA-001', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
+    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Prevencionista', 'Prevencionista', 'OBRA-001', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
 ];
 
 const TEMPLATE_INSTRUCTIONS = [
     '1. Las columnas rut, nombre y rol son obligatorias.',
-    '2. El rol debe ser admin, prevencionista, supervisor o trabajador.',
-    '3. obra: codigo de la obra (ej. OBRA-001). Si se deja vacio y la carga se hace desde una obra, se asigna a esa obra.',
-    '4. tieneAccesoWeb acepta si/no, true/false, 1/0.',
-    '5. Si tieneAccesoWeb es si y el email es valido, se genera password temporal.',
-    '6. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
-    '7. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
-    '8. Elimine las filas de ejemplo antes de cargar el archivo.'
+    '2. El rol debe coincidir con uno de los roles definidos para la empresa (ej. Prevencionista, Jefe de Obra, Supervisor, Colaborador o Administrador).',
+    '3. cargo: cargo del trabajador (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Prevencionista).',
+    '4. obra: codigo de la obra (ej. OBRA-001). Si se deja vacio y la carga se hace desde una obra, se asigna a esa obra.',
+    '5. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
+    '6. Si el email es valido, se genera una contraseña temporal para el acceso web (todas las personas tienen acceso web).',
+    '7. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
+    '8. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
+    '9. Elimine las filas de ejemplo antes de cargar el archivo.'
 ];
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
@@ -140,7 +146,13 @@ const normalizeHeader = (value) =>
 const headerAliases = {
     rut: 'rut',
     nombre: 'nombre',
+    apellidopaterno: 'apellidoPaterno',
+    apellidomaterno: 'apellidoMaterno',
     apellido: 'apellido',
+    fechanacimiento: 'fechaNacimiento',
+    fechadenacimiento: 'fechaNacimiento',
+    nacimiento: 'fechaNacimiento',
+    fechanac: 'fechaNacimiento',
     email: 'email',
     correo: 'email',
     telefono: 'telefono',
@@ -156,17 +168,15 @@ const headerAliases = {
     contactoemergenciatelefono: 'contactoEmergenciaTelefono',
     contactoemergenciarelacion: 'contactoEmergenciaRelacion',
     cursos: 'cursos',
-    capacitaciones: 'cursos',
-    tieneaccesoweb: 'tieneAccesoWeb',
-    accesoweb: 'tieneAccesoWeb'
+    capacitaciones: 'cursos'
 };
 
-const parseBoolean = (value) => {
-    if (value === undefined || value === null || value === '') return undefined;
-    const normalized = String(value).trim().toLowerCase();
-    if (['si', 'sí', 'true', '1', 'yes'].includes(normalized)) return true;
-    if (['no', 'false', '0'].includes(normalized)) return false;
-    return undefined;
+// Resuelve apellido paterno/materno admitiendo tanto la plantilla nueva (columnas
+// separadas) como una columna unica "apellido" (plantillas antiguas o externas).
+const resolveApellidos = (paterno, materno, apellidoUnico) => {
+    if (paterno || materno) return { apellidoPaterno: paterno, apellidoMaterno: materno };
+    const parts = String(apellidoUnico || '').split(/\s+/).filter(Boolean);
+    return { apellidoPaterno: parts[0] || '', apellidoMaterno: parts.slice(1).join(' ') };
 };
 
 const buildAssignment = (persona, fechaLimite = null) => {
@@ -499,11 +509,10 @@ module.exports.personasHandler = async (event) => {
 
                 const rut = getCell('rut');
                 const nombre = getCell('nombre');
-                const apellido = getCell('apellido');
+                const fechaNacimiento = getCell('fechaNacimiento');
                 const email = getCell('email');
-                const rol = getCell('rol').toLowerCase() || 'trabajador';
+                const rol = getCell('rol') || 'Colaborador';
                 const cargo = getCell('cargo');
-                const tieneAccesoWeb = parseBoolean(getCell('tieneAccesoWeb'));
 
                 if (!rut || !nombre) {
                     errores.push({ fila: rowIndex + 1, error: 'Faltan rut o nombre' });
@@ -517,12 +526,12 @@ module.exports.personasHandler = async (event) => {
                 }
                 seenRut.add(rutKey);
 
-                // Split apellido into paterno/materno if contains space
-                const apellidoParts = (apellido || '').split(/\s+/).filter(Boolean);
-                const apellidoPaterno = apellidoParts[0] || '';
-                const apellidoMaterno = apellidoParts.slice(1).join(' ') || '';
+                const { apellidoPaterno, apellidoMaterno } = resolveApellidos(
+                    getCell('apellidoPaterno'), getCell('apellidoMaterno'), getCell('apellido')
+                );
 
-                trabajadores.push({ rut, nombre, apellidoPaterno, apellidoMaterno, email, rol, cargo, tieneAccesoWeb, fechaNacimiento: '' });
+                // El acceso web es siempre habilitado; no se expone en la plantilla.
+                trabajadores.push({ rut, nombre, apellidoPaterno, apellidoMaterno, email, rol, cargo, tieneAccesoWeb: true, fechaNacimiento });
             }
 
             return success({ trabajadores, errores, total: trabajadores.length });
@@ -605,13 +614,15 @@ module.exports.personasHandler = async (event) => {
 
                 const rut = getCell('rut');
                 const nombre = getCell('nombre');
-                const apellido = getCell('apellido');
+                const { apellidoPaterno, apellidoMaterno } = resolveApellidos(
+                    getCell('apellidoPaterno'), getCell('apellidoMaterno'), getCell('apellido')
+                );
+                const fechaNacimiento = getCell('fechaNacimiento');
                 const email = getCell('email');
                 const telefono = getCell('telefono');
-                const rol = getCell('rol').toLowerCase();
-                // Solo los trabajadores usan el catálogo de cargos (resuelve su
-                // kit de onboarding). El Excel trae texto libre → normalizar al
-                // código del catálogo (alias EBCO; cae a OTRO si no se reconoce).
+                // Rol: nombre del rol del tenant (ej. "Colaborador") — sin lowercase
+                // porque el case importa para resolver el preset de permisos.
+                const rol = getCell('rol');
                 // Cargo (opcional) → código del catálogo. Vacío queda vacío (sin
                 // onboarding de terreno); con texto, normaliza a código (alias EBCO).
                 const cargoRaw = getCell('cargo');
@@ -631,7 +642,6 @@ module.exports.personasHandler = async (event) => {
                     .map((c) => c.trim())
                     .filter(Boolean)
                     .map((nombre) => ({ nombre }));
-                const tieneAccesoWeb = parseBoolean(getCell('tieneAccesoWeb'));
 
                 if (!rut || !nombre || !rol) {
                     resultados.errores.push({ fila: rowNumber, error: 'Faltan rut, nombre o rol' });
@@ -649,7 +659,9 @@ module.exports.personasHandler = async (event) => {
                     const { persona, passwordTemporal } = await personaService.crear(tenantId, {
                         rut,
                         nombre,
-                        apellido,
+                        apellidoPaterno,
+                        apellidoMaterno,
+                        fechaNacimiento,
                         email,
                         telefono,
                         rol,
@@ -658,7 +670,8 @@ module.exports.personasHandler = async (event) => {
                         nivelEscolar,
                         contactoEmergencia,
                         cursos,
-                        tieneAccesoWeb
+                        // El acceso web es siempre habilitado; no se expone en la plantilla.
+                        tieneAccesoWeb: true
                     });
 
                     if (sendEmails && persona.email && passwordTemporal) {

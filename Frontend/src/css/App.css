@@ -15,6 +15,25 @@
   flex-direction: column;
 }
 
+/* Sticky footer: el área de rutas llena por sí sola el alto visible
+   (viewport menos el header). Así, en páginas con poco contenido el footer
+   cae por debajo del pliegue y sólo se ve al hacer scroll. En páginas largas
+   crece de forma natural y el footer aparece al final. */
+.main-content > .route-outlet {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(100vh - var(--header-height));
+}
+
+@media (max-width: 1024px) {
+  .main-content > .route-outlet {
+    min-height: calc(100vh - var(--mobile-header-height));
+  }
+}
+
 @media (max-width: 1024px) {
   .main-content {
     margin-left: 0;
