@@ -98,6 +98,10 @@ class Obra {
         // Fase del ciclo Deming para el SGSST (DS44)
         this.faseDeming = data.faseDeming || 'plan'; // 'plan' | 'hacer' | 'verificar' | 'actuar'
 
+        // Plantillas de onboarding a nivel obra (alcance 'obra': IRL/Plan derivados
+        // del MIPER). Estructura: { [cargoCodigo]: { [kitItemKey]: {fileKey,nombre,tipo} } }.
+        this.plantillasOnboarding = data.plantillasOnboarding || {};
+
         this.createdAt = data.createdAt || new Date().toISOString();
         this.updatedAt = data.updatedAt || new Date().toISOString();
     }
@@ -166,6 +170,7 @@ class Obra {
             fasesConfig: this.fasesConfig,
             faseDeming: this.faseDeming,
             cumplimientoDS44: this.cumplimientoDS44,
+            plantillasOnboarding: this.plantillasOnboarding,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };
@@ -201,6 +206,7 @@ class Obra {
             // Eje normativo (cumplimiento DS44)
             faseDeming: this.faseDeming,
             cumplimientoDS44: this.cumplimientoDS44,
+            plantillasOnboarding: this.plantillasOnboarding,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         };

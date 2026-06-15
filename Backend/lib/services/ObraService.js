@@ -110,7 +110,8 @@ class ObraService {
         const allowedFields = ['nombre', 'codigo', 'direccion', 'comuna',
             'region', 'mandante', 'estado', 'etapaConstructivaActual', 'etapaActual',
             'faenaCompartida', 'tieneMaquinaria', 'agentesFQB',
-            'fasesConfig', 'faseDeming', 'cumplimientoDS44', 'imagenKey'];
+            'fasesConfig', 'faseDeming', 'cumplimientoDS44', 'imagenKey',
+            'plantillasOnboarding'];
 
         const updateExpressions = [];
         const expressionNames = {};

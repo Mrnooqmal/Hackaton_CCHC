@@ -8,6 +8,7 @@ import { Modal, Select, SegmentedControl } from '../components/ui';
 import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
+import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
 import type { SignatureRequest } from '../api/client';
 import { PERMISSIONS } from '../permissions';
 
@@ -1849,6 +1850,17 @@ export default function ObraDetalle() {
                   })}
                 </div>
                 </div>
+
+                {/* Plantillas de onboarding por obra (IRL/Plan Emergencias derivados del MIPER).
+                    Se adjuntan automáticamente al vincular un trabajador del cargo. */}
+                <ObraPlantillasOnboarding
+                  obraId={obraId!}
+                  tenantId={obra?.tenantId}
+                  cargos={cargoCatalog}
+                  initial={obra?.plantillasOnboarding || {}}
+                  canEdit={canSubirDocumentos}
+                  onSaved={(m) => setObra((o: any) => (o ? { ...o, plantillasOnboarding: m } : o))}
+                />
               </>
             )}
 
