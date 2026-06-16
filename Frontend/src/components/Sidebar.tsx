@@ -37,45 +37,11 @@ interface NavSection {
     items: NavItem[];
 }
 
-// ─────────────────────────────────────────────────────────────
-// Navegación basada en permisos.
-//
-// El ADMIN conserva su navegación global predefinida. Cualquier otro
-// rol usa GENERIC_NAV: cada ítem declara el permiso de vista que lo
-// habilita; el render filtra por hasPermission y oculta secciones vacías.
-// Los módulos siempre visibles (Inicio, Firma, Incidentes, Encuestas,
-// Configuración) no declaran permiso — sus subacciones se gatean en la página.
-// ─────────────────────────────────────────────────────────────
-const ADMIN_NAV: NavSection[] = [
-    {
-        section: 'Empresa',
-        items: [
-            { path: '/', icon: FiHome, label: 'Inicio' },
-        ]
-    },
-    {
-        section: 'Gestión',
-        items: [
-            { path: '/obras', icon: FiHome, label: 'Obras' },
-            { path: '/personas', icon: FiUsers, label: 'Personas' },
-            { path: '/documents-repository', icon: FiFileText, label: 'Archivos' },
-        ]
-    },
-    {
-        section: 'Cumplimiento',
-        items: [
-            { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
-        ]
-    },
-    {
-        section: 'Sistema',
-        items: [
-            { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
-            { path: '/settings', icon: FiSettings, label: 'Configuración' },
-        ]
-    }
-];
-
+// Cada ítem declara el permiso de vista que lo habilita; el render filtra
+// por hasPermission y oculta secciones vacías. Los módulos sin permiso
+// (Inicio, Firma, Incidentes, Encuestas, Configuración) son siempre visibles;
+// sus subacciones se gatean dentro de la página.
+// El admin tiene bypass total en hasPermission, por lo que ve todos los ítems.
 const GENERIC_NAV: NavSection[] = [
     {
         section: 'Principal',
@@ -109,8 +75,6 @@ const GENERIC_NAV: NavSection[] = [
         ]
     }
 ];
-
-const getNavItems = (role: string): NavSection[] => (role === 'admin' ? ADMIN_NAV : GENERIC_NAV);
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) {
     const location = useLocation();
@@ -279,7 +243,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 )}
 
                 <nav className="sidebar-nav">
-                    {getNavItems(user?.rol || '').map((section: NavSection) => {
+                    {GENERIC_NAV.map((section: NavSection) => {
                         // Permissions are already filtered by role, but keep this for double-checking
                         const visibleItems = section.items.filter((item: NavItem) =>
                             !item.permission || hasPermission(item.permission)

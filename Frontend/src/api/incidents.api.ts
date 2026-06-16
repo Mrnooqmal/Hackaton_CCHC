@@ -40,14 +40,24 @@ export interface ReporteFlash {
 
 export interface Incident {
     incidentId: string;
+    obraId?: string;
+    tenantId?: string;
     tipo: 'accidente' | 'incidente' | 'condicion_subestandar' | 'accion_subestandar';
+    clasificacion?: 'hallazgo' | 'incidente';
     gobernanza?: HallazgoGobernanza | null;
     reporteFlash?: ReporteFlash | null;
     centroTrabajo: string;
+    etapaConstructiva?: string;
     trabajador: {
         nombre: string;
         rut: string;
         genero: string;
+        cargo: string;
+    };
+    realizadoPor?: {
+        personaId: string | null;
+        nombre: string;
+        rut?: string;
         cargo: string;
     };
     fecha: string;
@@ -56,10 +66,6 @@ export interface Incident {
     gravedad: 'leve' | 'grave' | 'fatal';
     diasPerdidos?: number;
     evidencias: string[];
-    documentos?: {
-        diat?: string;
-        diep?: string;
-    };
     investigaciones: {
         prevencionista?: Investigation;
         jefeDirecto?: Investigation;
@@ -67,7 +73,6 @@ export interface Incident {
     };
     estado: 'reportado' | 'en_investigacion' | 'cerrado';
     reportadoPor: string;
-    empresaId: string;
     viewedBy?: string[];
     createdAt: string;
     updatedAt: string;
@@ -87,6 +92,7 @@ export interface Investigation {
 
 export interface CreateIncidentData {
     tipo: 'accidente' | 'incidente' | 'condicion_subestandar' | 'accion_subestandar';
+    obraId?: string;
     centroTrabajo: string;
     // Quien reporta (el backend valida rol para clasificacion 'incidente')
     solicitanteId?: string;
@@ -112,6 +118,7 @@ export interface CreateIncidentData {
     diasPerdidos?: number;
     evidencias?: string[];
     reportadoPor?: string;
+    tenantId?: string;
     empresaId?: string;
     clasificacion?: 'hallazgo' | 'incidente';
     tipoHallazgo?: 'accion' | 'condicion';
@@ -205,7 +212,8 @@ export interface AnalyticsData {
 }
 
 export interface IncidentListParams {
-    empresaId?: string;
+    tenantId?: string;
+    obraId?: string;
     tipo?: string;
     estado?: string;
     fechaInicio?: string;
@@ -246,7 +254,8 @@ export interface IncidentStats {
 }
 
 export interface IncidentStatsParams {
-    empresaId?: string;
+    tenantId?: string;
+    obraId?: string;
     mes?: string;
     masaLaboral?: number;
 }
@@ -298,7 +307,7 @@ export const incidentsApi = {
     getDocuments: (incidentId: string) =>
         apiRequest<{ documents: DocumentReference[] }>(`/incidents/${incidentId}/documents`),
 
-    getAnalytics: (params?: { empresaId?: string; fechaInicio?: string; fechaFin?: string }) => {
+    getAnalytics: (params?: { tenantId?: string; obraId?: string; fechaInicio?: string; fechaFin?: string }) => {
         const query = new URLSearchParams(params as Record<string, string>).toString();
         return apiRequest<AnalyticsData>(`/incidents/analytics${query ? `?${query}` : ''}`);
     },
@@ -335,5 +344,11 @@ export const incidentsApi = {
         apiRequest<{ success: true }>(`/incidents/${id}/viewed`, {
             method: 'POST',
             body: JSON.stringify({ userId }),
+        }),
+
+    marcarAccidente: (id: string, actorId: string) =>
+        apiRequest<Incident>(`/incidents/${id}/calificar-accidente`, {
+            method: 'PUT',
+            body: JSON.stringify({ actorId }),
         }),
 };

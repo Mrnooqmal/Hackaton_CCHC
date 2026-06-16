@@ -18,7 +18,7 @@ const { resolvePersonaPermisos } = require('../../lib/permissions');
 const crypto = require('crypto');
 
 const SESSIONS_TABLE = process.env.SESSIONS_TABLE || 'Sessions';
-const SESSION_DURATION_HOURS = 24;
+const SESSION_DURATION_HOURS = 6;
 
 const personaService = new PersonaService();
 const tenantService = new TenantService();

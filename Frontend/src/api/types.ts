@@ -8,6 +8,8 @@ export interface User {
     tenantId: string;
     rut: string;
     nombre: string;
+    apellidoPaterno: string;
+    apellidoMaterno: string;
     apellido: string;
     rol: PersonaRol;
     permisos?: string[];

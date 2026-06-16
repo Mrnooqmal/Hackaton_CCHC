@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../api/client';
-import { FiLock, FiCheckCircle, FiEye, FiEyeOff } from 'react-icons/fi';
+import { FiLock, FiCheckCircle, FiEye, FiEyeOff, FiArrowRight } from 'react-icons/fi';
 
 export default function ChangePassword() {
-    const { user, logout } = useAuth();
+    const { user, logout, updateUser } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -40,12 +40,17 @@ export default function ChangePassword() {
             });
 
             if (response.success) {
+                // Actualizar estado local: la contraseña ya no es temporal
+                updateUser({ passwordTemporal: false } as any);
                 setSuccess(true);
 
-                // Siempre hacer logout y redirigir al login para asegurar limpieza de estado
-                setTimeout(async () => {
-                    await logout();
-                    navigate('/login', { replace: true });
+                // Redirigir según si el usuario aún necesita enrolamiento
+                setTimeout(() => {
+                    if (!user?.habilitado) {
+                        navigate('/enroll-me', { replace: true });
+                    } else {
+                        navigate('/', { replace: true });
+                    }
                 }, 2000);
             } else {
                 setError(response.error || 'Error al cambiar la contraseña');
@@ -66,8 +71,12 @@ export default function ChangePassword() {
                     </div>
                     <h2 className="text-2xl font-bold mb-2">¡Contraseña Actualizada!</h2>
                     <p className="text-text-muted mb-6">
-                        Su contraseña ha sido cambiada exitosamente. Será redirigido al login para iniciar sesión con sus nuevas credenciales.
+                        Su contraseña ha sido creada exitosamente. Será redirigido para continuar con el proceso de enrolamiento.
                     </p>
+                    <div className="flex items-center justify-center gap-2 text-primary-500 text-sm font-medium">
+                        <FiArrowRight size={16} />
+                        <span>Continuando...</span>
+                    </div>
                 </div>
             </div>
         );
@@ -176,13 +185,15 @@ export default function ChangePassword() {
                             {loading ? 'Cambiando...' : 'Cambiar Contraseña'}
                         </button>
 
-                        <button
-                            type="button"
-                            onClick={() => logout()}
-                            className="btn btn-ghost w-full"
-                        >
-                            Cerrar Sesión
-                        </button>
+                        {!user?.passwordTemporal && (
+                            <button
+                                type="button"
+                                onClick={() => logout()}
+                                className="btn btn-ghost w-full"
+                            >
+                                Cerrar Sesión
+                            </button>
+                        )}
                     </div>
                 </form>
             </div>
