@@ -169,8 +169,9 @@ export default function PersonasManagement() {
                     relacion: newPersona.contactoEmergenciaRelacion
                 },
                 cursos,
-                tieneAccesoWeb: newPersona.tieneAccesoWeb
-            } as any);
+                tieneAccesoWeb: newPersona.tieneAccesoWeb,
+                solicitanteId: user?.personaId,
+            });
             if (res.success && res.data) {
                 setCreateResult({
                     password: typeof res.data.passwordTemporal === 'string' ? res.data.passwordTemporal : undefined,

@@ -31,10 +31,12 @@ import About from './pages/About';
 import OfflineBanner from './components/OfflineBanner';
 import SuggestionsWidget from './components/SuggestionsWidget';
 import Footer from './components/Footer';
+import { useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ToastProvider } from './context/ToastContext';
 import { ObraProvider } from './context/ObraContext';
+import { BrandProvider, useBrand } from './context/BrandContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PERMISSIONS } from './permissions';
 import './css/index.css';
@@ -45,6 +47,13 @@ import './css/dashboard.css';
 function AppContent() {
   const { user } = useAuth();
   const { isMobileMenuOpen, closeMobileMenu, isSidebarCollapsed } = useLayout();
+  const { setLogo, setPrimaryColor } = useBrand();
+
+  useEffect(() => {
+    if (!user?.branding) return;
+    if (user.branding.logoUrl)       setLogo(user.branding.logoUrl);
+    if (user.branding.colorPrimario) setPrimaryColor(user.branding.colorPrimario);
+  }, [user?.branding, setLogo, setPrimaryColor]);
 
   return (
     <div className={`app-layout ${!user ? 'auth-mode' : ''} ${user && isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -209,9 +218,11 @@ function App() {
       <ToastProvider>
         <ObraProvider>
           <LayoutProvider>
-            <BrowserRouter>
-              <AppContent />
-            </BrowserRouter>
+            <BrandProvider>
+              <BrowserRouter>
+                <AppContent />
+              </BrowserRouter>
+            </BrandProvider>
           </LayoutProvider>
         </ObraProvider>
       </ToastProvider>

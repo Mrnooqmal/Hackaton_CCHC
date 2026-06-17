@@ -5,6 +5,7 @@ import { useLayout } from '../context/LayoutContext';
 import { useObraContext } from '../context/ObraContext';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
+import { useBrand } from '../context/BrandContext';
 
 interface Crumb {
     label: string;
@@ -69,6 +70,7 @@ export default function Header() {
     const { toggleMobileMenu, toggleSidebarCollapsed } = useLayout();
     const { obras, selectedObraId, setSelectedObraId, isLoadingObras } = useObraContext();
     const { theme, toggleTheme } = useTheme();
+    const { logo } = useBrand();
     const location = useLocation();
     const [obraMenuOpen, setObraMenuOpen] = useState(false);
     const obraMenuRef = useRef<HTMLDivElement | null>(null);
@@ -124,11 +126,17 @@ export default function Header() {
                         <FiMenu />
                     </button>
 
-                    <Link to="/" className="header-brand" aria-label="Build & Serve — Inicio">
-                        <span className="header-brand-primary">Build</span>
-                        <span className="header-brand-amp">&amp;</span>
-                        <span className="header-brand-secondary">Serve</span>
-                    </Link>
+                    {logo ? (
+                        <Link to="/" className="header-brand" aria-label="Inicio">
+                            <img src={logo} alt="Logo empresa" className="header-brand-logo" />
+                        </Link>
+                    ) : (
+                        <Link to="/" className="header-brand" aria-label="Build &amp; Serve — Inicio">
+                            <span className="header-brand-primary">Build</span>
+                            <span className="header-brand-amp">&amp;</span>
+                            <span className="header-brand-secondary">Serve</span>
+                        </Link>
+                    )}
 
                     <span className="header-divider" aria-hidden="true" />
 

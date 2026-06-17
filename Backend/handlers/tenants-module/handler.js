@@ -1,6 +1,6 @@
 /**
  * Tenants Module - Handler
- * 
+ *
  * Router para endpoints de gestión de tenants (empresas).
  */
 const { TenantService } = require('../../lib/services/TenantService');
@@ -8,6 +8,25 @@ const { PersonaService } = require('../../lib/services/PersonaService');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const { buildDefaultCargoCatalog, sanitizeCargoCatalog } = require('../../lib/ds44');
+const { PutObjectCommand } = require('@aws-sdk/client-s3');
+const { s3Client } = require('../../lib/clients/s3');
+
+const BUCKET_NAME = process.env.DOCUMENTS_BUCKET;
+
+const uploadTenantLogo = async (dataUrl, tenantId) => {
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    const contentType = match ? match[1] : 'image/png';
+    const base64Data = match ? match[2] : dataUrl;
+    const buffer = Buffer.from(base64Data, 'base64');
+    const key = `tenants/${tenantId}/logos/logo.png`;
+    await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+    }));
+    return key;
+};
 
 const tenantService = new TenantService();
 
@@ -53,11 +72,29 @@ module.exports.tenantsHandler = async (event) => {
                 }
             }
 
+            // Strip logoBase64 from preferencias — it goes to S3, not DynamoDB
+            const logoBase64 = body.preferencias?.logoBase64;
+            const cleanPreferencias = { ...(body.preferencias || {}) };
+            delete cleanPreferencias.logoBase64;
+            const cleanBody = { ...body, preferencias: cleanPreferencias };
+
             let tenant;
             try {
-                tenant = await tenantService.setup(body);
+                tenant = await tenantService.setup(cleanBody);
             } catch (setupErr) {
                 return error(setupErr.message, 400);
+            }
+
+            // Upload logo to S3 and store the key in preferencias
+            if (logoBase64 && BUCKET_NAME) {
+                try {
+                    const logoKey = await uploadTenantLogo(logoBase64, tenant.tenantId);
+                    const updatedPrefs = { ...tenant.preferencias, logoKey };
+                    await tenantService.updateConfig(tenant.tenantId, { preferencias: updatedPrefs });
+                    tenant.preferencias.logoKey = logoKey;
+                } catch (logoErr) {
+                    console.error('Logo upload failed, continuing without logo:', logoErr);
+                }
             }
 
             // Si se proporcionan datos del admin, crear persona admin

@@ -791,7 +791,10 @@ module.exports.personasHandler = async (event) => {
                 }
             }
 
-            const { persona, passwordTemporal } = await personaService.crear(tenantId, body);
+            const { persona, passwordTemporal } = await personaService.crear(tenantId, {
+                ...body,
+                creadoPor: creadorId,
+            });
 
             // Cada persona registrada aumenta automáticamente el conteo del tenant.
             await tenantService.ajustarCantidadTrabajadores(tenantId, 1).catch((countErr) => {
@@ -931,7 +934,7 @@ module.exports.personasHandler = async (event) => {
                 return error('No se puede desvincular al administrador de la empresa', 400);
             }
 
-            await personaService.eliminar(tenantId, personaId);
+            await personaService.eliminar(tenantId, personaId, solicitanteId);
             await tenantService.ajustarCantidadTrabajadores(tenantId, -1).catch((countErr) => {
                 console.error('No se pudo actualizar la cantidad de trabajadores del tenant (desvinculación):', countErr.message);
             });

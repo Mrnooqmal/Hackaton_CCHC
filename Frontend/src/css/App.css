@@ -496,6 +496,14 @@
   color: var(--accent);
 }
 
+.header-brand-logo {
+  height: 30px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+  display: block;
+}
+
 .header-divider {
   width: 1px;
   height: 22px;

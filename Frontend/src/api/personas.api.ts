@@ -17,6 +17,10 @@ export const personasApi = {
         cargo?: string;
         tieneAccesoWeb?: boolean;
         obraIds?: string[];
+        solicitanteId?: string;
+        nivelEscolar?: string;
+        contactoEmergencia?: { nombre?: string; telefono?: string; relacion?: string };
+        cursos?: Array<{ nombre: string }>;
     }) =>
         apiRequest<{ message: string; persona: PersonaResponse; passwordTemporal?: string; emailNotificado: boolean }>(
             `/personas?tenantId=${tenantId}`, {

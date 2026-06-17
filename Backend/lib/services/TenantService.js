@@ -52,9 +52,6 @@ class TenantService {
             slug,
             nombre: data.nombre,
             rutEmpresa: data.rutEmpresa,
-            email: data.email || '',
-            telefono: data.telefono || '',
-            plan: data.plan || 'starter',
             cantidadTrabajadores,
             settings: data.settings,
             reglas: data.reglas,
@@ -102,9 +99,8 @@ class TenantService {
      * Actualizar configuración del tenant
      */
     async updateConfig(tenantId, updates) {
-        const allowedFields = ['nombre', 'email', 'telefono', 'plan',
-            'cantidadTrabajadores', 'settings', 'reglas', 'preferencias',
-            'roles', 'estado', 'adminPersonaId'];
+        const allowedFields = ['nombre', 'cantidadTrabajadores', 'settings',
+            'reglas', 'preferencias', 'roles', 'estado', 'adminPersonaId'];
 
         // Normalizar roles a { id, nombre, descripcion } antes de persistir
         if (Array.isArray(updates.roles)) {

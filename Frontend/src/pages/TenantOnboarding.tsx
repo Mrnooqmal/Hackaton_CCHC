@@ -94,8 +94,9 @@ export default function TenantOnboarding() {
   // La empresa parte con tamaño 1 (solo el administrador) y crece automáticamente
   // al registrar trabajadores; ya no se pide un número manual.
   const [empresa, setEmpresa] = useState({
-    nombre: '', rutEmpresa: '',
+    nombre: '', rutEmpresa: '', logo: null as string | null, colorPrincipal: '#006edc',
   });
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const [admin, setAdmin] = useState({ rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '', fechaNacimiento: '', email: '' });
   const [roles, setRoles] = useState<RoleDraft[]>(() => [
     ADMIN_ROLE_DRAFT,
@@ -304,7 +305,10 @@ export default function TenantOnboarding() {
         rutEmpresa: empresa.rutEmpresa,
         // Tamaño inicial 1 (solo el administrador). El backend lo fuerza igualmente.
         cantidadTrabajadores: 1,
-        plan: 'starter',
+        preferencias: {
+          colorPrimario: empresa.colorPrincipal,
+          logoBase64: empresa.logo ?? undefined,
+        },
         roles: roles.map(r => ({
           id: r.locked ? 'admin' : r.nombre.trim(),
           nombre: r.nombre.trim(),
@@ -358,6 +362,52 @@ export default function TenantOnboarding() {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(''), 2000);
+  };
+
+  const compressLogo = (dataUrl: string): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_H = 120;
+        const scale = Math.min(1, MAX_H / img.height);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+
+  const handleLogoFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setError('El logo debe ser una imagen (PNG, JPG, SVG, WebP).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError('El logo no puede superar los 2 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async e => {
+      try {
+        const compressed = await compressLogo(e.target?.result as string);
+        setEmpresa(prev => ({ ...prev, logo: compressed }));
+        setError('');
+      } catch {
+        setError('Error al procesar la imagen.');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const hexToRgb = (hex: string) => {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    if (!m) return { r: 0, g: 110, b: 220 };
+    return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
   };
 
   /* ── SUCCESS ── */
@@ -480,6 +530,107 @@ export default function TenantOnboarding() {
                   value={empresa.rutEmpresa}
                   onChange={e => { setEmpresa({ ...empresa, rutEmpresa: rutFormat(e.target.value) }); clearField('rutEmpresa'); clearField('rutEmpresaFormato'); }}
                 />
+              </div>
+            </div>
+
+            {/* ── Logo de la empresa ── */}
+            <div className="onb-brand-section">
+              <div className="onb-field">
+                <label className="onb-label">LOGO DE LA EMPRESA</label>
+                <div className="onb-logo-upload-area">
+                  <div className="onb-logo-preview">
+                    {empresa.logo ? (
+                      <img src={empresa.logo} alt="Logo empresa" className="onb-logo-preview-img" />
+                    ) : (
+                      <div className="onb-logo-preview-default" aria-label="Logo por defecto">
+                        <span className="onb-logo-b">Build</span>
+                        <span className="onb-logo-amp">&amp;</span>
+                        <span className="onb-logo-s">Serve</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="onb-logo-upload-actions">
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) handleLogoFile(file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="onb-logo-upload-btn"
+                      onClick={() => logoInputRef.current?.click()}
+                    >
+                      <FiUpload size={13} />
+                      {empresa.logo ? 'Cambiar logo' : 'Subir logo'}
+                    </button>
+                    {empresa.logo && (
+                      <button
+                        type="button"
+                        className="onb-logo-remove-btn"
+                        onClick={() => setEmpresa(prev => ({ ...prev, logo: null }))}
+                        title="Eliminar logo"
+                      >
+                        <FiX size={13} /> Eliminar
+                      </button>
+                    )}
+                    <span className="onb-logo-hint">PNG, JPG, SVG o WebP · Máx. 2 MB</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Color principal ── */}
+              <div className="onb-field">
+                <label className="onb-label">COLOR PRINCIPAL</label>
+                <div className="onb-color-picker-row">
+                  <div
+                    className="onb-color-swatch"
+                    style={{ background: empresa.colorPrincipal }}
+                    onClick={() => document.getElementById('onb-color-input')?.click()}
+                    role="button"
+                    tabIndex={0}
+                    title="Abrir selector de color"
+                    onKeyDown={e => e.key === 'Enter' && document.getElementById('onb-color-input')?.click()}
+                  />
+                  <input
+                    id="onb-color-input"
+                    type="color"
+                    className="onb-color-native"
+                    value={empresa.colorPrincipal}
+                    onChange={e => setEmpresa(prev => ({ ...prev, colorPrincipal: e.target.value }))}
+                  />
+                  <input
+                    type="text"
+                    className="onb-color-hex-input onb-input"
+                    value={empresa.colorPrincipal}
+                    maxLength={7}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEmpresa(prev => ({ ...prev, colorPrincipal: val }));
+                    }}
+                    onBlur={e => {
+                      const val = e.target.value;
+                      if (!/^#[0-9a-f]{6}$/i.test(val)) {
+                        setEmpresa(prev => ({ ...prev, colorPrincipal: '#006edc' }));
+                      }
+                    }}
+                    spellCheck={false}
+                  />
+                  <div className="onb-color-rgb">
+                    {(() => {
+                      const { r, g, b } = hexToRgb(empresa.colorPrincipal);
+                      return <span>R {r} · G {g} · B {b}</span>;
+                    })()}
+                  </div>
+                </div>
+                <p className="onb-color-hint">
+                  Reemplazará el azul principal en toda la plataforma. Haz clic en el cuadro de color para abrir la paleta RGB.
+                </p>
               </div>
             </div>
           </div>
@@ -2061,6 +2212,157 @@ const onbStyles = `
     margin: 10px 0 0;
   }
 
+  /* ── Brand section (logo + color) ── */
+  .onb-brand-section {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid #e8edf3;
+  }
+
+  .onb-logo-upload-area {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .onb-logo-preview {
+    width: 96px;
+    height: 56px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .onb-logo-preview-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .onb-logo-preview-default {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-family: 'Lora', Georgia, serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .onb-logo-upload-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .onb-logo-upload-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 14px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    color: #334155;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .onb-logo-upload-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+
+  .onb-logo-remove-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 34px;
+    padding: 0 12px;
+    background: none;
+    border: 1px solid rgba(239,68,68,0.25);
+    border-radius: 7px;
+    color: #ef4444;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .onb-logo-remove-btn:hover { background: rgba(239,68,68,0.06); }
+
+  .onb-logo-hint {
+    font-size: 11px;
+    color: #94a3b8;
+    width: 100%;
+  }
+
+  /* ── Color picker ── */
+  .onb-color-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .onb-color-swatch {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    border: 2px solid rgba(0,0,0,0.10);
+    cursor: pointer;
+    transition: transform 0.12s, box-shadow 0.12s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  }
+  .onb-color-swatch:hover { transform: scale(1.06); box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+
+  .onb-color-native {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .onb-color-hex-input {
+    width: 96px !important;
+    font-family: 'Courier New', monospace !important;
+    font-size: 13px !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .onb-color-rgb {
+    font-size: 11.5px;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .onb-color-hint {
+    font-size: 11px;
+    color: #94a3b8;
+    margin: 6px 0 0;
+    line-height: 1.5;
+  }
+
   /* ── Responsive ── */
   @media (max-width: 620px) {
     .onb-card { padding: 32px 20px 28px; border-radius: 12px; }
@@ -2071,6 +2373,8 @@ const onbStyles = `
     .onb-step-lbl { display: none !important; }
     .onb-wform-footer { flex-direction: column; align-items: flex-start; gap: 10px; }
     .onb-add-btn { width: 100%; justify-content: center; }
+    .onb-logo-upload-area { flex-direction: column; align-items: flex-start; }
+    .onb-color-picker-row { flex-wrap: wrap; }
   }
 
   @media (max-width: 380px) {

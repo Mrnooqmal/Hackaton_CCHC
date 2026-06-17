@@ -124,6 +124,10 @@ class Persona {
             idioma: 'es'
         };
 
+        // Auditoría de incorporación y desvinculación
+        this.creadoPor = data.creadoPor || null;
+        this.desvinculacion = data.desvinculacion || null;
+
         // Metadata
         this.createdAt = data.createdAt || new Date().toISOString();
         this.updatedAt = data.updatedAt || new Date().toISOString();
@@ -234,6 +238,8 @@ class Persona {
             vigilanciaSalud: this.vigilanciaSalud,
             restriccionLaboral: this.restriccionLaboral,
             preferencias: this.preferencias,
+            creadoPor: this.creadoPor,
+            desvinculacion: this.desvinculacion,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
             ultimoAcceso: this.ultimoAcceso
@@ -284,6 +290,8 @@ class Persona {
             vigilanciaSalud: this.vigilanciaSalud,
             restriccionLaboral: this.restriccionLaboral,
             preferencias: this.preferencias,
+            creadoPor: this.creadoPor,
+            desvinculacion: this.desvinculacion,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
             ultimoAcceso: this.ultimoAcceso

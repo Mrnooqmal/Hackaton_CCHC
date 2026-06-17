@@ -48,9 +48,6 @@ export interface Tenant {
     slug: string;
     nombre: string;
     rutEmpresa: string;
-    email: string;
-    telefono: string;
-    plan: 'starter' | 'professional' | 'enterprise';
     tamano: 'micro' | 'pequena' | 'mediana' | 'grande';
     cantidadTrabajadores: number;
     estado: 'setup' | 'activo' | 'suspendido';
@@ -69,12 +66,9 @@ export interface TenantSetupData {
     // La empresa parte con tamaño 1 (solo el administrador) y crece automáticamente
     // al registrar trabajadores. El backend lo fuerza a 1 en el setup.
     cantidadTrabajadores?: number;
-    email?: string;
-    telefono?: string;
-    plan?: 'starter' | 'professional' | 'enterprise';
     settings?: Partial<TenantSettings>;
     reglas?: Partial<TenantReglas>;
-    preferencias?: Partial<TenantPreferencias>;
+    preferencias?: Partial<TenantPreferencias> & { logoBase64?: string };
     roles?: TenantRole[];
     admin?: {
         rut: string;

@@ -9,7 +9,10 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { docClient } = require('../../lib/clients/dynamodb');
+const { s3Client } = require('../../lib/clients/s3');
 const { success, error } = require('../../lib/utils/response');
 const { validateRut, validateRequired, hashPassword, verifyPassword } = require('../../lib/utils/validation');
 const { PersonaService } = require('../../lib/services/PersonaService');
@@ -19,6 +22,7 @@ const crypto = require('crypto');
 
 const SESSIONS_TABLE = process.env.SESSIONS_TABLE || 'Sessions';
 const SESSION_DURATION_HOURS = 6;
+const BUCKET_NAME = process.env.DOCUMENTS_BUCKET;
 
 const personaService = new PersonaService();
 const tenantService = new TenantService();
@@ -29,14 +33,35 @@ const tenantService = new TenantService();
  */
 const buildUserPayload = async (persona) => {
     let permisos = [];
+    let branding = null;
     try {
         const tenant = await tenantService.getById(persona.tenantId);
-        permisos = resolvePersonaPermisos(persona, tenant ? tenant.toSafeFormat() : null);
+        const tenantData = tenant ? tenant.toSafeFormat() : null;
+        permisos = resolvePersonaPermisos(persona, tenantData);
+        if (tenantData?.preferencias) {
+            const prefs = tenantData.preferencias;
+            let logoUrl = null;
+            if (prefs.logoKey && BUCKET_NAME) {
+                try {
+                    logoUrl = await getSignedUrl(
+                        s3Client,
+                        new GetObjectCommand({ Bucket: BUCKET_NAME, Key: prefs.logoKey }),
+                        { expiresIn: SESSION_DURATION_HOURS * 3600 }
+                    );
+                } catch (urlErr) {
+                    console.error('Failed to generate logo presigned URL:', urlErr);
+                }
+            }
+            branding = {
+                logoUrl,
+                colorPrimario: prefs.colorPrimario || null,
+            };
+        }
     } catch (permErr) {
         console.error('Error resolviendo permisos:', permErr);
         permisos = resolvePersonaPermisos(persona, null);
     }
-    return { ...persona.toSafeFormat(), permisos };
+    return { ...persona.toSafeFormat(), permisos, branding };
 };
 
 const generateSessionToken = () => {

@@ -26,17 +26,14 @@ class Tenant {
         this.slug = data.slug || '';
         this.nombre = data.nombre;
         this.rutEmpresa = data.rutEmpresa || '';
-        this.email = data.email || '';
-        this.telefono = data.telefono || '';
 
-        this.plan = data.plan || 'starter';
         this.tamano = data.tamano || Tenant.calcularTamano(data.cantidadTrabajadores || 0);
         this.cantidadTrabajadores = data.cantidadTrabajadores || 0;
         this.estado = data.estado || 'setup';
         this.adminPersonaId = data.adminPersonaId || null;
 
         this.settings = {
-            maxWorkers: data.settings?.maxWorkers || PLANES[this.plan]?.limiteTrabajadores || 25,
+            maxWorkers: data.settings?.maxWorkers || PLANES.starter.limiteTrabajadores,
             dataRetentionDays: data.settings?.dataRetentionDays || 365,
             twoFactorEnabled: data.settings?.twoFactorEnabled || false,
             modulosActivos: data.settings?.modulosActivos || [
@@ -49,7 +46,7 @@ class Tenant {
             fasesObligatorias: data.reglas?.fasesObligatorias || [
                 'excavacion', 'obra_gruesa', 'terminaciones', 'entrega'
             ],
-            limiteObras: data.reglas?.limiteObras || PLANES[this.plan]?.limiteObras || 1,
+            limiteObras: data.reglas?.limiteObras || PLANES.starter.limiteObras,
             requiereFirmaPin: data.reglas?.requiereFirmaPin !== false,
             ...(data.reglas || {})
         };
@@ -145,9 +142,6 @@ class Tenant {
             slug: this.slug,
             nombre: this.nombre,
             rutEmpresa: this.rutEmpresa,
-            email: this.email,
-            telefono: this.telefono,
-            plan: this.plan,
             tamano: this.tamano,
             cantidadTrabajadores: this.cantidadTrabajadores,
             estado: this.estado,
@@ -178,9 +172,6 @@ class Tenant {
             slug: this.slug,
             nombre: this.nombre,
             rutEmpresa: this.rutEmpresa,
-            email: this.email,
-            telefono: this.telefono,
-            plan: this.plan,
             tamano: this.tamano,
             cantidadTrabajadores: this.cantidadTrabajadores,
             estado: this.estado,

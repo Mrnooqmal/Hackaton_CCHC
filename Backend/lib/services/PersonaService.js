@@ -7,7 +7,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const { Persona, ROLES } = require('../models/Persona');
 const {
@@ -80,6 +80,7 @@ class PersonaService {
             tieneAccesoWeb,
             habilitado: false,
             estado: 'pendiente',
+            creadoPor: data.creadoPor || null,
             createdAt: now,
             updatedAt: now
         };
@@ -181,11 +182,17 @@ class PersonaService {
             expressionValues[':rol'] = filters.rol;
         }
         if (filters.estado) {
-            filterExpression += filterExpression ? ' AND estado = :estado' : 'estado = :estado';
+            filterExpression += filterExpression ? ' AND #estado = :estado' : '#estado = :estado';
+            expressionNames['#estado'] = 'estado';
             expressionValues[':estado'] = filters.estado;
+        } else {
+            // Por defecto excluir personas desvinculadas
+            filterExpression += filterExpression ? ' AND #estado <> :desvinculado' : '#estado <> :desvinculado';
+            expressionNames['#estado'] = 'estado';
+            expressionValues[':desvinculado'] = 'desvinculado';
         }
         if (filters.obraId) {
-            filterExpression += filterExpression ? ' AND contains(obraIds, :obraId)' : 'contains(obraIds, :obraId)';
+            filterExpression += ' AND contains(obraIds, :obraId)';
             expressionValues[':obraId'] = filters.obraId;
         }
 
@@ -426,16 +433,27 @@ class PersonaService {
     }
 
     /**
-     * Desvincular (eliminar) una persona de la empresa. Borra el registro de la
-     * persona dentro del tenant. El ajuste del conteo de trabajadores del tenant
-     * lo realiza el handler (separación de responsabilidades).
+     * Desvincular una persona de la empresa (soft delete).
+     * Marca estado='desvinculado' y registra quién y cuándo desvinculó.
+     * El ajuste del conteo de trabajadores del tenant lo realiza el handler.
      */
-    async eliminar(tenantId, personaId) {
-        await this.dynamo.send(new DeleteCommand({
+    async eliminar(tenantId, personaId, desvinculadoPor = null) {
+        const now = new Date().toISOString();
+        await this.dynamo.send(new UpdateCommand({
             TableName: this.table,
             Key: {
                 PK: `TENANT#${tenantId}`,
                 SK: `PERSONA#${personaId}`
+            },
+            UpdateExpression: 'SET #estado = :estado, desvinculacion = :desvinculacion, updatedAt = :updatedAt',
+            ExpressionAttributeNames: { '#estado': 'estado' },
+            ExpressionAttributeValues: {
+                ':estado': 'desvinculado',
+                ':desvinculacion': {
+                    fechaDesvinculacion: now,
+                    desvinculadoPor: desvinculadoPor || null
+                },
+                ':updatedAt': now
             }
         }));
         return { message: 'Persona desvinculada de la empresa', personaId };
