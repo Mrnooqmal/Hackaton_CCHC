@@ -49,6 +49,11 @@ export const PERMISSIONS = {
     DOCUMENTOS_SUBIR: 'documentos.subir',
     // Cargos de onboarding (catálogo de cargos + kits DS44, nivel empresa)
     CARGOS_GESTIONAR: 'cargos.gestionar',
+    // Mi Empresa (configuración de la empresa: roles, cargos e identidad)
+    EMPRESA_VER: 'empresa.ver',
+    EMPRESA_ROLES: 'empresa.roles',
+    EMPRESA_CARGOS: 'empresa.cargos',
+    EMPRESA_IDENTIDAD: 'empresa.identidad',
 } as const;
 
 export type PermissionKey = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -131,6 +136,15 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         grupo: 'Asistente IA',
         permisos: [
             { key: PERMISSIONS.IA_VER, label: 'Ver Asistente IA' },
+        ],
+    },
+    {
+        grupo: 'Mi Empresa',
+        permisos: [
+            { key: PERMISSIONS.EMPRESA_VER, label: 'Ver módulo Mi Empresa' },
+            { key: PERMISSIONS.EMPRESA_ROLES, label: 'Gestionar roles y permisos' },
+            { key: PERMISSIONS.EMPRESA_CARGOS, label: 'Gestionar cargos predefinidos' },
+            { key: PERMISSIONS.EMPRESA_IDENTIDAD, label: 'Configurar identidad (nombre, logo, color)' },
         ],
     },
 ];

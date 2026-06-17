@@ -49,6 +49,11 @@ const PERMISSIONS = {
     DOCUMENTOS_SUBIR: 'documentos.subir',
     // Cargos de onboarding (catálogo de cargos + kits DS44, nivel empresa)
     CARGOS_GESTIONAR: 'cargos.gestionar',
+    // Mi Empresa (configuración de la empresa: roles, cargos e identidad)
+    EMPRESA_VER: 'empresa.ver',
+    EMPRESA_ROLES: 'empresa.roles',
+    EMPRESA_CARGOS: 'empresa.cargos',
+    EMPRESA_IDENTIDAD: 'empresa.identidad',
 };
 
 const ALL_PERMISSION_KEYS = Object.values(PERMISSIONS);

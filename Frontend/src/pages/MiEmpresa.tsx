@@ -1,0 +1,764 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+    FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
+    FiUpload, FiX, FiInfo, FiUsers, FiExternalLink, FiAlertTriangle,
+} from 'react-icons/fi';
+import { AlertBanner, Modal, Select } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+import { useBrand, DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
+import { useToast } from '../context/ToastContext';
+import { tenantsApi, type Tenant, type TenantRole, type TenantCargo } from '../api/tenants.api';
+import { personasApi } from '../api/personas.api';
+import type { PersonaResponse } from '../api/types';
+import { invalidateCargoCatalog } from '../hooks/useCargoCatalog';
+import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS, PERMISSIONS } from '../permissions';
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const normalize = (s: string) =>
+    String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
+const slug = (s: string) =>
+    normalize(s).replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+
+const codeFromLabel = (label: string) =>
+    label.trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 32) || 'CARGO';
+
+const isAdminRole = (r: { id?: string; nombre?: string }) =>
+    r.id === 'admin' || ['admin', 'administrador'].includes(normalize(r.nombre || ''));
+
+// Una persona pertenece a un rol si su `rol` coincide con el id o el nombre del rol.
+const personaEnRol = (p: PersonaResponse, r: { id?: string; nombre?: string }) =>
+    normalize(p.rol) === normalize(r.id || '') || normalize(p.rol) === normalize(r.nombre || '');
+
+const personaActiva = (p: PersonaResponse) => p.estado !== 'desvinculado';
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    if (!m) return null;
+    return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
+}
+
+function compressLogo(dataUrl: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const MAX_H = 120;
+            const scale = Math.min(1, MAX_H / img.height);
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = reject;
+        img.src = dataUrl;
+    });
+}
+
+interface RoleDraft { _id: string; id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; }
+
+type TabKey = 'identidad' | 'roles' | 'cargos';
+
+export default function MiEmpresa() {
+    const { user, hasPermission, updateUser } = useAuth();
+    const { setLogo, setPrimaryColor } = useBrand();
+    const { toast } = useToast();
+    const tenantId = (user as any)?.tenantId as string | undefined;
+
+    const can = {
+        identidad: hasPermission(PERMISSIONS.EMPRESA_IDENTIDAD),
+        roles: hasPermission(PERMISSIONS.EMPRESA_ROLES),
+        cargos: hasPermission(PERMISSIONS.EMPRESA_CARGOS),
+    };
+    const tabs: { key: TabKey; label: string; icon: any }[] = [
+        ...(can.identidad ? [{ key: 'identidad' as const, label: 'Identidad', icon: FiBriefcase }] : []),
+        ...(can.roles ? [{ key: 'roles' as const, label: 'Roles y permisos', icon: FiShield }] : []),
+        ...(can.cargos ? [{ key: 'cargos' as const, label: 'Cargos', icon: FiTag }] : []),
+    ];
+    const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'identidad');
+
+    const [tenant, setTenant] = useState<Tenant | null>(null);
+    const [personas, setPersonas] = useState<PersonaResponse[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+
+    useEffect(() => {
+        if (!tenantId) { setLoading(false); return; }
+        let alive = true;
+        Promise.all([tenantsApi.get(tenantId), personasApi.list(tenantId)])
+            .then(([tRes, pRes]) => {
+                if (!alive) return;
+                if (tRes.success && tRes.data) setTenant(tRes.data);
+                else setLoadError(tRes.error || 'No se pudo cargar la empresa');
+                if (pRes.success && pRes.data) setPersonas(pRes.data.personas);
+            })
+            .catch(() => alive && setLoadError('Error de conexión al cargar la empresa'))
+            .finally(() => alive && setLoading(false));
+        return () => { alive = false; };
+    }, [tenantId]);
+
+    if (!tenantId) {
+        return <div style={{ padding: 24 }}><AlertBanner variant="error" message="No hay una empresa asociada a tu sesión." /></div>;
+    }
+    if (loading) {
+        return <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
+    }
+
+    return (
+        <div className="mi-empresa-page" style={{ padding: '0 24px 40px' }}>
+            <div className="page-header">
+                <div className="page-header-info">
+                    <h2 className="page-header-title"><FiBriefcase /> Mi Empresa</h2>
+                    <p className="page-header-description">
+                        Administra la identidad, los roles y permisos, y los cargos de {tenant?.nombre || 'tu empresa'}.
+                    </p>
+                </div>
+            </div>
+
+            {loadError && <AlertBanner variant="error" message={loadError} onDismiss={() => setLoadError('')} />}
+
+            <div className="tabs" role="tablist">
+                {tabs.map((t) => {
+                    const Icon = t.icon;
+                    return (
+                        <button key={t.key} role="tab" aria-selected={tab === t.key}
+                            className={`tab me-tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
+                            <Icon size={15} /> {t.label}
+                        </button>
+                    );
+                })}
+            </div>
+
+            {tab === 'identidad' && can.identidad && tenant && (
+                <IdentidadTab
+                    tenant={tenant}
+                    onSaved={(t) => setTenant(t)}
+                    brand={{ setLogo, setPrimaryColor }}
+                    auth={{ user, updateUser }}
+                    toast={toast}
+                />
+            )}
+            {tab === 'roles' && can.roles && tenant && (
+                <RolesTab
+                    tenantId={tenantId}
+                    tenant={tenant}
+                    personas={personas}
+                    setPersonas={setPersonas}
+                    onSaved={(t) => setTenant(t)}
+                    toast={toast}
+                />
+            )}
+            {tab === 'cargos' && can.cargos && (
+                <CargosTab
+                    tenantId={tenantId}
+                    personas={personas}
+                    setPersonas={setPersonas}
+                    canEditKits={hasPermission(PERMISSIONS.CARGOS_GESTIONAR)}
+                    toast={toast}
+                />
+            )}
+
+            <style>{styles}</style>
+        </div>
+    );
+}
+
+// ── Identidad ─────────────────────────────────────────────────────────────────
+function IdentidadTab({ tenant, onSaved, brand, auth, toast }: {
+    tenant: Tenant;
+    onSaved: (t: Tenant) => void;
+    brand: { setLogo: (l: string | null) => void; setPrimaryColor: (c: string) => void };
+    auth: { user: any; updateUser: (u: any) => void };
+    toast: ReturnType<typeof useToast>['toast'];
+}) {
+    const [nombre, setNombre] = useState(tenant.nombre || '');
+    const [color, setColor] = useState(tenant.preferencias?.colorPrimario || DEFAULT_PRIMARY_COLOR);
+    // Logo: vista previa actual (presignado vía branding) + base64 nuevo si se cambia.
+    const [logoPreview, setLogoPreview] = useState<string | null>(auth.user?.branding?.logoUrl || null);
+    const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
+    const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState('');
+    const fileRef = useRef<HTMLInputElement>(null);
+
+    const rgb = hexToRgb(color);
+    const colorValido = !!rgb;
+
+    const onFile = (file: File) => {
+        if (!file.type.startsWith('image/')) { setErr('El logo debe ser una imagen (PNG, JPG, SVG, WebP).'); return; }
+        if (file.size > 2 * 1024 * 1024) { setErr('El logo no puede superar los 2 MB.'); return; }
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const compressed = await compressLogo(e.target?.result as string);
+                setLogoPreview(compressed); setLogoBase64(compressed); setErr('');
+            } catch { setErr('Error al procesar la imagen.'); }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const dirty = nombre.trim() !== (tenant.nombre || '')
+        || color.toLowerCase() !== (tenant.preferencias?.colorPrimario || DEFAULT_PRIMARY_COLOR).toLowerCase()
+        || logoBase64 !== undefined;
+
+    const save = async () => {
+        if (!nombre.trim()) { setErr('La razón social no puede quedar vacía.'); return; }
+        if (!colorValido) { setErr('El color principal no es un hexadecimal válido (ej. #006edc).'); return; }
+        setSaving(true); setErr('');
+        try {
+            const res = await tenantsApi.updateBranding(tenant.tenantId, {
+                nombre: nombre.trim(), colorPrimario: color, logoBase64,
+            });
+            if (res.success && res.data) {
+                // Aplicar identidad en vivo y reflejarla en la sesión.
+                brand.setPrimaryColor(color);
+                if (logoBase64) brand.setLogo(logoBase64);
+                else if (logoBase64 === '') brand.setLogo(null);
+                auth.updateUser({
+                    branding: {
+                        ...(auth.user?.branding || {}),
+                        colorPrimario: color,
+                        ...(logoBase64 ? { logoUrl: logoBase64 } : logoBase64 === '' ? { logoUrl: null } : {}),
+                    },
+                });
+                onSaved(res.data.tenant);
+                setLogoBase64(undefined);
+                toast.success('Identidad de la empresa actualizada.');
+            } else {
+                setErr(res.error || 'No se pudo guardar la identidad.');
+            }
+        } catch { setErr('Error de conexión al guardar.'); }
+        finally { setSaving(false); }
+    };
+
+    return (
+        <div className="me-grid-2">
+            <div className="card me-card">
+                <h3 className="me-card-title">Datos de la empresa</h3>
+                <div className="form-group">
+                    <label className="form-label">Razón social</label>
+                    <input className="form-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Constructora Demo SpA" />
+                </div>
+                <div className="form-group">
+                    <label className="form-label">RUT empresa</label>
+                    <input className="form-input" value={tenant.rutEmpresa} disabled readOnly />
+                    <span className="text-xs text-muted">El RUT no se puede modificar.</span>
+                </div>
+
+                <h3 className="me-card-title" style={{ marginTop: 20 }}>Color principal</h3>
+                <div className="me-color-row">
+                    <button type="button" className="me-swatch" style={{ background: colorValido ? color : '#888' }}
+                        onClick={() => document.getElementById('me-color-input')?.click()} title="Abrir selector de color" />
+                    <input id="me-color-input" type="color" className="me-color-native"
+                        value={colorValido ? color : DEFAULT_PRIMARY_COLOR} onChange={(e) => setColor(e.target.value)} />
+                    <input className="form-input" style={{ maxWidth: 130 }} value={color} maxLength={7} spellCheck={false}
+                        onChange={(e) => setColor(e.target.value)} />
+                    {rgb && <span className="text-xs text-muted">R {rgb.r} · G {rgb.g} · B {rgb.b}</span>}
+                </div>
+                <p className="text-xs text-muted" style={{ marginTop: 6 }}>
+                    Reemplaza el color de acento en toda la plataforma al guardar.
+                </p>
+            </div>
+
+            <div className="card me-card">
+                <h3 className="me-card-title">Logo</h3>
+                <div className="me-logo-area">
+                    <div className="me-logo-preview">
+                        {logoPreview
+                            ? <img src={logoPreview} alt="Logo de la empresa" />
+                            : <span className="text-sm text-muted">Sin logo</span>}
+                    </div>
+                    <div className="me-logo-actions">
+                        <input ref={fileRef} type="file" accept="image/*" hidden
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
+                        <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>
+                            <FiUpload size={13} /> {logoPreview ? 'Cambiar logo' : 'Subir logo'}
+                        </button>
+                        {logoPreview && (
+                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
+                                onClick={() => { setLogoPreview(null); setLogoBase64(''); }}>
+                                <FiX size={13} /> Quitar
+                            </button>
+                        )}
+                        <span className="text-xs text-muted">PNG, JPG, SVG o WebP · Máx. 2 MB</span>
+                    </div>
+                </div>
+            </div>
+
+            <div className="me-save-bar">
+                {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
+                <button className="btn btn-primary" disabled={!dirty || saving} onClick={save}>
+                    {saving ? <div className="spinner" /> : <><FiSave /> Guardar identidad</>}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── Roles y permisos ────────────────────────────────────────────────────────
+function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
+    tenantId: string;
+    tenant: Tenant;
+    personas: PersonaResponse[];
+    setPersonas: React.Dispatch<React.SetStateAction<PersonaResponse[]>>;
+    onSaved: (t: Tenant) => void;
+    toast: ReturnType<typeof useToast>['toast'];
+}) {
+    const toDraft = (roles: TenantRole[]): RoleDraft[] => {
+        const list = roles.map((r, i) => ({
+            _id: `r-${i}-${r.id || r.nombre}`,
+            id: r.id || slug(r.nombre),
+            nombre: r.nombre,
+            descripcion: r.descripcion || '',
+            permisos: isAdminRole(r) ? ALL_PERMISSION_KEYS : (r.permisos || []),
+            locked: isAdminRole(r),
+        }));
+        // El rol Administrador siempre primero.
+        return list.sort((a, b) => (a.locked === b.locked ? 0 : a.locked ? -1 : 1));
+    };
+
+    const [roles, setRoles] = useState<RoleDraft[]>(() => toDraft(tenant.roles || []));
+    const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState('');
+    const [reassign, setReassign] = useState<{ role: RoleDraft; affected: PersonaResponse[] } | null>(null);
+
+    const baseline = useMemo(() => JSON.stringify(toDraft(tenant.roles || []).map(({ _id, ...r }) => r)), [tenant.roles]);
+    const current = JSON.stringify(roles.map(({ _id, ...r }) => r));
+    const dirty = baseline !== current;
+
+    const update = (id: string, patch: Partial<RoleDraft>) =>
+        setRoles((p) => p.map((r) => (r._id === id ? { ...r, ...patch } : r)));
+
+    const togglePerm = (id: string, key: string) =>
+        setRoles((p) => p.map((r) => {
+            if (r._id !== id || r.locked) return r;
+            const has = r.permisos.includes(key);
+            return { ...r, permisos: has ? r.permisos.filter((k) => k !== key) : [...r.permisos, key] };
+        }));
+
+    const addRole = () =>
+        setRoles((p) => [...p, { _id: `new-${Date.now()}`, id: '', nombre: '', descripcion: '', permisos: [] }]);
+
+    // Construye la lista de roles para persistir (ids estables; admin con acceso total).
+    const buildRolesPayload = (list: RoleDraft[]): TenantRole[] => {
+        const taken = new Set<string>();
+        return list.map((r) => {
+            let id = r.locked ? 'admin' : (r.id || slug(r.nombre) || `rol_${taken.size + 1}`);
+            while (taken.has(id)) id = `${id}_2`;
+            taken.add(id);
+            return {
+                id,
+                nombre: r.nombre.trim(),
+                descripcion: r.descripcion.trim(),
+                permisos: r.locked ? ALL_PERMISSION_KEYS : r.permisos,
+            };
+        });
+    };
+
+    const validate = (list: RoleDraft[]): string | null => {
+        if (list.length === 0) return 'Debe existir al menos un rol.';
+        if (list.some((r) => !r.nombre.trim())) return 'Cada rol debe tener un nombre.';
+        const names = list.map((r) => normalize(r.nombre));
+        if (new Set(names).size !== names.length) return 'Hay roles con nombres duplicados.';
+        if (!list.some((r) => r.locked)) return 'El rol Administrador no puede eliminarse.';
+        return null;
+    };
+
+    const persist = async (list: RoleDraft[]): Promise<boolean> => {
+        const res = await tenantsApi.updateRoles(tenantId, buildRolesPayload(list));
+        if (res.success && res.data) { onSaved(res.data.tenant); return true; }
+        setErr(res.error || 'No se pudieron guardar los roles.');
+        return false;
+    };
+
+    const save = async () => {
+        const v = validate(roles);
+        if (v) { setErr(v); return; }
+        setSaving(true); setErr('');
+        try { if (await persist(roles)) toast.success('Roles y permisos actualizados.'); }
+        catch { setErr('Error de conexión al guardar.'); }
+        finally { setSaving(false); }
+    };
+
+    // Eliminar un rol: si tiene personas, exige reasignarlas antes de borrarlo.
+    const requestDelete = (role: RoleDraft) => {
+        if (role.locked) return;
+        if (roles.filter((r) => !r.locked).length <= 0) { setErr('Debe quedar al menos un rol.'); return; }
+        const affected = personas.filter((p) => personaActiva(p) && personaEnRol(p, role));
+        if (affected.length > 0) { setReassign({ role, affected }); return; }
+        // Sin personas: eliminar directamente (queda pendiente de guardar).
+        setRoles((p) => p.filter((r) => r._id !== role._id));
+    };
+
+    // Confirmación de reasignación: mueve a las personas al rol destino y elimina el rol.
+    const confirmReassign = async (targetId: string) => {
+        if (!reassign) return;
+        const { role, affected } = reassign;
+        const target = roles.find((r) => r.id === targetId || r._id === targetId);
+        if (!target) return;
+        setSaving(true); setErr('');
+        try {
+            for (const p of affected) {
+                const res = await personasApi.update(tenantId, p.personaId, { rol: target.id });
+                if (!res.success) throw new Error(res.error || `No se pudo reasignar a ${p.nombre}`);
+            }
+            setPersonas((prev) => prev.map((p) =>
+                affected.some((a) => a.personaId === p.personaId) ? { ...p, rol: target.id } : p));
+            const nextRoles = roles.filter((r) => r._id !== role._id);
+            if (await persist(nextRoles)) {
+                setRoles(nextRoles);
+                toast.success(`Rol "${role.nombre}" eliminado. ${affected.length} persona(s) reasignada(s) a "${target.nombre}".`);
+            }
+            setReassign(null);
+        } catch (e: any) { setErr(e?.message || 'Error al reasignar las personas.'); }
+        finally { setSaving(false); }
+    };
+
+    const countByRole = (r: RoleDraft) => personas.filter((p) => personaActiva(p) && personaEnRol(p, r)).length;
+
+    return (
+        <div>
+            <div className="card me-banner">
+                <FiInfo style={{ flexShrink: 0, color: 'var(--info-500)' }} />
+                <span className="text-sm text-muted" style={{ flex: 1 }}>
+                    El rol <b>Administrador</b> tiene acceso total y no es editable. Al eliminar un rol con personas
+                    asignadas, deberás reasignarlas a otro rol.
+                </span>
+                <button className="btn btn-primary" disabled={!dirty || saving} onClick={save}>
+                    {saving ? <div className="spinner" /> : <><FiSave /> Guardar cambios</>}
+                </button>
+            </div>
+
+            {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
+
+            <div className="me-roles">
+                {roles.map((r) => {
+                    const count = countByRole(r);
+                    return (
+                        <div key={r._id} className="card me-role">
+                            <div className="me-role-head">
+                                <span className={`me-role-icon ${r.locked ? 'locked' : ''}`}>
+                                    {r.locked ? <FiLock size={14} /> : <FiShield size={14} />}
+                                </span>
+                                <div className="me-role-fields">
+                                    <input className="form-input me-role-name" placeholder="Nombre del rol"
+                                        value={r.nombre} disabled={r.locked}
+                                        onChange={(e) => update(r._id, { nombre: e.target.value })} />
+                                    <input className="form-input" placeholder="Descripción (opcional)"
+                                        value={r.descripcion} onChange={(e) => update(r._id, { descripcion: e.target.value })} />
+                                </div>
+                                <div className="me-role-meta">
+                                    <span className="me-count" title="Personas con este rol"><FiUsers size={12} /> {count}</span>
+                                    {!r.locked && (
+                                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
+                                            onClick={() => requestDelete(r)} title="Eliminar rol"><FiTrash2 /></button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="me-perms-head">
+                                Permisos {r.locked && <span className="me-lock-tag"><FiLock size={10} /> Acceso total (no editable)</span>}
+                            </div>
+                            <div className="me-perms-groups">
+                                {PERMISSION_GROUPS.map((g) => (
+                                    <div key={g.grupo} className="me-perms-group">
+                                        <div className="me-perms-group-title">{g.grupo}</div>
+                                        {g.permisos.map((perm) => (
+                                            <label key={perm.key} className={`me-perm ${r.locked ? 'disabled' : ''}`}>
+                                                <input type="checkbox" disabled={r.locked}
+                                                    checked={r.locked || r.permisos.includes(perm.key)}
+                                                    onChange={() => togglePerm(r._id, perm.key)} />
+                                                <span>{perm.label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <button className="btn btn-secondary" style={{ marginTop: 12 }} onClick={addRole}><FiPlus /> Añadir rol</button>
+
+            <ReassignModal
+                open={!!reassign}
+                title={`Eliminar rol "${reassign?.role.nombre}"`}
+                noun="rol"
+                affected={(reassign?.affected || []).map((p) => ({
+                    id: p.personaId,
+                    label: `${p.nombre} ${p.apellido || ''}`.trim(),
+                    sub: p.rut,
+                }))}
+                options={roles.filter((r) => r._id !== reassign?.role._id && r.id).map((r) => ({ value: r.id, label: r.nombre }))}
+                busy={saving}
+                onCancel={() => setReassign(null)}
+                onConfirm={confirmReassign}
+            />
+        </div>
+    );
+}
+
+// ── Cargos ────────────────────────────────────────────────────────────────────
+function CargosTab({ tenantId, personas, setPersonas, canEditKits, toast }: {
+    tenantId: string;
+    personas: PersonaResponse[];
+    setPersonas: React.Dispatch<React.SetStateAction<PersonaResponse[]>>;
+    canEditKits: boolean;
+    toast: ReturnType<typeof useToast>['toast'];
+}) {
+    const [cargos, setCargos] = useState<TenantCargo[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState('');
+    const [newOpen, setNewOpen] = useState(false);
+    const [newLabel, setNewLabel] = useState('');
+    const [reassign, setReassign] = useState<{ cargo: TenantCargo; affected: PersonaResponse[] } | null>(null);
+
+    useEffect(() => {
+        let alive = true;
+        tenantsApi.getCargos(tenantId)
+            .then((res) => { if (alive && res.success && res.data) setCargos(res.data.cargos); })
+            .catch(() => alive && setErr('No se pudo cargar el catálogo de cargos.'))
+            .finally(() => alive && setLoading(false));
+        return () => { alive = false; };
+    }, [tenantId]);
+
+    const persist = async (list: TenantCargo[]): Promise<boolean> => {
+        const res = await tenantsApi.saveCargos(tenantId, list);
+        if (res.success) {
+            invalidateCargoCatalog();
+            if (res.data?.cargos) setCargos(res.data.cargos); else setCargos(list);
+            return true;
+        }
+        setErr(res.error || 'No se pudieron guardar los cargos.');
+        return false;
+    };
+
+    const addCargo = async () => {
+        const label = newLabel.trim();
+        if (!label) return;
+        let codigo = codeFromLabel(label);
+        const taken = new Set(cargos.map((c) => c.codigo));
+        while (taken.has(codigo)) codigo = `${codigo}_2`;
+        const next = [...cargos, { codigo, label, seed: false, kit: [] }];
+        setSaving(true); setErr('');
+        try { if (await persist(next)) { toast.success(`Cargo "${label}" agregado.`); setNewLabel(''); setNewOpen(false); } }
+        catch { setErr('Error de conexión al guardar.'); }
+        finally { setSaving(false); }
+    };
+
+    const requestDelete = (cargo: TenantCargo) => {
+        const affected = personas.filter((p) => personaActiva(p) && p.cargo === cargo.codigo);
+        if (affected.length > 0) { setReassign({ cargo, affected }); return; }
+        confirmDelete(cargo, null, []);
+    };
+
+    const confirmDelete = async (cargo: TenantCargo, targetCodigo: string | null, affected: PersonaResponse[]) => {
+        setSaving(true); setErr('');
+        try {
+            if (targetCodigo) {
+                for (const p of affected) {
+                    const res = await personasApi.update(tenantId, p.personaId, { cargo: targetCodigo });
+                    if (!res.success) throw new Error(res.error || `No se pudo reasignar a ${p.nombre}`);
+                }
+                setPersonas((prev) => prev.map((p) =>
+                    affected.some((a) => a.personaId === p.personaId) ? { ...p, cargo: targetCodigo } : p));
+            }
+            const next = cargos.filter((c) => c.codigo !== cargo.codigo);
+            if (await persist(next)) {
+                const target = cargos.find((c) => c.codigo === targetCodigo);
+                toast.success(targetCodigo
+                    ? `Cargo "${cargo.label}" eliminado. ${affected.length} persona(s) reasignada(s) a "${target?.label}".`
+                    : `Cargo "${cargo.label}" eliminado.`);
+            }
+            setReassign(null);
+        } catch (e: any) { setErr(e?.message || 'Error al reasignar las personas.'); }
+        finally { setSaving(false); }
+    };
+
+    const countByCargo = (codigo: string) => personas.filter((p) => personaActiva(p) && p.cargo === codigo).length;
+
+    if (loading) return <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
+
+    return (
+        <div>
+            <div className="card me-banner">
+                <FiInfo style={{ flexShrink: 0, color: 'var(--info-500)' }} />
+                <span className="text-sm text-muted" style={{ flex: 1 }}>
+                    Los cargos son de la <b>empresa</b> y aplican a todas las obras. Al eliminar un cargo con personas
+                    asignadas, deberás reasignarlas a otro cargo.
+                    {canEditKits && <> Para editar el <b>kit de onboarding DS44</b> de cada cargo, usa el constructor.</>}
+                </span>
+                {canEditKits && (
+                    <Link to="/cargos-onboarding" className="btn btn-secondary btn-sm">
+                        <FiExternalLink size={13} /> Editar kits
+                    </Link>
+                )}
+                <button className="btn btn-primary" onClick={() => setNewOpen(true)}><FiPlus /> Nuevo cargo</button>
+            </div>
+
+            {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
+
+            <div className="me-cargos">
+                {cargos.map((c) => {
+                    const count = countByCargo(c.codigo);
+                    return (
+                        <div key={c.codigo} className="card me-cargo">
+                            <div className="me-cargo-main">
+                                <span className="me-cargo-name">{c.label}</span>
+                                <span className="text-xs text-muted">{c.codigo}</span>
+                            </div>
+                            <span className="me-tag">{c.legacy ? 'heredado' : c.seed ? 'predefinido' : 'personalizado'}</span>
+                            <span className="me-tag">{c.kit?.length || 0} ítems</span>
+                            <span className="me-count" title="Personas con este cargo"><FiUsers size={12} /> {count}</span>
+                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
+                                disabled={saving} onClick={() => requestDelete(c)} title="Eliminar cargo"><FiTrash2 /></button>
+                        </div>
+                    );
+                })}
+                {cargos.length === 0 && <div className="text-sm text-muted" style={{ padding: 16 }}>No hay cargos. Crea el primero.</div>}
+            </div>
+
+            <Modal isOpen={newOpen} onClose={() => setNewOpen(false)} title="Nuevo cargo"
+                subtitle="El código se deriva del nombre. Empieza con un kit de onboarding vacío."
+                footer={<>
+                    <button className="btn btn-secondary" onClick={() => setNewOpen(false)}>Cancelar</button>
+                    <button className="btn btn-primary" disabled={!newLabel.trim() || saving} onClick={addCargo}>
+                        {saving ? <div className="spinner" /> : <><FiPlus /> Crear</>}
+                    </button>
+                </>}>
+                <div className="form-group">
+                    <label className="form-label">Nombre del cargo</label>
+                    <input className="form-input" autoFocus value={newLabel} placeholder="Ej: Enfierrador"
+                        onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCargo()} />
+                    {newLabel.trim() && <div className="text-xs text-muted" style={{ marginTop: 6 }}>Código: <b>{codeFromLabel(newLabel)}</b></div>}
+                </div>
+            </Modal>
+
+            <ReassignModal
+                open={!!reassign}
+                title={`Eliminar cargo "${reassign?.cargo.label}"`}
+                noun="cargo"
+                affected={(reassign?.affected || []).map((p) => ({
+                    id: p.personaId,
+                    label: `${p.nombre} ${p.apellido || ''}`.trim(),
+                    sub: p.rut,
+                }))}
+                options={cargos.filter((c) => c.codigo !== reassign?.cargo.codigo).map((c) => ({ value: c.codigo, label: c.label }))}
+                busy={saving}
+                onCancel={() => setReassign(null)}
+                onConfirm={(target) => reassign && confirmDelete(reassign.cargo, target, reassign.affected)}
+            />
+        </div>
+    );
+}
+
+// ── Modal de reasignación (compartido por roles y cargos) ─────────────────────
+function ReassignModal({ open, title, noun, affected, options, busy, onCancel, onConfirm }: {
+    open: boolean;
+    title: string;
+    noun: 'rol' | 'cargo';
+    affected: { id: string; label: string; sub?: string }[];
+    options: { value: string; label: string }[];
+    busy: boolean;
+    onCancel: () => void;
+    onConfirm: (target: string) => void;
+}) {
+    const [target, setTarget] = useState('');
+    useEffect(() => { if (open) setTarget(options[0]?.value ?? ''); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const sinDestino = options.length === 0;
+
+    return (
+        <Modal isOpen={open} onClose={onCancel} title={title} size="md"
+            subtitle={`${affected.length} persona(s) tienen este ${noun}. Reasígnalas para poder eliminarlo.`}
+            footer={<>
+                <button className="btn btn-secondary" onClick={onCancel}>Cancelar</button>
+                <button className="btn btn-danger" disabled={busy || sinDestino || !target} onClick={() => onConfirm(target)}>
+                    {busy ? <div className="spinner" /> : <><FiTrash2 /> Reasignar y eliminar</>}
+                </button>
+            </>}>
+            <div className="me-reassign-warn">
+                <FiAlertTriangle style={{ flexShrink: 0, color: 'var(--warning-500)' }} />
+                <span className="text-sm">
+                    Estas personas perderán el {noun} actual. Elige el {noun} de destino antes de continuar.
+                </span>
+            </div>
+
+            <div className="form-group" style={{ marginTop: 14 }}>
+                <label className="form-label">Reasignar al {noun}</label>
+                {sinDestino
+                    ? <AlertBanner variant="warning" message={`No hay otro ${noun} disponible. Crea uno antes de eliminar este.`} />
+                    : <Select value={target} onChange={setTarget} options={options} ariaLabel={`Nuevo ${noun}`} />}
+            </div>
+
+            <div className="me-affected">
+                {affected.map((a) => (
+                    <div key={a.id} className="me-affected-row">
+                        <span className="me-affected-name">{a.label}</span>
+                        {a.sub && <span className="text-xs text-muted">{a.sub}</span>}
+                    </div>
+                ))}
+            </div>
+        </Modal>
+    );
+}
+
+const styles = `
+.mi-empresa-page .me-tab { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; border-bottom: 2px solid transparent; }
+.mi-empresa-page .form-label { display:block; margin-bottom: 6px; }
+
+.me-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+.me-card { padding: 20px; }
+.me-card-title { font-size: var(--text-base); font-weight: 600; margin: 0 0 14px; }
+.me-color-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.me-swatch { width: 44px; height: 44px; border-radius: var(--radius-md); border: 1px solid var(--surface-border); cursor: pointer; }
+.me-color-native { width: 0; height: 0; opacity: 0; position: absolute; pointer-events: none; }
+
+.me-logo-area { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.me-logo-preview { width: 140px; height: 100px; border: 1px dashed var(--surface-border); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; background: var(--surface-hover); overflow: hidden; }
+.me-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.me-logo-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+
+.me-save-bar { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; align-items: flex-end; }
+.me-save-bar .alert-banner { width: 100%; }
+
+.me-banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 16px; }
+
+.me-roles { display: flex; flex-direction: column; gap: 14px; }
+.me-role { padding: 16px; }
+.me-role-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.me-role-icon { width: 32px; height: 32px; border-radius: var(--radius-md); background: var(--cchc-blue-tint); color: var(--accent-text); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.me-role-icon.locked { background: var(--surface-hover); color: var(--text-muted); }
+.me-role-fields { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.me-role-name { font-weight: 600; }
+.me-role-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.me-count { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-muted); background: var(--surface-hover); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+
+.me-perms-head { font-size: var(--text-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.me-lock-tag { display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-muted); }
+.me-perms-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.me-perms-group-title { font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary, var(--text-primary)); margin-bottom: 6px; }
+.me-perm { display: flex; align-items: flex-start; gap: 8px; font-size: var(--text-sm); padding: 3px 0; cursor: pointer; }
+.me-perm.disabled { cursor: default; opacity: .7; }
+.me-perm input { margin-top: 3px; flex-shrink: 0; }
+
+.me-cargos { display: flex; flex-direction: column; gap: 8px; }
+.me-cargo { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+.me-cargo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.me-cargo-name { font-weight: 500; }
+.me-tag { font-size: var(--text-xs); color: var(--text-muted); background: var(--surface-hover); padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+
+.me-reassign-warn { display: flex; align-items: center; gap: 10px; background: var(--surface-hover); padding: 10px 12px; border-radius: var(--radius-md); }
+.me-affected { margin-top: 14px; max-height: 220px; overflow-y: auto; border: 1px solid var(--surface-border); border-radius: var(--radius-md); }
+.me-affected-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--surface-border); }
+.me-affected-row:last-child { border-bottom: none; }
+.me-affected-name { font-size: var(--text-sm); font-weight: 500; }
+
+@media (max-width: 640px) {
+  .me-role-head { flex-wrap: wrap; }
+  .me-cargo { flex-wrap: wrap; }
+}
+`;

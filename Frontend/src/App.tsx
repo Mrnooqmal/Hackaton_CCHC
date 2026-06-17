@@ -26,6 +26,7 @@ import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
 import ObraDetalle from './pages/ObraDetalle';
 import CargosOnboarding from './pages/CargosOnboarding';
+import MiEmpresa from './pages/MiEmpresa';
 import Equipo from './pages/Equipo';
 import About from './pages/About';
 import OfflineBanner from './components/OfflineBanner';
@@ -187,6 +188,12 @@ function AppContent() {
           <Route path="/change-password" element={
             <ProtectedRoute>
               <ChangePassword />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/mi-empresa" element={
+            <ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}>
+              <MiEmpresa />
             </ProtectedRoute>
           } />
 

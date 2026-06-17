@@ -8,6 +8,7 @@ import {
     FiEdit3,
     FiMessageSquare,
     FiSettings,
+    FiBriefcase,
     FiAlertTriangle,
     FiClipboard,
     FiMail,
@@ -71,6 +72,7 @@ const GENERIC_NAV: NavSection[] = [
         section: 'Sistema',
         items: [
             { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA', permission: PERMISSIONS.IA_VER },
+            { path: '/mi-empresa', icon: FiBriefcase, label: 'Mi Empresa', permission: PERMISSIONS.EMPRESA_VER },
             { path: '/settings', icon: FiSettings, label: 'Configuración' },
         ]
     }

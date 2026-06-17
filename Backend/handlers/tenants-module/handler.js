@@ -167,6 +167,30 @@ module.exports.tenantsHandler = async (event) => {
         // PUT /tenants/{id} — Actualizar configuración
         if (method === 'PUT' && tenantId && !action) {
             const body = JSON.parse(event.body || '{}');
+
+            // Las preferencias se mergean con las existentes para no perder campos no
+            // enviados (updateConfig reemplaza el objeto completo). Si llega un logo
+            // nuevo (data URL en preferencias.logoBase64), se sube a S3 y se persiste
+            // como logoKey — igual que en el setup. El base64 nunca toca DynamoDB.
+            if (body.preferencias && typeof body.preferencias === 'object') {
+                const existing = await tenantService.getById(tenantId);
+                if (!existing) return error('Tenant no encontrado', 404);
+
+                const logoBase64 = body.preferencias.logoBase64;
+                const incoming = { ...body.preferencias };
+                delete incoming.logoBase64;
+
+                const merged = { ...(existing.preferencias || {}), ...incoming };
+                if (logoBase64 && BUCKET_NAME) {
+                    try {
+                        merged.logoKey = await uploadTenantLogo(logoBase64, tenantId);
+                    } catch (logoErr) {
+                        console.error('Logo upload failed on update:', logoErr);
+                    }
+                }
+                body.preferencias = merged;
+            }
+
             const tenant = await tenantService.updateConfig(tenantId, body);
             return success({
                 message: 'Tenant actualizado',
