@@ -16,6 +16,7 @@ import { activitiesApi, workersApi, type Activity, type Worker } from '../api/cl
 import SignatureModal from '../components/SignatureModal';
 import { Modal, Select } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
+import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
@@ -44,12 +45,17 @@ export default function Activities() {
     const canCrearActividad = hasPermission(PERMISSIONS.ACTIVIDADES_CREAR);
     const { isOnline, pendingCount, signActivity, syncPendingSignatures } = useOfflineSignature();
     const { toast } = useToast();
+    const { selectedObraId, obras } = useObraContext();
+    const selectedObra = obras.find(o => o.obraId === selectedObraId) ?? null;
     const [activities, setActivities] = useState<Activity[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
     const [showAttendanceModal, setShowAttendanceModal] = useState(false);
     const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [detailActivity, setDetailActivity] = useState<Activity | null>(null);
     const [selectedWorkers, setSelectedWorkers] = useState<string[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('');
@@ -63,17 +69,23 @@ export default function Activities() {
     // Check if user can manage (prevencionista/admin)
     const canManage = canCrearActividad;
 
-    const [newActivity, setNewActivity] = useState({
+    const emptyActivity = {
         tipo: 'CHARLA_5MIN',
         subtipo: '',
         titulo: '',
         descripcion: '',
         relatorId: '',
-    });
+        fecha: new Date().toISOString().split('T')[0],
+        horaInicio: new Date().toTimeString().slice(0, 5),
+        horaFin: '',
+        ubicacion: '',
+        asistentesRequeridos: [] as string[],
+    };
+    const [newActivity, setNewActivity] = useState(emptyActivity);
 
     useEffect(() => {
         loadData();
-    }, []);
+    }, [selectedObraId]);
 
     // Sync pending offline signatures when online
     useEffect(() => {
@@ -88,14 +100,24 @@ export default function Activities() {
     }, [isOnline]);
 
     const loadData = async () => {
+        // Sin obra seleccionada no se carga nada: la vista muestra el estado vacío.
+        if (!selectedObraId) {
+            setActivities([]);
+            setWorkers([]);
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
         try {
             const [activitiesRes, workersRes] = await Promise.all([
-                activitiesApi.list(),
-                workersApi.list()
+                activitiesApi.list({ obraId: selectedObraId }),
+                workersApi.list({ obraId: selectedObraId })
             ]);
 
             if (activitiesRes.success && activitiesRes.data) {
-                setActivities(activitiesRes.data.activities);
+                // Aislamiento por obra: aunque el backend devuelva de más (registros
+                // legacy sin obraId), solo mostramos los de la obra activa.
+                setActivities(activitiesRes.data.activities.filter(a => a.obraId === selectedObraId));
             }
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
@@ -109,19 +131,34 @@ export default function Activities() {
 
     const handleCreateActivity = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (submitting) return;
+        if (!selectedObraId) {
+            toast.error('Seleccione una obra antes de crear una actividad');
+            return;
+        }
 
+        setSubmitting(true);
         try {
-            const payload = { ...newActivity };
+            const payload: any = { ...newActivity, obraId: selectedObraId };
             // El subtipo solo aplica a capacitaciones.
-            if (payload.tipo !== 'CAPACITACION') delete (payload as any).subtipo;
+            if (payload.tipo !== 'CAPACITACION') delete payload.subtipo;
+            // Campos opcionales vacíos no se envían.
+            if (!payload.horaFin) delete payload.horaFin;
+            if (!payload.ubicacion) delete payload.ubicacion;
             const response = await activitiesApi.create(payload);
             if (response.success && response.data) {
                 setActivities([response.data, ...activities]);
                 setShowModal(false);
-                setNewActivity({ tipo: 'CHARLA_5MIN', subtipo: '', titulo: '', descripcion: '', relatorId: '' });
+                setNewActivity(emptyActivity);
+                toast.success('Actividad creada correctamente');
+            } else {
+                toast.error(response.error || 'Error al crear la actividad');
             }
         } catch (error) {
             console.error('Error creating activity:', error);
+            toast.error('Error al crear la actividad');
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -217,6 +254,20 @@ export default function Activities() {
         setShowAttendanceModal(true);
     };
 
+    const openDetailModal = (activity: Activity) => {
+        setDetailActivity(activity);
+        setShowDetailModal(true);
+    };
+
+    const toggleRequiredAttendee = (personaId: string) => {
+        setNewActivity(prev => ({
+            ...prev,
+            asistentesRequeridos: prev.asistentesRequeridos.includes(personaId)
+                ? prev.asistentesRequeridos.filter(id => id !== personaId)
+                : [...prev.asistentesRequeridos, personaId],
+        }));
+    };
+
     // Self-sign handler for workers
     const handleSelfSign = async (pin: string) => {
         if (!selfSignActivity || !user?.personaId) return;
@@ -277,18 +328,18 @@ export default function Activities() {
         );
     }
 
-    const todayActivities = activities.filter(a =>
-        a.fecha === new Date().toISOString().split('T')[0]
-    );
+    const today = new Date().toISOString().split('T')[0];
 
-    // Filter activities based on search and type
-    const filteredActivities = activities.filter(a => {
+    const matchesFilters = (a: Activity) => {
         const matchesSearch = searchTerm.trim() === '' ||
             a.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (a.descripcion && a.descripcion.toLowerCase().includes(searchTerm.toLowerCase()));
         const matchesType = filterType === '' || a.tipo === filterType;
         return matchesSearch && matchesType;
-    });
+    };
+
+    const todayActivities = activities.filter(a => a.fecha === today && matchesFilters(a));
+    const filteredActivities = activities.filter(matchesFilters);
 
     return (
         <>
@@ -303,10 +354,29 @@ export default function Activities() {
                             Registro de Actividades y Capacitación
                         </h2>
                         <p className="page-header-description">
-                            Gestión de charlas de 5 minutos, inducciones, ART y capacitación técnica.
+                            {selectedObra
+                                ? `Obra: ${selectedObra.nombre}`
+                                : 'Gestión de charlas de 5 minutos, inducciones, ART y capacitación técnica.'}
                         </p>
                     </div>
                 </div>
+
+                {/* Gate: obra requerida */}
+                {!selectedObraId && (
+                    <div className="empty-state" style={{ padding: 'var(--space-16) var(--space-6)' }}>
+                        <div className="empty-state-icon">
+                            <FiCalendar size={48} style={{ color: 'var(--text-muted)' }} />
+                        </div>
+                        <h3 className="empty-state-title">Seleccione una obra para ver sus actividades</h3>
+                        <p className="empty-state-description">
+                            Use el selector de obra en la barra superior para elegir la obra de la que
+                            desea ver o registrar actividades.
+                        </p>
+                    </div>
+                )}
+
+                {/* Contenido — solo visible cuando hay obra seleccionada */}
+                {selectedObraId && <>
 
                 {/* Offline Banner */}
                 {(!isOnline || pendingCount > 0) && (
@@ -376,33 +446,6 @@ export default function Activities() {
                     </div>
                 </div>
 
-                {/* Quick Actions */}
-                {canCrearActividad && (
-                <div className="grid grid-cols-4 mb-6">
-                    {Object.entries(ACTIVITY_TYPES).slice(0, 4).map(([key, { label, color, icon }]) => (
-                        <div
-                            key={key}
-                            className="card"
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => {
-                                setNewActivity({ ...newActivity, tipo: key });
-                                setShowModal(true);
-                            }}
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="avatar" style={{ background: color, fontSize: '1.5rem' }}>
-                                    {icon}
-                                </div>
-                                <div>
-                                    <div className="font-bold">{label}</div>
-                                    <div className="text-sm text-muted">Crear nueva</div>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                )}
-
                 {/* Today's Activities */}
                 <div className="card mb-6">
                     <div className="card-header">
@@ -432,18 +475,6 @@ export default function Activities() {
                             <p className="empty-state-description">
                                 Registra la primera actividad del día, como la charla de 5 minutos.
                             </p>
-                            {canCrearActividad && (
-                                <button
-                                    className="btn btn-primary"
-                                    onClick={() => {
-                                        setNewActivity({ ...newActivity, tipo: 'CHARLA_5MIN' });
-                                        setShowModal(true);
-                                    }}
-                                >
-                                    <FiMessageSquare />
-                                    Registrar Charla 5 Min
-                                </button>
-                            )}
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3">
@@ -538,74 +569,55 @@ export default function Activities() {
                         <table className="table">
                             <thead>
                                 <tr>
-                                    <th>Actividad</th>
-                                    <th>Tipo</th>
                                     <th>Fecha</th>
                                     <th>Hora</th>
-                                    <th>Asistentes</th>
-                                    <th>Estado</th>
+                                    <th>Actividad</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredActivities.slice(0, 10).map((activity) => {
-                                    const typeInfo = ACTIVITY_TYPES[activity.tipo] || {
-                                        label: activity.tipo,
-                                        color: 'var(--gray-500)'
-                                    };
-
-                                    return (
-                                        <tr key={activity.activityId}>
-                                            <td>
-                                                <div className="font-bold">{activity.titulo}</div>
-                                                {activity.descripcion && (
-                                                    <div className="text-sm text-muted">{activity.descripcion}</div>
-                                                )}
-                                            </td>
-                                            <td>
-                                                <span
-                                                    className="badge"
-                                                    style={{ background: `${typeInfo.color}20`, color: typeInfo.color }}
-                                                >
-                                                    {typeInfo.label}
-                                                </span>
-                                                {activity.subtipo && (
-                                                    <div className="text-xs text-muted" style={{ marginTop: 2 }}>
-                                                        {activity.subtipoDescripcion || CAPACITACION_SUBTIPOS[activity.subtipo] || activity.subtipo}
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td>{new Date(activity.fecha).toLocaleDateString('es-CL')}</td>
-                                            <td>{activity.horaInicio}</td>
-                                            <td>
-                                                <div className="flex items-center gap-1">
-                                                    <FiUsers />
-                                                    {activity.asistentes.length}
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span className={`badge badge-${activity.estado === 'completada' ? 'success' :
-                                                    activity.estado === 'cancelada' ? 'danger' : 'warning'
-                                                    }`}>
-                                                    {activity.estado}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                                {filteredActivities.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={3}>
+                                            <div className="text-sm text-muted" style={{ padding: 'var(--space-4)', textAlign: 'center' }}>
+                                                No hay actividades registradas para esta obra.
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ) : filteredActivities.slice(0, 10).map((activity) => (
+                                    <tr
+                                        key={activity.activityId}
+                                        style={{ cursor: 'pointer' }}
+                                        onClick={() => openDetailModal(activity)}
+                                    >
+                                        <td>{new Date(activity.fecha).toLocaleDateString('es-CL')}</td>
+                                        <td>
+                                            {activity.horaInicio}
+                                            {activity.horaFin && ` - ${activity.horaFin}`}
+                                        </td>
+                                        <td>
+                                            <div className="font-bold">{activity.titulo}</div>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
                 </div>
 
+                </>}
+
                 {/* Create Activity Modal */}
                 <Modal
                     isOpen={showModal}
-                    onClose={() => setShowModal(false)}
+                    onClose={() => !submitting && setShowModal(false)}
+                    preventClose={submitting}
                     title="Nueva Actividad"
                     footer={
                         <>
-                            <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button>
-                            <button type="submit" form="create-activity-form" className="btn btn-primary">Crear Actividad</button>
+                            <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => setShowModal(false)}>Cancelar</button>
+                            <button type="submit" form="create-activity-form" className="btn btn-primary" disabled={submitting}>
+                                {submitting ? 'Creando…' : 'Crear Actividad'}
+                            </button>
                         </>
                     }
                 >
@@ -679,6 +691,90 @@ export default function Activities() {
                                     description: worker.cargo,
                                 }))}
                             />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Fecha *</label>
+                            <input
+                                type="date"
+                                value={newActivity.fecha}
+                                onChange={(e) => setNewActivity({ ...newActivity, fecha: e.target.value })}
+                                className="form-input"
+                                required
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                            <div className="form-group">
+                                <label className="form-label">Hora inicio *</label>
+                                <input
+                                    type="time"
+                                    value={newActivity.horaInicio}
+                                    onChange={(e) => setNewActivity({ ...newActivity, horaInicio: e.target.value })}
+                                    className="form-input"
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Hora fin</label>
+                                <input
+                                    type="time"
+                                    value={newActivity.horaFin}
+                                    onChange={(e) => setNewActivity({ ...newActivity, horaFin: e.target.value })}
+                                    className="form-input"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Ubicación</label>
+                            <input
+                                type="text"
+                                value={newActivity.ubicacion}
+                                onChange={(e) => setNewActivity({ ...newActivity, ubicacion: e.target.value })}
+                                className="form-input"
+                                placeholder="Ej: Frente de obra, sala de charlas..."
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">
+                                Asistentes requeridos
+                                {newActivity.asistentesRequeridos.length > 0 && ` (${newActivity.asistentesRequeridos.length})`}
+                            </label>
+                            {workers.length === 0 ? (
+                                <div className="text-sm text-muted">No hay trabajadores asignados a esta obra.</div>
+                            ) : (
+                                <div className="flex flex-col gap-2" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                                    {workers.map((worker) => {
+                                        const isSelected = newActivity.asistentesRequeridos.includes(worker.personaId);
+                                        return (
+                                            <div
+                                                key={worker.personaId}
+                                                className="flex items-center justify-between cursor-pointer"
+                                                style={{
+                                                    padding: 'var(--space-2) var(--space-3)',
+                                                    background: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'var(--surface-elevated)',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
+                                                }}
+                                                onClick={() => toggleRequiredAttendee(worker.personaId)}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>
+                                                    <div>
+                                                        <div className="font-bold">{worker.nombre} {worker.apellido}</div>
+                                                        <div className="text-sm text-muted">{worker.cargo}</div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ width: '22px', height: '22px', borderRadius: '4px', border: '2px solid var(--surface-border)', background: isSelected ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    {isSelected && <FiCheck style={{ color: 'white' }} />}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     </form>
                 </Modal>
@@ -783,6 +879,119 @@ export default function Activities() {
                     description="Confirma tu asistencia a esta actividad con tu firma digital."
                     error={signatureError}
                 />
+
+                {/* Activity Detail Modal */}
+                <Modal
+                    isOpen={showDetailModal && !!detailActivity}
+                    onClose={() => setShowDetailModal(false)}
+                    title="Detalle de la Actividad"
+                    subtitle={detailActivity?.titulo}
+                    size="lg"
+                >
+                    {detailActivity && (() => {
+                        const typeInfo = ACTIVITY_TYPES[detailActivity.tipo] || {
+                            label: detailActivity.tipoDescripcion || detailActivity.tipo,
+                            color: 'var(--gray-500)',
+                            icon: <FiFileText />,
+                        };
+                        const requeridos = (detailActivity.asistentesRequeridos || [])
+                            .map(id => workers.find(w => w.personaId === id))
+                            .filter(Boolean) as Worker[];
+
+                        return (
+                            <div className="flex flex-col gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="avatar" style={{ background: typeInfo.color, fontSize: '1.2rem' }}>
+                                        {typeInfo.icon}
+                                    </div>
+                                    <div>
+                                        <div className="font-bold">{detailActivity.titulo}</div>
+                                        <div className="text-sm text-muted">
+                                            {typeInfo.label}
+                                            {detailActivity.subtipo && ` · ${detailActivity.subtipoDescripcion || CAPACITACION_SUBTIPOS[detailActivity.subtipo] || detailActivity.subtipo}`}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2" style={{ gap: 'var(--space-3)' }}>
+                                    <div>
+                                        <div className="text-xs text-muted">Fecha</div>
+                                        <div className="font-bold">{new Date(detailActivity.fecha).toLocaleDateString('es-CL')}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs text-muted">Horario</div>
+                                        <div className="font-bold">
+                                            {detailActivity.horaInicio}
+                                            {detailActivity.horaFin && ` - ${detailActivity.horaFin}`}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs text-muted">Estado</div>
+                                        <span className={`badge badge-${detailActivity.estado === 'completada' ? 'success' :
+                                            detailActivity.estado === 'cancelada' ? 'danger' :
+                                                detailActivity.estado === 'programada' ? 'neutral' : 'warning'}`}>
+                                            {detailActivity.estado}
+                                        </span>
+                                    </div>
+                                    {detailActivity.ubicacion && (
+                                        <div>
+                                            <div className="text-xs text-muted">Ubicación</div>
+                                            <div className="font-bold">{detailActivity.ubicacion}</div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {detailActivity.descripcion && (
+                                    <div>
+                                        <div className="text-xs text-muted">Descripción</div>
+                                        <div>{detailActivity.descripcion}</div>
+                                    </div>
+                                )}
+
+                                {requeridos.length > 0 && (
+                                    <div>
+                                        <div className="text-xs text-muted mb-2">Asistentes requeridos ({requeridos.length})</div>
+                                        <div className="flex flex-col gap-2">
+                                            {requeridos.map(w => (
+                                                <div key={w.personaId} className="flex items-center gap-3">
+                                                    <div className="avatar avatar-sm">{w.nombre.charAt(0)}</div>
+                                                    <div>
+                                                        <div className="font-bold">{w.nombre} {w.apellido}</div>
+                                                        <div className="text-sm text-muted">{w.cargo}</div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div>
+                                    <div className="text-xs text-muted mb-2 flex items-center gap-1">
+                                        <FiUsers /> Asistencia registrada ({detailActivity.asistentes.length})
+                                    </div>
+                                    {detailActivity.asistentes.length === 0 ? (
+                                        <div className="text-sm text-muted">Aún no hay asistencias firmadas.</div>
+                                    ) : (
+                                        <div className="flex flex-col gap-2">
+                                            {detailActivity.asistentes.map((a, i) => (
+                                                <div key={(a as any).workerId || (a as any).personaId || i} className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="avatar avatar-sm">{a.nombre.charAt(0)}</div>
+                                                        <div>
+                                                            <div className="font-bold">{a.nombre}</div>
+                                                            <div className="text-sm text-muted">{a.cargo || a.rut}</div>
+                                                        </div>
+                                                    </div>
+                                                    <span className="badge badge-success">Firmado</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
+                </Modal>
             </div>
         </>
     );

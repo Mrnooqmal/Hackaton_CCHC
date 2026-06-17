@@ -78,6 +78,9 @@ module.exports.create = async (event) => {
             horaFin: body.horaFin || null,
             relatorId: body.relatorId,
             ubicacion: body.ubicacion || '',
+            asistentesRequeridos: Array.isArray(body.asistentesRequeridos)
+                ? body.asistentesRequeridos
+                : (Array.isArray(body.attendees) ? body.attendees : []),
             asistentes: [],
             firmaRelator: null,
             estado: 'programada',
@@ -89,10 +92,10 @@ module.exports.create = async (event) => {
 
         // Notificar asistentes
         try {
-            if (body.attendees && body.attendees.length > 0) {
+            if (activity.asistentesRequeridos.length > 0) {
                 await eventBus.emit('activity.created', {
                     activityId: activity.activityId,
-                    attendeeIds: body.attendees,
+                    attendeeIds: activity.asistentesRequeridos,
                     createdBy: body.relatorId,
                     activityName: activity.titulo,
                     fecha: activity.fecha,
@@ -115,7 +118,7 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId, tipo, estado, fecha, relatorId } = event.queryStringParameters || {};
+        const { tenantId, obraId, tipo, estado, fecha, relatorId } = event.queryStringParameters || {};
         if (!tenantId) return error('tenantId es requerido');
 
         // Query por GSI tenantId-index (no Scan)
@@ -129,6 +132,10 @@ module.exports.list = async (event) => {
         let filterParts = [];
         const expressionAttributeNames = {};
 
+        if (obraId) {
+            filterParts.push('obraId = :obraId');
+            params.ExpressionAttributeValues[':obraId'] = obraId;
+        }
         if (tipo) {
             filterParts.push('tipo = :tipo');
             params.ExpressionAttributeValues[':tipo'] = tipo;

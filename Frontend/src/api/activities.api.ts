@@ -14,7 +14,9 @@ export interface Activity {
     horaFin?: string;
     relatorId: string;
     empresaId: string;
+    obraId?: string | null;
     ubicacion?: string;
+    asistentesRequeridos?: string[];
     asistentes: Attendee[];
     firmaRelator?: Signature;
     estado: 'programada' | 'en_curso' | 'completada' | 'cancelada';
@@ -42,9 +44,12 @@ export interface CreateActivityData {
     descripcion?: string;
     fecha?: string;
     horaInicio?: string;
+    horaFin?: string;
     relatorId: string;
     empresaId?: string;
+    obraId?: string | null;
     ubicacion?: string;
+    asistentesRequeridos?: string[];
 }
 
 export interface ActivityListParams {
