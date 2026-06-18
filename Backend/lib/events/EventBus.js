@@ -1,4 +1,8 @@
 const { InboxRepository } = require('../../handlers/inbox-module/inbox.repository');
+const { ObraService } = require('../services/ObraService');
+
+// Nombre del remitente de las notificaciones automáticas del sistema.
+const SYSTEM_SENDER_NAME = 'Build & Serve';
 
 /**
  * Simple Event Bus for dispatching system events
@@ -8,6 +12,22 @@ class EventBus {
     constructor() {
         this.listeners = new Map();
         this.inboxRepo = new InboxRepository();
+        this.obraService = new ObraService();
+    }
+
+    /**
+     * Resuelve el nombre de una obra a partir de su id. Devuelve null si no se
+     * puede obtener (la notificación se envía igual, sin la referencia a obra).
+     */
+    async getObraName(obraId) {
+        if (!obraId) return null;
+        try {
+            const obra = await this.obraService.getById(obraId);
+            return obra?.nombre || null;
+        } catch (err) {
+            console.error('Error resolviendo nombre de obra para notificación:', err);
+            return null;
+        }
     }
 
     /**
@@ -84,7 +104,7 @@ class EventBus {
      * Send a notification to inbox for activity creation
      */
     async onActivityCreated(data) {
-        const { activityId, attendeeIds, createdBy, activityName, fecha, tipo } = data;
+        const { activityId, attendeeIds, createdBy, activityName, fecha, obraId } = data;
 
         if (!attendeeIds || attendeeIds.length === 0) {
             console.log('No attendees to notify for activity');
@@ -92,15 +112,18 @@ class EventBus {
         }
 
         try {
+            const obraNombre = await this.getObraName(obraId);
+            const obraText = obraNombre ? ` Obra: ${obraNombre}.` : '';
+
             await this.inboxRepo.sendMessage({
                 senderId: createdBy || 'system',
-                senderName: 'PrevencionApp',
+                senderName: SYSTEM_SENDER_NAME,
                 senderRol: 'system',
                 recipientIds: attendeeIds,
                 type: 'notification',
                 priority: 'normal',
                 subject: `Nueva actividad: ${activityName}`,
-                content: `Se ha creado la actividad "${activityName}" (${tipo}) para el ${fecha}. Recuerda asistir y registrar tu firma.`,
+                content: `Se ha creado la actividad "${activityName}" para el ${fecha}. Recuerda asistir y registrar tu firma.${obraText}`,
                 linkedEntity: { type: 'activity', id: activityId }
             });
 
@@ -149,7 +172,7 @@ class EventBus {
      */
     async onSignatureRequested(data) {
         // In the new model, workerIds and personaIds are the same (personaId)
-        const { requestId, workerIds, personaIds, requestedBy, documentName, priority } = data;
+        const { requestId, workerIds, personaIds, requestedBy, documentName, priority, obraId } = data;
         const recipientIds = personaIds || workerIds || [];
 
         if (!recipientIds || recipientIds.length === 0) {
@@ -159,16 +182,18 @@ class EventBus {
 
         try {
             const priorityLevel = priority === 'urgent' ? 'urgent' : 'normal';
+            const obraNombre = await this.getObraName(obraId);
+            const obraText = obraNombre ? ` Obra: ${obraNombre}.` : '';
 
             await this.inboxRepo.sendMessage({
                 senderId: requestedBy || 'system',
-                senderName: 'PrevencionApp',
+                senderName: SYSTEM_SENDER_NAME,
                 senderRol: 'system',
                 recipientIds: recipientIds,
                 type: 'task',
                 priority: priorityLevel,
                 subject: `Firma requerida: ${documentName}`,
-                content: `Se requiere tu firma para el documento "${documentName}". Por favor firma a la brevedad.`,
+                content: `Se requiere tu firma para el documento "${documentName}". Por favor firma a la brevedad.${obraText}`,
                 linkedEntity: { type: 'signature-request', id: requestId }
             });
 

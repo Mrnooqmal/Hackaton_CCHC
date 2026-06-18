@@ -269,22 +269,56 @@ class InboxRepository {
     }
 
     async getRecipients(params) {
-        const { currentUserId, tenantId } = params;
+        const { currentUserId, tenantId, obraId } = params;
         if (!tenantId) throw new Error('tenantId es requerido');
 
-        // Obtener personas del tenant, excluyendo al usuario actual
-        const result = await this.dynamo.send(new QueryCommand({
-            TableName: this.personasTable,
-            KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-            FilterExpression: 'estado = :estado',
-            ExpressionAttributeValues: {
-                ':pk': `TENANT#${tenantId}`,
-                ':prefix': 'PERSONA#',
-                ':estado': 'activo'
-            }
-        }));
+        // Obtener personas del tenant que puedan recibir mensajes. Se incluyen
+        // 'activo' y 'pendiente' (no enrolado aún); se excluyen inactivo,
+        // suspendido y desvinculado.
+        const expressionValues = {
+            ':pk': `TENANT#${tenantId}`,
+            ':prefix': 'PERSONA#',
+            ':activo': 'activo',
+            ':pendiente': 'pendiente'
+        };
+        const expressionNames = { '#estado': 'estado' };
+        const filterParts = ['(#estado = :activo OR #estado = :pendiente)'];
 
-        const users = (result.Items || [])
+        if (obraId) {
+            filterParts.push('contains(obraIds, :obraId)');
+            expressionValues[':obraId'] = obraId;
+        }
+
+        // DynamoDB devuelve hasta 1 MB por llamada. En tablas grandes se necesita
+        // paginar siguiendo LastEvaluatedKey.
+        let allItems = [];
+        let lastKey = undefined;
+        do {
+            const result = await this.dynamo.send(new QueryCommand({
+                TableName: this.personasTable,
+                KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+                FilterExpression: filterParts.join(' AND '),
+                ExpressionAttributeValues: expressionValues,
+                ExpressionAttributeNames: expressionNames,
+                ...(lastKey ? { ExclusiveStartKey: lastKey } : {})
+            }));
+            allItems = allItems.concat(result.Items || []);
+            lastKey = result.LastEvaluatedKey;
+        } while (lastKey);
+
+        // Cargo del destinatario: cuando se filtra por obra usamos el cargo de la
+        // asignación en esa obra (multi-cargo); si no, el cargo principal.
+        const cargoEnObra = (u) => {
+            if (obraId && Array.isArray(u.asignaciones)) {
+                const a = u.asignaciones.find(x => x.obraId === obraId);
+                if (a && Array.isArray(a.cargos) && a.cargos.length) {
+                    return a.cargos.join(', ');
+                }
+            }
+            return u.cargo || '';
+        };
+
+        const users = allItems
             .filter(u => u.personaId !== currentUserId)
             .map(u => ({
                 userId: u.personaId,
@@ -294,7 +328,7 @@ class InboxRepository {
                 nombreCompleto: `${u.nombre} ${u.apellido || ''}`.trim(),
                 rut: u.rut,
                 rol: u.rol,
-                cargo: u.cargo,
+                cargo: cargoEnObra(u),
                 email: u.email
             }));
 

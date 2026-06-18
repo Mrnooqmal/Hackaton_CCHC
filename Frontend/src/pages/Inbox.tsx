@@ -1,24 +1,108 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     FiMail, FiSend, FiInbox, FiArchive, FiSearch,
     FiCheck, FiCheckCircle, FiAlertCircle, FiBell, FiClock,
-    FiTrash2, FiChevronLeft, FiPlus
+    FiTrash2, FiChevronLeft, FiPlus, FiUsers, FiFlag,
+    FiChevronDown, FiX
 } from 'react-icons/fi';
-import { inboxApi, type InboxMessage, type InboxRecipient, type SendMessageData, type MessageType, type MessagePriority } from '../api/client';
+import { inboxApi, personasApi, tenantsApi, type InboxMessage, type InboxRecipient, type SendMessageData, type MessageType, type MessagePriority } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { useObraContext } from '../context/ObraContext';
 import { Modal, Select, SegmentedControl } from '../components/ui';
 
 type TabType = 'inbox' | 'sent' | 'archived';
 type FilterType = 'all' | 'unread' | 'archived';
+type DateRangeFilter = 'all' | 'today' | 'week' | 'month';
+type ClassificationFilter = 'all' | 'priority' | 'normal';
+
+// Etiqueta legible del rol para los filtros de destinatario.
+const ROL_LABELS: Record<string, string> = {
+    admin: 'Administrador',
+    prevencionista: 'Prevencionista',
+    supervisor: 'Supervisor',
+    jefe_obra: 'Jefe de obra',
+    trabajador: 'Trabajador',
+    relator: 'Relator',
+};
+const rolLabel = (rol: string) => ROL_LABELS[rol] || rol || 'Sin rol';
+
+// Dropdown multi-select con checkboxes, estilo igual al Select de la interfaz.
+function MultiSelectDropdown({
+    label, options, selected, onToggle, onClear, disabledSet = new Set<string>(), getLabel
+}: {
+    label: string;
+    options: string[];
+    selected: string[];
+    onToggle: (val: string) => void;
+    onClear: () => void;
+    disabledSet?: Set<string>;
+    getLabel?: (val: string) => string;
+}) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    const activeCount = selected.length;
+    const displayLabel = activeCount > 0 ? `${label} (${activeCount})` : label;
+
+    return (
+        <div className="msd-wrap" ref={ref}>
+            <button
+                type="button"
+                className={`msd-trigger ${activeCount > 0 ? 'active' : ''}`}
+                onClick={() => setOpen(o => !o)}
+            >
+                <span>{displayLabel}</span>
+                {activeCount > 0
+                    ? <FiX size={13} onClick={(e) => { e.stopPropagation(); onClear(); }} />
+                    : <FiChevronDown size={13} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                }
+            </button>
+            {open && (
+                <div className="msd-panel">
+                    {options.length === 0 ? (
+                        <div className="msd-empty">Sin opciones</div>
+                    ) : options.map(opt => {
+                        const disabled = disabledSet.has(opt);
+                        const checked = selected.includes(opt);
+                        return (
+                            <label key={opt} className={`msd-option ${disabled ? 'msd-disabled' : ''}`}>
+                                <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={disabled}
+                                    onChange={() => !disabled && onToggle(opt)}
+                                />
+                                <span className="msd-option-label">{getLabel ? getLabel(opt) : opt}</span>
+                                {disabled && <span className="msd-no-members">sin personas</span>}
+                            </label>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default function Inbox() {
     const { user } = useAuth();
+    const { toast } = useToast();
     // Id canonico de la persona. El backend (inbox) indexa por personaId;
     // userId es alias legacy y, cuando existe, es identico a personaId.
     const currentUserId = user?.personaId || user?.userId;
     const currentTenantId = user?.tenantId || user?.empresaId;
     const navigate = useNavigate();
+    const { obras, selectedObraId } = useObraContext();
     const [activeTab, setActiveTab] = useState<TabType>('inbox');
     const [messages, setMessages] = useState<InboxMessage[]>([]);
     const [loading, setLoading] = useState(true);
@@ -27,11 +111,27 @@ export default function Inbox() {
     const [searchTerm, setSearchTerm] = useState('');
     const [unreadCount, setUnreadCount] = useState(0);
 
+    // Filtros de la lista de mensajes
+    const [dateRange, setDateRange] = useState<DateRangeFilter>('all');
+    const [classification, setClassification] = useState<ClassificationFilter>('all');
+
+    // Obras a las que pertenece el usuario actual (acotan obra y destinatarios)
+    const [myObraIds, setMyObraIds] = useState<string[] | null>(null);
+
     // Compose modal
     const [showCompose, setShowCompose] = useState(false);
     const [recipients, setRecipients] = useState<InboxRecipient[]>([]);
     const [loadingRecipients, setLoadingRecipients] = useState(false);
     const [composing, setComposing] = useState(false);
+    const [composeObraId, setComposeObraId] = useState('');
+    // Catálogo del tenant (para los filtros de rol y cargo)
+    const [tenantRoleCatalog, setTenantRoleCatalog] = useState<{ id: string; nombre: string }[]>([]);
+    const [tenantCargoCatalog, setTenantCargoCatalog] = useState<string[]>([]);
+    // Filtros del selector de destinatarios
+    const [recipientSearch, setRecipientSearch] = useState('');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [rolFilters, setRolFilters] = useState<string[]>([]);
+    const [cargoFilters, setCargoFilters] = useState<string[]>([]);
     const [composeData, setComposeData] = useState({
         recipientIds: [] as string[],
         subject: '',
@@ -40,12 +140,69 @@ export default function Inbox() {
         priority: 'normal' as MessagePriority
     });
 
+    // Obras donde el usuario puede enviar mensajes. Admin (y prevencionista sin
+    // asignación explícita) ven todas; el resto solo las suyas.
+    const userObras = useMemo(() => {
+        if (user?.rol === 'admin') return obras;
+        if (myObraIds === null) return [];
+        const propias = obras.filter(o => myObraIds.includes(o.obraId));
+        if (propias.length === 0 && user?.rol === 'prevencionista') return obras;
+        return propias;
+    }, [obras, myObraIds, user?.rol]);
+
     useEffect(() => {
         if (currentUserId) {
             loadMessages();
             loadUnreadCount();
         }
     }, [currentUserId, activeTab, filter]);
+
+    // Cargar las obras del usuario actual (para acotar el selector del modal)
+    useEffect(() => {
+        let active = true;
+        if (!currentUserId) return;
+        if (user?.rol === 'admin') {
+            setMyObraIds([]); // admin usa todas las obras del tenant
+            return;
+        }
+        (async () => {
+            try {
+                const res = await personasApi.get(currentUserId);
+                if (active && res.success && res.data) {
+                    setMyObraIds(res.data.obraIds || []);
+                } else if (active) {
+                    setMyObraIds([]);
+                }
+            } catch (error) {
+                console.error('Error loading user obras:', error);
+                if (active) setMyObraIds([]);
+            }
+        })();
+        return () => { active = false; };
+    }, [currentUserId, user?.rol]);
+
+    // Carga roles y cargos del tenant una sola vez al abrir el modal
+    useEffect(() => {
+        if (!showCompose || !currentTenantId) return;
+        if (tenantRoleCatalog.length === 0) {
+            tenantsApi.get(currentTenantId)
+                .then(res => {
+                    if (res.success && res.data?.roles?.length) {
+                        setTenantRoleCatalog(res.data.roles);
+                    }
+                })
+                .catch(() => {});
+        }
+        if (tenantCargoCatalog.length === 0) {
+            tenantsApi.getCargos(currentTenantId)
+                .then(res => {
+                    if (res.success && res.data?.cargos) {
+                        setTenantCargoCatalog(res.data.cargos.map(c => c.label));
+                    }
+                })
+                .catch(() => {});
+        }
+    }, [showCompose, currentTenantId]);
 
     const loadMessages = async () => {
         if (!currentUserId) return;
@@ -82,11 +239,14 @@ export default function Inbox() {
         }
     };
 
-    const loadRecipients = async () => {
-        if (!currentUserId) return;
+    const loadRecipients = async (obraId: string) => {
+        if (!currentUserId || !obraId) {
+            setRecipients([]);
+            return;
+        }
         setLoadingRecipients(true);
         try {
-            const response = await inboxApi.getRecipients(currentUserId, currentTenantId);
+            const response = await inboxApi.getRecipients(currentUserId, currentTenantId, obraId);
             if (response.success && response.data) {
                 setRecipients(response.data.recipients);
             }
@@ -95,6 +255,17 @@ export default function Inbox() {
         } finally {
             setLoadingRecipients(false);
         }
+    };
+
+    // Al cambiar la obra del modal: recargar destinatarios y limpiar selección/filtros
+    const handleSelectComposeObra = (obraId: string) => {
+        setComposeObraId(obraId);
+        setComposeData(prev => ({ ...prev, recipientIds: [] }));
+        setRecipientSearch('');
+        setRolFilters([]);
+        setCargoFilters([]);
+        setRecipients([]);
+        if (obraId) loadRecipients(obraId);
     };
 
     const handleOpenMessage = async (message: InboxMessage) => {
@@ -144,7 +315,10 @@ export default function Inbox() {
 
     const handleCompose = () => {
         setShowCompose(true);
-        loadRecipients();
+        setRecipients([]);
+        setRecipientSearch('');
+        setRolFilters([]);
+        setCargoFilters([]);
         setComposeData({
             recipientIds: [],
             subject: '',
@@ -152,11 +326,23 @@ export default function Inbox() {
             type: 'message',
             priority: 'normal'
         });
+        // Preseleccionar obra: la seleccionada globalmente si el usuario pertenece,
+        // o la única obra disponible.
+        const candidatas = user?.rol === 'admin' ? obras : userObras;
+        const preselect = selectedObraId && candidatas.some(o => o.obraId === selectedObraId)
+            ? selectedObraId
+            : (candidatas.length === 1 ? candidatas[0].obraId : '');
+        setComposeObraId(preselect);
+        if (preselect) loadRecipients(preselect);
     };
 
     const handleSend = async () => {
+        if (!composeObraId) {
+            toast.error('Selecciona una obra antes de enviar');
+            return;
+        }
         if (!currentUserId || composeData.recipientIds.length === 0 || !composeData.subject || !composeData.content) {
-            alert('Por favor completa todos los campos');
+            toast.error('Completa todos los campos obligatorios');
             return;
         }
 
@@ -172,14 +358,14 @@ export default function Inbox() {
             const response = await inboxApi.send(sendData);
             if (response.success) {
                 setShowCompose(false);
-                alert('Mensaje enviado exitosamente');
+                toast.success('Mensaje enviado correctamente');
                 if (activeTab === 'sent') loadMessages();
             } else {
-                alert('Error al enviar: ' + response.error);
+                toast.error('Error al enviar: ' + response.error);
             }
         } catch (error) {
             console.error('Error sending:', error);
-            alert('Error al enviar mensaje');
+            toast.error('Error al enviar mensaje');
         } finally {
             setComposing(false);
         }
@@ -191,6 +377,100 @@ export default function Inbox() {
             recipientIds: prev.recipientIds.includes(userId)
                 ? prev.recipientIds.filter(id => id !== userId)
                 : [...prev.recipientIds, userId]
+        }));
+    };
+
+    // Roles del catálogo del tenant. Fallback a los roles de sistema mientras carga.
+    const FALLBACK_ROLES = [
+        { id: 'admin', nombre: 'Administrador' },
+        { id: 'prevencionista', nombre: 'Prevencionista' },
+        { id: 'supervisor', nombre: 'Supervisor' },
+        { id: 'jefe_obra', nombre: 'Jefe de obra' },
+        { id: 'trabajador', nombre: 'Trabajador' },
+        { id: 'relator', nombre: 'Relator' },
+    ];
+    const rolesParaFiltros = tenantRoleCatalog.length > 0 ? tenantRoleCatalog : FALLBACK_ROLES;
+    const rolesConRecipients = useMemo(
+        () => new Set(recipients.map(r => r.rol).filter(Boolean)),
+        [recipients]
+    );
+    // IDs de roles sin personas en la obra actual (se deshabilitan en el dropdown)
+    const rolesDisabled = useMemo(
+        () => new Set(rolesParaFiltros.map(r => r.id).filter(id => !rolesConRecipients.has(id))),
+        [rolesParaFiltros, rolesConRecipients]
+    );
+
+    // Cargos del catálogo del tenant. Si aún no se cargó, fallback a los cargos
+    // de los recipients actuales para que los chips aparezcan de inmediato.
+    const cargosParaFiltros = useMemo(() => {
+        if (tenantCargoCatalog.length > 0) return tenantCargoCatalog;
+        return Array.from(new Set(recipients.map(r => r.cargo).filter(Boolean)));
+    }, [tenantCargoCatalog, recipients]);
+    const cargosConRecipients = useMemo(
+        () => new Set(recipients.map(r => r.cargo).filter(Boolean)),
+        [recipients]
+    );
+    const cargosDisabled = useMemo(
+        () => new Set(cargosParaFiltros.filter(c => !cargosConRecipients.has(c))),
+        [cargosParaFiltros, cargosConRecipients]
+    );
+
+    // Destinatarios visibles en la lista según filtros activos de rol/cargo
+    // (la búsqueda ya NO filtra la lista — lo hace el autocomplete arriba)
+    const filteredRecipients = useMemo(() => {
+        return recipients.filter(r => {
+            const matchesRol = rolFilters.length === 0 || rolFilters.includes(r.rol);
+            const matchesCargo = cargoFilters.length === 0 || cargoFilters.includes(r.cargo);
+            return matchesRol && matchesCargo;
+        });
+    }, [recipients, rolFilters, cargoFilters]);
+
+    // Sugerencias de autocomplete: max 8, filtradas por texto + filtros activos
+    const suggestions = useMemo(() => {
+        const q = recipientSearch.trim().toLowerCase();
+        if (!q) return [];
+        return filteredRecipients
+            .filter(r =>
+                (r.nombreCompleto || '').toLowerCase().includes(q) ||
+                (r.rut || '').toLowerCase().includes(q) ||
+                (r.cargo || '').toLowerCase().includes(q)
+            )
+            .slice(0, 8);
+    }, [filteredRecipients, recipientSearch]);
+
+    const toggleRolFilter = (rol: string) => {
+        setRolFilters(prev => prev.includes(rol) ? prev.filter(r => r !== rol) : [...prev, rol]);
+    };
+    const toggleCargoFilter = (cargo: string) => {
+        setCargoFilters(prev => prev.includes(cargo) ? prev.filter(c => c !== cargo) : [...prev, cargo]);
+    };
+
+    // Selecciona un destinatario desde el dropdown de autocomplete
+    const selectFromSuggestion = (userId: string) => {
+        setComposeData(prev => ({
+            ...prev,
+            recipientIds: prev.recipientIds.includes(userId)
+                ? prev.recipientIds
+                : [...prev.recipientIds, userId]
+        }));
+        setRecipientSearch('');
+        setShowSuggestions(false);
+    };
+
+    // Seleccionar / quitar todos los destinatarios actualmente visibles (permite
+    // seleccionar a todos los usuarios de uno o más roles o cargos filtrados).
+    const selectAllFiltered = () => {
+        const ids = filteredRecipients.map(r => r.userId);
+        setComposeData(prev => ({
+            ...prev,
+            recipientIds: Array.from(new Set([...prev.recipientIds, ...ids]))
+        }));
+    };
+    const clearFilteredSelection = () => {
+        const ids = new Set(filteredRecipients.map(r => r.userId));
+        setComposeData(prev => ({
+            ...prev,
+            recipientIds: prev.recipientIds.filter(id => !ids.has(id))
         }));
     };
 
@@ -300,11 +580,54 @@ export default function Inbox() {
         return Array.from(grouped.values());
     })();
 
-    const filteredMessages = groupedMessages.filter(m =>
-        (m.subject || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (m.senderName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (m.content || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Inicio del rango temporal seleccionado (null = sin límite)
+    const dateRangeStart = (() => {
+        if (dateRange === 'all') return null;
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        if (dateRange === 'today') return d;
+        if (dateRange === 'week') {
+            // Lunes de la semana actual
+            const day = (d.getDay() + 6) % 7;
+            d.setDate(d.getDate() - day);
+            return d;
+        }
+        if (dateRange === 'month') {
+            d.setDate(1);
+            return d;
+        }
+        return null;
+    })();
+
+    const filteredMessages = groupedMessages
+        .filter(m => {
+            const q = searchTerm.toLowerCase();
+            const matchesSearch =
+                (m.subject || '').toLowerCase().includes(q) ||
+                (m.senderName || '').toLowerCase().includes(q) ||
+                (m.content || '').toLowerCase().includes(q);
+
+            // Filtro por clasificación (prioritario = high/urgent)
+            const matchesClassification =
+                classification === 'all' ||
+                (classification === 'priority' && m.priority !== 'normal') ||
+                (classification === 'normal' && m.priority === 'normal');
+
+            // Filtro temporal
+            let matchesDate = true;
+            if (dateRangeStart) {
+                const t = new Date(m.createdAt).getTime();
+                matchesDate = !isNaN(t) && t >= dateRangeStart.getTime();
+            }
+
+            return matchesSearch && matchesClassification && matchesDate;
+        })
+        // Orden temporal decreciente: los más recientes primero
+        .sort((a, b) => {
+            const ta = new Date(a.createdAt).getTime();
+            const tb = new Date(b.createdAt).getTime();
+            return (isNaN(tb) ? 0 : tb) - (isNaN(ta) ? 0 : ta);
+        });
 
     return (
         <>
@@ -350,6 +673,37 @@ export default function Inbox() {
                                         <FiCheck /> Marcar todos leídos
                                     </button>
                                 )}
+                            </div>
+                        </div>
+
+                        {/* Filtros de temporalidad y clasificación */}
+                        <div className="inbox-toolbar-filters">
+                            <div className="inbox-toolbar-filter">
+                                <FiClock size={14} />
+                                <Select
+                                    ariaLabel="Filtrar por fecha"
+                                    value={dateRange}
+                                    onChange={(v) => setDateRange(v as DateRangeFilter)}
+                                    options={[
+                                        { value: 'all', label: 'Todas las fechas' },
+                                        { value: 'today', label: 'Hoy' },
+                                        { value: 'week', label: 'Esta semana' },
+                                        { value: 'month', label: 'Este mes' },
+                                    ]}
+                                />
+                            </div>
+                            <div className="inbox-toolbar-filter">
+                                <FiFlag size={14} />
+                                <Select
+                                    ariaLabel="Filtrar por clasificación"
+                                    value={classification}
+                                    onChange={(v) => setClassification(v as ClassificationFilter)}
+                                    options={[
+                                        { value: 'all', label: 'Todas las prioridades' },
+                                        { value: 'priority', label: 'Solo prioritarios' },
+                                        { value: 'normal', label: 'Solo normales' },
+                                    ]}
+                                />
                             </div>
                         </div>
 
@@ -839,26 +1193,148 @@ export default function Inbox() {
                 }
             >
                             <div className="form-group">
-                                <label className="form-label">Destinatarios *</label>
-                                {loadingRecipients ? (
-                                    <div className="spinner" />
-                                ) : (
-                                    <div className="recipient-list">
-                                        {recipients.map((r) => (
-                                            <label key={r.userId} className={`recipient-item ${composeData.recipientIds.includes(r.userId) ? 'selected' : ''}`}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={composeData.recipientIds.includes(r.userId)}
-                                                    onChange={() => toggleRecipient(r.userId)}
-                                                />
-                                                <div className="avatar avatar-sm">{(r.nombre || 'U').charAt(0)}</div>
-                                                <div>
-                                                    <div className="font-semibold">{r.nombreCompleto}</div>
-                                                    <div className="text-xs text-muted">{r.rol} • {r.rut}</div>
-                                                </div>
-                                            </label>
-                                        ))}
+                                <label className="form-label">Obra *</label>
+                                <Select
+                                    ariaLabel="Obra"
+                                    value={composeObraId}
+                                    onChange={handleSelectComposeObra}
+                                    placeholder={userObras.length === 0 ? 'No perteneces a ninguna obra' : 'Selecciona una obra'}
+                                    disabled={userObras.length === 0}
+                                    options={userObras.map(o => ({
+                                        value: o.obraId,
+                                        label: o.nombre + (o.codigo ? ` (${o.codigo})` : ''),
+                                    }))}
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">
+                                    Destinatarios *
+                                    {composeData.recipientIds.length > 0 && (
+                                        <span className="recipient-count-badge">{composeData.recipientIds.length} seleccionado(s)</span>
+                                    )}
+                                </label>
+
+                                {!composeObraId ? (
+                                    <div className="recipient-placeholder">
+                                        <FiUsers size={20} />
+                                        <span>Selecciona una obra para ver sus destinatarios.</span>
                                     </div>
+                                ) : loadingRecipients ? (
+                                    <div className="spinner" />
+                                ) : recipients.length === 0 ? (
+                                    <div className="recipient-placeholder">
+                                        <FiUsers size={20} />
+                                        <span>No hay destinatarios disponibles en esta obra.</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Autocomplete de búsqueda de destinatarios */}
+                                        <div className="recipient-autocomplete-wrap">
+                                            <div className="recipient-search">
+                                                <FiSearch size={14} />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Buscar por nombre, cargo o RUT…"
+                                                    value={recipientSearch}
+                                                    autoComplete="off"
+                                                    onChange={(e) => { setRecipientSearch(e.target.value); setShowSuggestions(true); }}
+                                                    onFocus={() => { if (recipientSearch) setShowSuggestions(true); }}
+                                                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Escape') { setShowSuggestions(false); setRecipientSearch(''); }
+                                                        if (e.key === 'Enter' && suggestions.length > 0) { e.preventDefault(); selectFromSuggestion(suggestions[0].userId); }
+                                                    }}
+                                                />
+                                                {recipientSearch && (
+                                                    <button type="button" className="recipient-search-clear" onClick={() => { setRecipientSearch(''); setShowSuggestions(false); }}>×</button>
+                                                )}
+                                            </div>
+                                            {showSuggestions && suggestions.length > 0 && (
+                                                <div className="recipient-suggestions">
+                                                    {suggestions.map(r => (
+                                                        <button
+                                                            type="button"
+                                                            key={r.userId}
+                                                            className={`recipient-suggestion-item ${composeData.recipientIds.includes(r.userId) ? 'selected' : ''}`}
+                                                            onMouseDown={(e) => { e.preventDefault(); selectFromSuggestion(r.userId); }}
+                                                        >
+                                                            <div className="avatar avatar-sm">{(r.nombre || 'U').charAt(0)}</div>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div className="font-semibold" style={{ fontSize: '13px' }}>{r.nombreCompleto}</div>
+                                                                <div className="text-xs text-muted">{rolLabel(r.rol)}{r.cargo ? ` · ${r.cargo}` : ''}</div>
+                                                            </div>
+                                                            {composeData.recipientIds.includes(r.userId) && <FiCheck size={14} style={{ color: 'var(--primary-500)', flexShrink: 0 }} />}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {showSuggestions && recipientSearch.trim() && suggestions.length === 0 && (
+                                                <div className="recipient-suggestions">
+                                                    <div className="recipient-suggestion-empty">Sin resultados para "{recipientSearch}"</div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Filtros por rol y cargo — dropdowns con checkboxes */}
+                                        <div className="recipient-filter-dropdowns">
+                                            <MultiSelectDropdown
+                                                label="Rol"
+                                                options={rolesParaFiltros.map(r => r.id)}
+                                                selected={rolFilters}
+                                                onToggle={toggleRolFilter}
+                                                onClear={() => setRolFilters([])}
+                                                disabledSet={rolesDisabled}
+                                                getLabel={id => rolesParaFiltros.find(r => r.id === id)?.nombre || rolLabel(id)}
+                                            />
+                                            {cargosParaFiltros.length > 0 && (
+                                                <MultiSelectDropdown
+                                                    label="Cargo"
+                                                    options={cargosParaFiltros}
+                                                    selected={cargoFilters}
+                                                    onToggle={toggleCargoFilter}
+                                                    onClear={() => setCargoFilters([])}
+                                                    disabledSet={cargosDisabled}
+                                                />
+                                            )}
+                                        </div>
+
+                                        {/* Acciones de selección masiva */}
+                                        <div className="recipient-bulk-actions">
+                                            <span className="text-xs text-muted">{filteredRecipients.length} persona(s)</span>
+                                            <div className="flex gap-2">
+                                                <button type="button" className="btn btn-sm btn-secondary" onClick={selectAllFiltered} disabled={filteredRecipients.length === 0}>
+                                                    <FiCheck /> Seleccionar todos
+                                                </button>
+                                                <button type="button" className="btn btn-sm btn-ghost" onClick={clearFilteredSelection} disabled={filteredRecipients.length === 0}>
+                                                    Quitar
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="recipient-list">
+                                            {filteredRecipients.length === 0 ? (
+                                                <div className="recipient-placeholder" style={{ border: 'none' }}>
+                                                    <span>Ningún destinatario coincide con los filtros.</span>
+                                                </div>
+                                            ) : filteredRecipients.map((r) => (
+                                                <label key={r.userId} className={`recipient-item ${composeData.recipientIds.includes(r.userId) ? 'selected' : ''}`}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={composeData.recipientIds.includes(r.userId)}
+                                                        onChange={() => toggleRecipient(r.userId)}
+                                                    />
+                                                    <div className="avatar avatar-sm">{(r.nombre || 'U').charAt(0)}</div>
+                                                    <div>
+                                                        <div className="font-semibold">{r.nombreCompleto}</div>
+                                                        <div className="text-xs text-muted">
+                                                            {rolLabel(r.rol)}{r.cargo ? ` • ${r.cargo}` : ''} • {r.rut}
+                                                        </div>
+                                                    </div>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </>
                                 )}
                             </div>
 
@@ -919,6 +1395,9 @@ export default function Inbox() {
                 .inbox-container {
                     display: grid;
                     grid-template-columns: 1fr;
+                    /* Limita la fila a la altura del contenedor para que las columnas
+                       (lista y detalle) puedan hacer scroll interno en vez de crecer. */
+                    grid-template-rows: minmax(0, 1fr);
                     gap: var(--space-4);
                     height: calc(100vh - var(--header-height) - var(--space-12));
                     background: var(--surface-card);
@@ -1122,6 +1601,12 @@ export default function Inbox() {
                     width: 100%;
                     height: 100%;
                     min-height: 0;
+                    overflow: hidden;
+                }
+
+                .inbox-detail-content .inbox-detail-body {
+                    overflow-wrap: anywhere;
+                    word-break: break-word;
                 }
 
                 .inbox-detail-header {
@@ -1170,6 +1655,254 @@ export default function Inbox() {
 
                 .inbox-detail-body p {
                     margin-bottom: var(--space-3);
+                }
+
+                /* Filtros de la lista (temporalidad + clasificación) */
+                .inbox-toolbar-filters {
+                    display: flex;
+                    gap: var(--space-2);
+                    padding: var(--space-2) var(--space-4) 0 var(--space-4);
+                    flex-wrap: wrap;
+                }
+
+                .inbox-toolbar-filter {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-2);
+                    flex: 1;
+                    min-width: 160px;
+                    color: var(--text-muted);
+                }
+
+                .inbox-toolbar-filter > div {
+                    flex: 1;
+                }
+
+                /* Selector de destinatarios */
+                .recipient-autocomplete-wrap {
+                    position: relative;
+                    margin-bottom: var(--space-2);
+                }
+
+                .recipient-search {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-2);
+                    background: var(--surface-elevated);
+                    padding: var(--space-2) var(--space-3);
+                    border-radius: var(--radius-md);
+                    border: 1px solid var(--surface-border);
+                    transition: border-color 0.15s;
+                }
+
+                .recipient-search:focus-within {
+                    border-color: var(--primary-500);
+                    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-500) 15%, transparent);
+                }
+
+                .recipient-search input {
+                    flex: 1;
+                    background: transparent;
+                    border: none;
+                    outline: none;
+                    color: var(--text-primary);
+                    font-size: 14px;
+                }
+
+                .recipient-search-clear {
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    color: var(--text-muted);
+                    font-size: 18px;
+                    line-height: 1;
+                    padding: 0 2px;
+                    display: flex;
+                    align-items: center;
+                }
+
+                .recipient-search-clear:hover {
+                    color: var(--text-primary);
+                }
+
+                .recipient-suggestions {
+                    position: absolute;
+                    top: calc(100% + 4px);
+                    left: 0;
+                    right: 0;
+                    background: var(--surface-card);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+                    z-index: 200;
+                    overflow: hidden;
+                    max-height: 280px;
+                    overflow-y: auto;
+                }
+
+                .recipient-suggestion-item {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-3);
+                    padding: var(--space-2) var(--space-3);
+                    width: 100%;
+                    text-align: left;
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    transition: background 0.1s;
+                    border-bottom: 1px solid var(--surface-border);
+                }
+
+                .recipient-suggestion-item:last-child {
+                    border-bottom: none;
+                }
+
+                .recipient-suggestion-item:hover {
+                    background: var(--surface-hover);
+                }
+
+                .recipient-suggestion-item.selected {
+                    background: color-mix(in srgb, var(--primary-500) 6%, transparent);
+                }
+
+                .recipient-suggestion-empty {
+                    padding: var(--space-3) var(--space-4);
+                    color: var(--text-muted);
+                    font-size: 13px;
+                    text-align: center;
+                }
+
+                .recipient-filter-dropdowns {
+                    display: flex;
+                    gap: var(--space-2);
+                    margin-bottom: var(--space-2);
+                    flex-wrap: wrap;
+                }
+
+                /* MultiSelectDropdown */
+                .msd-wrap {
+                    position: relative;
+                }
+
+                .msd-trigger {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 6px 12px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    background: var(--surface-elevated);
+                    color: var(--text-secondary);
+                    cursor: pointer;
+                    transition: all 0.15s;
+                    white-space: nowrap;
+                }
+
+                .msd-trigger:hover {
+                    border-color: var(--primary-400);
+                    color: var(--text-primary);
+                }
+
+                .msd-trigger.active {
+                    border-color: var(--primary-500);
+                    background: color-mix(in srgb, var(--primary-500) 10%, transparent);
+                    color: var(--primary-600, var(--primary-500));
+                    font-weight: 600;
+                }
+
+                .msd-panel {
+                    position: absolute;
+                    top: calc(100% + 4px);
+                    left: 0;
+                    min-width: 200px;
+                    background: var(--surface-card);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+                    z-index: 300;
+                    overflow: hidden;
+                    max-height: 260px;
+                    overflow-y: auto;
+                }
+
+                .msd-option {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 9px 14px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--text-primary);
+                    transition: background 0.1s;
+                    border-bottom: 1px solid var(--surface-border);
+                }
+
+                .msd-option:last-child {
+                    border-bottom: none;
+                }
+
+                .msd-option:hover:not(.msd-disabled) {
+                    background: var(--surface-hover);
+                }
+
+                .msd-option.msd-disabled {
+                    opacity: 0.4;
+                    cursor: not-allowed;
+                }
+
+                .msd-option input[type="checkbox"] {
+                    accent-color: var(--primary-500);
+                    width: 15px;
+                    height: 15px;
+                    flex-shrink: 0;
+                }
+
+                .msd-option-label {
+                    flex: 1;
+                }
+
+                .msd-no-members {
+                    font-size: 11px;
+                    color: var(--text-muted);
+                    margin-left: auto;
+                }
+
+                .msd-empty {
+                    padding: 10px 14px;
+                    font-size: 13px;
+                    color: var(--text-muted);
+                    text-align: center;
+                }
+
+                .recipient-bulk-actions {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: var(--space-2);
+                    margin-bottom: var(--space-2);
+                }
+
+                .recipient-placeholder {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: var(--space-2);
+                    padding: var(--space-4);
+                    color: var(--text-muted);
+                    font-size: var(--text-sm);
+                    text-align: center;
+                    border: 1px dashed var(--surface-border);
+                    border-radius: var(--radius-md);
+                }
+
+                .recipient-count-badge {
+                    margin-left: var(--space-2);
+                    font-size: var(--text-xs);
+                    font-weight: 600;
+                    color: var(--primary-500);
                 }
 
                 .recipient-list {

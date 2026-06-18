@@ -185,7 +185,8 @@ module.exports.create = async (event) => {
                 personaIds,
                 requestedBy: body.solicitanteId,
                 documentName: signatureRequest.titulo,
-                priority: isUrgent ? 'urgent' : 'normal'
+                priority: isUrgent ? 'urgent' : 'normal',
+                obraId: signatureRequest.obraId
             });
         } catch (eventError) {
             console.error('Error emitting signature.requested event:', eventError);

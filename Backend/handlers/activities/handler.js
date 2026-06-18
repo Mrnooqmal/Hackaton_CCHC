@@ -99,7 +99,8 @@ module.exports.create = async (event) => {
                     createdBy: body.relatorId,
                     activityName: activity.titulo,
                     fecha: activity.fecha,
-                    tipo: activity.tipo
+                    tipo: activity.tipo,
+                    obraId: activity.obraId
                 });
             }
         } catch (eventError) {

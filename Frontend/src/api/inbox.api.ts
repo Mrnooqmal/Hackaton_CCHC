@@ -103,9 +103,10 @@ export const inboxApi = {
     getUnreadCount: (userId: string) =>
         apiRequest<{ unreadCount: number; userId: string }>(`/inbox/unread-count?userId=${userId}`),
 
-    getRecipients: (userId: string, empresaId?: string) => {
+    getRecipients: (userId: string, tenantId?: string, obraId?: string) => {
         const params = new URLSearchParams({ userId });
-        if (empresaId) params.append('empresaId', empresaId);
+        if (tenantId) params.append('tenantId', tenantId);
+        if (obraId) params.append('obraId', obraId);
         return apiRequest<{
             recipients: InboxRecipient[];
             grouped: Record<string, InboxRecipient[]>;
