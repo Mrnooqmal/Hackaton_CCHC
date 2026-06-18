@@ -55,8 +55,8 @@ const GENERIC_NAV: NavSection[] = [
         items: [
             { path: '/obras', icon: FiHome, label: 'Obras', permission: PERMISSIONS.OBRAS_VER },
             { path: '/personas', icon: FiUsers, label: 'Personas', permission: PERMISSIONS.PERSONAS_VER },
-            { path: '/documents-repository', icon: FiFileText, label: 'Archivos', permission: PERMISSIONS.REPOSITORIO_VER },
-            { path: '/documents', icon: FiFileText, label: 'Documentos', permission: PERMISSIONS.DOCUMENTOS_VER },
+            { path: '/documents-repository', icon: FiFileText, label: 'Repositorio', permission: PERMISSIONS.REPOSITORIO_VER },
+            { path: '/documents', icon: FiFileText, label: 'Documentos DS44', permission: PERMISSIONS.DOCUMENTOS_VER },
             { path: '/activities', icon: FiCalendar, label: 'Actividades', permission: PERMISSIONS.ACTIVIDADES_VER },
         ]
     },
