@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import ConfirmModal from './ConfirmModal';
 import {
     FiHome,
     FiUsers,
@@ -82,6 +83,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     const location = useLocation();
     const navigate = useNavigate();
     const { user, hasPermission, logout } = useAuth();
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
     const sidebarRef = useRef<HTMLElement>(null);
     const [workerId, setWorkerId] = useState<string | null>(null);
@@ -232,6 +234,17 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 />
             )}
 
+            <ConfirmModal
+                isOpen={showLogoutConfirm}
+                title="Cerrar sesión"
+                message="¿Estás seguro de que deseas cerrar sesión?"
+                confirmLabel="Cerrar sesión"
+                cancelLabel="Cancelar"
+                variant="danger"
+                onConfirm={() => { setShowLogoutConfirm(false); logout(); }}
+                onCancel={() => setShowLogoutConfirm(false)}
+            />
+
             <aside ref={sidebarRef} className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
                 {/* Mobile close button */}
                 {onClose && (
@@ -374,7 +387,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                 </button>
                                 <button
                                     className="sidebar-user-logout"
-                                    onClick={logout}
+                                    onClick={() => setShowLogoutConfirm(true)}
                                     title="Cerrar sesión"
                                     aria-label="Cerrar sesión"
                                 >

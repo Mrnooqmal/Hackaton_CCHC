@@ -33,6 +33,7 @@ import OfflineBanner from './components/OfflineBanner';
 import SuggestionsWidget from './components/SuggestionsWidget';
 import Footer from './components/Footer';
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ToastProvider } from './context/ToastContext';
@@ -44,6 +45,40 @@ import './css/index.css';
 import './css/App.css';
 import './css/components.css';
 import './css/dashboard.css';
+
+function SessionExpiredModal() {
+  const { sessionExpired, clearSessionExpired } = useAuth();
+  if (!sessionExpired) return null;
+  const handleGoToLogin = () => {
+    clearSessionExpired();
+  };
+  return createPortal(
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+      backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', zIndex: 9999999, padding: '1rem'
+    }}>
+      <div style={{
+        background: 'var(--surface-card)', border: '1px solid var(--surface-border)',
+        borderRadius: 'var(--radius-xl)', maxWidth: 400, width: '100%',
+        padding: '2.5rem 1.5rem 1.5rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+        textAlign: 'center'
+      }}>
+        <div style={{ fontSize: 48, marginBottom: '1rem' }}>⏰</div>
+        <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+          Tu sesión ha expirado
+        </h2>
+        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '2rem' }}>
+          Por seguridad, tu sesión fue cerrada automáticamente. Por favor, inicia sesión nuevamente.
+        </p>
+        <a href="/login" onClick={handleGoToLogin} className="btn btn-primary" style={{ display: 'block', width: '100%', textAlign: 'center' }}>
+          Volver al inicio de sesión
+        </a>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 function AppContent() {
   const { user } = useAuth();
@@ -58,6 +93,7 @@ function AppContent() {
 
   return (
     <div className={`app-layout ${!user ? 'auth-mode' : ''} ${user && isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <SessionExpiredModal />
       {user && <Sidebar isOpen={isMobileMenuOpen} onClose={closeMobileMenu} />}
       <main className={user ? 'main-content' : 'auth-content'}>
         {user && <Header />}

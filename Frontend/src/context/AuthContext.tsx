@@ -6,6 +6,8 @@ interface AuthContextType {
     session: SessionInfo | null;
     loading: boolean;
     error: string | null;
+    sessionExpired: boolean;
+    clearSessionExpired: () => void;
     login: (rut: string, password: string) => Promise<{ success: boolean; error?: string; requiresChangePassword?: boolean; requiresEnrollment?: boolean }>;
     logout: () => Promise<void>;
     updateUser: (userData: Partial<User>) => void;
@@ -19,7 +21,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [session, setSession] = useState<SessionInfo | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [sessionExpired, setSessionExpired] = useState(false);
     const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearSessionExpired = useCallback(() => setSessionExpired(false), []);
 
     const scheduleAutoLogout = useCallback((expiresAt: string) => {
         if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
@@ -31,6 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.removeItem('tenant_id');
             setUser(null);
             setSession(null);
+            setSessionExpired(true);
         }, ms);
     }, []);
 
@@ -153,7 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, session, loading, error, login, logout, updateUser, hasPermission }}>
+        <AuthContext.Provider value={{ user, session, loading, error, sessionExpired, clearSessionExpired, login, logout, updateUser, hasPermission }}>
             {children}
         </AuthContext.Provider>
     );
