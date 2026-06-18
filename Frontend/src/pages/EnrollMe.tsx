@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
@@ -36,7 +36,16 @@ export default function EnrollMe() {
     const [currentStep, setCurrentStep] = useState<EnrollmentStep>('welcome');
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
+    const [pinCreateKey, setPinCreateKey] = useState(0);
+    const [pinConfirmKey, setPinConfirmKey] = useState(0);
     const [enrollmentData, setEnrollmentData] = useState<any>(null);
+
+    // Si el usuario ya está enrolado (ej. recargó en el paso de perfil), saltar directo ahí
+    useEffect(() => {
+        if ((user as any)?.habilitado === true) {
+            setCurrentStep('profile');
+        }
+    }, [user]);
 
     // Profile step state
     const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
@@ -54,7 +63,14 @@ export default function EnrollMe() {
         setTelefono(fmt);
     };
 
+    const PINES_OBVIOS = ['0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999', '1234', '4321'];
+
     const handlePinCreate = (newPin: string) => {
+        if (PINES_OBVIOS.includes(newPin)) {
+            setError('PIN demasiado simple, elige otro');
+            setPinCreateKey(k => k + 1);
+            return;
+        }
         setPin(newPin);
         setError('');
         setTimeout(() => setCurrentStep('confirm-pin'), 800);
@@ -63,6 +79,7 @@ export default function EnrollMe() {
     const handlePinConfirm = async (confirmedPin: string) => {
         if (confirmedPin !== pin) {
             setError('El PIN no coincide. Inténtalo nuevamente.');
+            setPinConfirmKey(k => k + 1);
             return;
         }
 
@@ -299,10 +316,12 @@ export default function EnrollMe() {
                     {currentStep === 'create-pin' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeInScale 0.35s ease-out' }}>
                             <PinInput
+                                key={pinCreateKey}
                                 mode="create"
                                 onComplete={handlePinCreate}
                                 title="Crea tu PIN de Seguridad"
                                 subtitle="Este PIN será tu firma digital. Recuérdalo bien."
+                                error={error}
                             />
                             <button
                                 className="btn btn-ghost btn-sm"
@@ -318,6 +337,7 @@ export default function EnrollMe() {
                     {currentStep === 'confirm-pin' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeInScale 0.35s ease-out' }}>
                             <PinInput
+                                key={pinConfirmKey}
                                 mode="confirm"
                                 onComplete={handlePinConfirm}
                                 title="Confirma tu PIN"
@@ -554,7 +574,7 @@ export default function EnrollMe() {
                     )}
 
                     {/* STEP: Éxito */}
-                    {currentStep === 'success' && enrollmentData && (
+                    {currentStep === 'success' && (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-5)', animation: 'fadeInScale 0.35s ease-out' }}>
                             <div style={{
                                 width: '72px', height: '72px',
@@ -577,39 +597,41 @@ export default function EnrollMe() {
                                 </p>
                             </div>
 
-                            <div style={{
-                                width: '100%',
-                                background: 'var(--surface-elevated)',
-                                border: '1px solid var(--surface-border)',
-                                borderRadius: 'var(--radius-lg)',
-                                overflow: 'hidden',
-                            }}>
+                            {enrollmentData && (
                                 <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-                                    padding: 'var(--space-3) var(--space-4)',
-                                    borderBottom: '1px solid var(--surface-border)',
-                                    background: 'var(--surface-card)',
+                                    width: '100%',
+                                    background: 'var(--surface-elevated)',
+                                    border: '1px solid var(--surface-border)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    overflow: 'hidden',
                                 }}>
-                                    <FiShield size={14} style={{ color: 'var(--accent)' }} />
-                                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
-                                        Datos de la firma
-                                    </span>
-                                </div>
-                                {[
-                                    { label: 'Token', value: enrollmentData.firma.token },
-                                    { label: 'Fecha', value: enrollmentData.firma.fecha },
-                                    { label: 'Hora', value: enrollmentData.firma.horario },
-                                ].map((field, i, arr) => (
-                                    <div key={i} style={{
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
                                         padding: 'var(--space-3) var(--space-4)',
-                                        borderBottom: i < arr.length - 1 ? '1px solid var(--surface-border)' : 'none',
+                                        borderBottom: '1px solid var(--surface-border)',
+                                        background: 'var(--surface-card)',
                                     }}>
-                                        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 500 }}>{field.label}</span>
-                                        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{field.value}</span>
+                                        <FiShield size={14} style={{ color: 'var(--accent)' }} />
+                                        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
+                                            Datos de la firma
+                                        </span>
                                     </div>
-                                ))}
-                            </div>
+                                    {[
+                                        { label: 'Token', value: enrollmentData.firma.token },
+                                        { label: 'Fecha', value: enrollmentData.firma.fecha },
+                                        { label: 'Hora', value: enrollmentData.firma.horario },
+                                    ].map((field, i, arr) => (
+                                        <div key={i} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: 'var(--space-3) var(--space-4)',
+                                            borderBottom: i < arr.length - 1 ? '1px solid var(--surface-border)' : 'none',
+                                        }}>
+                                            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 500 }}>{field.label}</span>
+                                            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{field.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
 
                             <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontStyle: 'italic', animation: 'pulse 2s ease-in-out infinite' }}>
                                 Redirigiendo al panel principal…

@@ -6,7 +6,7 @@ const { created, error } = require('../../lib/utils/response');
 const { validateRequired } = require('../../lib/utils/validation');
 
 const SUGGESTIONS_TABLE = process.env.SUGGESTIONS_TABLE || 'Suggestions';
-const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'noreply@prevencionapp.cl';
+const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'noreply@buildandserve.cl';
 const SUGGESTIONS_RECIPIENT = 'thecodecookers@gmail.com';
 
 const sesClient = new SESClient({ region: 'us-east-1' });
