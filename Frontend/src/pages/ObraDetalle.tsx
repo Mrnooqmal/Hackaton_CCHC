@@ -5,7 +5,15 @@ import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, worker
 import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
-import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, unionKits, getCargoLabel, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
+import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, normalizeCargoCodigo, unionKits, getCargoLabel, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
+
+// Roles de gestión/staff que NO entran al onboarding de terreno (espejo del backend).
+const ROLES_GESTION_ONBOARDING = new Set(['admin', 'jefe_obra', 'supervisor', 'prevencionista', 'relator']);
+const esRolGestion = (rol?: string): boolean => {
+  const n = String(rol || '').toLowerCase().trim().replace(/\s+/g, '_');
+  const canon = n === 'administrador' ? 'admin' : (n === 'jefe_de_obra' ? 'jefe_obra' : (n === 'colaborador' ? 'trabajador' : n));
+  return ROLES_GESTION_ONBOARDING.has(canon);
+};
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
@@ -199,13 +207,20 @@ export default function ObraDetalle() {
     // Fallback al cargo legacy global por compatibilidad con personas sin migrar.
     const cargosEnObra = (worker: any): string[] => {
       const asig = (worker.asignaciones || []).find((a: any) => a.obraId === (obraId || ''));
-      if (asig && Array.isArray(asig.cargos) && asig.cargos.length) return asig.cargos;
-      return worker.cargo ? [worker.cargo] : [];
+      const raw = (asig && Array.isArray(asig.cargos) && asig.cargos.length)
+        ? asig.cargos
+        : (worker.cargo ? [worker.cargo] : []);
+      // Normaliza a CÓDIGO de catálogo ("Carpintero" → CARPINTERO) para resolver el
+      // kit real, igual que el backend. Dedup.
+      return [...new Set(raw.map((c: string) => normalizeCargoCodigo(c)).filter(Boolean))] as string[];
     };
     const aplicabilidad = (obra?.aplicabilidadKit) || {};
 
     const byWorker = activeWorkers.map((worker) => {
       const workerId = worker.personaId;
+      // Roles de gestión/staff no entran al onboarding de terreno (coherente con el
+      // backend, que no genera sus documentos). Evita el ruido "admin 0/6".
+      if (esRolGestion(worker.rol)) return null;
       const cargos = cargosEnObra(worker);
       // Unión de kits de todos los cargos de la persona en la obra (dedup + estricto).
       let kit: any[] = unionKits(cargos.map((c) => ({ cargo: c, kit: kitDeCargo(c) })));

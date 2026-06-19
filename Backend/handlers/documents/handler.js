@@ -158,7 +158,7 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId, tipo, estado, clasificacion, obraId } = event.queryStringParameters || {};
+        const { tenantId, tipo, estado, clasificacion, obraId, pendienteDe } = event.queryStringParameters || {};
         if (!tenantId) return error('tenantId es requerido');
 
         // Query por GSI tenantId-index (no Scan)
@@ -192,9 +192,24 @@ module.exports.list = async (event) => {
         }
 
         const result = await docClient.send(new QueryCommand(params));
+        let documents = result.Items || [];
+
+        // pendienteDe={personaId}: documentos de onboarding listos para que ESA
+        // persona los firme — tiene asignación pendiente Y el doc ya tiene archivo
+        // (plantilla pegada). DynamoDB no filtra dentro de listas de mapas, por eso
+        // se filtra en código (la query ya está acotada por tenant).
+        if (pendienteDe) {
+            documents = documents.filter((doc) => {
+                const tieneArchivo = Boolean(doc.s3Key || doc.archivoUrl);
+                if (!tieneArchivo) return false;
+                return (doc.asignaciones || []).some(
+                    (a) => a.personaId === pendienteDe && a.estado === 'pendiente'
+                );
+            });
+        }
 
         return success({
-            documents: result.Items || [],
+            documents,
             types: DOCUMENT_TYPES,
         });
     } catch (err) {

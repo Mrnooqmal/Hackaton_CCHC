@@ -18,11 +18,53 @@ import {
 import {
     signatureRequestsApi,
     signaturesApi,
+    documentsApi,
     uploadsApi,
     type SignatureRequest,
     type NewSignature,
     REQUEST_TYPES,
 } from '../api/client';
+
+// Onboarding docs (clasificacion 'diario') firmables por el trabajador. Se adaptan
+// a la forma de SignatureRequest para reutilizar la misma tarjeta y modal de firma.
+// Discriminadores internos: __kind/__documentId/__tipoLabel.
+type PendingItem = SignatureRequest & {
+    __kind?: 'document';
+    __documentId?: string;
+    __tipoLabel?: string;
+};
+
+const docToPendingItem = (doc: any): PendingItem => {
+    const fileKey: string | null = doc.s3Key || doc.archivoUrl || null;
+    const nombre: string = doc.archivoNombre || doc.titulo || 'Documento';
+    return {
+        requestId: `doc:${doc.documentId}`,
+        tipo: doc.tipo,
+        tipoInfo: undefined as any,
+        titulo: doc.titulo || doc.tipoDescripcion || 'Documento de onboarding',
+        descripcion: doc.descripcion || '',
+        documentos: fileKey ? [{ nombre, url: fileKey, tipo: '', tamaño: 0 }] : [],
+        tieneDocumentos: Boolean(fileKey),
+        solicitanteId: doc.createdBy || 'system',
+        solicitanteNombre: doc.creatorName || 'Sistema DS44',
+        solicitanteRut: '',
+        trabajadores: [],
+        totalRequeridos: 1,
+        totalFirmados: 0,
+        fechaCreacion: doc.createdAt || new Date().toISOString(),
+        fechaLimite: null,
+        fechaCompletado: null,
+        ubicacion: null,
+        obraId: doc.obraId || null,
+        empresaId: doc.tenantId || '',
+        estado: 'pendiente',
+        createdAt: doc.createdAt || '',
+        updatedAt: doc.updatedAt || '',
+        __kind: 'document',
+        __documentId: doc.documentId,
+        __tipoLabel: doc.articulo ? `Onboarding · ${doc.articulo}` : 'Onboarding',
+    };
+};
 import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/ui';
 
@@ -31,10 +73,10 @@ type TabType = 'pendientes' | 'historial';
 export default function MySignatures() {
     const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<TabType>('pendientes');
-    const [pendingRequests, setPendingRequests] = useState<SignatureRequest[]>([]);
+    const [pendingRequests, setPendingRequests] = useState<PendingItem[]>([]);
     const [signatureHistory, setSignatureHistory] = useState<{ firma: NewSignature; solicitud: SignatureRequest | null }[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selectedRequest, setSelectedRequest] = useState<SignatureRequest | null>(null);
+    const [selectedRequest, setSelectedRequest] = useState<PendingItem | null>(null);
     const [showSignModal, setShowSignModal] = useState(false);
     const [signing, setSigning] = useState(false);
     const [pin, setPin] = useState('');
@@ -54,14 +96,22 @@ export default function MySignatures() {
 
         setLoading(true);
         try {
-            const [pendingRes, historyRes] = await Promise.all([
+            const [pendingRes, historyRes, onboardingDocsRes] = await Promise.all([
                 signatureRequestsApi.getPendingByWorker(user.personaId),
                 signatureRequestsApi.getHistoryByWorker(user.personaId),
+                // Documentos de onboarding (IRL, RI, PTS, etc.) con plantilla cargada
+                // y asignación pendiente para esta persona → firmables con PIN.
+                documentsApi.list({ clasificacion: 'diario', pendienteDe: user.personaId }),
             ]);
 
-            if (pendingRes.success && pendingRes.data) {
-                setPendingRequests(pendingRes.data.pendientes);
-            }
+            const requests: PendingItem[] = (pendingRes.success && pendingRes.data)
+                ? pendingRes.data.pendientes
+                : [];
+            const onboardingDocs: PendingItem[] = (onboardingDocsRes.success && onboardingDocsRes.data?.documents)
+                ? onboardingDocsRes.data.documents.map(docToPendingItem)
+                : [];
+            setPendingRequests([...onboardingDocs, ...requests]);
+
             if (historyRes.success && historyRes.data) {
                 setSignatureHistory(historyRes.data.historial);
             }
@@ -79,12 +129,20 @@ export default function MySignatures() {
         setError('');
 
         try {
-            const response = await signaturesApi.create({
-                personaId: user.personaId,
-                workerId: user.personaId,
-                pin,
-                requestId: selectedRequest.requestId,
-            });
+            // Documento de onboarding → firma del asignado (documentsApi.sign).
+            // Solicitud de firma → flujo de SignatureRequests (signaturesApi.create).
+            const response = selectedRequest.__kind === 'document' && selectedRequest.__documentId
+                ? await documentsApi.sign(selectedRequest.__documentId, {
+                    personaId: user.personaId,
+                    tipoFirma: 'documento',
+                    pin,
+                })
+                : await signaturesApi.create({
+                    personaId: user.personaId,
+                    workerId: user.personaId,
+                    pin,
+                    requestId: selectedRequest.requestId,
+                });
 
             if (response.success) {
                 // Refresh data
@@ -103,7 +161,7 @@ export default function MySignatures() {
         }
     };
 
-    const openSignModal = (request: SignatureRequest) => {
+    const openSignModal = (request: PendingItem) => {
         setSelectedRequest(request);
         setPin('');
         setError('');
@@ -455,7 +513,7 @@ export default function MySignatures() {
                                                 <div style={{ flex: 1 }}>
                                                     <div className="flex items-center gap-2 mb-2">
                                                         <span className="badge" style={{ background: 'var(--warning-100)', color: 'var(--warning-700)', fontSize: '12px', fontWeight: 600, padding: '4px 10px' }}>
-                                                            #{index + 1} • {REQUEST_TYPES[request.tipo]?.label}
+                                                            #{index + 1} • {REQUEST_TYPES[request.tipo]?.label || request.__tipoLabel || 'Documento'}
                                                         </span>
                                                     </div>
                                                     <h3 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, marginBottom: 'var(--space-2)', color: 'var(--text-primary)' }}>
