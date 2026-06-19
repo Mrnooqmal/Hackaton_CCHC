@@ -55,15 +55,19 @@ const TEMPLATE_HEADERS = [
 // de registro de empresa (Prevencionista, Jefe de Obra, Supervisor, Colaborador)
 // y la lista de cargos sugeridos. Los roles reales pueden variar segun los defina
 // el administrador al registrar la empresa.
+// El ROL es el perfil de permisos; el CARGO es el oficio de terreno (define el kit
+// de onboarding). Un rol de gestión (Prevencionista, Jefe de Obra, Admin) NO lleva
+// cargo de terreno: deja la columna cargo vacía.
 const TEMPLATE_EXAMPLE_ROWS = [
-    ['12.345.678-9', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Colaborador', 'Carpintero', 'OBRA-001', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
-    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Prevencionista', 'Prevencionista', 'OBRA-001', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
+    ['12.345.678-9', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Trabajador', 'Carpintero', 'OBRA-001', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
+    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Trabajador', 'Maestro albañil', 'OBRA-001', 'Media completa', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP'],
+    ['22.222.222-2', 'Sofia', 'Reyes', 'Vera', '1982-03-15', 'sreyes@empresa.cl', '56922223333', 'Prevencionista', '', 'OBRA-001', 'Universitaria', 'Luis Reyes', '56944445555', 'Conyuge', '']
 ];
 
 const TEMPLATE_INSTRUCTIONS = [
     '1. Las columnas rut, nombre y rol son obligatorias.',
-    '2. El rol debe coincidir con uno de los roles definidos para la empresa (ej. Prevencionista, Jefe de Obra, Supervisor, Colaborador o Administrador).',
-    '3. cargo: cargo del trabajador (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Prevencionista).',
+    '2. El rol debe coincidir con uno de los roles definidos para la empresa (ej. Trabajador, Prevencionista, Jefe de Obra, Supervisor o Administrador). El rol define los permisos de acceso.',
+    '3. cargo: oficio de terreno del trabajador, define su kit de onboarding (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Maestro de Terminaciones, Trazador). Los roles de gestión (Prevencionista, Jefe de Obra, Administrador) NO llevan cargo: deje la columna vacía.',
     '4. obra: codigo de la obra (ej. OBRA-001). Si se deja vacio y la carga se hace desde una obra, se asigna a esa obra.',
     '5. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
     '6. Si el email es valido, se genera una contraseña temporal para el acceso web (todas las personas tienen acceso web).',
@@ -74,6 +78,10 @@ const TEMPLATE_INSTRUCTIONS = [
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 const SIGNATURE_REQUESTS_TABLE = process.env.SIGNATURE_REQUESTS_TABLE || 'SignatureRequests';
+
+// Roles de gestión/staff que NO pasan por el onboarding de terreno del trabajador.
+// (El kit reducido para posiciones de gestión se definirá en una fase posterior.)
+const ROLES_GESTION = new Set(['admin', 'jefe_obra', 'supervisor', 'prevencionista', 'relator']);
 
 const ONBOARDING_DOCUMENTS = [
     {
@@ -372,10 +380,19 @@ const avisarFaltaPlantilla = async ({ solicitante, persona, obraId, faltantes })
 //   pegado (pendiente_firma). Sin plantilla y se esperaba → doc vacío + aviso.
 // - Nunca bloquea el registro/vinculación (cada ítem va en su propio try/catch).
 const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) => {
+    // Solo trabajadores de TERRENO reciben el kit de onboarding DS44. Los roles de
+    // gestión/staff (admin, jefe de obra, supervisor, prevencionista, relator) NO
+    // pasan por este flujo: evita contaminar el checklist (p.ej. "admin 0/6") y que
+    // un rol caiga al kit genérico. Sus documentos base/extras se manejan aparte.
+    if (ROLES_GESTION.has(normalizeRol(persona.rol))) return;
+
     // El cargo vive en la ASIGNACIÓN a esta obra (multi-cargo). Fallback al cargo
     // legacy global por compatibilidad con personas aún no migradas.
     const cargosObra = typeof persona.cargosEnObra === 'function' ? persona.cargosEnObra(obraId) : [];
-    const cargos = (cargosObra && cargosObra.length) ? cargosObra : (persona.cargo ? [persona.cargo] : []);
+    const rawCargos = (cargosObra && cargosObra.length) ? cargosObra : (persona.cargo ? [persona.cargo] : []);
+    // Normaliza a CÓDIGO del catálogo: "Carpintero" → CARPINTERO (resuelve su kit
+    // real de 13 ítems). Sin esto, el texto libre caía SIEMPRE al kit genérico.
+    const cargos = [...new Set(rawCargos.map((c) => normalizeCargoCodigo(c)).filter(Boolean))];
     if (cargos.length === 0) return; // sin cargo de terreno → sin kit (oficina/gestión)
 
     const tenant = await tenantService.getById(tenantId).catch(() => null);

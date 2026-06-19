@@ -61,6 +61,9 @@ export interface DocumentListParams {
     tipo?: string;
     estado?: string;
     clasificacion?: string;
+    // personaId: devuelve solo documentos de onboarding con asignación pendiente
+    // para esa persona y con archivo cargado (listos para que ella los firme).
+    pendienteDe?: string;
 }
 
 export interface DocumentListResponse {
