@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { useBrand } from '../context/BrandContext';
 import { inboxApi } from '../api/client';
+import { Badge } from './ui';
 
 interface Crumb {
     label: string;
@@ -96,9 +97,20 @@ export default function Header() {
 
     const crumbs = buildCrumbs(location.pathname);
 
-    const selectedObra = selectedObraId
-        ? obras.find((o) => o.obraId === selectedObraId)?.nombre || 'Obra desconocida'
-        : 'Todas las obras';
+    const isAdmin = user?.rol === 'admin';
+    const selectedObraObj = selectedObraId ? obras.find((o) => o.obraId === selectedObraId) : null;
+    const selectedObraLabel = selectedObraObj
+        ? [selectedObraObj.codigo, selectedObraObj.nombre].filter(Boolean).join(' · ')
+        : (isAdmin ? 'Vista empresa' : 'Todas las obras');
+
+    const obraEstadoBadge = (estado: string) => {
+        const map: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
+            activa: 'success', activo: 'success',
+            pausada: 'warning', pausa: 'warning',
+            finalizada: 'neutral', inactiva: 'neutral',
+        };
+        return map[estado?.toLowerCase()] ?? 'neutral';
+    };
 
     // El botón hamburguesa colapsa el sidebar en escritorio y abre el overlay en móvil
     const handleToggleSidebar = () => {
@@ -196,24 +208,32 @@ export default function Header() {
                                 aria-expanded={obraMenuOpen}
                             >
                                 <span className="header-obra-label">
-                                    {isLoadingObras ? 'Cargando…' : selectedObra}
+                                    {isLoadingObras ? 'Cargando…' : selectedObraLabel}
                                 </span>
+                                {selectedObraObj && (
+                                    <Badge variant={obraEstadoBadge(selectedObraObj.estado)} size="sm">
+                                        {selectedObraObj.estado}
+                                    </Badge>
+                                )}
                                 <FiChevronDown className="header-obra-caret" />
                             </button>
 
                             {obraMenuOpen && (
                                 <div className="header-dropdown" role="menu">
-                                    <button
-                                        type="button"
-                                        className={`header-dropdown-item ${!selectedObraId ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setSelectedObraId(null);
-                                            setObraMenuOpen(false);
-                                        }}
-                                    >
-                                        Todas las obras
-                                    </button>
-                                    {obras.length > 0 && <div className="header-dropdown-divider" />}
+                                    {isAdmin && (
+                                        <button
+                                            type="button"
+                                            className={`header-dropdown-item ${!selectedObraId ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setSelectedObraId(null);
+                                                setObraMenuOpen(false);
+                                            }}
+                                        >
+                                            <span className="header-dropdown-item-title">Vista empresa</span>
+                                            <span className="header-dropdown-item-sub">Todas las obras</span>
+                                        </button>
+                                    )}
+                                    {obras.length > 0 && isAdmin && <div className="header-dropdown-divider" />}
                                     {obras.map((obra) => (
                                         <button
                                             key={obra.obraId}
@@ -224,8 +244,16 @@ export default function Header() {
                                                 setObraMenuOpen(false);
                                             }}
                                         >
-                                            <span className="header-dropdown-item-title">{obra.nombre}</span>
-                                            <span className="header-dropdown-item-sub">{obra.etapaActual}</span>
+                                            <div className="header-dropdown-item-info">
+                                                <span className="header-dropdown-item-title">
+                                                    {obra.codigo && <span className="header-dropdown-item-code">{obra.codigo}</span>}
+                                                    {obra.nombre}
+                                                </span>
+                                                <span className="header-dropdown-item-sub">{obra.etapaActual}</span>
+                                            </div>
+                                            <Badge variant={obraEstadoBadge(obra.estado)} size="sm">
+                                                {obra.estado}
+                                            </Badge>
                                         </button>
                                     ))}
                                     {obras.length === 0 && !isLoadingObras && (
