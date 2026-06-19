@@ -10,7 +10,7 @@
 
 La plataforma ya tiene una **identidad de marca real y no genérica** (tokens CChC: navy `#002952`, azul `#006edc`, rojo `#df3601`; tipografías `Lora` display + `Roboto` UI; dark mode + tema claro). El problema no es la marca: es que las **interfaces operativas** se sienten genéricas ("dashboard de IA"), abusan de tarjetas/grillas, y encadenan modales dentro de modales.
 
-**Objetivo:** rediseño profundo de las partes operativas para que se vean como una **herramienta técnica profesional**, oxigenada pero con densidad de dato donde corresponde, intuitiva, responsiva y accesible — **sin perder ni alterar funcionalidades**.
+**Objetivo:** rediseño profundo de las partes operativas para que se vean como una **herramienta técnica profesional**, oxigenada pero con densidad de dato donde corresponde, intuitiva, responsiva y accesible — **sin perder ni alterar funcionalidades**. No temer a desligarse del diseño actual.
 
 ### Qué NO se toca
 - Footer.
@@ -40,7 +40,7 @@ La plataforma ya tiene una **identidad de marca real y no genérica** (tokens CC
 - La sidebar **no cambia de estructura** según contexto. Qué ítems se ven depende **del rol/permiso** (comportamiento actual conservado).
   - Roles administrativos (admin, jefe de obra): ven ítems de **empresa** (Obras, Personas globales, Mi Empresa, Cargos, Repositorio) + operativos.
   - Roles operativos (trabajador, etc.): **sin atajos a lo general**; solo su(s) obra(s) vía selector con una **por defecto**.
-- **Selector de obra** (en la cabecera de la sidebar; movible al header si en revisión no convence): muestra **código + nombre + estado** de la obra y permite cambiar. Es el único control que cambia el **contexto de datos**, no el menú.
+- **Selector de obra** (hoy vive en el **Header**, `Header.tsx` — se mantiene ahí, que es "como está ahora"): se mejora para mostrar **código + nombre + estado** de la obra y permite cambiar, además de la opción "Vista empresa" (sin obra) para roles administrativos. Es el único control que cambia el **contexto de datos**, no el menú.
 - Mejora: indicador inequívoco de "viendo: *Obra X*" / "*Vista empresa*" para quien tiene ambos ámbitos; persistencia de la obra elegida (ya existe en `localStorage`); toda página de obra refleja siempre la obra seleccionada.
 
 ### 1.3 Patrón de colecciones: lista ⇄ grilla
@@ -178,6 +178,6 @@ Cada paso: rediseño visual + reorganización modal→página/drawer **conservan
 - No introducir dependencias nuevas salvo que sean imprescindibles (se preferirá CSS/componentes propios).
 
 ## 7. Decisiones abiertas (a confirmar en cada turno)
-- Ubicación final del selector de obra (sidebar vs header) — se prueba en sidebar primero.
+- El selector de obra se mantiene en el Header (donde está hoy); solo se mejora visualmente.
 - Alcance exacto de cada variante de Inicio por rol (3.2).
 - Ruta exacta de "Crear obra" y de "Alta de persona / carga masiva".
