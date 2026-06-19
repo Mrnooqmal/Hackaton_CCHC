@@ -38,3 +38,9 @@ export type { StepperProps, StepperStep } from './Stepper';
 
 export { default as Drawer } from './Drawer';
 export type { DrawerProps } from './Drawer';
+
+export { default as DataTable } from './DataTable';
+export type { DataTableProps, DataTableColumn } from './DataTable';
+
+export { default as CollectionView } from './CollectionView';
+export type { CollectionViewProps, CollectionMode } from './CollectionView';
