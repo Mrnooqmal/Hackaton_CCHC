@@ -10,17 +10,15 @@ export interface FormPageProps {
 
 export default function FormPage({ header, stepper, children, actions, onSubmit, maxWidth = 760 }: FormPageProps) {
   return (
-    <div className="ui-form-page">
+    // El <form> envuelve también las acciones: si el botón submit queda fuera
+    // del form, el click no dispara onSubmit (el submit no se asocia a ningún form).
+    <form className="ui-form-page" onSubmit={onSubmit} noValidate>
       <div className="ui-form-page-inner" style={{ maxWidth }}>
         <div className="ui-form-page-header">{header}</div>
         {stepper && <div className="ui-form-page-stepper">{stepper}</div>}
-        <form
-          className="ui-form-page-body"
-          onSubmit={onSubmit}
-          noValidate
-        >
+        <div className="ui-form-page-body">
           {children}
-        </form>
+        </div>
       </div>
       <div className="ui-form-page-actions">{actions}</div>
       <style>{`
@@ -62,7 +60,7 @@ export default function FormPage({ header, stepper, children, actions, onSubmit,
           .ui-form-page-actions { padding: var(--space-3) var(--space-4); }
         }
       `}</style>
-    </div>
+    </form>
   );
 }
 
