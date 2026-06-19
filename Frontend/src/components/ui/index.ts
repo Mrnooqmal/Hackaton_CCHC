@@ -44,3 +44,6 @@ export type { DataTableProps, DataTableColumn } from './DataTable';
 
 export { default as CollectionView } from './CollectionView';
 export type { CollectionViewProps, CollectionMode } from './CollectionView';
+
+export { default as FormPage, FieldSection } from './FormPage';
+export type { FormPageProps, FieldSectionProps } from './FormPage';
