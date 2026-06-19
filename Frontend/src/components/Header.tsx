@@ -6,6 +6,7 @@ import { useObraContext } from '../context/ObraContext';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { useBrand } from '../context/BrandContext';
+import { inboxApi } from '../api/client';
 
 interface Crumb {
     label: string;
@@ -74,6 +75,24 @@ export default function Header() {
     const location = useLocation();
     const [obraMenuOpen, setObraMenuOpen] = useState(false);
     const obraMenuRef = useRef<HTMLDivElement | null>(null);
+
+    // Badge de notificaciones no leidas en la campana del header.
+    // Se refresca al cambiar de ruta (ej. tras leer mensajes en /inbox) y cada 60s.
+    const [unreadCount, setUnreadCount] = useState(0);
+    useEffect(() => {
+        const personaId = user?.personaId;
+        if (!personaId) return;
+        let active = true;
+        const loadCount = async () => {
+            try {
+                const res = await inboxApi.getUnreadCount(personaId);
+                if (active && res.success && res.data) setUnreadCount(res.data.unreadCount || 0);
+            } catch { /* sin red: se reintenta en el proximo ciclo */ }
+        };
+        loadCount();
+        const interval = setInterval(loadCount, 60000);
+        return () => { active = false; clearInterval(interval); };
+    }, [user?.personaId, location.pathname]);
 
     const crumbs = buildCrumbs(location.pathname);
 
@@ -230,10 +249,23 @@ export default function Header() {
                     <Link
                         to="/inbox"
                         className={`header-action ${location.pathname === '/inbox' ? 'active' : ''}`}
-                        aria-label="Notificaciones"
-                        title="Notificaciones"
+                        aria-label={unreadCount > 0 ? `Notificaciones (${unreadCount} sin leer)` : 'Notificaciones'}
+                        title={unreadCount > 0 ? `${unreadCount} notificacion(es) sin leer` : 'Notificaciones'}
+                        style={{ position: 'relative' }}
                     >
                         <FiBell />
+                        {unreadCount > 0 && (
+                            <span style={{
+                                position: 'absolute', top: '2px', right: '2px',
+                                minWidth: '16px', height: '16px', padding: '0 4px',
+                                borderRadius: '999px', background: 'var(--danger-500, #ef4444)',
+                                color: 'white', fontSize: '10px', fontWeight: 700,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                lineHeight: 1
+                            }}>
+                                {unreadCount > 99 ? '99+' : unreadCount}
+                            </span>
+                        )}
                     </Link>
                 </div>
             </div>

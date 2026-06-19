@@ -12,12 +12,10 @@ import {
     FiBriefcase,
     FiAlertTriangle,
     FiClipboard,
-    FiMail,
-    FiBell,
     FiX,
     FiLogOut
 } from 'react-icons/fi';
-import { surveysApi, workersApi, type InboxMessage } from '../api/client';
+import { surveysApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 
@@ -90,19 +88,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
     const pendingBadgeLabel = pendingSurveyCount > 99 ? '99+' : String(pendingSurveyCount);
 
-    // Inbox notifications state
-    const [unreadInboxCount] = useState(0);
-    const [recentMessages] = useState<InboxMessage[]>([]);
-    const [showNotificationPopup, setShowNotificationPopup] = useState(false);
-    const inboxBadgeLabel = unreadInboxCount > 99 ? '99+' : String(unreadInboxCount);
-
-    // Load inbox unread count
-    useEffect(() => {
-        if (!user?.userId) return;
-
-        // Inbox auto-refresh está deshabilitado por ahora
-        return () => { };
-    }, [user?.userId]);
+    // Las notificaciones viven en el Header (campana con badge), no en el sidebar.
 
     useEffect(() => {
         if (!canRespondSurveys) {
@@ -273,8 +259,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                     const Icon = item.icon;
                                     const isActive = location.pathname === item.path;
                                     const showSurveyBadge = item.path === '/surveys' && canRespondSurveys && pendingSurveyCount > 0;
-                                    const showInboxBadge = item.path === '/inbox' && unreadInboxCount > 0;
-                                    const showStaticBadge = !showSurveyBadge && !showInboxBadge && typeof item.badge === 'number' && item.badge > 0;
+                                    const showStaticBadge = !showSurveyBadge && typeof item.badge === 'number' && item.badge > 0;
 
                                     return (
                                         <Link
@@ -292,11 +277,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                                     {pendingBadgeLabel}
                                                 </span>
                                             )}
-                                            {showInboxBadge && (
-                                                <span className="nav-item-badge inbox-badge">
-                                                    {inboxBadgeLabel}
-                                                </span>
-                                            )}
                                             {showStaticBadge && (
                                                 <span className="nav-item-badge">
                                                     {item.badge}
@@ -309,49 +289,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                         );
                     })}
                 </nav>
-                {/* Notification Popup - Bottom Right */}
-                {showNotificationPopup && recentMessages.length > 0 && (
-                    <div className="notification-popup">
-                        <div className="notification-popup-header">
-                            <span><FiBell /> Notificaciones</span>
-                            <button onClick={() => setShowNotificationPopup(false)}><FiX /></button>
-                        </div>
-                        <div className="notification-popup-list">
-                            {recentMessages.slice(0, 5).map((msg) => (
-                                <Link
-                                    key={msg.messageId}
-                                    to="/inbox"
-                                    className="notification-popup-item"
-                                    onClick={() => setShowNotificationPopup(false)}
-                                >
-                                    <div className="notification-popup-icon">
-                                        <FiMail />
-                                    </div>
-                                    <div className="notification-popup-content">
-                                        <div className="notification-popup-title">{msg.subject || 'Sin asunto'}</div>
-                                        <div className="notification-popup-meta">{msg.senderName || 'Sistema'}</div>
-                                    </div>
-                                </Link>
-                            ))}
-                        </div>
-                        <Link to="/inbox" className="notification-popup-footer" onClick={() => setShowNotificationPopup(false)}>
-                            Ver todos los mensajes
-                        </Link>
-                    </div>
-                )}
-
-                {/* Floating notification bell for large screens */}
-                {unreadInboxCount > 0 && !showNotificationPopup && (
-                    <button
-                        className="notification-fab"
-                        onClick={() => setShowNotificationPopup(true)}
-                        title={`${unreadInboxCount} mensaje(s) sin leer`}
-                    >
-                        <FiBell />
-                        <span className="notification-fab-badge">{inboxBadgeLabel}</span>
-                    </button>
-                )}
-
                 {user && (() => {
                     const initials = [user.nombre, user.apellido]
                         .filter(Boolean)

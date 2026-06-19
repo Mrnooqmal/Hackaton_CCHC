@@ -218,7 +218,11 @@ export default function Inbox() {
             }
 
             if (response.success && response.data) {
-                setMessages(response.data.messages);
+                // Orden tipo correo: mas recientes primero por fecha/hora de llegada.
+                const ordenados = [...response.data.messages].sort((a, b) =>
+                    String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+                );
+                setMessages(ordenados);
             }
         } catch (error) {
             console.error('Error loading messages:', error);

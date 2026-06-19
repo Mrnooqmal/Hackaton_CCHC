@@ -204,6 +204,35 @@ class EventBus {
     }
 
     /**
+     * Notify the worker that their EPP delivery was validated and can be signed
+     */
+    async onEppValidado(data) {
+        const { personaId, entregaDocumentId, validadoPor } = data;
+        if (!personaId) {
+            console.log('No recipient to notify for EPP validation');
+            return;
+        }
+
+        try {
+            await this.inboxRepo.sendMessage({
+                senderId: validadoPor || 'system',
+                senderName: 'PrevencionApp',
+                senderRol: 'system',
+                recipientIds: [personaId],
+                type: 'task',
+                priority: 'normal',
+                subject: 'Entrega de EPP validada',
+                content: 'Tu entrega de EPP fue validada por una instancia superior. Ya puedes firmar la recepcion con tu PIN.',
+                linkedEntity: { type: 'document', id: entregaDocumentId }
+            });
+
+            console.log(`Notification sent for EPP validation ${entregaDocumentId} to ${personaId}`);
+        } catch (error) {
+            console.error('Error sending EPP validation notification:', error);
+        }
+    }
+
+    /**
      * Send urgent notification to prevencionistas for incident report
      */
     async onIncidentReported(data) {
@@ -247,5 +276,6 @@ eventBus.on('activity.created', (data) => eventBus.onActivityCreated(data));
 eventBus.on('survey.assigned', (data) => eventBus.onSurveyAssigned(data));
 eventBus.on('signature.requested', (data) => eventBus.onSignatureRequested(data));
 eventBus.on('incident.reported', (data) => eventBus.onIncidentReported(data));
+eventBus.on('epp.validado', (data) => eventBus.onEppValidado(data));
 
 module.exports = { eventBus };

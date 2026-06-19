@@ -95,23 +95,34 @@ class InboxRepository {
             expressionValues[':notArchived'] = false;
         }
 
-        const result = await this.dynamo.send(new QueryCommand({
-            TableName: this.inboxTable,
-            KeyConditionExpression: 'recipientId = :recipientId',
-            FilterExpression: filter === 'all'
-                ? '(archivedByRecipient = :notArchived OR attribute_not_exists(archivedByRecipient))'
-                : filter === 'unread'
-                    ? '#read = :read'
-                    : 'archivedByRecipient = :archived',
-            ExpressionAttributeValues: expressionValues,
-            ExpressionAttributeNames: filter === 'unread' ? { '#read': 'read' } : undefined,
-            ScanIndexForward: false, // Más recientes primero
-            Limit: limit
-        }));
+        // La sort key de la tabla es messageId (UUID), por lo que el orden de la
+        // Query NO es temporal. Se pagina la query completa del destinatario y se
+        // ordena por createdAt descendente (como un correo) antes de aplicar limit.
+        const items = [];
+        let ExclusiveStartKey;
+        do {
+            const result = await this.dynamo.send(new QueryCommand({
+                TableName: this.inboxTable,
+                KeyConditionExpression: 'recipientId = :recipientId',
+                FilterExpression: filter === 'all'
+                    ? '(archivedByRecipient = :notArchived OR attribute_not_exists(archivedByRecipient))'
+                    : filter === 'unread'
+                        ? '#read = :read'
+                        : 'archivedByRecipient = :archived',
+                ExpressionAttributeValues: expressionValues,
+                ExpressionAttributeNames: filter === 'unread' ? { '#read': 'read' } : undefined,
+                ExclusiveStartKey
+            }));
+            items.push(...(result.Items || []));
+            ExclusiveStartKey = result.LastEvaluatedKey;
+        } while (ExclusiveStartKey);
+
+        items.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+        const messages = items.slice(0, limit);
 
         return {
-            messages: result.Items || [],
-            count: result.Count || 0
+            messages,
+            count: messages.length
         };
     }
 
