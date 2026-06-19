@@ -29,3 +29,9 @@ export type { AlertBannerProps, AlertVariant } from './AlertBanner';
 
 export { default as CredentialCard } from './CredentialCard';
 export type { CredentialCardProps } from './CredentialCard';
+
+export { default as PageHeader } from './PageHeader';
+export type { PageHeaderProps } from './PageHeader';
+
+export { default as Stepper } from './Stepper';
+export type { StepperProps, StepperStep } from './Stepper';
