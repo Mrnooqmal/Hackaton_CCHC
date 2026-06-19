@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import PinInput from '../components/PinInput';
 import {
     FiCheck,
@@ -72,6 +73,8 @@ type TabType = 'pendientes' | 'historial';
 
 export default function MySignatures() {
     const { user } = useAuth();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<TabType>('pendientes');
     const [pendingRequests, setPendingRequests] = useState<PendingItem[]>([]);
     const [signatureHistory, setSignatureHistory] = useState<{ firma: NewSignature; solicitud: SignatureRequest | null }[]>([]);
@@ -90,6 +93,24 @@ export default function MySignatures() {
             setLoading(false);
         }
     }, [user?.personaId]);
+
+    // Apertura directa del modal de firma cuando se llega desde el inicio
+    // ("Mis firmas") con un documento ya seleccionado. Evita la navegación
+    // extra: el usuario hace click en la firma pendiente y firma de inmediato.
+    useEffect(() => {
+        const target = (location.state as { firmarRequestId?: string } | null)?.firmarRequestId;
+        if (!target || pendingRequests.length === 0) return;
+        const item = pendingRequests.find(r => r.requestId === target);
+        if (item) {
+            setSelectedRequest(item);
+            setPin('');
+            setError('');
+            setShowSignModal(true);
+            setActiveTab('pendientes');
+        }
+        // Limpia el state para que no se reabra al refrescar o volver atrás.
+        navigate(location.pathname, { replace: true, state: null });
+    }, [pendingRequests, location.state]);
 
     const loadData = async () => {
         if (!user?.personaId) return;

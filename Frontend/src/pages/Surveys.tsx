@@ -25,7 +25,6 @@ import {
     FiClipboard,
     FiList,
     FiX,
-    FiFileText,
     FiLock,
     FiSearch,
     FiCalendar

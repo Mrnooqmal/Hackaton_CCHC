@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ObraProgressCard from '../components/ObraProgressCard';
+import MisFirmasResumen from '../components/MisFirmasResumen';
+import type { ReactNode } from 'react';
 import {
     FiFileText,
     FiCalendar,
@@ -11,6 +13,10 @@ import {
     FiAlertCircle,
     FiEdit3,
     FiBell,
+    FiUsers,
+    FiClock,
+    FiTrendingUp,
+    FiFolder,
 } from 'react-icons/fi';
 import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi, signatureRequestsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +33,44 @@ interface PendingTask {
     dueDate?: string;
     priority: 'high' | 'normal' | 'low';
     urgent?: boolean;
+}
+
+type MetricTint = 'primary' | 'warning' | 'danger' | 'success';
+
+const TINT_VALUE_COLOR: Record<MetricTint, string> = {
+    primary: 'var(--text-primary)',
+    warning: 'var(--warning-600)',
+    danger: 'var(--danger-600)',
+    success: 'var(--success-600)',
+};
+
+/** Tarjeta de métrica del dashboard: ícono con tinte + valor + etiqueta.
+ *  Opcionalmente navegable. Pensada para verse bien aunque haya poca info. */
+function MetricCard({
+    icon,
+    value,
+    label,
+    tint = 'primary',
+    emphasize = false,
+    to,
+}: {
+    icon: ReactNode;
+    value: ReactNode;
+    label: string;
+    tint?: MetricTint;
+    emphasize?: boolean;
+    to?: string;
+}) {
+    const card = (
+        <div className="dash-stat">
+            <div className={`dash-stat-icon tint-${tint}`}>{icon}</div>
+            <div className="dash-stat-body">
+                <div className="dash-stat-value" style={emphasize ? { color: TINT_VALUE_COLOR[tint] } : undefined}>{value}</div>
+                <div className="dash-stat-label">{label}</div>
+            </div>
+        </div>
+    );
+    return to ? <Link to={to} className="dash-stat-link">{card}</Link> : card;
 }
 
 interface DashboardStats {
@@ -54,6 +98,14 @@ export default function Dashboard() {
     const [obraProgress, setObraProgress] = useState<Record<string, { uploaded: number; total: number; progress: number; label?: string }>>({});
     const selectedObra = selectedObraId ? obras.find(o => o.obraId === selectedObraId) : null;
     const selectedObraProgress = selectedObra ? obraProgress[selectedObra.obraId] : null;
+
+    // Roles de gestión tienen su propio dashboard; cualquier otro rol no-admin
+    // (trabajador, colaborador o roles personalizados del tenant) cae a la vista
+    // personal. El resumen de firmas propias se muestra a todos los no-admin.
+    const rol = (user?.rol as string) || '';
+    const isManagementRole = ['prevencionista', 'jefe_obra', 'supervisor', 'admin'].includes(rol);
+    const isPersonalRole = !isManagementRole;
+    const personaId = user?.personaId;
 
     useEffect(() => {
         const activeRef = { current: true };
@@ -605,9 +657,11 @@ export default function Dashboard() {
                     scope={scopeLabel ? { label: scopeLabel } : undefined}
                 />
 
-                {/* TRABAJADOR VIEW */}
-                {user?.rol === 'trabajador' && (
+                {/* VISTA PERSONAL: trabajador, colaborador y roles personalizados no-admin */}
+                {isPersonalRole && (
                     <div className="dash-role-view">
+                        {personaId && <MisFirmasResumen personaId={personaId} />}
+
                         {getUrgentTasks().length > 0 && (
                             <div className="alert alert-warning">
                                 <FiAlertCircle />
@@ -618,25 +672,11 @@ export default function Dashboard() {
                             </div>
                         )}
 
-                        <div className="dash-metrics">
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{progressPercentage}%</span>
-                                <span className="dash-metric-label">completado</span>
-                            </div>
-                            <div className="dash-metric-sep" />
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{pendings.length}</span>
-                                <span className="dash-metric-label">pendientes</span>
-                            </div>
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiTrendingUp size={20} />} value={`${progressPercentage}%`} label="completado" tint="success" emphasize />
+                            <MetricCard icon={<FiClock size={20} />} value={pendings.length} label="pendientes" tint="warning" emphasize={pendings.length > 0} />
                             {(stats.unreadMessages ?? 0) > 0 && (
-                                <>
-                                    <div className="dash-metric-sep" />
-                                    <div className="dash-metric">
-                                        <Link to="/inbox" className="dash-metric-link">
-                                            <FiBell size={14} /> {stats.unreadMessages} sin leer
-                                        </Link>
-                                    </div>
-                                </>
+                                <MetricCard icon={<FiBell size={20} />} value={stats.unreadMessages} label="sin leer" tint="primary" to="/inbox" />
                             )}
                         </div>
 
@@ -683,31 +723,13 @@ export default function Dashboard() {
                 {/* PREVENCIONISTA VIEW */}
                 {user?.rol === 'prevencionista' && (
                     <div className="dash-role-view">
-                        <div className="dash-metrics">
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{stats.totalWorkers || 0}</span>
-                                <span className="dash-metric-label">trabajadores</span>
-                            </div>
-                            <div className="dash-metric-sep" />
-                            <div className="dash-metric">
-                                <span className="dash-metric-value" style={{ color: (stats.workersPendingSignatures || 0) > 0 ? 'var(--warning-600)' : undefined }}>
-                                    {stats.workersPendingSignatures || 0}
-                                </span>
-                                <span className="dash-metric-label">firmas pendientes</span>
-                            </div>
-                            <div className="dash-metric-sep" />
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{stats.activitiesToday || 0}</span>
-                                <span className="dash-metric-label">actividades hoy</span>
-                            </div>
+                        {personaId && <MisFirmasResumen personaId={personaId} />}
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
+                            <MetricCard icon={<FiEdit3 size={20} />} value={stats.workersPendingSignatures || 0} label="firmas pendientes" tint="warning" emphasize={(stats.workersPendingSignatures || 0) > 0} />
+                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades hoy" tint="primary" />
                             {(stats.pendingIncidents || 0) > 0 && (
-                                <>
-                                    <div className="dash-metric-sep" />
-                                    <div className="dash-metric">
-                                        <span className="dash-metric-value" style={{ color: 'var(--danger-500)' }}>{stats.pendingIncidents}</span>
-                                        <span className="dash-metric-label">incidentes</span>
-                                    </div>
-                                </>
+                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
                             )}
                         </div>
 
@@ -743,9 +765,9 @@ export default function Dashboard() {
                                 <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
                             </div>
                             {recentActivities.length === 0 ? (
-                                <div className="empty-state" style={{ padding: 'var(--space-6) 0' }}>
-                                    <FiCalendar size={36} className="mb-3 opacity-20" />
-                                    <p>No hay actividades recientes</p>
+                                <div className="dash-empty-card">
+                                    <FiCalendar size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+                                    <p className="text-sm text-muted">No hay actividades recientes</p>
                                 </div>
                             ) : (
                                 <div className="dash-list">
@@ -770,31 +792,13 @@ export default function Dashboard() {
                 {/* JEFE DE OBRA VIEW */}
                 {(user?.rol as string) === 'jefe_obra' && (
                     <div className="dash-role-view">
-                        <div className="dash-metrics">
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{stats.totalWorkers || 0}</span>
-                                <span className="dash-metric-label">trabajadores</span>
-                            </div>
-                            <div className="dash-metric-sep" />
-                            <div className="dash-metric">
-                                <span className="dash-metric-value" style={{ color: (stats.workersPendingSignatures || 0) > 0 ? 'var(--warning-600)' : undefined }}>
-                                    {stats.workersPendingSignatures || 0}
-                                </span>
-                                <span className="dash-metric-label">firmas pendientes</span>
-                            </div>
-                            <div className="dash-metric-sep" />
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{stats.activitiesToday || 0}</span>
-                                <span className="dash-metric-label">actividades hoy</span>
-                            </div>
+                        {personaId && <MisFirmasResumen personaId={personaId} />}
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
+                            <MetricCard icon={<FiEdit3 size={20} />} value={stats.workersPendingSignatures || 0} label="firmas pendientes" tint="warning" emphasize={(stats.workersPendingSignatures || 0) > 0} />
+                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades hoy" tint="primary" />
                             {(stats.pendingIncidents || 0) > 0 && (
-                                <>
-                                    <div className="dash-metric-sep" />
-                                    <div className="dash-metric">
-                                        <span className="dash-metric-value" style={{ color: 'var(--danger-500)' }}>{stats.pendingIncidents}</span>
-                                        <span className="dash-metric-label">incidentes</span>
-                                    </div>
-                                </>
+                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
                             )}
                         </div>
 
@@ -830,9 +834,9 @@ export default function Dashboard() {
                                 <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
                             </div>
                             {recentActivities.length === 0 ? (
-                                <div className="empty-state" style={{ padding: 'var(--space-6) 0' }}>
-                                    <FiCalendar size={36} className="mb-3 opacity-20" />
-                                    <p>No hay actividades recientes</p>
+                                <div className="dash-empty-card">
+                                    <FiCalendar size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+                                    <p className="text-sm text-muted">No hay actividades recientes</p>
                                 </div>
                             ) : (
                                 <div className="dash-list">
@@ -857,24 +861,12 @@ export default function Dashboard() {
                 {/* SUPERVISOR VIEW */}
                 {(user?.rol as any) === 'supervisor' && (
                     <div className="dash-role-view">
-                        <div className="dash-metrics">
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{stats.totalWorkers || 0}</span>
-                                <span className="dash-metric-label">trabajadores</span>
-                            </div>
-                            <div className="dash-metric-sep" />
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{stats.activitiesToday || 0}</span>
-                                <span className="dash-metric-label">actividades hoy</span>
-                            </div>
+                        {personaId && <MisFirmasResumen personaId={personaId} />}
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
+                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades hoy" tint="primary" />
                             {(stats.pendingIncidents || 0) > 0 && (
-                                <>
-                                    <div className="dash-metric-sep" />
-                                    <div className="dash-metric">
-                                        <span className="dash-metric-value" style={{ color: 'var(--danger-500)' }}>{stats.pendingIncidents}</span>
-                                        <span className="dash-metric-label">incidentes</span>
-                                    </div>
-                                </>
+                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
                             )}
                         </div>
 
@@ -884,9 +876,9 @@ export default function Dashboard() {
                                 <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
                             </div>
                             {recentActivities.length === 0 ? (
-                                <div className="empty-state" style={{ padding: 'var(--space-6) 0' }}>
-                                    <FiCalendar size={36} className="mb-3 opacity-20" />
-                                    <p>No hay actividades recientes</p>
+                                <div className="dash-empty-card">
+                                    <FiCalendar size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+                                    <p className="text-sm text-muted">No hay actividades recientes</p>
                                 </div>
                             ) : (
                                 <div className="dash-list">
@@ -911,29 +903,12 @@ export default function Dashboard() {
                 {/* ADMIN VIEW */}
                 {user?.rol === 'admin' && (
                     <div className="dash-role-view">
-                        <div className="dash-metrics">
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{stats.totalWorkers || 0}</span>
-                                <span className="dash-metric-label">trabajadores</span>
-                            </div>
-                            <div className="dash-metric-sep" />
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{stats.activitiesToday || 0}</span>
-                                <span className="dash-metric-label">actividades</span>
-                            </div>
-                            <div className="dash-metric-sep" />
-                            <div className="dash-metric">
-                                <span className="dash-metric-value">{stats.totalDocuments || 0}</span>
-                                <span className="dash-metric-label">documentos</span>
-                            </div>
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
+                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades" tint="primary" />
+                            <MetricCard icon={<FiFolder size={20} />} value={stats.totalDocuments || 0} label="documentos" tint="primary" />
                             {(stats.pendingIncidents || 0) > 0 && (
-                                <>
-                                    <div className="dash-metric-sep" />
-                                    <div className="dash-metric">
-                                        <span className="dash-metric-value" style={{ color: 'var(--danger-500)' }}>{stats.pendingIncidents}</span>
-                                        <span className="dash-metric-label">incidentes</span>
-                                    </div>
-                                </>
+                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
                             )}
                         </div>
 
@@ -980,45 +955,59 @@ export default function Dashboard() {
                     flex-direction: column;
                     gap: var(--space-6);
                 }
-                .dash-metrics {
+                .dash-stats-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+                    gap: var(--space-4);
+                }
+                .dash-stat-link { text-decoration: none; display: block; }
+                .dash-stat {
                     display: flex;
                     align-items: center;
-                    gap: var(--space-5);
-                    padding: var(--space-4) 0;
-                    border-bottom: 1px solid var(--surface-border);
+                    gap: var(--space-3);
+                    padding: var(--space-4);
+                    background: var(--surface-card);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
                 }
-                .dash-metric {
+                .dash-stat-link:hover .dash-stat {
+                    transform: translateY(-2px);
+                    box-shadow: var(--shadow-md);
+                    border-color: var(--primary-300);
+                }
+                .dash-stat-icon {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 46px;
+                    height: 46px;
+                    flex-shrink: 0;
+                    border-radius: var(--radius-md);
+                    background: var(--surface-elevated);
+                    color: var(--primary-600);
+                }
+                .dash-stat-icon.tint-primary { background: rgba(59, 130, 246, 0.12); color: var(--primary-600); }
+                .dash-stat-icon.tint-warning { background: rgba(234, 179, 8, 0.16); color: var(--warning-600); }
+                .dash-stat-icon.tint-danger  { background: rgba(239, 68, 68, 0.12); color: var(--danger-600); }
+                .dash-stat-icon.tint-success { background: rgba(16, 185, 129, 0.16); color: var(--success-600); }
+                .dash-stat-body {
                     display: flex;
                     flex-direction: column;
-                    gap: 2px;
+                    gap: 3px;
+                    min-width: 0;
                 }
-                .dash-metric-value {
+                .dash-stat-value {
                     font-size: var(--text-2xl);
                     font-weight: 700;
                     color: var(--text-primary);
                     line-height: 1;
                 }
-                .dash-metric-label {
+                .dash-stat-label {
                     font-size: var(--text-xs);
                     color: var(--text-secondary);
                     text-transform: uppercase;
                     letter-spacing: 0.05em;
-                }
-                .dash-metric-link {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-1);
-                    font-size: var(--text-sm);
-                    color: var(--accent);
-                    font-weight: 500;
-                    text-decoration: none;
-                }
-                .dash-metric-link:hover { text-decoration: underline; }
-                .dash-metric-sep {
-                    width: 1px;
-                    height: 32px;
-                    background: var(--surface-border);
-                    flex-shrink: 0;
                 }
                 .dash-section-header {
                     display: flex;
@@ -1077,6 +1066,18 @@ export default function Dashboard() {
                     transition: background 0.15s;
                 }
                 .dash-list-row:hover { background: var(--surface-elevated); }
+                .dash-empty-card {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: var(--space-2);
+                    padding: var(--space-8) var(--space-4);
+                    border: 1px dashed var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    background: var(--surface-card);
+                    text-align: center;
+                }
                 .pending-task-card {
                     padding: var(--space-4);
                     background: var(--surface-elevated);
