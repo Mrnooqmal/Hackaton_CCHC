@@ -175,7 +175,7 @@ Cada paso: rediseño visual + reorganización modal→página/drawer **conservan
 - **No romper funcionalidad** es el riesgo principal: al extraer formularios de modales a páginas/drawers, mover la lógica tal cual y verificar submit/validaciones.
 - Mantener compatibilidad con `ObraContext`, `AuthContext`, permisos y rutas existentes.
 - Evitar regresiones de tema (dark/claro) reutilizando solo tokens.
-- No introducir dependencias nuevas salvo que sean imprescindibles (se preferirá CSS/componentes propios).
+- Se pueden añadir librerías de frontend con criterio: **preferir headless/sin estilo** (Radix UI, Headless UI, TanStack Table) estilizadas con tokens CChC; **evitar UI-kits opinados** (MUI/Chakra/Ant) que impondrían un look genérico.
 
 ## 7. Decisiones abiertas (a confirmar en cada turno)
 - El selector de obra se mantiene en el Header (donde está hoy); solo se mejora visualmente.

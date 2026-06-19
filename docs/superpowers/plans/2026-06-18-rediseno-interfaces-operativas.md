@@ -13,7 +13,7 @@
 - **No tocar:** Footer, Login (`Login.tsx`), Registro (`RegisterAdmin.tsx`, parte auth de `TenantOnboarding.tsx`), logos/identidad de marca, tipografías y tokens de color.
 - **No alterar funcionalidad:** APIs (`api/*`), permisos (`PERMISSIONS`), ruteo funcional, validaciones y efectos se conservan idénticos. Solo cambia presentación y organización (modal→página/drawer).
 - **Solo tokens existentes** de `src/css/index.css` (no inventar colores). `Lora` (`--font-display`) para títulos; `Roboto` (`--font-ui`) para datos/UI.
-- **Sin dependencias nuevas** salvo imprescindibles (preferir CSS/componentes propios).
+- **Librerías permitidas con criterio:** se pueden añadir dependencias de frontend que aporten valor. **Preferir librerías headless/sin estilo** (p. ej. Radix UI o Headless UI para Drawer/Dialog/menús; TanStack Table para la lógica de `DataTable`) estilizadas con **nuestros tokens CChC**. **Evitar UI-kits opinados** (MUI, Chakra, Ant, Bootstrap) que impondrían su propio look y nos llevarían a lo genérico que el rediseño quiere evitar. Si una librería headless cubre un componente de la Fase 0, usarla en vez de reimplementar a mano.
 - **Verificación por tarea (no hay test runner):** `npm run build` debe pasar (tsc -b + vite build), `npm run lint` sin errores nuevos, + checklist manual de la tarea. Commits frecuentes.
 - **Responsividad y accesibilidad:** tablas densas colapsan a tarjetas en móvil; `aria-label` en acciones de ícono; foco visible; navegación por teclado en drawers/tablas.
 - Trabajo dentro de `Frontend/`. Componentes comunes en `Frontend/src/components/ui/`, exportados desde `Frontend/src/components/ui/index.ts`.
