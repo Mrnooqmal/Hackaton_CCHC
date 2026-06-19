@@ -102,10 +102,11 @@ export default function ObraPlantillasOnboarding({ obraId, tenantId, cargos, ini
     <div className="card" style={{ padding: 'var(--space-4)', marginBottom: 'var(--space-3)', border: '1px solid var(--surface-border)', background: 'var(--surface-elevated)' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
         <div style={{ minWidth: 0 }}>
-          <div className="font-medium">Plantillas de onboarding por obra</div>
+          <div className="font-medium">Onboarding específico de esta obra</div>
           <div className="text-muted" style={{ fontSize: '0.82rem' }}>
-            IRL, Plan de Emergencias y demás documentos derivados del MIPER de esta obra. Se adjuntan
-            automáticamente al vincular un trabajador del cargo. {saving && <em>Guardando…</em>}
+            Capa <b>de esta obra</b> sobre el kit de empresa: IRL, Plan de Emergencias y demás plantillas
+            derivadas del MIPER de la obra. Se adjuntan automáticamente al vincular un trabajador del cargo.
+            {saving && <em> Guardando…</em>}
           </div>
         </div>
         <div className="text-muted" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>

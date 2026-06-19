@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ObraProgressCard from '../components/ObraProgressCard';
 import {
-    FiUsers,
     FiFileText,
     FiCalendar,
     FiAlertTriangle,
@@ -11,15 +10,14 @@ import {
     FiCheckSquare,
     FiAlertCircle,
     FiEdit3,
-    FiShield,
     FiBell,
-    FiMapPin
 } from 'react-icons/fi';
 import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi, signatureRequestsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import type { Worker, Activity, SignatureRequest } from '../api/client';
 import { DS44_ONBOARDING_ITEMS, DS44_PLAN_DOCS } from '../utils/ds44';
+import { PageHeader } from '../components/ui';
 
 interface PendingTask {
     id: string;
@@ -581,130 +579,76 @@ export default function Dashboard() {
         return (
             <div className="flex items-center justify-center" style={{ height: '100vh' }}>
                 <div className="spinner" />
+                <style>{`
+                    .spinner {
+                        width: 40px; height: 40px;
+                        border: 3px solid var(--surface-border);
+                        border-top-color: var(--primary-500);
+                        border-radius: 50%;
+                        animation: spin 0.8s linear infinite;
+                    }
+                    @keyframes spin { to { transform: rotate(360deg); } }
+                `}</style>
             </div>
         );
     }
 
+    const scopeLabel = selectedObra
+        ? [selectedObra.codigo, selectedObra.nombre].filter(Boolean).join(' · ')
+        : user?.rol === 'admin' ? 'Vista empresa' : '';
+
     return (
         <>
-
             <div className="page-content">
-                {/* Welcome Header */}
-                <div className="mb-6">
-                    <h1 className="text-2xl font-bold mb-1">
-                        Bienvenido, {user?.nombre} {user?.apellido}
-                    </h1>
-                    <div className="flex items-center gap-3 text-muted flex-wrap">
-                        <span className="flex items-center gap-1.5 text-sm font-medium">
-                            <FiShield size={14} />
-                            {user?.rol === 'admin' && 'Administrador'}
-                            {(user?.rol as string) === 'jefe_obra' && 'Jefe de Obra'}
-                            {user?.rol === 'prevencionista' && 'Prevencionista'}
-                            {(user?.rol as string) === 'supervisor' && 'Supervisor'}
-                            {user?.rol === 'trabajador' && 'Trabajador'}
-                        </span>
-                        {['jefe_obra', 'supervisor', 'prevencionista'].includes(user?.rol || '') && (
-                            <>
-                                <span className="text-gray-400">•</span>
-                                <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary-500/10 text-primary-500 text-xs font-semibold border border-primary-500/20">
-                                    <FiMapPin size={12} />
-                                    {selectedObraId ? obras.find(o => o.obraId === selectedObraId)?.nombre : 'Seleccionar Obra'}
-                                </span>
-                            </>
-                        )}
-                    </div>
-                </div>
+                <PageHeader
+                    title={`Hola, ${user?.nombre}`}
+                    scope={scopeLabel ? { label: scopeLabel } : undefined}
+                />
 
                 {/* TRABAJADOR VIEW */}
                 {user?.rol === 'trabajador' && (
-                    <>
-                        {/* Urgent Tasks Alert */}
+                    <div className="dash-role-view">
                         {getUrgentTasks().length > 0 && (
-                            <div className="alert alert-warning mb-6">
+                            <div className="alert alert-warning">
                                 <FiAlertCircle />
                                 <div>
                                     <strong>Requieren tu atención urgente</strong>
-                                    <div className="text-sm mt-1">
-                                        {getUrgentTasks().length} tarea(s) pendiente(s)
-                                    </div>
+                                    <div className="text-sm mt-1">{getUrgentTasks().length} tarea(s) pendiente(s)</div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Progress Card */}
-                        <div className="card mb-6">
-                            <h3 className="card-title mb-4">Tu Progreso de Cumplimiento</h3>
-                            <div className="flex items-center gap-4">
-                                <div className="progress-ring">
-                                    <svg width="120" height="120">
-                                        <circle
-                                            cx="60"
-                                            cy="60"
-                                            r="54"
-                                            fill="none"
-                                            stroke="var(--surface-border)"
-                                            strokeWidth="8"
-                                        />
-                                        <circle
-                                            cx="60"
-                                            cy="60"
-                                            r="54"
-                                            fill="none"
-                                            stroke="var(--primary-500)"
-                                            strokeWidth="8"
-                                            strokeDasharray={`${progressPercentage * 3.39} 339`}
-                                            strokeLinecap="round"
-                                            transform="rotate(-90 60 60)"
-                                        />
-                                        <text
-                                            x="60"
-                                            y="60"
-                                            textAnchor="middle"
-                                            dy="7"
-                                            fontSize="24"
-                                            fontWeight="bold"
-                                            fill="var(--text-primary)"
-                                        >
-                                            {progressPercentage}%
-                                        </text>
-                                    </svg>
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-lg font-bold mb-2">
-                                        {progressPercentage}% Completado
-                                    </div>
-                                    <div className="progress">
-                                        <div
-                                            className="progress-bar"
-                                            style={{ width: `${progressPercentage}%` }}
-                                        />
-                                    </div>
-                                    <div className="text-sm text-muted mt-2">
-                                        {pendings.length} tarea(s) pendiente(s)
-                                    </div>
-                                </div>
+                        <div className="dash-metrics">
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{progressPercentage}%</span>
+                                <span className="dash-metric-label">completado</span>
                             </div>
+                            <div className="dash-metric-sep" />
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{pendings.length}</span>
+                                <span className="dash-metric-label">pendientes</span>
+                            </div>
+                            {(stats.unreadMessages ?? 0) > 0 && (
+                                <>
+                                    <div className="dash-metric-sep" />
+                                    <div className="dash-metric">
+                                        <Link to="/inbox" className="dash-metric-link">
+                                            <FiBell size={14} /> {stats.unreadMessages} sin leer
+                                        </Link>
+                                    </div>
+                                </>
+                            )}
                         </div>
 
-                        {/* Pending Tasks */}
-                        <div className="card">
-                            <div className="card-header">
-                                <h3 className="card-title">Mis Pendientes</h3>
-                                {stats.unreadMessages! > 0 && (
-                                    <Link to="/inbox" className="btn btn-sm btn-secondary">
-                                        <FiBell /> {stats.unreadMessages} Notificaciones
-                                    </Link>
-                                )}
+                        {pendings.length === 0 ? (
+                            <div className="empty-state">
+                                <FiCheckSquare size={48} className="empty-state-icon" style={{ color: 'var(--success-500)' }} />
+                                <h3 className="empty-state-title">¡Todo al día!</h3>
+                                <p className="empty-state-description">No tienes tareas pendientes en este momento.</p>
                             </div>
-                            {pendings.length === 0 ? (
-                                <div className="empty-state">
-                                    <FiCheckSquare size={48} className="empty-state-icon" style={{ color: 'var(--success-500)' }} />
-                                    <h3 className="empty-state-title">¡Todo al día!</h3>
-                                    <p className="empty-state-description">
-                                        No tienes tareas pendientes en este momento.
-                                    </p>
-                                </div>
-                            ) : (
+                        ) : (
+                            <div>
+                                <h2 className="dash-section-title" style={{ marginBottom: 'var(--space-3)' }}>Mis pendientes</h2>
                                 <div className="flex flex-col gap-3">
                                     {pendings.map(task => (
                                         <div
@@ -731,66 +675,60 @@ export default function Dashboard() {
                                         </div>
                                     ))}
                                 </div>
-                            )}
-                        </div>
-                    </>
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {/* PREVENCIONISTA VIEW */}
                 {user?.rol === 'prevencionista' && (
-                    <>
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-4 mb-6">
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                        <FiUsers />
-                                    </div>
-                                    <span className="text-xs text-muted">Trabajadores</span>
-                                </div>
-                                <div className="stat-value">{stats.totalWorkers || 0}</div>
-                                <div className="stat-change">
-                                    {stats.pendingSignatures || 0} sin enrolar
-                                </div>
+                    <div className="dash-role-view">
+                        <div className="dash-metrics">
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{stats.totalWorkers || 0}</span>
+                                <span className="dash-metric-label">trabajadores</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
-                                        <FiCalendar />
-                                    </div>
-                                    <span className="text-xs text-muted">Actividades Hoy</span>
-                                </div>
-                                <div className="stat-value">{stats.activitiesToday || 0}</div>
+                            <div className="dash-metric-sep" />
+                            <div className="dash-metric">
+                                <span className="dash-metric-value" style={{ color: (stats.workersPendingSignatures || 0) > 0 ? 'var(--warning-600)' : undefined }}>
+                                    {stats.workersPendingSignatures || 0}
+                                </span>
+                                <span className="dash-metric-label">firmas pendientes</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--warning-500)' }}>
-                                        <FiEdit3 />
-                                    </div>
-                                    <span className="text-xs text-muted">Mis Firmas Pendientes</span>
-                                </div>
-                                <div className="stat-value">{stats.ownPendingSignatures || 0}</div>
-                                <div className="stat-change" style={{ color: 'var(--warning-500)' }}>
-                                    Tus propias firmas
-                                </div>
+                            <div className="dash-metric-sep" />
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{stats.activitiesToday || 0}</span>
+                                <span className="dash-metric-label">actividades hoy</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
-                                        <FiAlertTriangle />
+                            {(stats.pendingIncidents || 0) > 0 && (
+                                <>
+                                    <div className="dash-metric-sep" />
+                                    <div className="dash-metric">
+                                        <span className="dash-metric-value" style={{ color: 'var(--danger-500)' }}>{stats.pendingIncidents}</span>
+                                        <span className="dash-metric-label">incidentes</span>
                                     </div>
-                                    <span className="text-xs text-muted">Incidentes</span>
-                                </div>
-                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
-                            </div>
+                                </>
+                            )}
                         </div>
 
+                        {(stats.workersPendingSignatures || 0) > 0 && (
+                            <div className="dash-action-banner">
+                                <div className="dash-action-banner-body">
+                                    <FiEdit3 size={20} />
+                                    <div>
+                                        <div className="dash-action-banner-count">{stats.workersPendingSignatures}</div>
+                                        <div className="dash-action-banner-label">firmas de trabajadores pendientes</div>
+                                    </div>
+                                </div>
+                                <Link to="/signature-requests" className="btn btn-secondary btn-sm">
+                                    Ver solicitudes <FiArrowRight />
+                                </Link>
+                            </div>
+                        )}
+
                         {selectedObra && selectedObraProgress && (
-                            <div className="mb-6">
-                                <h3 className="text-sm font-bold uppercase tracking-wider text-muted mb-4">Progreso de Fase (DS44)</h3>
+                            <div>
+                                <h2 className="dash-section-title" style={{ marginBottom: 'var(--space-3)' }}>DS44 · {selectedObra.nombre}</h2>
                                 <ObraProgressCard
                                     obra={selectedObra}
                                     progress={selectedObraProgress}
@@ -799,141 +737,85 @@ export default function Dashboard() {
                             </div>
                         )}
 
-                        {/* Workers Signatures Banner */}
-                        <div className="card mb-6" style={{
-                            background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08), rgba(234, 179, 8, 0.02))',
-                            border: '1px solid rgba(234, 179, 8, 0.25)',
-                            padding: 'var(--space-5)',
-                        }}>
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className="avatar" style={{
-                                        background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))',
-                                        width: '52px',
-                                        height: '52px',
-                                        boxShadow: '0 4px 12px rgba(234, 179, 8, 0.3)',
-                                    }}>
-                                        <FiEdit3 size={22} />
-                                    </div>
-                                    <div>
-                                        <div className="text-sm text-muted" style={{ marginBottom: '4px' }}>Firmas Pendientes de Trabajadores</div>
-                                        <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--warning-600)' }}>
-                                            {stats.workersPendingSignatures || 0}
-                                        </div>
-                                        <div className="text-sm text-muted" style={{ marginTop: '2px' }}>firmas pendientes en total de todos los trabajadores asignados</div>
-                                    </div>
-                                </div>
-                                <Link to="/signature-requests" className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
-                                    Ver Solicitudes <FiArrowRight />
-                                </Link>
+                        <div>
+                            <div className="dash-section-header">
+                                <h2 className="dash-section-title">Actividades recientes</h2>
+                                <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
                             </div>
-                        </div>
-
-                        {/* Actions Grid */}
-                        <div className="dashboard-main-grid">
-                            {/* Recent Activities */}
-                            <div className="card">
-                                <div className="card-header">
-                                    <div>
-                                        <h2 className="card-title">Actividades Recientes</h2>
-                                        <p className="card-subtitle">Últimas actividades creadas</p>
-                                    </div>
-                                    <Link to="/activities" className="btn btn-primary btn-sm">
-                                        <FiPlus /> Nueva
-                                    </Link>
+                            {recentActivities.length === 0 ? (
+                                <div className="empty-state" style={{ padding: 'var(--space-6) 0' }}>
+                                    <FiCalendar size={36} className="mb-3 opacity-20" />
+                                    <p>No hay actividades recientes</p>
                                 </div>
-
-                                {recentActivities.length === 0 ? (
-                                    <div className="empty-state">
-                                        <FiCalendar size={36} className="mb-3 opacity-20" />
-                                        <p>No hay actividades recientes</p>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col gap-3">
-                                        {recentActivities.map((activity) => (
-                                            <div
-                                                key={activity.activityId}
-                                                className="flex items-center justify-between"
-                                                style={{
-                                                    padding: 'var(--space-3)',
-                                                    background: 'var(--surface-elevated)',
-                                                    borderRadius: 'var(--radius-md)'
-                                                }}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                                        <FiCalendar />
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold">{activity.titulo}</div>
-                                                        <div className="text-sm text-muted">{activity.fecha}</div>
-                                                    </div>
+                            ) : (
+                                <div className="dash-list">
+                                    {recentActivities.map(activity => (
+                                        <div key={activity.activityId} className="dash-list-row">
+                                            <div className="flex items-center gap-3">
+                                                <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}><FiCalendar /></div>
+                                                <div>
+                                                    <div className="font-bold">{activity.titulo}</div>
+                                                    <div className="text-sm text-muted">{activity.fecha}</div>
                                                 </div>
-                                                <span className="badge badge-secondary">
-                                                    {activity.tipo}
-                                                </span>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
+                                            <span className="badge badge-secondary">{activity.tipo}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </>
+                    </div>
                 )}
 
                 {/* JEFE DE OBRA VIEW */}
                 {(user?.rol as string) === 'jefe_obra' && (
-                    <>
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-4 mb-6">
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                        <FiUsers />
-                                    </div>
-                                    <span className="text-xs text-muted">Trabajadores</span>
-                                </div>
-                                <div className="stat-value">{stats.totalWorkers || 0}</div>
-                                <div className="stat-change">
-                                    {stats.pendingSignatures || 0} sin enrolar
-                                </div>
+                    <div className="dash-role-view">
+                        <div className="dash-metrics">
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{stats.totalWorkers || 0}</span>
+                                <span className="dash-metric-label">trabajadores</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
-                                        <FiCalendar />
-                                    </div>
-                                    <span className="text-xs text-muted">Actividades Hoy</span>
-                                </div>
-                                <div className="stat-value">{stats.activitiesToday || 0}</div>
+                            <div className="dash-metric-sep" />
+                            <div className="dash-metric">
+                                <span className="dash-metric-value" style={{ color: (stats.workersPendingSignatures || 0) > 0 ? 'var(--warning-600)' : undefined }}>
+                                    {stats.workersPendingSignatures || 0}
+                                </span>
+                                <span className="dash-metric-label">firmas pendientes</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--info-500)' }}>
-                                        <FiFileText />
-                                    </div>
-                                    <span className="text-xs text-muted">Documentos</span>
-                                </div>
-                                <div className="stat-value">{stats.totalDocuments || 0}</div>
+                            <div className="dash-metric-sep" />
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{stats.activitiesToday || 0}</span>
+                                <span className="dash-metric-label">actividades hoy</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
-                                        <FiAlertTriangle />
+                            {(stats.pendingIncidents || 0) > 0 && (
+                                <>
+                                    <div className="dash-metric-sep" />
+                                    <div className="dash-metric">
+                                        <span className="dash-metric-value" style={{ color: 'var(--danger-500)' }}>{stats.pendingIncidents}</span>
+                                        <span className="dash-metric-label">incidentes</span>
                                     </div>
-                                    <span className="text-xs text-muted">Incidentes</span>
-                                </div>
-                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
-                            </div>
+                                </>
+                            )}
                         </div>
 
+                        {(stats.workersPendingSignatures || 0) > 0 && (
+                            <div className="dash-action-banner">
+                                <div className="dash-action-banner-body">
+                                    <FiEdit3 size={20} />
+                                    <div>
+                                        <div className="dash-action-banner-count">{stats.workersPendingSignatures}</div>
+                                        <div className="dash-action-banner-label">firmas de trabajadores pendientes</div>
+                                    </div>
+                                </div>
+                                <Link to="/signature-requests" className="btn btn-secondary btn-sm">
+                                    Ver solicitudes <FiArrowRight />
+                                </Link>
+                            </div>
+                        )}
+
                         {selectedObra && selectedObraProgress && (
-                            <div className="mb-6">
-                                <h3 className="text-sm font-bold uppercase tracking-wider text-muted mb-4">Progreso de Fase (DS44)</h3>
+                            <div>
+                                <h2 className="dash-section-title" style={{ marginBottom: 'var(--space-3)' }}>DS44 · {selectedObra.nombre}</h2>
                                 <ObraProgressCard
                                     obra={selectedObra}
                                     progress={selectedObraProgress}
@@ -942,227 +824,123 @@ export default function Dashboard() {
                             </div>
                         )}
 
-                        {/* Firmas Pendientes Banner */}
-                        {(stats.workersPendingSignatures || 0) > 0 && (
-                            <div className="card mb-6" style={{
-                                background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08), rgba(234, 179, 8, 0.02))',
-                                border: '1px solid rgba(234, 179, 8, 0.25)',
-                                padding: 'var(--space-5)',
-                            }}>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
-                                        <div className="avatar" style={{
-                                            background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))',
-                                            width: '52px', height: '52px',
-                                            boxShadow: '0 4px 12px rgba(234, 179, 8, 0.3)',
-                                        }}>
-                                            <FiEdit3 size={22} />
-                                        </div>
-                                        <div>
-                                            <div className="text-sm text-muted" style={{ marginBottom: '4px' }}>Firmas Pendientes de Trabajadores</div>
-                                            <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--warning-600)' }}>
-                                                {stats.workersPendingSignatures || 0}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <Link to="/signature-requests" className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
-                                        Ver Solicitudes <FiArrowRight />
-                                    </Link>
-                                </div>
+                        <div>
+                            <div className="dash-section-header">
+                                <h2 className="dash-section-title">Actividades recientes</h2>
+                                <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
                             </div>
-                        )}
-
-                        {/* Removed redundant Obras list since selected via dropdown / navbar */}
-
-                        {/* Main grid: Activities + Quick Actions */}
-                        <div className="dashboard-main-grid">
-                            <div className="card">
-                                <div className="card-header">
-                                    <div>
-                                        <h2 className="card-title">Actividades Recientes</h2>
-                                        <p className="card-subtitle">Últimas actividades creadas</p>
-                                    </div>
-                                    <Link to="/activities" className="btn btn-primary btn-sm">
-                                        <FiPlus /> Nueva
-                                    </Link>
+                            {recentActivities.length === 0 ? (
+                                <div className="empty-state" style={{ padding: 'var(--space-6) 0' }}>
+                                    <FiCalendar size={36} className="mb-3 opacity-20" />
+                                    <p>No hay actividades recientes</p>
                                 </div>
-                                {recentActivities.length === 0 ? (
-                                    <div className="empty-state">
-                                        <FiCalendar size={36} className="mb-3 opacity-20" />
-                                        <p>No hay actividades recientes</p>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col gap-3">
-                                        {recentActivities.map((activity) => (
-                                            <div
-                                                key={activity.activityId}
-                                                className="flex items-center justify-between"
-                                                style={{
-                                                    padding: 'var(--space-3)',
-                                                    background: 'var(--surface-elevated)',
-                                                    borderRadius: 'var(--radius-md)'
-                                                }}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                                        <FiCalendar />
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold">{activity.titulo}</div>
-                                                        <div className="text-sm text-muted">{activity.fecha}</div>
-                                                    </div>
+                            ) : (
+                                <div className="dash-list">
+                                    {recentActivities.map(activity => (
+                                        <div key={activity.activityId} className="dash-list-row">
+                                            <div className="flex items-center gap-3">
+                                                <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}><FiCalendar /></div>
+                                                <div>
+                                                    <div className="font-bold">{activity.titulo}</div>
+                                                    <div className="text-sm text-muted">{activity.fecha}</div>
                                                 </div>
-                                                <span className="badge badge-secondary">{activity.tipo}</span>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
+                                            <span className="badge badge-secondary">{activity.tipo}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </>
+                    </div>
                 )}
 
                 {/* SUPERVISOR VIEW */}
                 {(user?.rol as any) === 'supervisor' && (
-                    <>
-                        <div className="grid grid-cols-3 mb-6">
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                        <FiUsers />
-                                    </div>
-                                    <span className="text-xs text-muted">Trabajadores</span>
-                                </div>
-                                <div className="stat-value">{stats.totalWorkers || 0}</div>
+                    <div className="dash-role-view">
+                        <div className="dash-metrics">
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{stats.totalWorkers || 0}</span>
+                                <span className="dash-metric-label">trabajadores</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
-                                        <FiCalendar />
-                                    </div>
-                                    <span className="text-xs text-muted">Actividades Hoy</span>
-                                </div>
-                                <div className="stat-value">{stats.activitiesToday || 0}</div>
+                            <div className="dash-metric-sep" />
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{stats.activitiesToday || 0}</span>
+                                <span className="dash-metric-label">actividades hoy</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
-                                        <FiAlertTriangle />
+                            {(stats.pendingIncidents || 0) > 0 && (
+                                <>
+                                    <div className="dash-metric-sep" />
+                                    <div className="dash-metric">
+                                        <span className="dash-metric-value" style={{ color: 'var(--danger-500)' }}>{stats.pendingIncidents}</span>
+                                        <span className="dash-metric-label">incidentes</span>
                                     </div>
-                                    <span className="text-xs text-muted">Incidentes</span>
-                                </div>
-                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
-                            </div>
+                                </>
+                            )}
                         </div>
 
-                        <div className="dashboard-main-grid">
-                            <div className="card">
-                                <div className="card-header">
-                                    <div>
-                                        <h2 className="card-title">Actividades Recientes</h2>
-                                        <p className="card-subtitle">Últimas actividades de tu equipo</p>
-                                    </div>
-                                    <Link to="/activities" className="btn btn-primary btn-sm">
-                                        <FiPlus /> Nueva
-                                    </Link>
+                        <div>
+                            <div className="dash-section-header">
+                                <h2 className="dash-section-title">Actividades recientes</h2>
+                                <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
+                            </div>
+                            {recentActivities.length === 0 ? (
+                                <div className="empty-state" style={{ padding: 'var(--space-6) 0' }}>
+                                    <FiCalendar size={36} className="mb-3 opacity-20" />
+                                    <p>No hay actividades recientes</p>
                                 </div>
-                                {recentActivities.length === 0 ? (
-                                    <div className="empty-state">
-                                        <FiCalendar size={36} className="mb-3 opacity-20" />
-                                        <p>No hay actividades recientes</p>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col gap-3">
-                                        {recentActivities.map((activity) => (
-                                            <div
-                                                key={activity.activityId}
-                                                className="flex items-center justify-between"
-                                                style={{
-                                                    padding: 'var(--space-3)',
-                                                    background: 'var(--surface-elevated)',
-                                                    borderRadius: 'var(--radius-md)'
-                                                }}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                                        <FiCalendar />
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold">{activity.titulo}</div>
-                                                        <div className="text-sm text-muted">{activity.fecha}</div>
-                                                    </div>
+                            ) : (
+                                <div className="dash-list">
+                                    {recentActivities.map(activity => (
+                                        <div key={activity.activityId} className="dash-list-row">
+                                            <div className="flex items-center gap-3">
+                                                <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}><FiCalendar /></div>
+                                                <div>
+                                                    <div className="font-bold">{activity.titulo}</div>
+                                                    <div className="text-sm text-muted">{activity.fecha}</div>
                                                 </div>
-                                                <span className="badge badge-secondary">{activity.tipo}</span>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
+                                            <span className="badge badge-secondary">{activity.tipo}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </>
+                    </div>
                 )}
 
                 {/* ADMIN VIEW */}
                 {user?.rol === 'admin' && (
-                    <>
-                        <div className="grid grid-cols-4 mb-6">
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                        <FiUsers />
-                                    </div>
-                                    <span className="text-xs text-muted">Trabajadores</span>
-                                </div>
-                                <div className="stat-value">{stats.totalWorkers || 0}</div>
+                    <div className="dash-role-view">
+                        <div className="dash-metrics">
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{stats.totalWorkers || 0}</span>
+                                <span className="dash-metric-label">trabajadores</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
-                                        <FiCalendar />
-                                    </div>
-                                    <span className="text-xs text-muted">Actividades</span>
-                                </div>
-                                <div className="stat-value">{stats.activitiesToday || 0}</div>
+                            <div className="dash-metric-sep" />
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{stats.activitiesToday || 0}</span>
+                                <span className="dash-metric-label">actividades</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--info-500)' }}>
-                                        <FiFileText />
-                                    </div>
-                                    <span className="text-xs text-muted">Documentos</span>
-                                </div>
-                                <div className="stat-value">{stats.totalDocuments || 0}</div>
+                            <div className="dash-metric-sep" />
+                            <div className="dash-metric">
+                                <span className="dash-metric-value">{stats.totalDocuments || 0}</span>
+                                <span className="dash-metric-label">documentos</span>
                             </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
-                                        <FiAlertTriangle />
+                            {(stats.pendingIncidents || 0) > 0 && (
+                                <>
+                                    <div className="dash-metric-sep" />
+                                    <div className="dash-metric">
+                                        <span className="dash-metric-value" style={{ color: 'var(--danger-500)' }}>{stats.pendingIncidents}</span>
+                                        <span className="dash-metric-label">incidentes</span>
                                     </div>
-                                    <span className="text-xs text-muted">Incidentes</span>
-                                </div>
-                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
-                            </div>
+                                </>
+                            )}
                         </div>
 
-                        {/* Obras Cards instead of Recent Workers */}
-                        <div className="card">
-                            <div className="card-header">
-                                <div>
-                                    <h2 className="card-title">Resumen de Obras</h2>
-                                    <p className="card-subtitle">
-                                        {selectedObraId ? 'Detalles de la obra seleccionada' : 'Tus obras activas en la plataforma'}
-                                    </p>
-                                </div>
-                                <Link to="/obras" className="btn btn-secondary btn-sm">
-                                    Ver todas las obras
-                                </Link>
+                        <div>
+                            <div className="dash-section-header">
+                                <h2 className="dash-section-title">Obras</h2>
+                                <Link to="/obras" className="btn btn-secondary btn-sm">Ver todas</Link>
                             </div>
 
                             {obras.length === 0 ? (
@@ -1170,13 +948,11 @@ export default function Dashboard() {
                                     <FiAlertTriangle size={48} className="empty-state-icon" style={{ color: 'var(--warning-500)' }} />
                                     <h3 className="empty-state-title">No tienes obras creadas</h3>
                                     <p className="empty-state-description">
-                                        1. Crea tu primera Obra.<br/>
-                                        2. Enrola trabajadores y asígnalos.<br/>
+                                        1. Crea tu primera Obra.<br />
+                                        2. Enrola trabajadores y asígnalos.<br />
                                         3. Sube los documentos para comenzar.
                                     </p>
-                                    <Link to="/obras" className="btn btn-primary mt-4">
-                                        <FiPlus /> Crear Obra
-                                    </Link>
+                                    <Link to="/obras" className="btn btn-primary mt-4"><FiPlus /> Crear Obra</Link>
                                 </div>
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
@@ -1194,24 +970,113 @@ export default function Dashboard() {
                                 </div>
                             )}
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
 
             <style>{`
-                .spinner {
-                    width: 40px;
-                    height: 40px;
-                    border: 3px solid var(--surface-border);
-                    border-top-color: var(--primary-500);
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
+                .dash-role-view {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-6);
                 }
-
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
+                .dash-metrics {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-5);
+                    padding: var(--space-4) 0;
+                    border-bottom: 1px solid var(--surface-border);
                 }
-
+                .dash-metric {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                }
+                .dash-metric-value {
+                    font-size: var(--text-2xl);
+                    font-weight: 700;
+                    color: var(--text-primary);
+                    line-height: 1;
+                }
+                .dash-metric-label {
+                    font-size: var(--text-xs);
+                    color: var(--text-secondary);
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                .dash-metric-link {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-1);
+                    font-size: var(--text-sm);
+                    color: var(--accent);
+                    font-weight: 500;
+                    text-decoration: none;
+                }
+                .dash-metric-link:hover { text-decoration: underline; }
+                .dash-metric-sep {
+                    width: 1px;
+                    height: 32px;
+                    background: var(--surface-border);
+                    flex-shrink: 0;
+                }
+                .dash-section-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    margin-bottom: var(--space-4);
+                }
+                .dash-section-title {
+                    font-size: var(--text-sm);
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
+                    color: var(--text-secondary);
+                    margin: 0;
+                }
+                .dash-action-banner {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: var(--space-4);
+                    padding: var(--space-4) var(--space-5);
+                    background: rgba(234, 179, 8, 0.06);
+                    border: 1px solid rgba(234, 179, 8, 0.22);
+                    border-radius: var(--radius-md);
+                }
+                .dash-action-banner-body {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-3);
+                    color: var(--warning-600);
+                }
+                .dash-action-banner-count {
+                    font-size: var(--text-2xl);
+                    font-weight: 700;
+                    color: var(--warning-600);
+                    line-height: 1;
+                }
+                .dash-action-banner-label {
+                    font-size: var(--text-sm);
+                    color: var(--text-secondary);
+                }
+                .dash-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1px;
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    overflow: hidden;
+                }
+                .dash-list-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: var(--space-3) var(--space-4);
+                    background: var(--surface-card);
+                    transition: background 0.15s;
+                }
+                .dash-list-row:hover { background: var(--surface-elevated); }
                 .pending-task-card {
                     padding: var(--space-4);
                     background: var(--surface-elevated);
@@ -1220,33 +1085,18 @@ export default function Dashboard() {
                     cursor: pointer;
                     transition: all 0.2s;
                 }
-                
                 .pending-task-card:hover {
                     background: var(--surface-hover);
                     transform: translateY(-2px);
                     box-shadow: var(--shadow-md);
                 }
-                
                 .pending-task-card.urgent {
                     border-left: 4px solid var(--danger-500);
                     background: rgba(var(--danger-rgb), 0.05);
                 }
-                
-                .priority-high {
-                    background: var(--danger-500) !important;
-                }
-                
-                .priority-normal {
-                    background: var(--primary-500) !important;
-                }
-                
-                .priority-low {
-                    background: var(--gray-500) !important;
-                }
-                
-                .progress-ring {
-                    flex-shrink: 0;
-                }
+                .priority-high { background: var(--danger-500) !important; }
+                .priority-normal { background: var(--primary-500) !important; }
+                .priority-low { background: var(--gray-500) !important; }
             `}</style>
         </>
     );

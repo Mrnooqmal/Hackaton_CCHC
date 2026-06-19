@@ -54,6 +54,14 @@ export const DS44_PLAN_DOCS: Ds44DocDefinition[] = [
         tipos: ['REGLAMENTO_INTERNO'],
         titulo: 'Reglamento Interno (RIHS/RIOHS)',
         estadoFirma: 'Jefe de Obra'
+    },
+    {
+        // Plan de Emergencias: documento BASE de la obra (específico del sitio,
+        // se sube una vez por obra). Antes vivía en el kit por-cargo; se movió aquí.
+        key: 'PLAN_EMERGENCIAS',
+        tipos: ['PLAN_EMERGENCIAS'],
+        titulo: 'Plan de Emergencias de la Obra',
+        estadoFirma: 'Jefe de Obra'
     }
 ];
 
@@ -459,11 +467,14 @@ const itemEppDeCargo = (cargo: string): Ds44KitItem => ({
     accion: 'ENTREGA_EPP', matrizEpp: DS44_EPP_MATRIZ[cargo] || EPP_GENERICO
 });
 
+// Plan de Emergencias ya NO vive en el kit por-cargo: es un DOCUMENTO BASE DE LA OBRA
+// (específico del sitio, se sube una vez por obra → ver DS44_PLAN_DOCS). El IRL es
+// específico del CARGO y se define UNA VEZ por empresa (alcance 'tenant' → su plantilla
+// se sube en Onboarding por cargo, no por obra).
 const kitTransversal = (cargo: string): Ds44KitItem[] => [
     { key: 'RI_76', tipo: 'REGLAMENTO_INTERNO', codigoEbco: 'RI 76', titulo: 'Reglamento Interno (RIHS/RIOHS)', articulo: 'Art. 156 CT', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' },
     { key: 'POLITICA_SST', tipo: 'POLITICA_SSO', titulo: 'Política SST', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' },
-    { key: 'PLAN_EMERGENCIAS', tipo: 'PLAN_EMERGENCIAS', codigoEbco: 'PR-PDO-07.01', titulo: 'Plan de Emergencias de la Obra', articulo: 'Art. 19', naturaleza: 'derivado_miper', alcancePlantilla: 'obra', accion: 'DIFUSION_FIRMA' },
-    { key: 'IRL', tipo: 'IRL', titulo: 'IRL — Información de Riesgos Laborales del cargo', articulo: 'Art. 15', naturaleza: 'derivado_miper', alcancePlantilla: 'obra', accion: 'CAPACITACION_EVALUACION', notaMinima: 70, bloqueante: true },
+    { key: 'IRL', tipo: 'IRL', titulo: 'IRL — Información de Riesgos Laborales del cargo', articulo: 'Art. 15', naturaleza: 'derivado_miper', alcancePlantilla: 'tenant', accion: 'CAPACITACION_EVALUACION', notaMinima: 70, bloqueante: true },
     itemEppDeCargo(cargo)
 ];
 
@@ -534,6 +545,11 @@ export const DS44_KIT_GENERICO: Ds44KitItem[] = [
     { key: 'ENTREGA_EPP', tipo: 'ENTREGA_EPP', titulo: 'Entrega y Capacitación EPP', articulo: 'Art. 13', naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'ENTREGA_EPP', matrizEpp: EPP_GENERICO },
     { key: 'INDUCCION', tipo: 'INDUCCION', titulo: 'Inducción Plan de Emergencia', articulo: 'Art. 19', naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'DIFUSION_FIRMA' }
 ];
+
+// Kit base para un cargo nuevo: RI, Política, IRL y EPP genérico.
+// Se asigna al crear un cargo en CargosOnboarding para que no quede vacío.
+export const buildBaseCargoKit = (): Ds44KitItem[] =>
+    kitTransversal('OTRO').map((it) => ({ ...it }));
 
 // Kits precomputados por código de cargo (transversal + específicos).
 export const DS44_CARGO_KITS: Record<string, Ds44KitItem[]> = {

@@ -43,7 +43,7 @@ const TEMPLATE_HEADERS = [
     'telefono',
     'rol',
     'cargo',
-    'obra',
+    'obraId',
     'nivelEscolar',
     'contactoEmergenciaNombre',
     'contactoEmergenciaTelefono',
@@ -59,21 +59,21 @@ const TEMPLATE_HEADERS = [
 // de onboarding). Un rol de gestión (Prevencionista, Jefe de Obra, Admin) NO lleva
 // cargo de terreno: deja la columna cargo vacía.
 const TEMPLATE_EXAMPLE_ROWS = [
-    ['12.345.678-9', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Trabajador', 'Carpintero', 'OBRA-001', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
-    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Trabajador', 'Maestro albañil', 'OBRA-001', 'Media completa', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP'],
-    ['22.222.222-2', 'Sofia', 'Reyes', 'Vera', '1982-03-15', 'sreyes@empresa.cl', '56922223333', 'Prevencionista', '', 'OBRA-001', 'Universitaria', 'Luis Reyes', '56944445555', 'Conyuge', '']
+    ['12.345.678-9', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Colaborador', 'Carpintero', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
+    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Prevencionista', 'Prevencionista', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
 ];
 
 const TEMPLATE_INSTRUCTIONS = [
     '1. Las columnas rut, nombre y rol son obligatorias.',
-    '2. El rol debe coincidir con uno de los roles definidos para la empresa (ej. Trabajador, Prevencionista, Jefe de Obra, Supervisor o Administrador). El rol define los permisos de acceso.',
-    '3. cargo: oficio de terreno del trabajador, define su kit de onboarding (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Maestro de Terminaciones, Trazador). Los roles de gestión (Prevencionista, Jefe de Obra, Administrador) NO llevan cargo: deje la columna vacía.',
-    '4. obra: codigo de la obra (ej. OBRA-001). Si se deja vacio y la carga se hace desde una obra, se asigna a esa obra.',
+    '2. El rol debe coincidir con uno de los roles definidos para la empresa (ej. Prevencionista, Jefe de Obra, Supervisor, Colaborador o Administrador).',
+    '3. cargo: cargo del trabajador (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Prevencionista).',
+    '4. obraId: ID de la obra en formato UUID (ej. a1b2c3d4-e5f6-7890-abcd-ef1234567890). Puedes copiarlo desde el detalle de la obra. Si se deja vacio y la carga se hace desde una obra, se asigna a esa obra. Para asignar a multiples obras, importa una vez por cada obra con su obraId correspondiente.',
     '5. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
     '6. Si el email es valido, se genera una contraseña temporal para el acceso web (todas las personas tienen acceso web).',
     '7. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
     '8. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
-    '9. Elimine las filas de ejemplo antes de cargar el archivo.'
+    '9. Reemplaza el obraId de ejemplo con el ID real de tu obra antes de importar.',
+    '10. Elimine las filas de ejemplo antes de cargar el archivo.'
 ];
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
@@ -170,6 +170,8 @@ const headerAliases = {
     obra: 'obra',
     codigoobra: 'obra',
     obracodigo: 'obra',
+    obraid: 'obra',
+    iddeobra: 'obra',
     nivelescolar: 'nivelEscolar',
     escolaridad: 'nivelEscolar',
     contactoemergencianombre: 'contactoEmergenciaNombre',
@@ -653,12 +655,14 @@ module.exports.personasHandler = async (event) => {
                 return error(`Faltan columnas obligatorias: ${missingHeaders.join(', ')}`);
             }
 
-            // Obra por defecto del lote (carga hecha desde una obra) + mapa codigo->obraId
+            // Obra por defecto del lote (carga hecha desde una obra) + mapas código/UUID->obraId
             const obraIdBatch = body.obraId || null;
             const obrasTenant = await obraService.listByTenant(tenantId).catch(() => []);
             const obraPorCodigo = {};
+            const obraPorUUID = {};
             (obrasTenant || []).forEach((o) => {
                 if (o.codigo) obraPorCodigo[String(o.codigo).trim().toLowerCase()] = o.obraId;
+                if (o.obraId) obraPorUUID[String(o.obraId).trim().toLowerCase()] = o.obraId;
             });
 
             const resultados = { creados: [], errores: [], duplicados: [], totalProcesados: 0 };
@@ -695,9 +699,11 @@ module.exports.personasHandler = async (event) => {
                 // onboarding de terreno); con texto, normaliza a código (alias EBCO).
                 const cargoRaw = getCell('cargo');
                 const cargo = cargoRaw ? normalizeCargoCodigo(cargoRaw) : '';
-                // Obra: por codigo en la fila; si no, la obra del lote (carga desde obra).
-                const obraCodigo = getCell('obra').trim().toLowerCase();
-                const obraIdFila = obraCodigo ? obraPorCodigo[obraCodigo] : obraIdBatch;
+                // Obra: acepta código (ej. OBRA-001) o UUID directo en columna obra/obraId.
+                const obraValor = getCell('obra').trim().toLowerCase();
+                const obraIdFila = obraValor
+                    ? (obraPorCodigo[obraValor] || obraPorUUID[obraValor] || null)
+                    : obraIdBatch;
                 const obraIds = obraIdFila ? [obraIdFila] : [];
                 const nivelEscolar = getCell('nivelEscolar');
                 const contactoEmergencia = {

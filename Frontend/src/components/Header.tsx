@@ -249,7 +249,11 @@ export default function Header() {
                                                     {obra.codigo && <span className="header-dropdown-item-code">{obra.codigo}</span>}
                                                     {obra.nombre}
                                                 </span>
-                                                <span className="header-dropdown-item-sub">{obra.etapaActual}</span>
+                                                <span className="header-dropdown-item-sub" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                    {obra.etapaActual && <span>{obra.etapaActual}</span>}
+                                                    {obra.etapaActual && obra.obraId && <span>·</span>}
+                                                    {obra.obraId && <span style={{ fontFamily: 'monospace', fontSize: '10px', opacity: 0.65 }}>{obra.obraId.slice(0, 8)}…</span>}
+                                                </span>
                                             </div>
                                             <Badge variant={obraEstadoBadge(obra.estado)} size="sm">
                                                 {obra.estado}

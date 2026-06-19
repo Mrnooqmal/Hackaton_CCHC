@@ -2,16 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
     FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
-    FiUpload, FiX, FiInfo, FiUsers, FiExternalLink, FiAlertTriangle,
+    FiUpload, FiX, FiInfo, FiUsers, FiArrowRight, FiAlertTriangle,
 } from 'react-icons/fi';
-import { AlertBanner, Modal, Select } from '../components/ui';
+import { AlertBanner, Modal, Select, PageHeader, SegmentedControl } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBrand, DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
 import { useToast } from '../context/ToastContext';
 import { tenantsApi, type Tenant, type TenantRole, type TenantCargo } from '../api/tenants.api';
 import { personasApi } from '../api/personas.api';
 import type { PersonaResponse } from '../api/types';
-import { invalidateCargoCatalog } from '../hooks/useCargoCatalog';
 import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS, PERMISSIONS } from '../permissions';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -21,9 +20,6 @@ const normalize = (s: string) =>
 const slug = (s: string) =>
     normalize(s).replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
 
-const codeFromLabel = (label: string) =>
-    label.trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-        .replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 32) || 'CARGO';
 
 const isAdminRole = (r: { id?: string; nombre?: string }) =>
     r.id === 'admin' || ['admin', 'administrador'].includes(normalize(r.nombre || ''));
@@ -108,14 +104,12 @@ export default function MiEmpresa() {
 
     return (
         <div className="mi-empresa-page" style={{ padding: '0 24px 40px' }}>
-            <div className="page-header">
-                <div className="page-header-info">
-                    <h2 className="page-header-title"><FiBriefcase /> Mi Empresa</h2>
-                    <p className="page-header-description">
-                        Administra la identidad, los roles y permisos, y los cargos de {tenant?.nombre || 'tu empresa'}.
-                    </p>
-                </div>
-            </div>
+            <PageHeader
+                banner
+                scope={{ label: 'Empresa' }}
+                title="Mi Empresa"
+                description={`Administra la identidad, los roles y permisos, y los cargos de ${tenant?.nombre || 'tu empresa'}.`}
+            />
 
             {loadError && <AlertBanner variant="error" message={loadError} onDismiss={() => setLoadError('')} />}
 
@@ -154,9 +148,7 @@ export default function MiEmpresa() {
                 <CargosTab
                     tenantId={tenantId}
                     personas={personas}
-                    setPersonas={setPersonas}
                     canEditKits={hasPermission(PERMISSIONS.CARGOS_GESTIONAR)}
-                    toast={toast}
                 />
             )}
 
@@ -500,21 +492,19 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
     );
 }
 
-// ── Cargos ────────────────────────────────────────────────────────────────────
-function CargosTab({ tenantId, personas, setPersonas, canEditKits, toast }: {
+// ── Cargos (solo lectura + toggle lista/grilla) ───────────────────────────────
+// Crear/editar cargos y cargar su IRL + kit vive en "Onboarding por cargo"
+// (/cargos-onboarding): crear un cargo va de la mano con cargar su IRL. Aquí solo
+// se ve el catálogo y cuántas personas tiene cada cargo.
+function CargosTab({ tenantId, personas }: {
     tenantId: string;
     personas: PersonaResponse[];
-    setPersonas: React.Dispatch<React.SetStateAction<PersonaResponse[]>>;
     canEditKits: boolean;
-    toast: ReturnType<typeof useToast>['toast'];
 }) {
     const [cargos, setCargos] = useState<TenantCargo[]>([]);
     const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
-    const [newOpen, setNewOpen] = useState(false);
-    const [newLabel, setNewLabel] = useState('');
-    const [reassign, setReassign] = useState<{ cargo: TenantCargo; affected: PersonaResponse[] } | null>(null);
+    const [view, setView] = useState<'lista' | 'grilla'>('lista');
 
     useEffect(() => {
         let alive = true;
@@ -525,59 +515,6 @@ function CargosTab({ tenantId, personas, setPersonas, canEditKits, toast }: {
         return () => { alive = false; };
     }, [tenantId]);
 
-    const persist = async (list: TenantCargo[]): Promise<boolean> => {
-        const res = await tenantsApi.saveCargos(tenantId, list);
-        if (res.success) {
-            invalidateCargoCatalog();
-            if (res.data?.cargos) setCargos(res.data.cargos); else setCargos(list);
-            return true;
-        }
-        setErr(res.error || 'No se pudieron guardar los cargos.');
-        return false;
-    };
-
-    const addCargo = async () => {
-        const label = newLabel.trim();
-        if (!label) return;
-        let codigo = codeFromLabel(label);
-        const taken = new Set(cargos.map((c) => c.codigo));
-        while (taken.has(codigo)) codigo = `${codigo}_2`;
-        const next = [...cargos, { codigo, label, seed: false, kit: [] }];
-        setSaving(true); setErr('');
-        try { if (await persist(next)) { toast.success(`Cargo "${label}" agregado.`); setNewLabel(''); setNewOpen(false); } }
-        catch { setErr('Error de conexión al guardar.'); }
-        finally { setSaving(false); }
-    };
-
-    const requestDelete = (cargo: TenantCargo) => {
-        const affected = personas.filter((p) => personaActiva(p) && p.cargo === cargo.codigo);
-        if (affected.length > 0) { setReassign({ cargo, affected }); return; }
-        confirmDelete(cargo, null, []);
-    };
-
-    const confirmDelete = async (cargo: TenantCargo, targetCodigo: string | null, affected: PersonaResponse[]) => {
-        setSaving(true); setErr('');
-        try {
-            if (targetCodigo) {
-                for (const p of affected) {
-                    const res = await personasApi.update(tenantId, p.personaId, { cargo: targetCodigo });
-                    if (!res.success) throw new Error(res.error || `No se pudo reasignar a ${p.nombre}`);
-                }
-                setPersonas((prev) => prev.map((p) =>
-                    affected.some((a) => a.personaId === p.personaId) ? { ...p, cargo: targetCodigo } : p));
-            }
-            const next = cargos.filter((c) => c.codigo !== cargo.codigo);
-            if (await persist(next)) {
-                const target = cargos.find((c) => c.codigo === targetCodigo);
-                toast.success(targetCodigo
-                    ? `Cargo "${cargo.label}" eliminado. ${affected.length} persona(s) reasignada(s) a "${target?.label}".`
-                    : `Cargo "${cargo.label}" eliminado.`);
-            }
-            setReassign(null);
-        } catch (e: any) { setErr(e?.message || 'Error al reasignar las personas.'); }
-        finally { setSaving(false); }
-    };
-
     const countByCargo = (codigo: string) => personas.filter((p) => personaActiva(p) && p.cargo === codigo).length;
 
     if (loading) return <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
@@ -587,70 +524,37 @@ function CargosTab({ tenantId, personas, setPersonas, canEditKits, toast }: {
             <div className="card me-banner">
                 <FiInfo style={{ flexShrink: 0, color: 'var(--info-500)' }} />
                 <span className="text-sm text-muted" style={{ flex: 1 }}>
-                    Los cargos son de la <b>empresa</b> y aplican a todas las obras. Al eliminar un cargo con personas
-                    asignadas, deberás reasignarlas a otro cargo.
-                    {canEditKits && <> Para editar el <b>kit de onboarding DS44</b> de cada cargo, usa el constructor.</>}
+                    Los cargos son de la <b>empresa</b> y aplican a todas las obras. Para crear un cargo y cargar su IRL usa <b>Onboarding por cargo</b>.
                 </span>
-                {canEditKits && (
-                    <Link to="/cargos-onboarding" className="btn btn-secondary btn-sm">
-                        <FiExternalLink size={13} /> Editar kits
-                    </Link>
-                )}
-                <button className="btn btn-primary" onClick={() => setNewOpen(true)}><FiPlus /> Nuevo cargo</button>
+                <SegmentedControl
+                    value={view}
+                    onChange={(v) => setView(v as 'lista' | 'grilla')}
+                    options={[{ value: 'lista', label: '≡ Lista' }, { value: 'grilla', label: '⊞ Grilla' }]}
+                />
+                <Link to="/cargos-onboarding" className="btn btn-primary btn-sm">
+                    Onboarding por cargo <FiArrowRight size={13} />
+                </Link>
             </div>
 
             {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
 
-            <div className="me-cargos">
+            <div className={view === 'grilla' ? 'me-cargos-grid' : 'me-cargos'}>
                 {cargos.map((c) => {
                     const count = countByCargo(c.codigo);
                     return (
-                        <div key={c.codigo} className="card me-cargo">
+                        <div key={c.codigo} className={`card me-cargo${view === 'grilla' ? ' me-cargo--grid' : ''}`}>
                             <div className="me-cargo-main">
                                 <span className="me-cargo-name">{c.label}</span>
-                                <span className="text-xs text-muted">{c.codigo}</span>
+                                <span className="text-xs text-muted" style={{ fontFamily: 'monospace' }}>{c.codigo}</span>
                             </div>
                             <span className="me-tag">{c.legacy ? 'heredado' : c.seed ? 'predefinido' : 'personalizado'}</span>
                             <span className="me-tag">{c.kit?.length || 0} ítems</span>
                             <span className="me-count" title="Personas con este cargo"><FiUsers size={12} /> {count}</span>
-                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
-                                disabled={saving} onClick={() => requestDelete(c)} title="Eliminar cargo"><FiTrash2 /></button>
                         </div>
                     );
                 })}
-                {cargos.length === 0 && <div className="text-sm text-muted" style={{ padding: 16 }}>No hay cargos. Crea el primero.</div>}
+                {cargos.length === 0 && <div className="text-sm text-muted" style={{ padding: 16 }}>No hay cargos. Créalos en Onboarding por cargo.</div>}
             </div>
-
-            <Modal isOpen={newOpen} onClose={() => setNewOpen(false)} title="Nuevo cargo"
-                subtitle="El código se deriva del nombre. Empieza con un kit de onboarding vacío."
-                footer={<>
-                    <button className="btn btn-secondary" onClick={() => setNewOpen(false)}>Cancelar</button>
-                    <button className="btn btn-primary" disabled={!newLabel.trim() || saving} onClick={addCargo}>
-                        {saving ? <div className="spinner" /> : <><FiPlus /> Crear</>}
-                    </button>
-                </>}>
-                <div className="form-group">
-                    <label className="form-label">Nombre del cargo</label>
-                    <input className="form-input" autoFocus value={newLabel} placeholder="Ej: Enfierrador"
-                        onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCargo()} />
-                    {newLabel.trim() && <div className="text-xs text-muted" style={{ marginTop: 6 }}>Código: <b>{codeFromLabel(newLabel)}</b></div>}
-                </div>
-            </Modal>
-
-            <ReassignModal
-                open={!!reassign}
-                title={`Eliminar cargo "${reassign?.cargo.label}"`}
-                noun="cargo"
-                affected={(reassign?.affected || []).map((p) => ({
-                    id: p.personaId,
-                    label: `${p.nombre} ${p.apellido || ''}`.trim(),
-                    sub: p.rut,
-                }))}
-                options={cargos.filter((c) => c.codigo !== reassign?.cargo.codigo).map((c) => ({ value: c.codigo, label: c.label }))}
-                busy={saving}
-                onCancel={() => setReassign(null)}
-                onConfirm={(target) => reassign && confirmDelete(reassign.cargo, target, reassign.affected)}
-            />
         </div>
     );
 }
@@ -746,8 +650,11 @@ const styles = `
 .me-perm input { margin-top: 3px; flex-shrink: 0; }
 
 .me-cargos { display: flex; flex-direction: column; gap: 8px; }
+.me-cargos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .me-cargo { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
-.me-cargo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.me-cargo--grid { flex-direction: column; align-items: flex-start; padding: 16px; gap: 8px; }
+.me-cargo--grid .me-cargo-main { margin-bottom: 4px; }
+.me-cargo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .me-cargo-name { font-weight: 500; }
 .me-tag { font-size: var(--text-xs); color: var(--text-muted); background: var(--surface-hover); padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
 

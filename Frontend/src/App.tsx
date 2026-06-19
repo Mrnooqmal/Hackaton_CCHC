@@ -3,6 +3,8 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
 import PersonasManagement from './pages/PersonasManagement';
+import PersonaNueva from './pages/PersonaNueva';
+import PersonasCargaMasiva from './pages/PersonasCargaMasiva';
 import WorkerDetail from './pages/WorkerDetail';
 import WorkerEnroll from './pages/WorkerEnroll';
 import Documents from './pages/Documents';
@@ -24,7 +26,9 @@ import SignatureRequests from './pages/SignatureRequests';
 import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
+import ObraNueva from './pages/ObraNueva';
 import ObraDetalle from './pages/ObraDetalle';
+import ObraEquipoPage from './pages/ObraEquipoPage';
 import CargosOnboarding from './pages/CargosOnboarding';
 import MiEmpresa from './pages/MiEmpresa';
 import Equipo from './pages/Equipo';
@@ -107,6 +111,8 @@ function AppContent() {
 
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/personas" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_VER}><PersonasManagement /></ProtectedRoute>} />
+      <Route path="/personas/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><PersonaNueva /></ProtectedRoute>} />
+      <Route path="/personas/carga-masiva" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><PersonasCargaMasiva /></ProtectedRoute>} />
       <Route path="/personas/:rut" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}><WorkerDetail /></ProtectedRoute>} />
 
       {/* Legacy routes redirect to unified personas */}
@@ -115,7 +121,9 @@ function AppContent() {
       <Route path="/workers/:rut" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}><WorkerDetail /></ProtectedRoute>} />
 
       <Route path="/obras" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_VER}><Obras /></ProtectedRoute>} />
+      <Route path="/obras/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_CREAR}><ObraNueva /></ProtectedRoute>} />
       <Route path="/obras/:obraId" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><ObraDetalle /></ProtectedRoute>} />
+      <Route path="/obras/:obraId/equipo" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES}><ObraEquipoPage /></ProtectedRoute>} />
 
       {/* Constructor de cargos de onboarding (catálogo tenant). Admin + jefe de obra. */}
       <Route path="/cargos-onboarding" element={<ProtectedRoute requiredPermission={PERMISSIONS.CARGOS_GESTIONAR}><CargosOnboarding /></ProtectedRoute>} />

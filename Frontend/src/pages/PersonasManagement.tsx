@@ -1,47 +1,48 @@
-import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { apiBaseUrl, personasApi, type PersonaResponse } from '../api/client';
+import { useState, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { personasApi, type PersonaResponse } from '../api/client';
 import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
-import ConfirmModal from '../components/ConfirmModal';
-import { AlertBanner, CredentialCard, Modal, Select, SegmentedControl } from '../components/ui';
+import { AlertBanner, CredentialCard, PageHeader, CollectionView, DataTable, Badge } from '../components/ui';
+import type { CollectionMode, DataTableColumn } from '../components/ui';
 import { PERMISSIONS } from '../permissions';
-import {
-    FiUserPlus, FiShield, FiEdit2,
-    FiUsers, FiX, FiSave,
-    FiBriefcase, FiStar, FiSearch, FiEye, FiUpload, FiDownload, FiCheckCircle
-} from 'react-icons/fi';
+import { FiUserPlus, FiUsers, FiUpload, FiMoreVertical } from 'react-icons/fi';
 import { getCargoLabel } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
+import { Select } from '../components/ui';
+import ConfirmModal from '../components/ConfirmModal';
 
-const rutFormat = (raw: string) => {
-    const clean = raw.replace(/[^0-9kK]/g, '').toUpperCase();
-    if (clean.length < 2) return clean;
-    const body = clean.slice(0, -1);
-    const dv   = clean.slice(-1);
-    return body.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + '-' + dv;
-};
-
-// Opciones de ficha (selects en vez de texto libre)
-const NIVELES_ESCOLAR = ['Básica incompleta', 'Básica completa', 'Media incompleta', 'Media completa', 'Técnico', 'Universitaria', 'Postgrado'];
-const RELACIONES_EMERGENCIA = ['Cónyuge', 'Pareja', 'Padre/Madre', 'Hijo/a', 'Hermano/a', 'Otro familiar', 'Amigo/a', 'Otro'];
-const CURSOS_COMUNES = ['Manejo de extintores', 'Trabajo en altura', 'Espacios confinados', 'Primeros auxilios', 'Manejo de sustancias peligrosas', 'Operación de equipos/grúa', 'Bloqueo y etiquetado (LOTO)'];
-
-const ROLE_CONFIG: Record<string, { label: string; color: string; icon: any; desc: string }> = {
-    admin: { label: 'Administrador', color: 'var(--primary-500)', icon: FiStar, desc: 'Acceso completo al sistema' },
-    jefe_obra: { label: 'Jefe de Obra', color: 'var(--success-500)', icon: FiBriefcase, desc: 'Gestiona su(s) obra(s) asignadas' },
-    prevencionista: { label: 'Prevencionista', color: 'var(--warning-500)', icon: FiShield, desc: 'Gestión de prevención y documentos' },
-    supervisor: { label: 'Supervisor', color: 'var(--info-500)', icon: FiEye, desc: 'Supervisión de trabajadores y actividades' },
-    trabajador: { label: 'Trabajador', color: 'var(--gray-500)', icon: FiUsers, desc: 'Acceso básico para firmas y documentos' },
-};
+// ── helpers ──────────────────────────────────────────────────────────────────
 
 const AVATAR_TINT = { bg: 'rgba(0, 110, 220, 0.12)', fg: '#4d9fff', border: 'rgba(0, 110, 220, 0.25)' };
+
+function PersonaAvatar({ p, size = 40 }: { p: PersonaResponse; size?: number }) {
+    return (
+        <div style={{
+            width: size, height: size, borderRadius: '50%', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontWeight: 700, fontSize: size * 0.38, textTransform: 'uppercase',
+            overflow: 'hidden',
+            ...(p.fotoPerfil
+                ? { border: `1.5px solid ${AVATAR_TINT.border}` }
+                : { background: AVATAR_TINT.bg, color: AVATAR_TINT.fg, border: `1.5px solid ${AVATAR_TINT.border}` })
+        }}>
+            {p.fotoPerfil
+                ? <img src={p.fotoPerfil} alt={p.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <>{p.nombre[0]}{p.apellido?.[0] ?? p.nombre[1] ?? ''}</>
+            }
+        </div>
+    );
+}
 
 export default function PersonasManagement() {
     const { user, hasPermission } = useAuth();
     const { selectedObraId, selectedObra } = useObraContext();
     const { options: cargoOptions } = useCargoCatalog();
+    const navigate = useNavigate();
+    const location = useLocation();
+
     const tenantId = user?.tenantId || user?.empresaId || localStorage.getItem('tenant_id') || '';
     const isAdmin = user?.rol === 'admin';
     const isObraScoped = Boolean(user && !isAdmin);
@@ -57,297 +58,212 @@ export default function PersonasManagement() {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterRol, setFilterRol] = useState('');
     const [filterCargo, setFilterCargo] = useState('');
-
-    // Create modal
-    const [showCreate, setShowCreate] = useState(false);
-    const [newPersona, setNewPersona] = useState({
-        rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '',
-        fechaNacimiento: '', email: '', cargo: '',
-        rol: '' as string, tieneAccesoWeb: true,
-        nivelEscolar: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '',
-        contactoEmergenciaRelacion: '', cursos: ''
-    });
-    const [createResult, setCreateResult] = useState<{ password?: string; persona: any } | null>(null);
-    const [telEmergenciaFocused, setTelEmergenciaFocused] = useState(false);
-
-    const handleEmergenciaTelefonoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const digits = e.target.value.replace(/\D/g, '').slice(0, 9);
-        let fmt = digits;
-        if (digits.length > 5) fmt = digits[0] + ' ' + digits.slice(1, 5) + ' ' + digits.slice(5);
-        else if (digits.length > 1) fmt = digits[0] + ' ' + digits.slice(1);
-        setNewPersona(p => ({ ...p, contactoEmergenciaTelefono: fmt }));
-    };
-
-    // Edit modal
-    const [showEdit, setShowEdit] = useState(false);
-    const [editing, setEditing] = useState<PersonaResponse | null>(null);
-    const [editForm, setEditForm] = useState({ nombre: '', apellido: '', email: '', cargo: '', estado: '' as string });
-
-    // Reset password
-    const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string; personaId?: string }>({ isOpen: false, title: '', message: '' });
-    const [resetResult, setResetResult] = useState<{ rut: string; passwordTemporal: string } | null>(null);
-
-    // Bulk upload
-    const [showBulkUpload, setShowBulkUpload] = useState(false);
-    const [uploading, setUploading] = useState(false);
-    const [uploadResult, setUploadResult] = useState<any | null>(null);
-    const [uploadError, setUploadError] = useState('');
-    const [uploadFile, setUploadFile] = useState<File | null>(null);
-    const [sendWelcomeEmail, setSendWelcomeEmail] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const [mode, setMode] = useState<CollectionMode>('list');
 
     const [tenantRoles, setTenantRoles] = useState<TenantRole[]>([]);
+
+    // Incoming success banner from PersonaNueva redirect
+    const [createResult, setCreateResult] = useState<{ password?: string; rut?: string } | null>(
+        location.state?.created ? { password: location.state.password, rut: location.state.rut } : null
+    );
+
+    // Unused locally but kept for WorkerDetail-triggered confirm flows
+    const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string }>({ isOpen: false, title: '', message: '' });
+    const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
     useEffect(() => {
         if (!tenantId) return;
         tenantsApi.get(tenantId).then(res => {
-            if (res.success && res.data?.roles?.length) {
-                setTenantRoles(res.data.roles);
-                setNewPersona(p => ({ ...p, rol: p.rol || res.data!.roles[0].id }));
-            }
+            if (res.success && res.data?.roles?.length) setTenantRoles(res.data.roles);
         }).catch(() => {});
     }, [tenantId]);
 
     const fetchPersonas = async () => {
-        if (!tenantId) {
-            setPersonas([]);
-            setLoading(false);
-            return;
-        }
-        if (isMissingObra) {
-            setPersonas([]);
-            setLoading(false);
-            return;
-        }
+        if (!tenantId || isMissingObra) { setPersonas([]); setLoading(false); return; }
         setLoading(true);
         try {
             const filters: any = {};
             if (filterRol) filters.rol = filterRol;
             if (isObraScoped && selectedObraId) filters.obraId = selectedObraId;
             const res = await personasApi.list(tenantId, filters);
-            if (res.success && res.data) {
-                setPersonas(res.data.personas || []);
-            } else {
-                setError(res.error || 'Error al cargar personas');
-            }
+            if (res.success && res.data) setPersonas(res.data.personas || []);
+            else setError(res.error || 'Error al cargar personas');
         } catch { setError('Error de conexión'); }
         finally { setLoading(false); }
     };
 
     useEffect(() => { fetchPersonas(); }, [tenantId, filterRol, selectedObraId, isObraScoped]);
 
-    const handleCreate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!canCreatePersonas) {
-            setError('No tienes permisos para crear personas.');
-            return;
-        }
-        setLoading(true);
-        try {
-            const obraIds = isObraScoped && selectedObraId ? [selectedObraId] : undefined;
-            const cursos = newPersona.cursos
-                .split(/[;,]/)
-                .map((c) => c.trim())
-                .filter(Boolean)
-                .map((nombre) => ({ nombre }));
-            const res = await personasApi.create(tenantId, {
-                rut: newPersona.rut,
-                nombre: newPersona.nombre,
-                apellidoPaterno: newPersona.apellidoPaterno,
-                apellidoMaterno: newPersona.apellidoMaterno || undefined,
-                fechaNacimiento: newPersona.fechaNacimiento || undefined,
-                email: newPersona.email,
-                cargo: newPersona.cargo,
-                rol: newPersona.rol,
-                obraIds,
-                nivelEscolar: newPersona.nivelEscolar,
-                contactoEmergencia: {
-                    nombre: newPersona.contactoEmergenciaNombre,
-                    telefono: newPersona.contactoEmergenciaTelefono
-                        ? `+56 ${newPersona.contactoEmergenciaTelefono}`
-                        : '',
-                    relacion: newPersona.contactoEmergenciaRelacion
-                },
-                cursos,
-                tieneAccesoWeb: newPersona.tieneAccesoWeb,
-                solicitanteId: user?.personaId,
-            });
-            if (res.success && res.data) {
-                setCreateResult({
-                    password: typeof res.data.passwordTemporal === 'string' ? res.data.passwordTemporal : undefined,
-                    persona: res.data.persona
-                });
-                setShowCreate(false);
-                setNewPersona({ rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '', fechaNacimiento: '', email: '', cargo: '', rol: tenantRoles[0]?.id || '', tieneAccesoWeb: true, nivelEscolar: '', contactoEmergenciaNombre: '', contactoEmergenciaTelefono: '', contactoEmergenciaRelacion: '', cursos: '' });
-                fetchPersonas();
-            } else { setError(res.error || 'Error al crear persona'); }
-        } catch { setError('Error de conexión'); }
-        finally { setLoading(false); }
-    };
-
-    const handleUpdate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!editing) return;
-        setLoading(true);
-        try {
-            const res = await personasApi.update(tenantId, editing.personaId, editForm as any);
-            if (res.success) { setShowEdit(false); setEditing(null); fetchPersonas(); }
-            else { setError(res.error || 'Error al actualizar'); }
-        } catch { setError('Error de conexión'); }
-        finally { setLoading(false); }
-    };
-
-    const readFileAsBase64 = (file: File) => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const result = typeof reader.result === 'string' ? reader.result : '';
-            const base64 = result.includes('base64,') ? result.split('base64,')[1] : result;
-            resolve(base64);
-        };
-        reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
-        reader.readAsDataURL(file);
-    });
-
-    const handleDownloadTemplate = async () => {
-        setUploadError('');
-        try {
-            const token = localStorage.getItem('auth_token');
-            const params = new URLSearchParams();
-            if (tenantId) params.set('tenantId', tenantId);
-            const url = `${apiBaseUrl}/personas/plantilla${params.toString() ? `?${params}` : ''}`;
-
-            const response = await fetch(url, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
-
-            if (!response.ok) {
-                setUploadError('No fue posible descargar la plantilla');
-                return;
-            }
-
-            const blob = await response.blob();
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = 'plantilla_personas.xlsx';
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(link.href);
-        } catch {
-            setUploadError('Error al descargar la plantilla');
-        }
-    };
-
-    const handleBulkUpload = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!canBulkUpload) {
-            setUploadError('Solo administradores pueden usar la carga masiva.');
-            return;
-        }
-        if (!uploadFile) {
-            setUploadError('Selecciona un archivo Excel');
-            return;
-        }
-
-        setUploading(true);
-        setUploadError('');
-        setUploadResult(null);
-
-        try {
-            const fileBase64 = await readFileAsBase64(uploadFile);
-            const res = await personasApi.bulkUpload(tenantId, {
-                fileBase64,
-                fileName: uploadFile.name,
-                sendWelcomeEmail,
-                obraId: isObraScoped && selectedObraId ? selectedObraId : undefined
-            });
-
-            if (res.success && res.data) {
-                setUploadResult(res.data);
-                fetchPersonas();
-            } else {
-                setUploadError(res.error || 'Error en la carga masiva');
-            }
-        } catch {
-            setUploadError('Error de conexión');
-        } finally {
-            setUploading(false);
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            setUploadFile(null);
-        }
-    };
-
-    const confirmReset = async () => {
-        const pid = confirmModal.personaId;
-        if (!pid) return;
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        setLoading(true);
-        try {
-            const res = await personasApi.resetPassword(tenantId, pid);
-            if (res.success && res.data) {
-                const p = personas.find(x => x.personaId === pid);
-                setResetResult({ rut: p?.rut || '', passwordTemporal: res.data.passwordTemporal });
-            } else { setError(res.error || 'Error al resetear'); }
-        } catch { setError('Error de conexión'); }
-        finally { setLoading(false); }
-    };
-
     const filtered = personas.filter(p => {
         const s = searchTerm.toLowerCase().replace(/[.-]/g, '');
         const rut = p.rut.toLowerCase().replace(/[.-]/g, '');
         const matchesSearch = p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (p.apellido || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            rut.includes(s);
+            (p.apellido || '').toLowerCase().includes(searchTerm.toLowerCase()) || rut.includes(s);
         const matchesCargo = !filterCargo || p.cargo === filterCargo;
         return matchesSearch && matchesCargo;
     });
 
-    const pageTitle = isObraScoped ? 'Equipo de Obra' : 'Personas de la Empresa';
+    const pageTitle = isObraScoped ? 'Equipo de Obra' : 'Personas';
     const pageDescription = isObraScoped
-        ? selectedObra
-            ? `Personas asignadas a ${selectedObra.nombre}.`
-            : 'Selecciona una obra para ver el equipo asignado.'
-        : 'Gestione todos los usuarios, roles y permisos desde un solo lugar.';
-        const showAdminActions = canCreatePersonas || canBulkUpload;
+        ? selectedObra ? `Personas asignadas a ${selectedObra.nombre}.` : 'Selecciona una obra para ver el equipo.'
+        : 'Directorio de personas, roles y accesos de la empresa.';
+
+    // DataTable columns
+    const columns: DataTableColumn<PersonaResponse>[] = [
+        {
+            key: 'nombre',
+            header: 'Persona',
+            sortable: true,
+            sortValue: (p) => p.nombre,
+            render: (p) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                    <PersonaAvatar p={p} size={32} />
+                    <div>
+                        <div style={{ fontWeight: 600 }}>{p.nombre} {p.apellido}</div>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{p.rut}</div>
+                    </div>
+                </div>
+            ),
+        },
+        {
+            key: 'cargo',
+            header: 'Cargo',
+            hideOnMobile: true,
+            render: (p) => <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>{getCargoLabel(p.cargo) || '—'}</span>,
+        },
+        {
+            key: 'rol',
+            header: 'Rol',
+            width: '130px',
+            render: (p) => {
+                const v = (p.rol === 'admin' || p.rol === 'jefe_obra') ? 'warning' : (p.rol === 'trabajador' ? 'neutral' : 'success');
+                const label = tenantRoles.find(r => r.id === p.rol)?.nombre || p.rol || '—';
+                return <Badge variant={v as any} size="sm">{label}</Badge>;
+            },
+        },
+        {
+            key: 'acciones',
+            header: '',
+            width: '44px',
+            render: (p) => {
+                const isOpen = menuOpenId === p.personaId;
+                return (
+                    <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '4px 6px', color: 'var(--text-muted)' }}
+                            onClick={() => setMenuOpenId(isOpen ? null : p.personaId)}
+                        >
+                            <FiMoreVertical size={16} />
+                        </button>
+                        {isOpen && (
+                            <>
+                                <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setMenuOpenId(null)} />
+                                <div style={{
+                                    position: 'absolute', right: 0, top: '100%', zIndex: 1000,
+                                    background: 'var(--surface-card)', border: '1px solid var(--surface-border)',
+                                    borderRadius: 'var(--radius-md)', boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                                    minWidth: 180, overflow: 'hidden',
+                                }}>
+                                    {[
+                                        { label: 'Ver datos', href: `/personas/${encodeURIComponent(p.rut)}` },
+                                        { label: 'Ver asignaciones', href: `/personas/${encodeURIComponent(p.rut)}?tab=asignaciones` },
+                                        { label: 'Cumplimiento', href: `/personas/${encodeURIComponent(p.rut)}?tab=cumplimiento` },
+                                    ].map((item) => (
+                                        <button
+                                            key={item.label}
+                                            className="btn btn-ghost"
+                                            style={{ width: '100%', justifyContent: 'flex-start', padding: '9px 14px', fontSize: 'var(--text-sm)', borderRadius: 0 }}
+                                            onClick={() => { setMenuOpenId(null); navigate(item.href); }}
+                                        >
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                );
+            },
+        },
+    ];
+
+    // Card grid view
+    const cardGrid = (
+        <div className="pdir-grid">
+            {filtered.length === 0 ? (
+                <div style={{ gridColumn: '1/-1', padding: 'var(--space-10)', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    No hay personas que coincidan con los filtros.
+                </div>
+            ) : filtered.map((p, i) => {
+                const cardInner = (
+                    <>
+                        <PersonaAvatar p={p} size={56} />
+                        <span className="pdir-name">{p.nombre} {p.apellido}</span>
+                        <span className="pdir-rut">{p.rut}</span>
+                        <span className="pdir-cargo">{getCargoLabel(p.cargo) || p.rol || '—'}</span>
+                    </>
+                );
+                const style = { animationDelay: `${Math.min(i * 20, 400)}ms` };
+                return canVerDetalle ? (
+                    <Link key={p.personaId} to={`/personas/${p.rut}`} className="pdir-card" style={style}>{cardInner}</Link>
+                ) : (
+                    <div key={p.personaId} className="pdir-card" style={{ ...style, cursor: 'default' }}>{cardInner}</div>
+                );
+            })}
+        </div>
+    );
+
+    const tableList = (
+        <DataTable
+            columns={columns}
+            rows={filtered}
+            rowKey={(p) => p.personaId}
+            loading={loading}
+            onRowClick={canVerDetalle ? (p) => navigate(`/personas/${p.rut}`) : undefined}
+            emptyState={
+                <div className="empty-state" style={{ padding: 'var(--space-10) 0' }}>
+                    <FiUsers size={36} className="empty-state-icon" />
+                    <p className="empty-state-description">
+                        {isMissingObra ? 'Selecciona una obra para ver el equipo.' : 'No hay personas registradas.'}
+                    </p>
+                </div>
+            }
+        />
+    );
 
     return (
         <>
             <div className="page-content">
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <h2 className="page-header-title"><FiUsers className="text-primary-500" /> {pageTitle}</h2>
-                        <p className="page-header-description">{pageDescription}</p>
-                    </div>
-                    {showAdminActions && (
-                        <div className="page-header-actions">
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => { setUploadResult(null); setUploadError(''); setSendWelcomeEmail(false); setShowBulkUpload(true); }}
-                            >
-                                <FiUpload /> Carga Masiva
-                            </button>
-                            <button
-                                className="btn btn-primary"
-                                onClick={() => { setCreateResult(null); setShowCreate(true); }}
-                            >
-                                <FiUserPlus /> Nueva Persona
-                            </button>
-                        </div>
-                    )}
-                </div>
+                <PageHeader
+                    banner
+                    title={pageTitle}
+                    description={pageDescription}
+                    actions={
+                        <>
+                            {canBulkUpload && (
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => navigate('/personas/carga-masiva')}
+                                >
+                                    <FiUpload /> Carga masiva
+                                </button>
+                            )}
+                            {canCreatePersonas && (
+                                <button className="btn btn-primary" onClick={() => navigate('/personas/nueva')}>
+                                    <FiUserPlus /> Nueva persona
+                                </button>
+                            )}
+                        </>
+                    }
+                />
 
                 {isMissingObra && (
-                    <AlertBanner
-                        variant="warning"
-                        message="Selecciona una obra en el encabezado para ver y gestionar el equipo asignado."
-                    />
+                    <AlertBanner variant="warning" message="Selecciona una obra en el encabezado para ver y gestionar el equipo asignado." />
                 )}
 
                 {!isAdmin && selectedObraId && (
-                    <AlertBanner
-                        variant="info"
-                        message="Las nuevas personas se crean a nivel empresa. Para sumar personas a esta obra, asigna personal desde la ficha de la obra."
-                    >
+                    <AlertBanner variant="info" message="Las nuevas personas se crean a nivel empresa. Para sumar personas a esta obra, asígnalas desde la ficha de la obra.">
                         {canManageObra && (
                             <Link to={`/obras/${selectedObraId}`} className="btn btn-secondary btn-sm" style={{ marginTop: 'var(--space-2)' }}>
                                 Ir a Gestionar Obra
@@ -356,530 +272,89 @@ export default function PersonasManagement() {
                     </AlertBanner>
                 )}
 
-                {/* Result Banners */}
                 {createResult && (
-                    <AlertBanner
-                        variant="success"
-                        message="Persona creada con éxito"
-                        onDismiss={() => setCreateResult(null)}
-                        autoDismissMs={0}
-                    >
+                    <AlertBanner variant="success" message="Persona creada con éxito." onDismiss={() => setCreateResult(null)} autoDismissMs={0}>
                         {createResult.password && (
-                            <CredentialCard
-                                rut={createResult.persona?.rut || ''}
-                                password={createResult.password}
-                                variant="primary"
-                            />
+                            <CredentialCard rut={createResult.rut || ''} password={createResult.password} variant="primary" />
                         )}
                     </AlertBanner>
                 )}
 
-                {resetResult && (
-                    <AlertBanner
-                        variant="warning"
-                        message="Contraseña Reseteada"
-                        onDismiss={() => setResetResult(null)}
-                        autoDismissMs={0}
-                    >
-                        <CredentialCard
-                            rut={resetResult.rut}
-                            password={resetResult.passwordTemporal}
-                            title="Nueva clave de acceso"
-                            variant="warning"
-                        />
-                    </AlertBanner>
-                )}
+                {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}
 
-                {error && (
-                    <AlertBanner
-                        variant="error"
-                        message={error}
-                        onDismiss={() => setError('')}
-                    />
-                )}
-
-                {/* Filters */}
-                <div className="card mb-6">
-                    <div className="flex items-center gap-4" style={{ flexWrap: 'wrap' }}>
-                        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-                            <input type="text" placeholder="Buscar por nombre o RUT..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="form-input" style={{ paddingLeft: 40 }} />
-                            <FiSearch style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                        </div>
-                        <div style={{ width: 180 }}>
-                            <Select
-                                ariaLabel="Filtrar por rol"
-                                value={filterRol}
-                                onChange={setFilterRol}
-                                options={[
-                                    { value: '', label: 'Todos los roles' },
-                                    ...tenantRoles.map(r => ({ value: r.id, label: r.nombre })),
-                                ]}
-                            />
-                        </div>
-                        <div style={{ width: 200 }}>
-                            <Select
-                                ariaLabel="Filtrar por cargo"
-                                value={filterCargo}
-                                onChange={setFilterCargo}
-                                options={[
-                                    { value: '', label: 'Todos los cargos' },
-                                    ...cargoOptions,
-                                ]}
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Cards */}
-                <div className="card">
-                    <div className="card-header">
-                        <div>
-                            <h2 className="card-title">Directorio de Personas</h2>
-                            <p className="card-subtitle">{filtered.length} persona(s)</p>
-                        </div>
-                    </div>
-
-                    {loading ? (
-                        <div className="flex items-center justify-center" style={{ padding: '48px 0' }}>
-                            <div className="spinner" />
-                        </div>
-                    ) : isMissingObra ? (
-                        <div className="empty-state">
-                            <FiUsers size={40} className="empty-state-icon" />
-                            <p className="empty-state-description">Selecciona una obra para ver su equipo</p>
-                        </div>
-                    ) : filtered.length === 0 ? (
-                        <div className="empty-state">
-                            <FiUsers size={40} className="empty-state-icon" />
-                            <p className="empty-state-description">No hay personas registradas</p>
-                        </div>
-                    ) : (
-                        <div className="pdir-grid">
-                            {filtered.map((p, i) => {
-                                const cardInner = (
-                                    <>
-                                        <div className="pdir-avatar" style={p.fotoPerfil ? { padding: 0, overflow: 'hidden', borderColor: AVATAR_TINT.border } : { background: AVATAR_TINT.bg, color: AVATAR_TINT.fg, borderColor: AVATAR_TINT.border }}>
-                                            {p.fotoPerfil
-                                                ? <img src={p.fotoPerfil} alt={p.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                : <>{p.nombre[0]}{p.apellido?.[0] ?? p.nombre[1] ?? ''}</>}
-                                        </div>
-                                        <span className="pdir-name">{p.nombre} {p.apellido}</span>
-                                        <span className="pdir-rut">{p.rut}</span>
-                                        <span className="pdir-cargo">{getCargoLabel(p.cargo) || ROLE_CONFIG[p.rol]?.label || '—'}</span>
-                                    </>
-                                );
-                                const cardStyle = { animationDelay: `${Math.min(i * 20, 400)}ms` };
-                                // Sin permiso de detalle, la tarjeta no es navegable.
-                                return canVerDetalle ? (
-                                    <Link key={p.personaId} to={`/personas/${p.rut}`} className="pdir-card" style={cardStyle}>
-                                        {cardInner}
-                                    </Link>
-                                ) : (
-                                    <div key={p.personaId} className="pdir-card" style={{ ...cardStyle, cursor: 'default' }}>
-                                        {cardInner}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Bulk Upload Modal */}
-            <Modal
-                isOpen={showBulkUpload && canBulkUpload}
-                onClose={() => setShowBulkUpload(false)}
-                title="Carga masiva de personas"
-                subtitle="Descargue la plantilla, complete los datos y suba el Excel"
-                icon={<FiUpload size={24} />}
-                size="lg"
-                preventClose={uploading}
-                footer={
-                    <>
-                        <button type="button" className="btn btn-secondary" onClick={() => setShowBulkUpload(false)}>Cancelar</button>
-                        <button type="submit" form="bulk-upload-form" className="btn btn-primary" disabled={uploading || !uploadFile}>
-                            {uploading ? <div className="spinner" /> : <><FiUpload /> Cargar archivo</>}
-                        </button>
-                    </>
-                }
-            >
-                        <form id="bulk-upload-form" onSubmit={handleBulkUpload}>
-                            <div className="form-section">
-                                <h3 className="form-section-title">Plantilla</h3>
-                                <p className="text-sm" style={{ marginBottom: 12 }}>Use la plantilla oficial para evitar errores en la carga.</p>
-                                <button type="button" className="btn btn-secondary" onClick={handleDownloadTemplate}>
-                                    <FiDownload /> Descargar plantilla
-                                </button>
-                            </div>
-                            <div className="form-section">
-                                <h3 className="form-section-title">Opciones</h3>
-                                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <input type="checkbox" checked={sendWelcomeEmail} onChange={e => setSendWelcomeEmail(e.target.checked)} />
-                                    Enviar credenciales por email cuando aplique
-                                </label>
-                            </div>
-
-                            {uploadError && <div className="alert alert-danger mb-4">{uploadError}</div>}
-                            {uploadResult && (
-                                <div className={`alert mb-4 ${uploadResult.resultados?.errores?.length > 0 ? 'alert-danger' : uploadResult.resultados?.duplicados?.length > 0 ? 'alert-warning' : 'alert-success'}`}>
-                                    <div style={{ fontWeight: 700, marginBottom: 12, fontSize: '15px' }}>{uploadResult.mensaje}</div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <span className="badge badge-success" style={{ width: 28, textAlign: 'center', display: 'inline-block' }}>{uploadResult.resultados?.creados?.length || 0}</span>
-                                            <span className="text-sm font-medium">Usuarios creados exitosamente</span>
-                                        </div>
-                                        {(uploadResult.resultados?.duplicados?.length || 0) > 0 && (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--warning-600)' }}>
-                                                <span className="badge badge-warning" style={{ width: 28, textAlign: 'center', display: 'inline-block' }}>{uploadResult.resultados?.duplicados?.length || 0}</span>
-                                                <span className="text-sm font-medium">Registros duplicados (ignorados)</span>
-                                            </div>
-                                        )}
-                                        {(uploadResult.resultados?.errores?.length || 0) > 0 && (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger-500)' }}>
-                                                    <span className="badge badge-danger" style={{ width: 28, textAlign: 'center', display: 'inline-block' }}>{uploadResult.resultados?.errores?.length || 0}</span>
-                                                    <span className="text-sm font-medium">Errores encontrados (filas omitidas)</span>
-                                                </div>
-                                                <div style={{ marginTop: '4px', maxHeight: '120px', overflowY: 'auto', fontSize: '12px', background: 'var(--surface-bg)', border: '1px solid var(--surface-border)', borderRadius: '6px', padding: '8px' }}>
-                                                    <ul style={{ margin: 0, paddingLeft: '16px', color: 'var(--text-secondary)' }}>
-                                                        {uploadResult.resultados?.errores?.map((err: any, idx: number) => (
-                                                            <li key={idx} style={{ marginBottom: '4px' }}>
-                                                                <strong>Fila {err.fila}:</strong> {err.error}
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="form-section">
-                                <h3 className="form-section-title">Archivo</h3>
-                                <div className="form-group">
-                                    <label className="form-label">Archivo Excel (.xlsx)</label>
-                                    <div 
-                                        className="file-upload-zone"
-                                        onClick={() => fileInputRef.current?.click()}
-                                    >
-                                        <FiUpload size={28} style={{ marginBottom: 12, color: uploadFile ? 'var(--primary-500)' : 'var(--text-muted)', display: 'inline-block' }} />
-                                        {uploadFile ? (
-                                            <div style={{ fontWeight: 600, color: 'var(--primary-500)', fontSize: '14px' }}>{uploadFile.name}</div>
-                                        ) : (
-                                            <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Haz clic aquí para seleccionar un archivo .xlsx</div>
-                                        )}
-                                    </div>
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept=".xlsx"
-                                        style={{ display: 'none' }}
-                                        onChange={e => setUploadFile(e.target.files?.[0] || null)}
-                                    />
-                                </div>
-                            </div>
-
-                        </form>
-            </Modal>
-
-            {/* Create Modal */}
-            <Modal
-                isOpen={showCreate && canCreatePersonas}
-                onClose={() => setShowCreate(false)}
-                title="Nueva Persona"
-                subtitle={isObraScoped ? 'Agregue un nuevo miembro a la obra seleccionada' : 'Agregue un nuevo miembro a su empresa'}
-                icon={<FiUserPlus size={24} />}
-                size="lg"
-                preventClose={loading}
-                footer={
-                    <>
-                        <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancelar</button>
-                        <button type="submit" form="create-persona-form" className="btn btn-primary" disabled={loading || !newPersona.nombre || !newPersona.apellidoPaterno || !newPersona.rut}>
-                            {loading ? <div className="spinner" /> : <><FiUserPlus /> Crear Persona</>}
-                        </button>
-                    </>
-                }
-            >
-                        <form id="create-persona-form" onSubmit={handleCreate}>
-                            <div className="form-section">
-                                <h3 className="form-section-title">Datos Personales</h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="form-group"><label className="form-label">Nombre *</label><input type="text" className="form-input" value={newPersona.nombre} onChange={e => setNewPersona({ ...newPersona, nombre: e.target.value })} required /></div>
-                                    <div className="form-group"><label className="form-label">Apellido paterno *</label><input type="text" className="form-input" value={newPersona.apellidoPaterno} onChange={e => setNewPersona({ ...newPersona, apellidoPaterno: e.target.value })} required /></div>
-                                    <div className="form-group"><label className="form-label">Apellido materno</label><input type="text" className="form-input" value={newPersona.apellidoMaterno} onChange={e => setNewPersona({ ...newPersona, apellidoMaterno: e.target.value })} /></div>
-                                    <div className="form-group"><label className="form-label">Fecha de nacimiento</label><input type="date" className="form-input" value={newPersona.fechaNacimiento} onChange={e => setNewPersona({ ...newPersona, fechaNacimiento: e.target.value })} /></div>
-                                </div>
-                                <div className="form-group"><label className="form-label">RUT *</label><input type="text" className="form-input" placeholder="12.345.678-9" value={newPersona.rut} onChange={e => setNewPersona({ ...newPersona, rut: rutFormat(e.target.value) })} required /></div>
-                                <div className="form-group">
-                                    <label className="form-label">Rol *</label>
-                                    <select
-                                        className="form-input"
-                                        value={newPersona.rol}
-                                        onChange={e => setNewPersona({ ...newPersona, rol: e.target.value })}
-                                        required
-                                    >
-                                        {tenantRoles.length === 0 && <option value="">Cargando roles…</option>}
-                                        {tenantRoles.map(r => (
-                                            <option key={r.id} value={r.id}>{r.nombre}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="form-group"><label className="form-label">Email</label><input type="email" className="form-input" value={newPersona.email} onChange={e => setNewPersona({ ...newPersona, email: e.target.value })} /><span className="form-hint">Si tiene acceso web, recibirá sus credenciales por email automáticamente</span></div>
-                                {/* Cargo OPCIONAL: solo personal de terreno. Define el kit de onboarding DS44 (catálogo del tenant). */}
-                                <div className="form-group">
-                                    <label className="form-label"><FiBriefcase size={14} /> Cargo <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(opcional · define el onboarding)</span></label>
-                                    <Select value={newPersona.cargo} onChange={v => setNewPersona({ ...newPersona, cargo: v })} options={cargoOptions} placeholder="Sin cargo (sin onboarding de terreno)" searchable ariaLabel="Cargo" />
-                                </div>
-                                <h3 className="form-section-title" style={{ marginTop: 'var(--space-3)' }}>Ficha del colaborador</h3>
-                                <div className="form-group">
-                                    <label className="form-label">Nivel escolar</label>
+                {!isMissingObra && (
+                    <CollectionView
+                        searchValue={searchTerm}
+                        onSearchChange={setSearchTerm}
+                        searchPlaceholder="Buscar por nombre o RUT…"
+                        count={filtered.length}
+                        mode={mode}
+                        onModeChange={setMode}
+                        filters={
+                            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                                <div style={{ width: 160 }}>
                                     <Select
-                                        ariaLabel="Nivel escolar"
-                                        placeholder="Seleccione…"
-                                        value={newPersona.nivelEscolar}
-                                        onChange={v => setNewPersona({ ...newPersona, nivelEscolar: v })}
-                                        options={NIVELES_ESCOLAR.map(n => ({ value: n, label: n }))}
-                                    />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="form-group"><label className="form-label">Contacto emergencia — Nombre Completo</label><input type="text" className="form-input" value={newPersona.contactoEmergenciaNombre} onChange={e => setNewPersona({ ...newPersona, contactoEmergenciaNombre: e.target.value })} /></div>
-                                    <div className="form-group">
-                                        <label className="form-label">Teléfono</label>
-                                        {(() => {
-                                            const complete = newPersona.contactoEmergenciaTelefono.replace(/\D/g, '').length === 9;
-                                            const borderColor = complete ? 'var(--success-500)' : telEmergenciaFocused ? 'var(--accent)' : 'var(--surface-border)';
-                                            return (
-                                                <div style={{
-                                                    display: 'flex', alignItems: 'center',
-                                                    border: `1.5px solid ${borderColor}`,
-                                                    borderRadius: 'var(--radius-md)',
-                                                    background: 'var(--surface-card)',
-                                                    overflow: 'hidden',
-                                                    transition: 'border-color 0.2s, box-shadow 0.2s',
-                                                    boxShadow: telEmergenciaFocused ? `0 0 0 3px ${complete ? 'rgba(34,197,94,0.15)' : 'rgba(0,110,220,0.12)'}` : 'none',
-                                                }}>
-                                                    <div style={{
-                                                        display: 'flex', alignItems: 'center', gap: '5px',
-                                                        padding: '0 10px', alignSelf: 'stretch',
-                                                        borderRight: '1.5px solid var(--surface-border)',
-                                                        background: 'var(--surface-elevated)',
-                                                        flexShrink: 0, userSelect: 'none',
-                                                    }}>
-                                                        <span style={{ fontSize: '12px', lineHeight: 1 }}>🇨🇱</span>
-                                                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>+56</span>
-                                                    </div>
-                                                    <input
-                                                        type="text"
-                                                        inputMode="numeric"
-                                                        placeholder="9 1234 5678"
-                                                        value={newPersona.contactoEmergenciaTelefono}
-                                                        onFocus={() => setTelEmergenciaFocused(true)}
-                                                        onBlur={() => setTelEmergenciaFocused(false)}
-                                                        onChange={handleEmergenciaTelefonoChange}
-                                                        style={{
-                                                            flex: 1, border: 'none', outline: 'none',
-                                                            background: 'transparent', fontSize: 'var(--text-base)',
-                                                            color: 'var(--text-primary)',
-                                                            padding: 'var(--space-3) var(--space-2)',
-                                                            caretColor: 'var(--accent)',
-                                                        }}
-                                                    />
-                                                    <div style={{
-                                                        paddingRight: '10px', display: 'flex', alignItems: 'center',
-                                                        opacity: complete ? 1 : 0,
-                                                        transform: complete ? 'scale(1)' : 'scale(0.5)',
-                                                        transition: 'opacity 0.25s, transform 0.25s',
-                                                    }}>
-                                                        <FiCheckCircle size={14} style={{ color: 'var(--success-500)' }} />
-                                                    </div>
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Relación del contacto</label>
-                                    <Select
-                                        ariaLabel="Relación del contacto"
-                                        placeholder="Seleccione…"
-                                        value={newPersona.contactoEmergenciaRelacion}
-                                        onChange={v => setNewPersona({ ...newPersona, contactoEmergenciaRelacion: v })}
-                                        options={RELACIONES_EMERGENCIA.map(r => ({ value: r, label: r }))}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Cursos / certificaciones</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                        {CURSOS_COMUNES.map(curso => {
-                                            const seleccionados = newPersona.cursos.split(';').map(c => c.trim()).filter(Boolean);
-                                            const checked = seleccionados.includes(curso);
-                                            return (
-                                                <label key={curso} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--surface-border)', cursor: 'pointer', fontSize: '0.82rem', background: checked ? 'var(--primary-500)' : 'var(--surface-elevated)', color: checked ? 'white' : 'var(--text-primary)' }}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={checked}
-                                                        onChange={() => {
-                                                            const next = checked ? seleccionados.filter(c => c !== curso) : [...seleccionados, curso];
-                                                            setNewPersona({ ...newPersona, cursos: next.join('; ') });
-                                                        }}
-                                                        style={{ display: 'none' }}
-                                                    />
-                                                    {curso}
-                                                </label>
-                                            );
-                                        })}
-                                    </div>
-                                    <span className="form-hint">Marca los cursos que tiene el colaborador</span>
-                                </div>
-                            </div>
-                        </form>
-            </Modal>
-
-            {/* Edit Modal */}
-            <Modal
-                isOpen={!!(showEdit && editing)}
-                onClose={() => { setShowEdit(false); setEditing(null); }}
-                title="Editar Persona"
-                subtitle={editing ? `${editing.nombre} ${editing.apellido}` : undefined}
-                icon={<FiEdit2 size={24} />}
-                size="md"
-                preventClose={loading}
-                footer={
-                    <>
-                        <button type="button" className="btn btn-secondary" onClick={() => { setShowEdit(false); setEditing(null); }}><FiX /> Cancelar</button>
-                        <button type="submit" form="edit-persona-form" className="btn btn-primary" disabled={loading}>{loading ? <div className="spinner" /> : <><FiSave /> Guardar</>}</button>
-                    </>
-                }
-            >
-                        <form id="edit-persona-form" onSubmit={handleUpdate}>
-                            <div className="form-section">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="form-group"><label className="form-label">Nombre</label><input type="text" className="form-input" value={editForm.nombre} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} required /></div>
-                                    <div className="form-group"><label className="form-label">Apellido</label><input type="text" className="form-input" value={editForm.apellido} onChange={e => setEditForm({ ...editForm, apellido: e.target.value })} /></div>
-                                </div>
-                                <div className="form-group"><label className="form-label">Email</label><input type="email" className="form-input" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
-                                <div className="form-group"><label className="form-label">Cargo <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(opcional)</span></label><Select value={editForm.cargo} onChange={v => setEditForm({ ...editForm, cargo: v })} options={cargoOptions} placeholder="Sin cargo" searchable ariaLabel="Cargo" /></div>
-                                <div className="form-group"><label className="form-label">Estado</label>
-                                    <SegmentedControl
-                                        ariaLabel="Estado"
-                                        value={editForm.estado}
-                                        onChange={v => setEditForm({ ...editForm, estado: v })}
+                                        ariaLabel="Filtrar por rol"
+                                        value={filterRol}
+                                        onChange={setFilterRol}
                                         options={[
-                                            { value: 'pendiente', label: 'Pendiente' },
-                                            { value: 'activo', label: 'Activo' },
-                                            { value: 'suspendido', label: 'Suspendido' },
+                                            { value: '', label: 'Todos los roles' },
+                                            ...tenantRoles.map(r => ({ value: r.id, label: r.nombre })),
+                                        ]}
+                                    />
+                                </div>
+                                <div style={{ width: 180 }}>
+                                    <Select
+                                        ariaLabel="Filtrar por cargo"
+                                        value={filterCargo}
+                                        onChange={setFilterCargo}
+                                        options={[
+                                            { value: '', label: 'Todos los cargos' },
+                                            ...cargoOptions,
                                         ]}
                                     />
                                 </div>
                             </div>
-                        </form>
-            </Modal>
+                        }
+                        list={tableList}
+                        grid={cardGrid}
+                    />
+                )}
+            </div>
 
-            <ConfirmModal isOpen={confirmModal.isOpen} title={confirmModal.title} message={confirmModal.message} confirmLabel="Resetear Contraseña" variant="warning" onConfirm={confirmReset} onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))} />
+            <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmLabel="Confirmar"
+                variant="warning"
+                onConfirm={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+            />
 
             <style>{`
-                /* ── Directorio grid ── */
                 .pdir-grid {
                     display: grid;
                     grid-template-columns: repeat(4, 1fr);
                     gap: 12px;
-                    padding: 16px 0 4px;
+                    padding: var(--space-2) 0;
                 }
-
                 .pdir-card {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    text-align: center;
-                    padding: 28px 16px 16px;
-                    border-radius: 12px;
-                    border: 1px solid var(--surface-border);
+                    display: flex; flex-direction: column; align-items: center; text-align: center;
+                    padding: 24px 16px 16px;
+                    border-radius: 12px; border: 1px solid var(--surface-border);
                     background: var(--surface-card);
-                    text-decoration: none;
-                    color: inherit;
+                    text-decoration: none; color: inherit;
                     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s;
                     animation: pdirIn 0.3s ease both;
                 }
-
-                @keyframes pdirIn {
-                    from { opacity: 0; transform: translateY(10px); }
-                    to   { opacity: 1; transform: translateY(0); }
-                }
-
-                .pdir-card:hover {
-                    transform: translateY(-3px);
-                    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18);
-                    border-color: var(--primary-400);
-                }
-
-                .pdir-avatar {
-                    width: 64px;
-                    height: 64px;
-                    border-radius: 50%;
-                    border: 1.5px solid transparent;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-family: var(--font-ui);
-                    font-size: 20px;
-                    font-weight: 700;
-                    letter-spacing: 0.02em;
-                    text-transform: uppercase;
-                    margin-bottom: 14px;
-                    flex-shrink: 0;
-                    transition: box-shadow 0.18s;
-                }
-
-                .pdir-card:hover .pdir-avatar {
-                    box-shadow: 0 0 0 4px var(--surface-bg), 0 0 0 6px currentColor;
-                }
-
-                .pdir-name {
-                    font-family: var(--font-ui);
-                    font-size: 13.5px;
-                    font-weight: 600;
-                    color: var(--text-primary);
-                    line-height: 1.35;
-                    word-break: break-word;
-                    margin-bottom: 5px;
-                }
-
-                .pdir-rut {
-                    font-family: var(--font-mono);
-                    font-size: 10.5px;
-                    color: var(--text-muted);
-                    letter-spacing: 0.04em;
-                }
-
-                .pdir-cargo {
-                    font-size: 11px;
-                    color: var(--text-secondary);
-                    margin-top: 10px;
-                    padding-top: 10px;
-                    border-top: 1px solid var(--surface-border);
-                    width: 100%;
-                    word-break: break-word;
-                    line-height: 1.4;
-                }
-
+                @keyframes pdirIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                .pdir-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px -4px rgba(0,0,0,0.18); border-color: var(--primary-400); }
+                .pdir-name { font-size: 13.5px; font-weight: 600; color: var(--text-primary); line-height: 1.35; word-break: break-word; margin: 12px 0 4px; }
+                .pdir-rut { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.04em; }
+                .pdir-cargo { font-size: 11px; color: var(--text-secondary); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--surface-border); width: 100%; word-break: break-word; line-height: 1.4; }
                 @media (max-width: 900px) { .pdir-grid { grid-template-columns: repeat(3, 1fr); } }
                 @media (max-width: 580px) { .pdir-grid { grid-template-columns: repeat(2, 1fr); } }
-
-                /* ── Modales ── */
-                .role-selector { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-                .role-card { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 16px; background: var(--surface-elevated); border: 2px solid var(--surface-border); border-radius: 12px; cursor: pointer; transition: all 0.2s; }
-                .role-card:hover { border-color: var(--primary-400); background: var(--surface-card); }
-                .role-card.selected { border-color: var(--primary-500); background: rgba(76,175,80,0.1); box-shadow: 0 0 0 3px rgba(76,175,80,0.2); }
-                .role-card-icon { font-size: 28px; margin-bottom: 8px; }
-                .role-card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
-                .role-card-desc { font-size: 10px; color: var(--text-muted); line-height: 1.4; }
-                .form-section { margin-bottom: 24px; }
-                .form-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--surface-border); }
-                .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block; }
-                .file-upload-zone { border: 2px dashed var(--surface-border); border-radius: 12px; padding: 32px 16px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--surface-elevated); }
-                .file-upload-zone:hover { border-color: var(--primary-400); background: var(--surface-card); }
-                @media (max-width: 640px) { .role-selector { grid-template-columns: 1fr; } }
             `}</style>
         </>
     );

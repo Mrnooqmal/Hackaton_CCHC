@@ -136,7 +136,7 @@ export default function SuggestionsWidget() {
                     gap: 8px;
                     padding: 0 18px 0 14px;
                     height: 44px;
-                    background: #002855;
+                    background: #df3601;
                     color: #fff;
                     border: none;
                     border-radius: 22px;
@@ -149,9 +149,9 @@ export default function SuggestionsWidget() {
                     transition: background 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
                 }
                 .sw-fab:hover {
-                    background: #003f7a;
+                    background: #f13800;
                     transform: translateY(-2px);
-                    box-shadow: 0 6px 20px rgba(0, 40, 85, 0.4);
+                    box-shadow: 0 6px 20px #df3601;
                 }
                 .sw-fab:active {
                     transform: translateY(0);
