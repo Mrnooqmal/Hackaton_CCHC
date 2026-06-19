@@ -215,9 +215,9 @@ export default function PersonasCargaMasiva() {
                                         </div>
                                         <div style={{ padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'rgba(0,110,220,0.04)', border: '1px solid rgba(0,110,220,0.15)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
                                             <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: 4 }}>Columna obraId</strong>
-                                            Acepta el UUID de la obra (cópialo desde el detalle de la obra con el botón <FiCopy size={11} style={{ display: 'inline', verticalAlign: 'middle' }} />):<br />
+                                            Acepta el código (ej. <code style={{ fontFamily: 'monospace' }}>OBRA-001</code>) o el UUID de la obra (cópialo desde el detalle de la obra con el botón <FiCopy size={11} style={{ display: 'inline', verticalAlign: 'middle' }} />):<br />
                                             <span style={{ fontFamily: 'monospace', letterSpacing: '0.02em', color: '#006edc', fontSize: '0.9em' }}>a1b2c3d4-e5f6-7890-abcd-ef1234567890</span><br />
-                                            Para asignar personas a <strong>múltiples obras</strong>, importa el archivo una vez por cada obra con su <code style={{ fontFamily: 'monospace' }}>obraId</code> correspondiente.
+                                            Para <strong>varias obras</strong>, sepáralas por coma (ej. <code style={{ fontFamily: 'monospace' }}>OBRA-001, OBRA-002</code>). Si la dejas <strong>vacía</strong>, la persona se crea en la empresa sin obra y la vinculas después.
                                         </div>
                                     </div>
                                 </div>
@@ -229,7 +229,7 @@ export default function PersonasCargaMasiva() {
                                     <span className="cm-step-num">2</span>
                                     <div>
                                         <div className="cm-section-title">Opciones de importación</div>
-                                        <div className="cm-section-sub">La obra se asigna por la columna <code style={{ fontFamily: 'monospace', fontSize: '0.9em' }}>obraId</code> del Excel.</div>
+                                        <div className="cm-section-sub">La obra se asigna por la columna <code style={{ fontFamily: 'monospace', fontSize: '0.9em' }}>obraId</code> del Excel (opcional; varias separadas por coma).</div>
                                     </div>
                                 </div>
                                 <div className="cm-section-body">

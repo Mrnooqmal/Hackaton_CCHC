@@ -546,10 +546,16 @@ export const DS44_KIT_GENERICO: Ds44KitItem[] = [
     { key: 'INDUCCION', tipo: 'INDUCCION', titulo: 'Inducción Plan de Emergencia', articulo: 'Art. 19', naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'DIFUSION_FIRMA' }
 ];
 
-// Kit base para un cargo nuevo: RI, Política, IRL y EPP genérico.
-// Se asigna al crear un cargo en CargosOnboarding para que no quede vacío.
-export const buildBaseCargoKit = (): Ds44KitItem[] =>
-    kitTransversal('OTRO').map((it) => ({ ...it }));
+// Kit base para un cargo nuevo: empresa (RI + Política) + IRL + Procedimiento + EPP.
+// Las 3 naturalezas (derivado_miper, procedimiento_corporativo, evidencia_individual)
+// quedan con al menos un ítem para que los 3 grupos aparezcan en cargos-onboarding.
+export const buildBaseCargoKit = (): Ds44KitItem[] => [
+    ...kitTransversal('OTRO').map((it) => ({ ...it })),
+    // Procedimiento de trabajo seguro (no es de empresa → aparece en "Procedimientos del cargo")
+    { key: 'PROCEDIMIENTO_TRABAJO', tipo: 'PROCEDIMIENTO_TRABAJO', titulo: 'Procedimiento de trabajo seguro del cargo', articulo: 'Art. 10', naturaleza: 'procedimiento_corporativo' as const, alcancePlantilla: 'tenant' as const, accion: 'DIFUSION_FIRMA' as const },
+    // Evidencia de inducción (persona → aparece en "Evidencia individual")
+    { key: 'INDUCCION', tipo: 'INDUCCION', titulo: 'Inducción Plan de Emergencia', articulo: 'Art. 19', naturaleza: 'evidencia_individual' as const, alcancePlantilla: 'persona' as const, accion: 'DIFUSION_FIRMA' as const },
+];
 
 // Kits precomputados por código de cargo (transversal + específicos).
 export const DS44_CARGO_KITS: Record<string, Ds44KitItem[]> = {

@@ -7,11 +7,10 @@ import {
     FiFileText,
     FiCalendar,
     FiEdit3,
-    FiMessageSquare,
     FiSettings,
     FiBriefcase,
     FiAlertTriangle,
-    FiClipboard,
+    FiCheckSquare,
     FiX,
     FiLogOut
 } from 'react-icons/fi';
@@ -54,24 +53,22 @@ const GENERIC_NAV: NavSection[] = [
         items: [
             { path: '/obras', icon: FiHome, label: 'Obras', permission: PERMISSIONS.OBRAS_VER },
             { path: '/personas', icon: FiUsers, label: 'Personas', permission: PERMISSIONS.PERSONAS_VER },
+            { path: '/contenido', icon: FiCalendar, label: 'Contenido' },
             { path: '/documents-repository', icon: FiFileText, label: 'Repositorio', permission: PERMISSIONS.REPOSITORIO_VER },
-            { path: '/documents', icon: FiFileText, label: 'Documentos DS44', permission: PERMISSIONS.DOCUMENTOS_VER },
-            { path: '/activities', icon: FiCalendar, label: 'Actividades', permission: PERMISSIONS.ACTIVIDADES_VER },
         ]
     },
     {
         section: 'Cumplimiento',
         items: [
-            { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
+            { path: '/my-signatures', icon: FiEdit3, label: 'Mis firmas' },
             { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
-            { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
         ]
     },
     {
         section: 'Sistema',
         items: [
-            { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA', permission: PERMISSIONS.IA_VER },
             { path: '/mi-empresa', icon: FiBriefcase, label: 'Mi Empresa', permission: PERMISSIONS.EMPRESA_VER },
+            { path: '/cargos-onboarding', icon: FiCheckSquare, label: 'Onboarding', permission: PERMISSIONS.CARGOS_GESTIONAR },
             { path: '/settings', icon: FiSettings, label: 'Configuración' },
         ]
     }

@@ -1,25 +1,76 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     FiFileText,
     FiFolder,
     FiSearch,
-    FiFilter,
     FiUpload,
     FiDownload,
     FiFile,
     FiX,
     FiUsers,
-    FiChevronDown,
-    FiChevronUp,
-    FiEye
+    FiEye,
+    FiChevronRight,
+    FiHome,
+    FiShield,
+    FiCalendar,
+    FiArchive,
+    FiUser
 } from 'react-icons/fi';
-import { documentsApi, uploadsApi, type Document } from '../api/client';
+import { documentsApi, uploadsApi, tenantsApi, type Document } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
-import { AlertBanner, Select } from '../components/ui';
+import { AlertBanner, Select, PageHeader } from '../components/ui';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+
+// ── Carpetas del repositorio ──────────────────────────────────────────────
+// Cada documento se ubica en una carpeta según su clasificación / fase.
+type FolderKey = 'empresa' | 'obra' | 'ds44' | 'repositorio' | 'diario' | 'trabajador' | 'otros';
+
+const FOLDERS: Record<FolderKey, { label: string; icon: typeof FiFolder; color: string }> = {
+    empresa:     { label: 'Documentos de empresa',   icon: FiArchive,  color: '#0ea5e9' },
+    obra:        { label: 'Documentos de obra',      icon: FiHome,     color: '#006edc' },
+    ds44:        { label: 'DS44 · Cumplimiento',     icon: FiShield,   color: '#10b981' },
+    repositorio: { label: 'Repositorio general',     icon: FiFolder,   color: '#8b5cf6' },
+    diario:      { label: 'Registros y actividades', icon: FiCalendar, color: '#f59e0b' },
+    trabajador:  { label: 'Documentos de personas',  icon: FiUsers,    color: '#ec4899' },
+    otros:       { label: 'Otros',                   icon: FiFile,     color: '#64748b' },
+};
+const FOLDER_ORDER: FolderKey[] = ['empresa', 'obra', 'ds44', 'repositorio', 'diario', 'trabajador', 'otros'];
+
+const folderOf = (doc: { clasificacion?: string; fase?: string }): FolderKey => {
+    if (doc.clasificacion === 'empresa') return 'empresa';
+    if (doc.fase) return 'ds44';
+    switch (doc.clasificacion) {
+        case 'obra': return 'obra';
+        case 'repositorio': return 'repositorio';
+        case 'diario': return 'diario';
+        case 'trabajador': return 'trabajador';
+        default: return 'otros';
+    }
+};
+
+// Documentos corporativos (1 para todas las obras) que se suben en Onboarding.
+// Se inyectan en el repositorio como carpeta "Documentos de empresa".
+const EMPRESA_DOC_TITLES: Record<string, string> = {
+    REGLAMENTO_INTERNO: 'Reglamento Interno (RIHS/RIOHS)',
+    POLITICA_SSO: 'Política de SST',
+};
+const extractEmpresaDocs = (cargos: any[]): { tipo: string; fileKey: string; nombre?: string; subidoEn?: string }[] => {
+    const out: { tipo: string; fileKey: string; nombre?: string; subidoEn?: string }[] = [];
+    const seen = new Set<string>();
+    for (const c of cargos || []) {
+        for (const it of (c?.kit || [])) {
+            const fileKey = it?.plantilla?.fileKey;
+            if (fileKey && it?.tipo && EMPRESA_DOC_TITLES[it.tipo] && !seen.has(it.tipo)) {
+                seen.add(it.tipo);
+                out.push({ tipo: it.tipo, fileKey, nombre: it.plantilla.nombre, subidoEn: it.plantilla.subidoEn });
+            }
+        }
+    }
+    return out;
+};
 
 type RepoDocument = Document & {
     clasificacion?: string;
@@ -33,17 +84,16 @@ type RepoDocument = Document & {
 
 export default function DocumentsRepository() {
     const { user, hasPermission } = useAuth();
-    const { obras, selectedObraId, selectedObra, setSelectedObraId, isLoadingObras } = useObraContext();
+    const { selectedObraId, selectedObra } = useObraContext();
     const { toast } = useToast();
 
     const [documents, setDocuments] = useState<RepoDocument[]>([]);
+    const [empresaDocuments, setEmpresaDocuments] = useState<RepoDocument[]>([]);
     const [documentTypes, setDocumentTypes] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filterType, setFilterType] = useState('');
-    const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+    const [openFolder, setOpenFolder] = useState<FolderKey | null>(null);
     const canViewGeneral = user?.rol !== 'trabajador';
-    const canSelectObra = user?.rol === 'admin';
     const [activeScope, setActiveScope] = useState<'general' | 'personal'>(canViewGeneral ? 'general' : 'personal');
 
     const canUpload = hasPermission(PERMISSIONS.REPOSITORIO_SUBIR);
@@ -79,11 +129,30 @@ export default function DocumentsRepository() {
 
         setLoading(true);
         try {
-            const res = await documentsApi.list({ obraId: selectedObraId } as any);
+            const tenantId = user?.tenantId || localStorage.getItem('tenant_id') || '';
+            const [res, cargosRes] = await Promise.all([
+                documentsApi.list({ obraId: selectedObraId } as any),
+                tenantId ? tenantsApi.getCargos(tenantId) : Promise.resolve({ success: false } as any),
+            ]);
             if (res.success && res.data) {
                 setDocuments((res.data.documents || []) as RepoDocument[]);
                 setDocumentTypes(res.data.types || {});
             }
+            // Documentos corporativos (Reglamento Interno, Política SST) subidos en
+            // Onboarding: se reflejan en el repositorio como carpeta "Documentos de empresa".
+            const empresaRaw = cargosRes.success && cargosRes.data ? extractEmpresaDocs(cargosRes.data.cargos || []) : [];
+            setEmpresaDocuments(empresaRaw.map((d) => ({
+                documentId: `empresa-${d.tipo}`,
+                tipo: d.tipo,
+                titulo: EMPRESA_DOC_TITLES[d.tipo] || d.tipo,
+                descripcion: 'Documento de empresa · aplica a todas las obras',
+                clasificacion: 'empresa',
+                archivoUrl: d.fileKey,
+                s3Key: d.fileKey,
+                archivoNombre: d.nombre || null,
+                createdAt: d.subidoEn,
+                creatorName: 'Empresa',
+            } as RepoDocument)));
         } catch (err) {
             console.error('Error loading repository documents:', err);
             toast.error('No se pudieron cargar los documentos');
@@ -97,19 +166,36 @@ export default function DocumentsRepository() {
 
     const personalDocuments = useMemo(() => documents.filter(isAssignedToUser), [documents, user?.personaId]);
     const generalDocuments = useMemo(
-        () => documents.filter(doc => doc.clasificacion !== 'diario'),
-        [documents]
+        () => [...empresaDocuments, ...documents.filter(doc => doc.clasificacion !== 'diario')],
+        [documents, empresaDocuments]
     );
+
+    // Documentos del scope activo (antes de aplicar carpeta o búsqueda).
+    const scopeDocuments = activeScope === 'personal' ? personalDocuments : generalDocuments;
+
+    // Conteo de documentos por carpeta dentro del scope activo.
+    const folderCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        scopeDocuments.forEach((doc) => { const f = folderOf(doc); counts[f] = (counts[f] || 0) + 1; });
+        return counts;
+    }, [scopeDocuments]);
+
+    const isSearching = searchTerm.trim().length > 0;
+
+    // Documentos visibles: al buscar se aplana todo el scope; si no, se filtra por
+    // la carpeta abierta. La raíz (sin carpeta, sin búsqueda) muestra carpetas.
     const visibleDocuments = useMemo(() => {
-        const baseDocs = activeScope === 'personal' ? personalDocuments : generalDocuments;
-        return baseDocs.filter((doc) => {
-            const matchesSearch = doc.titulo.toLowerCase().includes(searchTerm.toLowerCase())
-                || (doc.descripcion || '').toLowerCase().includes(searchTerm.toLowerCase())
-                || (doc.archivoNombre || '').toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesType = !filterType || doc.tipo === filterType;
-            return matchesSearch && matchesType;
+        const term = searchTerm.toLowerCase();
+        return scopeDocuments.filter((doc) => {
+            if (!isSearching && openFolder && folderOf(doc) !== openFolder) return false;
+            if (!term) return true;
+            return doc.titulo.toLowerCase().includes(term)
+                || (doc.descripcion || '').toLowerCase().includes(term)
+                || (doc.archivoNombre || '').toLowerCase().includes(term);
         });
-    }, [activeScope, generalDocuments, personalDocuments, searchTerm, filterType]);
+    }, [scopeDocuments, openFolder, searchTerm, isSearching]);
+
+    const showFolders = !isSearching && !openFolder;
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0] || null;
@@ -269,11 +355,10 @@ export default function DocumentsRepository() {
         return date.toLocaleDateString('es-CL');
     };
 
-    const toggleRow = (documentId: string) => {
-        setExpandedRows((prev) => ({
-            ...prev,
-            [documentId]: !prev[documentId]
-        }));
+    const switchScope = (scope: 'general' | 'personal') => {
+        setActiveScope(scope);
+        setOpenFolder(null);
+        setSearchTerm('');
     };
 
     const generalCount = generalDocuments.length;
@@ -283,98 +368,48 @@ export default function DocumentsRepository() {
         <>
 
             <div className="page-content">
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <h2 className="page-header-title">
-                            <FiFolder className="text-primary-500" />
-                            Repositorio de Archivos
-                        </h2>
-                        <p className="page-header-description">
-                            Registro centralizado de documentos de la obra, incluyendo DS44 y anexos generales.
-                        </p>
-                    </div>
-                    <div className="page-header-actions" style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                        {canSelectObra && (
-                            <div style={{ minWidth: '220px' }}>
-                                <Select
-                                    ariaLabel="Seleccionar obra"
-                                    placeholder="Selecciona una obra"
-                                    searchable
-                                    disabled={isLoadingObras || obras.length === 0}
-                                    value={selectedObraId || ''}
-                                    onChange={(v) => setSelectedObraId(v || null)}
-                                    options={obras.map((obra) => ({ value: obra.obraId, label: obra.nombre }))}
-                                />
-                            </div>
-                        )}
-                        {canUpload && selectedObraId && (
-                            <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)}>
-                                <FiUpload /> Subir Documento
+                <PageHeader
+                    banner
+                    scope={{ label: selectedObra?.nombre ? `Obra · ${selectedObra.nombre}` : 'Repositorio' }}
+                    title="Repositorio de documentos"
+                    description="Archivos de la obra organizados por carpetas: documentos base, cumplimiento DS44, registros y los documentos asignados a cada persona."
+                    actions={
+                        canUpload && selectedObraId ? (
+                            <button className="btn btn-save" onClick={() => setShowUploadForm((prev) => !prev)}>
+                                <FiUpload /> Subir documento
                             </button>
-                        )}
-                    </div>
-                </div>
+                        ) : undefined
+                    }
+                />
 
                 {!selectedObraId && (
                     <AlertBanner
                         variant="warning"
-                        message="Selecciona una obra para ver su repositorio de documentos."
+                        message="Selecciona una obra desde la barra superior para ver su repositorio de documentos."
                     />
                 )}
 
-                {selectedObraId && (
-                    <div className="card mb-6" style={{ padding: 'var(--space-4)' }}>
-                        <div className="flex items-center justify-between flex-wrap" style={{ gap: 'var(--space-3)' }}>
-                            <div className="text-sm text-muted">
-                                Obra activa: <strong>{selectedObra?.nombre || 'Sin nombre'}</strong>
-                            </div>
-                            <div className="text-sm text-muted">
-                                {generalCount} documentos totales
-                            </div>
-                        </div>
-                    </div>
-                )}
-
                 {selectedObraId && canViewGeneral && (
-                    <div className="tabs mb-6" style={{ borderBottom: '1px solid var(--surface-border)', display: 'flex', gap: 'var(--space-6)' }}>
+                    <div className="repo-scope">
                         <button
-                            className={`tab ${activeScope === 'general' ? 'active' : ''}`}
-                            onClick={() => setActiveScope('general')}
-                            style={{
-                                padding: 'var(--space-3) 0',
-                                background: 'transparent',
-                                border: 'none',
-                                borderBottom: activeScope === 'general' ? '2px solid var(--primary-500)' : '2px solid transparent',
-                                color: activeScope === 'general' ? 'var(--primary-600)' : 'var(--text-muted)',
-                                fontWeight: activeScope === 'general' ? '600' : 'normal',
-                                cursor: 'pointer'
-                            }}
+                            className={`repo-scope-btn${activeScope === 'general' ? ' repo-scope-btn--active' : ''}`}
+                            onClick={() => switchScope('general')}
                         >
-                            General ({generalCount})
+                            <FiFolder size={15} /> General <span className="repo-scope-count">{generalCount}</span>
                         </button>
                         <button
-                            className={`tab ${activeScope === 'personal' ? 'active' : ''}`}
-                            onClick={() => setActiveScope('personal')}
-                            style={{
-                                padding: 'var(--space-3) 0',
-                                background: 'transparent',
-                                border: 'none',
-                                borderBottom: activeScope === 'personal' ? '2px solid var(--primary-500)' : '2px solid transparent',
-                                color: activeScope === 'personal' ? 'var(--primary-600)' : 'var(--text-muted)',
-                                fontWeight: activeScope === 'personal' ? '600' : 'normal',
-                                cursor: 'pointer'
-                            }}
+                            className={`repo-scope-btn${activeScope === 'personal' ? ' repo-scope-btn--active' : ''}`}
+                            onClick={() => switchScope('personal')}
                         >
-                            Personal ({personalCount})
+                            <FiUser size={15} /> Personal <span className="repo-scope-count">{personalCount}</span>
                         </button>
-
                     </div>
                 )}
 
                 {selectedObraId && !canViewGeneral && (
-                    <div className="tabs mb-6" style={{ borderBottom: '1px solid var(--surface-border)' }}>
-                        <span className="tab active" style={{ padding: 'var(--space-3) 0', borderBottom: '2px solid var(--primary-500)', color: 'var(--primary-600)', fontWeight: 600 }}>
-                            Mis Documentos ({personalCount})
+                    <div className="repo-scope">
+                        <span className="repo-scope-btn repo-scope-btn--active">
+                            <FiUser size={15} /> Mis documentos <span className="repo-scope-count">{personalCount}</span>
                         </span>
                     </div>
                 )}
@@ -470,42 +505,43 @@ export default function DocumentsRepository() {
                     </div>
                 )}
 
+                {/* ── Toolbar: breadcrumb + búsqueda ── */}
                 {selectedObraId && (
-                    <div className="card mb-6">
-                        <div className="documents-actions-bar">
-                            <div className="documents-filters">
-                                <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
-                                    <input
-                                        type="text"
-                                        placeholder="Buscar en el repositorio..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="form-input"
-                                        style={{ paddingLeft: '40px' }}
-                                    />
-                                    <FiSearch
-                                        style={{
-                                            position: 'absolute',
-                                            left: '12px',
-                                            top: '50%',
-                                            transform: 'translateY(-50%)',
-                                            color: 'var(--text-muted)'
-                                        }}
-                                    />
-                                </div>
-                                <div style={{ minWidth: '220px' }}>
-                                    <Select
-                                        ariaLabel="Filtrar por tipo"
-                                        leadingIcon={<FiFilter />}
-                                        value={filterType}
-                                        onChange={setFilterType}
-                                        options={[
-                                            { value: '', label: 'Todos los tipos' },
-                                            ...Object.entries(documentTypes).map(([key, label]) => ({ value: key, label: label as string })),
-                                        ]}
-                                    />
-                                </div>
-                            </div>
+                    <div className="repo-toolbar">
+                        <div className="repo-breadcrumb">
+                            <button
+                                className="repo-crumb"
+                                onClick={() => { setOpenFolder(null); setSearchTerm(''); }}
+                                disabled={showFolders}
+                            >
+                                <FiFolder size={14} /> {activeScope === 'personal' ? 'Personal' : 'General'}
+                            </button>
+                            {!isSearching && openFolder && (
+                                <>
+                                    <FiChevronRight size={13} className="repo-crumb-sep" />
+                                    <span className="repo-crumb repo-crumb--current">{FOLDERS[openFolder].label}</span>
+                                </>
+                            )}
+                            {isSearching && (
+                                <>
+                                    <FiChevronRight size={13} className="repo-crumb-sep" />
+                                    <span className="repo-crumb repo-crumb--current">Resultados de búsqueda</span>
+                                </>
+                            )}
+                        </div>
+                        <div className="repo-search">
+                            <FiSearch className="repo-search-icon" size={15} />
+                            <input
+                                type="text"
+                                placeholder="Buscar en todo el repositorio…"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                            {searchTerm && (
+                                <button className="repo-search-clear" onClick={() => setSearchTerm('')} aria-label="Limpiar búsqueda">
+                                    <FiX size={14} />
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}
@@ -516,160 +552,210 @@ export default function DocumentsRepository() {
                     </div>
                 )}
 
-                {!loading && selectedObraId && visibleDocuments.length === 0 && (
-                    <div className="card empty-state" style={{ padding: 'var(--space-12)' }}>
-                        <div className="empty-state-icon-container" style={{
-                            width: '80px',
-                            height: '80px',
-                            borderRadius: '50%',
-                            background: 'var(--surface-elevated)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            margin: '0 auto var(--space-6)'
-                        }}>
-                            <FiFileText size={40} style={{ color: 'var(--text-muted)' }} />
-                        </div>
-                        <h3 className="empty-state-title" style={{ fontSize: 'var(--text-xl)', fontWeight: 'bold', marginBottom: 'var(--space-2)' }}>
-                            No hay documentos en este apartado
-                        </h3>
-                        <p className="empty-state-description" style={{ color: 'var(--text-muted)', maxWidth: '400px', margin: '0 auto' }}>
-                            Ajusta los filtros o sube un nuevo archivo al repositorio.
-                        </p>
+                {/* ── Vista de carpetas (raíz) ── */}
+                {!loading && selectedObraId && showFolders && scopeDocuments.length > 0 && (
+                    <div className="repo-folder-grid">
+                        {FOLDER_ORDER.filter((k) => folderCounts[k]).map((k) => {
+                            const f = FOLDERS[k];
+                            const Icon = f.icon;
+                            return (
+                                <button key={k} className="repo-folder" onClick={() => setOpenFolder(k)}>
+                                    <div className="repo-folder-icon" style={{ background: `${f.color}1a`, color: f.color }}>
+                                        <Icon size={22} />
+                                    </div>
+                                    <div className="repo-folder-info">
+                                        <div className="repo-folder-name">{f.label}</div>
+                                        <div className="repo-folder-count">{folderCounts[k]} documento{folderCounts[k] === 1 ? '' : 's'}</div>
+                                    </div>
+                                    <FiChevronRight className="repo-folder-arrow" size={18} />
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
 
-                {!loading && selectedObraId && visibleDocuments.length > 0 && (
-                    <div className="card" style={{ padding: 'var(--space-2)', background: 'var(--surface-card)', border: '1px solid var(--surface-border)' }}>
-                        <div className="table-container">
-                            <table className="table table-compact" style={{ minWidth: '960px' }}>
-                            <thead>
-                                <tr>
-                                    <th style={{ width: '36%' }}>Documento</th>
-                                    <th style={{ width: '16%' }}>Tipo</th>
-                                    <th style={{ width: '16%' }}>Clasificacion</th>
-                                    <th style={{ width: '16%' }}>Autor</th>
-                                    <th style={{ width: '10%' }}>Fecha</th>
-                                    <th style={{ width: '6%' }}>Accion</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {visibleDocuments.map((doc) => {
-                                    const typeLabel = documentTypes[doc.tipo] || doc.tipo;
-                                    const fileKey = doc.s3Key || doc.archivoUrl;
-                                    const assignmentCount = doc.asignaciones?.length || 0;
-                                    const clasificacionLabel = doc.clasificacion || 'diario';
-                                    const isExpanded = Boolean(expandedRows[doc.documentId]);
-                                    return (
-                                        <Fragment key={doc.documentId}>
-                                            <tr>
-                                                <td>
-                                                    <div className="flex items-start gap-3">
-                                                        <div
-                                                            className="avatar avatar-sm"
-                                                            style={{ background: 'var(--primary-500)', width: '36px', height: '36px', flexShrink: 0, alignSelf: 'flex-start' }}
-                                                        >
-                                                            <FiFileText />
-                                                        </div>
-                                                        <div>
-                                                            <div className="font-semibold">{doc.titulo}</div>
-                                                            <div
-                                                                className="text-xs text-muted"
-                                                                style={{
-                                                                    overflow: 'hidden',
-                                                                    textOverflow: 'ellipsis',
-                                                                    display: '-webkit-box',
-                                                                    WebkitLineClamp: 1,
-                                                                    WebkitBoxOrient: 'vertical',
-                                                                    maxWidth: 420
-                                                                }}
-                                                            >
-                                                                {doc.descripcion || 'Sin descripcion'}
-                                                            </div>
-                                                            <div className="text-xs text-muted" style={{ marginTop: 4 }}>
-                                                                <FiUsers size={12} /> {assignmentCount} asignaciones
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <span className="badge badge-neutral">{typeLabel}</span>
-                                                </td>
-                                                <td>
-                                                    <span className="badge badge-secondary" style={{ textTransform: 'capitalize' }}>
-                                                        {clasificacionLabel}
-                                                    </span>
-                                                    {doc.fase && (
-                                                        <div className="text-xs text-muted" style={{ marginTop: 4 }}>Fase: {doc.fase}</div>
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    <div className="text-sm">{doc.creatorName || 'Sistema'}</div>
-                                                </td>
-                                                <td>
-                                                    <div className="text-sm">{formatDate(doc.createdAt)}</div>
-                                                </td>
-                                                <td>
-                                                    <div className="flex items-center gap-2">
-                                                        {fileKey ? (
-                                                            <>
-                                                                <button
-                                                                    className="btn btn-ghost btn-icon btn-sm"
-                                                                    onClick={() => handlePreview(doc)}
-                                                                    title="Previsualizar"
-                                                                >
-                                                                    <FiEye />
-                                                                </button>
-                                                                <button
-                                                                    className="btn btn-ghost btn-icon btn-sm"
-                                                                    onClick={() => handleDownload(doc)}
-                                                                    title="Descargar archivo"
-                                                                >
-                                                                    <FiDownload />
-                                                                </button>
-                                                            </>
-                                                        ) : (
-                                                            <span className="text-xs text-muted">-</span>
-                                                        )}
-                                                        <button
-                                                            className="btn btn-ghost btn-icon btn-sm"
-                                                            onClick={() => toggleRow(doc.documentId)}
-                                                            aria-expanded={isExpanded}
-                                                            title={isExpanded ? 'Ocultar detalles' : 'Mostrar detalles'}
-                                                        >
-                                                            {isExpanded ? <FiChevronUp /> : <FiChevronDown />}
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {isExpanded && (
-                                                <tr className="table-expand-row">
-                                                    <td colSpan={6}>
-                                                        <div className="table-expand-content">
-                                                            <div>
-                                                                <strong>Descripcion:</strong> {doc.descripcion || 'Sin descripcion'}
-                                                            </div>
-                                                            <div>
-                                                                <strong>Archivo:</strong> {doc.archivoNombre || 'Sin archivo'}
-                                                            </div>
-                                                            <div>
-                                                                <strong>Clasificacion:</strong> {clasificacionLabel}
-                                                            </div>
-                                                            <div>
-                                                                <strong>Asignaciones:</strong> {assignmentCount}
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </Fragment>
-                                    );
-                                })}
-                            </tbody>
-                            </table>
-                        </div>
+                {/* ── Scope vacío ── */}
+                {!loading && selectedObraId && showFolders && scopeDocuments.length === 0 && (
+                    <div className="repo-empty">
+                        <div className="repo-empty-icon"><FiFolder size={34} /></div>
+                        <h3>{activeScope === 'personal' ? 'Aún no tienes documentos asignados' : 'No hay documentos en esta obra'}</h3>
+                        <p>{activeScope === 'personal'
+                            ? 'Los documentos que se te asignen aparecerán aquí, organizados por carpeta.'
+                            : 'Sube un archivo o registra documentos DS44 para comenzar a poblar el repositorio.'}</p>
                     </div>
                 )}
+
+                {/* ── Lista de documentos (dentro de carpeta o búsqueda) ── */}
+                {!loading && selectedObraId && !showFolders && (
+                    visibleDocuments.length === 0 ? (
+                        <div className="repo-empty">
+                            <div className="repo-empty-icon"><FiFileText size={34} /></div>
+                            <h3>Sin resultados</h3>
+                            <p>{isSearching ? 'No encontramos documentos que coincidan con tu búsqueda.' : 'Esta carpeta no tiene documentos.'}</p>
+                        </div>
+                    ) : (
+                        <div className="repo-doc-list">
+                            {visibleDocuments.map((doc) => {
+                                const typeLabel = documentTypes[doc.tipo] || doc.tipo;
+                                const fileKey = doc.s3Key || doc.archivoUrl;
+                                const assignmentCount = doc.asignaciones?.length || 0;
+                                const fk = folderOf(doc);
+                                return (
+                                    <div key={doc.documentId} className="repo-doc">
+                                        <div className="repo-doc-icon" style={{ color: FOLDERS[fk].color }}>
+                                            <FiFileText size={18} />
+                                        </div>
+                                        <div className="repo-doc-main">
+                                            <div className="repo-doc-title">{doc.titulo}</div>
+                                            <div className="repo-doc-meta">
+                                                <span className="badge badge-neutral">{typeLabel}</span>
+                                                {isSearching && (
+                                                    <span className="repo-doc-folder"><FiFolder size={11} /> {FOLDERS[fk].label}</span>
+                                                )}
+                                                <span>{doc.creatorName || 'Sistema'}</span>
+                                                <span>· {formatDate(doc.createdAt)}</span>
+                                                {assignmentCount > 0 && (
+                                                    <span>· <FiUsers size={11} /> {assignmentCount}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="repo-doc-actions">
+                                            {fileKey ? (
+                                                <>
+                                                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handlePreview(doc)} title="Previsualizar">
+                                                        <FiEye />
+                                                    </button>
+                                                    <button className="btn btn-ghost btn-icon btn-sm" onClick={() => handleDownload(doc)} title="Descargar">
+                                                        <FiDownload />
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <span className="text-xs text-muted">Sin archivo</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )
+                )}
+
+                <style>{`
+                    .repo-scope {
+                        display: inline-flex; gap: 4px; padding: 4px;
+                        background: var(--surface-elevated);
+                        border: 1px solid var(--surface-border);
+                        border-radius: var(--radius-lg);
+                        margin-bottom: var(--space-5);
+                    }
+                    .repo-scope-btn {
+                        display: inline-flex; align-items: center; gap: 7px;
+                        padding: 7px 14px; border: none; background: none; cursor: pointer;
+                        font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
+                        border-radius: var(--radius-md); transition: all var(--transition-fast);
+                    }
+                    .repo-scope-btn:hover { color: var(--text-primary); }
+                    .repo-scope-btn--active { background: var(--surface-card); color: var(--primary-600); box-shadow: var(--shadow-sm); }
+                    .repo-scope-count {
+                        font-size: 0.72rem; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+                        background: var(--surface-border); color: var(--text-muted);
+                    }
+                    .repo-scope-btn--active .repo-scope-count { background: var(--accent-tint); color: var(--accent-text); }
+
+                    .repo-toolbar {
+                        display: flex; align-items: center; justify-content: space-between;
+                        gap: var(--space-4); margin-bottom: var(--space-4); flex-wrap: wrap;
+                    }
+                    .repo-breadcrumb { display: flex; align-items: center; gap: 6px; min-width: 0; }
+                    .repo-crumb {
+                        display: inline-flex; align-items: center; gap: 6px;
+                        background: none; border: none; padding: 4px 8px; border-radius: var(--radius-sm);
+                        font-size: 0.85rem; font-weight: 600; color: var(--text-muted); cursor: pointer;
+                    }
+                    .repo-crumb:not(:disabled):hover { color: var(--primary-600); background: var(--surface-elevated); }
+                    .repo-crumb:disabled { cursor: default; }
+                    .repo-crumb--current { color: var(--text-primary); }
+                    .repo-crumb-sep { color: var(--surface-border); flex-shrink: 0; }
+
+                    .repo-search {
+                        position: relative; display: flex; align-items: center;
+                        flex: 1; max-width: 360px; min-width: 220px;
+                    }
+                    .repo-search-icon { position: absolute; left: 12px; color: var(--text-muted); pointer-events: none; }
+                    .repo-search input {
+                        width: 100%; padding: 9px 34px 9px 36px;
+                        border: 1px solid var(--surface-border); border-radius: var(--radius-md);
+                        background: var(--surface-card); font-size: 0.88rem; color: var(--text-primary);
+                    }
+                    .repo-search input:focus { outline: none; border-color: var(--primary-400); box-shadow: 0 0 0 3px var(--accent-tint); }
+                    .repo-search-clear {
+                        position: absolute; right: 8px; display: flex; padding: 4px;
+                        background: none; border: none; color: var(--text-muted); cursor: pointer; border-radius: 50%;
+                    }
+                    .repo-search-clear:hover { background: var(--surface-elevated); color: var(--text-primary); }
+
+                    .repo-folder-grid {
+                        display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                        gap: var(--space-3);
+                    }
+                    .repo-folder {
+                        display: flex; align-items: center; gap: var(--space-3);
+                        padding: var(--space-4); text-align: left; cursor: pointer;
+                        background: var(--surface-card); border: 1px solid var(--surface-border);
+                        border-radius: var(--radius-lg); transition: all var(--transition-fast);
+                    }
+                    .repo-folder:hover { border-color: var(--primary-300); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+                    .repo-folder-icon {
+                        width: 46px; height: 46px; border-radius: var(--radius-md);
+                        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+                    }
+                    .repo-folder-info { flex: 1; min-width: 0; }
+                    .repo-folder-name { font-weight: 700; font-size: 0.92rem; color: var(--text-primary); }
+                    .repo-folder-count { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+                    .repo-folder-arrow { color: var(--text-muted); flex-shrink: 0; }
+
+                    .repo-doc-list {
+                        display: flex; flex-direction: column;
+                        border: 1px solid var(--surface-border); border-radius: var(--radius-lg); overflow: hidden;
+                        background: var(--surface-card);
+                    }
+                    .repo-doc {
+                        display: flex; align-items: center; gap: var(--space-3);
+                        padding: var(--space-3) var(--space-4);
+                        border-bottom: 1px solid var(--surface-border); transition: background var(--transition-fast);
+                    }
+                    .repo-doc:last-child { border-bottom: none; }
+                    .repo-doc:hover { background: var(--surface-elevated); }
+                    .repo-doc-icon {
+                        width: 38px; height: 38px; border-radius: var(--radius-md); flex-shrink: 0;
+                        display: flex; align-items: center; justify-content: center; background: var(--surface-elevated);
+                    }
+                    .repo-doc-main { flex: 1; min-width: 0; }
+                    .repo-doc-title { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                    .repo-doc-meta {
+                        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+                        font-size: 0.76rem; color: var(--text-muted); margin-top: 3px;
+                    }
+                    .repo-doc-folder { display: inline-flex; align-items: center; gap: 3px; color: var(--text-secondary); }
+                    .repo-doc-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+                    .repo-empty {
+                        text-align: center; padding: var(--space-10) var(--space-6);
+                        border: 1px dashed var(--surface-border); border-radius: var(--radius-lg);
+                    }
+                    .repo-empty-icon {
+                        width: 72px; height: 72px; border-radius: 50%; margin: 0 auto var(--space-4);
+                        background: var(--surface-elevated); color: var(--text-muted);
+                        display: flex; align-items: center; justify-content: center;
+                    }
+                    .repo-empty h3 { font-size: var(--text-lg); font-weight: 700; margin: 0 0 var(--space-2); }
+                    .repo-empty p { color: var(--text-muted); max-width: 420px; margin: 0 auto; font-size: 0.88rem; }
+
+                    @media (max-width: 560px) {
+                        .repo-toolbar { flex-direction: column; align-items: stretch; }
+                        .repo-search { max-width: none; }
+                    }
+                `}</style>
             </div>
 
             <DocumentPreviewModal

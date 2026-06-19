@@ -26,7 +26,7 @@ import { useToast } from '../context/ToastContext';
 import { useObraContext } from '../context/ObraContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import SignatureModal from '../components/SignatureModal';
-import { Modal, Select } from '../components/ui';
+import { Modal, Select, PageHeader } from '../components/ui';
 
 const DOCUMENT_TYPES: Record<string, { label: string; color: string; category: string }> = {
     IRL: { label: 'Informe de Riesgos Laborales', color: 'var(--primary-500)', category: 'normativo' },
@@ -45,7 +45,7 @@ const DOCUMENT_TYPES: Record<string, { label: string; color: string; category: s
 export default function Documents() {
     const { user, hasPermission } = useAuth();
     const canSubirDocumento = hasPermission(PERMISSIONS.DOCUMENTOS_SUBIR);
-    const { selectedObraId } = useObraContext();
+    const { selectedObraId, selectedObra } = useObraContext();
     const { isOnline, pendingCount, signDocument, syncPendingSignatures } = useOfflineSignature();
     const [activeTab, setActiveTab] = useState<'normativos' | 'diarios'>('normativos');
     const activeCategory = activeTab === 'normativos' ? 'normativo' : 'diario';
@@ -430,17 +430,19 @@ export default function Documents() {
 
 
             <div className="page-content">
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <h2 className="page-header-title">
-                            <FiFileText className="text-primary-500" />
-                            Gestión Documental Normativa
-                        </h2>
-                        <p className="page-header-description">
-                            Control de políticas, reglamentos, procedimientos y matrices de riesgo.
-                        </p>
-                    </div>
-                </div>
+                <PageHeader
+                    banner
+                    scope={{ label: selectedObra?.nombre ? `Obra · ${selectedObra.nombre}` : 'Documentos' }}
+                    title="Gestión documental"
+                    description="Políticas, reglamentos, procedimientos y matrices de riesgo, con difusión y firma de los trabajadores."
+                    actions={
+                        canSubirDocumento ? (
+                            <button className="btn btn-save" onClick={() => setShowModal(true)}>
+                                <FiPlus /> Nuevo documento
+                            </button>
+                        ) : undefined
+                    }
+                />
 
                 {/* Offline Banner */}
                 {(!isOnline || pendingCount > 0) && (
@@ -517,52 +519,30 @@ export default function Documents() {
                     </button>
                 </div>
 
-                {/* Actions */}
-                <div className="card mb-6">
-                    <div className="documents-actions-bar">
-                        <div className="documents-filters">
-                            <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
-                                <input
-                                    type="text"
-                                    placeholder="Buscar documentos..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="form-input"
-                                    style={{ paddingLeft: '40px' }}
-                                />
-                                <FiSearch
-                                    style={{
-                                        position: 'absolute',
-                                        left: '12px',
-                                        top: '50%',
-                                        transform: 'translateY(-50%)',
-                                        color: 'var(--text-muted)'
-                                    }}
-                                />
-                            </div>
-
-                            <div style={{ minWidth: '200px' }}>
-                                <Select
-                                    ariaLabel="Filtrar por tipo"
-                                    leadingIcon={<FiFilter />}
-                                    value={filterType}
-                                    onChange={setFilterType}
-                                    options={[
-                                        { value: '', label: 'Todos los tipos' },
-                                        ...Object.entries(DOCUMENT_TYPES)
-                                            .filter(([, info]) => info.category === activeCategory)
-                                            .map(([key, { label }]) => ({ value: key, label })),
-                                    ]}
-                                />
-                            </div>
-                        </div>
-
-                        {canSubirDocumento && (
-                            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-                                <FiPlus />
-                                Nuevo Documento
-                            </button>
-                        )}
+                {/* Toolbar: búsqueda + filtro */}
+                <div className="tbar">
+                    <div className="tbar-search">
+                        <FiSearch size={15} />
+                        <input
+                            type="text"
+                            placeholder="Buscar documentos…"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                    <div style={{ minWidth: '210px' }}>
+                        <Select
+                            ariaLabel="Filtrar por tipo"
+                            leadingIcon={<FiFilter />}
+                            value={filterType}
+                            onChange={setFilterType}
+                            options={[
+                                { value: '', label: 'Todos los tipos' },
+                                ...Object.entries(DOCUMENT_TYPES)
+                                    .filter(([, info]) => info.category === activeCategory)
+                                    .map(([key, { label }]) => ({ value: key, label })),
+                            ]}
+                        />
                     </div>
                 </div>
 

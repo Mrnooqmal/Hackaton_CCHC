@@ -12,7 +12,7 @@ import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData, Incide
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
-import { Modal, Select } from '../components/ui';
+import { Modal, Select, PageHeader } from '../components/ui';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
 
@@ -946,39 +946,32 @@ export default function Incidents() {
     return (
         <>
             <div className="page-content">
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <h2 className="page-header-title">
-                            <FiAlertTriangle className="text-blue-500" />
-                            Control de eventos
-                        </h2>
-                        <p className="page-header-description">
-                            {selectedObra
-                                ? <>Obra: <strong>{selectedObra.nombre}</strong></>
-                                : 'Sistema de reporte, seguimiento y análisis estadístico de seguridad.'}
-                        </p>
-                    </div>
-                    <div className="page-header-actions" style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                        <button
-                            className="btn btn-secondary"
-                            disabled={!selectedObraId}
-                            onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'hallazgo' })); setFlashMode(false); setStep(1); setShowModal(true); }}
-                        >
-                            <FiPlus className="mr-2" />
-                            Reportar hallazgo
-                        </button>
-                        {canCreateIncidente && (
+                <PageHeader
+                    banner
+                    scope={{ label: selectedObra?.nombre ? `Obra · ${selectedObra.nombre}` : 'Seguridad' }}
+                    title="Incidentes y hallazgos"
+                    description="Reporte, seguimiento y análisis estadístico de incidentes, accidentes y hallazgos de seguridad."
+                    actions={
+                        <>
                             <button
-                                className="btn btn-primary"
+                                className="btn btn-secondary"
                                 disabled={!selectedObraId}
-                                onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'incidente' })); setStep(1); setShowModal(true); }}
+                                onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'hallazgo' })); setFlashMode(false); setStep(1); setShowModal(true); }}
                             >
-                                <FiPlus className="mr-2" />
-                                Reportar Incidente
+                                <FiPlus /> Reportar hallazgo
                             </button>
-                        )}
-                    </div>
-                </div>
+                            {canCreateIncidente && (
+                                <button
+                                    className="btn btn-save"
+                                    disabled={!selectedObraId}
+                                    onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'incidente' })); setStep(1); setShowModal(true); }}
+                                >
+                                    <FiPlus /> Reportar incidente
+                                </button>
+                            )}
+                        </>
+                    }
+                />
 
                 {/* Gate: obra requerida */}
                 {!selectedObraId && (

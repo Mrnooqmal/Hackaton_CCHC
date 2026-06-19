@@ -4,7 +4,8 @@ import {
     FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
     FiUpload, FiX, FiInfo, FiUsers, FiArrowRight, FiAlertTriangle,
 } from 'react-icons/fi';
-import { AlertBanner, Modal, Select, PageHeader, SegmentedControl } from '../components/ui';
+import { AlertBanner, Modal, Select, PageHeader, CollectionView } from '../components/ui';
+import type { CollectionMode } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBrand, DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
 import { useToast } from '../context/ToastContext';
@@ -417,7 +418,7 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
                     El rol <b>Administrador</b> tiene acceso total y no es editable. Al eliminar un rol con personas
                     asignadas, deberás reasignarlas a otro rol.
                 </span>
-                <button className="btn btn-primary" disabled={!dirty || saving} onClick={save}>
+                <button className="btn btn-save" disabled={!dirty || saving} onClick={save}>
                     {saving ? <div className="spinner" /> : <><FiSave /> Guardar cambios</>}
                 </button>
             </div>
@@ -493,9 +494,6 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
 }
 
 // ── Cargos (solo lectura + toggle lista/grilla) ───────────────────────────────
-// Crear/editar cargos y cargar su IRL + kit vive en "Onboarding por cargo"
-// (/cargos-onboarding): crear un cargo va de la mano con cargar su IRL. Aquí solo
-// se ve el catálogo y cuántas personas tiene cada cargo.
 function CargosTab({ tenantId, personas }: {
     tenantId: string;
     personas: PersonaResponse[];
@@ -504,7 +502,8 @@ function CargosTab({ tenantId, personas }: {
     const [cargos, setCargos] = useState<TenantCargo[]>([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState('');
-    const [view, setView] = useState<'lista' | 'grilla'>('lista');
+    const [mode, setMode] = useState<CollectionMode>('list');
+    const [search, setSearch] = useState('');
 
     useEffect(() => {
         let alive = true;
@@ -517,44 +516,76 @@ function CargosTab({ tenantId, personas }: {
 
     const countByCargo = (codigo: string) => personas.filter((p) => personaActiva(p) && p.cargo === codigo).length;
 
+    const filtered = cargos.filter((c) => {
+        if (!search) return true;
+        const s = search.toLowerCase();
+        return c.label.toLowerCase().includes(s) || c.codigo.toLowerCase().includes(s);
+    });
+
     if (loading) return <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
 
-    return (
-        <div>
-            <div className="card me-banner">
-                <FiInfo style={{ flexShrink: 0, color: 'var(--info-500)' }} />
-                <span className="text-sm text-muted" style={{ flex: 1 }}>
-                    Los cargos son de la <b>empresa</b> y aplican a todas las obras. Para crear un cargo y cargar su IRL usa <b>Onboarding por cargo</b>.
-                </span>
-                <SegmentedControl
-                    value={view}
-                    onChange={(v) => setView(v as 'lista' | 'grilla')}
-                    options={[{ value: 'lista', label: '≡ Lista' }, { value: 'grilla', label: '⊞ Grilla' }]}
-                />
-                <Link to="/cargos-onboarding" className="btn btn-primary btn-sm">
-                    Onboarding por cargo <FiArrowRight size={13} />
-                </Link>
-            </div>
+    const tagLabel = (c: TenantCargo) => c.legacy ? 'heredado' : c.seed ? 'predefinido' : 'personalizado';
+    const tagColor = (c: TenantCargo) => c.legacy ? 'var(--text-muted)' : c.seed ? '#006edc' : '#10b981';
 
+    const listView = (
+        <div className="me-cargos-list">
+            {filtered.length === 0 && <div className="text-sm text-muted" style={{ padding: '12px 0' }}>No hay cargos que coincidan.</div>}
+            {filtered.map((c) => {
+                const count = countByCargo(c.codigo);
+                return (
+                    <Link key={c.codigo} to={`/cargos-onboarding?cargo=${c.codigo}`} className="me-cargo-row">
+                        <div className="me-cargo-row-name">{c.label}</div>
+                        <div className="me-cargo-row-code">{c.codigo}</div>
+                        <div className="me-cargo-row-meta">
+                            <span className="me-cargo-row-tag" style={{ color: tagColor(c) }}>{tagLabel(c)}</span>
+                            <span className="me-cargo-row-tag">{c.kit?.length || 0} ítems kit</span>
+                            <span className="me-cargo-row-count"><FiUsers size={11} /> {count}</span>
+                        </div>
+                        <FiArrowRight size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    </Link>
+                );
+            })}
+        </div>
+    );
+
+    const gridView = (
+        <div className="me-cargos-grid2">
+            {filtered.length === 0 && <div className="text-sm text-muted" style={{ padding: '12px 0' }}>No hay cargos que coincidan.</div>}
+            {filtered.map((c) => {
+                const count = countByCargo(c.codigo);
+                return (
+                    <Link key={c.codigo} to={`/cargos-onboarding?cargo=${c.codigo}`} className="me-cargo-card">
+                        <div className="me-cargo-card-name">{c.label}</div>
+                        <div className="me-cargo-card-code">{c.codigo}</div>
+                        <div className="me-cargo-card-footer">
+                            <span style={{ fontSize: '0.72rem', color: tagColor(c), fontWeight: 600 }}>{tagLabel(c)}</span>
+                            <span className="me-cargo-row-count"><FiUsers size={11} /> {count}</span>
+                        </div>
+                    </Link>
+                );
+            })}
+        </div>
+    );
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
 
-            <div className={view === 'grilla' ? 'me-cargos-grid' : 'me-cargos'}>
-                {cargos.map((c) => {
-                    const count = countByCargo(c.codigo);
-                    return (
-                        <div key={c.codigo} className={`card me-cargo${view === 'grilla' ? ' me-cargo--grid' : ''}`}>
-                            <div className="me-cargo-main">
-                                <span className="me-cargo-name">{c.label}</span>
-                                <span className="text-xs text-muted" style={{ fontFamily: 'monospace' }}>{c.codigo}</span>
-                            </div>
-                            <span className="me-tag">{c.legacy ? 'heredado' : c.seed ? 'predefinido' : 'personalizado'}</span>
-                            <span className="me-tag">{c.kit?.length || 0} ítems</span>
-                            <span className="me-count" title="Personas con este cargo"><FiUsers size={12} /> {count}</span>
-                        </div>
-                    );
-                })}
-                {cargos.length === 0 && <div className="text-sm text-muted" style={{ padding: 16 }}>No hay cargos. Créalos en Onboarding por cargo.</div>}
-            </div>
+            <CollectionView
+                searchValue={search}
+                onSearchChange={setSearch}
+                searchPlaceholder="Buscar cargo…"
+                mode={mode}
+                onModeChange={setMode}
+                count={filtered.length}
+                list={listView}
+                grid={gridView}
+                actions={
+                    <Link to="/cargos-onboarding" className="btn btn-primary btn-sm">
+                        Onboarding por cargo <FiArrowRight size={13} />
+                    </Link>
+                }
+            />
         </div>
     );
 }
@@ -649,13 +680,33 @@ const styles = `
 .me-perm.disabled { cursor: default; opacity: .7; }
 .me-perm input { margin-top: 3px; flex-shrink: 0; }
 
-.me-cargos { display: flex; flex-direction: column; gap: 8px; }
-.me-cargos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.me-cargo { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
-.me-cargo--grid { flex-direction: column; align-items: flex-start; padding: 16px; gap: 8px; }
-.me-cargo--grid .me-cargo-main { margin-bottom: 4px; }
-.me-cargo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.me-cargo-name { font-weight: 500; }
+.me-cargos-list { display: flex; flex-direction: column; }
+.me-cargo-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 12px; border-radius: var(--radius-md);
+    text-decoration: none; color: inherit;
+    transition: background var(--transition-fast);
+    border-bottom: 1px solid var(--surface-border);
+}
+.me-cargo-row:last-child { border-bottom: none; }
+.me-cargo-row:hover { background: var(--surface-hover); }
+.me-cargo-row-name { font-weight: 600; font-size: var(--text-sm); color: var(--text-primary); flex: 1; min-width: 120px; }
+.me-cargo-row-code { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); min-width: 80px; }
+.me-cargo-row-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.me-cargo-row-tag { font-size: 11px; font-weight: 500; }
+.me-cargo-row-count { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); background: var(--surface-hover); padding: 2px 7px; border-radius: 999px; }
+.me-cargos-grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.me-cargo-card {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 14px 16px; border-radius: var(--radius-md);
+    border: 1px solid var(--surface-border); background: var(--surface);
+    text-decoration: none; color: inherit;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.me-cargo-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,110,220,0.08); }
+.me-cargo-card-name { font-weight: 600; font-size: var(--text-sm); color: var(--text-primary); }
+.me-cargo-card-code { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.me-cargo-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
 .me-tag { font-size: var(--text-xs); color: var(--text-muted); background: var(--surface-hover); padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
 
 .me-reassign-warn { display: flex; align-items: center; gap: 10px; background: var(--surface-hover); padding: 10px 12px; border-radius: var(--radius-md); }

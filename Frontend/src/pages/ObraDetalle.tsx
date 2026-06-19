@@ -27,7 +27,52 @@ interface Ds44Item {
   documentId?: string;
   archivoSubido: boolean;
   document?: any;
+  /** Documento que se gestiona EXCLUSIVAMENTE a nivel empresa (Onboarding):
+   *  no se sube por obra, la obra solo refleja el estado corporativo. */
+  tenantLevel?: boolean;
+  /** El requisito está cubierto por el documento corporativo subido en Onboarding
+   *  (1 documento para todas las obras). */
+  fromEmpresa?: boolean;
+  empresaPlantilla?: { fileKey: string; nombre?: string; subidoEn?: string };
 }
+
+// Documentos base que viven a NIVEL EMPRESA (Onboarding) y se comparten entre
+// todas las obras. No se vuelven a subir por obra: la obra hereda el corporativo.
+const TENANT_LEVEL_PLAN_KEYS = new Set(['POLITICA_SSO', 'REGLAMENTO_INTERNO']);
+
+// Extrae las plantillas corporativas (por tipo de documento) del catálogo de
+// cargos del tenant. Estas plantillas son las que se suben en /cargos-onboarding.
+const extractEmpresaDocs = (cargos: any[]): Record<string, { fileKey: string; nombre?: string; subidoEn?: string }> => {
+  const out: Record<string, { fileKey: string; nombre?: string; subidoEn?: string }> = {};
+  for (const c of cargos || []) {
+    for (const it of (c?.kit || [])) {
+      const fileKey = it?.plantilla?.fileKey;
+      if (fileKey && it?.tipo && !out[it.tipo]) {
+        out[it.tipo] = { fileKey, nombre: it.plantilla.nombre, subidoEn: it.plantilla.subidoEn };
+      }
+    }
+  }
+  return out;
+};
+
+// Construye la lista de documentos base de la obra reconciliando:
+//  1) documentos propios de la obra (clasificacion 'obra'), y
+//  2) documentos corporativos heredados (Política SST, Reglamento Interno).
+const buildDs44PlanDocs = (
+  docsObra: any[],
+  empresaDocs: Record<string, { fileKey: string; nombre?: string; subidoEn?: string }>,
+): Ds44Item[] =>
+  DS44_PLAN_DOCS.map((required) => {
+    // Documentos corporativos: fuente única en Onboarding. No se suben por obra;
+    // la obra refleja el estado de empresa (presente / falta en empresa).
+    if (TENANT_LEVEL_PLAN_KEYS.has(required.key)) {
+      const emp = required.tipos.map((t) => empresaDocs[t]).find(Boolean);
+      return { ...required, tenantLevel: true, archivoSubido: Boolean(emp), fromEmpresa: Boolean(emp), empresaPlantilla: emp };
+    }
+    const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
+    const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
+    return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
+  });
 
 interface DoItem {
   key: string;
@@ -62,6 +107,7 @@ export default function ObraDetalle() {
   const [actividades, setActividades] = useState<any[]>([]);
   const [obraSignatureRequests, setObraSignatureRequests] = useState<SignatureRequest[]>([]);
   const [ds44Docs, setDs44Docs] = useState<Ds44Item[]>([]);
+  const [empresaDocsByTipo, setEmpresaDocsByTipo] = useState<Record<string, { fileKey: string; nombre?: string; subidoEn?: string }>>({});
   const [obraDocs, setObraDocs] = useState<any[]>([]); // documentos clasificacion 'obra' (incluye procedimientos DO)
   const [tenantSize, setTenantSize] = useState<number | null>(null); // cantidadTrabajadores de la entidad (condicionales DO)
   const [firmaAsistidaOpen, setFirmaAsistidaOpen] = useState(false);
@@ -419,21 +465,23 @@ export default function ObraDetalle() {
 
         setLoading(false); // UI visible aquí
 
-        // Fase 2 — background paralelo: documentos, incidentes, actividades, firmas
+        // Fase 2 — background paralelo: documentos, incidentes, actividades, firmas,
+        // y catálogo de cargos (para heredar documentos corporativos de la obra).
         const tenantId = obraData?.tenantId || localStorage.getItem('tenant_id') || '';
-        const [docsObraRes, docsPrevRes, incidentsRes, activitiesRes, sigRes] = await Promise.all([
+        const [docsObraRes, docsPrevRes, incidentsRes, activitiesRes, sigRes, cargosRes] = await Promise.all([
           documentsApi.list({ obraId, clasificacion: 'obra' } as any),
           documentsApi.list({ obraId, clasificacion: 'diario' } as any),
           incidentsApi.list(),
           activitiesApi.list(),
           signatureRequestsApi.list({ tenantId, obraId }),
+          tenantsApi.getCargos(tenantId),
         ]);
 
+        const empresaDocs = extractEmpresaDocs(cargosRes.success && cargosRes.data ? cargosRes.data.cargos || [] : []);
+        setEmpresaDocsByTipo(empresaDocs);
+
         const docsObra = docsObraRes.success && docsObraRes.data ? docsObraRes.data.documents || [] : [];
-        setDs44Docs(DS44_PLAN_DOCS.map((required) => {
-          const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-          return { ...required, documentId: existing?.documentId, archivoSubido: Boolean(existing?.s3Key || existing?.archivoUrl), document: existing };
-        }));
+        setDs44Docs(buildDs44PlanDocs(docsObra, empresaDocs));
         setObraDocs(docsObra);
 
         const ds44Types = new Set([...DS44_ONBOARDING_ITEMS.map(i => i.tipo), ...DS44_PLAN_DOCS.flatMap(req => req.tipos)]);
@@ -483,18 +531,13 @@ export default function ObraDetalle() {
     ]);
     if (docsObraRes.success && docsObraRes.data) {
       const docsObra = docsObraRes.data.documents || [];
-      const mappedDs44 = DS44_PLAN_DOCS.map((required) => {
-        const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-        const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-        return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
-      });
-      setDs44Docs(mappedDs44);
+      setDs44Docs(buildDs44PlanDocs(docsObra, empresaDocsByTipo));
       setObraDocs(docsObra);
     }
     if (sigRes.success && sigRes.data) {
       setObraSignatureRequests(sigRes.data.requests || []);
     }
-  }, [obraId]);
+  }, [obraId, empresaDocsByTipo]);
 
   const reloadActividades = useCallback(async () => {
     const res = await activitiesApi.list();
@@ -1319,6 +1362,20 @@ export default function ObraDetalle() {
     }
   };
 
+  // Abre la plantilla corporativa heredada (Política SST / Reglamento Interno).
+  const previewEmpresaDoc = async (fileKey: string) => {
+    if (!fileKey) return;
+    setDs44Previewing(true);
+    try {
+      const res = await uploadsApi.getDownloadUrl(fileKey);
+      if (res.success && res.data?.downloadUrl) window.open(res.data.downloadUrl, '_blank');
+    } catch (error) {
+      console.error('Error opening company document:', error);
+    } finally {
+      setDs44Previewing(false);
+    }
+  };
+
   const handlePreviewDocument = async () => {
     const fileKey = selectedDs44Detail?.s3Key || selectedDs44Detail?.archivoUrl;
     if (!fileKey) return;
@@ -1840,6 +1897,45 @@ export default function ObraDetalle() {
                     const fechaCaducidad = getDocExpiryDate(doc.document);
                     const isExpired = Boolean(fechaCaducidad && new Date(fechaCaducidad) < new Date());
                     const firmasCompletas = total > 0 && firmadas === total;
+
+                    // Documento corporativo (Política SST / Reglamento Interno): fuente
+                    // única en Onboarding, aplica a todas las obras. No se sube por obra.
+                    if (doc.tenantLevel) {
+                      return (
+                        <div key={doc.key} className="ds44-doc-row">
+                          <div style={{ minWidth: 0 }}>
+                            <div className="font-medium" style={{ fontSize: '0.9rem' }}>{doc.titulo}</div>
+                            <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                              {doc.fromEmpresa
+                                ? <>Documento de empresa · aplica a todas las obras{doc.empresaPlantilla?.nombre && ` · ${doc.empresaPlantilla.nombre}`}</>
+                                : 'Documento de empresa · se gestiona en Onboarding'}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
+                            <span className={`badge ${doc.fromEmpresa ? 'badge-info' : 'badge-danger'}`}>
+                              {doc.fromEmpresa ? 'Empresa' : 'Falta en empresa'}
+                            </span>
+                            {doc.fromEmpresa && doc.empresaPlantilla?.fileKey && (
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                type="button"
+                                onClick={() => previewEmpresaDoc(doc.empresaPlantilla!.fileKey)}
+                              >
+                                Ver
+                              </button>
+                            )}
+                            <button
+                              className={doc.fromEmpresa ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
+                              type="button"
+                              onClick={() => navigate('/cargos-onboarding')}
+                            >
+                              {doc.fromEmpresa ? 'Gestionar' : 'Subir en Onboarding'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     const badgeClass = isExpired ? 'badge-danger' : firmasCompletas ? 'badge-success' : doc.archivoSubido ? 'badge-warning' : 'badge-danger';
                     const badgeLabel = isExpired ? 'Vencido' : firmasCompletas ? 'Completo' : doc.archivoSubido ? 'Pendiente de firma' : 'Sin documento';
                     return (

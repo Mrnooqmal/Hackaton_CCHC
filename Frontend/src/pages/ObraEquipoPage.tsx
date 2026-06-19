@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { obrasApi, workersApi } from '../api/client';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { AlertBanner, PageHeader } from '../components/ui';
 import { PERMISSIONS } from '../permissions';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
-import { FiSearch, FiUserPlus, FiUser, FiCheck, FiX } from 'react-icons/fi';
+import { useNavigate } from 'react-router-dom';
+import { FiSearch, FiUserPlus, FiCheck, FiX } from 'react-icons/fi';
 import { LuCircleCheck } from 'react-icons/lu';
 
 const initials = (nombre: string, apellido?: string) =>
@@ -15,6 +16,7 @@ const initials = (nombre: string, apellido?: string) =>
 export default function ObraEquipoPage() {
     const { user, hasPermission } = useAuth();
     const { obraId } = useParams<{ obraId: string }>();
+    const navigate = useNavigate();
     const { options: cargoOptions } = useCargoCatalog();
 
     const canAsignar = hasPermission(PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES);
@@ -27,6 +29,7 @@ export default function ObraEquipoPage() {
     const [updating, setUpdating] = useState<string | null>(null);
     const [toast, setToast] = useState<string | null>(null);
     const [search, setSearch] = useState('');
+    const [searchAssigned, setSearchAssigned] = useState('');
     // cargo selection per worker (for adding/updating)
     const [assignCargos, setAssignCargos] = useState<Record<string, string[]>>({});
     // firma asistida
@@ -145,6 +148,17 @@ export default function ObraEquipoPage() {
     const activeAssigned = assigned.filter((w) => w.estado !== 'inactivo');
     const inactiveAssigned = assigned.filter((w) => w.estado === 'inactivo');
 
+    const filteredActiveAssigned = useMemo(() => {
+        const s = searchAssigned.toLowerCase();
+        if (!s) return activeAssigned;
+        return activeAssigned.filter(
+            (w) =>
+                w.nombre?.toLowerCase().includes(s) ||
+                (w.apellido || '').toLowerCase().includes(s) ||
+                w.rut?.toLowerCase().includes(s)
+        );
+    }, [activeAssigned, searchAssigned]);
+
     const obraName = obra?.nombre || obra?.codigo || obraId || '…';
 
     if (loading) return (
@@ -172,11 +186,23 @@ export default function ObraEquipoPage() {
                         <div className="eq-section-title">En esta obra</div>
                         <div className="eq-section-sub">{activeAssigned.length} activos{inactiveAssigned.length > 0 ? ` · ${inactiveAssigned.length} dados de baja` : ''}</div>
                     </div>
-                    {canFirmaAsistida && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => { setFirmaWorkerId(undefined); setFirmaOpen(true); }}>
-                            Firma asistida
-                        </button>
-                    )}
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div className="eq-search-wrap">
+                            <FiSearch size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                            <input
+                                className="form-input"
+                                style={{ flex: 1, fontSize: 'var(--text-sm)', minWidth: 160 }}
+                                placeholder="Buscar en obra…"
+                                value={searchAssigned}
+                                onChange={(e) => setSearchAssigned(e.target.value)}
+                            />
+                        </div>
+                        {canFirmaAsistida && (
+                            <button className="btn btn-secondary btn-sm" onClick={() => { setFirmaWorkerId(undefined); setFirmaOpen(true); }}>
+                                Firma asistida
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {assigned.length === 0 ? (
@@ -185,18 +211,28 @@ export default function ObraEquipoPage() {
                     </div>
                 ) : (
                     <div className="eq-worker-list">
-                        {activeAssigned.map((w) => {
+                        {filteredActiveAssigned.length === 0 && searchAssigned && (
+                            <div style={{ padding: 'var(--space-3)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                                Sin resultados para «{searchAssigned}».
+                            </div>
+                        )}
+                        {filteredActiveAssigned.map((w) => {
                             const currCargos = assignCargos[w.personaId] ?? cargosActuales(w);
                             const isDirty = !!assignCargos[w.personaId];
                             return (
-                                <div key={w.personaId} className="eq-worker-row">
+                                <div
+                                    key={w.personaId}
+                                    className="eq-worker-row"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => navigate(`/personas/${encodeURIComponent(w.rut)}`)}
+                                >
                                     <div className="eq-worker-avatar">{initials(w.nombre, w.apellido)}</div>
                                     <div className="eq-worker-info">
                                         <div className="eq-worker-name">{w.nombre} {w.apellido || ''}</div>
                                         <div className="eq-worker-rut">{w.rut}</div>
                                     </div>
-                                    {/* Selector de cargos */}
-                                    <div className="eq-cargo-pills">
+                                    {/* Selector de cargos — stop propagation to prevent row click */}
+                                    <div className="eq-cargo-pills" onClick={(e) => e.stopPropagation()}>
                                         {cargoOptions.map((opt) => (
                                             <button
                                                 key={opt.value}
@@ -208,7 +244,7 @@ export default function ObraEquipoPage() {
                                             </button>
                                         ))}
                                     </div>
-                                    <div className="eq-worker-actions">
+                                    <div className="eq-worker-actions" onClick={(e) => e.stopPropagation()}>
                                         {isDirty && (
                                             <button
                                                 className="btn btn-primary btn-sm"
@@ -226,9 +262,6 @@ export default function ObraEquipoPage() {
                                                 Firma asistida
                                             </button>
                                         )}
-                                        <Link to={`/personas/${encodeURIComponent(w.rut)}`} className="btn btn-ghost btn-sm">
-                                            <FiUser size={13} /> Perfil
-                                        </Link>
                                         <button
                                             className="btn btn-ghost btn-sm"
                                             style={{ color: 'var(--danger-500)' }}

@@ -14,7 +14,7 @@ import {
 } from 'react-icons/fi';
 import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
-import { Modal, Select } from '../components/ui';
+import { Modal, Select, PageHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
@@ -347,19 +347,19 @@ export default function Activities() {
 
 
             <div className="page-content">
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <h2 className="page-header-title">
-                            <FiCalendar className="text-primary-500" />
-                            Registro de Actividades y Capacitación
-                        </h2>
-                        <p className="page-header-description">
-                            {selectedObra
-                                ? `Obra: ${selectedObra.nombre}`
-                                : 'Gestión de charlas de 5 minutos, inducciones, ART y capacitación técnica.'}
-                        </p>
-                    </div>
-                </div>
+                <PageHeader
+                    banner
+                    scope={{ label: selectedObra?.nombre ? `Obra · ${selectedObra.nombre}` : 'Actividades' }}
+                    title="Actividades y capacitación"
+                    description="Charlas de 5 minutos, inducciones, ART y capacitación técnica, con asistencia y firma de los participantes."
+                    actions={
+                        selectedObraId && canCrearActividad ? (
+                            <button className="btn btn-save" onClick={() => setShowModal(true)}>
+                                <FiPlus /> Nueva actividad
+                            </button>
+                        ) : undefined
+                    }
+                />
 
                 {/* Gate: obra requerida */}
                 {!selectedObraId && (
@@ -419,20 +419,18 @@ export default function Activities() {
                     </div>
                 )}
 
-                {/* Search Bar */}
-                <div className="flex gap-3 mb-6" style={{ flexWrap: 'wrap' }}>
-                    <div className="flex items-center gap-2" style={{ flex: 1, minWidth: '200px', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-lg)', padding: '10px 16px' }}>
-                        <FiSearch style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                {/* Toolbar: búsqueda + filtro */}
+                <div className="tbar">
+                    <div className="tbar-search">
+                        <FiSearch size={15} />
                         <input
                             type="text"
-                            placeholder="Buscar actividades..."
+                            placeholder="Buscar actividades…"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="form-control"
-                            style={{ border: 'none', background: 'transparent', padding: 0, boxShadow: 'none', color: 'var(--text-primary)' }}
                         />
                     </div>
-                    <div style={{ minWidth: '200px' }}>
+                    <div style={{ minWidth: '210px' }}>
                         <Select
                             ariaLabel="Filtrar por tipo"
                             leadingIcon={<FiFilter size={18} />}
@@ -460,12 +458,6 @@ export default function Activities() {
                                 })}
                             </p>
                         </div>
-                        {canCrearActividad && (
-                            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-                                <FiPlus />
-                                Nueva Actividad
-                            </button>
-                        )}
                     </div>
 
                     {todayActivities.length === 0 ? (

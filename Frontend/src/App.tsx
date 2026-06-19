@@ -29,6 +29,8 @@ import Obras from './pages/Obras';
 import ObraNueva from './pages/ObraNueva';
 import ObraDetalle from './pages/ObraDetalle';
 import ObraEquipoPage from './pages/ObraEquipoPage';
+import Crear from './pages/Crear';
+import Contenido from './pages/Contenido';
 import CargosOnboarding from './pages/CargosOnboarding';
 import MiEmpresa from './pages/MiEmpresa';
 import Equipo from './pages/Equipo';
@@ -140,6 +142,8 @@ function AppContent() {
       <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
       <Route path="/mi-empresa" element={<ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}><MiEmpresa /></ProtectedRoute>} />
+      <Route path="/crear" element={<ProtectedRoute><Crear /></ProtectedRoute>} />
+      <Route path="/contenido" element={<ProtectedRoute><Contenido /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="/enroll-me" element={<ProtectedRoute><EnrollMe /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />

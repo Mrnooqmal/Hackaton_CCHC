@@ -1,18 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
     LuChevronLeft,
     LuUser,
-    LuMail,
-    LuIdCard,
-    LuTrendingUp,
     LuFileText,
     LuActivity,
     LuCircleCheck,
     LuCircleAlert,
     LuDownload,
     LuClock,
-    LuBriefcase,
     LuShield,
     LuUsers,
     LuCircleMinus,
@@ -30,9 +26,9 @@ import {
     signaturesApi,
     signatureRequestsApi,
     personasApi,
+    obrasApi,
     type Worker as ApiWorker,
     type DigitalSignature,
-    REQUEST_TYPES
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
@@ -95,6 +91,7 @@ const getSigIcon = (sig: DigitalSignature) => {
 export default function WorkerDetail() {
     const { rut } = useParams<{ rut: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
     const { selectedObraId } = useObraContext();
     const { user, hasPermission } = useAuth();
     const authTenantId = user?.tenantId || localStorage.getItem('tenant_id') || '';
@@ -108,7 +105,7 @@ export default function WorkerDetail() {
     const [worker, setWorker] = useState<WorkerWithRole | null>(null);
     const [stats, setStats] = useState<WorkerStats | null>(null);
     const [signatures, setSignatures] = useState<DigitalSignature[]>([]);
-    const [compliance, setCompliance] = useState({ completed: 0, assigned: 0 });
+    const [, setCompliance] = useState({ completed: 0, assigned: 0 });
     const [ds44Checklist, setDs44Checklist] = useState<{ completed: number; total: number; items: Array<{ key: string; label: string; articulo?: string; kind?: string; tipo?: string; actionLabel?: string; firmaInfo?: string; status: 'ok' | 'pending' | 'na' | 'subido' }> } | null>(null);
     const [docRecordMap, setDocRecordMap] = useState<Record<string, { documentId: string; s3Key: string | null; archivoNombre: string | null }>>({});
     const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
@@ -131,6 +128,12 @@ export default function WorkerDetail() {
     const [desvincularText, setDesvincularText] = useState('');
     const [desvinculando, setDesvinculando] = useState(false);
     const [desvincularError, setDesvincularError] = useState('');
+
+    const initialTab = new URLSearchParams(location.search).get('tab');
+    const [activeTab, setActiveTab] = useState<'datos' | 'asignaciones'>(
+        (initialTab === 'asignaciones' || initialTab === 'cumplimiento') ? 'asignaciones' : 'datos'
+    );
+    const [obrasInfo, setObrasInfo] = useState<Record<string, { nombre?: string; codigo?: string }>>({});
 
     const getLatestOverrideObraId = (overrides?: Record<string, { items?: Record<string, { doneAt: string }>; updatedAt?: string }>) => {
         if (!overrides) return null;
@@ -221,6 +224,22 @@ export default function WorkerDetail() {
         if (worker?.personaId) loadEppHistorial(worker.personaId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [worker?.personaId]);
+
+    useEffect(() => {
+        const ids: string[] = (worker as any)?.obraIds || [];
+        if (!ids.length) return;
+        Promise.allSettled(ids.map((id) => obrasApi.getById(id))).then((results) => {
+            const map: Record<string, { nombre?: string; codigo?: string }> = {};
+            results.forEach((r, i) => {
+                if (r.status === 'fulfilled' && r.value.success && r.value.data) {
+                    map[ids[i]] = { nombre: r.value.data.nombre, codigo: r.value.data.codigo };
+                } else {
+                    map[ids[i]] = {};
+                }
+            });
+            setObrasInfo(map);
+        });
+    }, [(worker as any)?.obraIds?.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const resetEppForm = () => {
         setEppForm({ esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
@@ -506,11 +525,6 @@ Generado por PrevencionApp
         }
     };
 
-    const compliancePercent = compliance.assigned > 0
-        ? (compliance.completed / compliance.assigned) * 100
-        : 0;
-    const compliancePercentRounded = Math.round(compliancePercent);
-
     if (loading) {
         return (
             <div className="flex items-center justify-center" style={{ height: '100vh' }}>
@@ -537,296 +551,393 @@ Generado por PrevencionApp
         <>
 
             <div className="page-content">
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <button
-                            className="btn btn-ghost btn-sm mb-2"
-                            onClick={() => navigate('/personas')}
-                            style={{ marginLeft: '-12px' }}
-                        >
-                            <LuChevronLeft className="mr-1" /> Volver a Personas
-                        </button>
-                        <h2 className="page-header-title">
-                            <LuUser className="text-primary-500" />
-                            {worker.nombre} {worker.apellido}
-                        </h2>
-                        <p className="page-header-description">Vista detallada de perfil, estadísticas y cumplimiento.</p>
-                    </div>
-                    {canExportar && (
-                        <div className="page-header-actions">
-                            <button className="btn btn-secondary" onClick={downloadReport}>
-                                <LuDownload className="mr-2" /> Exportar Reporte
-                            </button>
+                {/* ── Hero ── */}
+                <div className="wd-hero">
+                    <button className="wd-back" onClick={() => navigate('/personas')}>
+                        <LuChevronLeft size={14} /> Personas
+                    </button>
+                    <div className="wd-hero-main">
+                        <div className="wd-avatar">
+                            {(worker as any).fotoPerfil
+                                ? <img src={(worker as any).fotoPerfil} alt={worker.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                                : `${worker.nombre.charAt(0)}${worker.apellido?.charAt(0) ?? ''}`
+                            }
                         </div>
-                    )}
+                        <div className="wd-hero-info">
+                            <div className="wd-hero-name">{worker.nombre} {worker.apellido}</div>
+                            <div className="wd-hero-meta">
+                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{worker.rut}</span>
+                                <span style={{ color: 'var(--surface-border)' }}>·</span>
+                                <span>{getCargoLabel(worker.cargo) || worker.cargo || 'Sin cargo'}</span>
+                                <span className={`badge badge-sm badge-${worker.habilitado ? 'success' : 'warning'}`} style={{ marginLeft: 4 }}>
+                                    {worker.habilitado ? 'Habilitado' : 'Pendiente enrolamiento'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="wd-hero-actions">
+                        {canExportar && (
+                            <button className="btn btn-secondary btn-sm" onClick={downloadReport}>
+                                <LuDownload size={14} /> Exportar
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ gridTemplateRows: 'auto auto' }}>
-                    {/* Columna Izquierda - Info del Trabajador */}
-                    <div className="lg:col-span-1 lg:row-span-2">
-                        <div className="card p-6 h-fit">
-                            <div className="flex flex-col items-center text-center mb-6">
-                                <div
-                                    className="avatar mb-4"
-                                    style={{ width: 80, height: 80, fontSize: '2rem', background: 'var(--primary-100)', color: 'var(--primary-600)', overflow: 'hidden', padding: (worker as any).fotoPerfil ? 0 : undefined }}
-                                >
-                                    {(worker as any).fotoPerfil
-                                        ? <img src={(worker as any).fotoPerfil} alt={worker.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        : worker.nombre.charAt(0)}
-                                </div>
-                                <h3 className="text-lg font-bold mb-1">{worker.nombre} {worker.apellido}</h3>
-                                <div className={`badge mt-2 mb-3 badge-${worker.habilitado ? 'success' : 'warning'}`}>
-                                    {worker.habilitado ? 'Habilitado' : 'Pendiente Enrolamiento'}
-                                </div>
+                {/* ── Tab nav ── */}
+                <div className="wd-tab-nav">
+                    <button className={`wd-tab${activeTab === 'datos' ? ' wd-tab--active' : ''}`} onClick={() => setActiveTab('datos')}>
+                        <LuUser size={14} /> Datos
+                    </button>
+                    <button className={`wd-tab${activeTab === 'asignaciones' ? ' wd-tab--active' : ''}`} onClick={() => setActiveTab('asignaciones')}>
+                        <LuBuild size={14} /> Asignaciones
+                    </button>
+                </div>
 
-                                {/* Compliance Progress Bar */}
-                                {(
-                                    <div className="compliance-bar-container">
-                                        <div className="compliance-header">
-                                            <span className="compliance-label">Cumplimiento</span>
-                                            <span className="compliance-percentage">
-                                                {compliancePercentRounded}%
-                                            </span>
-                                        </div>
-                                        <div className="compliance-bar-track">
-                                            <div
-                                                className="compliance-bar-fill"
-                                                style={{
-                                                    width: `${Math.min(compliancePercent, 100)}%`,
-                                                    background: (() => {
-                                                        const pct = compliancePercent;
-                                                        if (pct >= 75) return 'linear-gradient(90deg, #22c55e, #16a34a)';
-                                                        if (pct >= 50) return 'linear-gradient(90deg, #eab308, #ca8a04)';
-                                                        return 'linear-gradient(90deg, #ef4444, #dc2626)';
-                                                    })()
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="compliance-detail">
-                                            {compliance.assigned > 0
-                                                ? `${compliance.completed} de ${compliance.assigned} cumplimientos`
-                                                : 'Sin cumplimientos asignados'}
+                {/* ── TAB: ASIGNACIONES ── */}
+                {activeTab === 'asignaciones' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+
+                        {/* Obra actual — banner contextual */}
+                        {(() => {
+                            const currentObraId = selectedObraId || worker.obraIds?.[0] || null;
+                            const currentObra = currentObraId ? obrasInfo[currentObraId] : null;
+                            if (!currentObraId) return null;
+                            return (
+                                <div className="wd-obra-banner">
+                                    <LuBuild size={15} style={{ color: '#006edc', flexShrink: 0 }} />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Obra actual</span>
+                                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginTop: 1 }}>
+                                            {currentObra?.nombre || currentObra?.codigo || currentObraId}
+                                            {currentObra?.codigo && currentObra?.nombre && (
+                                                <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', marginLeft: 8 }}>{currentObra.codigo}</span>
+                                            )}
                                         </div>
                                     </div>
-                                )}
-                            </div>
+                                    <Link to={`/obras/${currentObraId}/equipo`} className="btn btn-ghost btn-sm" style={{ flexShrink: 0, fontSize: '0.78rem' }}>
+                                        Ver equipo
+                                    </Link>
+                                </div>
+                            );
+                        })()}
 
-                            {ds44Checklist && (() => {
-                                const pct = ds44Checklist.total > 0 ? Math.round((ds44Checklist.completed / ds44Checklist.total) * 100) : 0;
-                                return (
-                                    <div style={{ width: '100%', textAlign: 'left', marginTop: 'var(--space-3)' }}>
-                                        {/* Header con progreso */}
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-                                            <div className="text-xs text-muted" style={{ fontWeight: 700, letterSpacing: '0.08em' }}>ONBOARDING DS44</div>
-                                            <span className={`badge ${pct >= 80 ? 'badge-success' : pct >= 50 ? 'badge-warning' : 'badge-danger'}`}>
-                                                {ds44Checklist.completed}/{ds44Checklist.total}
-                                            </span>
-                                        </div>
-                                        {/* Fecha de ingreso a la obra */}
-                                        {worker.obraIds && worker.obraIds.length > 0 && (
-                                            <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                <LuBuild size={12} />
-                                                Obra: {worker.obraIds.length} asignación{worker.obraIds.length !== 1 ? 'es' : ''}
-                                                {(worker as any).createdAt && ` · Ingreso: ${new Date((worker as any).createdAt).toLocaleDateString('es-CL')}`}
+                        {/* DS44 Onboarding checklist */}
+                        {ds44Checklist && (() => {
+                            const pct = ds44Checklist.total > 0 ? Math.round((ds44Checklist.completed / ds44Checklist.total) * 100) : 0;
+                            return (
+                                <div className="wd-ds44-panel">
+                                    <div className="wd-ds44-header">
+                                        <div>
+                                            <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>Onboarding DS44</div>
+                                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                                                {ds44Checklist.completed} de {ds44Checklist.total} ítems completados
                                             </div>
-                                        )}
-
-                                        {/* Barra de progreso */}
-                                        <div style={{ height: '6px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', marginBottom: 'var(--space-3)' }}>
-                                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444', transition: 'width 300ms' }} />
                                         </div>
-                                        {/* Lista de 6 ítems */}
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                            {ds44Checklist.items.map((item) => (
-                                                <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', padding: '5px 0', borderBottom: '1px solid var(--surface-border)' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                                                        <span style={{ flexShrink: 0, display: 'flex' }}>
-                                                            {item.status === 'ok'
-                                                                ? <LuCircleCheck size={15} style={{ color: '#10b981' }} />
-                                                                : item.status === 'na'
-                                                                ? <LuCircleMinus size={15} style={{ color: 'var(--text-muted)' }} />
-                                                                : <LuClock size={15} style={{ color: item.status === 'subido' ? '#f59e0b' : 'var(--text-muted)' }} />
-                                                            }
-                                                        </span>
-                                                        <div style={{ minWidth: 0 }}>
-                                                            <div style={{ fontSize: '0.83rem', fontWeight: item.status === 'ok' ? 400 : 500, color: item.status === 'ok' ? 'var(--text-muted)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                {item.label}
-                                                            </div>
-                                                            <div className="text-muted" style={{ fontSize: '0.72rem' }}>
-                                                                {(item as any).articulo}
-                                                                {(item as any).firmaInfo && <span style={{ color: '#f59e0b' }}> · {(item as any).firmaInfo}</span>}
-                                                            </div>
-                                                        </div>
+                                        <span className={`badge ${pct >= 80 ? 'badge-success' : pct >= 50 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.85rem', padding: '4px 12px' }}>
+                                            {pct}%
+                                        </span>
+                                    </div>
+                                    <div style={{ height: 6, borderRadius: 999, background: 'var(--surface-elevated)', overflow: 'hidden', margin: '0 var(--space-4)' }}>
+                                        <div style={{ width: `${pct}%`, height: '100%', background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444', transition: 'width 300ms' }} />
+                                    </div>
+                                    <div style={{ padding: 'var(--space-2) var(--space-4) var(--space-4)' }}>
+                                        {ds44Checklist.items.map((item) => (
+                                            <div key={item.key} className="wd-ds44-item">
+                                                <span style={{ flexShrink: 0 }}>
+                                                    {item.status === 'ok'
+                                                        ? <LuCircleCheck size={16} style={{ color: '#10b981' }} />
+                                                        : item.status === 'na'
+                                                        ? <LuCircleMinus size={16} style={{ color: 'var(--text-muted)' }} />
+                                                        : <LuClock size={16} style={{ color: item.status === 'subido' ? '#f59e0b' : 'var(--surface-border)' }} />
+                                                    }
+                                                </span>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: '0.85rem', fontWeight: item.status === 'ok' ? 400 : 500, color: item.status === 'ok' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                                        {item.label}
                                                     </div>
-                                                    {/* Documento sin archivo: subir (no completa, queda pendiente de firma) */}
-                                                    {item.status === 'pending' && item.kind === 'document' ? (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de subir</span>
-                                                            {canOnboarding && (
-                                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                                                                {uploadingDocType === item.tipo
-                                                                    ? <><LuClock size={11} /> Subiendo...</>
-                                                                    : <><LuDownload size={11} /> Subir</>
-                                                                }
-                                                                <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }}
-                                                                    disabled={!!uploadingDocType}
-                                                                    onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }}
-                                                                />
-                                                            </label>
-                                                            )}
+                                                    {(item as any).articulo && (
+                                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                                            {(item as any).articulo}
+                                                            {(item as any).firmaInfo && <span style={{ color: '#f59e0b' }}> · {(item as any).firmaInfo}</span>}
                                                         </div>
-                                                    ) : item.status === 'subido' ? (
-                                                        /* Documento subido, falta la firma del trabajador (firma asistida desde la obra) */
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Pendiente de firma</span>
-                                                            {canOnboarding && (
-                                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                                                                {uploadingDocType === item.tipo
-                                                                    ? <><LuClock size={11} /> Subiendo...</>
-                                                                    : <><LuDownload size={11} /> Reemplazar</>
-                                                                }
-                                                                <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }}
-                                                                    disabled={!!uploadingDocType}
-                                                                    onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }}
-                                                                />
-                                                            </label>
-                                                            )}
-                                                        </div>
-                                                    ) : item.status === 'pending' ? (
-                                                        <span className="badge badge-warning" style={{ fontSize: '0.7rem', whiteSpace: 'nowrap', flexShrink: 0 }}>Pendiente de firma</span>
-                                                    ) : null}
-                                                    {item.status === 'ok' && (
-                                                        <LuCircleCheck size={14} style={{ color: '#10b981', flexShrink: 0 }} />
                                                     )}
                                                 </div>
-                                            ))}
-                                        </div>
+                                                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    {item.status === 'pending' && item.kind === 'document' && (
+                                                        <>
+                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de subir</span>
+                                                            {canOnboarding && (
+                                                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)' }}>
+                                                                    {uploadingDocType === item.tipo ? <><LuClock size={11} /> Subiendo...</> : <><LuDownload size={11} /> Subir</>}
+                                                                    <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }} disabled={!!uploadingDocType}
+                                                                        onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }} />
+                                                                </label>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                    {item.status === 'subido' && (
+                                                        <>
+                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de firma</span>
+                                                            {canOnboarding && (
+                                                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)' }}>
+                                                                    {uploadingDocType === item.tipo ? <><LuClock size={11} /> Subiendo...</> : <><LuDownload size={11} /> Reemplazar</>}
+                                                                    <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }} disabled={!!uploadingDocType}
+                                                                        onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }} />
+                                                                </label>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                    {item.status === 'pending' && item.kind !== 'document' && (
+                                                        <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de firma</span>
+                                                    )}
+                                                    {item.status === 'ok' && <LuCircleCheck size={14} style={{ color: '#10b981' }} />}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                );
-                            })()}
+                                </div>
+                            );
+                        })()}
 
-                            <div className="worker-info-list mt-2">
-                                <div className="info-item">
-                                    <LuIdCard className="icon" size={18} />
-                                    <div className="content">
-                                        <label>RUT</label>
-                                        <span>{worker.rut}</span>
-                                    </div>
+                        {/* Asignar contenido — acceso rápido */}
+                        <div>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 'var(--space-2)' }}>
+                                Asignar contenido
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)' }}>
+                                {[
+                                    { icon: <LuFileText size={18} style={{ color: '#006edc' }} />, titulo: 'Documento', href: `/documents?workerRut=${encodeURIComponent(worker.rut)}`, color: '#006edc' },
+                                    { icon: <LuActivity size={18} style={{ color: '#10b981' }} />, titulo: 'Actividad', href: `/activities?workerRut=${encodeURIComponent(worker.rut)}`, color: '#10b981' },
+                                    { icon: <LuShieldCheck size={18} style={{ color: '#f59e0b' }} />, titulo: 'Encuesta', href: `/surveys?workerRut=${encodeURIComponent(worker.rut)}`, color: '#f59e0b' },
+                                ].map((item) => (
+                                    <Link key={item.titulo} to={item.href} className="wd-quick-card" style={{ '--qcard-color': item.color } as React.CSSProperties}>
+                                        {item.icon}
+                                        <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{item.titulo}</span>
+                                    </Link>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Obras asignadas — sección secundaria */}
+                        {worker.obraIds && worker.obraIds.length > 0 && (
+                            <div>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 'var(--space-2)' }}>
+                                    Obras asignadas ({worker.obraIds.length})
                                 </div>
-                                <div className="info-item">
-                                    <LuBriefcase className="icon" size={18} />
-                                    <div className="content">
-                                        <label>Cargo</label>
-                                        <span>{getCargoLabel(worker.cargo) || 'No asignado'}</span>
-                                    </div>
-                                </div>
-                                <div className="info-item">
-                                    <LuShield className="icon" size={18} />
-                                    <div className="content">
-                                        <label>Rol</label>
-                                        <span>{worker.rol === 'admin' ? 'Administrador' : (worker.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador')}</span>
-                                    </div>
-                                </div>
-                                <div className="info-item">
-                                    <LuMail className="icon" size={18} />
-                                    <div className="content">
-                                        <label>Correo</label>
-                                        <span>{worker.email || 'Sin correo registrado'}</span>
-                                    </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    {(worker.obraIds as string[]).map((obraId) => {
+                                        const info = obrasInfo[obraId];
+                                        const onboardingEntry = (worker as any).onboardingDS44?.[obraId];
+                                        const items = onboardingEntry?.items ? Object.values(onboardingEntry.items as Record<string, any>) : [];
+                                        const completed = items.filter((it: any) => it.doneAt).length;
+                                        const total = items.length;
+                                        const pct = total > 0 ? Math.round((completed / total) * 100) : null;
+                                        const isCurrent = obraId === (selectedObraId || worker.obraIds?.[0]);
+                                        return (
+                                            <div key={obraId} className={`wd-obra-row${isCurrent ? ' wd-obra-row--current' : ''}`}>
+                                                <LuBuild size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>{info?.nombre || info?.codigo || obraId}</span>
+                                                    {info?.codigo && info?.nombre && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 6 }}>{info.codigo}</span>}
+                                                </div>
+                                                {pct !== null && (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                                        <div style={{ width: 48, height: 4, borderRadius: 999, background: 'var(--surface-elevated)', overflow: 'hidden' }}>
+                                                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }} />
+                                                        </div>
+                                                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{completed}/{total}</span>
+                                                    </div>
+                                                )}
+                                                <Link to={`/obras/${obraId}`} className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem', padding: '2px 8px', flexShrink: 0 }}>Ver</Link>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
+                        )}
 
-                            {/* Zona crítica — desvincular a la persona de la empresa */}
-                            {canDesvincular && worker.rol !== 'admin' && (
-                                <div className="worker-danger-zone">
-                                    <button
-                                        type="button"
-                                        className="worker-danger-btn"
-                                        onClick={() => { setDesvincularError(''); setDesvincularText(''); setDesvincularOpen(true); }}
-                                    >
-                                        <LuTriangleAlert size={16} />
-                                        <span>Eliminar persona de la empresa</span>
-                                    </button>
+                        {/* Historial de cumplimiento */}
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                    Historial de cumplimiento
+                                </div>
+                                <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>{signatures.length} registros</span>
+                            </div>
+                            {signatures.length === 0 ? (
+                                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    <LuClock size={24} style={{ opacity: 0.2, margin: '0 auto var(--space-2)' }} />
+                                    <p style={{ margin: 0 }}>Sin actividad registrada aún.</p>
+                                </div>
+                            ) : (
+                                <div className="table-container" style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                                    <table className="table">
+                                        <thead>
+                                            <tr><th>Tipo</th><th>Documento / Actividad</th><th>Fecha</th><th>Estado</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {signatures.map((sig, idx) => {
+                                                const s = sig as any;
+                                                const fecha = s.fechaFirma || s.fecha;
+                                                return (
+                                                    <tr key={s.firmaId || s.id || idx}>
+                                                        <td>{getSigIcon(sig)}</td>
+                                                        <td style={{ fontSize: '0.85rem' }}>{s.requestTitulo || s.titulo || s.nombre || '—'}</td>
+                                                        <td style={{ fontSize: '0.85rem' }}>{fecha ? new Date(fecha).toLocaleDateString('es-CL') : '—'}</td>
+                                                        <td><span className={`badge badge-sm badge-${sig.estado === 'valida' ? 'success' : 'warning'}`}>{sig.estado === 'valida' ? 'Válida' : sig.estado}</span></td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
                             )}
                         </div>
                     </div>
+                )}
 
-                    {/* Resumen de Actividad - Ahora en la primera fila, segunda columna */}
+                {/* ── TAB: DATOS ── */}
+                {activeTab === 'datos' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+
+                    {/* Stats — fila inline sin cajas */}
                     {stats && (
-                        <div className="lg:col-span-2">
-                            <div className="card p-6">
-                                <h4 className="text-sm font-bold uppercase tracking-wider text-muted mb-5 flex items-center gap-2">
-                                    <LuTrendingUp size={16} /> Resumen de Actividad
-                                </h4>
-                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                    <div className="detail-stat-box">
-                                        <div className="val">{stats.totalFirmas}</div>
-                                        <div className="lab">Firmas Totales</div>
-                                    </div>
-                                    <div className="detail-stat-box">
-                                        <div className="val">{stats.firmasUltimos30Dias}</div>
-                                        <div className="lab">Últimos 30 días</div>
-                                    </div>
-                                    <div className="detail-stat-box">
-                                        <div className="val">{stats.documentosFirmados}</div>
-                                        <div className="lab">Docs. Firmados</div>
-                                    </div>
-                                    <div className="detail-stat-box">
-                                        <div className="val">{stats.actividadesAsistidas}</div>
-                                        <div className="lab">Asistencias</div>
-                                    </div>
-                                </div>
+                        <div className="wd-stats-row">
+                            <div className="wd-stat">
+                                <div className="wd-stat-val">{stats.totalFirmas}</div>
+                                <div className="wd-stat-lab">Firmas totales</div>
+                            </div>
+                            <div className="wd-stat">
+                                <div className="wd-stat-val">{stats.firmasUltimos30Dias}</div>
+                                <div className="wd-stat-lab">Últimos 30 días</div>
+                            </div>
+                            <div className="wd-stat">
+                                <div className="wd-stat-val">{stats.documentosFirmados}</div>
+                                <div className="wd-stat-lab">Docs. firmados</div>
+                            </div>
+                            <div className="wd-stat">
+                                <div className="wd-stat-val">{stats.actividadesAsistidas}</div>
+                                <div className="wd-stat-lab">Asistencias</div>
                             </div>
                         </div>
                     )}
 
-                    {/* Historial de EPP (Art. 13) — entregas y reposiciones validadas */}
-                    <div className="lg:col-span-2">
-                        <div className="card" style={{ padding: 'var(--space-4)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', marginBottom: 'var(--space-3)', flexWrap: 'wrap' }}>
-                                <h3 className="font-bold m-0">
-                                    Historial de EPP <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(Art. 13 — entregas y reposiciones)</span>
-                                </h3>
-                                {canValidarEpp && (
-                                    <button className="btn btn-primary btn-sm" type="button" onClick={() => { resetEppForm(); setEppModalOpen(true); }}>
-                                        Nueva entrega / Reposición
-                                    </button>
-                                )}
+                    {/* Info personal — grid 2 columnas sin card */}
+                    <div>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 'var(--space-3)' }}>
+                            Información
+                        </div>
+                        <div className="wd-info-grid">
+                            <div className="wd-info-field">
+                                <div className="wd-info-label">RUT</div>
+                                <div className="wd-info-value" style={{ fontFamily: 'var(--font-mono)' }}>{worker.rut}</div>
                             </div>
-                            {eppHistorial.length === 0 ? (
-                                <div className="text-muted" style={{ fontSize: '0.85rem' }}>Sin entregas de EPP registradas.</div>
+                            <div className="wd-info-field">
+                                <div className="wd-info-label">Correo</div>
+                                <div className="wd-info-value">{worker.email || <span style={{ color: 'var(--text-muted)' }}>Sin correo</span>}</div>
+                            </div>
+                            <div className="wd-info-field">
+                                <div className="wd-info-label">Cargo</div>
+                                <div className="wd-info-value">{getCargoLabel(worker.cargo) || <span style={{ color: 'var(--text-muted)' }}>No asignado</span>}</div>
+                            </div>
+                            <div className="wd-info-field">
+                                <div className="wd-info-label">Rol de sistema</div>
+                                <div className="wd-info-value">{worker.rol === 'admin' ? 'Administrador' : worker.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Vigilancia de Salud */}
+                    <div className="wd-section-card">
+                        <div className="wd-section-head">
+                            <div>
+                                <div style={{ fontWeight: 700 }}>Vigilancia de Salud</div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Art. 67/73</div>
+                            </div>
+                            {canVigilancia && (!vigEditing ? (
+                                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setVigEditing(true)}>Editar</button>
                             ) : (
-                                <div className="table-container" style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    <button className="btn btn-ghost btn-sm" type="button" onClick={() => setVigEditing(false)}>Cancelar</button>
+                                    <button className="btn btn-sm" type="button" disabled={vigSaving} onClick={handleSaveVigilancia}
+                                        style={{ background: '#f13800', color: '#fff', border: 'none' }}>
+                                        {vigSaving ? 'Guardando…' : 'Guardar'}
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        {!vigEditing ? (
+                            <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '6px 12px', fontSize: '0.88rem', padding: 'var(--space-4)' }}>
+                                <div style={{ color: 'var(--text-muted)' }}>En vigilancia</div>
+                                <div><span className={`badge ${vigForm.enVigilancia ? 'badge-warning' : 'badge-secondary'}`}>{vigForm.enVigilancia ? 'Sí' : 'No'}</span></div>
+                                <div style={{ color: 'var(--text-muted)' }}>Protocolos</div><div>{vigForm.protocolos || '—'}</div>
+                                <div style={{ color: 'var(--text-muted)' }}>Último examen</div><div>{vigForm.fechaUltimoExamen || '—'}</div>
+                                <div style={{ color: 'var(--text-muted)' }}>Aptitud laboral</div><div>{vigForm.aptitudLaboral || '—'}</div>
+                                <div style={{ color: 'var(--text-muted)' }}>Restricciones</div><div>{vigForm.restricciones || '—'}</div>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-4)' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <input type="checkbox" checked={vigForm.enVigilancia} onChange={(e) => setVigForm({ ...vigForm, enVigilancia: e.target.checked })} />
+                                    <span>En programa de vigilancia de la salud</span>
+                                </label>
+                                <div className="form-group"><label className="form-label">Protocolos</label><input type="text" className="form-input" placeholder="Ej: PLANESI, Ruido, Sílice" value={vigForm.protocolos} onChange={(e) => setVigForm({ ...vigForm, protocolos: e.target.value })} /><span className="form-hint">Separar con coma</span></div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                                    <div className="form-group"><label className="form-label">Último examen</label><input type="date" className="form-input" value={vigForm.fechaUltimoExamen} onChange={(e) => setVigForm({ ...vigForm, fechaUltimoExamen: e.target.value })} /></div>
+                                    <div className="form-group"><label className="form-label">Aptitud laboral</label><input type="text" className="form-input" placeholder="apto / apto con restricciones / no apto" value={vigForm.aptitudLaboral} onChange={(e) => setVigForm({ ...vigForm, aptitudLaboral: e.target.value })} /></div>
+                                </div>
+                                <div className="form-group"><label className="form-label">Restricciones</label><input type="text" className="form-input" placeholder="Ej: No trabajo en altura" value={vigForm.restricciones} onChange={(e) => setVigForm({ ...vigForm, restricciones: e.target.value })} /><span className="form-hint">Separar con coma</span></div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* EPP historial */}
+                    <div className="wd-section-card">
+                        <div className="wd-section-head">
+                            <div>
+                                <div style={{ fontWeight: 700 }}>Historial de EPP</div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Art. 13 — entregas y reposiciones</div>
+                            </div>
+                            {canValidarEpp && (
+                                <button className="btn btn-sm" type="button" onClick={() => { resetEppForm(); setEppModalOpen(true); }}
+                                    style={{ background: '#f13800', color: '#fff', border: 'none' }}>
+                                    Nueva entrega
+                                </button>
+                            )}
+                        </div>
+                        <div style={{ padding: '0 var(--space-4) var(--space-4)' }}>
+                            {eppHistorial.length === 0 ? (
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Sin entregas de EPP registradas.</div>
+                            ) : (
+                                <div className="table-container" style={{ maxHeight: 280, overflowY: 'auto' }}>
                                     <table className="table">
                                         <thead>
-                                            <tr>
-                                                <th>Fecha</th><th>Items</th><th>Reposición</th><th>Validado por</th><th>Capacitación uso</th><th>Estado</th>
-                                            </tr>
+                                            <tr><th>Fecha</th><th>Items</th><th>Reposición</th><th>Validado por</th><th>Cap. uso</th><th>Estado</th></tr>
                                         </thead>
                                         <tbody>
                                             {eppHistorial.map((e: any) => {
                                                 const validado = e.validacion?.estado === 'validado';
                                                 return (
                                                     <tr key={e.documentId}>
-                                                        <td className="text-sm">{e.fecha ? new Date(e.fecha).toLocaleDateString('es-CL') : '-'}</td>
-                                                        <td className="text-sm">{(e.itemsEntregados || []).map((i: any) => `${i.descripcion} x${i.cantidad}${i.talla ? ` (${i.talla})` : ''}`).join(', ') || '-'}</td>
-                                                        <td className="text-sm">{e.esReposicion ? (e.motivoReposicion || 'Sí') : 'No'}</td>
-                                                        <td className="text-sm">{e.validacion?.validadoPor?.nombre || '-'}</td>
-                                                        <td className="text-sm">{e.capacitacionUso?.completada ? `${e.capacitacionUso.duracionRealMinutos || 60} min` : 'Pendiente'}</td>
+                                                        <td style={{ fontSize: '0.82rem' }}>{e.fecha ? new Date(e.fecha).toLocaleDateString('es-CL') : '-'}</td>
+                                                        <td style={{ fontSize: '0.82rem' }}>{(e.itemsEntregados || []).map((i: any) => `${i.descripcion} x${i.cantidad}${i.talla ? ` (${i.talla})` : ''}`).join(', ') || '-'}</td>
+                                                        <td style={{ fontSize: '0.82rem' }}>{e.esReposicion ? (e.motivoReposicion || 'Sí') : 'No'}</td>
+                                                        <td style={{ fontSize: '0.82rem' }}>{e.validacion?.validadoPor?.nombre || '-'}</td>
+                                                        <td style={{ fontSize: '0.82rem' }}>{e.capacitacionUso?.completada ? `${e.capacitacionUso.duracionRealMinutos || 60} min` : 'Pendiente'}</td>
                                                         <td>
                                                             {e.firmadoPorTrabajador
                                                                 ? <span className="badge badge-success">Firmado</span>
                                                                 : validado
-                                                                    ? <span className="badge badge-info">Validado, falta firma</span>
+                                                                    ? <span className="badge badge-info">Falta firma</span>
                                                                     : (
-                                                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                                                            <span className="badge badge-warning">Pendiente validación</span>
+                                                                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                                            <span className="badge badge-warning">Pendiente</span>
                                                                             {canValidarEpp && (
                                                                                 <button className="btn btn-secondary btn-sm" type="button"
                                                                                     disabled={eppValidating === e.documentId}
                                                                                     onClick={() => handleValidarEntrega(e.documentId)}>
-                                                                                    {eppValidating === e.documentId ? '...' : 'Validar entrega'}
+                                                                                    {eppValidating === e.documentId ? '...' : 'Validar'}
                                                                                 </button>
                                                                             )}
                                                                         </div>
@@ -842,7 +953,7 @@ Generado por PrevencionApp
                         </div>
                     </div>
 
-                    {/* Evidencias persona-level con vigencia (reutilizables entre obras) */}
+                    {/* Evidencias persona-level */}
                     <WorkerEvidencias
                         personaId={worker.personaId}
                         tenantId={authTenantId}
@@ -850,407 +961,202 @@ Generado por PrevencionApp
                         canEdit={canVigilancia}
                     />
 
-                    {/* Vigilancia de Salud (Art. 67/73) */}
-                    <div className="lg:col-span-2">
-                        <div className="card" style={{ padding: 'var(--space-4)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
-                                <h3 className="font-bold flex items-center gap-2 m-0">
-                                    <LuActivity className="text-primary-500" />
-                                    Vigilancia de Salud <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(Art. 67/73)</span>
-                                </h3>
-                                {canVigilancia && (!vigEditing ? (
-                                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => setVigEditing(true)}>Editar</button>
-                                ) : (
-                                    <div style={{ display: 'flex', gap: '6px' }}>
-                                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setVigEditing(false); }}>Cancelar</button>
-                                        <button className="btn btn-primary btn-sm" type="button" disabled={vigSaving} onClick={handleSaveVigilancia}>{vigSaving ? 'Guardando…' : 'Guardar'}</button>
-                                    </div>
-                                ))}
-                            </div>
-
-                            {!vigEditing ? (
-                                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '6px 12px', fontSize: '0.88rem' }}>
-                                    <div className="text-muted">En vigilancia</div>
-                                    <div>
-                                        <span className={`badge ${vigForm.enVigilancia ? 'badge-warning' : 'badge-secondary'}`}>{vigForm.enVigilancia ? 'Sí' : 'No'}</span>
-                                    </div>
-                                    <div className="text-muted">Protocolos</div><div>{vigForm.protocolos || '—'}</div>
-                                    <div className="text-muted">Último examen</div><div>{vigForm.fechaUltimoExamen || '—'}</div>
-                                    <div className="text-muted">Aptitud laboral</div><div>{vigForm.aptitudLaboral || '—'}</div>
-                                    <div className="text-muted">Restricciones</div><div>{vigForm.restricciones || '—'}</div>
-                                </div>
-                            ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <input type="checkbox" checked={vigForm.enVigilancia} onChange={(e) => setVigForm({ ...vigForm, enVigilancia: e.target.checked })} />
-                                        <span>En programa de vigilancia de la salud</span>
-                                    </label>
-                                    <div className="form-group"><label className="form-label">Protocolos</label><input type="text" className="form-input" placeholder="Ej: PLANESI, Ruido, Sílice" value={vigForm.protocolos} onChange={(e) => setVigForm({ ...vigForm, protocolos: e.target.value })} /><span className="form-hint">Separar con coma</span></div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="form-group"><label className="form-label">Último examen</label><input type="date" className="form-input" value={vigForm.fechaUltimoExamen} onChange={(e) => setVigForm({ ...vigForm, fechaUltimoExamen: e.target.value })} /></div>
-                                        <div className="form-group"><label className="form-label">Aptitud laboral</label><input type="text" className="form-input" placeholder="apto / apto con restricciones / no apto" value={vigForm.aptitudLaboral} onChange={(e) => setVigForm({ ...vigForm, aptitudLaboral: e.target.value })} /></div>
-                                    </div>
-                                    <div className="form-group"><label className="form-label">Restricciones</label><input type="text" className="form-input" placeholder="Ej: No trabajo en altura" value={vigForm.restricciones} onChange={(e) => setVigForm({ ...vigForm, restricciones: e.target.value })} /><span className="form-hint">Separar con coma</span></div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Historial de Cumplimiento - Segunda fila, segunda columna */}
-                    <div className="lg:col-span-2">
-                        <div className="card p-0 overflow-hidden h-full">
-                            <div className="p-5 border-bottom flex items-center justify-between bg-surface-elevated">
-                                <h3 className="font-bold flex items-center gap-2 m-0">
-                                    <LuFileText className="text-primary-500" />
-                                    Historial de Cumplimiento
-                                </h3>
-                                <span className="badge badge-secondary">{signatures.length} Registros</span>
-                            </div>
-
-                            <div className="signatures-timeline" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                                {signatures.length === 0 ? (
-                                    <div className="text-center text-muted" style={{ padding: '60px 48px' }}>
-                                        <LuClock size={40} className="mb-3 mx-auto opacity-20" />
-                                        <p style={{ marginTop: '8px' }}>No se registran actividades o firmas aún.</p>
-                                    </div>
-                                ) : (
-                                    <div className="table-container">
-                                        <table className="table">
-                                            <thead>
-                                                <tr>
-                                                    <th style={{ width: '20%' }}>Tipo</th>
-                                                    <th style={{ width: '40%' }}>Documento / Actividad</th>
-                                                    <th style={{ width: '20%' }}>Fecha</th>
-                                                    <th style={{ width: '20%' }}>Estado</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {signatures.map((sig, i) => (
-                                                    <tr key={i}>
-                                                        <td>
-                                                            <div className="flex items-center gap-2">
-                                                                <div
-                                                                    className="avatar avatar-sm"
-                                                                    style={{
-                                                                        background: sig.tipoFirma === 'enrolamiento' ? 'var(--success-100)' : 'var(--primary-100)',
-                                                                        color: sig.tipoFirma === 'enrolamiento' ? 'var(--success-600)' : 'var(--primary-600)'
-                                                                    }}
-                                                                >
-                                                                    {getSigIcon(sig)}
-                                                                </div>
-                                                                <span className="text-xs font-semibold">
-                                                                    {REQUEST_TYPES[(sig as any).requestTipo]?.label || sig.tipoFirma?.replace('_', ' ')}
-                                                                </span>
-                                                            </div>
-                                                        </td>
-                                                        <td>
-                                                            <div className="font-medium text-sm">
-                                                                {(sig as any).requestTitulo || (sig.metadata as any)?.titulo || (sig.metadata as any)?.documentoNombre || 'Registro de Sistema'}
-                                                            </div>
-                                                        </td>
-                                                        <td>
-                                                            <div className="text-sm">{sig.fecha}</div>
-                                                            <div className="text-xs text-muted">{sig.horario}</div>
-                                                        </td>
-                                                        <td>
-                                                            <span className={`badge badge-sm badge-${sig.estado === 'valida' ? 'success' : 'warning'}`}>
-                                                                {sig.estado === 'valida' ? <LuCircleCheck className="mr-1" /> : null}
-                                                                {sig.estado === 'valida' ? 'Válida' : sig.estado}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
+                    {/* Danger zone */}
+                    {canDesvincular && worker.rol !== 'admin' && (
+                        <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
+                            <div className="worker-danger-zone">
+                                <button type="button" className="worker-danger-btn"
+                                    onClick={() => { setDesvincularError(''); setDesvincularText(''); setDesvincularOpen(true); }}>
+                                    <LuTriangleAlert size={15} />
+                                    <span>Eliminar persona de la empresa</span>
+                                </button>
                             </div>
                         </div>
-                    </div>
+                    )}
                 </div>
+                )}
+
             </div>
 
             <style>{`
-                .page-content {
-                    padding-bottom: var(--space-6);
-                }
-                
-                /* Compliance Progress Bar */
-                .compliance-bar-container {
-                    width: 100%;
-                    padding: var(--space-4);
-                    background: var(--surface-elevated);
-                    border-radius: var(--radius-lg);
-                    border: 1px solid var(--surface-border);
-                    margin-top: var(--space-2);
-                }
-                
-                .compliance-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    margin-bottom: var(--space-2);
-                }
-                
-                .compliance-label {
-                    font-size: 11px;
-                    font-weight: 700;
-                    text-transform: uppercase;
-                    letter-spacing: 0.05em;
-                    color: var(--text-muted);
-                }
-                
-                .compliance-percentage {
-                    font-size: var(--text-lg);
-                    font-weight: 800;
-                    color: var(--text-primary);
-                }
-                
-                .compliance-bar-track {
-                    width: 100%;
-                    height: 12px;
-                    background: var(--surface-border);
-                    border-radius: 6px;
-                    overflow: hidden;
-                    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
-                }
-                
-                .compliance-bar-fill {
-                    height: 100%;
-                    border-radius: 6px;
-                    transition: width 0.5s ease-out;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                }
-                
-                .compliance-detail {
-                    font-size: var(--text-xs);
-                    color: var(--text-muted);
-                    text-align: center;
-                    margin-top: var(--space-2);
-                }
-                
-                .worker-info-list {
-                    display: flex;
-                    flex-direction: column;
-                    gap: var(--space-4);
-                }
+                .page-content { padding-bottom: var(--space-8); }
 
-                /* Zona crítica — desvincular persona de la empresa */
-                .worker-danger-zone {
-                    margin-top: var(--space-5);
-                    padding-top: var(--space-4);
-                    border-top: 1px solid var(--surface-border);
-                }
-                .worker-danger-btn {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 8px;
-                    width: 100%;
-                    padding: 10px 14px;
-                    border-radius: var(--radius-md);
-                    border: 1px solid rgba(239, 68, 68, 0.35);
-                    background: rgba(239, 68, 68, 0.06);
-                    color: var(--danger-600, #dc2626);
-                    font-size: 0.85rem;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: background 0.15s, border-color 0.15s;
-                }
-                .worker-danger-btn:hover {
-                    background: rgba(239, 68, 68, 0.12);
-                    border-color: rgba(239, 68, 68, 0.55);
-                }
-                
-                .info-item {
-                    display: flex;
-                    gap: var(--space-3);
-                    align-items: flex-start;
-                    padding: var(--space-1) 0;
-                }
-                
-                .info-item .icon {
-                    margin-top: 2px;
-                    color: var(--text-muted);
-                    flex-shrink: 0;
-                }
-                
-                .info-item .content {
-                    display: flex;
-                    flex-direction: column;
-                    flex: 1;
-                }
-                
-                .info-item label {
-                    font-size: 10px;
-                    text-transform: uppercase;
-                    letter-spacing: 0.05em;
-                    color: var(--text-muted);
-                    font-weight: 700;
-                    margin-bottom: 2px;
-                }
-                
-                .info-item span {
-                    font-size: var(--text-sm);
-                    color: var(--text-primary);
-                    font-weight: 500;
-                    word-break: break-word;
-                }
-                
-                .detail-stat-box {
-                    background: var(--surface-elevated);
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-md);
-                    padding: var(--space-4);
-                    text-align: center;
-                    transition: transform 0.2s, box-shadow 0.2s;
-                }
-                
-                .detail-stat-box:hover {
-                    transform: translateY(-2px);
-                    box-shadow: var(--shadow-md);
-                }
-                
-                .detail-stat-box .val {
-                    font-size: var(--text-xl);
-                    font-weight: 800;
-                    color: var(--primary-500);
-                    line-height: 1.2;
+                /* ── Hero ── */
+                .wd-hero {
+                    position: relative;
+                    padding: var(--space-5) 0 var(--space-4);
+                    border-bottom: 1px solid var(--surface-border);
                     margin-bottom: var(--space-1);
                 }
-                
-                .detail-stat-box .lab {
-                    font-size: 10px;
-                    text-transform: uppercase;
+                /* Línea de acento estilo PageHeader (azul → naranja de marca) */
+                .wd-hero::after {
+                    content: '';
+                    position: absolute;
+                    bottom: -1px; left: 0;
+                    width: 72px; height: 3px;
+                    border-radius: 3px;
+                    background: linear-gradient(90deg, #006edc 0%, #df3601 100%);
+                }
+                .wd-back {
+                    display: inline-flex; align-items: center; gap: 4px;
+                    font-size: 0.78rem; color: var(--text-muted);
+                    background: none; border: none; cursor: pointer; padding: 0 0 var(--space-3) 0;
+                    transition: color var(--transition-fast);
+                }
+                .wd-back:hover { color: var(--text-primary); }
+                .wd-hero-main { display: flex; align-items: center; gap: var(--space-4); }
+                .wd-avatar {
+                    width: 56px; height: 56px; border-radius: 50%;
+                    background: rgba(0,41,82,0.1); color: #002952;
+                    font-size: 1.3rem; font-weight: 800;
+                    display: flex; align-items: center; justify-content: center;
+                    flex-shrink: 0; overflow: hidden; letter-spacing: -0.5px;
+                }
+                .wd-hero-info { flex: 1; min-width: 0; }
+                .wd-hero-name { font-size: var(--text-xl); font-weight: 800; color: var(--text-primary); line-height: 1.2; }
+                .wd-hero-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; font-size: 0.85rem; color: var(--text-muted); }
+                .wd-hero-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
+
+                /* ── Tabs ── */
+                .wd-tab-nav {
+                    display: flex; gap: 0;
+                    border-bottom: 2px solid var(--surface-border);
+                    margin-bottom: var(--space-5);
+                    margin-top: var(--space-2);
+                }
+                .wd-tab {
+                    display: inline-flex; align-items: center; gap: 6px;
+                    padding: 9px 18px;
+                    font-size: var(--text-sm); font-weight: 500;
                     color: var(--text-muted);
-                    font-weight: 600;
-                    letter-spacing: 0.05em;
+                    background: none; border: none; cursor: pointer;
+                    border-bottom: 2px solid transparent;
+                    margin-bottom: -2px;
+                    transition: color var(--transition-fast), border-color var(--transition-fast);
                 }
-                
-                .border-bottom {
-                    border-bottom: 1px solid var(--surface-border);
+                .wd-tab:hover { color: var(--text-primary); }
+                .wd-tab--active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+                /* ── Datos: stats row ── */
+                .wd-stats-row {
+                    display: flex; gap: 0;
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    overflow: hidden;
                 }
-                
-                .signatures-timeline {
-                    position: relative;
+                .wd-stat {
+                    flex: 1; padding: var(--space-4) var(--space-3);
+                    text-align: center;
+                    border-right: 1px solid var(--surface-border);
                 }
-                
-                .table-container {
-                    overflow-x: auto;
-                }
-                
-                .table {
-                    width: 100%;
-                    min-width: 600px;
-                }
-                
-                .table th {
-                    position: sticky;
-                    top: 0;
-                    background: var(--surface-card);
-                    z-index: 1;
-                    padding: var(--space-3) var(--space-4);
-                    font-size: var(--text-xs);
-                    text-transform: uppercase;
-                    letter-spacing: 0.05em;
-                    color: var(--text-muted);
-                    font-weight: 700;
-                    border-bottom: 1px solid var(--surface-border);
-                }
-                
-                .table td {
+                .wd-stat:last-child { border-right: none; }
+                .wd-stat-val { font-size: var(--text-xl); font-weight: 800; color: #002952; line-height: 1; }
+                .wd-stat-lab { font-size: 0.7rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+
+                /* ── Datos: info grid ── */
+                .wd-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+                .wd-info-field { padding: var(--space-3) 0; border-bottom: 1px solid var(--surface-border); }
+                .wd-info-field:nth-child(odd) { padding-right: var(--space-4); }
+                .wd-info-field:nth-child(even) { padding-left: var(--space-4); border-left: 1px solid var(--surface-border); }
+                .wd-info-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 3px; }
+                .wd-info-value { font-size: 0.88rem; color: var(--text-primary); font-weight: 500; }
+
+                /* ── Section card (vigilancia, EPP) ── */
+                .wd-section-card { border: 1px solid var(--surface-border); border-radius: var(--radius-lg); overflow: hidden; }
+                .wd-section-head {
+                    display: flex; align-items: center; justify-content: space-between;
                     padding: var(--space-4);
                     border-bottom: 1px solid var(--surface-border);
-                    vertical-align: middle;
+                    background: var(--surface-elevated);
                 }
-                
-                .table tbody tr {
-                    transition: background-color 0.2s;
+
+                /* ── Asignaciones: obra banner ── */
+                .wd-obra-banner {
+                    display: flex; align-items: center; gap: var(--space-3);
+                    padding: var(--space-3) var(--space-4);
+                    border-left: 3px solid #006edc;
+                    background: rgba(0,110,220,0.04);
+                    border-radius: 0 var(--radius-md) var(--radius-md) 0;
                 }
-                
-                .table tbody tr:hover {
-                    background-color: var(--surface-hover);
+
+                /* ── DS44 panel ── */
+                .wd-ds44-panel {
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    overflow: hidden;
                 }
-                
-                /* Responsive adjustments */
-                @media (max-width: 1024px) {
-                    .detail-stat-box .val {
-                        font-size: var(--text-lg);
-                    }
-                    
-                    .grid.grid-cols-1.lg\\:grid-cols-3 {
-                        display: flex;
-                        flex-direction: column;
-                        gap: var(--space-4);
-                    }
-                    
-                    .lg\\:col-span-1,
-                    .lg\\:col-span-2 {
-                        width: 100%;
-                    }
+                .wd-ds44-header {
+                    display: flex; align-items: center; justify-content: space-between;
+                    padding: var(--space-4);
+                    border-bottom: 1px solid var(--surface-border);
+                    background: var(--surface-elevated);
+                    margin-bottom: var(--space-3);
                 }
-                
-                @media (max-width: 768px) {
-                    .detail-stat-box {
-                        padding: var(--space-3);
-                    }
-                    
-                    .detail-stat-box .val {
-                        font-size: var(--text-base);
-                    }
-                    
-                    .detail-stat-box .lab {
-                        font-size: 9px;
-                    }
-                    
-                    .page-header {
-                        flex-direction: column;
-                        align-items: flex-start;
-                        gap: var(--space-3);
-                    }
-                    
-                    .page-header-actions {
-                        width: 100%;
-                    }
-                    
-                    .page-header-actions .btn {
-                        width: 100%;
-                    }
-                    
-                    .table th,
-                    .table td {
-                        padding: var(--space-3) var(--space-2);
-                    }
+                .wd-ds44-item {
+                    display: flex; align-items: center; gap: var(--space-2);
+                    padding: 8px 0;
+                    border-bottom: 1px solid var(--surface-border);
                 }
-                
-                @media (max-width: 640px) {
-                    .card {
-                        padding: var(--space-4);
-                    }
-                    
-                    .info-item {
-                        flex-direction: column;
-                        gap: var(--space-1);
-                    }
-                    
-                    .info-item .icon {
-                        align-self: flex-start;
-                    }
-                    
-                    .grid.grid-cols-2.lg\\:grid-cols-4 {
-                        grid-template-columns: repeat(2, 1fr);
-                        gap: var(--space-3);
-                    }
+                .wd-ds44-item:last-child { border-bottom: none; }
+
+                /* ── Quick assign cards ── */
+                .wd-quick-card {
+                    display: flex; align-items: center; gap: var(--space-2);
+                    padding: var(--space-3) var(--space-4);
+                    border: 1.5px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    background: var(--surface); color: var(--text-primary);
+                    text-decoration: none; font-size: 0.85rem; font-weight: 600;
+                    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
                 }
-                
-                @media (max-width: 480px) {
-                    .grid.grid-cols-2.lg\\:grid-cols-4 {
-                        grid-template-columns: 1fr;
-                    }
-                    
-                    .detail-stat-box {
-                        padding: var(--space-3);
-                    }
+                .wd-quick-card:hover {
+                    border-color: var(--qcard-color, var(--accent));
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                }
+
+                /* ── Obras asignadas (secondary) ── */
+                .wd-obra-row {
+                    display: flex; align-items: center; gap: var(--space-2);
+                    padding: 7px var(--space-2); border-radius: var(--radius-sm);
+                    transition: background var(--transition-fast);
+                }
+                .wd-obra-row:hover { background: var(--surface-elevated); }
+                .wd-obra-row--current { background: rgba(0,110,220,0.05); }
+
+                /* ── Tables ── */
+                .table-container { overflow-x: auto; }
+                .table { width: 100%; min-width: 500px; }
+                .table th {
+                    padding: var(--space-2) var(--space-3);
+                    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+                    color: var(--text-muted); font-weight: 700;
+                    border-bottom: 1px solid var(--surface-border);
+                }
+                .table td { padding: var(--space-3); border-bottom: 1px solid var(--surface-border); vertical-align: middle; }
+                .table tbody tr:hover { background: var(--surface-elevated); }
+
+                /* ── Danger zone ── */
+                .worker-danger-zone { margin-top: 0; }
+                .worker-danger-btn {
+                    display: inline-flex; align-items: center; gap: 8px;
+                    padding: 8px 14px;
+                    border-radius: var(--radius-md);
+                    border: 1px solid rgba(239,68,68,0.35);
+                    background: rgba(239,68,68,0.06); color: #dc2626;
+                    font-size: 0.82rem; font-weight: 600; cursor: pointer;
+                    transition: background 0.15s, border-color 0.15s;
+                }
+                .worker-danger-btn:hover { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.55); }
+
+                /* ── EPP modal ── */
+                .signatures-timeline { position: relative; }
+                .border-bottom { border-bottom: 1px solid var(--surface-border); }
+
+                @media (max-width: 600px) {
+                    .wd-stats-row { flex-wrap: wrap; }
+                    .wd-stat { flex: 1 1 45%; border-right: 1px solid var(--surface-border); }
+                    .wd-info-grid { grid-template-columns: 1fr; }
+                    .wd-info-field:nth-child(even) { border-left: none; padding-left: 0; }
                 }
             `}</style>
 

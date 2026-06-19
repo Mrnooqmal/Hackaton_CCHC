@@ -1300,6 +1300,73 @@
   box-shadow: var(--shadow-glow-primary);
 }
 
+/* Acción de guardar cambios — naranja de marca CChC para contrastar con
+   el azul del resto de la UI. Pensado para vivir sobre el PageHeader. */
+.btn-save {
+  background: #f13800;
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(223, 54, 1, 0.28);
+}
+
+.btn-save:hover:not(:disabled) {
+  background: #df3601;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(223, 54, 1, 0.38);
+}
+
+/* Sobre el banner navy del PageHeader mantiene su color de marca */
+.ui-page-header--banner .btn-save {
+  background: #f13800;
+  color: #fff;
+}
+.ui-page-header--banner .btn-save:hover:not(:disabled) {
+  background: #ff4a12;
+}
+
+/* ── Toolbar + búsqueda reutilizable (listados) ────────────────────────── */
+.tbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+.tbar-left { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1; }
+.tbar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 360px;
+  min-width: 200px;
+}
+.tbar-search > svg {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.tbar-search input {
+  width: 100%;
+  padding: 9px 12px 9px 36px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+.tbar-search input:focus {
+  outline: none;
+  border-color: var(--primary-400);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+@media (max-width: 560px) {
+  .tbar { flex-direction: column; align-items: stretch; }
+  .tbar-search { max-width: none; }
+}
+
 .btn-secondary {
   background: var(--surface-elevated);
   color: var(--text-primary);
