@@ -56,6 +56,14 @@
   width: 100%;
 }
 
+.onboarding-content {
+  min-height: 100vh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--surface-bg);
+}
+
 /* Contenedor interno para cada vista, evita duplicar el offset del sidebar */
 .page-content {
   width: 100%;

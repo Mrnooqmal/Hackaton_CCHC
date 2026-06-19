@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
@@ -84,12 +84,72 @@ function AppContent() {
   const { user } = useAuth();
   const { isMobileMenuOpen, closeMobileMenu, isSidebarCollapsed } = useLayout();
   const { setLogo, setPrimaryColor } = useBrand();
+  const location = useLocation();
 
   useEffect(() => {
     if (!user?.branding) return;
     if (user.branding.logoUrl)       setLogo(user.branding.logoUrl);
     if (user.branding.colorPrimario) setPrimaryColor(user.branding.colorPrimario);
   }, [user?.branding, setLogo, setPrimaryColor]);
+
+  const isBlockingStep = !!user && (
+    user.passwordTemporal === true || user.habilitado === false
+  ) && ['/change-password', '/enroll-me'].includes(location.pathname);
+
+  const routes = (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/register-admin" element={<RegisterAdmin />} />
+      <Route path="/onboarding" element={<TenantOnboarding />} />
+      <Route path="/unauthorized" element={<Unauthorized />} />
+      <Route path="/equipo" element={<Equipo />} />
+      <Route path="/about" element={<About />} />
+
+      <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/personas" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_VER}><PersonasManagement /></ProtectedRoute>} />
+      <Route path="/personas/:rut" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}><WorkerDetail /></ProtectedRoute>} />
+
+      {/* Legacy routes redirect to unified personas */}
+      <Route path="/workers" element={<Navigate to="/personas" replace />} />
+      <Route path="/users" element={<Navigate to="/personas" replace />} />
+      <Route path="/workers/:rut" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}><WorkerDetail /></ProtectedRoute>} />
+
+      <Route path="/obras" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_VER}><Obras /></ProtectedRoute>} />
+      <Route path="/obras/:obraId" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><ObraDetalle /></ProtectedRoute>} />
+
+      {/* Constructor de cargos de onboarding (catálogo tenant). Admin + jefe de obra. */}
+      <Route path="/cargos-onboarding" element={<ProtectedRoute requiredPermission={PERMISSIONS.CARGOS_GESTIONAR}><CargosOnboarding /></ProtectedRoute>} />
+      <Route path="/workers/enroll" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><WorkerEnroll /></ProtectedRoute>} />
+      <Route path="/documents" element={<ProtectedRoute requiredPermission={PERMISSIONS.DOCUMENTOS_VER}><Documents /></ProtectedRoute>} />
+      <Route path="/documents-repository" element={<ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}><DocumentsRepository /></ProtectedRoute>} />
+      <Route path="/surveys" element={<ProtectedRoute><Surveys /></ProtectedRoute>} />
+      <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
+      <Route path="/activities" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_VER}><Activities /></ProtectedRoute>} />
+      <Route path="/signature-requests" element={<ProtectedRoute><SignatureRequests /></ProtectedRoute>} />
+      <Route path="/my-signatures" element={<ProtectedRoute><MySignatures /></ProtectedRoute>} />
+      <Route path="/offline-signatures" element={<ProtectedRoute requiredPermission={PERMISSIONS.FIRMAS_CREAR}><OfflineSignatures /></ProtectedRoute>} />
+      <Route path="/ai-assistant" element={<ProtectedRoute requiredPermission={PERMISSIONS.IA_VER}><AIAssistant /></ProtectedRoute>} />
+      <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
+      <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
+      <Route path="/mi-empresa" element={<ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}><MiEmpresa /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      <Route path="/enroll-me" element={<ProtectedRoute><EnrollMe /></ProtectedRoute>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+
+  if (isBlockingStep) {
+    return (
+      <>
+        <SessionExpiredModal />
+        <main className="onboarding-content">
+          <div className="route-outlet">
+            {routes}
+          </div>
+        </main>
+      </>
+    );
+  }
 
   return (
     <div className={`app-layout ${!user ? 'auth-mode' : ''} ${user && isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -99,154 +159,7 @@ function AppContent() {
         {user && <Header />}
         {user && <OfflineBanner />}
         <div className="route-outlet">
-        <Routes>
-
-          <Route path="/login" element={<Login />} />
-          <Route path="/register-admin" element={<RegisterAdmin />} />
-          <Route path="/onboarding" element={<TenantOnboarding />} />
-          <Route path="/unauthorized" element={<Unauthorized />} />
-          <Route path="/equipo" element={<Equipo />} />
-          <Route path="/about" element={<About />} />
-
-          <Route path="/" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/personas" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_VER}>
-              <PersonasManagement />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/personas/:rut" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}>
-              <WorkerDetail />
-            </ProtectedRoute>
-          } />
-
-          {/* Legacy routes redirect to unified personas */}
-          <Route path="/workers" element={<Navigate to="/personas" replace />} />
-          <Route path="/users" element={<Navigate to="/personas" replace />} />
-
-          <Route path="/workers/:rut" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}>
-              <WorkerDetail />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/obras" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_VER}>
-              <Obras />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/obras/:obraId" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}>
-              <ObraDetalle />
-            </ProtectedRoute>
-          } />
-
-          {/* Constructor de cargos de onboarding (catálogo tenant). Admin + jefe de obra. */}
-          <Route path="/cargos-onboarding" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.CARGOS_GESTIONAR}>
-              <CargosOnboarding />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/workers/enroll" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}>
-              <WorkerEnroll />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/documents" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.DOCUMENTOS_VER}>
-              <Documents />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/documents-repository" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}>
-              <DocumentsRepository />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/surveys" element={
-            <ProtectedRoute>
-              <Surveys />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/incidents" element={
-            <ProtectedRoute>
-              <Incidents />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/activities" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_VER}>
-              <Activities />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/signature-requests" element={
-            <ProtectedRoute>
-              <SignatureRequests />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/my-signatures" element={
-            <ProtectedRoute>
-              <MySignatures />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/offline-signatures" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.FIRMAS_CREAR}>
-              <OfflineSignatures />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/ai-assistant" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.IA_VER}>
-              <AIAssistant />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/inbox" element={
-            <ProtectedRoute>
-              <Inbox />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/change-password" element={
-            <ProtectedRoute>
-              <ChangePassword />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/mi-empresa" element={
-            <ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}>
-              <MiEmpresa />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/settings" element={
-            <ProtectedRoute>
-              <Settings />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/enroll-me" element={
-            <ProtectedRoute>
-              <EnrollMe />
-            </ProtectedRoute>
-          } />
-
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          {routes}
         </div>
         {user && <SuggestionsWidget />}
         {user && <Footer />}
