@@ -40,6 +40,15 @@ const CAPACITACION_SUBTIPOS: Record<string, string> = {
     OTRA: 'Otra capacitación',
 };
 
+// Opciones de periodicidad para actividades recurrentes.
+const FRECUENCIA_OPCIONES: Record<'unica' | 'diaria' | 'semanal' | 'mensual', string> = {
+    unica: 'Una vez (sin repetir)',
+    diaria: 'Diaria',
+    semanal: 'Semanal',
+    mensual: 'Mensual',
+};
+const labelFrecuencia = (f: 'unica' | 'diaria' | 'semanal' | 'mensual') => FRECUENCIA_OPCIONES[f].toLowerCase();
+
 export default function Activities() {
     const { user, hasPermission } = useAuth();
     const canCrearActividad = hasPermission(PERMISSIONS.ACTIVIDADES_CREAR);
@@ -80,6 +89,9 @@ export default function Activities() {
         horaFin: '',
         ubicacion: '',
         asistentesRequeridos: [] as string[],
+        // Periodicidad: 'unica' (sin repetición) o repetir hasta una fecha.
+        frecuencia: 'unica' as 'unica' | 'diaria' | 'semanal' | 'mensual',
+        repetirHasta: '',
     };
     const [newActivity, setNewActivity] = useState(emptyActivity);
 
@@ -145,12 +157,32 @@ export default function Activities() {
             // Campos opcionales vacíos no se envían.
             if (!payload.horaFin) delete payload.horaFin;
             if (!payload.ubicacion) delete payload.ubicacion;
+            // Periodicidad: validar que la repetición tenga fecha de término.
+            if (payload.frecuencia === 'unica') {
+                delete payload.frecuencia;
+                delete payload.repetirHasta;
+            } else if (!payload.repetirHasta) {
+                toast.error('Indica hasta qué fecha se debe repetir la actividad');
+                setSubmitting(false);
+                return;
+            } else if (payload.repetirHasta < payload.fecha) {
+                toast.error('La fecha de término debe ser posterior a la fecha de inicio');
+                setSubmitting(false);
+                return;
+            }
             const response = await activitiesApi.create(payload);
             if (response.success && response.data) {
-                setActivities([response.data, ...activities]);
+                const data = response.data as any;
+                if (data?.serie) {
+                    // Serie recurrente: recargamos para traer todas las ocurrencias de la obra.
+                    await loadData();
+                    toast.success(`${data.count} actividades creadas (serie ${labelFrecuencia(newActivity.frecuencia)})`);
+                } else {
+                    setActivities([data, ...activities]);
+                    toast.success('Actividad creada correctamente');
+                }
                 setShowModal(false);
                 setNewActivity(emptyActivity);
-                toast.success('Actividad creada correctamente');
             } else {
                 toast.error(response.error || 'Error al crear la actividad');
             }
@@ -686,7 +718,7 @@ export default function Activities() {
                         </div>
 
                         <div className="form-group">
-                            <label className="form-label">Fecha *</label>
+                            <label className="form-label">{newActivity.frecuencia === 'unica' ? 'Fecha *' : 'Fecha de inicio *'}</label>
                             <input
                                 type="date"
                                 value={newActivity.fecha}
@@ -695,6 +727,39 @@ export default function Activities() {
                                 required
                             />
                         </div>
+
+                        <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                            <div className="form-group">
+                                <label className="form-label">Periodicidad</label>
+                                <Select
+                                    ariaLabel="Periodicidad"
+                                    value={newActivity.frecuencia}
+                                    onChange={(v) => setNewActivity({ ...newActivity, frecuencia: v as typeof newActivity.frecuencia })}
+                                    options={Object.entries(FRECUENCIA_OPCIONES).map(([value, label]) => ({ value, label }))}
+                                />
+                            </div>
+                            {newActivity.frecuencia !== 'unica' && (
+                                <div className="form-group">
+                                    <label className="form-label">Repetir hasta *</label>
+                                    <input
+                                        type="date"
+                                        value={newActivity.repetirHasta}
+                                        min={newActivity.fecha}
+                                        onChange={(e) => setNewActivity({ ...newActivity, repetirHasta: e.target.value })}
+                                        className="form-input"
+                                        required
+                                    />
+                                </div>
+                            )}
+                        </div>
+
+                        {newActivity.frecuencia !== 'unica' && (
+                            <div className="form-group" style={{ marginTop: 'calc(-1 * var(--space-2))' }}>
+                                <p className="text-xs text-muted" style={{ margin: 0 }}>
+                                    Se creará una actividad {labelFrecuencia(newActivity.frecuencia)} a las {newActivity.horaInicio || '—'} desde {newActivity.fecha || '—'}{newActivity.repetirHasta ? ` hasta ${newActivity.repetirHasta}` : ''}.
+                                </p>
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
                             <div className="form-group">

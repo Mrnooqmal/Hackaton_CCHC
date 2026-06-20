@@ -315,7 +315,7 @@ export default function PersonaNueva() {
                                     <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>Acceso web</div>
                                     <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
                                         {form.tieneAccesoWeb
-                                            ? 'Se generará contraseña temporal al crear — cópiala y entrégala al colaborador.'
+                                            ? 'La contraseña temporal serán los primeros 4 dígitos del RUT — la persona la cambia en su primer ingreso.'
                                             : 'La persona solo existe en el sistema, sin credenciales de acceso web.'}
                                     </div>
                                 </div>

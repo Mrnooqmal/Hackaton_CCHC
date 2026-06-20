@@ -36,6 +36,9 @@ export type { PageHeaderProps } from './PageHeader';
 export { default as Stepper } from './Stepper';
 export type { StepperProps, StepperStep } from './Stepper';
 
+export { default as OnboardingShell } from './OnboardingShell';
+export type { OnboardingShellProps } from './OnboardingShell';
+
 export { default as Drawer } from './Drawer';
 export type { DrawerProps } from './Drawer';
 

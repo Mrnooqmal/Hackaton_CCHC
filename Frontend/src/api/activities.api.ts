@@ -50,6 +50,9 @@ export interface CreateActivityData {
     obraId?: string | null;
     ubicacion?: string;
     asistentesRequeridos?: string[];
+    /** Periodicidad: 'unica' (default) o repetir hasta `repetirHasta`. */
+    frecuencia?: 'unica' | 'diaria' | 'semanal' | 'mensual';
+    repetirHasta?: string;
 }
 
 export interface ActivityListParams {

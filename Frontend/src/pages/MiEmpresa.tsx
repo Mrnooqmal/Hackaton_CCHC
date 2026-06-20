@@ -37,6 +37,35 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
     return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
 }
 
+// Luminancia relativa (WCAG) y ratio de contraste contra blanco — para validar
+// que el texto blanco sobre el color de marca sea legible (botones, banners).
+function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
+    const ch = [r, g, b].map((v) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+
+function contrastVsWhite(hex: string): number | null {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return null;
+    const l = relativeLuminance(rgb);
+    return (1 + 0.05) / (l + 0.05);
+}
+
+// Paleta sugerida: colores de marca legibles con texto blanco (contraste AA ≥ 4.5).
+const SUGGESTED_COLORS = [
+    { hex: '#006edc', label: 'Azul CChC' },
+    { hex: '#002952', label: 'Azul marino' },
+    { hex: '#df3601', label: 'Naranja' },
+    { hex: '#c81e1e', label: 'Rojo' },
+    { hex: '#047857', label: 'Verde' },
+    { hex: '#7c3aed', label: 'Violeta' },
+    { hex: '#b45309', label: 'Ámbar' },
+    { hex: '#0e7490', label: 'Cian' },
+];
+
 function compressLogo(dataUrl: string): Promise<string> {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -249,8 +278,45 @@ function IdentidadTab({ tenant, onSaved, brand, auth, toast }: {
                         onChange={(e) => setColor(e.target.value)} />
                     {rgb && <span className="text-xs text-muted">R {rgb.r} · G {rgb.g} · B {rgb.b}</span>}
                 </div>
+
+                <div style={{ marginTop: 12 }}>
+                    <span className="text-xs text-muted" style={{ display: 'block', marginBottom: 6 }}>Colores sugeridos</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {SUGGESTED_COLORS.map((s) => {
+                            const active = color.toLowerCase() === s.hex.toLowerCase();
+                            return (
+                                <button key={s.hex} type="button" title={`${s.label} · ${s.hex}`}
+                                    onClick={() => setColor(s.hex)}
+                                    style={{
+                                        width: 28, height: 28, borderRadius: 8, background: s.hex, cursor: 'pointer',
+                                        border: active ? '2px solid var(--text-primary)' : '2px solid var(--surface-border)',
+                                        boxShadow: active ? '0 0 0 2px var(--surface-bg)' : 'none',
+                                        outline: 'none', padding: 0,
+                                    }} />
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {colorValido && (() => {
+                    const ratio = contrastVsWhite(color);
+                    if (ratio == null) return null;
+                    const ok = ratio >= 4.5;
+                    return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                            <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', fontWeight: 600,
+                                color: '#fff', background: color, padding: '3px 10px', borderRadius: 6,
+                            }}>Texto blanco</span>
+                            <span className="text-xs" style={{ color: ok ? 'var(--success-600, #047857)' : 'var(--warning-600, #b45309)', fontWeight: 600 }}>
+                                {ok ? '✓ Buen contraste' : '⚠ Contraste bajo'} · {ratio.toFixed(1)}:1
+                            </span>
+                        </div>
+                    );
+                })()}
+
                 <p className="text-xs text-muted" style={{ marginTop: 6 }}>
-                    Reemplaza el color de acento en toda la plataforma al guardar.
+                    Reemplaza el color de acento en toda la plataforma al guardar. Recomendamos un contraste mínimo de 4.5:1 con el texto blanco de los botones.
                 </p>
             </div>
 

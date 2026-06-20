@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
 import PinInput from '../components/PinInput';
+import { OnboardingShell } from '../components/ui';
+import type { StepperStep } from '../components/ui';
 import { FiCheckCircle, FiShield, FiLock, FiArrowRight, FiKey, FiUser, FiPhone, FiMessageSquare, FiCamera, FiSkipForward } from 'react-icons/fi';
 
 type EnrollmentStep = 'welcome' | 'create-pin' | 'confirm-pin' | 'processing' | 'profile' | 'success';
@@ -148,95 +150,24 @@ export default function EnrollMe() {
         }
     };
 
-    const steps = [
-        { key: 'welcome', label: 'Bienvenida' },
-        { key: 'create-pin', label: 'Crear PIN' },
-        { key: 'confirm-pin', label: 'Confirmar' },
-        { key: 'profile', label: 'Perfil' },
-        { key: 'success', label: 'Completado' },
+    const steps: StepperStep[] = [
+        { id: 'welcome', label: 'Bienvenida' },
+        { id: 'create-pin', label: 'Crear PIN' },
+        { id: 'confirm-pin', label: 'Confirmar' },
+        { id: 'profile', label: 'Perfil' },
+        { id: 'success', label: 'Completado' },
     ];
     const currentIndex = steps.findIndex(s =>
-        s.key === currentStep || (currentStep === 'processing' && s.key === 'profile')
+        s.id === currentStep || (currentStep === 'processing' && s.id === 'profile')
     );
 
     return (
-        <div style={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--surface-base)',
-            padding: 'var(--space-6)',
-        }}>
-            <div style={{ width: '100%', maxWidth: '520px', animation: 'fadeInUp 0.4s ease-out' }}>
-
-                {/* Barra de progreso */}
-                <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    position: 'relative',
-                    marginBottom: 'var(--space-6)',
-                }}>
-                    <div style={{
-                        position: 'absolute',
-                        top: '18px',
-                        left: '10%',
-                        right: '10%',
-                        height: '2px',
-                        background: 'var(--surface-border)',
-                    }} />
-                    <div style={{
-                        position: 'absolute',
-                        top: '18px',
-                        left: '10%',
-                        height: '2px',
-                        background: 'var(--accent)',
-                        width: `${(currentIndex / (steps.length - 1)) * 80}%`,
-                        transition: 'width 0.4s ease',
-                    }} />
-
-                    {steps.map((step, index) => {
-                        const isCompleted = index < currentIndex;
-                        const isActive = index === currentIndex;
-                        return (
-                            <div key={step.key} style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: 'var(--space-2)',
-                                flex: 1,
-                                position: 'relative',
-                                zIndex: 1,
-                            }}>
-                                <div style={{
-                                    width: '36px',
-                                    height: '36px',
-                                    borderRadius: '50%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontWeight: 600,
-                                    fontSize: 'var(--text-sm)',
-                                    transition: 'all 0.3s ease',
-                                    background: isCompleted ? 'var(--accent)' : 'var(--surface-card)',
-                                    border: `2px solid ${isCompleted || isActive ? 'var(--accent)' : 'var(--surface-border)'}`,
-                                    color: isCompleted ? 'white' : isActive ? 'var(--accent)' : 'var(--text-muted)',
-                                }}>
-                                    {isCompleted ? <FiCheckCircle size={15} /> : index + 1}
-                                </div>
-                                <span style={{
-                                    fontSize: '11px',
-                                    fontWeight: isActive ? 600 : 400,
-                                    color: isActive ? 'var(--accent-text)' : 'var(--text-muted)',
-                                    textAlign: 'center',
-                                }}>
-                                    {step.label}
-                                </span>
-                            </div>
-                        );
-                    })}
-                </div>
-
+        <OnboardingShell
+            user={user as any}
+            steps={steps}
+            currentIndex={currentIndex < 0 ? 0 : currentIndex}
+            sideHint="Crea tu firma digital (PIN de 4 dígitos) y completa tu perfil para terminar de habilitar tu cuenta."
+        >
                 {/* Card principal */}
                 <div className="card" style={{ padding: 'var(--space-8)' }}>
 
@@ -639,7 +570,6 @@ export default function EnrollMe() {
                         </div>
                     )}
                 </div>
-            </div>
 
             <style>{`
                 @keyframes fadeInUp {
@@ -659,6 +589,6 @@ export default function EnrollMe() {
                     to { transform: rotate(360deg); }
                 }
             `}</style>
-        </div>
+        </OnboardingShell>
     );
 }

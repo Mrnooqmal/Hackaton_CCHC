@@ -80,6 +80,8 @@ export default function CargosOnboarding() {
     const [newCargoOpen, setNewCargoOpen] = useState(false);
     const [newCargoLabel, setNewCargoLabel] = useState('');
     const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+    const [cargoToDelete, setCargoToDelete] = useState<TenantCargo | null>(null);
+    const [itemToDelete, setItemToDelete] = useState<{ idx: number; label: string } | null>(null);
     const [itemDrawer, setItemDrawer] = useState<{ idx: number | null; draft: Ds44KitItem } | null>(null);
     const [uploadingItem, setUploadingItem] = useState<number | null>(null);
     const [uploadingEmpresaKey, setUploadingEmpresaKey] = useState<string | null>(null);
@@ -372,7 +374,7 @@ export default function CargosOnboarding() {
                             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{current.codigo}</span>
                             <div style={{ flex: 1 }} />
                             <button className="btn btn-ghost btn-sm" onClick={() => duplicateCargo(current)} title="Duplicar cargo"><FiCopy /></button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => removeCargo(current.codigo)} style={{ color: 'var(--danger-500)' }} title="Eliminar cargo"><FiTrash2 /></button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setCargoToDelete(current)} style={{ color: 'var(--danger-500)' }} title="Eliminar cargo"><FiTrash2 /></button>
                         </div>
 
                         <div style={{
@@ -438,7 +440,7 @@ export default function CargosOnboarding() {
                                                         </div>
                                                         <div style={{ display: 'flex', gap: 'var(--space-1)', flexShrink: 0 }}>
                                                             <button className="btn btn-ghost btn-sm" onClick={() => setItemDrawer({ idx, draft: { ...it } })} title="Editar ítem"><FiEdit2 /></button>
-                                                            <button className="btn btn-ghost btn-sm" onClick={() => removeItem(idx)} style={{ color: 'var(--danger-500)' }} title="Eliminar ítem"><FiTrash2 /></button>
+                                                            <button className="btn btn-ghost btn-sm" onClick={() => setItemToDelete({ idx, label: it.titulo })} style={{ color: 'var(--danger-500)' }} title="Eliminar ítem"><FiTrash2 /></button>
                                                         </div>
                                                     </div>
                                                 ))}
@@ -510,6 +512,52 @@ export default function CargosOnboarding() {
                     <span>
                         Se eliminarán los cargos personalizados y los documentos subidos quedarán sin referencia.
                         Deberás <strong>guardar cambios</strong> después para persistir en la base de datos.
+                    </span>
+                </div>
+            </Modal>
+
+            {/* Modal: confirmar eliminar cargo */}
+            <Modal
+                isOpen={!!cargoToDelete}
+                onClose={() => setCargoToDelete(null)}
+                title="Eliminar cargo"
+                subtitle={cargoToDelete ? `Se quitará "${cargoToDelete.label}" del catálogo.` : undefined}
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => setCargoToDelete(null)}>Cancelar</button>
+                        <button className="btn btn-danger" onClick={() => { if (cargoToDelete) removeCargo(cargoToDelete.codigo); setCargoToDelete(null); }}>
+                            <FiTrash2 size={14} /> Eliminar cargo
+                        </button>
+                    </>
+                }
+            >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--surface-hover)', padding: '10px 12px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)' }}>
+                    <FiAlertTriangle style={{ color: 'var(--warning-500)', flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                        Se eliminará el cargo y todo su kit de documentos del catálogo. Deberás <strong>guardar cambios</strong> después para persistir en la base de datos.
+                    </span>
+                </div>
+            </Modal>
+
+            {/* Modal: confirmar eliminar ítem del kit */}
+            <Modal
+                isOpen={!!itemToDelete}
+                onClose={() => setItemToDelete(null)}
+                title="Eliminar ítem"
+                subtitle={itemToDelete ? `Se quitará "${itemToDelete.label}" del kit de este cargo.` : undefined}
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => setItemToDelete(null)}>Cancelar</button>
+                        <button className="btn btn-danger" onClick={() => { if (itemToDelete) removeItem(itemToDelete.idx); setItemToDelete(null); }}>
+                            <FiTrash2 size={14} /> Eliminar ítem
+                        </button>
+                    </>
+                }
+            >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--surface-hover)', padding: '10px 12px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)' }}>
+                    <FiAlertTriangle style={{ color: 'var(--warning-500)', flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                        Se eliminará este ítem del kit del cargo. Deberás <strong>guardar cambios</strong> después para persistir en la base de datos.
                     </span>
                 </div>
             </Modal>

@@ -78,6 +78,18 @@ export interface TenantSetupData {
         fechaNacimiento?: string;
         email: string;
     };
+    /** Trabajadores iniciales creados junto al tenant (opcional). */
+    trabajadores?: Array<{
+        rut: string;
+        nombre: string;
+        apellidoPaterno?: string;
+        apellidoMaterno?: string;
+        fechaNacimiento?: string;
+        email?: string;
+        rol?: string;
+        cargo?: string;
+        tieneAccesoWeb?: boolean;
+    }>;
 }
 
 export interface TenantSetupResponse {
@@ -92,6 +104,14 @@ export interface TenantSetupResponse {
         rol: string;
         estado: string;
     } | null;
+    trabajadores?: Array<{
+        rut: string;
+        nombre: string;
+        apellido: string;
+        password?: string;
+        emailNotificado?: boolean;
+        error?: string;
+    }>;
 }
 
 // ========================================

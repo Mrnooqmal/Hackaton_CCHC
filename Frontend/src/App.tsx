@@ -98,9 +98,15 @@ function AppContent() {
     if (user.branding.colorPrimario) setPrimaryColor(user.branding.colorPrimario);
   }, [user?.branding, setLogo, setPrimaryColor]);
 
+  // El enrolamiento es siempre pantalla completa (sin sidebar): durante el paso de
+  // perfil el usuario ya queda `habilitado`, pero el flujo aún no termina, así que
+  // no debe volver al layout del sistema. El cambio de contraseña solo bloquea en
+  // el primer ingreso (después se puede cambiar desde dentro del sistema).
+  const isFirstEntryUser = !!user && (user.passwordTemporal === true || user.habilitado === false);
   const isBlockingStep = !!user && (
-    user.passwordTemporal === true || user.habilitado === false
-  ) && ['/change-password', '/enroll-me'].includes(location.pathname);
+    location.pathname === '/enroll-me' ||
+    (isFirstEntryUser && location.pathname === '/change-password')
+  );
 
   const routes = (
     <Routes>

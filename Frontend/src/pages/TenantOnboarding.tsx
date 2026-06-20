@@ -316,6 +316,15 @@ export default function TenantOnboarding() {
           permisos: r.locked ? ALL_PERMISSION_KEYS : r.permisos,
         })),
         admin: { rut: admin.rut, nombre: admin.nombre, apellidoPaterno: admin.apellidoPaterno, apellidoMaterno: admin.apellidoMaterno, fechaNacimiento: admin.fechaNacimiento || undefined, email: admin.email },
+        // Los trabajadores se crean en el mismo setup (server-side) para que queden
+        // persistidos de forma confiable junto al tenant y el administrador.
+        trabajadores: workers.map(w => ({
+          rut: w.rut, nombre: w.nombre,
+          apellidoPaterno: w.apellidoPaterno, apellidoMaterno: w.apellidoMaterno,
+          fechaNacimiento: w.fechaNacimiento || undefined,
+          email: w.email, rol: w.rol, cargo: w.cargo,
+          tieneAccesoWeb: true,
+        })),
       };
       const response = await tenantsApi.setup(payload);
       if (response.success && response.data) {
@@ -324,28 +333,12 @@ export default function TenantOnboarding() {
           : (typeof data.admin?.passwordTemporal === 'string' ? data.admin.passwordTemporal : '');
         setAdminPassword(tempPwd);
 
-        const tenantId = response.data.tenant.tenantId;
-        if (workers.length > 0 && tenantId) {
-          const results: WorkerResult[] = [];
-          for (const w of workers) {
-            try {
-              const wRes = await personasApi.create(tenantId, {
-                rut: w.rut, nombre: w.nombre,
-                apellidoPaterno: w.apellidoPaterno, apellidoMaterno: w.apellidoMaterno,
-                fechaNacimiento: w.fechaNacimiento || undefined,
-                email: w.email, rol: w.rol, cargo: w.cargo,
-                tieneAccesoWeb: true,
-              });
-              if (wRes.success && wRes.data) {
-                results.push({ rut: w.rut, nombre: w.nombre, apellido: `${w.apellidoPaterno} ${w.apellidoMaterno}`.trim(), password: wRes.data.passwordTemporal });
-              } else {
-                results.push({ rut: w.rut, nombre: w.nombre, apellido: `${w.apellidoPaterno} ${w.apellidoMaterno}`.trim(), error: wRes.error || 'Error al crear' });
-              }
-            } catch {
-              results.push({ rut: w.rut, nombre: w.nombre, apellido: `${w.apellidoPaterno} ${w.apellidoMaterno}`.trim(), error: 'Error de conexión' });
-            }
-          }
-          setWorkersResult(results);
+        const trabajadores = (response.data.trabajadores || []) as Array<{ rut: string; nombre: string; apellido: string; password?: string; error?: string }>;
+        if (trabajadores.length > 0) {
+          setWorkersResult(trabajadores.map(t => ({
+            rut: t.rut, nombre: t.nombre, apellido: t.apellido || '',
+            password: t.password, error: t.error,
+          })));
         }
         setResult(response.data);
       } else {
@@ -409,6 +402,28 @@ export default function TenantOnboarding() {
     if (!m) return { r: 0, g: 110, b: 220 };
     return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
   };
+
+  // Contraste WCAG contra blanco (texto blanco sobre el color de marca).
+  const contrastVsWhite = (hex: string) => {
+    const { r, g, b } = hexToRgb(hex);
+    const lum = [r, g, b].map((v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    const l = 0.2126 * lum[0] + 0.7152 * lum[1] + 0.0722 * lum[2];
+    return 1.05 / (l + 0.05);
+  };
+
+  const SUGGESTED_COLORS = [
+    { hex: '#006edc', label: 'Azul CChC' },
+    { hex: '#002952', label: 'Azul marino' },
+    { hex: '#df3601', label: 'Naranja' },
+    { hex: '#c81e1e', label: 'Rojo' },
+    { hex: '#047857', label: 'Verde' },
+    { hex: '#7c3aed', label: 'Violeta' },
+    { hex: '#b45309', label: 'Ámbar' },
+    { hex: '#0e7490', label: 'Cian' },
+  ];
 
   /* ── SUCCESS ── */
   if (result) {
@@ -628,6 +643,33 @@ export default function TenantOnboarding() {
                     })()}
                   </div>
                 </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                  {SUGGESTED_COLORS.map((s) => {
+                    const active = empresa.colorPrincipal.toLowerCase() === s.hex.toLowerCase();
+                    return (
+                      <button key={s.hex} type="button" title={`${s.label} · ${s.hex}`}
+                        onClick={() => setEmpresa(prev => ({ ...prev, colorPrincipal: s.hex }))}
+                        style={{
+                          width: 26, height: 26, borderRadius: 7, background: s.hex, cursor: 'pointer',
+                          border: active ? '2px solid #fff' : '2px solid rgba(255,255,255,0.25)',
+                          boxShadow: active ? '0 0 0 2px rgba(255,255,255,0.5)' : 'none',
+                          outline: 'none', padding: 0,
+                        }} />
+                    );
+                  })}
+                </div>
+
+                {(() => {
+                  const ratio = contrastVsWhite(empresa.colorPrincipal);
+                  const ok = ratio >= 4.5;
+                  return (
+                    <p className="onb-color-hint" style={{ marginTop: 8, color: ok ? '#86efac' : '#fcd34d' }}>
+                      {ok ? '✓ Buen contraste con texto blanco' : '⚠ Contraste bajo con texto blanco'} · {ratio.toFixed(1)}:1
+                    </p>
+                  );
+                })()}
+
                 <p className="onb-color-hint">
                   Reemplazará el azul principal en toda la plataforma. Haz clic en el cuadro de color para abrir la paleta RGB.
                 </p>

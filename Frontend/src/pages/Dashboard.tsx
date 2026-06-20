@@ -304,7 +304,10 @@ export default function Dashboard() {
     const loadWorkerDashboard = async () => {
         const pendingTasks: PendingTask[] = [];
         let completedCount = 0;
-        let totalRequiredCount = 7; // Base requirements
+        // El total refleja tareas REALES del trabajador: el enrolamiento (siempre
+        // requerido) más las asignaciones que efectivamente tenga (encuestas, etc.).
+        // Antes era un 7 fijo, lo que daba un 14% (1/7) apenas se enrolaba.
+        let totalRequiredCount = 1; // Enrolamiento
 
         // Check enrollment status (sync — no API needed)
         if (user?.habilitado) {
@@ -349,6 +352,8 @@ export default function Dashboard() {
                     s.recipients?.some(r => r.workerId === user.personaId && r.estado === 'respondida')
                 ).length;
 
+                // Cada encuesta asignada (pendiente o respondida) suma al total real.
+                totalRequiredCount += mySurveys.length + completedSurveys;
                 completedCount += completedSurveys;
             }
         } else {
