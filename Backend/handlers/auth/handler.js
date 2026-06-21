@@ -197,7 +197,7 @@ module.exports.changePassword = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
 
-        const validation = validateRequired(body, ['personaId', 'passwordActual', 'passwordNuevo', 'confirmarPassword']);
+        const validation = validateRequired(body, ['personaId', 'passwordNuevo', 'confirmarPassword']);
         if (!validation.valid) {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
@@ -214,8 +214,14 @@ module.exports.changePassword = async (event) => {
         const persona = await personaService.getById(personaId);
         if (!persona) return error('Usuario no encontrado', 404);
 
-        const passValido = verifyPassword(passwordActual, persona._passwordHash, personaId);
-        if (!passValido) return error('Contraseña actual incorrecta', 401);
+        // En el primer ingreso (contraseña temporal) el usuario ya se validó al
+        // iniciar sesión con la temporal, así que no se le vuelve a pedir la actual.
+        // En cambios posteriores sí se exige y verifica la contraseña vigente.
+        if (!persona.passwordTemporal) {
+            if (!passwordActual) return error('Campos requeridos faltantes: passwordActual');
+            const passValido = verifyPassword(passwordActual, persona._passwordHash, personaId);
+            if (!passValido) return error('Contraseña actual incorrecta', 401);
+        }
 
         const now = new Date().toISOString();
         const newPasswordHash = hashPassword(passwordNuevo, personaId);

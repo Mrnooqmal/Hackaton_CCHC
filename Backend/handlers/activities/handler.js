@@ -33,6 +33,31 @@ const CAPACITACION_SUBTIPOS = {
     OTRA: 'Otra capacitación',
 };
 
+// Tope de ocurrencias por serie, para evitar crear cantidades desmedidas.
+const MAX_OCURRENCIAS = 180;
+
+/**
+ * Genera la lista de fechas (YYYY-MM-DD) de una serie recurrente entre la fecha
+ * de inicio y `hasta` (inclusive), según la frecuencia. Devuelve solo la fecha
+ * de inicio si no hay repetición o los parámetros son inválidos.
+ */
+function generarFechasRecurrencia(inicio, hasta, frecuencia) {
+    if (frecuencia === 'unica' || !hasta) return [inicio];
+    const cur = new Date(`${inicio}T00:00:00`);
+    const fin = new Date(`${hasta}T00:00:00`);
+    if (isNaN(cur.getTime()) || isNaN(fin.getTime()) || fin < cur) return [inicio];
+
+    const fechas = [];
+    while (cur <= fin && fechas.length < MAX_OCURRENCIAS) {
+        fechas.push(cur.toISOString().split('T')[0]);
+        if (frecuencia === 'diaria') cur.setDate(cur.getDate() + 1);
+        else if (frecuencia === 'semanal') cur.setDate(cur.getDate() + 7);
+        else if (frecuencia === 'mensual') cur.setMonth(cur.getMonth() + 1);
+        else break;
+    }
+    return fechas;
+}
+
 /**
  * POST /activities - Crear nueva actividad
  */
@@ -61,10 +86,24 @@ module.exports.create = async (event) => {
         }
 
         const now = new Date().toISOString();
-        const activityId = uuidv4();
 
-        const activity = {
-            activityId,
+        // Periodicidad: si la actividad se repite, generamos una ocurrencia por
+        // fecha (ej. una charla de 5 min cada día a las 9am). Todas comparten un
+        // serieId para poder agruparlas/identificarlas. 'unica' = sin repetición.
+        const FRECUENCIAS = ['unica', 'diaria', 'semanal', 'mensual'];
+        const frecuencia = FRECUENCIAS.includes(body.frecuencia) ? body.frecuencia : 'unica';
+        const fechaInicio = body.fecha || now.split('T')[0];
+        const repetirHasta = body.repetirHasta || null;
+
+        const fechas = generarFechasRecurrencia(fechaInicio, repetirHasta, frecuencia);
+        const esSerie = frecuencia !== 'unica' && fechas.length > 1;
+        const serieId = esSerie ? uuidv4() : null;
+
+        const asistentesRequeridos = Array.isArray(body.asistentesRequeridos)
+            ? body.asistentesRequeridos
+            : (Array.isArray(body.attendees) ? body.attendees : []);
+
+        const baseActivity = {
             tenantId,
             obraId: body.obraId || null,
             tipo: body.tipo,
@@ -73,41 +112,53 @@ module.exports.create = async (event) => {
             subtipoDescripcion: subtipo ? CAPACITACION_SUBTIPOS[subtipo] : null,
             titulo: body.titulo,
             descripcion: body.descripcion || '',
-            fecha: body.fecha || now.split('T')[0],
             horaInicio: body.horaInicio || now.split('T')[1].substring(0, 5),
             horaFin: body.horaFin || null,
             relatorId: body.relatorId,
             ubicacion: body.ubicacion || '',
-            asistentesRequeridos: Array.isArray(body.asistentesRequeridos)
-                ? body.asistentesRequeridos
-                : (Array.isArray(body.attendees) ? body.attendees : []),
+            asistentesRequeridos,
             asistentes: [],
             firmaRelator: null,
             estado: 'programada',
+            recurrencia: esSerie ? { frecuencia, repetirHasta, serieId } : { frecuencia: 'unica' },
+            serieId,
             createdAt: now,
             updatedAt: now,
         };
 
-        await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: activity }));
+        const actividades = fechas.map((fecha) => ({
+            ...baseActivity,
+            activityId: uuidv4(),
+            fecha,
+        }));
 
-        // Notificar asistentes
+        for (const act of actividades) {
+            await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: act }));
+        }
+
+        // Notificar asistentes (un solo evento por la serie/actividad, con la primera fecha).
         try {
-            if (activity.asistentesRequeridos.length > 0) {
+            if (asistentesRequeridos.length > 0) {
+                const primera = actividades[0];
                 await eventBus.emit('activity.created', {
-                    activityId: activity.activityId,
-                    attendeeIds: activity.asistentesRequeridos,
+                    activityId: primera.activityId,
+                    attendeeIds: asistentesRequeridos,
                     createdBy: body.relatorId,
-                    activityName: activity.titulo,
-                    fecha: activity.fecha,
-                    tipo: activity.tipo,
-                    obraId: activity.obraId
+                    activityName: primera.titulo,
+                    fecha: primera.fecha,
+                    tipo: primera.tipo,
+                    obraId: primera.obraId,
+                    serie: esSerie ? { serieId, ocurrencias: actividades.length } : undefined,
                 });
             }
         } catch (eventError) {
             console.error('Error emitting activity.created event:', eventError);
         }
 
-        return created(activity);
+        // Compatibilidad: una sola actividad devuelve el objeto; una serie devuelve
+        // la lista creada junto con la primera ocurrencia.
+        if (!esSerie) return created(actividades[0]);
+        return created({ serie: true, serieId, count: actividades.length, activities: actividades, first: actividades[0] });
     } catch (err) {
         console.error('Error creating activity:', err);
         return error(err.message, 500);

@@ -17,11 +17,12 @@
         "@aws-sdk/lib-dynamodb": "^3.700.0",
         "@aws-sdk/s3-request-presigner": "^3.700.0",
         "@google/generative-ai": "^0.24.1",
+        "exceljs": "^4.4.0",
         "itty-router": "^5.0.22",
         "jspdf-autotable": "^5.0.7",
         "rut.js": "^2.1.0",
-        "xlsx": "^0.18.5",
-        "uuid": "^11.1.0"
+        "uuid": "^11.1.0",
+        "xlsx": "^0.18.5"
     },
     "devDependencies": {
         "serverless": "^4.0.0",

@@ -134,11 +134,55 @@ module.exports.tenantsHandler = async (event) => {
                 }
             }
 
+            // Crear trabajadores iniciales (opcional) en el mismo setup, para que
+            // queden persistidos de forma confiable junto al tenant/admin. Cada uno
+            // se crea con el mismo servicio que el panel; los errores no bloquean.
+            const trabajadoresResult = [];
+            if (Array.isArray(body.trabajadores) && body.trabajadores.length > 0) {
+                for (const w of body.trabajadores) {
+                    const apellido = [w.apellidoPaterno, w.apellidoMaterno].filter(Boolean).join(' ').trim();
+                    try {
+                        const { persona, passwordTemporal: wPwd } = await personaService.crear(tenant.tenantId, {
+                            rut: w.rut,
+                            nombre: w.nombre,
+                            apellidoPaterno: w.apellidoPaterno || '',
+                            apellidoMaterno: w.apellidoMaterno || '',
+                            fechaNacimiento: w.fechaNacimiento || null,
+                            email: w.email || '',
+                            rol: w.rol || 'Colaborador',
+                            cargo: w.cargo || '',
+                            tieneAccesoWeb: w.tieneAccesoWeb !== undefined ? w.tieneAccesoWeb : true
+                        });
+                        let emailSent = false;
+                        if (persona.email && wPwd) {
+                            try {
+                                const nombreCompleto = [persona.nombre, persona.apellido].filter(Boolean).join(' ');
+                                const r = await sendWelcomeEmail(persona.email, nombreCompleto, persona.rut, wPwd);
+                                emailSent = r?.sent || false;
+                            } catch (mailErr) {
+                                console.error('Error sending worker welcome email:', mailErr.message);
+                            }
+                        }
+                        trabajadoresResult.push({ rut: persona.rut, nombre: persona.nombre, apellido, password: wPwd || undefined, emailNotificado: emailSent });
+                    } catch (wErr) {
+                        console.error(`Error creando trabajador ${w.rut}:`, wErr.message);
+                        trabajadoresResult.push({ rut: w.rut, nombre: w.nombre, apellido, error: wErr.message });
+                    }
+                }
+                const creados = trabajadoresResult.filter(t => !t.error).length;
+                if (creados > 0) {
+                    await tenantService.ajustarCantidadTrabajadores(tenant.tenantId, creados).catch((countErr) => {
+                        console.error('No se pudo actualizar la cantidad de trabajadores del tenant (setup):', countErr.message);
+                    });
+                }
+            }
+
             return created({
                 message: 'Tenant creado exitosamente',
                 tenant: tenant.toSafeFormat(),
                 admin: adminResult,
-                passwordTemporal
+                passwordTemporal,
+                trabajadores: trabajadoresResult
             });
         }
 

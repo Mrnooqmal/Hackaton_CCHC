@@ -82,11 +82,13 @@ const itemEppDeCargo = (cargo) => ({
     accion: 'ENTREGA_EPP', matrizEpp: DS44_EPP_MATRIZ[cargo] || EPP_GENERICO
 });
 
+// Plan de Emergencias ya NO vive en el kit por-cargo: es DOCUMENTO BASE DE LA OBRA
+// (específico del sitio, una vez por obra). El IRL es del CARGO, definido UNA VEZ por
+// empresa (alcance 'tenant': su plantilla se sube en Onboarding por cargo, no por obra).
 const kitTransversal = (cargo) => [
     { key: 'RI_76', tipo: 'REGLAMENTO_INTERNO', codigoEbco: 'RI 76', titulo: 'Reglamento Interno (RIHS/RIOHS)', articulo: 'Art. 156 CT', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' },
     { key: 'POLITICA_SST', tipo: 'POLITICA_SSO', titulo: 'Política SST', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' },
-    { key: 'PLAN_EMERGENCIAS', tipo: 'PLAN_EMERGENCIAS', codigoEbco: 'PR-PDO-07.01', titulo: 'Plan de Emergencias de la Obra', articulo: 'Art. 19', naturaleza: 'derivado_miper', alcancePlantilla: 'obra', accion: 'DIFUSION_FIRMA' },
-    { key: 'IRL', tipo: 'IRL', titulo: 'IRL — Información de Riesgos Laborales del cargo', articulo: 'Art. 15', naturaleza: 'derivado_miper', alcancePlantilla: 'obra', accion: 'CAPACITACION_EVALUACION', notaMinima: 70, bloqueante: true },
+    { key: 'IRL', tipo: 'IRL', titulo: 'IRL — Información de Riesgos Laborales del cargo', articulo: 'Art. 15', naturaleza: 'derivado_miper', alcancePlantilla: 'tenant', accion: 'CAPACITACION_EVALUACION', notaMinima: 70, bloqueante: true },
     itemEppDeCargo(cargo)
 ];
 

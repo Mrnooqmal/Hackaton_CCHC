@@ -5,6 +5,7 @@
  * Todas las operaciones filtran por tenantId.
  */
 const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
@@ -67,9 +68,9 @@ const TEMPLATE_INSTRUCTIONS = [
     '1. Las columnas rut, nombre y rol son obligatorias.',
     '2. El rol debe coincidir con uno de los roles definidos para la empresa (ej. Prevencionista, Jefe de Obra, Supervisor, Colaborador o Administrador).',
     '3. cargo: cargo del trabajador (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Prevencionista).',
-    '4. obraId: ID de la obra en formato UUID (ej. a1b2c3d4-e5f6-7890-abcd-ef1234567890). Puedes copiarlo desde el detalle de la obra. Si se deja vacio y la carga se hace desde una obra, se asigna a esa obra. Para asignar a multiples obras, importa una vez por cada obra con su obraId correspondiente.',
+    '4. obraId: codigo (ej. OBRA-001) o UUID de la obra. Puedes copiarlo desde el detalle de la obra. Para asignar a varias obras, separalas por coma (ej. OBRA-001, OBRA-002). Si se deja vacio, la persona se crea en la empresa sin obra (se vincula despues); si la carga se hace desde una obra, se asigna a esa obra.',
     '5. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
-    '6. Si el email es valido, se genera una contraseña temporal para el acceso web (todas las personas tienen acceso web).',
+    '6. Si el email es valido, se genera una contraseña temporal para el acceso web: los primeros 4 digitos del RUT. La persona debera cambiarla en su primer ingreso.',
     '7. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
     '8. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
     '9. Reemplaza el obraId de ejemplo con el ID real de tu obra antes de importar.',
@@ -417,12 +418,13 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
             const excluido = origenes.every((cg) => aplicabilidad?.[cg]?.[item.key] === 'no_aplica');
             if (excluido) continue;
 
-            // EPP (Art. 13): entrega física por obra (riesgos del sitio), no es PDF.
+            // EPP (Art. 13): la entrega física es un acto real (bodega/prevención
+            // hace entrega y el trabajador firma recepción). NO se auto-genera al
+            // crear la persona: hacerlo simulaba una entrega inexistente y ensuciaba
+            // el historial de EPP. El ítem queda PENDIENTE en el checklist DS44 y la
+            // entrega se registra cuando efectivamente ocurre (modal "Nueva entrega
+            // / Reposición de EPP" en la ficha del trabajador).
             if (item.accion === 'ENTREGA_EPP') {
-                const items = (item.matrizEpp || []).map((e) => ({ descripcion: e.descripcion, cantidad: 1 }));
-                if (items.length > 0) {
-                    await eppService.crearEntrega({ tenantId, obraId, persona, creador: solicitante, itemsEntregados: items });
-                }
                 continue;
             }
 
@@ -479,18 +481,90 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
     await avisarFaltaPlantilla({ solicitante, persona, obraId, faltantes });
 };
 
-const createTemplateBuffer = () => {
-    const workbook = XLSX.utils.book_new();
-    const dataSheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ...TEMPLATE_EXAMPLE_ROWS]);
-    XLSX.utils.book_append_sheet(workbook, dataSheet, 'Personas');
+// Valores estandarizados para los desplegables de la plantilla.
+const NIVEL_ESCOLAR_OPCIONES = [
+    'Básica incompleta', 'Básica completa', 'Media incompleta', 'Media completa',
+    'Técnica', 'Universitaria', 'Postgrado'
+];
+const RELACION_EMERGENCIA_OPCIONES = [
+    'Cónyuge', 'Conviviente', 'Padre', 'Madre', 'Hijo/a', 'Hermano/a', 'Otro familiar', 'Amigo/a'
+];
 
-    const instructionsSheet = XLSX.utils.aoa_to_sheet([
-        ['Instrucciones'],
-        ...TEMPLATE_INSTRUCTIONS.map(line => [line])
-    ]);
-    XLSX.utils.book_append_sheet(workbook, instructionsSheet, 'Instrucciones');
+// Columnas (1-based) de la hoja Personas que llevan desplegable.
+const COL = { rol: 8, cargo: 9, nivelEscolar: 11, relacion: 14 };
+const TEMPLATE_FILAS_VALIDADAS = 500; // filas de datos con desplegable activo
 
-    return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+/**
+ * Genera la plantilla Excel de carga masiva con LISTAS DESPLEGABLES por columna
+ * para los campos estandarizados (rol, cargo, nivel escolar, relación de
+ * contacto). Los valores de rol/cargo se toman del tenant cuando está
+ * disponible; si no, se usan ejemplos. Usa exceljs porque SheetJS (community)
+ * no escribe validaciones de datos.
+ *
+ * @param {{ roles?: string[], cargos?: string[] }} listas
+ * @returns {Promise<Buffer>}
+ */
+const createTemplateBuffer = async ({ roles, cargos } = {}) => {
+    const rolesList = (Array.isArray(roles) && roles.length) ? roles
+        : ['Administrador', 'Prevencionista', 'Jefe de Obra', 'Supervisor', 'Colaborador'];
+    const cargosList = (Array.isArray(cargos) && cargos.length) ? cargos
+        : ['Carpintero', 'Maestro albañil', 'Jornal de aseo y acarreo', 'Prevencionista'];
+
+    const wb = new ExcelJS.Workbook();
+
+    // IMPORTANTE: la hoja de datos (Personas) se crea PRIMERO para que sea la
+    // pestaña activa. Si la hoja oculta fuera la activa, los visores la revelan
+    // (la pestaña activa no puede estar oculta). 'Listas' se agrega al final.
+    const ws = wb.addWorksheet('Personas', { views: [{ tabSelected: true }] });
+    ws.addRow(TEMPLATE_HEADERS);
+    TEMPLATE_EXAMPLE_ROWS.forEach((row) => ws.addRow(row));
+
+    // Encabezado en negrita.
+    ws.getRow(1).font = { bold: true };
+    ws.columns.forEach((col) => { col.width = 20; });
+
+    // Rangos de cada lista en la hoja oculta.
+    const rango = (letra, n) => `Listas!$${letra}$1:$${letra}$${Math.max(n, 1)}`;
+    const validaciones = [
+        { col: COL.rol, formula: rango('A', rolesList.length), msg: 'Selecciona un rol definido por la empresa.' },
+        { col: COL.cargo, formula: rango('B', cargosList.length), msg: 'Selecciona un cargo del catálogo.' },
+        { col: COL.nivelEscolar, formula: rango('C', NIVEL_ESCOLAR_OPCIONES.length), msg: 'Selecciona el nivel escolar.' },
+        { col: COL.relacion, formula: rango('D', RELACION_EMERGENCIA_OPCIONES.length), msg: 'Selecciona la relación del contacto.' },
+    ];
+
+    // Aplica el desplegable a las filas de datos (desde la fila 2).
+    for (let fila = 2; fila <= TEMPLATE_FILAS_VALIDADAS + 1; fila++) {
+        for (const v of validaciones) {
+            ws.getCell(fila, v.col).dataValidation = {
+                type: 'list',
+                allowBlank: true,
+                formulae: [v.formula],
+                showErrorMessage: true,
+                errorStyle: 'warning',
+                errorTitle: 'Valor sugerido',
+                error: v.msg,
+            };
+        }
+    }
+
+    const instrucciones = wb.addWorksheet('Instrucciones');
+    instrucciones.getColumn(1).width = 120;
+    instrucciones.addRow(['Instrucciones']).font = { bold: true };
+    TEMPLATE_INSTRUCTIONS.forEach((line) => instrucciones.addRow([line]));
+
+    // Hoja oculta (al final) con los valores permitidos de cada desplegable. No es
+    // editable por el usuario: se regenera en cada descarga con los datos reales de
+    // la empresa. 'veryHidden' la oculta sin opción de mostrarla desde la UI de Excel.
+    const listas = wb.addWorksheet('Listas');
+    listas.state = 'veryHidden';
+    const columnasLista = [rolesList, cargosList, NIVEL_ESCOLAR_OPCIONES, RELACION_EMERGENCIA_OPCIONES];
+    const letras = ['A', 'B', 'C', 'D'];
+    columnasLista.forEach((valores, c) => {
+        valores.forEach((v, r) => { listas.getCell(`${letras[c]}${r + 1}`).value = v; });
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    return Buffer.from(buffer);
 };
 
 module.exports.personasHandler = async (event) => {
@@ -512,7 +586,17 @@ module.exports.personasHandler = async (event) => {
 
         // GET /personas/plantilla — Descargar plantilla Excel
         if (method === 'GET' && personaId === 'plantilla') {
-            const buffer = createTemplateBuffer();
+            // Plantilla tenant-aware: pobla los desplegables de rol y cargo con los
+            // valores reales de la empresa cuando hay tenantId disponible.
+            let roles, cargos;
+            if (tenantId) {
+                const tenant = await tenantService.getById(tenantId).catch(() => null);
+                if (tenant) {
+                    roles = Array.isArray(tenant.roles) ? tenant.roles.map(r => r.nombre).filter(Boolean) : undefined;
+                    cargos = Array.isArray(tenant.reglas?.cargos) ? tenant.reglas.cargos.map(c => c.label || c.codigo).filter(Boolean) : undefined;
+                }
+            }
+            const buffer = await createTemplateBuffer({ roles, cargos });
             return {
                 statusCode: 200,
                 headers: {
@@ -699,12 +783,26 @@ module.exports.personasHandler = async (event) => {
                 // onboarding de terreno); con texto, normaliza a código (alias EBCO).
                 const cargoRaw = getCell('cargo');
                 const cargo = cargoRaw ? normalizeCargoCodigo(cargoRaw) : '';
-                // Obra: acepta código (ej. OBRA-001) o UUID directo en columna obra/obraId.
-                const obraValor = getCell('obra').trim().toLowerCase();
-                const obraIdFila = obraValor
-                    ? (obraPorCodigo[obraValor] || obraPorUUID[obraValor] || null)
-                    : obraIdBatch;
-                const obraIds = obraIdFila ? [obraIdFila] : [];
+                // Obra: acepta código (ej. OBRA-001) o UUID en la columna obra/obraId.
+                // Se pueden indicar MÚLTIPLES obras separadas por coma. Si la celda
+                // queda vacía, se usa la obra del lote (si la carga se hizo desde una
+                // obra) o la persona se crea sin obra (se vincula después).
+                const obraCellRaw = getCell('obra').trim();
+                let obraIds = [];
+                if (obraCellRaw) {
+                    const seenObra = new Set();
+                    for (const token of obraCellRaw.split(',')) {
+                        const v = token.trim().toLowerCase();
+                        if (!v) continue;
+                        const resolved = obraPorCodigo[v] || obraPorUUID[v] || null;
+                        if (resolved && !seenObra.has(resolved)) {
+                            seenObra.add(resolved);
+                            obraIds.push(resolved);
+                        }
+                    }
+                } else if (obraIdBatch) {
+                    obraIds = [obraIdBatch];
+                }
                 const nivelEscolar = getCell('nivelEscolar');
                 const contactoEmergencia = {
                     nombre: getCell('contactoEmergenciaNombre'),

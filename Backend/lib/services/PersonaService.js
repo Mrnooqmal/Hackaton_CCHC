@@ -85,9 +85,13 @@ class PersonaService {
             updatedAt: now
         };
 
-        // Generar password temporal si tiene acceso web
+        // Generar password temporal si tiene acceso web.
+        // Convención: los primeros 4 dígitos del RUT (sin puntos ni dígito verificador).
+        // El usuario debe cambiarla en el primer ingreso (passwordTemporal = true).
         if (tieneAccesoWeb && data.email) {
-            passwordTemporal = generateTempPassword(10);
+            const rutDigits = rutValidation.formatted.replace(/[^0-9]/g, '').slice(0, -1); // quita DV
+            const first4 = rutDigits.slice(0, 4);
+            passwordTemporal = first4.length === 4 ? first4 : generateTempPassword(10);
             personaData.passwordHash = hashPassword(passwordTemporal, personaId);
             personaData.passwordTemporal = true;
         }
