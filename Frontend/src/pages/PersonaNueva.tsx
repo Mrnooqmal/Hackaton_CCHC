@@ -5,9 +5,82 @@ import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { FormPage, FieldSection, Select, CredentialCard } from '../components/ui';
-import { FiCheckCircle, FiInfo, FiArrowLeft } from 'react-icons/fi';
+import { FiCheckCircle, FiInfo, FiArrowLeft, FiPhone } from 'react-icons/fi';
 import { getCargoLabel } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
+import type { PersonaResponse } from '../api/types';
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+// Formatea el RUT con puntos y guion en tiempo real (igual que en el login).
+const rutFormat = (raw: string) => {
+    const clean = raw.replace(/[^0-9kK]/g, '').toUpperCase();
+    if (clean.length < 2) return clean;
+    const body = clean.slice(0, -1);
+    const dv = clean.slice(-1);
+    return body.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + '-' + dv;
+};
+
+// Formatea la parte local de un teléfono chileno (9 dígitos): "9 1234 5678".
+const formatTelLocal = (raw: string) => {
+    const digits = raw.replace(/\D/g, '').slice(0, 9);
+    if (digits.length > 5) return digits[0] + ' ' + digits.slice(1, 5) + ' ' + digits.slice(5);
+    if (digits.length > 1) return digits[0] + ' ' + digits.slice(1);
+    return digits;
+};
+
+// Antepone el prefijo +56 al guardar (vacío → undefined).
+const telToFull = (local: string) => (local.replace(/\D/g, '') ? `+56 ${local}` : undefined);
+
+// Campo de teléfono con el mismo diseño que la pantalla de enrolamiento (EnrollMe):
+// badge 🇨🇱 +56 fijo, formato en vivo y check al completar los 9 dígitos.
+function PhoneField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+    const [focused, setFocused] = useState(false);
+    const complete = value.replace(/\D/g, '').length === 9;
+    const borderColor = complete ? 'var(--success-500)' : focused ? 'var(--accent)' : 'var(--surface-border)';
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label className="form-label">{label}</label>
+            <div style={{
+                display: 'flex', alignItems: 'center', border: `1.5px solid ${borderColor}`,
+                borderRadius: 'var(--radius-md)', background: 'var(--surface-card)', overflow: 'hidden',
+                transition: 'border-color 0.2s, box-shadow 0.2s',
+                boxShadow: focused ? `0 0 0 3px ${complete ? 'rgba(34,197,94,0.15)' : 'rgba(0,110,220,0.12)'}` : 'none',
+                height: '42px',
+            }}>
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px', height: '100%',
+                    borderRight: '1.5px solid var(--surface-border)', background: 'var(--surface-elevated)',
+                    flexShrink: 0, userSelect: 'none',
+                }}>
+                    <span style={{ fontSize: '13px', lineHeight: 1 }}>🇨🇱</span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>+56</span>
+                </div>
+                <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="9 1234 5678"
+                    value={value}
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
+                    onChange={(e) => onChange(formatTelLocal(e.target.value))}
+                    style={{
+                        flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                        fontSize: '15px', color: 'var(--text-primary)', padding: '0 10px', caretColor: 'var(--accent)',
+                    }}
+                />
+                <div style={{
+                    paddingRight: '12px', display: 'flex', alignItems: 'center',
+                    opacity: complete ? 1 : 0, transform: complete ? 'scale(1)' : 'scale(0.5)',
+                    transition: 'opacity 0.25s, transform 0.25s',
+                }}>
+                    <FiCheckCircle size={16} style={{ color: 'var(--success-500)' }} />
+                </div>
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Formato: +56 9 1234 5678</span>
+        </div>
+    );
+}
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -66,6 +139,9 @@ export default function PersonaNueva() {
         selectedObraId ? [selectedObraId] : []
     );
     const [tenantRoles, setTenantRoles] = useState<TenantRole[]>([]);
+    const [personas, setPersonas] = useState<PersonaResponse[]>([]);
+    // Supervisor (cuadrilla) elegido por obra cuando el rol es "persona trabajadora".
+    const [obraSupervisores, setObraSupervisores] = useState<Record<string, string>>({});
     const [rutError, setRutError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
@@ -76,7 +152,23 @@ export default function PersonaNueva() {
         tenantsApi.get(tenantId).then(res => {
             if (res.success && res.data?.roles?.length) setTenantRoles(res.data.roles);
         }).catch(() => {});
+        // Personas del tenant → para resolver los supervisores de cada obra.
+        personasApi.list(tenantId).then(res => {
+            if (res.success && res.data?.personas) setPersonas(res.data.personas);
+        }).catch(() => {});
     }, [tenantId]);
+
+    // Rol seleccionado y si es una "persona trabajadora" (requiere cuadrilla).
+    const selectedRole = tenantRoles.find(r => r.id === form.rol);
+    const esTrabajador = selectedRole?.tipo === 'trabajador';
+
+    // Supervisores activos asignados a una obra concreta.
+    const supervisoresDeObra = (obraId: string) =>
+        personas.filter(p =>
+            p.rolTipo === 'supervisor'
+            && p.estado !== 'inactivo' && p.estado !== 'desvinculado'
+            && Array.isArray(p.obraIds) && p.obraIds.includes(obraId)
+        );
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
@@ -118,7 +210,7 @@ export default function PersonaNueva() {
                 apellidoMaterno: form.apellidoMaterno || undefined,
                 fechaNacimiento: form.fechaNacimiento || undefined,
                 email: form.email || undefined,
-                telefono: form.telefono || undefined,
+                telefono: telToFull(form.telefono),
                 rol: form.rol,
                 cargo: form.cargo || undefined,
                 tieneAccesoWeb: form.tieneAccesoWeb,
@@ -127,7 +219,7 @@ export default function PersonaNueva() {
                 nivelEscolar: form.nivelEscolar || undefined,
                 contactoEmergencia: (form.contactoNombre || form.contactoTelefono) ? {
                     nombre: form.contactoNombre || undefined,
-                    telefono: form.contactoTelefono || undefined,
+                    telefono: telToFull(form.contactoTelefono),
                     relacion: form.contactoRelacion || undefined,
                 } : undefined,
             });
@@ -135,6 +227,20 @@ export default function PersonaNueva() {
                 setFormError(res.error || 'Error al crear la persona.');
                 return;
             }
+
+            // Si es persona trabajadora, fija el supervisor (cuadrilla) elegido por obra.
+            if (esTrabajador) {
+                const nuevoId = res.data.persona.personaId;
+                const cargos = form.cargo ? [form.cargo] : [];
+                for (const obraId of selectedObraIds) {
+                    const supId = obraSupervisores[obraId];
+                    if (!supId) continue;
+                    try {
+                        await personasApi.setAsignacion(tenantId, nuevoId, obraId, cargos, solicitanteId, supId);
+                    } catch { /* la asignación a la obra ya quedó; el supervisor se puede fijar luego */ }
+                }
+            }
+
             setSuccess({
                 rut: res.data.persona.rut,
                 nombre: `${form.nombre} ${form.apellidoPaterno}`.trim(),
@@ -174,7 +280,7 @@ export default function PersonaNueva() {
                             <CredentialCard rut={success.rut} password={success.password} />
                         )}
                         <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                            <button className="btn btn-secondary" onClick={() => { setSuccess(null); setForm(INITIAL_FORM); setSelectedObraIds(selectedObraId ? [selectedObraId] : []); }}>
+                            <button className="btn btn-secondary" onClick={() => { setSuccess(null); setForm(INITIAL_FORM); setSelectedObraIds(selectedObraId ? [selectedObraId] : []); setObraSupervisores({}); }}>
                                 Crear otra persona
                             </button>
                             <button className="btn btn-primary" onClick={() => navigate('/personas', { state: { created: true, rut: success.rut, password: success.password } })}>
@@ -224,7 +330,7 @@ export default function PersonaNueva() {
                         Nueva persona
                     </h1>
                     <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-sm)', color: 'rgba(255,255,255,0.75)' }}>
-                        Registra un trabajador o colaborador en la empresa.
+                        Registra una persona trabajadora o miembro del equipo en la empresa.
                     </p>
                 </div>
                 <div style={{ height: 3, background: 'linear-gradient(90deg, #006edc 0%, #df3601 100%)', marginTop: 'var(--space-6)' }} />
@@ -258,7 +364,7 @@ export default function PersonaNueva() {
                             className={`form-input${rutError ? ' form-input--error' : ''}`}
                             name="rut"
                             value={form.rut}
-                            onChange={e => setForm(prev => ({ ...prev, rut: e.target.value }))}
+                            onChange={e => setForm(prev => ({ ...prev, rut: rutFormat(e.target.value) }))}
                             onBlur={handleRutBlur}
                             placeholder="12.345.678-9"
                             autoComplete="off"
@@ -282,10 +388,7 @@ export default function PersonaNueva() {
                         <label className="form-label">Fecha de nacimiento</label>
                         <input className="form-input" type="date" name="fechaNacimiento" value={form.fechaNacimiento} onChange={handleChange} />
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                        <label className="form-label">Teléfono</label>
-                        <input className="form-input" type="tel" name="telefono" value={form.telefono} onChange={handleChange} placeholder="+56 9 1234 5678" />
-                    </div>
+                    <PhoneField label="Teléfono" value={form.telefono} onChange={v => setForm(prev => ({ ...prev, telefono: v }))} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', gridColumn: '1 / -1' }}>
                         <label className="form-label">Email</label>
                         <input className="form-input" type="email" name="email" value={form.email} onChange={handleChange} placeholder="correo@ejemplo.com" autoComplete="email" style={{ maxWidth: 360 }} />
@@ -339,35 +442,61 @@ export default function PersonaNueva() {
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 'var(--space-2)' }}>
                                 {obras.map(obra => {
                                     const checked = selectedObraIds.includes(obra.obraId);
+                                    const sups = supervisoresDeObra(obra.obraId);
                                     return (
-                                        <label
+                                        <div
                                             key={obra.obraId}
                                             style={{
-                                                display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
-                                                padding: 'var(--space-3) var(--space-4)', cursor: 'pointer',
                                                 borderRadius: 'var(--radius-md)',
                                                 border: `1px solid ${checked ? 'var(--primary-400)' : 'var(--surface-border)'}`,
                                                 background: checked ? 'rgba(0,110,220,0.06)' : 'var(--surface-card)',
-                                                transition: 'all 0.18s',
+                                                transition: 'all 0.18s', overflow: 'hidden',
                                             }}
                                         >
-                                            <input
-                                                type="checkbox"
-                                                checked={checked}
-                                                onChange={() => toggleObra(obra.obraId)}
-                                                style={{ marginTop: 2 }}
-                                            />
-                                            <div style={{ minWidth: 0 }}>
-                                                <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                    {obra.nombre}
+                                            <label
+                                                style={{
+                                                    display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
+                                                    padding: 'var(--space-3) var(--space-4)', cursor: 'pointer',
+                                                }}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={() => toggleObra(obra.obraId)}
+                                                    style={{ marginTop: 2 }}
+                                                />
+                                                <div style={{ minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {obra.nombre}
+                                                    </div>
+                                                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 6 }}>
+                                                        {obra.codigo && <span style={{ fontFamily: 'monospace' }}>{obra.codigo}</span>}
+                                                        {obra.codigo && <span>·</span>}
+                                                        <span style={{ fontFamily: 'monospace', opacity: 0.6 }}>{obra.obraId?.slice(0, 8)}…</span>
+                                                    </div>
                                                 </div>
-                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 6 }}>
-                                                    {obra.codigo && <span style={{ fontFamily: 'monospace' }}>{obra.codigo}</span>}
-                                                    {obra.codigo && <span>·</span>}
-                                                    <span style={{ fontFamily: 'monospace', opacity: 0.6 }}>{obra.obraId?.slice(0, 8)}…</span>
+                                            </label>
+                                            {checked && esTrabajador && (
+                                                <div style={{ padding: '0 var(--space-4) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Asignar a supervisor</label>
+                                                    {sups.length > 0 ? (
+                                                        <Select
+                                                            ariaLabel={`Supervisor en ${obra.nombre}`}
+                                                            value={obraSupervisores[obra.obraId] || ''}
+                                                            onChange={v => setObraSupervisores(prev => ({ ...prev, [obra.obraId]: v }))}
+                                                            options={[
+                                                                { value: '', label: '— Sin asignar —' },
+                                                                ...sups.map(s => ({ value: s.personaId, label: `${s.nombre} ${s.apellido || ''}`.trim() })),
+                                                            ]}
+                                                        />
+                                                    ) : (
+                                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--warning-600, #b45309)' }}>
+                                                            No hay supervisores en esta obra. Podrás asignarlo después desde el equipo de la obra.
+                                                        </span>
+                                                    )}
                                                 </div>
-                                            </div>
-                                        </label>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </div>
@@ -383,13 +512,10 @@ export default function PersonaNueva() {
                 {/* Contacto de emergencia */}
                 <FieldSection title="Contacto de emergencia" description="Datos opcionales para el expediente del trabajador.">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                        <label className="form-label">Nombre</label>
-                        <input className="form-input" name="contactoNombre" value={form.contactoNombre} onChange={handleChange} placeholder="Nombre del contacto" />
+                        <label className="form-label">Nombre completo</label>
+                        <input className="form-input" name="contactoNombre" value={form.contactoNombre} onChange={handleChange} placeholder="Nombre completo del contacto" />
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                        <label className="form-label">Teléfono</label>
-                        <input className="form-input" type="tel" name="contactoTelefono" value={form.contactoTelefono} onChange={handleChange} placeholder="+56 9 1234 5678" />
-                    </div>
+                    <PhoneField label="Teléfono" value={form.contactoTelefono} onChange={v => setForm(prev => ({ ...prev, contactoTelefono: v }))} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                         <label className="form-label">Relación</label>
                         <Select ariaLabel="Relación" value={form.contactoRelacion} onChange={v => setForm(prev => ({ ...prev, contactoRelacion: v }))} options={RELACION_OPTIONS} />

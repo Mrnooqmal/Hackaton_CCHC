@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { personasApi, type PersonaResponse } from '../api/client';
 import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
-import { AlertBanner, CredentialCard, PageHeader, CollectionView, DataTable, Badge } from '../components/ui';
+import { AlertBanner, PageHeader, CollectionView, DataTable, Badge } from '../components/ui';
 import type { CollectionMode, DataTableColumn } from '../components/ui';
 import { PERMISSIONS } from '../permissions';
 import { FiUserPlus, FiUsers, FiUpload, FiMoreVertical } from 'react-icons/fi';
@@ -41,7 +41,6 @@ export default function PersonasManagement() {
     const { selectedObraId, selectedObra } = useObraContext();
     const { options: cargoOptions } = useCargoCatalog();
     const navigate = useNavigate();
-    const location = useLocation();
 
     const tenantId = user?.tenantId || user?.empresaId || localStorage.getItem('tenant_id') || '';
     const isAdmin = user?.rol === 'admin';
@@ -58,14 +57,9 @@ export default function PersonasManagement() {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterRol, setFilterRol] = useState('');
     const [filterCargo, setFilterCargo] = useState('');
-    const [mode, setMode] = useState<CollectionMode>('list');
+    const [mode, setMode] = useState<CollectionMode>('grid');
 
     const [tenantRoles, setTenantRoles] = useState<TenantRole[]>([]);
-
-    // Incoming success banner from PersonaNueva redirect
-    const [createResult, setCreateResult] = useState<{ password?: string; rut?: string } | null>(
-        location.state?.created ? { password: location.state.password, rut: location.state.rut } : null
-    );
 
     // Unused locally but kept for WorkerDetail-triggered confirm flows
     const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string }>({ isOpen: false, title: '', message: '' });
@@ -268,14 +262,6 @@ export default function PersonasManagement() {
                             <Link to={`/obras/${selectedObraId}`} className="btn btn-secondary btn-sm" style={{ marginTop: 'var(--space-2)' }}>
                                 Ir a Gestionar Obra
                             </Link>
-                        )}
-                    </AlertBanner>
-                )}
-
-                {createResult && (
-                    <AlertBanner variant="success" message="Persona creada con éxito." onDismiss={() => setCreateResult(null)} autoDismissMs={0}>
-                        {createResult.password && (
-                            <CredentialCard rut={createResult.rut || ''} password={createResult.password} variant="primary" />
                         )}
                     </AlertBanner>
                 )}

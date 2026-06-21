@@ -34,6 +34,24 @@ const tenantSafe = async (tenantId) => {
     return tenant ? tenant.toSafeFormat() : null;
 };
 
+// Resuelve el rol de la empresa (def. del tenant) que corresponde a persona.rol,
+// matcheando por id o por nombre. Devuelve { nombre, tipo } o null.
+const resolverRol = (rol, tenant) => {
+    const roles = Array.isArray(tenant?.roles) ? tenant.roles : [];
+    const match = roles.find(
+        (r) => r.id === rol || normalizeRol(r.nombre) === normalizeRol(rol) || r.id === normalizeRol(rol)
+    );
+    return match ? { nombre: match.nombre, tipo: match.tipo || null } : null;
+};
+
+// Esencia de rol de una persona (admin|jefe_obra|prevencionista|supervisor|trabajador|null).
+const tipoDeRol = (persona, tenant) => {
+    if (normalizeRol(persona?.rol) === 'admin') return 'admin';
+    const r = resolverRol(persona?.rol, tenant);
+    if (r?.tipo) return r.tipo;
+    return normalizeRol(persona?.rol) === 'trabajador' ? 'trabajador' : null;
+};
+
 const TEMPLATE_HEADERS = [
     'rut',
     'nombre',
@@ -53,20 +71,20 @@ const TEMPLATE_HEADERS = [
 ];
 
 // Roles y cargos de ejemplo concordantes con los que trae por defecto la pagina
-// de registro de empresa (Prevencionista, Jefe de Obra, Supervisor, Colaborador)
+// de registro de empresa (Prevencionista, Jefe de Obra, Supervisor, Persona trabajadora)
 // y la lista de cargos sugeridos. Los roles reales pueden variar segun los defina
 // el administrador al registrar la empresa.
 // El ROL es el perfil de permisos; el CARGO es el oficio de terreno (define el kit
 // de onboarding). Un rol de gestión (Prevencionista, Jefe de Obra, Admin) NO lleva
 // cargo de terreno: deja la columna cargo vacía.
 const TEMPLATE_EXAMPLE_ROWS = [
-    ['12.345.678-9', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Colaborador', 'Carpintero', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
+    ['12.345.678-9', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Persona trabajadora', 'Carpintero', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
     ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Prevencionista', 'Prevencionista', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
 ];
 
 const TEMPLATE_INSTRUCTIONS = [
     '1. Las columnas rut, nombre y rol son obligatorias.',
-    '2. El rol debe coincidir con uno de los roles definidos para la empresa (ej. Prevencionista, Jefe de Obra, Supervisor, Colaborador o Administrador).',
+    '2. El rol debe coincidir con uno de los roles definidos para la empresa (ej. Prevencionista, Jefe de Obra, Supervisor, Persona trabajadora o Administrador).',
     '3. cargo: cargo del trabajador (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Prevencionista).',
     '4. obraId: codigo (ej. OBRA-001) o UUID de la obra. Puedes copiarlo desde el detalle de la obra. Para asignar a varias obras, separalas por coma (ej. OBRA-001, OBRA-002). Si se deja vacio, la persona se crea en la empresa sin obra (se vincula despues); si la carga se hace desde una obra, se asigna a esa obra.',
     '5. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
@@ -506,7 +524,7 @@ const TEMPLATE_FILAS_VALIDADAS = 500; // filas de datos con desplegable activo
  */
 const createTemplateBuffer = async ({ roles, cargos } = {}) => {
     const rolesList = (Array.isArray(roles) && roles.length) ? roles
-        : ['Administrador', 'Prevencionista', 'Jefe de Obra', 'Supervisor', 'Colaborador'];
+        : ['Administrador', 'Prevencionista', 'Jefe de Obra', 'Supervisor', 'Persona trabajadora'];
     const cargosList = (Array.isArray(cargos) && cargos.length) ? cargos
         : ['Carpintero', 'Maestro albañil', 'Jornal de aseo y acarreo', 'Prevencionista'];
 
@@ -665,7 +683,7 @@ module.exports.personasHandler = async (event) => {
                 const nombre = getCell('nombre');
                 const fechaNacimiento = getCell('fechaNacimiento');
                 const email = getCell('email');
-                const rol = getCell('rol') || 'Colaborador';
+                const rol = getCell('rol') || 'Persona trabajadora';
                 const cargo = getCell('cargo');
 
                 if (!rut || !nombre) {
@@ -962,9 +980,20 @@ module.exports.personasHandler = async (event) => {
             if (!tenantId) return error('tenantId es requerido');
             const { rol, estado, obraId } = event.queryStringParameters || {};
             const personas = await personaService.listByTenant(tenantId, { rol, estado, obraId });
+            // Resuelve nombre/tipo del rol desde la def. del tenant para que el
+            // frontend muestre el rol y arme las cuadrillas (quién es supervisor).
+            const tenantDef = await tenantSafe(tenantId);
             return success({
                 total: personas.length,
-                personas: personas.map(p => p.toSafeFormat())
+                personas: personas.map(p => {
+                    const safe = p.toSafeFormat();
+                    const r = resolverRol(p.rol, tenantDef);
+                    return {
+                        ...safe,
+                        rolNombre: r?.nombre || safe.rol,
+                        rolTipo: tipoDeRol(p, tenantDef),
+                    };
+                })
             });
         }
 
@@ -1071,7 +1100,34 @@ module.exports.personasHandler = async (event) => {
             const body = JSON.parse(event.body || '{}');
             if (!body.obraId) return error('obraId es requerido');
             const cargos = Array.isArray(body.cargos) ? body.cargos : (body.cargo ? [body.cargo] : []);
-            const { persona, esNueva } = await personaService.setAsignacionObra(tenantId, personaId, body.obraId, cargos);
+
+            // Cuadrilla: una persona trabajadora debe tener supervisor en la obra.
+            // Se exige al crear o actualizar la asignación de un trabajador.
+            const personaActual = await personaService.getById(personaId);
+            if (!personaActual) return error('Persona no encontrada', 404);
+            const tenantDef = await tenantSafe(tenantId);
+            const esTrabajador = tipoDeRol(personaActual, tenantDef) === 'trabajador';
+            const supervisorEnviado = body.supervisorPersonaId !== undefined;
+            const asignacionPrevia = personaActual.asignaciones.find((a) => a.obraId === body.obraId);
+            const supervisorEfectivo = supervisorEnviado
+                ? body.supervisorPersonaId
+                : asignacionPrevia?.supervisorPersonaId;
+            if (esTrabajador && !supervisorEfectivo) {
+                // Se exige supervisor SOLO si la obra ya tiene alguno. Si todavía no
+                // hay supervisores, el trabajador queda temporalmente sin cuadrilla.
+                const enObra = await personaService.listByTenant(tenantId, { obraId: body.obraId });
+                const haySupervisores = enObra.some(
+                    (p) => p.personaId !== personaId && tipoDeRol(p, tenantDef) === 'supervisor'
+                );
+                if (haySupervisores) {
+                    return error('Una persona trabajadora debe tener un supervisor (cuadrilla) en la obra.', 400);
+                }
+            }
+
+            const { persona, esNueva } = await personaService.setAsignacionObra(
+                tenantId, personaId, body.obraId, cargos,
+                supervisorEnviado ? body.supervisorPersonaId : undefined
+            );
 
             try {
                 if (esNueva && normalizeRol(persona.rol) === 'trabajador') {
