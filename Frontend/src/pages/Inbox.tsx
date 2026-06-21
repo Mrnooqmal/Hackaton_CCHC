@@ -489,7 +489,7 @@ export default function Inbox() {
 
     // Get navigation route from linked entity
     const getLinkedEntityRoute = (linkedEntity: { type: string; id: string } | null | undefined): string | null => {
-        if (!linkedEntity) return null;
+        if (!linkedEntity || !linkedEntity.type) return null;
         // Normalizar: el backend puede enviar 'signature-request' o 'signature_request'
         switch (linkedEntity.type.replace(/_/g, '-')) {
             case 'survey': return '/surveys';
@@ -502,7 +502,8 @@ export default function Inbox() {
         }
     };
 
-    const getLinkedEntityLabel = (type: string): string => {
+    const getLinkedEntityLabel = (type: string | undefined): string => {
+        if (!type) return 'Ver Detalle';
         switch (type.replace(/_/g, '-')) {
             case 'survey': return 'Ver Encuesta';
             case 'activity': return 'Ver Actividad';
@@ -1974,7 +1975,7 @@ export default function Inbox() {
                     }
                     
                     .inbox-container.has-selection .inbox-detail {
-                        display: flex;
+                        display: flex !important;
                         position: absolute;
                         top: 0;
                         left: 0;
