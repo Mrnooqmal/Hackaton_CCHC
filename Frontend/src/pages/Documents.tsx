@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     FiPlus,
     FiFileText,
@@ -19,7 +20,7 @@ import {
     FiChevronDown,
     FiChevronUp
 } from 'react-icons/fi';
-import { documentsApi, workersApi, uploadsApi, inboxApi, type Document, type Worker } from '../api/client';
+import { documentsApi, workersApi, uploadsApi, type Document, type Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
@@ -66,6 +67,11 @@ export default function Documents() {
     const [signing, setSigning] = useState(false);
     const { toast } = useToast();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [searchParams, setSearchParams] = useSearchParams();
+    // Evita reabrir el detalle si el usuario cierra el modal con el mismo ?doc en la URL.
+    const handledDocParam = useRef<string | null>(null);
+    // Visualización inline del archivo en el detalle (URL presignada).
+    const [detailPreviewUrl, setDetailPreviewUrl] = useState<string | null>(null);
 
     // New document form
     const [newDoc, setNewDoc] = useState({
@@ -95,6 +101,22 @@ export default function Documents() {
             });
         }
     }, [isOnline]);
+
+    // Deep-link: si llega ?doc=<id> (desde una notificación), abre directamente el
+    // detalle del documento con su visualización y la opción de firmar.
+    useEffect(() => {
+        const docId = searchParams.get('doc');
+        if (!docId || documents.length === 0 || handledDocParam.current === docId) return;
+        const target = documents.find(d => d.documentId === docId);
+        if (target) {
+            handledDocParam.current = docId;
+            setSelectedDocument(target);
+            setShowDetailModal(true);
+            // Limpia el parámetro para no reabrir al navegar dentro de la página.
+            searchParams.delete('doc');
+            setSearchParams(searchParams, { replace: true });
+        }
+    }, [documents, searchParams, setSearchParams]);
 
     const loadData = async () => {
         try {
@@ -275,33 +297,9 @@ export default function Documents() {
             });
 
             if (response.success) {
-                // FIXED MISSING NOTIFICATIONS (Frontend explicit push)
-                try {
-                    const recipientsRes = await inboxApi.getRecipients(user?.personaId || '', user?.empresaId || '');
-                    if (recipientsRes.success && recipientsRes.data) {
-                        const allRecipients = recipientsRes.data.recipients;
-                        // Map worker IDs to their RUTs, then find matching Inbox Recipients to extract userIds
-                        const assignedRuts = workers.filter(w => workerIdsToAssign.includes(w.personaId)).map(w => w.rut);
-                        const recipientUserIds = allRecipients.filter(r => assignedRuts.includes(r.rut)).map(r => r.userId);
-                        
-                        if (recipientUserIds.length > 0) {
-                            await inboxApi.send({
-                                senderId: user?.personaId || 'system',
-                                senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'Gestor SST',
-                                senderRol: user?.rol || 'system',
-                                recipientIds: recipientUserIds,
-                                type: 'task',
-                                priority: 'normal',
-                                subject: `Nuevo documento asignado: ${selectedDocument?.titulo}`,
-                                content: `Se te ha asignado el documento "${selectedDocument?.titulo}". Por favor revisa y firma a la brevedad.`,
-                                linkedEntity: { type: 'document', id: selectedDocument.documentId }
-                            });
-                        }
-                    }
-                } catch (notifErr) {
-                    console.error('Error mandando notificación desde frontend', notifErr);
-                }
-
+                // La notificación al asignado la envía el backend al asignar el
+                // documento (evento 'document.assigned' → bandeja con deep-link).
+                // No se vuelve a enviar desde el frontend para evitar duplicados.
                 toast.success(`Documento asignado a ${workerIdsToAssign.length} trabajadores`);
                 setShowAssignModal(false);
                 loadData(); // Refresh to get updated assignments
@@ -356,6 +354,18 @@ export default function Documents() {
             setSigning(false);
         }
     };
+
+    // Resuelve una URL presignada para visualizar el archivo dentro del detalle.
+    useEffect(() => {
+        let cancelled = false;
+        const fileKey = showDetailModal ? selectedDocument?.archivoUrl : null;
+        if (!fileKey) { setDetailPreviewUrl(null); return; }
+        setDetailPreviewUrl(null);
+        uploadsApi.getDownloadUrl(fileKey).then(res => {
+            if (!cancelled && res.success && res.data?.downloadUrl) setDetailPreviewUrl(res.data.downloadUrl);
+        }).catch(() => { /* preview opcional */ });
+        return () => { cancelled = true; };
+    }, [showDetailModal, selectedDocument]);
 
     const handleDownloadFile = async (fileKey: string) => {
         try {
@@ -926,13 +936,44 @@ export default function Documents() {
 
                                 {selectedDocument.archivoUrl && (
                                     <div className="mb-4">
-                                        <button
-                                            className="btn btn-primary"
-                                            onClick={() => handleDownloadFile(selectedDocument.archivoUrl!)}
-                                        >
-                                            <FiDownload />
-                                            Descargar Documento
-                                        </button>
+                                        {/* Visualización inline del archivo (PDF / imagen). */}
+                                        {(() => {
+                                            const name = (selectedDocument.archivoNombre || selectedDocument.archivoUrl || '').toLowerCase();
+                                            const isPdf = name.endsWith('.pdf');
+                                            const isImg = /\.(png|jpe?g|gif|webp|svg)$/.test(name);
+                                            if (!detailPreviewUrl) {
+                                                return (
+                                                    <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-elevated)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)' }}>
+                                                        <div className="spinner" style={{ marginRight: 8 }} /> Cargando vista previa…
+                                                    </div>
+                                                );
+                                            }
+                                            if (isPdf) {
+                                                return <iframe title="Vista previa del documento" src={detailPreviewUrl} style={{ width: '100%', height: 420, border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-3)' }} />;
+                                            }
+                                            if (isImg) {
+                                                return <img alt="Vista previa del documento" src={detailPreviewUrl} style={{ maxWidth: '100%', maxHeight: 420, borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', marginBottom: 'var(--space-3)', display: 'block' }} />;
+                                            }
+                                            return (
+                                                <div style={{ padding: 'var(--space-4)', background: 'var(--surface-elevated)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)' }}>
+                                                    Vista previa no disponible para este tipo de archivo. Usa “Descargar” para abrirlo.
+                                                </div>
+                                            );
+                                        })()}
+                                        <div className="flex gap-2">
+                                            <button
+                                                className="btn btn-primary"
+                                                onClick={() => handleDownloadFile(selectedDocument.archivoUrl!)}
+                                            >
+                                                <FiDownload />
+                                                Descargar Documento
+                                            </button>
+                                            {detailPreviewUrl && (
+                                                <a className="btn btn-secondary" href={detailPreviewUrl} target="_blank" rel="noopener noreferrer">
+                                                    <FiEye /> Abrir en pestaña
+                                                </a>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
 

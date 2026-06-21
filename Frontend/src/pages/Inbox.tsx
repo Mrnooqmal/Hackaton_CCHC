@@ -494,7 +494,8 @@ export default function Inbox() {
         switch (linkedEntity.type.replace(/_/g, '-')) {
             case 'survey': return '/surveys';
             case 'activity': return '/activities';
-            case 'document': return '/documents';
+            // Deep-link al documento específico: abre su detalle (visualización + firmar).
+            case 'document': return `/documents?doc=${encodeURIComponent(linkedEntity.id)}`;
             case 'incident': return '/incidents';
             case 'signature-request': return '/my-signatures';
             default: return null;

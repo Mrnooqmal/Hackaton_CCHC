@@ -146,6 +146,10 @@ export const personasApi = {
         }),
 
     downloadTemplate: () => {
-        window.open(`${apiBaseUrl}/personas/plantilla`, '_blank');
+        // Incluye el tenantId para que la plantilla traiga los desplegables de rol
+        // y cargo con los valores reales de la empresa.
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        const qs = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+        window.open(`${apiBaseUrl}/personas/plantilla${qs}`, '_blank');
     },
 };

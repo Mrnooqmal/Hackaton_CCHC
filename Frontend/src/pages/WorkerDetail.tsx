@@ -845,8 +845,61 @@ Generado por PrevencionApp
                                 <div className="wd-info-label">Rol de sistema</div>
                                 <div className="wd-info-value">{worker.rol === 'admin' ? 'Administrador' : worker.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}</div>
                             </div>
+                            <div className="wd-info-field">
+                                <div className="wd-info-label">Teléfono</div>
+                                <div className="wd-info-value">{(worker as any).telefono || <span style={{ color: 'var(--text-muted)' }}>Sin teléfono</span>}</div>
+                            </div>
+                            <div className="wd-info-field">
+                                <div className="wd-info-label">Fecha de nacimiento</div>
+                                <div className="wd-info-value">{(worker as any).fechaNacimiento || <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
+                            </div>
+                            <div className="wd-info-field">
+                                <div className="wd-info-label">Nivel escolar</div>
+                                <div className="wd-info-value">{(worker as any).nivelEscolar || <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
+                            </div>
+                            <div className="wd-info-field">
+                                <div className="wd-info-label">Cursos</div>
+                                <div className="wd-info-value">
+                                    {(() => {
+                                        const cursos = (worker as any).cursos;
+                                        const list = Array.isArray(cursos)
+                                            ? cursos.map((c: any) => (typeof c === 'string' ? c : c?.nombre)).filter(Boolean)
+                                            : [];
+                                        return list.length > 0
+                                            ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{list.map((c: string, i: number) => <span key={i} className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>{c}</span>)}</div>
+                                            : <span style={{ color: 'var(--text-muted)' }}>Sin cursos registrados</span>;
+                                    })()}
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                    {/* Contacto de emergencia */}
+                    {(() => {
+                        const ce = (worker as any).contactoEmergencia || {};
+                        const hasContacto = ce.nombre || ce.telefono || ce.relacion;
+                        return (
+                            <div className="wd-section-card">
+                                <div className="wd-section-head">
+                                    <div>
+                                        <div style={{ fontWeight: 700 }}>Contacto de emergencia</div>
+                                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>A quién avisar ante una emergencia</div>
+                                    </div>
+                                </div>
+                                {hasContacto ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '6px 12px', fontSize: '0.88rem', padding: 'var(--space-4)' }}>
+                                        <div style={{ color: 'var(--text-muted)' }}>Nombre</div><div>{ce.nombre || '—'}</div>
+                                        <div style={{ color: 'var(--text-muted)' }}>Teléfono</div><div>{ce.telefono || '—'}</div>
+                                        <div style={{ color: 'var(--text-muted)' }}>Relación</div><div>{ce.relacion || '—'}</div>
+                                    </div>
+                                ) : (
+                                    <div style={{ padding: 'var(--space-4)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                        Sin contacto de emergencia registrado.
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* Vigilancia de Salud */}
                     <div className="wd-section-card">
