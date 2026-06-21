@@ -6,18 +6,33 @@ export interface PageHeaderProps {
   description?: React.ReactNode;
   scope?: { label: string };
   backTo?: string;
+  /** Custom label for the back link (defaults to "Volver") */
+  backLabel?: string;
+  /** Optional breadcrumb segments shown before the title */
+  breadcrumb?: { label: string; to: string }[];
   actions?: React.ReactNode;
   /** When true, renders as a full-bleed CChC navy→blue gradient banner */
   banner?: boolean;
 }
 
-export default function PageHeader({ title, description, scope, backTo, actions, banner }: PageHeaderProps) {
+export default function PageHeader({ title, description, scope, backTo, backLabel, breadcrumb, actions, banner }: PageHeaderProps) {
   return (
     <div className={`ui-page-header${banner ? ' ui-page-header--banner' : ''}`}>
-      {backTo && (
+      {breadcrumb && breadcrumb.length > 0 && (
+        <nav className="ui-page-header-breadcrumb">
+          {breadcrumb.map((crumb, i) => (
+            <span key={i} className="ui-page-header-breadcrumb-item">
+              <Link to={crumb.to}>{crumb.label}</Link>
+              <span className="ui-page-header-breadcrumb-sep">›</span>
+            </span>
+          ))}
+          <span className="ui-page-header-breadcrumb-current">{title}</span>
+        </nav>
+      )}
+      {backTo && !breadcrumb && (
         <Link to={backTo} className="ui-page-header-back">
           <FiArrowLeft size={15} />
-          <span>Volver</span>
+          <span>{backLabel ?? 'Volver'}</span>
         </Link>
       )}
       <div className="ui-page-header-main">
@@ -77,6 +92,40 @@ export default function PageHeader({ title, description, scope, backTo, actions,
         .ui-page-header--banner .btn-secondary:hover {
           background: rgba(255,255,255,0.2);
         }
+
+        .ui-page-header-breadcrumb {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 2px;
+          margin-bottom: var(--space-3);
+          font-size: var(--text-sm);
+        }
+        .ui-page-header-breadcrumb-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .ui-page-header-breadcrumb-item a {
+          color: var(--text-muted);
+          text-decoration: none;
+          transition: color var(--transition-fast);
+        }
+        .ui-page-header-breadcrumb-item a:hover { color: var(--text-primary); }
+        .ui-page-header-breadcrumb-sep {
+          color: var(--text-muted);
+          opacity: 0.5;
+          font-size: 12px;
+          margin: 0 2px;
+        }
+        .ui-page-header-breadcrumb-current {
+          color: var(--text-secondary);
+          font-weight: 500;
+        }
+        .ui-page-header--banner .ui-page-header-breadcrumb-item a { color: rgba(255,255,255,0.6); }
+        .ui-page-header--banner .ui-page-header-breadcrumb-item a:hover { color: #fff; }
+        .ui-page-header--banner .ui-page-header-breadcrumb-sep { color: rgba(255,255,255,0.4); }
+        .ui-page-header--banner .ui-page-header-breadcrumb-current { color: rgba(255,255,255,0.85); }
 
         .ui-page-header-back {
           display: inline-flex;

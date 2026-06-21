@@ -456,7 +456,9 @@ export default function ObraEquipoPage() {
                 scope={{ label: obraName }}
                 title="Gestionar equipo"
                 description={`Organiza cuadrillas, roles y cargos del equipo de ${obraName}.`}
-                backTo={`/obras/${obraId}`}
+                breadcrumb={[
+                    { label: 'Detalle de obra', to: `/obras/${obraId}` },
+                ]}
             />
 
             {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}
