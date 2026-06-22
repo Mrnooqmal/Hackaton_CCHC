@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { obrasApi, workersApi } from '../api/client';
@@ -20,6 +21,30 @@ const initials = (nombre: string, apellido?: string) =>
 const norm = (s: string) =>
     String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
+// Calcula la posición fija de un menú anclado a un disparador. Se usa para
+// renderizar los dropdowns en un portal y así escapar del `overflow: hidden`
+// de la tarjeta de cuadrilla (que recortaba la lista desplegada).
+function useAnchoredMenu(open: boolean, anchorRef: React.RefObject<HTMLElement | null>) {
+    const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+    useLayoutEffect(() => {
+        if (!open) { setPos(null); return; }
+        const el = anchorRef.current;
+        if (!el) return;
+        const update = () => {
+            const r = el.getBoundingClientRect();
+            setPos({ top: r.bottom + 4, left: r.left, width: r.width });
+        };
+        update();
+        window.addEventListener('scroll', update, true);
+        window.addEventListener('resize', update);
+        return () => {
+            window.removeEventListener('scroll', update, true);
+            window.removeEventListener('resize', update);
+        };
+    }, [open, anchorRef]);
+    return pos;
+}
+
 // ── Dropdown de cargos con checkboxes ───────────────────────────────────────
 function CargoDropdown({
     options, selected, onToggle,
@@ -30,9 +55,15 @@ function CargoDropdown({
 }) {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const pos = useAnchoredMenu(open, ref);
     useEffect(() => {
         if (!open) return;
-        const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+        const onDoc = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (ref.current?.contains(t) || menuRef.current?.contains(t)) return;
+            setOpen(false);
+        };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
     }, [open]);
@@ -46,15 +77,21 @@ function CargoDropdown({
                 <span className="eq-dd-btn-label">{summary}</span>
                 <FiChevronDown size={13} style={{ flexShrink: 0, opacity: 0.6 }} />
             </button>
-            {open && (
-                <div className="eq-dd-menu">
+            {open && pos && createPortal(
+                <div
+                    className="eq-dd-menu"
+                    ref={menuRef}
+                    style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth: Math.max(pos.width, 200) }}
+                    onClick={(e) => e.stopPropagation()}
+                >
                     {options.map((opt) => (
                         <label key={opt.value} className="eq-dd-item">
                             <input type="checkbox" checked={selected.includes(opt.value)} onChange={() => onToggle(opt.value)} />
                             <span>{opt.label}</span>
                         </label>
                     ))}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
@@ -73,12 +110,16 @@ function SupervisorAutocomplete({
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const ref = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const pos = useAnchoredMenu(open, ref);
     const selected = options.find((o) => o.value === value) || null;
 
     useEffect(() => {
         if (!open) return;
         const onDoc = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setQuery(''); }
+            const t = e.target as Node;
+            if (ref.current?.contains(t) || menuRef.current?.contains(t)) return;
+            setOpen(false); setQuery('');
         };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
@@ -104,8 +145,13 @@ function SupervisorAutocomplete({
                 )}
                 <FiChevronDown size={13} style={{ flexShrink: 0, opacity: 0.6 }} />
             </div>
-            {open && (
-                <div className="eq-dd-menu">
+            {open && pos && createPortal(
+                <div
+                    className="eq-dd-menu"
+                    ref={menuRef}
+                    style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth: Math.max(pos.width, 200) }}
+                    onClick={(e) => e.stopPropagation()}
+                >
                     {filtered.length === 0 && <div className="eq-ac-empty">Sin coincidencias</div>}
                     {filtered.map((o) => (
                         <button
@@ -117,7 +163,8 @@ function SupervisorAutocomplete({
                             {o.label}
                         </button>
                     ))}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

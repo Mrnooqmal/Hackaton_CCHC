@@ -542,6 +542,11 @@ export default function Activities() {
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3">
+                            <style>{`
+                                .activity-today-card { transition: background 0.12s, border-color 0.12s; }
+                                .activity-today-card:hover { background: var(--surface-hover) !important; border-color: var(--accent) !important; }
+                                .activity-today-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+                            `}</style>
                             {todayActivities.map((activity) => {
                                 const typeInfo = ACTIVITY_TYPES[activity.tipo] || {
                                     label: activity.tipo,
@@ -552,12 +557,23 @@ export default function Activities() {
                                 return (
                                     <div
                                         key={activity.activityId}
-                                        className="flex items-center justify-between"
+                                        className="activity-today-card flex items-center justify-between"
+                                        role="button"
+                                        tabIndex={0}
+                                        title="Ver detalle y asistentes"
+                                        onClick={() => openDetailModal(activity)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                openDetailModal(activity);
+                                            }
+                                        }}
                                         style={{
                                             padding: 'var(--space-4)',
                                             background: 'var(--surface-elevated)',
                                             borderRadius: 'var(--radius-md)',
-                                            border: '1px solid var(--surface-border)'
+                                            border: '1px solid var(--surface-border)',
+                                            cursor: 'pointer'
                                         }}
                                     >
                                         <div className="flex items-center gap-4">
@@ -593,7 +609,7 @@ export default function Activities() {
 
                                             {activity.estado !== 'completada' && (
                                                 haComenzado(activity) ? (
-                                                    <div className="flex items-center gap-2">
+                                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                                         {/* Worker self-sign button */}
                                                         {canSelfSign && !activity.asistentes.some(a => a.workerId === user?.personaId || (a as any).personaId === user?.personaId) && (
                                                             <button
@@ -967,6 +983,10 @@ export default function Activities() {
                     const currentNombre = currentWorker ? `${currentWorker.nombre} ${currentWorker.apellido || ''}`.trim() : 'Trabajador';
                     return (
                         <SignatureModal
+                            // Remonta el modal (y el PinInput) por cada trabajador para
+                            // resetear el PIN al avanzar. Sin esto, el input queda
+                            // congelado con el PIN del trabajador anterior.
+                            key={`sign-${signingIndex}`}
                             isOpen={showSignatureModal && selectedWorkers.length > 0}
                             onClose={() => { setShowSignatureModal(false); setSigningIndex(0); }}
                             onConfirm={handleSignCurrentWorker}

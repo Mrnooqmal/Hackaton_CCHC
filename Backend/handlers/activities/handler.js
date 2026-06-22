@@ -311,35 +311,31 @@ module.exports.registerAttendance = async (event) => {
 
             // Crear firma en SignaturesTable (siempre con PIN del trabajador).
             const metodo = 'PIN';
-            try {
-                const firma = await FirmaService.crear({
-                    personaId: pid,
-                    tenantId: activity.tenantId,
-                    obraId: activity.obraId || null,
-                    metodo,
-                    credencial: pin || {},
-                    tipoFirma: 'actividad',
-                    referenciaId: id,
-                    referenciaTipo: 'activity',
-                    contexto,
-                    persona
-                });
+            const firma = await FirmaService.crear({
+                personaId: pid,
+                tenantId: activity.tenantId,
+                obraId: activity.obraId || null,
+                metodo,
+                credencial: pin || {},
+                tipoFirma: 'actividad',
+                referenciaId: id,
+                referenciaTipo: 'activity',
+                contexto,
+                persona
+            });
 
-                nuevosAsistentes.push({
-                    personaId: pid,
-                    nombre: persona.nombre,
-                    rut: persona.rut,
-                    cargo: persona.cargo || '',
-                    firma: {
-                        token: firma.token,
-                        fecha: firma.fecha,
-                        horario: firma.horario,
-                        timestamp: firma.timestamp
-                    }
-                });
-            } catch (firmaErr) {
-                console.error(`Error creando firma para ${pid}:`, firmaErr.message);
-            }
+            nuevosAsistentes.push({
+                personaId: pid,
+                nombre: persona.nombre,
+                rut: persona.rut,
+                cargo: persona.cargo || '',
+                firma: {
+                    token: firma.token,
+                    fecha: firma.fecha,
+                    horario: firma.horario,
+                    timestamp: firma.timestamp
+                }
+            });
         }
 
         const asistentes = [...(activity.asistentes || []), ...nuevosAsistentes];
