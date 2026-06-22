@@ -278,7 +278,7 @@ class PersonaService {
      * lista COMPLETA de cargos en esa obra (multi-cargo). Devuelve la persona y
      * los obraId nuevos (para que el caller dispare onboarding solo en esos).
      */
-    async setAsignacionObra(tenantId, personaId, obraId, cargos = []) {
+    async setAsignacionObra(tenantId, personaId, obraId, cargos = [], supervisorPersonaId = undefined) {
         const persona = await this.getById(personaId);
         if (!persona) throw new Error('Persona no encontrada');
         const yaAsignada = persona.asignaciones.some((a) => a.obraId === obraId);
@@ -287,6 +287,10 @@ class PersonaService {
         asignaciones.push({
             obraId,
             cargos: Persona._normalizeCargos(cargos),
+            // Si no se envía supervisor se conserva el previo (no se borra al editar cargos).
+            supervisorPersonaId: supervisorPersonaId !== undefined
+                ? (supervisorPersonaId || null)
+                : (prev?.supervisorPersonaId || null),
             fechaIngreso: prev?.fechaIngreso || new Date().toISOString(),
             estado: 'activa',
         });

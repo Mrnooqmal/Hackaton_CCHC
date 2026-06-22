@@ -43,15 +43,19 @@ const STEP_LABELS: Record<Step, string> = {
 const STEP_NUMS: Record<Step, string> = {
   empresa: '1', roles: '2', admin: '3', trabajadores: '4', confirmacion: '5',
 };
-// ── Roles por defecto de la empresa (editables / removibles) ──────
-// `locked` marca el rol Administrador: nombre/descripción editables, pero
-// no se puede eliminar ni modificar sus permisos (acceso total).
-interface RoleDraft { _id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; }
+// ── Roles de la empresa ───────────────────────────────────────────
+// `tipo` es la esencia estable del rol (admin|jefe_obra|prevencionista|
+// supervisor|trabajador). Los roles con `tipo` son los mínimos de toda empresa:
+//   • `protegido` → no se pueden eliminar ni editar su descripción; SOLO el
+//     nombre es editable. Sus permisos sí se pueden ajustar (la esencia la
+//     define el `tipo`, no los permisos).
+//   • `locked` (solo Administrador) → además, permisos no editables (acceso total).
+interface RoleDraft { _id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; tipo?: string | null; protegido?: boolean; }
 const DEFAULT_ROLES: Array<Omit<RoleDraft, '_id'>> = [
-  { nombre: 'Prevencionista', descripcion: 'Encargado de la prevención de riesgos y la seguridad en obra.', permisos: DEFAULT_ROLE_PRESETS.prevencionista },
-  { nombre: 'Jefe de Obra', descripcion: 'Responsable de la dirección y supervisión de la obra.', permisos: DEFAULT_ROLE_PRESETS.jefe_obra },
-  { nombre: 'Supervisor', descripcion: 'Supervisa el cumplimiento de tareas y coordina al equipo en terreno.', permisos: DEFAULT_ROLE_PRESETS.supervisor },
-  { nombre: 'Colaborador', descripcion: 'Participa en las actividades diarias de la obra.', permisos: DEFAULT_ROLE_PRESETS.colaborador },
+  { nombre: 'Jefe de Obra', descripcion: 'Responsable de la dirección y supervisión de la obra.', permisos: DEFAULT_ROLE_PRESETS.jefe_obra, tipo: 'jefe_obra', protegido: true },
+  { nombre: 'Prevencionista', descripcion: 'Encargado de la prevención de riesgos y la seguridad en obra.', permisos: DEFAULT_ROLE_PRESETS.prevencionista, tipo: 'prevencionista', protegido: true },
+  { nombre: 'Supervisor', descripcion: 'Lidera una cuadrilla de personas trabajadoras y coordina el equipo en terreno.', permisos: DEFAULT_ROLE_PRESETS.supervisor, tipo: 'supervisor', protegido: true },
+  { nombre: 'Persona trabajadora', descripcion: 'Ejecuta las actividades diarias en obra dentro de la cuadrilla de un supervisor.', permisos: DEFAULT_ROLE_PRESETS.trabajador, tipo: 'trabajador', protegido: true },
 ];
 const ADMIN_ROLE_DRAFT: RoleDraft = {
   _id: 'role-admin',
@@ -59,6 +63,8 @@ const ADMIN_ROLE_DRAFT: RoleDraft = {
   descripcion: 'Acceso completo a la gestión de la empresa.',
   permisos: ALL_PERMISSION_KEYS,
   locked: true,
+  protegido: true,
+  tipo: 'admin',
 };
 
 // Cargos = oficios DS44 (catálogo semilla). Los perfiles de acceso
@@ -106,7 +112,7 @@ export default function TenantOnboarding() {
   const [workers, setWorkers] = useState<WorkerDraft[]>([]);
   const [wForm, setWForm] = useState(() => ({
     ...BLANK_WORKER,
-    rol: DEFAULT_ROLES[0]?.nombre.trim() ?? '',
+    rol: DEFAULT_ROLES.find(r => r.tipo === 'trabajador')?.nombre.trim() ?? '',
   }));
   const [wErrors, setWErrors] = useState<Set<string>>(new Set());
   const [workerTab, setWorkerTab] = useState<'manual' | 'bulk'>('manual');
@@ -219,10 +225,15 @@ export default function TenantOnboarding() {
   };
 
   const updateRole = (id: string, field: 'nombre' | 'descripcion', value: string) =>
-    setRoles(p => p.map(r => (r._id === id ? { ...r, [field]: value } : r)));
+    setRoles(p => p.map(r => {
+      if (r._id !== id) return r;
+      // En roles protegidos solo el nombre es editable (la descripción no).
+      if (field === 'descripcion' && r.protegido) return r;
+      return { ...r, [field]: value };
+    }));
 
-  // Mantiene el rol si no es el objetivo, o si está bloqueado (admin no removible).
-  const removeRole = (id: string) => setRoles(p => p.filter(r => r._id !== id || r.locked));
+  // Mantiene el rol si no es el objetivo, o si es protegido (mínimo, no removible).
+  const removeRole = (id: string) => setRoles(p => p.filter(r => r._id !== id || r.protegido));
 
   const togglePermiso = (id: string, permKey: string) =>
     setRoles(p => p.map(r => {
@@ -245,7 +256,7 @@ export default function TenantOnboarding() {
     setWErrors(errs);
     if (errs.size) return;
     setWorkers(p => [...p, { ...wForm, _id: String(Date.now() + Math.random()) }]);
-    setWForm({ ...BLANK_WORKER, rol: roles.find(r => !r.locked)?.nombre.trim() ?? '' });
+    setWForm({ ...BLANK_WORKER, rol: (roles.find(r => r.tipo === 'trabajador') ?? roles.find(r => !r.locked))?.nombre.trim() ?? '' });
     setWErrors(new Set());
   };
 
@@ -310,7 +321,9 @@ export default function TenantOnboarding() {
           logoBase64: empresa.logo ?? undefined,
         },
         roles: roles.map(r => ({
-          id: r.locked ? 'admin' : r.nombre.trim(),
+          // El id de los roles protegidos lo fija el backend según su `tipo`.
+          id: r.tipo ?? r.nombre.trim(),
+          tipo: r.tipo ?? null,
           nombre: r.nombre.trim(),
           descripcion: r.descripcion.trim(),
           permisos: r.locked ? ALL_PERMISSION_KEYS : r.permisos,
@@ -687,8 +700,10 @@ export default function TenantOnboarding() {
               <div className="onb-info-banner">
                 <FiInfo size={15} className="onb-info-icon" />
                 <p className="onb-info-text">
-                  Estos roles vienen creados por defecto. Puedes editarlos, eliminarlos o
-                  añadir los que necesites. Se guardarán en la configuración de tu empresa.
+                  Los roles marcados con <FiLock size={11} style={{ verticalAlign: -1 }} /> son los mínimos de toda
+                  empresa: puedes renombrarlos y ajustar sus permisos, pero no eliminarlos ni
+                  cambiar su descripción (en esencia siguen siendo el mismo rol). Puedes añadir
+                  los roles adicionales que necesites.
                 </p>
                 <button
                   className="onb-info-close"
@@ -705,7 +720,7 @@ export default function TenantOnboarding() {
               {roles.map((r, i) => (
                 <div key={r._id} className="onb-role-card">
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <span className="onb-role-index">{r.locked ? <FiLock size={12} /> : String(i + 1).padStart(2, '0')}</span>
+                    <span className="onb-role-index">{r.protegido ? <FiLock size={12} /> : String(i + 1).padStart(2, '0')}</span>
                     <div className="onb-role-fields">
                       <div className="onb-role-field-group">
                         <label className="onb-role-label">NOMBRE DEL ROL</label>
@@ -717,16 +732,18 @@ export default function TenantOnboarding() {
                         />
                       </div>
                       <div className="onb-role-field-group">
-                        <label className="onb-role-label">DESCRIPCIÓN</label>
+                        <label className="onb-role-label">DESCRIPCIÓN{r.protegido && ' (fija)'}</label>
                         <input
                           className="onb-input onb-role-desc"
                           placeholder="Responsabilidades del rol (opcional)"
                           value={r.descripcion}
                           onChange={e => updateRole(r._id, 'descripcion', e.target.value)}
+                          disabled={r.protegido}
+                          title={r.protegido ? 'La descripción de un rol mínimo no se puede editar.' : undefined}
                         />
                       </div>
                     </div>
-                    {!r.locked && (
+                    {!r.protegido && (
                       <button
                         className="onb-role-remove"
                         onClick={() => removeRole(r._id)}
@@ -954,7 +971,7 @@ export default function TenantOnboarding() {
                 </div>
                 <div className="onb-wform-footer">
                   <button className="onb-add-btn" onClick={addWorker} type="button">
-                    <FiUserPlus size={13} /><span>Agregar</span>
+                    <FiUserPlus size={13} /><span>Añadir trabajador a la empresa</span>
                   </button>
                 </div>
               </div>

@@ -38,6 +38,9 @@ export interface TenantPreferencias {
 
 export interface TenantRole {
     id: string;
+    // Esencia estable del rol (admin|jefe_obra|prevencionista|supervisor|trabajador).
+    // Los roles con `tipo` son los mínimos protegidos: solo el nombre es editable.
+    tipo?: string | null;
     nombre: string;
     descripcion?: string;
     permisos?: string[];

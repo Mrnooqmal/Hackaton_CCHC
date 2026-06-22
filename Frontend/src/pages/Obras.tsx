@@ -57,7 +57,7 @@ export const Obras: React.FC = () => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterEstado, setFilterEstado] = useState('');
-  const [mode, setMode] = useState<CollectionMode>('list');
+  const [mode, setMode] = useState<CollectionMode>('grid');
   const canViewObras = hasPermission(PERMISSIONS.OBRAS_VER);
 
   const filteredObras = useMemo(() => {

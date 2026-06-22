@@ -96,10 +96,11 @@ export const workersApi = {
         return personasApi.update(tenantId, id, data as any);
     },
 
-    // Asigna al trabajador a una obra con sus cargos de terreno (multi-cargo).
-    setAsignacion: (id: string, obraId: string, cargos: string[], solicitanteId?: string) => {
+    // Asigna al trabajador a una obra con sus cargos de terreno (multi-cargo) y,
+    // opcionalmente, su supervisor (cuadrilla) en esa obra.
+    setAsignacion: (id: string, obraId: string, cargos: string[], solicitanteId?: string, supervisorPersonaId?: string | null) => {
         const tenantId = localStorage.getItem('tenant_id') || '';
-        return personasApi.setAsignacion(tenantId, id, obraId, cargos, solicitanteId);
+        return personasApi.setAsignacion(tenantId, id, obraId, cargos, solicitanteId, supervisorPersonaId);
     },
 
     quitarAsignacion: (id: string, obraId: string) => {

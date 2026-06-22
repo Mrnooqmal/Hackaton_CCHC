@@ -55,6 +55,9 @@ export interface PersonaResponse {
     notificacionesSms?: boolean;
     fechaNacimiento?: string;
     rol: string;
+    // Resueltos por el backend desde la def. de roles del tenant (GET /personas).
+    rolNombre?: string;
+    rolTipo?: 'admin' | 'jefe_obra' | 'prevencionista' | 'supervisor' | 'trabajador' | null;
     cargo: string;
     estado: 'pendiente' | 'activo' | 'inactivo' | 'suspendido' | 'desvinculado';
     tieneAccesoWeb: boolean;

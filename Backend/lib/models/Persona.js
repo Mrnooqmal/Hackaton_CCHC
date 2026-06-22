@@ -148,6 +148,9 @@ class Persona {
                 .map((a) => ({
                     obraId: a.obraId,
                     cargos: Persona._normalizeCargos(a.cargos != null ? a.cargos : a.cargo),
+                    // Supervisor (cuadrilla) de esta persona en esta obra. Es por-obra:
+                    // una persona puede tener distinto supervisor en cada obra.
+                    supervisorPersonaId: a.supervisorPersonaId || null,
                     fechaIngreso: a.fechaIngreso || null,
                     estado: a.estado || 'activa',
                 }))

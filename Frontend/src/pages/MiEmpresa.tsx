@@ -83,7 +83,7 @@ function compressLogo(dataUrl: string): Promise<string> {
     });
 }
 
-interface RoleDraft { _id: string; id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; }
+interface RoleDraft { _id: string; id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; tipo?: string | null; protegido?: boolean; }
 
 type TabKey = 'identidad' | 'roles' | 'cargos';
 
@@ -365,16 +365,27 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
     toast: ReturnType<typeof useToast>['toast'];
 }) {
     const toDraft = (roles: TenantRole[]): RoleDraft[] => {
-        const list = roles.map((r, i) => ({
-            _id: `r-${i}-${r.id || r.nombre}`,
-            id: r.id || slug(r.nombre),
-            nombre: r.nombre,
-            descripcion: r.descripcion || '',
-            permisos: isAdminRole(r) ? ALL_PERMISSION_KEYS : (r.permisos || []),
-            locked: isAdminRole(r),
-        }));
-        // El rol Administrador siempre primero.
-        return list.sort((a, b) => (a.locked === b.locked ? 0 : a.locked ? -1 : 1));
+        const list = roles.map((r, i) => {
+            const tipo = r.tipo || (isAdminRole(r) ? 'admin' : null);
+            const locked = tipo === 'admin';
+            return {
+                _id: `r-${i}-${r.id || r.nombre}`,
+                id: r.id || slug(r.nombre),
+                tipo,
+                // Roles con `tipo` son mínimos: no eliminables, descripción no editable.
+                protegido: !!tipo,
+                nombre: r.nombre,
+                descripcion: r.descripcion || '',
+                permisos: locked ? ALL_PERMISSION_KEYS : (r.permisos || []),
+                locked,
+            };
+        });
+        // Roles mínimos (protegidos) primero; el Administrador a la cabeza.
+        return list.sort((a, b) => {
+            if (a.locked !== b.locked) return a.locked ? -1 : 1;
+            if (a.protegido !== b.protegido) return a.protegido ? -1 : 1;
+            return 0;
+        });
     };
 
     const [roles, setRoles] = useState<RoleDraft[]>(() => toDraft(tenant.roles || []));
@@ -387,7 +398,15 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
     const dirty = baseline !== current;
 
     const update = (id: string, patch: Partial<RoleDraft>) =>
-        setRoles((p) => p.map((r) => (r._id === id ? { ...r, ...patch } : r)));
+        setRoles((p) => p.map((r) => {
+            if (r._id !== id) return r;
+            // En roles protegidos la descripción es fija (solo el nombre es editable).
+            if (r.protegido && 'descripcion' in patch) {
+                const { descripcion, ...rest } = patch;
+                return { ...r, ...rest };
+            }
+            return { ...r, ...patch };
+        }));
 
     const togglePerm = (id: string, key: string) =>
         setRoles((p) => p.map((r) => {
@@ -403,11 +422,13 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
     const buildRolesPayload = (list: RoleDraft[]): TenantRole[] => {
         const taken = new Set<string>();
         return list.map((r) => {
-            let id = r.locked ? 'admin' : (r.id || slug(r.nombre) || `rol_${taken.size + 1}`);
+            // El id de un rol protegido lo fija su `tipo` (estable ante renombres).
+            let id = r.protegido ? (r.tipo as string) : (r.id || slug(r.nombre) || `rol_${taken.size + 1}`);
             while (taken.has(id)) id = `${id}_2`;
             taken.add(id);
             return {
                 id,
+                tipo: r.tipo ?? null,
                 nombre: r.nombre.trim(),
                 descripcion: r.descripcion.trim(),
                 permisos: r.locked ? ALL_PERMISSION_KEYS : r.permisos,
@@ -442,7 +463,7 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
 
     // Eliminar un rol: si tiene personas, exige reasignarlas antes de borrarlo.
     const requestDelete = (role: RoleDraft) => {
-        if (role.locked) return;
+        if (role.protegido) return;
         if (roles.filter((r) => !r.locked).length <= 0) { setErr('Debe quedar al menos un rol.'); return; }
         const affected = personas.filter((p) => personaActiva(p) && personaEnRol(p, role));
         if (affected.length > 0) { setReassign({ role, affected }); return; }
@@ -481,8 +502,10 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
             <div className="card me-banner">
                 <FiInfo style={{ flexShrink: 0, color: 'var(--info-500)' }} />
                 <span className="text-sm text-muted" style={{ flex: 1 }}>
-                    El rol <b>Administrador</b> tiene acceso total y no es editable. Al eliminar un rol con personas
-                    asignadas, deberás reasignarlas a otro rol.
+                    Los roles con <FiLock size={11} style={{ verticalAlign: -1 }} /> son los mínimos de la empresa:
+                    puedes renombrarlos y ajustar sus permisos, pero no eliminarlos ni cambiar su descripción.
+                    El <b>Administrador</b> tiene acceso total y sus permisos no se editan. Al eliminar un rol con
+                    personas asignadas, deberás reasignarlas a otro rol.
                 </span>
                 <button className="btn btn-save" disabled={!dirty || saving} onClick={save}>
                     {saving ? <div className="spinner" /> : <><FiSave /> Guardar cambios</>}
@@ -497,19 +520,21 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
                     return (
                         <div key={r._id} className="card me-role">
                             <div className="me-role-head">
-                                <span className={`me-role-icon ${r.locked ? 'locked' : ''}`}>
-                                    {r.locked ? <FiLock size={14} /> : <FiShield size={14} />}
+                                <span className={`me-role-icon ${r.protegido ? 'locked' : ''}`}>
+                                    {r.protegido ? <FiLock size={14} /> : <FiShield size={14} />}
                                 </span>
                                 <div className="me-role-fields">
                                     <input className="form-input me-role-name" placeholder="Nombre del rol"
                                         value={r.nombre} disabled={r.locked}
                                         onChange={(e) => update(r._id, { nombre: e.target.value })} />
                                     <input className="form-input" placeholder="Descripción (opcional)"
-                                        value={r.descripcion} onChange={(e) => update(r._id, { descripcion: e.target.value })} />
+                                        value={r.descripcion} disabled={r.protegido}
+                                        title={r.protegido ? 'La descripción de un rol mínimo no se puede editar.' : undefined}
+                                        onChange={(e) => update(r._id, { descripcion: e.target.value })} />
                                 </div>
                                 <div className="me-role-meta">
                                     <span className="me-count" title="Personas con este rol"><FiUsers size={12} /> {count}</span>
-                                    {!r.locked && (
+                                    {!r.protegido && (
                                         <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
                                             onClick={() => requestDelete(r)} title="Eliminar rol"><FiTrash2 /></button>
                                     )}

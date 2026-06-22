@@ -42,6 +42,14 @@ const DETAIL_LEAF: Record<string, string> = {
     obras: 'Detalle de obra',
 };
 
+// Etiqueta de la hoja para sub-rutas de acción (no dinámicas), por `sección/acción`.
+// Tiene prioridad sobre DETAIL_LEAF para que /personas/nueva no diga "Detalle".
+const ACTION_LEAF: Record<string, string> = {
+    'personas/nueva': 'Nueva persona',
+    'personas/carga-masiva': 'Carga masiva',
+    'obras/nueva': 'Nueva obra',
+};
+
 function buildCrumbs(pathname: string): Crumb[] {
     const segments = pathname.split('/').filter(Boolean);
     const crumbs: Crumb[] = [{ label: 'Inicio', to: '/', home: true }];
@@ -60,7 +68,8 @@ function buildCrumbs(pathname: string): Crumb[] {
     });
 
     if (segments.length > 1) {
-        crumbs.push({ label: DETAIL_LEAF[first] ?? 'Detalle' });
+        const actionLabel = ACTION_LEAF[`${first}/${segments[1]}`];
+        crumbs.push({ label: actionLabel ?? DETAIL_LEAF[first] ?? 'Detalle' });
     }
 
     // Elimina duplicados consecutivos

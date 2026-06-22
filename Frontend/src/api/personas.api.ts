@@ -62,10 +62,12 @@ export const personasApi = {
     // Asigna/actualiza los cargos del trabajador EN una obra (multi-cargo). El
     // cargo de terreno vive en la asignación (persona × obra), no en la persona.
     // Dispara el onboarding de esa obra si la asignación es nueva.
-    setAsignacion: (tenantId: string, id: string, obraId: string, cargos: string[], solicitanteId?: string) =>
+    setAsignacion: (tenantId: string, id: string, obraId: string, cargos: string[], solicitanteId?: string, supervisorPersonaId?: string | null) =>
         apiRequest<{ message: string; persona: PersonaResponse }>(`/personas/${id}/asignaciones?tenantId=${tenantId}`, {
             method: 'POST',
-            body: JSON.stringify({ obraId, cargos, solicitanteId }),
+            // supervisorPersonaId solo se envía cuando se quiere fijar/cambiar la
+            // cuadrilla; si es undefined el backend conserva el supervisor previo.
+            body: JSON.stringify({ obraId, cargos, solicitanteId, ...(supervisorPersonaId !== undefined ? { supervisorPersonaId } : {}) }),
         }),
 
     // Quita al trabajador de una obra (no borra evidencias persona-level).
