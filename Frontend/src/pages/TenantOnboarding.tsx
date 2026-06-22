@@ -101,6 +101,7 @@ export default function TenantOnboarding() {
   // al registrar trabajadores; ya no se pide un número manual.
   const [empresa, setEmpresa] = useState({
     nombre: '', rutEmpresa: '', logo: null as string | null, colorPrincipal: '#006edc',
+    codigoHabilitacion: '',
   });
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [admin, setAdmin] = useState({ rut: '', nombre: '', apellidoPaterno: '', apellidoMaterno: '', fechaNacimiento: '', email: '' });
@@ -314,6 +315,8 @@ export default function TenantOnboarding() {
       const payload: TenantSetupData = {
         nombre: empresa.nombre,
         rutEmpresa: empresa.rutEmpresa,
+        // Código de habilitación (gating de alta). Se valida server-side.
+        codigoHabilitacion: empresa.codigoHabilitacion.trim() || undefined,
         // Tamaño inicial 1 (solo el administrador). El backend lo fuerza igualmente.
         cantidadTrabajadores: 1,
         preferencias: {
@@ -558,6 +561,17 @@ export default function TenantOnboarding() {
                   value={empresa.rutEmpresa}
                   onChange={e => { setEmpresa({ ...empresa, rutEmpresa: rutFormat(e.target.value) }); clearField('rutEmpresa'); clearField('rutEmpresaFormato'); }}
                 />
+              </div>
+              <div className="onb-field onb-full">
+                <label className="onb-label">CÓDIGO DE HABILITACIÓN</label>
+                <input
+                  className="onb-input"
+                  placeholder="Código entregado por la CChC"
+                  value={empresa.codigoHabilitacion}
+                  onChange={e => setEmpresa({ ...empresa, codigoHabilitacion: e.target.value })}
+                  autoComplete="off"
+                />
+                <span className="onb-hint">Requerido para registrar una empresa. Solicítalo al administrador de la plataforma.</span>
               </div>
             </div>
 

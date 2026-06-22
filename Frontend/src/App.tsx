@@ -17,6 +17,8 @@ import Inbox from './pages/Inbox';
 import Login from './pages/Login';
 // Legacy UserManagement replaced by PersonasManagement
 import ChangePassword from './pages/ChangePassword';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Settings from './pages/Settings';
 import EnrollMe from './pages/EnrollMe';
 import Unauthorized from './pages/Unauthorized';
@@ -111,6 +113,8 @@ function AppContent() {
   const routes = (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/recuperar-clave" element={<ForgotPassword />} />
+      <Route path="/restablecer-clave" element={<ResetPassword />} />
       <Route path="/register-admin" element={<RegisterAdmin />} />
       <Route path="/onboarding" element={<TenantOnboarding />} />
       <Route path="/unauthorized" element={<Unauthorized />} />

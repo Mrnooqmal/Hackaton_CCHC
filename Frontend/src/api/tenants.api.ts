@@ -66,6 +66,8 @@ export interface Tenant {
 export interface TenantSetupData {
     nombre: string;
     rutEmpresa: string;
+    /** Código de habilitación (gating de alta de empresa). Validado server-side. */
+    codigoHabilitacion?: string;
     // La empresa parte con tamaño 1 (solo el administrador) y crece automáticamente
     // al registrar trabajadores. El backend lo fuerza a 1 en el setup.
     cantidadTrabajadores?: number;

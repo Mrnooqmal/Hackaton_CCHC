@@ -39,8 +39,14 @@ provider:
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     # --- External ---
     SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
+    # URL del frontend para construir enlaces (ej. recuperación de contraseña).
+    FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:5173'}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
+    # --- Gating de alta de empresas (Fase 1: PIN estático) ---
+    # Código de habilitación requerido para crear una empresa via /tenants/setup.
+    # El valor vive en el .env de Backend (TENANT_SIGNUP_CODE). Si queda vacío, no se gatea.
+    TENANT_SIGNUP_CODE: ${env:TENANT_SIGNUP_CODE, ''}
 
   httpApi:
     cors:
@@ -194,6 +200,20 @@ functions:
     events:
       - httpApi:
           path: /auth/change-password
+          method: POST
+
+  authForgotPassword:
+    handler: handlers/auth/handler.forgotPassword
+    events:
+      - httpApi:
+          path: /auth/forgot-password
+          method: POST
+
+  authResetPassword:
+    handler: handlers/auth/handler.resetPassword
+    events:
+      - httpApi:
+          path: /auth/reset-password
           method: POST
 
   authLogout:

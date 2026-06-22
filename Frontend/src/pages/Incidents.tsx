@@ -5,7 +5,7 @@ import {
     FiUser, FiCalendar, FiActivity,
     FiAlertCircle, FiFileText, FiSave,
     FiPieChart, FiList, FiBarChart2, FiCheck, FiArrowRight,
-    FiMic, FiCamera, FiRefreshCw
+    FiMic, FiCamera, FiRefreshCw, FiChevronLeft, FiChevronRight
 } from 'react-icons/fi';
 import { incidentsApi, aiApi, workersApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData, IncidentLocation } from '../api/client';
@@ -60,7 +60,9 @@ export default function Incidents() {
     const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailError, setDetailError] = useState('');
-    const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
+    // Carrusel de evidencias: índice de la imagen abierta dentro de la galería
+    // navegable (o null si el visor está cerrado).
+    const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
     const [_showFilters, _setShowFilters] = useState(false);
     const [activeTab, setActiveTab] = useState<'listado' | 'estadisticas'>('listado');
     const [filters, _setFilters] = useState({
@@ -942,6 +944,32 @@ export default function Incidents() {
                 };
             }))
         : [];
+
+    // Solo las evidencias con imagen disponible son navegables en el carrusel.
+    const viewableEvidence = incidentEvidenceItems.filter(item => !!item.url);
+    const lightboxItem = lightboxIndex !== null ? viewableEvidence[lightboxIndex] : null;
+
+    const openLightbox = (item: { url?: string }) => {
+        const idx = viewableEvidence.findIndex(v => v.url === item.url);
+        if (idx >= 0) setLightboxIndex(idx);
+    };
+    const showPrevEvidence = () =>
+        setLightboxIndex(i => (i === null ? i : (i - 1 + viewableEvidence.length) % viewableEvidence.length));
+    const showNextEvidence = () =>
+        setLightboxIndex(i => (i === null ? i : (i + 1) % viewableEvidence.length));
+
+    // Navegación por teclado mientras el carrusel está abierto.
+    useEffect(() => {
+        if (lightboxIndex === null) return;
+        const onKey = (e: globalThis.KeyboardEvent) => {
+            if (e.key === 'Escape') setLightboxIndex(null);
+            else if (e.key === 'ArrowLeft') showPrevEvidence();
+            else if (e.key === 'ArrowRight') showNextEvidence();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lightboxIndex, viewableEvidence.length]);
 
     return (
         <>
@@ -1934,7 +1962,7 @@ export default function Incidents() {
                         setSelectedIncident(null);
                         setDetailError('');
                         setDetailLoading(false);
-                        setImagePreview(null);
+                        setLightboxIndex(null);
                     }}
                     title={`Detalle del ${selectedIncident ? getTipoLabel(selectedIncident.tipo) : ''}`}
                     subtitle={`Reportado el ${selectedIncident ? new Date(selectedIncident.fecha).toLocaleDateString('es-CL') : ''}`}
@@ -1947,7 +1975,7 @@ export default function Incidents() {
                                 setSelectedIncident(null);
                                 setDetailError('');
                                 setDetailLoading(false);
-                                setImagePreview(null);
+                                setLightboxIndex(null);
                             }}
                         >
                             <FiX className="mr-2" />
@@ -2111,12 +2139,12 @@ export default function Incidents() {
                                             <div
                                                 key={item.id}
                                                 className="incident-evidence-card"
-                                                onClick={() => item.url && setImagePreview({ url: item.url, title: item.title })}
+                                                onClick={() => item.url && openLightbox(item)}
                                                 title={item.url ? 'Ver imagen' : 'Imagen no disponible'}
                                                 role="button"
                                                 tabIndex={0}
                                                 onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-                                                    if (event.key === 'Enter' && item.url) setImagePreview({ url: item.url, title: item.title });
+                                                    if (event.key === 'Enter' && item.url) openLightbox(item);
                                                 }}
                                             >
                                                 {item.url ? (
@@ -2141,19 +2169,46 @@ export default function Incidents() {
                 </Modal>
 
 
-                {imagePreview && (
-                    <div className="incident-evidence-lightbox" onClick={() => setImagePreview(null)}>
+                {lightboxItem && (
+                    <div className="incident-evidence-lightbox" onClick={() => setLightboxIndex(null)}>
                         <div className="incident-evidence-lightbox-content" onClick={(e) => e.stopPropagation()}>
                             <button
                                 type="button"
                                 className="incident-evidence-lightbox-close"
-                                onClick={() => setImagePreview(null)}
+                                onClick={() => setLightboxIndex(null)}
                                 aria-label="Cerrar imagen"
                             >
                                 <FiX size={20} />
                             </button>
-                            <img src={imagePreview.url} alt={imagePreview.title} />
-                            <p>{imagePreview.title}</p>
+                            {viewableEvidence.length > 1 && (
+                                <button
+                                    type="button"
+                                    className="incident-evidence-lightbox-nav prev"
+                                    onClick={showPrevEvidence}
+                                    aria-label="Imagen anterior"
+                                >
+                                    <FiChevronLeft size={26} />
+                                </button>
+                            )}
+                            <img src={lightboxItem.url} alt={lightboxItem.title} />
+                            {viewableEvidence.length > 1 && (
+                                <button
+                                    type="button"
+                                    className="incident-evidence-lightbox-nav next"
+                                    onClick={showNextEvidence}
+                                    aria-label="Imagen siguiente"
+                                >
+                                    <FiChevronRight size={26} />
+                                </button>
+                            )}
+                            <p>
+                                {lightboxItem.title}
+                                {viewableEvidence.length > 1 && (
+                                    <span className="incident-evidence-lightbox-counter">
+                                        {(lightboxIndex ?? 0) + 1} / {viewableEvidence.length}
+                                    </span>
+                                )}
+                            </p>
                         </div>
                     </div>
                 )}
@@ -2604,6 +2659,51 @@ export default function Incidents() {
                     border: none;
                     color: white;
                     cursor: pointer;
+                }
+
+                .incident-evidence-lightbox-content p {
+                    margin-top: var(--space-3);
+                    text-align: center;
+                    color: white;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: var(--space-3);
+                }
+
+                .incident-evidence-lightbox-counter {
+                    font-variant-numeric: tabular-nums;
+                    color: rgba(255, 255, 255, 0.7);
+                    font-size: var(--text-sm);
+                }
+
+                .incident-evidence-lightbox-nav {
+                    position: absolute;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 999px;
+                    background: rgba(0, 0, 0, 0.45);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    color: white;
+                    cursor: pointer;
+                    transition: background 0.15s ease;
+                }
+
+                .incident-evidence-lightbox-nav:hover {
+                    background: rgba(0, 0, 0, 0.75);
+                }
+
+                .incident-evidence-lightbox-nav.prev { left: -56px; }
+                .incident-evidence-lightbox-nav.next { right: -56px; }
+
+                @media (max-width: 640px) {
+                    .incident-evidence-lightbox-nav.prev { left: 8px; }
+                    .incident-evidence-lightbox-nav.next { right: 8px; }
                 }
 
                 /* AI Quick Report Styles */

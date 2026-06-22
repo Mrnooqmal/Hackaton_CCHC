@@ -64,6 +64,18 @@ module.exports.tenantsHandler = async (event) => {
             const body = JSON.parse(event.body || '{}');
             const personaService = new PersonaService();
 
+            // Gating: código de habilitación requerido para crear empresa.
+            // Fase 1: PIN estático en variable de entorno. Encapsulado para migrar a
+            // códigos emitidos por el super admin sin tocar el resto del flujo.
+            // Si TENANT_SIGNUP_CODE no está configurado, el alta no se gatea (dev/offline).
+            const expectedSignupCode = process.env.TENANT_SIGNUP_CODE;
+            if (expectedSignupCode) {
+                const provided = (body.codigoHabilitacion || '').trim();
+                if (provided !== expectedSignupCode) {
+                    return error('Código de habilitación inválido. Solicítalo al administrador de la plataforma.', 403);
+                }
+            }
+
             // Validar RUT del admin antes de crear el tenant
             if (body.admin?.rut) {
                 const adminExistente = await personaService.getByRutGlobal(body.admin.rut);

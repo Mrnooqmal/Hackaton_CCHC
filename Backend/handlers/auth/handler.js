@@ -8,7 +8,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { docClient } = require('../../lib/clients/dynamodb');
@@ -243,6 +243,156 @@ module.exports.changePassword = async (event) => {
         return success({ message: 'Contraseña actualizada exitosamente', passwordTemporal: false });
     } catch (err) {
         console.error('Error changing password:', err);
+        return error(err.message, 500);
+    }
+};
+
+// Hash de un token de reset (no se guarda el token en claro, solo su hash).
+const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+
+// Busca una persona por RUT sin conocer el tenant (mismo patrón que el login).
+const findPersonaByRut = async (rutFormatted) => {
+    const scanResult = await docClient.send(new ScanCommand({
+        TableName: process.env.PERSONAS_TABLE || 'Personas',
+        IndexName: 'tenantRut-index',
+        FilterExpression: 'rut = :rut',
+        ExpressionAttributeValues: { ':rut': rutFormatted }
+    }));
+    if (scanResult.Items && scanResult.Items.length > 0) {
+        const { Persona } = require('../../lib/models/Persona');
+        return Persona.fromDynamoItem(scanResult.Items[0]);
+    }
+    return null;
+};
+
+const RESET_TOKEN_MINUTES = 30;
+
+/**
+ * POST /auth/forgot-password - Solicitar recuperación de contraseña
+ * Body: { rut }
+ * Respuesta genérica (anti-enumeración): nunca revela si el RUT existe.
+ */
+module.exports.forgotPassword = async (event) => {
+    // Mensaje único para cualquier caso (exista o no el RUT, tenga o no email).
+    const genericResponse = success({
+        message: 'Si el RUT está registrado y tiene un correo asociado, te enviamos instrucciones para restablecer tu contraseña.'
+    });
+
+    try {
+        const body = JSON.parse(event.body || '{}');
+        const validation = validateRequired(body, ['rut']);
+        if (!validation.valid) {
+            return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
+        }
+
+        const rutValidation = validateRut(body.rut);
+        if (!rutValidation.valid) {
+            // No filtramos detalle: respuesta genérica igual.
+            return genericResponse;
+        }
+
+        const persona = await findPersonaByRut(rutValidation.formatted);
+        // Solo enviamos correo si la persona existe, tiene acceso web y email.
+        if (!persona || !persona.tieneAccesoWeb || !persona.email) {
+            return genericResponse;
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const tokenHash = hashResetToken(token);
+        const expiry = new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000).toISOString();
+        const now = new Date().toISOString();
+
+        await docClient.send(new UpdateCommand({
+            TableName: process.env.PERSONAS_TABLE || 'Personas',
+            Key: {
+                PK: `TENANT#${persona.tenantId}`,
+                SK: `PERSONA#${persona.personaId}`
+            },
+            UpdateExpression: 'SET resetTokenHash = :th, resetTokenExpiry = :te, updatedAt = :u',
+            ExpressionAttributeValues: { ':th': tokenHash, ':te': expiry, ':u': now }
+        }));
+
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const resetUrl = `${frontendUrl}/restablecer-clave?pid=${persona.personaId}&token=${token}`;
+        const { sendPasswordResetEmail } = require('../notifications/handler');
+        const nombre = [persona.nombre, persona.apellido].filter(Boolean).join(' ') || persona.nombre || 'usuario';
+        try {
+            await sendPasswordResetEmail(persona.email, nombre, resetUrl, RESET_TOKEN_MINUTES);
+        } catch (mailErr) {
+            console.error('Error enviando email de recuperación:', mailErr.message);
+        }
+
+        return genericResponse;
+    } catch (err) {
+        console.error('Error in forgotPassword:', err);
+        // Incluso ante error interno devolvemos genérico para no filtrar información.
+        return genericResponse;
+    }
+};
+
+/**
+ * POST /auth/reset-password - Restablecer contraseña con token de un solo uso
+ * Body: { personaId, token, passwordNuevo, confirmarPassword }
+ */
+module.exports.resetPassword = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+        const validation = validateRequired(body, ['personaId', 'token', 'passwordNuevo', 'confirmarPassword']);
+        if (!validation.valid) {
+            return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
+        }
+
+        const { personaId, token, passwordNuevo, confirmarPassword } = body;
+
+        if (passwordNuevo !== confirmarPassword) {
+            return error('Las contraseñas no coinciden');
+        }
+        if (passwordNuevo.length < 6) {
+            return error('La contraseña debe tener al menos 6 caracteres');
+        }
+
+        // Leemos el item crudo (no via modelo): el constructor de Persona no
+        // preserva resetTokenHash/resetTokenExpiry, así que los consultamos directo.
+        const personaQuery = await docClient.send(new QueryCommand({
+            TableName: process.env.PERSONAS_TABLE || 'Personas',
+            IndexName: 'personaId-index',
+            KeyConditionExpression: 'personaId = :pid',
+            ExpressionAttributeValues: { ':pid': personaId }
+        }));
+        const personaItem = personaQuery.Items && personaQuery.Items[0];
+
+        // Mensaje único para token inválido/expirado/persona inexistente.
+        const invalidMsg = 'El enlace de recuperación es inválido o expiró. Solicita uno nuevo.';
+        if (!personaItem || !personaItem.resetTokenHash || !personaItem.resetTokenExpiry) {
+            return error(invalidMsg, 400);
+        }
+        if (new Date(personaItem.resetTokenExpiry) < new Date()) {
+            return error(invalidMsg, 400);
+        }
+        if (hashResetToken(token) !== personaItem.resetTokenHash) {
+            return error(invalidMsg, 400);
+        }
+
+        const now = new Date().toISOString();
+        const newPasswordHash = hashPassword(passwordNuevo, personaId);
+
+        await docClient.send(new UpdateCommand({
+            TableName: process.env.PERSONAS_TABLE || 'Personas',
+            Key: {
+                PK: `TENANT#${personaItem.tenantId}`,
+                SK: `PERSONA#${personaId}`
+            },
+            UpdateExpression: 'SET passwordHash = :ph, passwordTemporal = :pt, updatedAt = :u REMOVE resetTokenHash, resetTokenExpiry',
+            ExpressionAttributeValues: {
+                ':ph': newPasswordHash,
+                ':pt': false,
+                ':u': now
+            }
+        }));
+
+        return success({ message: 'Contraseña restablecida exitosamente. Ya puedes iniciar sesión.' });
+    } catch (err) {
+        console.error('Error in resetPassword:', err);
         return error(err.message, 500);
     }
 };
