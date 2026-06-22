@@ -66,6 +66,12 @@ const DOCUMENT_TYPES = {
     // Fase ACTUAR (ACT)
     PLAN_MEJORA: 'Plan de Mejora / Medidas Correctivas (Art. 2.16, Art. 14)',
     OTRO: 'Documento General',
+    // Tipos de libre creación desde /documents (no gestionados por onboarding/obra).
+    COMUNICADO: 'Comunicado interno',
+    INSTRUCTIVO: 'Instructivo / Manual',
+    OTRO_NORMATIVO: 'Otro documento de empresa',
+    ACTA_REGISTRO: 'Acta / Registro',
+    OTRO_DIARIO: 'Otro registro de obra',
 };
 
 /**
@@ -158,7 +164,7 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId, tipo, estado, clasificacion, obraId, pendienteDe } = event.queryStringParameters || {};
+        const { tenantId, tipo, estado, clasificacion, obraId, pendienteDe, asignadoA } = event.queryStringParameters || {};
         if (!tenantId) return error('tenantId es requerido');
 
         // Query por GSI tenantId-index (no Scan)
@@ -194,6 +200,12 @@ module.exports.list = async (event) => {
         const result = await docClient.send(new QueryCommand(params));
         let documents = result.Items || [];
 
+        // Por defecto se ocultan los archivados (soft-delete al desasignar de la
+        // obra). Solo aparecen si se piden explícitamente con estado=archivado.
+        if (estado !== 'archivado') {
+            documents = documents.filter((doc) => doc.estado !== 'archivado');
+        }
+
         // pendienteDe={personaId}: documentos de onboarding listos para que ESA
         // persona los firme — tiene asignación pendiente Y el doc ya tiene archivo
         // (plantilla pegada). DynamoDB no filtra dentro de listas de mapas, por eso
@@ -206,6 +218,14 @@ module.exports.list = async (event) => {
                     (a) => a.personaId === pendienteDe && a.estado === 'pendiente'
                 );
             });
+        }
+
+        // asignadoA={personaId}: TODOS los documentos donde esa persona tiene una
+        // asignación (firmada o pendiente), para calcular su cumplimiento personal.
+        if (asignadoA) {
+            documents = documents.filter((doc) =>
+                (doc.asignaciones || []).some((a) => a.personaId === asignadoA)
+            );
         }
 
         return success({
@@ -449,6 +469,7 @@ module.exports.sign = async (event) => {
             firmaResult = await FirmaService.crear({
                 personaId: signerPersonaId,
                 tenantId: documentData.tenantId,
+                obraId: documentData.obraId || null,
                 metodo,
                 credencial: body.pin || {},
                 tipoFirma: body.tipoFirma,
@@ -528,9 +549,14 @@ module.exports.signAssisted = async (event) => {
         const body = JSON.parse(event.body || '{}');
         if (!id) return error('ID de documento requerido');
 
-        const { firmanteId, asistidoPor, metodo = 'PIN' } = body;
+        const { firmanteId, asistidoPor } = body;
         if (!firmanteId) return error('firmanteId (trabajador) es requerido');
         if (!asistidoPor) return error('asistidoPor (quien asiste la firma) es requerido');
+
+        // Solo firma con PIN del trabajador: sin PIN no hay evidencia real, así que
+        // la modalidad presencial queda descartada en la firma asistida.
+        const metodo = 'PIN';
+        if (!body.pin) return error('El trabajador debe ingresar su PIN para firmar', 400);
 
         const personaService = new PersonaService();
 
@@ -579,15 +605,14 @@ module.exports.signAssisted = async (event) => {
             ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
             userAgent: event.headers?.['user-agent'] || 'unknown'
         };
-        const credencial = metodo === 'PIN'
-            ? (body.pin || {})
-            : { firmaManuscrita: body.firmaManuscrita || null };
+        const credencial = body.pin;
 
         let firmaResult;
         try {
             firmaResult = await FirmaService.crear({
                 personaId: firmanteId,
                 tenantId: firmante.tenantId,
+                obraId: documentData.obraId || null,
                 metodo,
                 credencial,
                 tipoFirma: 'documento',
@@ -666,6 +691,7 @@ module.exports.signBulk = async (event) => {
         const metodo = pin ? 'PIN' : 'PRESENCIAL';
         const resultado = await FirmaService.crearBatch(personaIds, {
             tenantId: documentData.tenantId,
+            obraId: documentData.obraId || null,
             metodo,
             credencial: pin || {},
             tipoFirma: tipoFirma || 'trabajador',

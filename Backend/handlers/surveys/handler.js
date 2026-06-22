@@ -21,7 +21,11 @@ const normalizeRut = (rut = '') => rut.replace(/[^0-9kK]/g, '').toUpperCase();
 const scanAllWorkers = async (tenantId) => {
     if (!tenantId) return [];
     const personaService = new PersonaService();
-    const personas = await personaService.listByTenant(tenantId, { estado: 'activo' });
+    // Toda la organización = todas las personas vinculadas (excluye solo las
+    // desvinculadas, que listByTenant ya filtra). Antes pedía estado 'activo', pero
+    // las personas recién creadas están 'pendiente' hasta enrolarse, así que una
+    // encuesta "para todos" no encontraba a nadie.
+    const personas = await personaService.listByTenant(tenantId);
     return personas.map(p => ({
         workerId: p.personaId,
         personaId: p.personaId,
@@ -142,7 +146,10 @@ module.exports.create = async (event) => {
             return error('Debe indicar al menos un RUT para la audiencia personalizada');
         }
 
-        const workers = await scanAllWorkers(body.tenantId);
+        // El tenantId llega por query (lo inyecta el cliente) o en el body.
+        const tenantId = event.queryStringParameters?.tenantId || body.tenantId;
+        if (!tenantId) return error('tenantId es requerido');
+        const workers = await scanAllWorkers(tenantId);
         const recipients = buildRecipients(workers, {
             tipo: audienceType,
             cargo: body.cargoDestino,
@@ -159,7 +166,7 @@ module.exports.create = async (event) => {
             surveyId: uuidv4(),
             titulo: body.titulo,
             descripcion: body.descripcion || '',
-            tenantId: body.tenantId || 'default',
+            tenantId,
             obraId: body.obraId || null,
             estado: body.estado || 'activa',
             createdBy: body.createdBy || null,
@@ -168,6 +175,9 @@ module.exports.create = async (event) => {
                 cargo: body.cargoDestino || null,
                 ruts: body.ruts || [],
             },
+            // Vínculo con el ítem del kit de onboarding (trazabilidad): al responder,
+            // se cierra ese ítem para la persona.
+            kitItemKey: body.kitItemKey || null,
             preguntas,
             recipients,
             stats: calculateStats(recipients),
@@ -314,6 +324,7 @@ module.exports.updateResponseStatus = async (event) => {
                 signatureData = await FirmaService.crear({
                     personaId: workerId,
                     tenantId: survey.tenantId,
+                    obraId: survey.obraId || null,
                     metodo: 'PIN',
                     credencial: pin,
                     tipoFirma: 'encuesta',

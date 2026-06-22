@@ -175,7 +175,7 @@ export const tenantsApi = {
         apiRequest<{ cargos: TenantCargo[]; sembrado: boolean }>(`/tenants/${id}/cargos`),
 
     saveCargos: (id: string, cargos: TenantCargo[]) =>
-        apiRequest<{ message: string; cargos: TenantCargo[] }>(`/tenants/${id}/cargos`, {
+        apiRequest<{ message: string; cargos: TenantCargo[]; documentosSincronizados?: number }>(`/tenants/${id}/cargos`, {
             method: 'PUT',
             body: JSON.stringify({ cargos }),
         }),

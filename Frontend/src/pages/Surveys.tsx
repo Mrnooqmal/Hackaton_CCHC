@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import type { IconType } from 'react-icons';
 import {
     surveysApi,
@@ -117,12 +118,32 @@ export default function Surveys() {
         cargoDestino: '',
         selectedRuts: [] as string[],
         selectedWorkerId: '',
+        // Vínculo con un ítem de onboarding (si se asignó desde el Equipo).
+        kitItemKey: '' as string,
     });
 
     const [questions, setQuestions] = useState<QuestionDraft[]>([defaultQuestion()]);
 
+    const location = useLocation();
+
     useEffect(() => {
         loadData();
+    }, []);
+
+    // Prefill desde el Equipo de la obra: "Asignar encuesta" precargada a una persona.
+    useEffect(() => {
+        const prefill = (location.state as any)?.prefill;
+        if (!prefill || !prefill.rut) return;
+        setForm((prev) => ({
+            ...prev,
+            audienceType: 'personalizado' as SurveyAudienceType,
+            selectedRuts: [prefill.rut],
+            titulo: prefill.titulo ? `Encuesta: ${prefill.titulo}` : prev.titulo,
+            kitItemKey: prefill.kitItemKey || '',
+        }));
+        setShowModal(true);
+        window.history.replaceState({}, ''); // evita reabrir al volver
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Sync pending offline signatures when online
@@ -357,6 +378,7 @@ export default function Surveys() {
             cargoDestino: '',
             selectedRuts: [],
             selectedWorkerId: '',
+            kitItemKey: '',
         });
         setQuestions([defaultQuestion()]);
     };
@@ -421,11 +443,11 @@ export default function Surveys() {
             titulo: form.titulo,
             descripcion: form.descripcion,
             preguntas,
-            audience: {
-                tipo: form.audienceType,
-                cargo: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
-                ruts: form.audienceType === 'personalizado' ? form.selectedRuts : undefined,
-            },
+            // El backend lee estos campos a nivel raíz (no anidados en `audience`).
+            audienceType: form.audienceType,
+            cargoDestino: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
+            ruts: form.audienceType === 'personalizado' ? form.selectedRuts : undefined,
+            kitItemKey: form.kitItemKey || undefined,
             createdBy: user?.personaId || user?.userId,
             creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined,
         };
@@ -758,6 +780,7 @@ export default function Surveys() {
                                         cargoDestino: '',
                                         selectedRuts: [],
                                         selectedWorkerId: '',
+                                        kitItemKey: '',
                                     });
                                     setQuestions([defaultQuestion()]);
                                     setShowModal(true);

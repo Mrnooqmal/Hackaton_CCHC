@@ -5,9 +5,9 @@ import { documentsApi, uploadsApi } from '../api/client';
 /**
  * Firma asistida desde el perfil del admin/supervisor/prevencionista.
  *
- * Modalidad principal: el TRABAJADOR teclea su PIN en el dispositivo del
- * asistente. Modalidad secundaria opcional: PRESENCIAL (firma registrada por el
- * tercero). El backend deja personaId del trabajador + metadata.asistidoPor.
+ * El TRABAJADOR teclea su PIN en el dispositivo del asistente (única modalidad:
+ * sin PIN no hay evidencia real de firma). El backend deja personaId del
+ * trabajador + metadata.asistidoPor para la trazabilidad de quién asistió.
  *
  * Seleccion: lista de trabajadores de la obra activa + filtro por nombre/RUT.
  */
@@ -37,7 +37,6 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
     const [docs, setDocs] = useState<any[]>([]);
     const [loadingDocs, setLoadingDocs] = useState(false);
     const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
-    const [metodo, setMetodo] = useState<'PIN' | 'PRESENCIAL'>('PIN');
     const [pin, setPin] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -55,7 +54,6 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
         setSelectedWorker(null);
         setDocs([]);
         setSelectedDocId(null);
-        setMetodo('PIN');
         setPin('');
         setError(null);
         setOkMsg(null);
@@ -116,7 +114,7 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
 
     const handleSign = async () => {
         if (!selectedWorker || !selectedDocId) return;
-        if (metodo === 'PIN' && (!pin || pin.length < 4)) {
+        if (!pin || pin.length < 4) {
             setError('El trabajador debe ingresar su PIN (mínimo 4 dígitos).');
             return;
         }
@@ -126,8 +124,8 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
             const res = await documentsApi.signAssisted(selectedDocId, {
                 firmanteId: selectedWorker.personaId,
                 asistidoPor,
-                metodo,
-                pin: metodo === 'PIN' ? pin : undefined,
+                metodo: 'PIN',
+                pin,
             });
             if (!res.success || !res.data) {
                 setError(res.error || 'No se pudo firmar. Verifica el PIN del trabajador.');
@@ -293,45 +291,21 @@ export default function FirmaAsistidaModal({ isOpen, onClose, obraId, workers, a
                                     {viewing ? 'Abriendo…' : 'Ver documento'}
                                 </button>
 
-                                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                                    <button
-                                        type="button"
-                                        className={`btn btn-sm ${metodo === 'PIN' ? 'btn-primary' : 'btn-secondary'}`}
-                                        onClick={() => setMetodo('PIN')}
-                                    >
-                                        PIN del trabajador
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`btn btn-sm ${metodo === 'PRESENCIAL' ? 'btn-primary' : 'btn-secondary'}`}
-                                        onClick={() => setMetodo('PRESENCIAL')}
-                                    >
-                                        Firma presencial
-                                    </button>
+                                <div>
+                                    <label className="text-muted" style={{ fontSize: '0.82rem', display: 'block', marginBottom: '4px' }}>
+                                        El trabajador ingresa su PIN
+                                    </label>
+                                    <input
+                                        type="password"
+                                        inputMode="numeric"
+                                        className="form-input"
+                                        value={pin}
+                                        onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError(null); }}
+                                        placeholder="••••"
+                                        maxLength={8}
+                                        autoComplete="off"
+                                    />
                                 </div>
-
-                                {metodo === 'PIN' ? (
-                                    <div>
-                                        <label className="text-muted" style={{ fontSize: '0.82rem', display: 'block', marginBottom: '4px' }}>
-                                            El trabajador ingresa su PIN
-                                        </label>
-                                        <input
-                                            type="password"
-                                            inputMode="numeric"
-                                            className="form-input"
-                                            value={pin}
-                                            onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError(null); }}
-                                            placeholder="••••"
-                                            maxLength={8}
-                                            autoComplete="off"
-                                        />
-                                    </div>
-                                ) : (
-                                    <div className="text-muted" style={{ fontSize: '0.8rem', padding: '8px 12px', borderRadius: '8px', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)' }}>
-                                        Firma presencial registrada por el asistente. Queda trazada con tu identidad
-                                        como responsable de la captura.
-                                    </div>
-                                )}
 
                                 <button
                                     className="btn btn-primary"

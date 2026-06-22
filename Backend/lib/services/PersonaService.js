@@ -68,7 +68,10 @@ class PersonaService {
             telefono: data.telefono || '',
             rol: data.rol,
             permisos: rolConfig ? rolConfig.permisos : [],
-            cargo: data.cargo || (rolConfig ? rolConfig.nombre : data.rol),
+            // El cargo es el oficio DS44 (del catálogo de /onboarding), NO el rol.
+            // Si no se indica, queda vacío: antes se rellenaba con el nombre del rol
+            // ("Trabajador"), creando cargos fantasma que no existen en el catálogo.
+            cargo: data.cargo || null,
             obraIds: data.obraIds || [],
             // Si vienen asignaciones explícitas (obra+cargos), priman; si no, el
             // modelo las deriva de obraIds + cargo (shim de compatibilidad).
@@ -221,7 +224,8 @@ class PersonaService {
      * Actualizar datos de una persona
      */
     async actualizar(tenantId, personaId, updates) {
-        const allowedFields = ['nombre', 'apellido', 'email', 'telefono', 'fotoPerfil', 'notificacionesSms',
+        const allowedFields = ['nombre', 'apellido', 'apellidoPaterno', 'apellidoMaterno', 'email', 'telefono',
+            'fechaNacimiento', 'fotoPerfil', 'notificacionesSms',
             'rol', 'cargo', 'estado', 'preferencias', 'obraIds', 'asignaciones', 'evidencias',
             'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44',
             'contactoEmergencia', 'nivelEscolar', 'cursos'];

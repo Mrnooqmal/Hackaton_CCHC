@@ -323,13 +323,73 @@ export default function Dashboard() {
             });
         }
 
-        // UI visible de inmediato; encuestas e inbox cargan en background
+        // UI visible de inmediato; el resto carga en background
         setLoading(false);
 
-        const [surveysResult, inboxResult] = await Promise.allSettled([
+        const myId = user?.personaId || '';
+
+        const [surveysResult, inboxResult, docsResult, activitiesResult] = await Promise.allSettled([
             surveysApi.list(),
-            (user?.personaId || user?.userId) ? inboxApi.getUnreadCount((user?.personaId || user?.userId)!) : Promise.resolve(null)
+            (user?.personaId || user?.userId) ? inboxApi.getUnreadCount((user?.personaId || user?.userId)!) : Promise.resolve(null),
+            // Documentos asignados a mí (firmados + pendientes), en todas mis obras.
+            myId ? documentsApi.list({ asignadoA: myId } as any) : Promise.resolve(null),
+            // Actividades del tenant (luego filtro donde soy asistente requerido).
+            activitiesApi.list({}),
         ]);
+
+        // ── Documentos asignados a mí ──────────────────────────────────────────
+        if (docsResult.status === 'fulfilled' && docsResult.value?.success && docsResult.value.data && myId) {
+            const myDocs = docsResult.value.data.documents || [];
+            myDocs.forEach((doc: any) => {
+                const asig = (doc.asignaciones || []).find((a: any) => a.personaId === myId || a.workerId === myId);
+                if (!asig) return;
+                const firmado = asig.estado === 'firmado' || Boolean(asig.fechaFirma);
+                // Solo cuentan/aparecen los documentos ACCIONABLES: con archivo cargado.
+                // Un documento de onboarding sin archivo aún no es responsabilidad del
+                // trabajador (espera que el admin suba la plantilla) → no se muestra.
+                const tieneArchivo = Boolean(doc.s3Key || doc.archivoUrl);
+                if (!firmado && !tieneArchivo) return;
+                totalRequiredCount += 1;
+                if (firmado) {
+                    completedCount += 1;
+                } else {
+                    pendingTasks.push({
+                        id: doc.documentId,
+                        type: 'document',
+                        title: `Firmar: ${doc.titulo}`,
+                        description: doc.tipoDescripcion || 'Documento pendiente de firma',
+                        priority: doc.bloqueante ? 'high' : 'normal',
+                        urgent: Boolean(doc.bloqueante),
+                    });
+                }
+            });
+        } else if (docsResult.status === 'rejected') {
+            console.error('Error loading my documents:', docsResult.reason);
+        }
+
+        // ── Actividades donde soy asistente requerido ──────────────────────────
+        if (activitiesResult.status === 'fulfilled' && activitiesResult.value?.success && activitiesResult.value.data && myId) {
+            const acts = activitiesResult.value.data.activities || [];
+            acts.forEach((act: any) => {
+                const requerido = (act.asistentesRequeridos || []).includes(myId);
+                if (!requerido) return;
+                const asistio = (act.asistentes || []).some((a: any) => a.personaId === myId);
+                totalRequiredCount += 1;
+                if (asistio) {
+                    completedCount += 1;
+                } else {
+                    pendingTasks.push({
+                        id: act.activityId,
+                        type: 'activity',
+                        title: `Asistir: ${act.titulo}`,
+                        description: `${act.tipoDescripcion || 'Actividad'}${act.fecha ? ` · ${act.fecha}` : ''}`,
+                        priority: 'normal',
+                    });
+                }
+            });
+        } else if (activitiesResult.status === 'rejected') {
+            console.error('Error loading my activities:', activitiesResult.reason);
+        }
 
         if (surveysResult.status === 'fulfilled') {
             const surveysRes = surveysResult.value;
@@ -702,7 +762,11 @@ export default function Dashboard() {
                                             onClick={() => {
                                                 if (task.type === 'survey') navigate('/surveys');
                                                 else if (task.type === 'signature') navigate('/enroll-me');
+                                                // Documento → abre su detalle (visualización + firmar) vía deep-link.
+                                                else if (task.type === 'document') navigate(`/documents?doc=${encodeURIComponent(task.id)}`);
+                                                else if (task.type === 'activity') navigate('/activities');
                                             }}
+                                            style={{ cursor: 'pointer' }}
                                         >
                                             <div className="flex items-start gap-3">
                                                 <div className={`avatar avatar-sm priority-${task.priority}`}>

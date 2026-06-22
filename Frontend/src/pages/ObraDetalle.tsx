@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi } from '../api/client';
+import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
 import { LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl, PageHeader } from '../components/ui';
@@ -15,6 +15,7 @@ const esRolGestion = (rol?: string): boolean => {
   return ROLES_GESTION_ONBOARDING.has(canon);
 };
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
+import { useObraContext } from '../context/ObraContext';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import type { SignatureRequest } from '../api/client';
 import { PERMISSIONS } from '../permissions';
@@ -96,7 +97,19 @@ export default function ObraDetalle() {
   const canFirmaAsistida = hasPermission(PERMISSIONS.OBRA_FIRMA_ASISTIDA);
   const navigate = useNavigate();
   const { obraId } = useParams();
+  const { setSelectedObraId } = useObraContext();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Atajo: agendar/asignar un ítem de onboarding precargado para una persona desde
+  // el Equipo. Fija la obra activa y abre el flujo correspondiente con prefill.
+  const agendarItem = (worker: any, item: any) => {
+    if (obraId) setSelectedObraId(obraId);
+    if (item.accion === 'ENCUESTA') {
+      navigate('/surveys', { state: { prefill: { rut: worker.rut, nombre: worker.nombre, titulo: item.label, kitItemKey: item.key } } });
+    } else {
+      navigate('/activities', { state: { prefill: { obraId, personaId: worker.workerId, nombre: worker.nombre, subtipo: item.subtipo || 'OTRA', titulo: item.label, kitItemKey: item.key } } });
+    }
+  };
 
   const [loading, setLoading] = useState(true);
   const [obra, setObra] = useState<any | null>(null);
@@ -105,6 +118,7 @@ export default function ObraDetalle() {
   const [documentosPrevencion, setDocumentosPrevencion] = useState<any[]>([]);
   const [incidentes, setIncidentes] = useState<any[]>([]);
   const [actividades, setActividades] = useState<any[]>([]);
+  const [encuestas, setEncuestas] = useState<any[]>([]);
   const [obraSignatureRequests, setObraSignatureRequests] = useState<SignatureRequest[]>([]);
   const [ds44Docs, setDs44Docs] = useState<Ds44Item[]>([]);
   const [empresaDocsByTipo, setEmpresaDocsByTipo] = useState<Record<string, { fileKey: string; nombre?: string; subidoEn?: string }>>({});
@@ -242,6 +256,28 @@ export default function ObraDetalle() {
       });
     });
 
+    // TRAZABILIDAD: ítems de onboarding cumplidos vía actividad o encuesta VINCULADA
+    // (kitItemKey). Asistir a la actividad / responder la encuesta cierra el ítem.
+    const kitDoneByLink = new Map<string, boolean>(); // `${personaId}:${kitItemKey}`
+    const kitAssignedByLink = new Map<string, boolean>();
+    actividades.forEach((act: any) => {
+      if (!act.kitItemKey) return;
+      (act.asistentesRequeridos || []).forEach((pid: string) => kitAssignedByLink.set(`${pid}:${act.kitItemKey}`, true));
+      (act.asistentes || []).forEach((a: any) => {
+        const pid = a.personaId || a.workerId;
+        if (pid) kitDoneByLink.set(`${pid}:${act.kitItemKey}`, true);
+      });
+    });
+    encuestas.forEach((survey: any) => {
+      if (!survey.kitItemKey) return;
+      (survey.recipients || []).forEach((r: any) => {
+        const pid = r.personaId || r.workerId;
+        if (!pid) return;
+        kitAssignedByLink.set(`${pid}:${survey.kitItemKey}`, true);
+        if (r.estado === 'respondida') kitDoneByLink.set(`${pid}:${survey.kitItemKey}`, true);
+      });
+    });
+
     let total = 0;
     let completed = 0;
 
@@ -288,11 +324,13 @@ export default function ObraDetalle() {
       const itemDetail = kit.map((item: any) => {
         const manualDone = Boolean(manualOverrides[item.tipo]);
         const key = `${workerId}:${item.tipo}`;
-        // Señal unificada: documento del onboarding (incl. ENTREGA_EPP) o, para
-        // datos legacy, solicitud de firma del mismo tipo.
-        const trabajadorFirmo = Boolean(docSigned.get(key)) || Boolean(requestSigned.get(key));
-        const firmaRelatorPendiente = Boolean(docRelatorPendiente.get(key));
-        const tieneArchivoOAsignado = Boolean(docHasFile.get(key)) || Boolean(requestAssigned.get(key));
+        const linkKey = `${workerId}:${item.key}`;
+        // Señal unificada: documento del onboarding (incl. ENTREGA_EPP), solicitud de
+        // firma del mismo tipo, o actividad/encuesta VINCULADA (kitItemKey) cumplida.
+        const cumplidoPorLink = Boolean(kitDoneByLink.get(linkKey));
+        const trabajadorFirmo = Boolean(docSigned.get(key)) || Boolean(requestSigned.get(key)) || cumplidoPorLink;
+        const firmaRelatorPendiente = Boolean(docRelatorPendiente.get(key)) && !cumplidoPorLink;
+        const tieneArchivoOAsignado = Boolean(docHasFile.get(key)) || Boolean(requestAssigned.get(key)) || Boolean(kitAssignedByLink.get(linkKey));
 
         let estado: 'pendiente_asignar' | 'pendiente_firma' | 'completo' = 'pendiente_asignar';
         if (trabajadorFirmo && !firmaRelatorPendiente) estado = 'completo';
@@ -308,6 +346,9 @@ export default function ObraDetalle() {
           done, estado, firmaRelatorPendiente, trabajadorFirmo,
           documentId: docIdPorKey.get(key) || null,
           kind: 'document' as const,
+          // Naturaleza del ítem: define el atajo (firmar doc, agendar capacitación, asignar encuesta).
+          accion: item.accion || 'DIFUSION_FIRMA',
+          subtipo: item.subtipo || null,
           bloqueante: Boolean(item.bloqueante)
         };
       });
@@ -320,6 +361,7 @@ export default function ObraDetalle() {
 
       return {
         workerId,
+        rut: worker.rut,
         nombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
         cargo: cargos.length ? cargos.map((c) => getCargoLabel(c)).join(', ') : (worker.cargo || ''),
         fechaIngreso: (worker.obraIds || []).length > 0 ? (worker.createdAt || null) : null,
@@ -333,7 +375,7 @@ export default function ObraDetalle() {
 
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { completed, total, progress, byWorker };
-  }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, obraId, cargoCatalog, obra]);
+  }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, encuestas, obraId, cargoCatalog, obra]);
 
   const getSignatureStats = (doc: any) => {
     // Prefer obraSignatureRequests (live data) over doc.asignaciones (may be absent in list responses)
@@ -468,13 +510,17 @@ export default function ObraDetalle() {
         // Fase 2 — background paralelo: documentos, incidentes, actividades, firmas,
         // y catálogo de cargos (para heredar documentos corporativos de la obra).
         const tenantId = obraData?.tenantId || localStorage.getItem('tenant_id') || '';
-        const [docsObraRes, docsPrevRes, incidentsRes, activitiesRes, sigRes, cargosRes] = await Promise.all([
+        const [docsObraRes, docsPrevRes, docsEmpresaRes, incidentsRes, activitiesRes, sigRes, cargosRes, surveysRes] = await Promise.all([
           documentsApi.list({ obraId, clasificacion: 'obra' } as any),
           documentsApi.list({ obraId, clasificacion: 'diario' } as any),
+          // Documentos de empresa (RI/Política) a nivel tenant: se cuentan en TODAS
+          // las obras porque toda persona debe cumplirlos, aunque no sean por-obra.
+          documentsApi.list({ clasificacion: 'empresa' } as any),
           incidentsApi.list(),
           activitiesApi.list(),
           signatureRequestsApi.list({ tenantId, obraId }),
           tenantsApi.getCargos(tenantId),
+          surveysApi.list(),
         ]);
 
         const empresaDocs = extractEmpresaDocs(cargosRes.success && cargosRes.data ? cargosRes.data.cargos || [] : []);
@@ -485,17 +531,25 @@ export default function ObraDetalle() {
         setObraDocs(docsObra);
 
         const ds44Types = new Set([...DS44_ONBOARDING_ITEMS.map(i => i.tipo), ...DS44_PLAN_DOCS.flatMap(req => req.tipos)]);
+        const empresaDocsList = docsEmpresaRes.success && docsEmpresaRes.data ? docsEmpresaRes.data.documents || [] : [];
+        const candidatos = [
+          ...(docsPrevRes.success && docsPrevRes.data ? docsPrevRes.data.documents || [] : [])
+            .filter((d: any) => d.clasificacion === 'diario' || (!ds44Types.has(d.tipo) && d.clasificacion !== 'obra' && d.clasificacion !== 'trabajador')),
+          // Documentos de empresa (tenant-level) — cuentan en la obra para cada persona.
+          ...empresaDocsList,
+        ];
+        // Dedup por documentId (NO por tipo): cada persona tiene su propio documento
+        // del mismo tipo; deduplicar por tipo perdía a todas las personas menos una.
         const uniqueDocsPrev: any[] = [];
         const seenIds = new Set();
-        for (const doc of (docsPrevRes.success && docsPrevRes.data ? docsPrevRes.data.documents || [] : [])
-          .filter((d: any) => d.clasificacion === 'diario' || (!ds44Types.has(d.tipo) && d.clasificacion !== 'obra' && d.clasificacion !== 'trabajador'))) {
-          const key = doc.tipo || doc.titulo;
-          if (!seenIds.has(key)) { seenIds.add(key); uniqueDocsPrev.push(doc); }
+        for (const doc of candidatos) {
+          if (!seenIds.has(doc.documentId)) { seenIds.add(doc.documentId); uniqueDocsPrev.push(doc); }
         }
         setDocumentosPrevencion(uniqueDocsPrev);
 
         setIncidentes((incidentsRes.success && incidentsRes.data ? incidentsRes.data : []).filter((inc: any) => inc.obraId === obraId));
         setActividades((activitiesRes.success && activitiesRes.data ? activitiesRes.data.activities || [] : []).filter((act: any) => act.obraId === obraId));
+        setEncuestas(surveysRes.success && surveysRes.data ? surveysRes.data.surveys || [] : []);
         if (sigRes.success && sigRes.data) setObraSignatureRequests(sigRes.data.requests || []);
 
         // Fase 3 — fire-and-forget: tamaño tenant (solo condicionales DO)
@@ -2559,7 +2613,28 @@ export default function ObraDetalle() {
                                 </div>
                                 {estado !== 'completo' && (
                                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                                    {item.kind === 'document' && estado === 'pendiente_asignar' && canSubirDocumentos && (
+                                    {/* Naturaleza encuesta → asignar encuesta precargada a esta persona. */}
+                                    {item.accion === 'ENCUESTA' && canAsignarTrabajadores && (
+                                      <button
+                                        className="btn btn-primary"
+                                        style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                        onClick={() => agendarItem(worker, item)}
+                                      >
+                                        Asignar encuesta
+                                      </button>
+                                    )}
+                                    {/* Naturaleza capacitación → agendar actividad precargada (cargo/obra/persona). */}
+                                    {item.accion === 'CAPACITACION_EVALUACION' && estado === 'pendiente_asignar' && canAsignarTrabajadores && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                        onClick={() => agendarItem(worker, item)}
+                                        title="Agendar la capacitación de este ítem para esta persona"
+                                      >
+                                        Agendar
+                                      </button>
+                                    )}
+                                    {item.kind === 'document' && item.accion !== 'ENCUESTA' && estado === 'pendiente_asignar' && canSubirDocumentos && (
                                       <>
                                         <input
                                           type="file"

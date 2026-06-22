@@ -41,12 +41,30 @@ const DOCUMENT_TYPES: Record<string, { label: string; color: string; category: s
     ENTREGA_EPP: { label: 'Entrega EPP', color: 'var(--success-500)', category: 'diario' },
     CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)', category: 'diario' },
     CHARLA_5_MIN: { label: 'Charla 5 Minutos', color: 'var(--warning-500)', category: 'diario' },
+    // Tipos de libre creación (no gestionados por onboarding/obra).
+    COMUNICADO: { label: 'Comunicado interno', color: 'var(--info-500)', category: 'normativo' },
+    INSTRUCTIVO: { label: 'Instructivo / Manual', color: 'var(--success-500)', category: 'normativo' },
+    OTRO_NORMATIVO: { label: 'Otro documento de empresa', color: 'var(--text-muted)', category: 'normativo' },
+    ACTA_REGISTRO: { label: 'Acta / Registro', color: 'var(--info-500)', category: 'diario' },
+    OTRO_DIARIO: { label: 'Otro registro de obra', color: 'var(--text-muted)', category: 'diario' },
 };
+
+// Tipos GESTIONADOS por otros módulos (onboarding del cargo, DS44 de la obra,
+// actividades, EPP). NO se ofrecen en la creación manual de /documents: el IRL,
+// Reglamento, Política, MIPER, etc. se cargan desde /onboarding o el detalle de obra,
+// y las charlas/capacitaciones/EPP desde sus propios flujos.
+const TIPOS_GESTIONADOS = new Set([
+    'IRL', 'POLITICA_SSO', 'DIAGNOSTICO_LEGAL', 'REGLAMENTO_INTERNO', 'MATRIZ_MIPPER',
+    'MIPER', 'MAPA_RIESGOS', 'ENTREGA_EPP', 'CAPACITACION', 'CHARLA_5_MIN',
+]);
+// Tipos disponibles para crear manualmente, por categoría.
+const tiposCreables = (category: string) =>
+    Object.entries(DOCUMENT_TYPES).filter(([key, info]) => info.category === category && !TIPOS_GESTIONADOS.has(key));
 
 export default function Documents() {
     const { user, hasPermission } = useAuth();
     const canSubirDocumento = hasPermission(PERMISSIONS.DOCUMENTOS_SUBIR);
-    const { selectedObraId, selectedObra } = useObraContext();
+    const { selectedObraId, selectedObra, obras } = useObraContext();
     const { isOnline, pendingCount, signDocument, syncPendingSignatures } = useOfflineSignature();
     const [activeTab, setActiveTab] = useState<'normativos' | 'diarios'>('normativos');
     const activeCategory = activeTab === 'normativos' ? 'normativo' : 'diario';
@@ -121,7 +139,10 @@ export default function Documents() {
     const loadData = async () => {
         try {
             const [docsRes, workersRes] = await Promise.all([
-                documentsApi.list({ obraId: selectedObraId || undefined }),
+                // Los documentos NORMATIVOS son de empresa (no se filtran por obra); los
+                // DIARIOS sí se acotan por obra, pero eso se filtra en el front para que
+                // un documento de empresa recién creado se vea siempre, esté o no en obra.
+                documentsApi.list({}),
                 workersApi.list({ obraId: selectedObraId || undefined })
             ]);
 
@@ -272,11 +293,14 @@ export default function Documents() {
 
         let workerIdsToAssign: string[] = [];
 
+        // No se exige estar enrolado/activo para ASIGNAR: el supervisor asigna ahora
+        // y la persona firma cuando complete su enrolamiento. (Antes se filtraba por
+        // w.habilitado y no se podía asignar a quien aún no se activaba.)
         if (assignmentType === 'todos') {
-            workerIdsToAssign = workers.filter(w => w.habilitado).map(w => w.personaId);
+            workerIdsToAssign = workers.map(w => w.personaId);
         } else if (assignmentType === 'cargo') {
             workerIdsToAssign = workers
-                .filter(w => w.habilitado && w.cargo?.toLowerCase() === selectedCargo.toLowerCase())
+                .filter(w => w.cargo?.toLowerCase() === selectedCargo.toLowerCase())
                 .map(w => w.personaId);
         } else {
             workerIdsToAssign = selectedWorkerIds;
@@ -409,17 +433,29 @@ export default function Documents() {
     // Get unique cargos from workers
     const uniqueCargos = [...new Set(workers.map(w => w.cargo).filter(Boolean))] as string[];
 
+    const isWorkerOrSupervisor = user?.rol === 'trabajador';
+
     const filteredDocuments = documents.filter((doc) => {
         if ((doc as any).clasificacion === 'repositorio') return false;
         const typeInfo = DOCUMENT_TYPES[doc.tipo];
         const categoryMatch = typeInfo ? typeInfo.category === activeCategory : activeTab === 'normativos';
+        // El tab NORMATIVOS muestra documentos de empresa (no se filtran por obra).
+        // Para gestión, las copias por-trabajador del onboarding (con kitItemKey) NO
+        // van aquí: son tareas de firma de cada persona (se ven en su ficha / la obra)
+        // y de lo contrario el tab se inundaría con un RI/Política por trabajador.
+        // El propio trabajador SÍ las ve (abajo se filtra a sus asignados) para firmar.
+        if (activeCategory === 'normativo' && (doc as any).kitItemKey && !isWorkerOrSupervisor) return false;
+        // El tab DIARIOS (registros por obra) se acota a la obra activa; un diario
+        // sin obra también se muestra.
+        if (activeCategory === 'diario' && selectedObraId && (doc as any).obraId && (doc as any).obraId !== selectedObraId) {
+            return false;
+        }
         const matchesSearch = doc.titulo.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesType = !filterType || doc.tipo === filterType;
 
         // Si no es admin/prevencionista, ver solo si está asignado
-        const isWorkerOrSupervisor = user?.rol === 'trabajador';
         if (isWorkerOrSupervisor) {
-            const isAssigned = doc.asignaciones?.some(a => a.workerId === user?.personaId);
+            const isAssigned = doc.asignaciones?.some(a => a.workerId === user?.personaId || (a as any).personaId === user?.personaId);
             return categoryMatch && matchesSearch && matchesType && isAssigned;
         }
 
@@ -565,7 +601,7 @@ export default function Documents() {
                             </div>
                             <div>
                                 <div className="stat-value" style={{ fontSize: 'var(--text-2xl)' }}>
-                                    {documents.length}
+                                    {filteredDocuments.length}
                                 </div>
                                 <div className="text-sm text-muted">Total Documentos</div>
                             </div>
@@ -579,7 +615,7 @@ export default function Documents() {
                             </div>
                             <div>
                                 <div className="stat-value" style={{ fontSize: 'var(--text-2xl)' }}>
-                                    {documents.filter(d => d.firmas && d.firmas.length > 0).length}
+                                    {filteredDocuments.filter(d => d.firmas && d.firmas.length > 0).length}
                                 </div>
                                 <div className="text-sm text-muted">Con Firmas</div>
                             </div>
@@ -593,7 +629,7 @@ export default function Documents() {
                             </div>
                             <div>
                                 <div className="stat-value" style={{ fontSize: 'var(--text-2xl)' }}>
-                                    {documents.filter(d => d.asignaciones?.some(a => a.estado === 'pendiente')).length}
+                                    {filteredDocuments.filter(d => d.asignaciones?.some(a => a.estado === 'pendiente')).length}
                                 </div>
                                 <div className="text-sm text-muted">Pendientes</div>
                             </div>
@@ -607,7 +643,7 @@ export default function Documents() {
                             </div>
                             <div>
                                 <div className="stat-value" style={{ fontSize: 'var(--text-2xl)' }}>
-                                    {documents.reduce((acc, d) => acc + (d.asignaciones?.length || 0), 0)}
+                                    {filteredDocuments.reduce((acc, d) => acc + (d.asignaciones?.length || 0), 0)}
                                 </div>
                                 <div className="text-sm text-muted">Asignaciones</div>
                             </div>
@@ -665,7 +701,10 @@ export default function Documents() {
                                     const signedCount = doc.asignaciones?.filter(a => a.estado === 'firmado').length || 0;
                                     const totalAssigned = doc.asignaciones?.length || 0;
 
-                                    const myAssignment = user?.personaId ? doc.asignaciones?.find(a => a.workerId === user.personaId) : null;
+                                    // Las asignaciones usan personaId (workerId es legacy): se comprueban ambos
+                                    // para que quien asigna (prevencionista/supervisor) también pueda FIRMAR el
+                                    // documento si se lo asignaron a sí mismo.
+                                    const myAssignment = user?.personaId ? doc.asignaciones?.find(a => (a as any).personaId === user.personaId || a.workerId === user.personaId) : null;
                                     const isPendingForMe = myAssignment?.estado === 'pendiente';
                                     const isSignedByMe = myAssignment?.estado === 'firmado';
                                     const isExpanded = Boolean(expandedRows[doc.documentId]);
@@ -684,7 +723,16 @@ export default function Documents() {
                                                             <FiFileText />
                                                         </div>
                                                         <div>
-                                                            <div className="font-semibold">{doc.titulo}</div>
+                                                            <div className="font-semibold" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                                {doc.titulo}
+                                                                {/* Alcance: empresa (sin obra) u obra específica. */}
+                                                                {(() => {
+                                                                    const oId = (doc as any).obraId;
+                                                                    if (!oId) return <span className="badge" style={{ fontSize: '10px', background: 'rgba(0,110,220,0.12)', color: 'var(--primary-600)' }}>Empresa</span>;
+                                                                    const o = obras.find((x: any) => x.obraId === oId);
+                                                                    return <span className="badge badge-neutral" style={{ fontSize: '10px' }}>{o?.nombre || 'Obra'}</span>;
+                                                                })()}
+                                                            </div>
                                                             <div
                                                                 className="text-xs text-muted"
                                                                 style={{
@@ -816,10 +864,12 @@ export default function Documents() {
                                             searchable
                                             value={newDoc.tipo}
                                             onChange={(v) => setNewDoc({ ...newDoc, tipo: v })}
-                                            options={Object.entries(DOCUMENT_TYPES)
-                                                .filter(([, info]) => info.category === activeCategory)
+                                            options={tiposCreables(activeCategory)
                                                 .map(([key, { label }]) => ({ value: key, label }))}
                                         />
+                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2, display: 'block' }}>
+                                            El IRL, Reglamento, Política SST, MIPER y similares se cargan desde Onboarding o el detalle de la obra, no aquí.
+                                        </span>
                                     </div>
 
                                     <div className="form-group">
@@ -909,7 +959,7 @@ export default function Documents() {
                     size="lg"
                     footer={
                         <>
-                            {(user?.personaId && selectedDocument?.asignaciones?.some(a => a.workerId === user!.personaId && a.estado === 'pendiente')) && (
+                            {(user?.personaId && selectedDocument?.asignaciones?.some(a => ((a as any).personaId === user!.personaId || a.workerId === user!.personaId) && a.estado === 'pendiente')) && (
                                 <button className="btn btn-success" style={{ background: 'var(--success-600)', color: 'white', marginRight: 'auto' }} onClick={() => { setShowDetailModal(false); setShowSignModal(true); }}>
                                     <FiPenTool className="inline mr-2" />Firmar Documento
                                 </button>
@@ -1102,7 +1152,7 @@ export default function Documents() {
                                                 Seleccionar Trabajadores ({selectedWorkerIds.length} seleccionados)
                                             </label>
                                             <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
-                                                {workers.filter(w => w.habilitado).map(worker => (
+                                                {workers.map(worker => (
                                                     <label
                                                         key={worker.personaId}
                                                         className="flex items-center gap-2"
@@ -1119,7 +1169,8 @@ export default function Documents() {
                                                             onChange={() => toggleWorkerSelection(worker.personaId)}
                                                         />
                                                         <span>{worker.nombre} {worker.apellido}</span>
-                                                        <span className="text-sm text-muted">- {worker.cargo}</span>
+                                                        <span className="text-sm text-muted">- {worker.cargo || 'Sin cargo'}</span>
+                                                        {!(worker as any).habilitado && <span className="badge badge-warning" style={{ fontSize: '10px' }}>pendiente</span>}
                                                     </label>
                                                 ))}
                                             </div>
@@ -1128,7 +1179,7 @@ export default function Documents() {
 
                                     {assignmentType === 'todos' && (
                                         <p className="text-muted">
-                                            Se asignará a {workers.filter(w => w.habilitado).length} trabajadores habilitados.
+                                            Se asignará a {workers.length} persona(s) de la obra. Las que aún no se enrolan podrán firmar una vez activen su cuenta.
                                         </p>
                                     )}
                 </Modal>

@@ -122,6 +122,9 @@ module.exports.create = async (event) => {
             estado: 'programada',
             recurrencia: esSerie ? { frecuencia, repetirHasta, serieId } : { frecuencia: 'unica' },
             serieId,
+            // Vínculo con el ítem del kit de onboarding (trazabilidad): si esta
+            // actividad se agendó para cumplir un ítem, al asistir se cierra ese ítem.
+            kitItemKey: body.kitItemKey || null,
             createdAt: now,
             updatedAt: now,
         };
@@ -265,12 +268,20 @@ module.exports.registerAttendance = async (event) => {
 
         if (!id) return error('ID de actividad requerido');
 
-        // Acepta personaId o workerId (legacy) 
+        // Acepta personaId o workerId (legacy)
         const { personaId, personaIds, workerId, workerIds, incluirFirmaRelator, pin } = body;
         const personas = personaIds || (personaId ? [personaId] : workerIds || (workerId ? [workerId] : []));
 
         if (personas.length === 0) {
             return error('Se requiere al menos un trabajador');
+        }
+
+        // Firma con PIN del trabajador (no presencial): la asistencia se firma de
+        // forma INDIVIDUAL porque un PIN solo autentica a su dueño. El cliente
+        // registra un trabajador a la vez con su propio PIN.
+        if (!pin) return error('Se requiere el PIN del trabajador para registrar la asistencia', 400);
+        if (personas.length > 1) {
+            return error('La firma con PIN es individual: registra un trabajador a la vez con su propio PIN', 400);
         }
 
         // Obtener actividad
@@ -298,12 +309,13 @@ module.exports.registerAttendance = async (event) => {
             const persona = await personaService.getById(pid);
             if (!persona) continue;
 
-            // Crear firma en SignaturesTable
-            const metodo = pin ? 'PIN' : 'PRESENCIAL';
+            // Crear firma en SignaturesTable (siempre con PIN del trabajador).
+            const metodo = 'PIN';
             try {
                 const firma = await FirmaService.crear({
                     personaId: pid,
                     tenantId: activity.tenantId,
+                    obraId: activity.obraId || null,
                     metodo,
                     credencial: pin || {},
                     tipoFirma: 'actividad',

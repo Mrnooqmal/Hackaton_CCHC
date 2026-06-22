@@ -64,6 +64,9 @@ export interface DocumentListParams {
     // personaId: devuelve solo documentos de onboarding con asignación pendiente
     // para esa persona y con archivo cargado (listos para que ella los firme).
     pendienteDe?: string;
+    // personaId: TODOS los documentos donde la persona tiene asignación (firmada o
+    // pendiente) — para calcular su cumplimiento personal.
+    asignadoA?: string;
 }
 
 export interface DocumentListResponse {

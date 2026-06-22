@@ -7,7 +7,7 @@
 const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { ObraService } = require('../../lib/services/ObraService');
@@ -79,6 +79,7 @@ const TEMPLATE_INSTRUCTIONS = [
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 const SIGNATURE_REQUESTS_TABLE = process.env.SIGNATURE_REQUESTS_TABLE || 'SignatureRequests';
+const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 
 // Roles de gestión/staff que NO pasan por el onboarding de terreno del trabajador.
 // (El kit reducido para posiciones de gestión se definirá en una fase posterior.)
@@ -221,7 +222,9 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
         documentId,
         tenantId,
         obraId,
-        clasificacion: 'diario',
+        // Los documentos de empresa (RI/Política) son de nivel tenant (obraId null)
+        // y se marcan 'empresa'; el resto del kit es 'diario' por obra.
+        clasificacion: docConfig.clasificacion || 'diario',
         fase: 'hacer',
         tipo: docConfig.tipo,
         tipoDescripcion: docConfig.titulo,
@@ -376,18 +379,94 @@ const avisarFaltaPlantilla = async ({ solicitante, persona, obraId, faltantes })
     }
 };
 
+// Documentos de onboarding (clasificacion 'diario') de una persona en una obra.
+// Base para idempotencia (no duplicar al reasignar) y limpieza al desasignar.
+const getOnboardingDocsForPersonaObra = async (tenantId, obraId, personaId) => {
+    const result = await docClient.send(new QueryCommand({
+        TableName: DOCUMENTS_TABLE,
+        IndexName: 'tenantId-index',
+        KeyConditionExpression: 'tenantId = :t',
+        ExpressionAttributeValues: { ':t': tenantId },
+    }));
+    return (result.Items || []).filter((doc) =>
+        doc.obraId === obraId &&
+        doc.clasificacion === 'diario' &&
+        (doc.asignaciones || []).some((a) => a.personaId === personaId)
+    );
+};
+
+// Documentos de empresa que TODA persona (salvo admin) debe revisar/firmar,
+// indistinto de rol o cargo: Reglamento Interno y Política SST. Se toman del
+// catálogo del tenant (cualquier cargo los tiene en su kit transversal).
+const EMPRESA_DOC_TIPOS = ['REGLAMENTO_INTERNO', 'POLITICA_SSO'];
+const getCompanyWideKitItems = (tenant) => {
+    const porTipo = {};
+    for (const c of (tenant?.reglas?.cargos || [])) {
+        for (const it of (c.kit || [])) {
+            if (EMPRESA_DOC_TIPOS.includes(it.tipo) && !porTipo[it.tipo]) {
+                porTipo[it.tipo] = it; // primera aparición (con plantilla si la hay)
+            }
+        }
+    }
+    return EMPRESA_DOC_TIPOS.map((t) => porTipo[t]).filter(Boolean);
+};
+
+// Reactiva un documento de onboarding archivado (al reasignar a la obra).
+const setOnboardingDocEstado = async (documentId, estado) => {
+    await docClient.send(new UpdateCommand({
+        TableName: DOCUMENTS_TABLE,
+        Key: { documentId },
+        UpdateExpression: 'SET #e = :estado, updatedAt = :u',
+        ExpressionAttributeNames: { '#e': 'estado' },
+        ExpressionAttributeValues: { ':estado': estado, ':u': new Date().toISOString() },
+    }));
+};
+
+// Marca como 'superada' las firmas válidas de unas personas para una referencia
+// (al renovar un documento: la firma anterior es de una versión previa). Las firmas
+// no se borran (auditoría); cambiar el estado permite volver a firmar la versión
+// nueva (la verificación de idempotencia solo cuenta firmas 'valida').
+const supersedeFirmasDeReferencia = async (referenciaId, personaIds) => {
+    for (const pid of personaIds) {
+        try {
+            const res = await docClient.send(new QueryCommand({
+                TableName: SIGNATURES_TABLE,
+                IndexName: 'personaId-index',
+                KeyConditionExpression: 'personaId = :p',
+                FilterExpression: 'referenciaId = :r AND #st = :v',
+                ExpressionAttributeNames: { '#st': 'estado' },
+                ExpressionAttributeValues: { ':p': pid, ':r': referenciaId, ':v': 'valida' },
+            }));
+            for (const f of (res.Items || [])) {
+                await docClient.send(new UpdateCommand({
+                    TableName: SIGNATURES_TABLE,
+                    Key: { signatureId: f.signatureId },
+                    UpdateExpression: 'SET #st = :s, supersededAt = :u',
+                    ExpressionAttributeNames: { '#st': 'estado' },
+                    ExpressionAttributeValues: { ':s': 'superada', ':u': new Date().toISOString() },
+                }));
+            }
+        } catch (e) {
+            console.error('No se pudo superar firma previa al renovar:', e.message);
+        }
+    }
+};
+
 // Genera el onboarding DS44 según el KIT del cargo (catálogo del tenant).
 // - Sin cargo → no hay kit (personal de oficina/gestión).
 // - ENTREGA_EPP → EppService (Art. 13), matriz del cargo.
 // - Ítems con plantilla (tenant del catálogo / obra del MIPER) → doc con archivo
 //   pegado (pendiente_firma). Sin plantilla y se esperaba → doc vacío + aviso.
 // - Nunca bloquea el registro/vinculación (cada ítem va en su propio try/catch).
+// - IDEMPOTENTE: si el ítem ya existe para esta persona+obra (de una asignación
+//   previa), no se duplica; si estaba archivado, se reactiva.
 const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) => {
-    // Solo trabajadores de TERRENO reciben el kit de onboarding DS44. Los roles de
-    // gestión/staff (admin, jefe de obra, supervisor, prevencionista, relator) NO
-    // pasan por este flujo: evita contaminar el checklist (p.ej. "admin 0/6") y que
-    // un rol caiga al kit genérico. Sus documentos base/extras se manejan aparte.
-    if (ROLES_GESTION.has(normalizeRol(persona.rol))) return;
+    // El kit DE OBRA es solo para trabajadores de TERRENO (con cargo). Los documentos
+    // de EMPRESA (Reglamento Interno + Política SST) ya NO viven en el kit por obra:
+    // son de nivel tenant y se asignan a TODA persona no-admin en ensureCompanyDocsForPersona
+    // (indistinto de rol, cargo u obra). Aquí solo se genera el kit técnico del cargo.
+    const rolNorm = normalizeRol(persona.rol);
+    if (rolNorm === 'admin') return;
 
     // El cargo vive en la ASIGNACIÓN a esta obra (multi-cargo). Fallback al cargo
     // legacy global por compatibilidad con personas aún no migradas.
@@ -396,10 +475,13 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
     // Normaliza a CÓDIGO del catálogo: "Carpintero" → CARPINTERO (resuelve su kit
     // real de 13 ítems). Sin esto, el texto libre caía SIEMPRE al kit genérico.
     const cargos = [...new Set(rawCargos.map((c) => normalizeCargoCodigo(c)).filter(Boolean))];
-    if (cargos.length === 0) return; // sin cargo de terreno → sin kit (oficina/gestión)
+
+    // Sin cargo de terreno (gestión/oficina) → no hay kit de obra. Sus documentos de
+    // empresa se asignan aparte (a nivel tenant).
+    const esTerreno = !ROLES_GESTION.has(rolNorm) && cargos.length > 0;
+    if (!esTerreno) return;
 
     const tenant = await tenantService.getById(tenantId).catch(() => null);
-    // Unión de kits de todos los cargos de la persona en la obra (dedup + estricto).
     const kit = resolveKitUnion(tenant?.reglas?.cargos, cargos);
     if (!Array.isArray(kit) || kit.length === 0) return;
 
@@ -407,16 +489,39 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
     const aplicabilidad = (obra && obra.aplicabilidadKit) || {};       // MIPER manual por obra+cargo
     const plantillasPorCargo = (obra && obra.plantillasOnboarding) || {};
 
+    // Idempotencia: documentos de onboarding ya existentes de esta persona en la
+    // obra (de una asignación previa), indexados por la key del kit / tipo.
+    const existentes = await getOnboardingDocsForPersonaObra(tenantId, obraId, persona.personaId).catch(() => []);
+    const existentePorKey = new Map();
+    for (const d of existentes) {
+        const k = d.kitItemKey || d.tipo;
+        if (k && !existentePorKey.has(k)) existentePorKey.set(k, d);
+    }
+
     const faltantes = [];
 
     for (const item of kit) {
         try {
+            // Los documentos de empresa (RI/Política) NO se crean por obra: son de
+            // nivel tenant (ensureCompanyDocsForPersona). Se saltan aquí.
+            if (EMPRESA_DOC_TIPOS.includes(item.tipo)) continue;
+
             const origenes = (item.cargosOrigen && item.cargosOrigen.length) ? item.cargosOrigen : cargos;
 
             // Aplicabilidad MIPER (manual): se excluye solo si TODOS los cargos de
             // origen lo marcan 'no_aplica' en esta obra (PR-PO excluidos según MIPER).
-            const excluido = origenes.every((cg) => aplicabilidad?.[cg]?.[item.key] === 'no_aplica');
+            const excluido = origenes.length > 0 && origenes.every((cg) => aplicabilidad?.[cg]?.[item.key] === 'no_aplica');
             if (excluido) continue;
+
+            // IDEMPOTENCIA: si el ítem ya existe (asignación previa), no se duplica.
+            // Si estaba archivado (la persona fue desasignada antes), se reactiva.
+            const yaExiste = existentePorKey.get(item.key) || existentePorKey.get(item.tipo);
+            if (yaExiste) {
+                if (yaExiste.estado === 'archivado') {
+                    await setOnboardingDocEstado(yaExiste.documentId, 'activo').catch(() => {});
+                }
+                continue;
+            }
 
             // EPP (Art. 13): la entrega física es un acto real (bodega/prevención
             // hace entrega y el trabajador firma recepción). NO se auto-genera al
@@ -425,6 +530,13 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
             // entrega se registra cuando efectivamente ocurre (modal "Nueva entrega
             // / Reposición de EPP" en la ficha del trabajador).
             if (item.accion === 'ENTREGA_EPP') {
+                continue;
+            }
+
+            // Naturaleza NO documental: encuestas y el ingreso a vigilancia de salud
+            // se gestionan en sus propios módulos (encuestas / ficha de salud), no se
+            // crean como documentos de firma aquí.
+            if (['ENCUESTA', 'INGRESO_VIGILANCIA'].includes(item.accion)) {
                 continue;
             }
 
@@ -446,9 +558,15 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
                 }
             }
 
-            // Faltante solo si se esperaba plantilla, no hay, y no se reutilizó evidencia.
-            if (!plantilla && !evidenciaReuse && (item.alcancePlantilla === 'tenant' || item.alcancePlantilla === 'obra')) {
+            // SOLO se asignan los ítems CONFIGURADOS. Si el ítem espera una plantilla
+            // (tenant/obra) y aún no se ha subido (ni hay evidencia reutilizable), NO se
+            // crea un documento vacío: queda como FALTANTE (aviso al admin) y, cuando se
+            // suba la plantilla en /onboarding o el detalle de obra, el broadcast lo
+            // asigna retroactivamente a quien corresponda.
+            const esperaPlantilla = item.alcancePlantilla === 'tenant' || item.alcancePlantilla === 'obra';
+            if (esperaPlantilla && !plantilla && !evidenciaReuse) {
                 faltantes.push(`${item.codigoEbco ? item.codigoEbco + ' · ' : ''}${item.titulo}`);
+                continue;
             }
 
             await createOnboardingDocument({
@@ -479,6 +597,279 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
     }
 
     await avisarFaltaPlantilla({ solicitante, persona, obraId, faltantes });
+};
+
+// Asigna los DOCUMENTOS DE EMPRESA (Reglamento Interno + Política SST) a una persona
+// a NIVEL TENANT (obraId null), indistinto de rol, cargo u obra (salvo admin). Así
+// "todo documento de empresa aplica a todos" y aparece en todas sus obras y en su
+// ficha. Idempotente: no duplica si la persona ya los tiene.
+const ensureCompanyDocsForPersona = async ({ tenantId, persona, solicitante }) => {
+    if (!persona) return;
+    if (normalizeRol(persona.rol) === 'admin') return;
+
+    const tenant = await tenantService.getById(tenantId).catch(() => null);
+    const items = getCompanyWideKitItems(tenant);
+    if (!Array.isArray(items) || items.length === 0) return;
+
+    // Documentos de empresa que ya tiene la persona (cualquier obra/tenant), por tipo.
+    const existentes = await docClient.send(new QueryCommand({
+        TableName: DOCUMENTS_TABLE,
+        IndexName: 'tenantId-index',
+        KeyConditionExpression: 'tenantId = :t',
+        ExpressionAttributeValues: { ':t': tenantId },
+    })).then((r) => (r.Items || []).filter((d) =>
+        (d.asignaciones || []).some((a) => a.personaId === persona.personaId) &&
+        d.estado !== 'archivado'
+    )).catch(() => []);
+    const tiposExistentes = new Set(existentes.map((d) => d.tipo));
+
+    for (const item of items) {
+        if (tiposExistentes.has(item.tipo)) continue; // ya lo tiene → no duplicar
+        // Solo se asigna si el documento de empresa ya está CONFIGURADO (plantilla
+        // subida en /onboarding). Si aún no, no se crea vacío: cuando se suba, el
+        // broadcast lo asigna a todos retroactivamente.
+        if (!item.plantilla || !item.plantilla.fileKey) continue;
+        try {
+            await createOnboardingDocument({
+                tenantId, obraId: null, persona, solicitante,
+                docConfig: {
+                    tipo: item.tipo,
+                    titulo: item.titulo,
+                    descripcion: item.articulo ? `${item.articulo} — ${item.titulo}` : item.titulo,
+                    requiereFirmaRelator: false,
+                    plantilla: item.plantilla || null,
+                    kitItemKey: item.key,
+                    accion: item.accion || 'DIFUSION_FIRMA',
+                    alcance: 'tenant',
+                    clasificacion: 'empresa',
+                    articulo: item.articulo || null,
+                    cargosOrigen: null,
+                },
+            });
+        } catch (e) {
+            console.error(`No se pudo asignar documento de empresa ${item.tipo} a ${persona.personaId}:`, e.message);
+        }
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BROADCAST retroactivo de plantillas del catálogo de cargos.
+//
+// Caso: se crea una persona con un cargo cuya plantilla (IRL, PTS…) o cuyo
+// documento de empresa (Reglamento Interno, Política SST) AÚN no se había subido.
+// Su documento de onboarding nace sin archivo (pendiente_asignar). Cuando luego
+// se sube la plantilla en /cargos-onboarding, este broadcast la sincroniza a TODOS
+// los documentos de onboarding ya existentes que apliquen y que aún no la tengan,
+// y notifica a cada asignado que el documento quedó listo para firmar.
+//
+// Reglas:
+//  - Solo toca documentos NO firmados (preserva firmas de versiones anteriores).
+//  - Alcance 'tenant' (RI/Política/IRL de empresa) → aplica a todos los cargos.
+//  - Alcance por cargo → solo a documentos de ese cargo.
+//  - Idempotente: si el documento ya tiene esa misma plantilla, no hace nada.
+const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
+    const fileKeyDe = (p) => (p && p.fileKey) ? p.fileKey : null;
+
+    // 1) Detectar qué ítems del kit ganaron o cambiaron su plantilla.
+    const oldMap = new Map(); // `${cargo}|${key}` -> fileKey anterior
+    for (const c of (oldCargos || [])) {
+        for (const it of (c.kit || [])) {
+            oldMap.set(`${c.codigo}|${it.key}`, fileKeyDe(it.plantilla));
+        }
+    }
+    const cambios = []; // { key, tipo, alcance, cargo, plantilla }  (alta/cambio)
+    const removals = []; // { key, tipo, cargo }  (se quitó la plantilla)
+    let itemsAgregados = false; // ¿se añadió algún ítem nuevo al kit de algún cargo?
+    for (const c of (newCargos || [])) {
+        const oldKit = (oldCargos || []).find((o) => o.codigo === c.codigo)?.kit || [];
+        const oldKeys = new Set(oldKit.map((it) => it.key));
+        for (const it of (c.kit || [])) {
+            if (!oldKeys.has(it.key)) itemsAgregados = true;
+            const fk = fileKeyDe(it.plantilla);
+            const prevFk = oldMap.get(`${c.codigo}|${it.key}`);
+            // Se normaliza el código del cargo igual que en los documentos de los
+            // trabajadores (cargosDoc), para que el match no falle por formato/casing.
+            const cargoNorm = normalizeCargoCodigo(c.codigo) || c.codigo;
+            if (fk) {
+                if (prevFk !== fk) {
+                    cambios.push({ key: it.key, tipo: it.tipo, alcance: it.alcancePlantilla, cargo: cargoNorm, plantilla: it.plantilla });
+                }
+            } else if (prevFk) {
+                // Tenía plantilla y ahora no → se quitó: hay que despegar el archivo de
+                // los documentos de los trabajadores (vuelven a "pendiente de asignar").
+                removals.push({ key: it.key, tipo: it.tipo, cargo: cargoNorm });
+            }
+        }
+    }
+    // ¿Cambió algún documento de empresa (RI/Política)? Si sí, hay que asegurarse de
+    // que TODA persona no-admin lo tenga asignado (a nivel tenant) y reciba el archivo.
+    const companyWideChanged = cambios.some((c) => EMPRESA_DOC_TIPOS.includes(c.tipo));
+    if (cambios.length === 0 && removals.length === 0 && !itemsAgregados) return { actualizados: 0, creados: 0, removidos: 0 };
+
+    // Documentos verdaderamente de empresa (un mismo archivo para TODOS los cargos):
+    // Reglamento Interno y Política SST. El IRL, en cambio, es alcance 'tenant' pero
+    // su contenido es POR CARGO (cada cargo tiene su propio IRL), así que NO se
+    // difunde entre cargos distintos.
+    const EMPRESA_WIDE_TIPOS = new Set(['POLITICA_SSO', 'REGLAMENTO_INTERNO']);
+
+    // 2) Documentos de onboarding del tenant (una sola query) si hay altas o bajas.
+    const docsRes = (cambios.length > 0 || removals.length > 0) ? await docClient.send(new QueryCommand({
+        TableName: DOCUMENTS_TABLE,
+        IndexName: 'tenantId-index',
+        KeyConditionExpression: 'tenantId = :t',
+        ExpressionAttributeValues: { ':t': tenantId },
+    })) : { Items: [] };
+    // Incluye docs de obra ('diario') y de empresa a nivel tenant ('empresa'): el
+    // broadcast de RI/Política debe alcanzar ambos.
+    const docs = (docsRes.Items || []).filter((d) => ['diario', 'empresa'].includes(d.clasificacion) && d.estado !== 'archivado');
+
+    let actualizados = 0;
+    let removidos = 0;
+    const now = new Date().toISOString();
+    for (const doc of docs) {
+        const docKey = doc.kitItemKey || doc.tipo;
+        // Se normalizan SIEMPRE los códigos de cargo del documento (cargosOrigen o el
+        // fallback doc.cargo) para comparar con los del catálogo ya normalizados.
+        const cargosDoc = ((Array.isArray(doc.cargosOrigen) && doc.cargosOrigen.length)
+            ? doc.cargosOrigen
+            : (doc.cargo ? String(doc.cargo).split(',') : [])
+        ).map((s) => normalizeCargoCodigo(String(s).trim())).filter(Boolean);
+
+        // BAJA: se quitó la plantilla del catálogo → despegar el archivo del documento
+        // del trabajador (vuelve a pendiente_asignar) y superar firmas de esa versión.
+        const rm = removals.find((r) =>
+            (r.key === docKey || r.tipo === doc.tipo) &&
+            (EMPRESA_DOC_TIPOS.includes(r.tipo) || cargosDoc.includes(r.cargo))
+        );
+        if (rm && doc.s3Key) {
+            const firmantes = (doc.asignaciones || [])
+                .filter((a) => a.estado === 'firmado' || a.fechaFirma)
+                .map((a) => a.personaId || a.workerId)
+                .filter(Boolean);
+            if (firmantes.length > 0) await supersedeFirmasDeReferencia(doc.documentId, firmantes);
+            const asigReset = (doc.asignaciones || []).map((a) => ({ ...a, estado: 'pendiente', fechaFirma: null }));
+            await docClient.send(new UpdateCommand({
+                TableName: DOCUMENTS_TABLE,
+                Key: { documentId: doc.documentId },
+                UpdateExpression: 'SET s3Key = :s, archivoNombre = :n, asignaciones = :asig, firmas = :f, updatedAt = :u',
+                ExpressionAttributeValues: { ':s': null, ':n': null, ':asig': asigReset, ':f': [], ':u': now },
+            }));
+            removidos++;
+            continue;
+        }
+
+        // Cambio que aplica a este documento: los docs de empresa (RI/Política) se
+        // difunden a todos los cargos; el resto (IRL, PTS…) solo al cargo que coincide.
+        const ch = cambios.find((c) =>
+            (c.key === docKey || c.tipo === doc.tipo) &&
+            (EMPRESA_WIDE_TIPOS.has(c.tipo) || cargosDoc.includes(c.cargo))
+        );
+        if (!ch) continue;
+
+        // Si ya tiene exactamente esa plantilla, no hay nada que hacer.
+        if (doc.s3Key === ch.plantilla.fileKey) continue;
+
+        // RENOVACIÓN: el documento ya tenía un archivo (versión previa) que cambió.
+        // Hay que reabrir la firma para TODOS (incluidos los que ya firmaron la
+        // versión anterior) y superar sus firmas previas. PRIMERA CARGA: el archivo
+        // estaba ausente; solo se adjunta y se mantiene el estado pendiente.
+        const esRenovacion = Boolean(doc.s3Key);
+        const huboFirmados = (doc.asignaciones || []).some((a) => a.estado === 'firmado' || a.fechaFirma);
+
+        let nuevasAsignaciones = doc.asignaciones || [];
+        if (esRenovacion && huboFirmados) {
+            const firmantes = (doc.asignaciones || [])
+                .filter((a) => a.estado === 'firmado' || a.fechaFirma)
+                .map((a) => a.personaId)
+                .filter(Boolean);
+            await supersedeFirmasDeReferencia(doc.documentId, firmantes);
+            nuevasAsignaciones = (doc.asignaciones || []).map((a) => ({
+                ...a, estado: 'pendiente', fechaFirma: null,
+            }));
+        }
+
+        const updateExpr = esRenovacion && huboFirmados
+            ? 'SET s3Key = :s, archivoNombre = :n, asignaciones = :asig, version = :ver, firmas = :firmas, updatedAt = :u'
+            : 'SET s3Key = :s, archivoNombre = :n, updatedAt = :u';
+        const exprValues = esRenovacion && huboFirmados
+            ? {
+                ':s': ch.plantilla.fileKey,
+                ':n': ch.plantilla.nombre || doc.archivoNombre || null,
+                ':asig': nuevasAsignaciones,
+                ':ver': (doc.version || 1) + 1,
+                ':firmas': [],
+                ':u': now,
+            }
+            : {
+                ':s': ch.plantilla.fileKey,
+                ':n': ch.plantilla.nombre || doc.archivoNombre || null,
+                ':u': now,
+            };
+
+        await docClient.send(new UpdateCommand({
+            TableName: DOCUMENTS_TABLE,
+            Key: { documentId: doc.documentId },
+            UpdateExpression: updateExpr,
+            ExpressionAttributeValues: exprValues,
+        }));
+        actualizados++;
+
+        // Avisar a TODOS los asignados (en renovación reabren firma; en primera
+        // carga, los que estaban pendientes) que el documento está listo para revisar.
+        const asignados = nuevasAsignaciones
+            .filter((a) => a.estado !== 'firmado')
+            .map((a) => a.personaId || a.workerId)
+            .filter(Boolean);
+        if (asignados.length > 0) {
+            try {
+                await eventBus.emit('document.assigned', {
+                    documentId: doc.documentId,
+                    userIds: asignados,
+                    assignedBy: 'system',
+                    creatorName: 'Sistema DS44',
+                    documentName: esRenovacion ? `${doc.titulo} (versión actualizada)` : doc.titulo,
+                    dueDate: null,
+                });
+            } catch (e) {
+                console.error('Broadcast plantilla: fallo al notificar', e.message);
+            }
+        }
+    }
+
+    // 3) Asignación retroactiva a personas YA existentes (infalible):
+    //    - Documento de empresa cambiado (RI/Política) → asegurar que TODA persona
+    //      no-admin lo tenga (a nivel tenant). El doc nace con el archivo y notifica.
+    //    - Cualquier plantilla cargada/cambiada o ítem nuevo → re-correr onboarding
+    //      por obra (idempotente: crea SOLO lo que falta) para que un trabajador que
+    //      ya tenía el cargo reciba el ítem (ej. IRL) aunque su doc aún no existiera.
+    const recrearOnboarding = cambios.length > 0 || itemsAgregados;
+    let creados = 0;
+    if (companyWideChanged || recrearOnboarding) {
+        const personas = await personaService.listByTenant(tenantId).catch(() => []);
+        for (const p of personas) {
+            if (normalizeRol(p.rol) === 'admin') continue;
+            if (companyWideChanged) {
+                try {
+                    await ensureCompanyDocsForPersona({ tenantId, persona: p, solicitante: null });
+                } catch (e) {
+                    console.error(`Resync docs empresa (persona ${p.personaId}) falló:`, e.message);
+                }
+            }
+            if (recrearOnboarding) {
+                const obras = Array.isArray(p.obraIds) ? p.obraIds : [];
+                for (const oId of obras) {
+                    try {
+                        await runOnboardingForObra({ tenantId, obraId: oId, persona: p, solicitante: null });
+                        creados++;
+                    } catch (e) {
+                        console.error(`Resync onboarding (persona ${p.personaId}, obra ${oId}) falló:`, e.message);
+                    }
+                }
+            }
+        }
+    }
+
+    return { actualizados, creados, removidos };
 };
 
 // Valores estandarizados para los desplegables de la plantilla.
@@ -566,6 +957,10 @@ const createTemplateBuffer = async ({ roles, cargos } = {}) => {
     const buffer = await wb.xlsx.writeBuffer();
     return Buffer.from(buffer);
 };
+
+// Broadcast retroactivo de plantillas (lo invoca el guardado de cargos del tenant).
+module.exports.syncPlantillasToWorkers = syncPlantillasToWorkers;
+module.exports.ensureCompanyDocsForPersona = ensureCompanyDocsForPersona;
 
 module.exports.personasHandler = async (event) => {
     const method = event.requestContext?.http?.method || event.httpMethod;
@@ -854,10 +1249,14 @@ module.exports.personasHandler = async (event) => {
                         }
                     }
 
-                    // Generar onboarding DS44 para trabajadores creados con obra.
-                    // Antes solo se disparaba al asignar obra via PUT; la carga masiva
-                    // dejaba trabajadores sin documentos de onboarding (bug demo).
-                    if (normalizeRol(persona.rol) === 'trabajador' && Array.isArray(persona.obraIds)) {
+                    // Documentos de empresa (RI/Política) a nivel tenant: a TODA persona
+                    // no-admin, tenga o no obra.
+                    if (normalizeRol(persona.rol) !== 'admin') {
+                        await ensureCompanyDocsForPersona({ tenantId, persona, solicitante: null }).catch((e) =>
+                            console.error(`Docs empresa fila ${rowNumber}:`, e.message));
+                    }
+                    // Kit técnico del cargo por obra (solo terreno).
+                    if (normalizeRol(persona.rol) !== 'admin' && Array.isArray(persona.obraIds)) {
                         for (const oId of persona.obraIds) {
                             try {
                                 await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null });
@@ -922,10 +1321,16 @@ module.exports.personasHandler = async (event) => {
                 console.error('No se pudo actualizar la cantidad de trabajadores del tenant:', countErr.message);
             });
 
-            // Generar onboarding DS44 si el trabajador se crea ya asignado a obra(s).
-            if (normalizeRol(persona.rol) === 'trabajador' && Array.isArray(persona.obraIds) && persona.obraIds.length > 0) {
-                const solicitanteId = body.solicitanteId || null;
-                const solicitante = solicitanteId ? await personaService.getById(solicitanteId).catch(() => null) : null;
+            // Documentos de empresa (RI/Política) a nivel tenant: a TODA persona
+            // no-admin, tenga o no obra.
+            const solicitanteCreate = body.solicitanteId ? await personaService.getById(body.solicitanteId).catch(() => null) : null;
+            if (normalizeRol(persona.rol) !== 'admin') {
+                await ensureCompanyDocsForPersona({ tenantId, persona, solicitante: solicitanteCreate }).catch((e) =>
+                    console.error('Docs empresa al crear persona:', e.message));
+            }
+            // Kit técnico del cargo por obra (solo terreno).
+            if (normalizeRol(persona.rol) !== 'admin' && Array.isArray(persona.obraIds) && persona.obraIds.length > 0) {
+                const solicitante = solicitanteCreate;
                 for (const oId of persona.obraIds) {
                     try {
                         await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante });
@@ -1003,9 +1408,9 @@ module.exports.personasHandler = async (event) => {
             try {
                 const nextObraIds = Array.isArray(persona.obraIds) ? persona.obraIds : [];
                 const addedObras = nextObraIds.filter((id) => !previousObraIds.has(id));
-                const isWorker = normalizeRol(persona.rol) === 'trabajador';
+                const noEsAdmin = normalizeRol(persona.rol) !== 'admin';
 
-                if (isWorker && addedObras.length > 0) {
+                if (noEsAdmin && addedObras.length > 0) {
                     const solicitanteId = body.solicitanteId
                         || event.requestContext?.authorizer?.claims?.sub
                         || null;
@@ -1074,7 +1479,7 @@ module.exports.personasHandler = async (event) => {
             const { persona, esNueva } = await personaService.setAsignacionObra(tenantId, personaId, body.obraId, cargos);
 
             try {
-                if (esNueva && normalizeRol(persona.rol) === 'trabajador') {
+                if (esNueva && normalizeRol(persona.rol) !== 'admin') {
                     const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
                     const solicitante = solicitanteId ? await personaService.getById(solicitanteId) : null;
                     await runOnboardingForObra({ tenantId, obraId: body.obraId, persona, solicitante });
@@ -1089,7 +1494,23 @@ module.exports.personasHandler = async (event) => {
         // DELETE /personas/{id}/asignaciones/{obraId} — Quita al trabajador de una obra.
         if (method === 'DELETE' && personaId && action === 'asignaciones' && segments[2]) {
             if (!tenantId) return error('tenantId es requerido');
-            const persona = await personaService.quitarDeObra(tenantId, personaId, segments[2]);
+            const obraIdQuitar = segments[2];
+            const persona = await personaService.quitarDeObra(tenantId, personaId, obraIdQuitar);
+
+            // Consistencia por obra: al sacar a la persona de la obra, sus documentos
+            // de onboarding de ESA obra se archivan (no se borran: preservan firmas y
+            // auditoría). Si se la reasigna luego, runOnboardingForObra los reactiva.
+            try {
+                const docs = await getOnboardingDocsForPersonaObra(tenantId, obraIdQuitar, personaId);
+                for (const d of docs) {
+                    if (d.estado !== 'archivado') {
+                        await setOnboardingDocEstado(d.documentId, 'archivado').catch(() => {});
+                    }
+                }
+            } catch (archErr) {
+                console.error('No se pudieron archivar documentos de onboarding al desasignar:', archErr.message);
+            }
+
             return success({ message: 'Asignación eliminada', persona: persona.toSafeFormat() });
         }
 

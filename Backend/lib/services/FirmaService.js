@@ -67,6 +67,7 @@ class FirmaService {
         const {
             personaId,
             tenantId,
+            obraId = null,
             metodo = 'PIN',
             credencial,
             tipoFirma,
@@ -105,6 +106,33 @@ class FirmaService {
             throw new Error(`Validación de ${metodo} fallida`);
         }
 
+        // IDEMPOTENCIA: si ya existe una firma válida de esta persona para la misma
+        // referencia (documento/actividad), se devuelve esa en vez de crear un
+        // duplicado (protege contra doble envío / reintentos de red).
+        if (referenciaId && referenciaTipo && tipoFirma !== 'enrolamiento') {
+            try {
+                const existing = await docClient.send(new QueryCommand({
+                    TableName: SIGNATURES_TABLE,
+                    IndexName: 'personaId-index',
+                    KeyConditionExpression: 'personaId = :p',
+                    FilterExpression: 'referenciaId = :r AND referenciaTipo = :rt AND tipoFirma = :tf AND #st = :e',
+                    ExpressionAttributeNames: { '#st': 'estado' },
+                    ExpressionAttributeValues: {
+                        ':p': persona.personaId,
+                        ':r': referenciaId,
+                        ':rt': referenciaTipo,
+                        ':tf': tipoFirma,
+                        ':e': 'valida',
+                    },
+                }));
+                if (existing.Items && existing.Items.length > 0) {
+                    return existing.Items[0];
+                }
+            } catch (idemErr) {
+                console.error('Idempotencia firma: verificación falló, se continúa:', idemErr.message);
+            }
+        }
+
         // Crear firma
         const now = new Date();
         const signatureId = uuidv4();
@@ -125,6 +153,9 @@ class FirmaService {
             tipoFirma,
             referenciaId: referenciaId || null,
             referenciaTipo: referenciaTipo || null,
+            // Obra a la que pertenece la firma (trazabilidad por obra). Se deriva del
+            // documento/actividad firmado; null para firmas sin obra (ej. enrolamiento).
+            obraId: obraId || null,
 
             // Timestamps según DS 44
             fecha: now.toISOString().split('T')[0],

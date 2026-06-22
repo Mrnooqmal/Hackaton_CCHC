@@ -9,6 +9,7 @@ import {
     FiAward,
     FiSearch,
     FiCalendar,
+    FiClock,
     FiFileText,
     FiFilter
 } from 'react-icons/fi';
@@ -20,6 +21,7 @@ import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
+import { useLocation } from 'react-router-dom';
 
 const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
     CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: <FiMessageSquare /> },
@@ -70,6 +72,9 @@ export default function Activities() {
     const [filterType, setFilterType] = useState('');
     const [showSignatureModal, setShowSignatureModal] = useState(false);
     const [signatureError, setSignatureError] = useState('');
+    // Firma asistida SECUENCIAL: cada trabajador firma con su propio PIN, uno a uno.
+    const [signingIndex, setSigningIndex] = useState(0);
+    const [signingResults, setSigningResults] = useState<{ signed: number; skipped: number }>({ signed: 0, skipped: 0 });
     const [showSelfSignModal, setShowSelfSignModal] = useState(false);
     const [selfSignActivity, setSelfSignActivity] = useState<Activity | null>(null);
 
@@ -92,12 +97,32 @@ export default function Activities() {
         // Periodicidad: 'unica' (sin repetición) o repetir hasta una fecha.
         frecuencia: 'unica' as 'unica' | 'diaria' | 'semanal' | 'mensual',
         repetirHasta: '',
+        // Vínculo con un ítem de onboarding (si se agendó desde el Equipo).
+        kitItemKey: '' as string,
     };
     const [newActivity, setNewActivity] = useState(emptyActivity);
+    const location = useLocation();
 
     useEffect(() => {
         loadData();
     }, [selectedObraId]);
+
+    // Prefill desde el Equipo de la obra: "Agendar" una capacitación para una persona.
+    useEffect(() => {
+        const prefill = (location.state as any)?.prefill;
+        if (!prefill || !prefill.personaId) return;
+        setNewActivity({
+            ...emptyActivity,
+            tipo: 'CAPACITACION',
+            subtipo: prefill.subtipo || 'OTRA',
+            titulo: prefill.titulo || '',
+            asistentesRequeridos: [prefill.personaId],
+            kitItemKey: prefill.kitItemKey || '',
+        });
+        setShowModal(true);
+        window.history.replaceState({}, ''); // evita reabrir al volver
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Sync pending offline signatures when online
     useEffect(() => {
@@ -194,92 +219,84 @@ export default function Activities() {
         }
     };
 
-    const handleRegisterAttendance = async (pin: string) => {
-        if (!selectedActivity || selectedWorkers.length === 0) return;
+    // Inicia la firma asistida SECUENCIAL: empieza por el primer trabajador.
+    const startSequentialSigning = () => {
+        if (selectedWorkers.length === 0) return;
+        setSignatureError('');
+        setSigningIndex(0);
+        setSigningResults({ signed: 0, skipped: 0 });
+        setShowSignatureModal(true);
+    };
+
+    // Cierra el flujo secuencial y muestra el resumen.
+    const finishSequentialSigning = (signed: number, skipped: number) => {
+        setShowSignatureModal(false);
+        setShowAttendanceModal(false);
+        setSelectedActivity(null);
+        setSelectedWorkers([]);
+        setSigningIndex(0);
+        loadData();
+        if (signed > 0 && skipped === 0) toast.success(`Asistencia registrada para ${signed} trabajador(es)`);
+        else if (signed > 0 && skipped > 0) toast.success(`${signed} firmada(s), ${skipped} omitida(s)`);
+        else toast.info('No se registró ninguna asistencia');
+    };
+
+    // Avanza al siguiente trabajador o termina si era el último.
+    const advanceSigning = (signedDelta: number, skippedDelta: number) => {
+        const nextIndex = signingIndex + 1;
+        const signed = signingResults.signed + signedDelta;
+        const skipped = signingResults.skipped + skippedDelta;
+        setSigningResults({ signed, skipped });
+        if (nextIndex >= selectedWorkers.length) {
+            finishSequentialSigning(signed, skipped);
+        } else {
+            setSignatureError('');
+            setSigningIndex(nextIndex);
+        }
+    };
+
+    // Firma del trabajador actual con SU PIN. Si falla, lanza para que el modal
+    // muestre el error y el mismo trabajador reintente (no avanza).
+    const handleSignCurrentWorker = async (pin: string) => {
+        if (!selectedActivity) return;
+        const workerId = selectedWorkers[signingIndex];
+        const worker = workers.find(w => w.personaId === workerId);
+        const nombre = worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : 'Trabajador';
         setSignatureError('');
 
-        // Offline-first: if no connection, save each worker's attendance locally
+        // Offline-first: guarda localmente con el PIN de este trabajador.
         if (!navigator.onLine) {
-            for (const workerId of selectedWorkers) {
-                const worker = workers.find(w => w.personaId === workerId);
-                await signActivity(
-                    selectedActivity.activityId,
-                    selectedActivity.titulo,
-                    workerId,
-                    worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : 'Trabajador',
-                    pin
-                );
-            }
-            setShowSignatureModal(false);
-            setShowAttendanceModal(false);
-            setSelectedActivity(null);
-            setSelectedWorkers([]);
-            toast.info(`${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizaran cuando vuelva la conexion.`);
+            await signActivity(selectedActivity.activityId, selectedActivity.titulo, workerId, nombre, pin);
+            advanceSigning(1, 0);
             return;
         }
 
-        try {
-            const response = await activitiesApi.registerAttendance(selectedActivity.activityId, {
-                workerIds: selectedWorkers,
-                incluirFirmaRelator: true,
-                pin: pin,
-            });
+        const response = await activitiesApi.registerAttendance(selectedActivity.activityId, {
+            workerIds: [workerId],
+            // La firma del relator se incluye solo en la primera firma de la sesión.
+            incluirFirmaRelator: signingIndex === 0,
+            pin,
+        });
 
-            if (response.success) {
-                setShowSignatureModal(false);
-                loadData();
-                setShowAttendanceModal(false);
-                setSelectedActivity(null);
-                setSelectedWorkers([]);
-                toast.success(`Asistencia registrada para ${selectedWorkers.length} trabajador(es)`);
-            } else {
-                // Check if it's a network error disguised as API error
-                const errMsg = (response.error || '').toLowerCase();
-                if (errMsg.includes('fetch') || errMsg.includes('network')) {
-                    for (const workerId of selectedWorkers) {
-                        const worker = workers.find(w => w.personaId === workerId);
-                        await signActivity(
-                            selectedActivity.activityId,
-                            selectedActivity.titulo,
-                            workerId,
-                            worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : 'Trabajador',
-                            pin
-                        );
-                    }
-                    setShowSignatureModal(false);
-                    setShowAttendanceModal(false);
-                    setSelectedActivity(null);
-                    setSelectedWorkers([]);
-                    toast.info(`${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizaran cuando vuelva la conexion.`);
-                } else {
-                    setSignatureError(response.error || 'Error al registrar asistencia');
-                }
-            }
-        } catch (error: any) {
-            // Network error - fallback to offline storage
-            const msg = (error?.message || '').toLowerCase();
-            if (msg.includes('fetch') || msg.includes('network') || !navigator.onLine) {
-                for (const workerId of selectedWorkers) {
-                    const worker = workers.find(w => w.personaId === workerId);
-                    await signActivity(
-                        selectedActivity.activityId,
-                        selectedActivity.titulo,
-                        workerId,
-                        worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : 'Trabajador',
-                        pin
-                    );
-                }
-                setShowSignatureModal(false);
-                setShowAttendanceModal(false);
-                setSelectedActivity(null);
-                setSelectedWorkers([]);
-                toast.info(`${selectedWorkers.length} asistencia(s) guardada(s) localmente. Se sincronizaran cuando vuelva la conexion.`);
-            } else {
-                console.error('Error registering attendance:', error);
-                setSignatureError(error.message || 'Error al registrar asistencia');
-            }
+        if (response.success) {
+            advanceSigning(1, 0);
+            return;
         }
+
+        // Error de red → cae a offline para este trabajador.
+        const errMsg = (response.error || '').toLowerCase();
+        if (errMsg.includes('fetch') || errMsg.includes('network')) {
+            await signActivity(selectedActivity.activityId, selectedActivity.titulo, workerId, nombre, pin);
+            advanceSigning(1, 0);
+            return;
+        }
+
+        // PIN incorrecto u otro error de validación → lanza para reintento del mismo.
+        throw new Error(response.error || `PIN incorrecto para ${nombre}. Inténtalo de nuevo.`);
     };
+
+    // Salta al trabajador actual (ej. ausente o no recuerda su PIN).
+    const handleSkipCurrentWorker = () => advanceSigning(0, 1);
 
     const openAttendanceModal = (activity: Activity) => {
         setSelectedActivity(activity);
@@ -371,7 +388,20 @@ export default function Activities() {
     };
 
     const todayActivities = activities.filter(a => a.fecha === today && matchesFilters(a));
-    const filteredActivities = activities.filter(matchesFilters);
+    // "Historial" = solo actividades que YA pasaron (fecha anterior a hoy). Las de hoy
+    // van en su propia sección y las futuras son recordatorios (no historial).
+    const filteredActivities = activities.filter(a => a.fecha < today && matchesFilters(a));
+    const upcomingActivities = activities.filter(a => a.fecha > today && matchesFilters(a));
+
+    // Una actividad solo es FIRMABLE cuando ya empezó (fecha+hora de inicio <= ahora).
+    // Antes de eso es un recordatorio de asistencia, no se puede firmar todavía.
+    const haComenzado = (a: Activity): boolean => {
+        if (a.fecha < today) return true;
+        if (a.fecha > today) return false;
+        const inicio = (a.horaInicio || '00:00').slice(0, 5);
+        const ahora = new Date().toTimeString().slice(0, 5);
+        return ahora >= inicio;
+    };
 
     return (
         <>
@@ -385,8 +415,13 @@ export default function Activities() {
                     title="Actividades y capacitación"
                     description="Charlas de 5 minutos, inducciones, ART y capacitación técnica, con asistencia y firma de los participantes."
                     actions={
-                        selectedObraId && canCrearActividad ? (
-                            <button className="btn btn-save" onClick={() => setShowModal(true)}>
+                        canCrearActividad ? (
+                            <button
+                                className="btn btn-save"
+                                disabled={!selectedObraId}
+                                title={!selectedObraId ? 'Selecciona una obra en la barra superior para crear una actividad' : undefined}
+                                onClick={() => setShowModal(true)}
+                            >
                                 <FiPlus /> Nueva actividad
                             </button>
                         ) : undefined
@@ -488,6 +523,11 @@ export default function Activities() {
                                     month: 'long',
                                     day: 'numeric'
                                 })}
+                                {upcomingActivities.length > 0 && (
+                                    <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
+                                        · {upcomingActivities.length} programada(s) próximamente
+                                    </span>
+                                )}
                             </p>
                         </div>
                     </div>
@@ -552,28 +592,35 @@ export default function Activities() {
                                             </span>
 
                                             {activity.estado !== 'completada' && (
-                                                <div className="flex items-center gap-2">
-                                                    {/* Worker self-sign button */}
-                                                    {canSelfSign && !activity.asistentes.some(a => a.workerId === user?.personaId) && (
-                                                        <button
-                                                            className="btn btn-secondary btn-sm"
-                                                            onClick={() => openSelfSignModal(activity)}
-                                                        >
-                                                            <FiCheck />
-                                                            Registrar mi asistencia
-                                                        </button>
-                                                    )}
-                                                    {/* Manager mass attendance button */}
-                                                    {canManage && (
-                                                        <button
-                                                            className="btn btn-primary btn-sm"
-                                                            onClick={() => openAttendanceModal(activity)}
-                                                        >
-                                                            <FiCheck />
-                                                            Registrar Asistencia
-                                                        </button>
-                                                    )}
-                                                </div>
+                                                haComenzado(activity) ? (
+                                                    <div className="flex items-center gap-2">
+                                                        {/* Worker self-sign button */}
+                                                        {canSelfSign && !activity.asistentes.some(a => a.workerId === user?.personaId || (a as any).personaId === user?.personaId) && (
+                                                            <button
+                                                                className="btn btn-secondary btn-sm"
+                                                                onClick={() => openSelfSignModal(activity)}
+                                                            >
+                                                                <FiCheck />
+                                                                Registrar mi asistencia
+                                                            </button>
+                                                        )}
+                                                        {/* Manager mass attendance button */}
+                                                        {canManage && (
+                                                            <button
+                                                                className="btn btn-primary btn-sm"
+                                                                onClick={() => openAttendanceModal(activity)}
+                                                            >
+                                                                <FiCheck />
+                                                                Registrar Asistencia
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-muted" title={`Disponible para firmar a las ${(activity.horaInicio || '').slice(0,5)}`}>
+                                                        <FiClock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                                                        Aún no comienza · firma disponible desde {(activity.horaInicio || '').slice(0, 5)}
+                                                    </span>
+                                                )
                                             )}
                                         </div>
                                     </div>
@@ -849,10 +896,10 @@ export default function Activities() {
                             <button
                                 className="btn btn-primary"
                                 disabled={selectedWorkers.length === 0}
-                                onClick={() => setShowSignatureModal(true)}
+                                onClick={startSequentialSigning}
                             >
                                 <FiCheck />
-                                Firmar y Registrar {selectedWorkers.length} Asistencia(s)
+                                Firmar {selectedWorkers.length} Asistencia(s) con PIN
                             </button>
                         </>
                     }
@@ -905,7 +952,7 @@ export default function Activities() {
                             {selectedWorkers.length > 0 && (
                                 <div className="mt-6">
                                     <div className="alert alert-info">
-                                        <strong>{selectedWorkers.length}</strong> trabajador(es) seleccionado(s) para firma masiva.
+                                        <strong>{selectedWorkers.length}</strong> trabajador(es) seleccionado(s). Cada uno firmará con <strong>su propio PIN</strong>, uno por uno.
                                     </div>
                                 </div>
                             )}
@@ -913,17 +960,26 @@ export default function Activities() {
                     )}
                 </Modal>
 
-                {/* Signature Modal for Attendance Registration */}
-                <SignatureModal
-                    isOpen={showSignatureModal}
-                    onClose={() => setShowSignatureModal(false)}
-                    onConfirm={handleRegisterAttendance}
-                    type="activity"
-                    title="Firmar Asistencia"
-                    itemName={selectedActivity?.titulo}
-                    description={`Registrarás la asistencia de ${selectedWorkers.length} trabajador(es) a esta actividad.`}
-                    error={signatureError}
-                />
+                {/* Signature Modal — firma asistida SECUENCIAL (PIN por trabajador) */}
+                {(() => {
+                    const currentWorkerId = selectedWorkers[signingIndex];
+                    const currentWorker = workers.find(w => w.personaId === currentWorkerId);
+                    const currentNombre = currentWorker ? `${currentWorker.nombre} ${currentWorker.apellido || ''}`.trim() : 'Trabajador';
+                    return (
+                        <SignatureModal
+                            isOpen={showSignatureModal && selectedWorkers.length > 0}
+                            onClose={() => { setShowSignatureModal(false); setSigningIndex(0); }}
+                            onConfirm={handleSignCurrentWorker}
+                            type="activity"
+                            title={`Firma de ${currentNombre}`}
+                            itemName={`${selectedActivity?.titulo || ''} · Trabajador ${signingIndex + 1} de ${selectedWorkers.length}`}
+                            description={`${currentNombre} ingresa su PIN para firmar su asistencia. Cada trabajador firma con su propio PIN.`}
+                            error={signatureError}
+                            secondaryActionLabel={selectedWorkers.length > 1 ? 'Saltar este trabajador' : undefined}
+                            onSecondaryAction={selectedWorkers.length > 1 ? handleSkipCurrentWorker : undefined}
+                        />
+                    );
+                })()}
 
                 {/* Self-Sign Modal for Workers */}
                 <SignatureModal

@@ -100,8 +100,18 @@ const DEFAULT_ROLE_PRESETS = {
         PERMISSIONS.ACTIVIDADES_VER,
         PERMISSIONS.DOCUMENTOS_VER,
     ],
-    colaborador: [],
-    trabajador: [],
+    // Colaborador/trabajador: acceso mínimo para VER y firmar lo que se les asigna
+    // (documentos y actividades). Las encuestas y "mis firmas" no requieren permiso.
+    // Las páginas filtran a solo sus ítems asignados; firmar lo asignado no requiere
+    // un permiso aparte.
+    colaborador: [
+        PERMISSIONS.DOCUMENTOS_VER,
+        PERMISSIONS.ACTIVIDADES_VER,
+    ],
+    trabajador: [
+        PERMISSIONS.DOCUMENTOS_VER,
+        PERMISSIONS.ACTIVIDADES_VER,
+    ],
 };
 
 /**
@@ -113,15 +123,25 @@ const DEFAULT_ROLE_PRESETS = {
  */
 const resolvePersonaPermisos = (persona, tenant) => {
     if (!persona) return [];
-    if (normalizeRol(persona.rol) === 'admin') return [...ALL_PERMISSION_KEYS];
+    const normRol = normalizeRol(persona.rol);
+    if (normRol === 'admin') return [...ALL_PERMISSION_KEYS];
 
+    const preset = DEFAULT_ROLE_PRESETS[normRol] || [];
     const roles = Array.isArray(tenant?.roles) ? tenant.roles : [];
     const role = roles.find(
         (r) => r.id === persona.rol || normalizeRol(r.nombre) === normalizeRol(persona.rol)
     );
-    if (role && Array.isArray(role.permisos)) return role.permisos;
+    if (role && Array.isArray(role.permisos)) {
+        // Para colaborador/trabajador se garantiza el MÍNIMO de acceso (ver/firmar lo
+        // asignado) uniéndolo con el preset, aunque el rol guardado venga con permisos
+        // vacíos de tenants creados antes (no requiere migración de datos).
+        if (normRol === 'colaborador' || normRol === 'trabajador') {
+            return [...new Set([...role.permisos, ...preset])];
+        }
+        return role.permisos;
+    }
 
-    return DEFAULT_ROLE_PRESETS[normalizeRol(persona.rol)] || [];
+    return preset;
 };
 
 /**

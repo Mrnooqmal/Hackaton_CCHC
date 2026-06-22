@@ -198,6 +198,14 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.ACTIVIDADES_VER,
         PERMISSIONS.DOCUMENTOS_VER,
     ],
-    colaborador: [],
-    trabajador: [],
+    // Acceso mínimo para ver/firmar lo asignado (docs y actividades). Encuestas y
+    // "mis firmas" no requieren permiso; las páginas filtran a sus ítems asignados.
+    colaborador: [
+        PERMISSIONS.DOCUMENTOS_VER,
+        PERMISSIONS.ACTIVIDADES_VER,
+    ],
+    trabajador: [
+        PERMISSIONS.DOCUMENTOS_VER,
+        PERMISSIONS.ACTIVIDADES_VER,
+    ],
 };

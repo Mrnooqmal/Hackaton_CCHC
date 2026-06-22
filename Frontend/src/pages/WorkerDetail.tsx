@@ -17,6 +17,7 @@ import {
     LuTrash2,
     LuShieldCheck,
     LuTriangleAlert,
+    LuPencil,
     LuBuilding2 as LuBuild
 } from 'react-icons/lu';
 import {
@@ -25,6 +26,8 @@ import {
     uploadsApi,
     signaturesApi,
     signatureRequestsApi,
+    activitiesApi,
+    surveysApi,
     personasApi,
     obrasApi,
     type Worker as ApiWorker,
@@ -33,8 +36,9 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 import { useObraContext } from '../context/ObraContext';
-import { Modal } from '../components/ui';
+import { Modal, Select } from '../components/ui';
 import WorkerEvidencias from '../components/WorkerEvidencias';
+import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
 
 interface WorkerStats {
@@ -101,8 +105,19 @@ export default function WorkerDetail() {
     const canOnboarding = hasPermission(PERMISSIONS.PERSONA_ONBOARDING);
     const canVigilancia = hasPermission(PERMISSIONS.PERSONA_VIGILANCIA_SALUD);
     const canDesvincular = hasPermission(PERMISSIONS.PERSONA_DESVINCULAR);
+    // Editar datos sensibles de la persona (cargo, teléfono, etc.): mismo permiso
+    // que gestionar/añadir personas.
+    const canEditarDatos = hasPermission(PERMISSIONS.PERSONAS_CREAR);
+    const { options: cargoOptions } = useCargoCatalog();
 
     const [worker, setWorker] = useState<WorkerWithRole | null>(null);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editForm, setEditForm] = useState({
+        nombre: '', apellidoPaterno: '', apellidoMaterno: '', email: '', telefono: '',
+        fechaNacimiento: '', cargo: '', nivelEscolar: '',
+        contactoNombre: '', contactoTelefono: '', contactoRelacion: '',
+    });
+    const [editSaving, setEditSaving] = useState(false);
     const [stats, setStats] = useState<WorkerStats | null>(null);
     const [signatures, setSignatures] = useState<DigitalSignature[]>([]);
     const [, setCompliance] = useState({ completed: 0, assigned: 0 });
@@ -208,6 +223,62 @@ export default function WorkerDetail() {
             console.error('Error guardando vigilancia de salud:', err);
         } finally {
             setVigSaving(false);
+        }
+    };
+
+    const openEditModal = () => {
+        if (!worker) return;
+        const w = worker as any;
+        const ce = w.contactoEmergencia || {};
+        setEditForm({
+            nombre: w.nombre || '',
+            apellidoPaterno: w.apellidoPaterno || '',
+            apellidoMaterno: w.apellidoMaterno || '',
+            email: w.email || '',
+            telefono: w.telefono || '',
+            fechaNacimiento: w.fechaNacimiento || '',
+            cargo: w.cargo || '',
+            nivelEscolar: w.nivelEscolar || '',
+            contactoNombre: ce.nombre || '',
+            contactoTelefono: ce.telefono || '',
+            contactoRelacion: ce.relacion || '',
+        });
+        setShowEditModal(true);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!worker) return;
+        setEditSaving(true);
+        try {
+            const apellido = [editForm.apellidoPaterno, editForm.apellidoMaterno].filter(Boolean).join(' ').trim();
+            const payload: any = {
+                nombre: editForm.nombre.trim(),
+                apellidoPaterno: editForm.apellidoPaterno.trim(),
+                apellidoMaterno: editForm.apellidoMaterno.trim(),
+                apellido,
+                email: editForm.email.trim(),
+                telefono: editForm.telefono.trim(),
+                fechaNacimiento: editForm.fechaNacimiento || null,
+                cargo: editForm.cargo || null,
+                nivelEscolar: editForm.nivelEscolar.trim(),
+                contactoEmergencia: {
+                    nombre: editForm.contactoNombre.trim(),
+                    telefono: editForm.contactoTelefono.trim(),
+                    relacion: editForm.contactoRelacion.trim(),
+                },
+            };
+            const res = await workersApi.update(worker.personaId, payload);
+            if (res.success) {
+                setShowEditModal(false);
+                await loadWorkerData();
+            } else {
+                setError(res.error || 'No se pudieron guardar los cambios');
+            }
+        } catch (err) {
+            console.error('Error guardando datos de la persona:', err);
+            setError('Error de conexión al guardar');
+        } finally {
+            setEditSaving(false);
         }
     };
 
@@ -354,12 +425,36 @@ export default function WorkerDetail() {
             const manualOverrides = targetObraId
                 ? (workerRes.data as any).onboardingDS44?.[targetObraId]?.items || {}
                 : {};
-            const [signaturesRes, , historyRes, docsRes] = await Promise.all([
+            const [signaturesRes, , historyRes, docsRes, activitiesRes, surveysRes] = await Promise.all([
                 signaturesApi.getByWorker(workerRes.data.personaId),
                 signatureRequestsApi.getPendingByWorker(workerRes.data.personaId),
                 signatureRequestsApi.getHistoryByWorker(workerRes.data.personaId),
-                targetObraId ? documentsApi.list({ obraId: targetObraId } as any) : Promise.resolve({ success: false })
+                // TODOS los documentos asignados a la persona (kit de su obra + docs de
+                // empresa a nivel tenant), sin importar la obra. Antes era obra-scoped y
+                // dejaba fuera los documentos de empresa y a quienes no tienen obra.
+                documentsApi.list({ asignadoA: workerRes.data.personaId } as any),
+                activitiesApi.list({}),
+                surveysApi.list(),
             ]);
+
+            // TRAZABILIDAD: ítems de onboarding cumplidos vía actividad/encuesta
+            // VINCULADA (kitItemKey). Asistir / responder cierra el ítem del kit.
+            const myId = workerRes.data.personaId;
+            const kitDoneByLink = new Set<string>();
+            if (activitiesRes.success && activitiesRes.data) {
+                (activitiesRes.data.activities || []).forEach((act: any) => {
+                    if (act.kitItemKey && (act.asistentes || []).some((a: any) => (a.personaId || a.workerId) === myId)) {
+                        kitDoneByLink.add(act.kitItemKey);
+                    }
+                });
+            }
+            if (surveysRes.success && surveysRes.data) {
+                (surveysRes.data.surveys || []).forEach((s: any) => {
+                    if (s.kitItemKey && (s.recipients || []).some((r: any) => (r.personaId || r.workerId) === myId && r.estado === 'respondida')) {
+                        kitDoneByLink.add(s.kitItemKey);
+                    }
+                });
+            }
 
             if (signaturesRes.success && signaturesRes.data) {
                 const firmas = signaturesRes.data.firmas || [];
@@ -423,14 +518,26 @@ export default function WorkerDetail() {
 
             let ds44Total = 0;
             let ds44Completed = 0;
-            const checklistItems = DS44_ONBOARDING_ITEMS.map((item) => {
+            // Terreno (con cargo) → checklist completo del kit. Sin cargo (gestión /
+            // oficina) → solo los documentos de empresa que aplican a todos (RI /
+            // Política SST), que es lo único que el backend les asigna. Se usa "tiene
+            // cargo" como señal (coincide con el backend) en vez del rol, que puede
+            // venir con nombres personalizados ("Colaborador") y ocultaría el kit.
+            const esTerreno = Boolean((workerRes.data as any).cargo);
+            const EMPRESA_KEYS = new Set(['POLITICA_SSO', 'REGLAMENTO_INTERNO']);
+            const itemsParaRol = esTerreno
+                ? DS44_ONBOARDING_ITEMS
+                : DS44_ONBOARDING_ITEMS.filter((it) => EMPRESA_KEYS.has(it.key));
+            const checklistItems = itemsParaRol.map((item) => {
                 ds44Total += 1;
                 const manualDone = Boolean((manualOverrides as any)[item.tipo]);
+                // Cumplido vía actividad/encuesta vinculada (kitItemKey).
+                const linkDone = kitDoneByLink.has(item.key);
 
                 if (item.kind === 'document') {
                     const trabajadorFirmo = docSigned.get(item.tipo) || false;
-                    const relatorPendiente = docRelatorPendiente.get(item.tipo) || false;
-                    const signed = (trabajadorFirmo && !relatorPendiente) || manualDone;
+                    const relatorPendiente = (docRelatorPendiente.get(item.tipo) || false) && !linkDone;
+                    const signed = (trabajadorFirmo && !relatorPendiente) || manualDone || linkDone;
                     const subido = docHasFile.get(item.tipo) || trabajadorFirmo;
                     if (signed) ds44Completed += 1;
                     const status = signed ? 'ok' as const : subido ? 'subido' as const : 'pending' as const;
@@ -441,18 +548,20 @@ export default function WorkerDetail() {
                 }
 
                 if (item.kind === 'signature') {
-                    const signed = completedTypes.has(item.tipo) || manualDone;
+                    const signed = completedTypes.has(item.tipo) || manualDone || linkDone;
                     if (signed) ds44Completed += 1;
                     return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status: signed ? 'ok' as const : 'pending' as const };
                 }
 
                 if (item.kind === 'actividad') {
-                    const hasCap = completedTypes.has('CAPACITACION') || manualDone;
+                    const hasCap = completedTypes.has('CAPACITACION') || manualDone || linkDone;
                     if (hasCap) ds44Completed += 1;
                     return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status: hasCap ? 'ok' as const : 'pending' as const };
                 }
 
-                return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status: 'pending' as const };
+                const done = manualDone || linkDone;
+                if (done) ds44Completed += 1;
+                return { key: item.key, label: item.label, articulo: item.articulo, kind: item.kind, tipo: item.tipo, actionLabel: item.actionLabel, status: done ? 'ok' as const : 'pending' as const };
             });
 
             setDs44Checklist({ completed: ds44Completed, total: ds44Total, items: checklistItems });
@@ -825,8 +934,15 @@ Generado por PrevencionApp
 
                     {/* Info personal — grid 2 columnas sin card */}
                     <div>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 'var(--space-3)' }}>
-                            Información
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                Información
+                            </div>
+                            {canEditarDatos && (
+                                <button className="btn btn-ghost btn-sm" type="button" onClick={openEditModal}>
+                                    <LuPencil size={13} /> Editar datos
+                                </button>
+                            )}
                         </div>
                         <div className="wd-info-grid">
                             <div className="wd-info-field">
@@ -1557,6 +1673,77 @@ Generado por PrevencionApp
                         color: var(--danger-600, #b91c1c); font-size: 0.82rem;
                     }
                 `}</style>
+            </Modal>
+
+            {/* Editar datos sensibles de la persona */}
+            <Modal
+                isOpen={showEditModal}
+                onClose={() => !editSaving && setShowEditModal(false)}
+                title="Editar datos de la persona"
+                subtitle="Actualiza la información de contacto, cargo y datos personales."
+                footer={
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
+                        <button className="btn btn-secondary" onClick={() => setShowEditModal(false)} disabled={editSaving}>Cancelar</button>
+                        <button className="btn" style={{ background: '#f13800', color: '#fff', border: 'none' }} onClick={handleSaveEdit} disabled={editSaving}>
+                            {editSaving ? 'Guardando…' : 'Guardar cambios'}
+                        </button>
+                    </div>
+                }
+            >
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                    <div className="form-group">
+                        <label className="form-label">Nombre</label>
+                        <input className="form-input" value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Apellido paterno</label>
+                        <input className="form-input" value={editForm.apellidoPaterno} onChange={(e) => setEditForm({ ...editForm, apellidoPaterno: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Apellido materno</label>
+                        <input className="form-input" value={editForm.apellidoMaterno} onChange={(e) => setEditForm({ ...editForm, apellidoMaterno: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Cargo DS44</label>
+                        <Select ariaLabel="Cargo" value={editForm.cargo}
+                            onChange={(v) => setEditForm({ ...editForm, cargo: v })}
+                            options={[{ value: '', label: 'Sin cargo específico' }, ...cargoOptions]} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Correo</label>
+                        <input className="form-input" type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Teléfono</label>
+                        <input className="form-input" value={editForm.telefono} onChange={(e) => setEditForm({ ...editForm, telefono: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Fecha de nacimiento</label>
+                        <input className="form-input" type="date" value={editForm.fechaNacimiento} onChange={(e) => setEditForm({ ...editForm, fechaNacimiento: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Nivel escolar</label>
+                        <input className="form-input" value={editForm.nivelEscolar} onChange={(e) => setEditForm({ ...editForm, nivelEscolar: e.target.value })} />
+                    </div>
+                </div>
+
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 'var(--space-4) 0 var(--space-2)' }}>
+                    Contacto de emergencia
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
+                    <div className="form-group">
+                        <label className="form-label">Nombre</label>
+                        <input className="form-input" value={editForm.contactoNombre} onChange={(e) => setEditForm({ ...editForm, contactoNombre: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Teléfono</label>
+                        <input className="form-input" value={editForm.contactoTelefono} onChange={(e) => setEditForm({ ...editForm, contactoTelefono: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Relación</label>
+                        <input className="form-input" value={editForm.contactoRelacion} onChange={(e) => setEditForm({ ...editForm, contactoRelacion: e.target.value })} />
+                    </div>
+                </div>
             </Modal>
         </>
     );

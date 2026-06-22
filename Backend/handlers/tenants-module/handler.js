@@ -163,6 +163,13 @@ module.exports.tenantsHandler = async (event) => {
                                 console.error('Error sending worker welcome email:', mailErr.message);
                             }
                         }
+                        // Documentos de empresa (RI/Política) a nivel tenant para el trabajador.
+                        try {
+                            const { ensureCompanyDocsForPersona } = require('../personas-module/handler');
+                            await ensureCompanyDocsForPersona({ tenantId: tenant.tenantId, persona, solicitante: null });
+                        } catch (docErr) {
+                            console.error('Docs empresa (setup trabajador) falló:', docErr.message);
+                        }
                         trabajadoresResult.push({ rut: persona.rut, nombre: persona.nombre, apellido, password: wPwd || undefined, emailNotificado: emailSent });
                     } catch (wErr) {
                         console.error(`Error creando trabajador ${w.rut}:`, wErr.message);
@@ -266,11 +273,32 @@ module.exports.tenantsHandler = async (event) => {
             }
             const tenant = await tenantService.getById(tenantId);
             if (!tenant) return error('Tenant no encontrado', 404);
+            const oldCargos = Array.isArray(tenant.reglas?.cargos) ? tenant.reglas.cargos : [];
             const reglas = { ...(tenant.reglas || {}), cargos };
             const updated = await tenantService.updateConfig(tenantId, { reglas });
+
+            // Broadcast retroactivo: si se subió/actualizó alguna plantilla (IRL, PTS,
+            // Reglamento Interno, Política SST…), se sincroniza a los documentos de
+            // onboarding ya existentes de los trabajadores que aplican y se les avisa.
+            let sincronizados = 0;
+            let removidos = 0;
+            try {
+                const { syncPlantillasToWorkers } = require('../personas-module/handler');
+                const r = await syncPlantillasToWorkers({ tenantId, oldCargos, newCargos: cargos });
+                sincronizados = (r?.actualizados || 0);
+                removidos = (r?.removidos || 0);
+            } catch (syncErr) {
+                console.error('Broadcast de plantillas falló:', syncErr.message);
+            }
+
+            const partes = [];
+            if (sincronizados > 0) partes.push(`${sincronizados} documento(s) sincronizado(s)`);
+            if (removidos > 0) partes.push(`${removidos} documento(s) despegado(s) por plantilla eliminada`);
             return success({
-                message: 'Catálogo de cargos actualizado',
-                cargos: updated.reglas?.cargos || cargos
+                message: partes.length ? `Catálogo actualizado. ${partes.join(' y ')}.` : 'Catálogo de cargos actualizado',
+                cargos: updated.reglas?.cargos || cargos,
+                documentosSincronizados: sincronizados,
+                documentosRemovidos: removidos
             });
         }
 

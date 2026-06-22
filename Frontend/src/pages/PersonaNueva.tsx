@@ -189,9 +189,24 @@ export default function PersonaNueva() {
 
     // ── form ───────────────────────────────────────────────────────────────────
 
+    // Dedup por id (y por nombre normalizado) para no mostrar roles repetidos en el
+    // selector cuando el catálogo del tenant trae duplicados.
     const rolOptions = [
         { value: '', label: 'Selecciona un rol' },
-        ...tenantRoles.map(r => ({ value: r.id, label: r.nombre })),
+        ...(() => {
+            const seen = new Set<string>();
+            const out: { value: string; label: string }[] = [];
+            for (const r of tenantRoles) {
+                // Se deduplica por NOMBRE normalizado (lo que se muestra): dos roles con
+                // el mismo nombre pero distinto id (ej. 'jefe_obra' y 'Jefe de Obra')
+                // no deben aparecer repetidos en el selector.
+                const key = (r.nombre || r.id || '').toLowerCase().trim().replace(/\s+/g, ' ');
+                if (!key || seen.has(key)) continue;
+                seen.add(key);
+                out.push({ value: r.id, label: r.nombre });
+            }
+            return out;
+        })(),
     ];
 
     const cargoSelectOptions = [

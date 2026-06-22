@@ -76,6 +76,7 @@ export default function CargosOnboarding() {
     const [dirty, setDirty] = useState(false);
     const [error, setError] = useState('');
     const [saved, setSaved] = useState(false);
+    const [syncMsg, setSyncMsg] = useState('');
 
     const [newCargoOpen, setNewCargoOpen] = useState(false);
     const [newCargoLabel, setNewCargoLabel] = useState('');
@@ -133,6 +134,8 @@ export default function CargosOnboarding() {
             if (res.success) {
                 invalidateCargoCatalog();
                 setDirty(false); setSaved(true);
+                const n = res.data?.documentosSincronizados || 0;
+                setSyncMsg(n > 0 ? `Se sincronizó la plantilla a ${n} documento(s) de trabajadores ya existentes y se les notificó.` : '');
                 if (res.data?.cargos) setCargos(res.data.cargos);
             } else {
                 setError(res.error || 'No se pudo guardar');
@@ -270,7 +273,7 @@ export default function CargosOnboarding() {
             />
 
             {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}
-            {saved && <AlertBanner variant="success" message="Catálogo de cargos guardado." onDismiss={() => setSaved(false)} />}
+            {saved && <AlertBanner variant="success" message={`Catálogo de cargos guardado.${syncMsg ? ' ' + syncMsg : ''}`} onDismiss={() => { setSaved(false); setSyncMsg(''); }} />}
 
             {/* ── Sección 1: Documentos de empresa ── */}
             <div className="card co-empresa-section">

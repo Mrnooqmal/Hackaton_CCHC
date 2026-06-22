@@ -161,8 +161,10 @@ export default function DocumentsRepository() {
         }
     };
 
+    // Las asignaciones usan personaId (workerId es legacy): se comprueban ambos, si no
+    // los documentos recién asignados no aparecían en la sección "Personal".
     const isAssignedToUser = (doc: RepoDocument) =>
-        Boolean(user?.personaId && doc.asignaciones?.some(a => a.workerId === user.personaId));
+        Boolean(user?.personaId && doc.asignaciones?.some(a => (a as any).personaId === user.personaId || a.workerId === user.personaId));
 
     const personalDocuments = useMemo(() => documents.filter(isAssignedToUser), [documents, user?.personaId]);
     const generalDocuments = useMemo(
