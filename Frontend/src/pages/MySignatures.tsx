@@ -4,7 +4,6 @@ import PinInput from '../components/PinInput';
 import {
     FiCheck,
     FiClock,
-    FiFile,
     FiFileText,
     FiCalendar,
     FiUser,

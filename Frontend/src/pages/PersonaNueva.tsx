@@ -5,7 +5,7 @@ import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { FormPage, FieldSection, Select, CredentialCard } from '../components/ui';
-import { FiCheckCircle, FiInfo, FiArrowLeft, FiPhone } from 'react-icons/fi';
+import { FiCheckCircle, FiInfo, FiArrowLeft } from 'react-icons/fi';
 import { getCargoLabel } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import type { PersonaResponse } from '../api/types';
