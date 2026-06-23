@@ -330,11 +330,18 @@ class PersonaService {
         const persona = await this.getById(personaId);
         if (!persona) throw new Error('Persona no encontrada');
 
-        // Verificar PIN actual si ya tiene uno
-        if (persona._pinHash && persona.habilitado) {
-            if (!pinActual) throw new Error('PIN actual es requerido para cambiar el PIN');
+        const yaTienePin = !!persona._pinHash;
+
+        // Verificacion opcional del PIN actual: si el cliente lo envia, se valida.
+        // No es obligatorio, lo que permite la actualizacion directa del PIN.
+        if (yaTienePin && pinActual) {
             const pinValido = verifyPin(pinActual, persona._pinHash, personaId);
             if (!pinValido) throw new Error('PIN actual incorrecto');
+        }
+
+        // Validacion de duplicados: el nuevo PIN no puede ser identico al registrado.
+        if (yaTienePin && verifyPin(pin, persona._pinHash, personaId)) {
+            throw new Error('El nuevo PIN no puede ser igual al PIN actual');
         }
 
         const now = new Date().toISOString();

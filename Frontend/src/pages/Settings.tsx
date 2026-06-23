@@ -4,8 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import { personasApi, type PersonaResponse } from '../api/client';
 import {
     FiCamera, FiCheckCircle, FiLock, FiMail, FiCreditCard,
-    FiShield, FiBriefcase, FiPhone, FiCalendar, FiUser, FiSave, FiEdit2, FiX
+    FiShield, FiBriefcase, FiPhone, FiCalendar, FiUser, FiSave, FiEdit2, FiX, FiKey
 } from 'react-icons/fi';
+import ConfirmModal from '../components/ConfirmModal';
 
 const ROLE_LABELS: Record<string, string> = {
     admin: 'Administrador', jefe_obra: 'Jefe de Obra',
@@ -67,6 +68,8 @@ export default function Settings() {
     const [telFocused, setTelFocused] = useState(false);
     const [telSaving, setTelSaving] = useState(false);
     const [telSuccess, setTelSuccess] = useState(false);
+
+    const [showPinConfirm, setShowPinConfirm] = useState(false);
 
     useEffect(() => {
         const tenantId = user?.tenantId || (user as any)?.empresaId;
@@ -271,13 +274,26 @@ export default function Settings() {
 
                     </div>
 
-                    <div className="sett-card-footer">
+                    <div className="sett-card-footer" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => navigate('/change-password')} style={{ gap: 6 }}>
                             <FiLock size={13} /> Cambiar contraseña
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setShowPinConfirm(true)} style={{ gap: 6 }}>
+                            <FiKey size={13} /> Cambiar PIN
                         </button>
                     </div>
                 </div>
             </div>
+
+            <ConfirmModal
+                isOpen={showPinConfirm}
+                title="Cambiar PIN"
+                message="¿Estás seguro de que deseas actualizar tu PIN?"
+                confirmLabel="Sí, actualizar"
+                cancelLabel="Cancelar"
+                onConfirm={() => { setShowPinConfirm(false); navigate('/enroll-me', { state: { changePin: true } }); }}
+                onCancel={() => setShowPinConfirm(false)}
+            />
 
             <style>{`
                 /* ── Hero card ── */

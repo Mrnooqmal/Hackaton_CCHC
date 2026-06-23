@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
 import PinInput from '../components/PinInput';
@@ -34,20 +34,26 @@ function resizeImageToBase64(file: File, maxSize = 256): Promise<string> {
 export default function EnrollMe() {
     const { user, updateUser } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
 
-    const [currentStep, setCurrentStep] = useState<EnrollmentStep>('welcome');
+    // Modo "cambio de PIN": el usuario ya está enrolado y sólo quiere actualizar su PIN.
+    // Llega desde Configuración → "Cambiar PIN". Omite la bienvenida y el paso de perfil.
+    const isChangePin = Boolean((location.state as any)?.changePin);
+
+    const [currentStep, setCurrentStep] = useState<EnrollmentStep>(isChangePin ? 'create-pin' : 'welcome');
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
     const [pinCreateKey, setPinCreateKey] = useState(0);
     const [pinConfirmKey, setPinConfirmKey] = useState(0);
     const [enrollmentData, setEnrollmentData] = useState<any>(null);
 
-    // Si el usuario ya está enrolado (ej. recargó en el paso de perfil), saltar directo ahí
+    // Si el usuario ya está enrolado (ej. recargó en el paso de perfil), saltar directo ahí.
+    // En modo cambio de PIN NO redirigimos: el usuario debe poder fijar un nuevo PIN.
     useEffect(() => {
-        if ((user as any)?.habilitado === true) {
+        if (!isChangePin && (user as any)?.habilitado === true) {
             setCurrentStep('profile');
         }
-    }, [user]);
+    }, [user, isChangePin]);
 
     // Profile step state
     const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
@@ -65,14 +71,7 @@ export default function EnrollMe() {
         setTelefono(fmt);
     };
 
-    const PINES_OBVIOS = ['0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999', '1234', '4321'];
-
     const handlePinCreate = (newPin: string) => {
-        if (PINES_OBVIOS.includes(newPin)) {
-            setError('PIN demasiado simple, elige otro');
-            setPinCreateKey(k => k + 1);
-            return;
-        }
         setPin(newPin);
         setError('');
         setTimeout(() => setCurrentStep('confirm-pin'), 800);
@@ -97,6 +96,14 @@ export default function EnrollMe() {
             const setPinResponse = await personasApi.setPin(targetTenant, targetId, pin);
             if (!setPinResponse.success) throw new Error(setPinResponse.error || 'Error al configurar el PIN');
 
+            // Modo cambio de PIN: el usuario ya estaba enrolado. Omitimos el paso de
+            // perfil y completarEnrolamiento; vamos directo a la confirmación de éxito.
+            if (isChangePin) {
+                setCurrentStep('success');
+                setTimeout(() => navigate('/settings', { replace: true }), 3000);
+                return;
+            }
+
             const enrollResponse = await personasApi.completarEnrolamiento(targetTenant, targetId, pin);
             if (!enrollResponse.success || !enrollResponse.data) throw new Error(enrollResponse.error || 'Error al completar el enrolamiento');
 
@@ -106,7 +113,9 @@ export default function EnrollMe() {
         } catch (err) {
             console.error('Error en enrolamiento:', err);
             setError(err instanceof Error ? err.message : 'Error desconocido');
-            setCurrentStep('confirm-pin');
+            // En cambio de PIN volvemos a "crear" para que elija otro (p. ej. PIN duplicado).
+            setCurrentStep(isChangePin ? 'create-pin' : 'confirm-pin');
+            if (isChangePin) setPinCreateKey(k => k + 1);
         }
     };
 
@@ -150,15 +159,22 @@ export default function EnrollMe() {
         }
     };
 
-    const steps: StepperStep[] = [
-        { id: 'welcome', label: 'Bienvenida' },
-        { id: 'create-pin', label: 'Crear PIN' },
-        { id: 'confirm-pin', label: 'Confirmar' },
-        { id: 'profile', label: 'Perfil' },
-        { id: 'success', label: 'Completado' },
-    ];
+    const steps: StepperStep[] = isChangePin
+        ? [
+            { id: 'create-pin', label: 'Nuevo PIN' },
+            { id: 'confirm-pin', label: 'Confirmar' },
+            { id: 'success', label: 'Completado' },
+        ]
+        : [
+            { id: 'welcome', label: 'Bienvenida' },
+            { id: 'create-pin', label: 'Crear PIN' },
+            { id: 'confirm-pin', label: 'Confirmar' },
+            { id: 'profile', label: 'Perfil' },
+            { id: 'success', label: 'Completado' },
+        ];
     const currentIndex = steps.findIndex(s =>
-        s.id === currentStep || (currentStep === 'processing' && s.id === 'profile')
+        s.id === currentStep
+        || (currentStep === 'processing' && s.id === (isChangePin ? 'confirm-pin' : 'profile'))
     );
 
     return (
@@ -166,7 +182,9 @@ export default function EnrollMe() {
             user={user as any}
             steps={steps}
             currentIndex={currentIndex < 0 ? 0 : currentIndex}
-            sideHint="Crea tu firma digital (PIN de 4 dígitos) y completa tu perfil para terminar de habilitar tu cuenta."
+            sideHint={isChangePin
+                ? 'Actualiza tu PIN de firma digital (4 dígitos). El nuevo PIN debe ser distinto al actual.'
+                : 'Crea tu firma digital (PIN de 4 dígitos) y completa tu perfil para terminar de habilitar tu cuenta.'}
         >
                 {/* Card principal */}
                 <div className="card" style={{ padding: 'var(--space-8)' }}>
@@ -250,16 +268,16 @@ export default function EnrollMe() {
                                 key={pinCreateKey}
                                 mode="create"
                                 onComplete={handlePinCreate}
-                                title="Crea tu PIN de Seguridad"
-                                subtitle="Este PIN será tu firma digital. Recuérdalo bien."
+                                title={isChangePin ? 'Crea tu nuevo PIN' : 'Crea tu PIN de Seguridad'}
+                                subtitle={isChangePin ? 'Elige un PIN distinto al actual. Recuérdalo bien.' : 'Este PIN será tu firma digital. Recuérdalo bien.'}
                                 error={error}
                             />
                             <button
                                 className="btn btn-ghost btn-sm"
                                 style={{ alignSelf: 'center' }}
-                                onClick={() => setCurrentStep('welcome')}
+                                onClick={() => isChangePin ? navigate('/settings') : setCurrentStep('welcome')}
                             >
-                                Volver
+                                {isChangePin ? 'Cancelar' : 'Volver'}
                             </button>
                         </div>
                     )}
@@ -297,7 +315,7 @@ export default function EnrollMe() {
                             }} />
                             <div style={{ textAlign: 'center' }}>
                                 <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-1)' }}>
-                                    Creando tu firma digital…
+                                    {isChangePin ? 'Actualizando tu PIN…' : 'Creando tu firma digital…'}
                                 </h3>
                                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
                                     Estamos configurando tu cuenta de forma segura
@@ -521,10 +539,10 @@ export default function EnrollMe() {
 
                             <div style={{ textAlign: 'center' }}>
                                 <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-ui)', marginBottom: 'var(--space-2)' }}>
-                                    ¡Enrolamiento completado!
+                                    {isChangePin ? '¡PIN actualizado!' : '¡Enrolamiento completado!'}
                                 </h2>
                                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                                    Tu firma digital ha sido creada exitosamente.
+                                    {isChangePin ? 'Tu PIN ha sido actualizado exitosamente.' : 'Tu firma digital ha sido creada exitosamente.'}
                                 </p>
                             </div>
 
@@ -565,7 +583,7 @@ export default function EnrollMe() {
                             )}
 
                             <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontStyle: 'italic', animation: 'pulse 2s ease-in-out infinite' }}>
-                                Redirigiendo al panel principal…
+                                {isChangePin ? 'Redirigiendo a configuración…' : 'Redirigiendo al panel principal…'}
                             </p>
                         </div>
                     )}
