@@ -782,10 +782,6 @@
 }
 
 @media (max-width: 1024px) {
-  .header-topbar {
-    display: none;
-  }
-
   .header-mainbar {
     height: var(--mobile-header-height);
     padding: 0 var(--space-3);

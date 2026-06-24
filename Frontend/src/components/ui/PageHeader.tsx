@@ -52,9 +52,12 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
 
         /* ── Banner variant ── */
         .ui-page-header--banner {
-          margin: 0 calc(-1 * var(--space-6)) var(--space-6);
-          padding: var(--space-5) var(--space-8) calc(var(--space-6) + 3px);
-          background: #002952;
+          /* Pull up by main-content's top gap (space-6) and bleed into both
+             main-content (space-6) + page-content (space-6) horizontal paddings */
+          margin: calc(-1 * var(--space-6)) calc(-2 * var(--space-6)) var(--space-6);
+          /* Restore inner padding so text stays aligned with the page body below */
+          padding: var(--space-5) var(--space-12) calc(var(--space-6) + 3px);
+          background: var(--cchc-navy);
           position: relative;
           border-top: none;
           border-bottom: none;
@@ -159,7 +162,6 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           margin-bottom: var(--space-2);
         }
         .ui-page-header-title {
-          font-family: var(--font-display);
           font-size: var(--text-2xl);
           font-weight: 700;
           color: var(--text-primary);
@@ -180,8 +182,9 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
         }
         @media (max-width: 640px) {
           .ui-page-header--banner {
-            margin: 0 calc(-1 * var(--space-2)) var(--space-4);
-            padding: var(--space-4) var(--space-4) var(--space-5);
+            /* Mobile: main-content h-padding=space-4, page-content h-padding=space-2 → cancel both */
+            margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-6)) var(--space-4);
+            padding: var(--space-4) var(--space-6) var(--space-5);
           }
           .ui-page-header-actions { width: 100%; justify-content: flex-start; }
         }
