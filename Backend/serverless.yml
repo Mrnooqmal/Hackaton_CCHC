@@ -1,4 +1,4 @@
-service: hackatonbackendv2
+service: hackatonbackendv2-testeo
 
 plugins:
   - serverless-prune-plugin
@@ -40,7 +40,9 @@ provider:
     # --- External ---
     SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
     # URL del frontend para construir enlaces (ej. recuperación de contraseña).
-    FRONTEND_URL: ${env:FRONTEND_URL, 'http://localhost:5173'}
+    # No es secreto (URL pública), así que el default apunta a la demo en CloudFront
+    # para que funcione aunque no se cargue el .env. Overridable por env var.
+    FRONTEND_URL: ${env:FRONTEND_URL, 'https://d30jksx91fodea.cloudfront.net'}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
     # --- Gating de alta de empresas (Fase 1: PIN estático) ---

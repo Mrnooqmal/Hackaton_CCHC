@@ -103,6 +103,8 @@ export default function Documents() {
     const [assignmentType, setAssignmentType] = useState<'todos' | 'cargo' | 'personalizado'>('todos');
     const [selectedCargo, setSelectedCargo] = useState('');
     const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
+    // Búsqueda dentro del modo "personalizado" (filtra la lista de trabajadores).
+    const [workerSearch, setWorkerSearch] = useState('');
 
     useEffect(() => {
         loadData();
@@ -285,6 +287,7 @@ export default function Documents() {
         setAssignmentType('todos');
         setSelectedCargo('');
         setSelectedWorkerIds([]);
+        setWorkerSearch('');
         setShowAssignModal(true);
     };
 
@@ -421,6 +424,32 @@ export default function Documents() {
                 ? prev.filter(id => id !== workerId)
                 : [...prev, workerId]
         );
+    };
+
+    // Trabajadores visibles en el modo "personalizado" según la búsqueda
+    // (nombre, apellido, cargo o RUT). Sin término => todos.
+    const filteredWorkers = (() => {
+        const q = workerSearch.trim().toLowerCase();
+        if (!q) return workers;
+        return workers.filter(w =>
+            `${w.nombre || ''} ${w.apellido || ''}`.toLowerCase().includes(q)
+            || (w.cargo || '').toLowerCase().includes(q)
+            || (w.rut || '').toLowerCase().includes(q)
+        );
+    })();
+
+    // "Seleccionar todos" opera sobre lo filtrado: si ya están todos los visibles
+    // seleccionados, los quita; si no, los agrega (preservando la selección previa).
+    const allFilteredSelected = filteredWorkers.length > 0
+        && filteredWorkers.every(w => selectedWorkerIds.includes(w.personaId));
+    const toggleSelectAllFiltered = () => {
+        const filteredIds = filteredWorkers.map(w => w.personaId);
+        if (allFilteredSelected) {
+            const remove = new Set(filteredIds);
+            setSelectedWorkerIds(prev => prev.filter(id => !remove.has(id)));
+        } else {
+            setSelectedWorkerIds(prev => Array.from(new Set([...prev, ...filteredIds])));
+        }
     };
 
     const toggleRow = (documentId: string) => {
@@ -1148,11 +1177,34 @@ export default function Documents() {
 
                                     {assignmentType === 'personalizado' && (
                                         <div className="form-group">
-                                            <label className="form-label">
-                                                Seleccionar Trabajadores ({selectedWorkerIds.length} seleccionados)
-                                            </label>
+                                            <div className="flex items-center justify-between mb-2" style={{ gap: 'var(--space-2)' }}>
+                                                <label className="form-label" style={{ margin: 0 }}>
+                                                    Seleccionar Trabajadores ({selectedWorkerIds.length} seleccionados)
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-ghost btn-sm"
+                                                    onClick={toggleSelectAllFiltered}
+                                                    disabled={filteredWorkers.length === 0}
+                                                >
+                                                    {allFilteredSelected ? 'Quitar todos' : 'Seleccionar todos'}
+                                                </button>
+                                            </div>
+                                            <div className="tbar-search" style={{ marginBottom: 'var(--space-2)' }}>
+                                                <FiSearch size={15} />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Buscar por nombre, cargo o RUT…"
+                                                    value={workerSearch}
+                                                    onChange={(e) => setWorkerSearch(e.target.value)}
+                                                />
+                                            </div>
                                             <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
-                                                {workers.map(worker => (
+                                                {filteredWorkers.length === 0 ? (
+                                                    <div className="text-sm text-muted" style={{ padding: 'var(--space-3)' }}>
+                                                        No hay trabajadores que coincidan con la búsqueda.
+                                                    </div>
+                                                ) : filteredWorkers.map(worker => (
                                                     <label
                                                         key={worker.personaId}
                                                         className="flex items-center gap-2"

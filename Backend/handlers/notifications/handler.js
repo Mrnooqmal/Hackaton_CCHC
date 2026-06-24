@@ -19,6 +19,8 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
         return { sent: false, reason: 'no_email' };
     }
 
+    const loginUrl = `${process.env.FRONTEND_URL || 'https://d30jksx91fodea.cloudfront.net'}/login`;
+
     const htmlBody = `
 <!DOCTYPE html>
 <html lang="es">
@@ -59,6 +61,18 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
     .step p { margin: 0; font-size: 13px; color: #475569; line-height: 1.55; padding-top: 3px; }
     .footer { background: #f8fafc; border-top: 1px solid #e8edf3; padding: 20px 40px;
               text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.6; }
+    .btn-login { display: inline-block; background: #006edc; color: #ffffff; text-decoration: none;
+                 font-size: 15px; font-weight: 600; padding: 14px 32px; border-radius: 10px; }
+    /* Responsive: en móvil reducimos el padding lateral para que el texto no se parta */
+    @media only screen and (max-width: 600px) {
+      .wrapper { padding: 16px 8px !important; }
+      .header { padding: 28px 20px !important; }
+      .body { padding: 28px 20px !important; }
+      .cred-box { padding: 16px 16px !important; }
+      .footer { padding: 18px 20px !important; }
+      .logo { font-size: 24px !important; }
+      .btn-login { display: block !important; text-align: center !important; }
+    }
   </style>
 </head>
 <body>
@@ -77,14 +91,16 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
 
         <div class="cred-box">
           <p class="cred-title">Tus credenciales</p>
-          <div class="cred-row">
-            <span class="cred-label">RUT (usuario)</span>
-            <span class="cred-value">${rut}</span>
-          </div>
-          <div class="cred-row">
-            <span class="cred-label">Contraseña temporal</span>
-            <span class="cred-value">${passwordTemporal}</span>
-          </div>
+          <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+            <tr>
+              <td style="font-size:13px;color:#64748b;padding:10px 0;border-bottom:1px solid #e8edf3;">RUT (usuario)</td>
+              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;border-bottom:1px solid #e8edf3;">${rut}</td>
+            </tr>
+            <tr>
+              <td style="font-size:13px;color:#64748b;padding:10px 0;">Contraseña temporal</td>
+              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;">${passwordTemporal}</td>
+            </tr>
+          </table>
         </div>
 
         <div class="alert">
@@ -93,19 +109,37 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
           primer inicio de sesión.</p>
         </div>
 
+        <div style="text-align:center;margin:0 0 28px;">
+          <a href="${loginUrl}" class="btn-login" style="display:inline-block;background:#006edc;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;font-family:'Segoe UI',Helvetica,Arial,sans-serif;padding:14px 32px;border-radius:10px;">Ingresar al sistema</a>
+        </div>
+
         <p class="steps-title">Primeros pasos</p>
-        <div class="step">
-          <div class="step-num">1</div>
-          <p>Accede al sistema con el RUT y la contraseña temporal indicados arriba.</p>
-        </div>
-        <div class="step">
-          <div class="step-num">2</div>
-          <p>Crea una contraseña nueva y segura cuando el sistema lo solicite.</p>
-        </div>
-        <div class="step">
-          <div class="step-num">3</div>
-          <p>Completa tu perfil y el proceso de enrolamiento para habilitar tu firma digital.</p>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+          <tr>
+            <td width="38" valign="top" style="padding:6px 0;">
+              <table cellpadding="0" cellspacing="0" role="presentation"><tr>
+                <td width="26" height="26" align="center" valign="middle" style="width:26px;height:26px;background:#002855;color:#ffffff;border-radius:13px;font-size:12px;font-weight:700;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">1</td>
+              </tr></table>
+            </td>
+            <td valign="top" style="font-size:13px;color:#475569;line-height:1.55;padding:6px 0;">Accede al sistema con el RUT y la contraseña temporal indicados arriba.</td>
+          </tr>
+          <tr>
+            <td width="38" valign="top" style="padding:6px 0;">
+              <table cellpadding="0" cellspacing="0" role="presentation"><tr>
+                <td width="26" height="26" align="center" valign="middle" style="width:26px;height:26px;background:#002855;color:#ffffff;border-radius:13px;font-size:12px;font-weight:700;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">2</td>
+              </tr></table>
+            </td>
+            <td valign="top" style="font-size:13px;color:#475569;line-height:1.55;padding:6px 0;">Crea una contraseña nueva y segura cuando el sistema lo solicite.</td>
+          </tr>
+          <tr>
+            <td width="38" valign="top" style="padding:6px 0;">
+              <table cellpadding="0" cellspacing="0" role="presentation"><tr>
+                <td width="26" height="26" align="center" valign="middle" style="width:26px;height:26px;background:#002855;color:#ffffff;border-radius:13px;font-size:12px;font-weight:700;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">3</td>
+              </tr></table>
+            </td>
+            <td valign="top" style="font-size:13px;color:#475569;line-height:1.55;padding:6px 0;">Completa tu perfil y el proceso de enrolamiento para habilitar tu firma digital.</td>
+          </tr>
+        </table>
       </div>
       <div class="footer">
         Build &amp; Serve &mdash; Plataforma de Gestión de Obras<br>
@@ -217,6 +251,15 @@ const sendPasswordResetEmail = async (email, nombre, resetUrl, minutosVigencia =
     .alert strong { color: #df3601; }
     .footer { background: #f8fafc; border-top: 1px solid #e8edf3; padding: 20px 40px;
               text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.6; }
+    /* Responsive: en móvil reducimos el padding lateral para que el texto no se parta */
+    @media only screen and (max-width: 600px) {
+      .wrapper { padding: 16px 8px !important; }
+      .header { padding: 28px 20px !important; }
+      .body { padding: 28px 20px !important; }
+      .footer { padding: 18px 20px !important; }
+      .logo { font-size: 24px !important; }
+      .btn, .btn-login { display: block !important; text-align: center !important; }
+    }
   </style>
 </head>
 <body>
@@ -234,7 +277,7 @@ const sendPasswordResetEmail = async (email, nombre, resetUrl, minutosVigencia =
         </p>
 
         <div class="btn-wrap">
-          <a href="${resetUrl}" class="btn">Restablecer contraseña</a>
+          <a href="${resetUrl}" class="btn" style="display:inline-block;background:#006edc;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;font-family:'Segoe UI',Helvetica,Arial,sans-serif;padding:14px 32px;border-radius:10px;">Restablecer contraseña</a>
         </div>
 
         <p class="link-fallback">
