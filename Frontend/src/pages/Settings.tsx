@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { personasApi, type PersonaResponse } from '../api/client';
 import {
     FiCamera, FiCheckCircle, FiLock, FiMail, FiCreditCard,
-    FiShield, FiBriefcase, FiPhone, FiCalendar, FiUser, FiSave, FiEdit2, FiX, FiKey
+    FiShield, FiBriefcase, FiPhone, FiCalendar, FiUser, FiSave, FiEdit2, FiX, FiKey, FiMessageSquare
 } from 'react-icons/fi';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -67,7 +67,9 @@ export default function Settings() {
     const [telValue, setTelValue] = useState(() => parseTelDigits(user?.telefono));
     const [telFocused, setTelFocused] = useState(false);
     const [telSaving, setTelSaving] = useState(false);
-    const [telSuccess, setTelSuccess] = useState(false);
+
+    const [notificacionesSms, setNotificacionesSms] = useState(() => user?.notificacionesSms ?? false);
+    const [smsSaving, setSmsSaving] = useState(false);
 
     const [showPinConfirm, setShowPinConfirm] = useState(false);
 
@@ -136,10 +138,20 @@ export default function Settings() {
             const tid = user?.tenantId;
             if (id && tid) await personasApi.update(tid, id, { telefono: full });
             updateUser({ telefono: full });
-            setTelSuccess(true);
             setTelEditing(false);
-            setTimeout(() => setTelSuccess(false), 2500);
         } catch { /* silent */ } finally { setTelSaving(false); }
+    };
+
+    const toggleSms = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newVal = e.target.checked;
+        setNotificacionesSms(newVal);
+        setSmsSaving(true);
+        try {
+            const id = (user as any)?.personaId || user?.userId;
+            const tid = user?.tenantId;
+            if (id && tid) await personasApi.update(tid, id, { notificacionesSms: newVal });
+            updateUser({ notificacionesSms: newVal });
+        } catch { setNotificacionesSms(!newVal); } finally { setSmsSaving(false); }
     };
 
     const telComplete = telValue.replace(/\D/g, '').length === 9;
@@ -264,12 +276,43 @@ export default function Settings() {
                                 </div>
                             ) : (
                                 <div className="sett-tel-view-row">
-                                    <span className="sett-field-value">{telSuccess ? <span style={{ color: 'var(--success-500)', display: 'inline-flex', alignItems: 'center', gap: 5 }}><FiCheckCircle size={14} /> Guardado</span> : telefonoDisplay}</span>
+                                    <span className="sett-field-value">{telefonoDisplay}</span>
                                     <button className="btn btn-ghost btn-sm sett-edit-btn" onClick={() => setTelEditing(true)}>
                                         <FiEdit2 size={13} /> Editar
                                     </button>
                                 </div>
                             )}
+                        </div>
+
+                        {/* SMS notifications */}
+                        <div className="sett-field-row">
+                            <span className="sett-field-label"><FiMessageSquare size={13} /> Notificaciones por SMS</span>
+                            <label style={{
+                                display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
+                                padding: 'var(--space-3) var(--space-4)',
+                                background: 'var(--surface-elevated)',
+                                border: `1px solid ${notificacionesSms ? 'var(--accent)' : 'var(--surface-border)'}`,
+                                borderRadius: 'var(--radius-md)',
+                                cursor: smsSaving ? 'default' : 'pointer',
+                                transition: 'border-color 0.2s',
+                                opacity: smsSaving ? 0.7 : 1,
+                            }}>
+                                <input
+                                    type="checkbox"
+                                    checked={notificacionesSms}
+                                    disabled={smsSaving}
+                                    onChange={toggleSms}
+                                    style={{ marginTop: '2px', accentColor: 'var(--accent)', width: '16px', height: '16px', flexShrink: 0 }}
+                                />
+                                <div>
+                                    <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', display: 'block', marginBottom: '2px' }}>
+                                        Deseo recibir notificaciones mediante SMS
+                                    </span>
+                                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                                        Recibirás alertas importantes sobre documentos y actividades en tu número de teléfono.
+                                    </span>
+                                </div>
+                            </label>
                         </div>
 
                     </div>

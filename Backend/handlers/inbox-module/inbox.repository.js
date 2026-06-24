@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { normalizeRol } = require('../../lib/utils/validation');
+const { sendSms, toE164Chile } = require('../../lib/services/SmsService');
 
 const INBOX_TABLE = process.env.INBOX_TABLE || 'Inbox';
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
@@ -66,11 +67,74 @@ class InboxRepository {
             messages.push(message);
         }
 
+        // Notificación por SMS (best-effort, no bloquea ni rompe el envío al inbox).
+        // Solo se dispara para mensajes de otro usuario o prioritarios; el filtrado
+        // por preferencia/teléfono del destinatario ocurre dentro del método.
+        await this._notifyBySms({
+            recipientIds,
+            senderName: senderName || 'Sistema',
+            senderRol: senderRol || 'system',
+            priority: messagePriority,
+            subject,
+            content
+        }).catch(err => console.error('Error en notificación SMS:', err));
+
         return {
             message: `Mensaje enviado a ${recipientIds.length} destinatario(s)`,
             messageId: baseMessageId,
             count: messages.length
         };
+    }
+
+    /**
+     * Envía SMS a los destinatarios que correspondan, según la política:
+     *   - El mensaje proviene de otro usuario de la plataforma (senderRol !== 'system'), o
+     *   - El mensaje está marcado como prioritario (priority high/urgent).
+     * Y por cada destinatario:
+     *   - Autorizó las notificaciones por SMS (notificacionesSms === true), y
+     *   - Tiene un teléfono normalizable a E.164.
+     * Las notificaciones automáticas de prioridad normal NO generan SMS (evita
+     * saturar al usuario con decenas de mensajes diarios).
+     */
+    async _notifyBySms({ recipientIds, senderName, senderRol, priority, subject, content }) {
+        const esDeUsuario = senderRol && senderRol !== 'system';
+        const esPrioritario = priority === 'high' || priority === 'urgent';
+        if (!esDeUsuario && !esPrioritario) return;
+
+        // Lazy require para evitar dependencias circulares en la carga de módulos.
+        const { PersonaService } = require('../../lib/services/PersonaService');
+        const personaService = new PersonaService();
+
+        const texto = this._buildSmsText({ senderName, priority, subject, content });
+
+        await Promise.all(recipientIds.map(async (recipientId) => {
+            try {
+                const persona = await personaService.getById(recipientId);
+                if (!persona || !persona.notificacionesSms) return;
+                const phone = toE164Chile(persona.telefono);
+                if (!phone) return;
+                await sendSms(phone, texto);
+            } catch (err) {
+                console.error(`No se pudo enviar SMS a ${recipientId}:`, err.message);
+            }
+        }));
+    }
+
+    /**
+     * Construye el texto del SMS. Se mantiene conciso (idealmente ~1 segmento de
+     * 160 caracteres) recortando el contenido; el detalle completo vive en la
+     * plataforma.
+     */
+    _buildSmsText({ senderName, priority, subject, content }) {
+        const prefijo = priority === 'urgent' ? '🚨 Build & Serve' : 'Build & Serve';
+        const remitente = senderName && senderName !== 'Sistema' ? `${senderName}: ` : '';
+        let texto = `${prefijo} — ${remitente}${subject}`;
+        if (content) {
+            const snippet = content.length > 90 ? `${content.slice(0, 87)}…` : content;
+            texto += `\n${snippet}`;
+        }
+        texto += '\nIngresa a la plataforma para ver el detalle.';
+        return texto;
     }
 
     async getInbox(params) {
