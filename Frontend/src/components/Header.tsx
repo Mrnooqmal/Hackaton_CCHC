@@ -50,6 +50,12 @@ const ACTION_LEAF: Record<string, string> = {
     'obras/nueva': 'Nueva obra',
 };
 
+// Etiqueta de la hoja para sub-rutas que cuelgan de una página de detalle,
+// por `sección/sub-acción` (la sub-acción es el segmento posterior al id).
+const SUBDETAIL_LEAF: Record<string, string> = {
+    'obras/equipo': 'Equipo de obra',
+};
+
 function buildCrumbs(pathname: string): Crumb[] {
     const segments = pathname.split('/').filter(Boolean);
     const crumbs: Crumb[] = [{ label: 'Inicio', to: '/', home: true }];
@@ -69,7 +75,19 @@ function buildCrumbs(pathname: string): Crumb[] {
 
     if (segments.length > 1) {
         const actionLabel = ACTION_LEAF[`${first}/${segments[1]}`];
-        crumbs.push({ label: actionLabel ?? DETAIL_LEAF[first] ?? 'Detalle' });
+        const detailLabel = actionLabel ?? DETAIL_LEAF[first] ?? 'Detalle';
+        const hasSubRoute = segments.length > 2;
+        // Con una sub-ruta (ej. /obras/:id/equipo) el detalle pasa a ser enlace
+        crumbs.push({
+            label: detailLabel,
+            to: hasSubRoute ? `/${first}/${segments[1]}` : undefined,
+        });
+
+        if (hasSubRoute) {
+            const sub = segments[2];
+            const subLabel = SUBDETAIL_LEAF[`${first}/${sub}`];
+            crumbs.push({ label: subLabel ?? sub.charAt(0).toUpperCase() + sub.slice(1) });
+        }
     }
 
     // Elimina duplicados consecutivos
