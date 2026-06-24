@@ -48,7 +48,7 @@ export default function Footer() {
                         <p className="ft-col-desc">
                             ¿Necesitas ayuda con tu experiencia en Build &amp; Serve?
                         </p>
-                        <a href="#manual" className="ft-col-link ft-col-link--cta">
+                        <a href="/manual/" target="_blank" rel="noopener noreferrer" className="ft-col-link ft-col-link--cta">
                             Ver manual de uso →
                         </a>
                     </div>

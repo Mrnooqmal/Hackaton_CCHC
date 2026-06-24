@@ -1,0 +1,36 @@
+import{_ as n,o as s,c as e,a2 as t}from"./chunks/framework.D8Tso2Ul.js";const m=JSON.parse('{"title":"Módulo: Tenants","description":"","frontmatter":{},"headers":[],"relativePath":"modulos/tenants.md","filePath":"modulos/tenants.md"}'),o={name:"modulos/tenants.md"};function i(l,a,r,p,d,c){return s(),e("div",null,[...a[0]||(a[0]=[t(`<h1 id="modulo-tenants" tabindex="-1">Módulo: Tenants <a class="header-anchor" href="#modulo-tenants" aria-label="Permalink to &quot;Módulo: Tenants&quot;">​</a></h1><p><strong>Ubicación:</strong> <code>Backend/handlers/tenants-module/</code> · <code>lib/models/Tenant</code></p><p>Un <strong>tenant</strong> es una empresa cliente del SaaS. El sistema es multi-tenant: cada empresa opera de forma aislada, con sus propias obras, personas y configuración. Este módulo gestiona el registro, los planes y la personalización de cada empresa.</p><h2 id="aislamiento-multi-tenant" tabindex="-1">Aislamiento multi-tenant <a class="header-anchor" href="#aislamiento-multi-tenant" aria-label="Permalink to &quot;Aislamiento multi-tenant&quot;">​</a></h2><p>Toda tabla operacional incluye <code>tenantId</code>. El <code>tenantId</code> se extrae <strong>siempre del JWT</strong>, nunca del body del request, lo que previene fugas de datos entre clientes. Ver <a href="/manual/arquitectura/multi-tenant.html">Arquitectura · Multi-tenant</a>.</p><h2 id="estructura-tenantstable" tabindex="-1">Estructura (TenantsTable) <a class="header-anchor" href="#estructura-tenantstable" aria-label="Permalink to &quot;Estructura (TenantsTable)&quot;">​</a></h2><div class="language- vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang"></span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span>tenantId        UUID</span></span>
+<span class="line"><span>slug            URL-friendly, único global</span></span>
+<span class="line"><span>nombre          Razón social</span></span>
+<span class="line"><span>rutEmpresa / email / telefono</span></span>
+<span class="line"><span>plan            starter | professional | enterprise</span></span>
+<span class="line"><span>tamano          micro | pequena | mediana | grande</span></span>
+<span class="line"><span>cantidadTrabajadores</span></span>
+<span class="line"><span>estado          setup | activo | suspendido</span></span>
+<span class="line"><span>adminPersonaId  ID de la persona administradora</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>settings        Configuración técnica</span></span>
+<span class="line"><span>  maxWorkers</span></span>
+<span class="line"><span>  dataRetentionDays</span></span>
+<span class="line"><span>  twoFactorEnabled</span></span>
+<span class="line"><span>  modulosActivos   [documentos, actividades, encuestas, incidentes, ia]</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>reglas          Reglas de negocio SST</span></span>
+<span class="line"><span>  fasesObligatorias   Fases del DS 44 que aplican</span></span>
+<span class="line"><span>  limiteObras</span></span>
+<span class="line"><span>  requiereFirmaPin</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>preferencias    Personalización UI</span></span>
+<span class="line"><span>  timezone / idioma / formatoFecha</span></span>
+<span class="line"><span>  colorPrimario / colorSecundario / logoUrl</span></span></code></pre></div><h2 id="planes" tabindex="-1">Planes <a class="header-anchor" href="#planes" aria-label="Permalink to &quot;Planes&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Plan</th><th>Orientado a</th><th>Características típicas</th></tr></thead><tbody><tr><td>starter</td><td>Empresas pequeñas</td><td>Módulos básicos, límite de obras y trabajadores</td></tr><tr><td>professional</td><td>Empresas medianas</td><td>Más obras, Asistente IA, reportería avanzada</td></tr><tr><td>enterprise</td><td>Grandes constructoras</td><td>Sin límites prácticos, personalización completa</td></tr></tbody></table><p>El campo <code>settings.modulosActivos</code> permite <strong>vender por módulos</strong>: habilitar o deshabilitar funcionalidades según el plan contratado.</p><h2 id="personalizacion" tabindex="-1">Personalización <a class="header-anchor" href="#personalizacion" aria-label="Permalink to &quot;Personalización&quot;">​</a></h2><p>El tenant puede personalizar la apariencia (color primario/secundario, logo) y preferencias regionales (<code>timezone: America/Santiago</code>, <code>idioma: es</code>, <code>formatoFecha: DD/MM/YYYY</code>).</p><h2 id="reglas-de-negocio" tabindex="-1">Reglas de negocio <a class="header-anchor" href="#reglas-de-negocio" aria-label="Permalink to &quot;Reglas de negocio&quot;">​</a></h2><p><code>reglas.fasesObligatorias</code> define qué fases del DS 44 aplican a las obras del tenant. Al crear una obra, se preconfiguran los documentos obligatorios de esas fases. Ver <a href="/manual/ds44/fases-obra.html">Fases de obra</a>.</p><h2 id="onboarding" tabindex="-1">Onboarding <a class="header-anchor" href="#onboarding" aria-label="Permalink to &quot;Onboarding&quot;">​</a></h2><div class="language- vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang"></span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span>1. POST /tenants/setup (nombre, rutEmpresa, cantidadTrabajadores, datos admin)</span></span>
+<span class="line"><span>        ↓</span></span>
+<span class="line"><span>2. Se crea el tenant en estado &quot;setup&quot;</span></span>
+<span class="line"><span>        ↓</span></span>
+<span class="line"><span>3. Se calcula &quot;tamano&quot; según cantidadTrabajadores</span></span>
+<span class="line"><span>        ↓</span></span>
+<span class="line"><span>4. Se crea la Persona admin (rol admin, tieneAccesoWeb=true, password temporal)</span></span>
+<span class="line"><span>        ↓</span></span>
+<span class="line"><span>5. Se actualiza tenant.adminPersonaId</span></span>
+<span class="line"><span>        ↓</span></span>
+<span class="line"><span>6. estado del tenant pasa a &quot;activo&quot;</span></span>
+<span class="line"><span>        ↓</span></span>
+<span class="line"><span>7. Se notifica al admin con sus credenciales</span></span></code></pre></div><blockquote><p>El <code>tenant-0</code> está reservado para el superadmin con acceso cross-tenant.</p></blockquote><p>Ver el paso a paso en <a href="/manual/guia-inicio/onboarding.html">Onboarding de tenant</a>.</p><h2 id="endpoints-relacionados" tabindex="-1">Endpoints relacionados <a class="header-anchor" href="#endpoints-relacionados" aria-label="Permalink to &quot;Endpoints relacionados&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Método</th><th>Ruta</th><th>Acción</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/tenants/setup</code></td><td>Registrar nuevo tenant</td></tr><tr><td><code>GET</code></td><td><code>/tenants/{id}</code></td><td>Obtener tenant</td></tr><tr><td><code>PUT</code></td><td><code>/tenants/{id}/settings</code></td><td>Actualizar configuración</td></tr></tbody></table>`,20)])])}const h=n(o,[["render",i]]);export{m as __pageData,h as default};
