@@ -1,95 +1,77 @@
-# Módulo: Tenants
+# Mi Empresa
 
-**Ubicación:** `Backend/handlers/tenants-module/` · `lib/models/Tenant`
+La sección **Mi Empresa** es donde configuras los datos y la apariencia de tu empresa dentro
+de la plataforma, además de los **roles** y **cargos** que usarás para tu equipo. Es una
+pantalla de administración: normalmente la usa el **Administrador**.
 
-Un **tenant** es una empresa cliente del SaaS. El sistema es multi-tenant: cada empresa
-opera de forma aislada, con sus propias obras, personas y configuración. Este módulo
-gestiona el registro, los planes y la personalización de cada empresa.
+Cada empresa funciona de forma **independiente y aislada**: tus obras, personas y documentos
+solo los ve tu empresa. Aquí defines cómo se ve y cómo se organiza ese espacio.
 
-## Aislamiento multi-tenant
+## Entrar a Mi Empresa
 
-Toda tabla operacional incluye `tenantId`. El `tenantId` se extrae **siempre del JWT**,
-nunca del body del request, lo que previene fugas de datos entre clientes. Ver
-[Arquitectura · Multi-tenant](/arquitectura/multi-tenant).
+En el menú lateral, haz clic en **Mi Empresa**. Verás una pantalla con **pestañas** en la
+parte superior. Las principales son **Identidad**, **Roles** y **Cargos**.
 
-## Estructura (TenantsTable)
+![Pantalla Mi Empresa con las pestañas Identidad, Roles y Cargos](/img/tenants/mi-empresa.png)
 
-```
-tenantId        UUID
-slug            URL-friendly, único global
-nombre          Razón social
-rutEmpresa / email / telefono
-plan            starter | professional | enterprise
-tamano          micro | pequena | mediana | grande
-cantidadTrabajadores
-estado          setup | activo | suspendido
-adminPersonaId  ID de la persona administradora
+## Pestaña "Identidad"
 
-settings        Configuración técnica
-  maxWorkers
-  dataRetentionDays
-  twoFactorEnabled
-  modulosActivos   [documentos, actividades, encuestas, incidentes, ia]
+Aquí defines la imagen y los datos básicos de tu empresa:
 
-reglas          Reglas de negocio SST
-  fasesObligatorias   Fases del DS 44 que aplican
-  limiteObras
-  requiereFirmaPin
+- **Razón social** — el nombre de tu empresa.
+- **RUT empresa** — se muestra pero **no se puede modificar** (queda fijo desde el registro).
+- **Color principal** — el color con el que se personaliza la plataforma. Puedes elegir uno
+  de los **colores sugeridos** o abrir el selector de color.
+- **Logo** — sube el logo de tu empresa (PNG, JPG, SVG o WebP, máximo 2 MB). Si no cargas
+  uno, aparecerá *"Sin logo"*.
 
-preferencias    Personalización UI
-  timezone / idioma / formatoFecha
-  colorPrimario / colorSecundario / logoUrl
-```
+Cuando termines, haz clic en **Guardar identidad**.
 
-## Planes
+> 🎨 Personalizar el color y el logo hace que la plataforma se sienta "tuya" y ayuda a que
+> los trabajadores reconozcan que es el sistema oficial de su empresa.
 
-| Plan | Orientado a | Características típicas |
-| --- | --- | --- |
-| starter | Empresas pequeñas | Módulos básicos, límite de obras y trabajadores |
-| professional | Empresas medianas | Más obras, Asistente IA, reportería avanzada |
-| enterprise | Grandes constructoras | Sin límites prácticos, personalización completa |
+## Pestaña "Roles"
 
-El campo `settings.modulosActivos` permite **vender por módulos**: habilitar o
-deshabilitar funcionalidades según el plan contratado.
+Los **roles** definen qué puede hacer cada persona en la plataforma. La empresa viene con
+roles base, pero desde aquí puedes **crear roles personalizados** y ajustar sus permisos:
 
-## Personalización
+- **Añadir rol** — crea un nuevo rol con su nombre, descripción y permisos.
+- **Permisos** — marca qué puede ver y hacer cada rol.
+- **Eliminar rol** — quita un rol que ya no uses (las personas que lo tenían deberán
+  reasignarse a otro).
 
-El tenant puede personalizar la apariencia (color primario/secundario, logo) y
-preferencias regionales (`timezone: America/Santiago`, `idioma: es`,
-`formatoFecha: DD/MM/YYYY`).
+> 🔒 El rol **Administrador** tiene **acceso total** y sus permisos no se pueden editar.
+> Aparece marcado como *"Acceso total (no editable)"*. Esto evita que alguien se quede sin
+> administrador por error. Revisa [Roles de Usuario](/roles/) para entender los roles base.
 
-## Reglas de negocio
+![Pestaña Roles con la lista de roles y sus permisos](/img/tenants/roles.png)
 
-`reglas.fasesObligatorias` define qué fases del DS 44 aplican a las obras del tenant.
-Al crear una obra, se preconfiguran los documentos obligatorios de esas fases. Ver
-[Fases de obra](/ds44/fases-obra).
+## Pestaña "Cargos"
 
-## Onboarding
+Los **cargos** son los oficios de obra (carpintero, soldador, jornal, etc.). El catálogo de
+cargos es importante porque **cada cargo determina qué documentos y capacitaciones de
+onboarding** necesita un trabajador. Desde aquí mantienes ese catálogo y, en su caso,
+asocias plantillas de documentos a cada cargo.
 
-```
-1. POST /tenants/setup (nombre, rutEmpresa, cantidadTrabajadores, datos admin)
-        ↓
-2. Se crea el tenant en estado "setup"
-        ↓
-3. Se calcula "tamano" según cantidadTrabajadores
-        ↓
-4. Se crea la Persona admin (rol admin, tieneAccesoWeb=true, password temporal)
-        ↓
-5. Se actualiza tenant.adminPersonaId
-        ↓
-6. estado del tenant pasa a "activo"
-        ↓
-7. Se notifica al admin con sus credenciales
-```
+## Preguntas frecuentes
 
-> El `tenant-0` está reservado para el superadmin con acceso cross-tenant.
+**¿Por qué no puedo cambiar el RUT de la empresa?**
+El RUT identifica de forma única a tu empresa y queda fijo desde el registro para mantener la
+integridad de los datos. Si hay un error en el RUT, contacta al soporte.
 
-Ver el paso a paso en [Onboarding de tenant](/guia-inicio/onboarding).
+**Cambié el color y el logo pero no se ven.**
+Asegúrate de hacer clic en **Guardar identidad**. Luego, si no ves el cambio de inmediato,
+recarga la página.
 
-## Endpoints relacionados
+**¿Qué diferencia hay entre un rol y un cargo?**
+El **rol** define los permisos en la plataforma (qué pantallas y acciones puede usar). El
+**cargo** es el oficio en obra y determina qué documentos de seguridad le corresponden.
+Consulta el módulo de [Personas](/modulos/personas).
 
-| Método | Ruta | Acción |
-| --- | --- | --- |
-| `POST` | `/tenants/setup` | Registrar nuevo tenant |
-| `GET` | `/tenants/{id}` | Obtener tenant |
-| `PUT` | `/tenants/{id}/settings` | Actualizar configuración |
+**Eliminé un rol que estaba en uso. ¿Qué pasa con esas personas?**
+Las personas que tenían ese rol deberán reasignarse a otro rol. Por eso conviene revisar
+quién usa un rol antes de eliminarlo (la lista muestra cuántas personas lo tienen).
+
+**¿Quién puede entrar a Mi Empresa?**
+Principalmente el **Administrador**. Algunas pestañas pueden estar disponibles para otros
+roles de gestión según los permisos configurados. Consulta [Roles de Usuario](/roles/).

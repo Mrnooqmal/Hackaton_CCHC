@@ -1,8 +1,7 @@
 # Roles de Usuario
 
-Build & Serve define **5 roles**, cada uno con un conjunto de permisos derivados
-(`persona.permisos`). El rol determina qué módulos y acciones están disponibles para
-cada persona dentro de su tenant.
+La plataforma define **5 roles**, cada uno con su propio conjunto de permisos. El rol
+determina qué módulos y acciones están disponibles para cada persona dentro de su empresa.
 
 | Rol | Resumen |
 | --- | --- |
@@ -28,11 +27,10 @@ Leyenda: ✓ acceso completo · 👁 solo lectura · ✗ sin acceso
 | Asistente IA | ✓ | ✓ | 👁 | ✗ | ✗ |
 | Personas | ✓ | 👁 | 👁 | 👁 | ✗ |
 | Bandeja de Entrada | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Tenants | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Mi Empresa | ✓ | ✗ | ✗ | ✗ | ✗ |
 
-> La matriz refleja el comportamiento de referencia. Los permisos efectivos se
-> derivan del rol en `persona.permisos` y se validan en el backend
-> (`lib/permissions.js`). Algunos accesos pueden ajustarse por configuración del tenant.
+> Esta tabla refleja el comportamiento de referencia. Algunos accesos pueden ajustarse según
+> la configuración de roles de tu empresa (ver [Mi Empresa](/modulos/tenants)).
 
 ## Notas sobre los permisos
 

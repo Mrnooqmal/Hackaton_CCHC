@@ -16,8 +16,6 @@ export default defineConfig({
       { text: 'DS44', link: '/ds44/' },
       { text: 'Módulos', link: '/modulos/' },
       { text: 'Roles', link: '/roles/' },
-      { text: 'API', link: '/api/' },
-      { text: 'Arquitectura', link: '/arquitectura/' },
     ],
 
     sidebar: {
@@ -26,9 +24,9 @@ export default defineConfig({
           text: 'Guía de Inicio',
           items: [
             { text: '¿Qué es Build & Serve?', link: '/guia-inicio/' },
-            { text: 'Instalación y configuración', link: '/guia-inicio/instalacion' },
+            { text: 'Cómo ingresar', link: '/guia-inicio/instalacion' },
             { text: 'Primeros pasos', link: '/guia-inicio/primeros-pasos' },
-            { text: 'Onboarding de tenant', link: '/guia-inicio/onboarding' },
+            { text: 'Registro de una empresa', link: '/guia-inicio/onboarding' },
           ],
         },
       ],
@@ -60,7 +58,7 @@ export default defineConfig({
             { text: 'Asistente IA', link: '/modulos/asistente-ia' },
             { text: 'Personas', link: '/modulos/personas' },
             { text: 'Bandeja de Entrada', link: '/modulos/bandeja-entrada' },
-            { text: 'Tenants', link: '/modulos/tenants' },
+            { text: 'Mi Empresa', link: '/modulos/tenants' },
           ],
         },
       ],
@@ -74,31 +72,6 @@ export default defineConfig({
             { text: 'Jefe de Obra', link: '/roles/jefe-obra' },
             { text: 'Supervisor', link: '/roles/supervisor' },
             { text: 'Trabajador', link: '/roles/trabajador' },
-          ],
-        },
-      ],
-      '/api/': [
-        {
-          text: 'Referencia API',
-          items: [
-            { text: 'Visión general', link: '/api/' },
-            { text: 'Autenticación', link: '/api/autenticacion' },
-            { text: 'Obras', link: '/api/obras' },
-            { text: 'Documentos', link: '/api/documentos' },
-            { text: 'Firmas', link: '/api/firmas' },
-            { text: 'Incidentes', link: '/api/incidentes' },
-            { text: 'Actividades', link: '/api/actividades' },
-            { text: 'Personas', link: '/api/personas' },
-          ],
-        },
-      ],
-      '/arquitectura/': [
-        {
-          text: 'Arquitectura',
-          items: [
-            { text: 'Visión general', link: '/arquitectura/' },
-            { text: 'Base de datos (DynamoDB)', link: '/arquitectura/base-de-datos' },
-            { text: 'Multi-tenant', link: '/arquitectura/multi-tenant' },
           ],
         },
       ],

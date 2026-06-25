@@ -1,38 +1,48 @@
-# Resumen de módulos
+# Módulos de la plataforma
 
-Build & Serve se organiza en **11 módulos** que cubren el ciclo completo de gestión de
-SST en una obra. Cada módulo es accesible según el [rol](/roles/) de la persona y los
-módulos activos del [tenant](/modulos/tenants).
+La plataforma se organiza en **módulos**, cada uno accesible desde el **menú lateral
+izquierdo**. Según tu [rol](/roles/), verás unos u otros: un trabajador verá los módulos que
+necesita para sus tareas, mientras que un administrador verá todos.
 
-| Módulo | Para qué sirve | Documentación |
-| --- | --- | --- |
-| 📊 Dashboard | KPIs y métricas de seguridad de la obra | [Ver](/modulos/dashboard) |
-| 🏗️ Obras | Gestión de proyectos y ciclo de fases | [Ver](/modulos/obras) |
-| 📄 Documentos | Documentos DS 44 (obra y diarios) | [Ver](/modulos/documentos) |
-| ✍️ Firmas Digitales | Firma PIN, offline y presencial | [Ver](/modulos/firmas) |
-| ⚠️ Incidentes | Reporte y análisis de incidentes y accidentes | [Ver](/modulos/incidentes) |
-| 🎓 Actividades | Charlas, capacitaciones, auditorías | [Ver](/modulos/actividades) |
-| 📋 Encuestas | Formularios y evaluaciones | [Ver](/modulos/encuestas) |
-| 🤖 Asistente IA | Matrices de riesgo y consultas normativas | [Ver](/modulos/asistente-ia) |
-| 👤 Personas | Identidad unificada de usuarios y trabajadores | [Ver](/modulos/personas) |
-| 📨 Bandeja de Entrada | Mensajería y notificaciones internas | [Ver](/modulos/bandeja-entrada) |
-| 🏢 Tenants | Configuración multi-tenant y planes | [Ver](/modulos/tenants) |
+Esta es una guía rápida de para qué sirve cada módulo y dónde encontrar su explicación
+detallada.
 
-## Cómo se relacionan
+| Módulo | ¿Para qué lo uso? |
+| --- | --- |
+| 📊 [Dashboard](/modulos/dashboard) | Tu pantalla de inicio: resume tus pendientes y el estado de tus obras. |
+| 🏗️ [Obras](/modulos/obras) | Crear y gestionar tus proyectos de construcción. Es el punto de partida de todo. |
+| 📄 [Documentos](/modulos/documentos) | Cargar, asignar y consultar los documentos de seguridad. |
+| ✍️ [Firmas Digitales](/modulos/firmas) | Firmar con tu PIN y solicitar firmas a otros (incluso sin internet). |
+| ⚠️ [Incidentes](/modulos/incidentes) | Reportar hallazgos, incidentes y accidentes, y ver estadísticas. |
+| 🎓 [Actividades](/modulos/actividades) | Programar capacitaciones y charlas, y registrar la asistencia. |
+| 📋 [Encuestas](/modulos/encuestas) | Crear y responder encuestas de seguridad. |
+| 🤖 [Asistente IA](/modulos/asistente-ia) | Generar matrices de riesgo y documentos con ayuda de la IA. |
+| 👤 [Personas](/modulos/personas) | Registrar a los trabajadores y definir su rol y cargo. |
+| 📨 [Bandeja de Entrada](/modulos/bandeja-entrada) | Enviar y recibir mensajes internos de la obra. |
+| 🏢 [Mi Empresa](/modulos/tenants) | Configurar los datos, el logo, los roles y los cargos de tu empresa. |
 
-```
-Tenant (empresa cliente)
-  └── Obra
-        ├── Documentos  ── firmados con ──▶ Firmas
-        ├── Actividades ── firmadas con ──▶ Firmas
-        ├── Incidentes  ── notifican vía ─▶ Bandeja de Entrada
-        └── Encuestas
-  └── Personas (admin, prevencionista, supervisor, jefe de obra, trabajador)
-        └── Asignaciones y firmas
-```
+## ¿Por dónde empiezo?
 
-## Venta por módulos
+Si es tu primera vez, el orden recomendado es:
 
-El campo `settings.modulosActivos` del tenant controla qué módulos están disponibles,
-permitiendo comercializar la plataforma por paquetes. Un tenant del plan *starter*
-puede no tener habilitado el Asistente IA, por ejemplo. Ver [Tenants](/modulos/tenants).
+1. **Mi Empresa** — revisa los datos, el logo y los cargos de tu empresa.
+2. **Personas** — registra a tu equipo de trabajo.
+3. **Obras** — crea tu primera obra (esto genera sus documentos obligatorios).
+4. **Documentos** y **Actividades** — completa los documentos y programa las capacitaciones.
+5. **Firmas** — cada persona firma lo que le corresponde.
+
+Revisa también la [Guía de Inicio](/guia-inicio/) para los primeros pasos paso a paso.
+
+## Cómo se conectan los módulos
+
+Todo gira en torno a la **obra**:
+
+- Dentro de una **Obra** viven sus **Documentos**, **Actividades**, **Incidentes** y
+  **Encuestas**.
+- Los documentos y las actividades se validan con **Firmas**.
+- Las **Personas** se asignan a las obras y firman lo que les corresponde.
+- Los avisos y coordinaciones se manejan por la **Bandeja de Entrada**.
+
+> 💡 Es posible que no veas todos los módulos. Cada empresa puede tener habilitados solo
+> algunos, según su plan. Si te falta un módulo que necesitas, consúltalo con el
+> administrador de tu empresa.

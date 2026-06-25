@@ -34,7 +34,7 @@ Es quien opera el día a día del cumplimiento del DS 44 en la obra.
 - **Asignación de documentos diarios**: asigna documentos a personas, generando
   notificaciones automáticas en su bandeja.
 - **Destino de alertas de incidentes**: recibe notificación automática cuando se reporta
-  un incidente (`incident.created`).
+  un incidente.
 
 Es el principal receptor de las notificaciones automáticas del sistema. Ver
 [Incidentes](/modulos/incidentes) y [Documentos](/modulos/documentos).

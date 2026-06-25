@@ -1,0 +1,31 @@
+/* Migas de pan (breadcrumb) — arriba a la izquierda del contenido */
+.bs-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--vp-c-text-2);
+}
+
+.bs-breadcrumb__link {
+  color: var(--vp-c-text-2);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.bs-breadcrumb__link:hover {
+  color: var(--vp-c-brand-1);
+}
+
+.bs-breadcrumb__sep {
+  color: var(--vp-c-text-3);
+  user-select: none;
+}
+
+.bs-breadcrumb__current {
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+}

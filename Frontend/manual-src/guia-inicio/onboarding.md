@@ -1,76 +1,55 @@
-# Onboarding de tenant
+# Registro de una empresa
 
-El onboarding es el proceso de registrar una nueva empresa (tenant) en la plataforma.
-Crea el tenant, su administrador inicial y deja todo listo para operar.
+El **registro** (u onboarding) es el proceso por el cual una empresa nueva queda dada de alta
+en la plataforma. Al completarlo, la empresa tiene su espacio propio y un **administrador**
+listo para empezar a trabajar.
 
-## Flujo de onboarding
+## Qué se necesita para registrar una empresa
 
-```
-1. POST /tenants/setup
-   (nombre, rutEmpresa, cantidadTrabajadores, email y nombre del admin)
-        ↓
-2. Se crea el registro en TenantsTable con estado "setup"
-        ↓
-3. Se calcula "tamano" según cantidadTrabajadores
-        ↓
-4. Se crea la Persona admin en PersonasTable
-   (rol "admin", tieneAccesoWeb=true, password temporal)
-        ↓
-5. Se actualiza tenant.adminPersonaId
-        ↓
-6. El estado del tenant pasa a "activo"
-        ↓
-7. Se notifica al admin con sus credenciales (email vía SES o respuesta directa)
-```
+Para crear la cuenta de una empresa se piden algunos datos básicos:
 
-## Datos requeridos
+- **Nombre / razón social** de la empresa.
+- **RUT** de la empresa.
+- **Cantidad de trabajadores** (aproximada).
+- **Nombre y correo del administrador** — la persona que gestionará la plataforma.
 
-```json
-{
-  "nombre": "Constructora Ejemplo S.A.",
-  "rutEmpresa": "76.123.456-7",
-  "cantidadTrabajadores": 120,
-  "admin": {
-    "nombre": "María González",
-    "email": "maria.gonzalez@constructora.cl"
-  }
-}
-```
+## Cómo funciona
 
-## Cálculo del tamaño
+1. Se ingresan los datos de la empresa y de su administrador.
+2. La plataforma **crea el espacio de la empresa** y la cuenta del administrador.
+3. El administrador recibe sus **credenciales de acceso** (por correo).
+4. La empresa queda **activa** y lista para operar.
 
-El campo `tamano` se deriva automáticamente de `cantidadTrabajadores` y condiciona
-límites y comportamiento del backend:
+> ✉️ El administrador recibirá un correo con su acceso inicial. Si no lo ves, revisa la
+> carpeta de spam o correo no deseado.
 
-| Tamaño | Rango aproximado de trabajadores |
-| --- | --- |
-| micro | hasta ~10 |
-| pequena | ~11 a 50 |
-| mediana | ~51 a 200 |
-| grande | más de ~200 |
+## Primeros pasos del administrador
 
-## Estados del tenant
+Una vez que la empresa está activa, el administrador debería:
 
-```
-setup → activo → suspendido
-```
+1. **Iniciar sesión** y cambiar la contraseña temporal por una propia. Ver
+   [Cómo ingresar](/guia-inicio/instalacion).
+2. **Revisar los datos de la empresa**: logo, color, roles y cargos. Ver
+   [Mi Empresa](/modulos/tenants).
+3. **Registrar a las personas** del equipo. Ver [Personas](/modulos/personas).
+4. **Crear la primera obra**. Ver [Obras](/modulos/obras).
 
-- **setup**: registro creado, pendiente de completar.
-- **activo**: operativo, el admin puede iniciar sesión.
-- **suspendido**: acceso bloqueado (por ejemplo, por impago).
+Continúa con el recorrido completo en [Primeros pasos](/guia-inicio/primeros-pasos).
 
-## Después del onboarding
+## Preguntas frecuentes
 
-Una vez activo el tenant, el admin debe:
+**¿Quién registra a mi empresa?**
+El registro inicial lo realiza el equipo de la plataforma o el proceso de alta de tu
+proveedor. Una vez creada, tú como administrador gestionas todo desde dentro.
 
-1. Cambiar su contraseña temporal.
-2. Configurar módulos activos, reglas SST y personalización.
-3. Crear la primera obra y registrar personas.
+**No recibí el correo con mis credenciales.**
+Revisa la carpeta de spam. Si aún no aparece, contacta al soporte de la plataforma para que
+reenvíen tu acceso.
 
-Continúa en [Primeros pasos](/guia-inicio/primeros-pasos).
+**¿Puedo tener más de un administrador?**
+Sí. Una vez dentro, el administrador puede registrar a otras personas y asignarles el rol de
+administrador desde el módulo de [Personas](/modulos/personas).
 
-::: info Superadmin
-El `tenant-0` está reservado para el superadmin de la plataforma, con acceso
-cross-tenant para soporte. No se crea mediante este flujo. Ver
-[Multi-tenant](/arquitectura/multi-tenant).
-:::
+**¿Los datos de mi empresa los puede ver otra empresa?**
+No. Cada empresa opera en su propio espacio **aislado**: tus obras, personas y documentos
+solo los ve tu empresa.

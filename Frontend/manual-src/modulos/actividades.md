@@ -1,81 +1,91 @@
-# Módulo: Actividades
+# Actividades y capacitación
 
-**Ubicación:** `Frontend/src/pages/Activities.tsx` · `Backend/handlers/activities/`
+El módulo de **Actividades** te permite programar y registrar todo lo que reúne a los
+trabajadores en torno a la seguridad: **capacitaciones**, **charlas de inicio de jornada**,
+**simulacros** y otras actividades preventivas. Lo más importante es que aquí queda el
+**registro de asistencia firmado**, que es la prueba de que la capacitación efectivamente se
+realizó (una exigencia clave del DS 44, Art. 16).
 
-Registro de actividades preventivas: charlas, capacitaciones, inducciones, análisis de
-riesgo (ART) e inspecciones. Cubre la obligación de informar y capacitar del Art. 16 del
-DS 44.
+## Entrar al módulo
 
-## Tipos de actividad
+En el menú lateral, haz clic en **Actividades**. Se abrirá la pantalla **"Actividades y
+capacitación"**.
 
-| Tipo | Código | Frecuencia | Descripción |
-| --- | --- | --- | --- |
-| Charla de 5 minutos | `CHARLA_5MIN` | Diaria | Charla preventiva breve antes de la jornada |
-| Inducción | `INDUCCION` | Al ingreso | Inducción de seguridad para nuevos trabajadores |
-| Capacitación SST | `CAPACITACION` | 8 horas (Art. 16) | Capacitación formal obligatoria |
-| Análisis de Riesgo del Trabajo | `ART` | Por tarea crítica | Identificación de riesgos antes de una actividad |
+> 📌 Las actividades se gestionan **por obra**. Si ves el mensaje *"Seleccione una obra para
+> ver sus actividades"*, elige primero la obra con la que quieres trabajar (en el selector de
+> obra, normalmente arriba). Una vez seleccionada, verás sus actividades.
 
-## Estructura de una actividad
+La pantalla se organiza en dos bloques:
 
-```
-activityId    UUID
-tenantId      FK
-obraId        FK a la obra donde se realiza
-tipo          CHARLA_5MIN | ART | CAPACITACION | INDUCCION
-titulo / descripcion / fecha
-relatorId     personaId del relator
-asistentes    [{ personaId, nombre, rut, cargo, firma }]
-firmaRelator  Firma del responsable
-estado        programada | en_curso | completada | cancelada
-```
+- **Actividades de Hoy** — lo programado para el día, listo para registrar asistencia.
+- **Historial de Actividades** — todo lo que ya se realizó.
 
-## Flujo de registro
+![Pantalla de Actividades mostrando las actividades de hoy y el historial](/img/actividades/inicio.png)
 
-```
-1. Prevencionista programa la actividad (estado: programada)
-        ↓
-2. Se realiza la actividad (estado: en_curso)
-        ↓
-3. Cada asistente firma su asistencia (PIN o presencial)
-        ↓
-4. El relator firma como responsable (firma cruzada)
-        ↓
-5. La actividad queda completada con registro inmutable
-```
+## Programar una actividad nueva
 
-## Charlas de seguridad
+1. Haz clic en el botón **Nueva Actividad**.
+2. Completa el formulario:
+   - **Tipo de Actividad** *(obligatorio)* — capacitación, charla, simulacro, etc.
+   - **Tipo de capacitación (DS44)** *(obligatorio si es capacitación)* — el tipo específico
+     que exige la normativa.
+   - **Título** *(obligatorio)* — un nombre claro (ej.: *"Uso correcto de EPP"*).
+   - **Descripción** *(opcional)* — de qué tratará.
+   - **Relator** *(obligatorio)* — quién dictará la actividad.
+   - **Fecha** *(obligatorio)* — cuándo se realizará.
+   - **Periodicidad** — si es una actividad **única** o se **repite** (en cuyo caso indicas
+     hasta cuándo).
+   - **Hora inicio** *(obligatorio)* y **Hora fin** *(opcional)*.
+   - **Ubicación** *(opcional)* — dónde se hará (ej.: *"Frente de obra, sala de charlas"*).
+   - **Trabajadores** — marca quiénes deben asistir (solo aparecen los asignados a la obra).
+3. Guarda. La actividad quedará programada y aparecerá en la agenda de la obra.
 
-- Programación de charlas diarias (`CHARLA_5MIN`).
-- Registro de asistencia con firma individual.
-- Temario tratado.
+![Formulario de Nueva Actividad con los campos de tipo, relator y fecha](/img/actividades/nueva-actividad.png)
 
-## Capacitaciones
+> 💡 Si una charla se repite (por ejemplo, la charla diaria de 5 minutos), usa la opción de
+> **periodicidad** para no tener que crearla manualmente cada día.
 
-- Calendario de capacitaciones e inscripción de participantes.
-- Capacitación formal de **8 horas** según Art. 16 (`CAPACITACION`).
-- Generación de certificados de asistencia a partir del registro firmado.
-- Material didáctico y evaluaciones asociadas.
+## Registrar la asistencia
 
-## Inspecciones y auditorías
+Una actividad solo cuenta como **realizada** cuando queda registrada la asistencia de los
+trabajadores. Hay dos formas:
 
-- Checklist de inspección.
-- Registro fotográfico.
-- Hallazgos y observaciones.
-- Acciones correctivas con seguimiento de cierre.
+- **Registrar Asistencia** (el relator o gestor) — abre la lista de trabajadores y marca
+  quiénes asistieron. Cada asistente confirma con su firma. Los que ya están registrados se
+  muestran con la etiqueta **"Ya registrado"**.
+- **Registrar mi asistencia** (el propio trabajador) — cada persona puede confirmar su
+  asistencia y firmar desde su cuenta.
 
-## Firma cruzada del relator
+> ✅ La firma de asistencia es la evidencia legal de la capacitación. Sin asistencia firmada,
+> la actividad queda como pendiente y **no cuenta** para el cumplimiento de la obra.
 
-Las capacitaciones y charlas requieren la **firma del relator** además de la de los
-asistentes, certificando que la actividad se impartió. Ver
-[Capacitaciones (Art.16)](/ds44/capacitaciones) y [Firmas](/modulos/firmas).
+## Ver el detalle de una actividad
 
-## Endpoints relacionados
+Haz clic sobre cualquier actividad para abrir su **Detalle**, donde verás la fecha, el
+horario, el relator, la descripción y la lista de **asistentes** con su estado de firma.
 
-| Método | Ruta | Acción |
-| --- | --- | --- |
-| `POST` | `/activities` | Crear actividad |
-| `GET` | `/activities` | Listar actividades |
-| `POST` | `/activities/{id}/sign` | Firmar (asistente o relator) |
-| `POST` | `/activities/{id}/attendance` | Registrar asistencia |
+## Preguntas frecuentes
 
-Ver detalle en [API · Actividades](/api/actividades).
+**No veo ninguna actividad.**
+Probablemente no has seleccionado una obra. Las actividades se muestran **por obra**: elige
+una en el selector de obra y aparecerán sus actividades.
+
+**Programé la actividad pero no aparece como cumplida.**
+Una actividad se considera cumplida cuando tiene **asistencia registrada y firmada**.
+Mientras nadie firme la asistencia, quedará pendiente.
+
+**¿Quién puede crear actividades?**
+Los roles de gestión (Administrador, Prevencionista, Jefe de Obra, Supervisor). El relator
+asignado es quien la dicta. Consulta [Roles de Usuario](/roles/).
+
+**Un trabajador faltó a la capacitación. ¿Qué hago?**
+Simplemente no lo marques como asistente. Quedará registrado que no asistió, y podrás
+reprogramarle la capacitación más adelante.
+
+**¿La asistencia se puede firmar en terreno sin señal?**
+La firma de asistencia usa el mismo sistema de PIN de las firmas. Si no hay conexión, revisa
+las opciones de [Firmas Offline](/modulos/firmas) para recolectarlas y sincronizarlas luego.
+
+**¿Cómo programo la charla diaria que se repite todos los días?**
+Al crear la actividad, elige la **periodicidad** correspondiente e indica hasta qué fecha se
+repite. El sistema generará las ocurrencias por ti.

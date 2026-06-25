@@ -1,96 +1,114 @@
-# Módulo: Documentos
+# Documentos
 
-**Ubicación:** `Frontend/src/pages/Documents.tsx` · `Backend/handlers/documents/`
+El módulo de **Documentos** es donde vive toda la documentación de seguridad de tu empresa
+y tus obras: políticas, reglamentos, matrices de riesgo, certificados, procedimientos,
+entregas de EPP y más. Reemplaza las carpetas de papel por un repositorio digital único,
+ordenado y siempre disponible.
 
-Gestión centralizada de todos los documentos del sistema. Cada documento se clasifica
-en uno de dos tipos según su comportamiento: **de obra** o **diario**.
+Aquí harás tres cosas principales: **cargar** documentos, **asignarlos** a las personas que
+deben conocerlos o firmarlos, y **consultarlos o descargarlos** cuando los necesites.
 
-## Clasificación
+> 💡 Muchos documentos obligatorios del DS 44 ya se crean solos cuando creas una obra. En
+> este módulo terminas de completarlos subiendo el archivo y asignándolos a las personas.
 
-### Documentos de obra (`clasificacion: "obra"`)
+## Las dos vistas de documentos
 
-- Obligatorios por fase según el DS 44.
-- Se precrean al crear la obra (según `fasesConfig`).
-- Accesibles desde la zona central de documentos de la obra.
-- Cumplimiento agregado por fase (% completado).
-- No se asignan individualmente; son documentos de referencia que deben existir y estar
-  firmados para cumplir normativa.
+La plataforma organiza los documentos en dos pantallas complementarias:
 
-### Documentos de uso diario (`clasificacion: "diario"`)
+- **Gestión documental** — para **crear, asignar y firmar** documentos. Es la vista de
+  trabajo, usada principalmente por roles de gestión (Administrador, Prevencionista, Jefe
+  de Obra).
+- **Repositorio de documentos** — para **buscar, consultar y descargar** documentos ya
+  existentes. Pensada para encontrar rápido cualquier archivo.
 
-- Se crean y asignan a personas específicas.
-- Al asignarse, el `EventBus` emite `document.assigned`, que genera una notificación en
-  la bandeja de entrada de cada persona asignada.
-- Aparecen como pendientes en el dashboard del trabajador.
-- Requieren firma individual (PIN o presencial).
-- Tienen fecha límite opcional; si vencen, el estado pasa a `vencido`.
+Accedes a ellas desde el menú lateral, en la sección de **Documentos**.
 
-## Flujo de documento de obra
+## Gestión documental
 
-```
-1. Al crear la obra, se precrean los documentos obligatorios por fase
-        ↓
-2. El prevencionista sube el archivo (PDF) a cada documento
-        ↓
-3. Desde la zona central se ve el % de cumplimiento por fase
-        ↓
-4. Al avanzar de fase, se verifica que los obligatorios estén firmados
-```
+Al abrir **Gestión documental** verás, en la parte superior, unas tarjetas con el resumen:
+**Total Documentos**, **Con Firmas**, **Pendientes** y **Asignaciones**. Debajo, la lista
+de documentos con las columnas **Documento**, **Asignaciones**, **Fecha** y **Acciones**.
 
-## Flujo de documento diario
+![Pantalla de Gestión documental con las tarjetas de resumen y la tabla de documentos](/img/documentos/gestion.png)
 
-```
-1. Prevencionista crea un documento con clasificacion "diario"
-        ↓
-2. Lo asigna a una o más personas (POST /documents/{id}/assign)
-        ↓
-3. EventBus emite "document.assigned" → mensaje en InboxTable por persona
-        ↓
-4. El trabajador ve la notificación en su bandeja de entrada
-        ↓
-5. El trabajador firma el documento (PIN o presencial)
-        ↓
-6. El estado de la asignación cambia a "firmado"
-```
+### Subir un documento nuevo
 
-## Estructura de un documento
+1. Haz clic en el botón **Nuevo Documento** (arriba a la derecha).
+2. Se abrirá la ventana **Nuevo Documento**. Completa:
+   - **Tipo de Documento** *(obligatorio)* — elige de la lista qué tipo es (política,
+     reglamento, certificado, etc.).
+   - **Título** *(obligatorio)* — un nombre claro para identificarlo (ej.: *"IRL - Soldador"*).
+   - **Descripción** *(opcional)* — una nota sobre el contenido.
+   - **Archivo del Documento** — selecciona el archivo desde tu computador.
+3. Haz clic en **Crear Documento**. Mientras se procesa verás *"Subiendo…"* y luego
+   *"Creando…"*.
 
-```
-documentoId    UUID
-tenantId       FK
-obraId         FK a la obra
-clasificacion  obra | diario
-fase           Solo si clasificacion=obra
-tipoDS44       IRL | POLITICA_SSO | ENTREGA_EPP | MIPPER | ...
-obligatorio    BOOL
-titulo / descripcion / contenido
-s3Key          tenants/{tenantId}/obras/{obraId}/docs/{key}
-asignaciones   Lista de personas con estado de firma
-firmas         Firmas recolectadas
-estado         borrador | activo | completado | vencido
-```
+> 📎 Sube los archivos preferentemente en **PDF**. Así se ven igual en cualquier dispositivo
+> y se conservan correctamente para una eventual fiscalización.
 
-## Almacenamiento
+### Buscar un documento
 
-Los archivos se guardan en S3 con aislamiento por prefijo de tenant:
+Usa el campo **"Buscar documentos…"** para filtrar la lista por nombre. Es la forma más
+rápida de encontrar algo cuando hay muchos documentos.
 
-```
-hackaton-documents-{stage}/tenants/{tenantId}/obras/{obraId}/fase-{fase}/archivo.pdf
-```
+### Ver el detalle, asignar y firmar
 
-La descarga se realiza mediante **URLs prefirmadas (presigned)** de S3, garantizando
-acceso seguro y temporal. Ver [Arquitectura · Base de datos](/arquitectura/base-de-datos).
+Al hacer clic en un documento se abre su **ficha**, donde puedes:
 
-## Endpoints relacionados
+- **Ver una vista previa** del archivo sin descargarlo.
+- **Descargar** el archivo.
+- **Asignar** el documento a una o varias personas para que lo firmen o lo conozcan.
+- **Firmar** el documento (si te corresponde a ti).
 
-| Método | Ruta | Acción |
-| --- | --- | --- |
-| `POST` | `/documents` | Crear / subir documento |
-| `GET` | `/documents` | Listar documentos |
-| `GET` | `/documents/{id}` | Obtener documento |
-| `PUT` | `/documents/{id}` | Actualizar metadatos |
-| `DELETE` | `/documents/{id}` | Eliminar documento |
-| `POST` | `/documents/{id}/assign` | Asignar a personas |
-| `GET` | `/documents/{id}/download` | URL de descarga prefirmada |
+En la columna **Asignaciones** de la lista verás cuántas personas ya firmaron y cuántas
+están pendientes (por ejemplo, *"3/5 firmados · 2 pendientes"*).
 
-Ver detalle en [API · Documentos](/api/documentos).
+> ✅ La etiqueta **Empresa** junto a un documento indica que es un documento corporativo
+> (válido para toda la empresa), no de una obra puntual.
+
+## Repositorio de documentos
+
+El **Repositorio** es la vista de consulta. Arriba encontrarás pestañas para filtrar por
+ámbito:
+
+- **General** — documentos de la empresa y las obras.
+- **Personal** — documentos asociados a una persona en particular.
+- **Mis documentos** — tus propios documentos (los que te corresponden a ti).
+
+![Repositorio de documentos con las pestañas General, Personal y Mis documentos](/img/documentos/repositorio.png)
+
+Para encontrar algo, usa el buscador **"Buscar en todo el repositorio…"**. Sobre cada
+documento tienes botones para **previsualizar** (ver sin descargar) y **descargar**.
+
+Si un documento aún no tiene archivo cargado, verás la nota *"Sin archivo"*: significa que
+está creado pero todavía falta subir el PDF.
+
+## Preguntas frecuentes
+
+**¿Cuál es la diferencia entre "Gestión documental" y "Repositorio"?**
+**Gestión documental** es para *trabajar* los documentos (crearlos, asignarlos, firmarlos).
+El **Repositorio** es para *consultarlos y descargarlos*. Si solo necesitas encontrar un
+archivo, usa el Repositorio; si necesitas crear o asignar, usa Gestión documental.
+
+**Creé el documento pero aparece "Sin archivo".**
+Es porque se creó el registro del documento sin subir el archivo. Ábrelo y carga el PDF
+correspondiente para completarlo.
+
+**Asigné un documento pero la persona no lo ha firmado.**
+La asignación genera la solicitud, pero la firma la realiza cada persona. Aparecerá como
+pendiente hasta que firme. La persona verá el documento en su Dashboard y en su Bandeja de
+Entrada como una tarea pendiente. Revisa el módulo de [Firmas Digitales](/modulos/firmas).
+
+**¿Quién puede crear documentos?**
+Principalmente los roles de gestión (Administrador, Prevencionista, Jefe de Obra). Un
+Trabajador normalmente solo ve y firma los documentos que le asignan. Consulta
+[Roles de Usuario](/roles/).
+
+**No encuentro un documento que sé que existe.**
+Revisa que estés en la pestaña correcta del Repositorio (General / Personal / Mis
+documentos) y usa el buscador. Algunos documentos personales solo aparecen en la pestaña
+"Personal" o "Mis documentos".
+
+**¿Puedo ver un documento sin descargarlo?**
+Sí. Usa el botón de **previsualizar**: abre una vista del archivo dentro de la misma
+plataforma, sin necesidad de guardarlo en tu equipo.

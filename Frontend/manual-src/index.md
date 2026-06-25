@@ -36,14 +36,6 @@ features:
     title: Roles de Usuario
     details: Qué puede hacer cada rol. Tabla comparativa de permisos por módulo.
     link: /roles/
-  - icon: 🔌
-    title: Referencia API
-    details: Endpoints REST, autenticación JWT y ejemplos de request/response.
-    link: /api/
-  - icon: 🏗️
-    title: Arquitectura
-    details: Esquema DynamoDB, aislamiento multi-tenant y estructura de almacenamiento S3.
-    link: /arquitectura/
 ---
 
 ## ¿Qué es Build & Serve?
@@ -82,8 +74,8 @@ hasta obtener respuesta oficial. Más detalles en
 
 | Quiero… | Ir a |
 | --- | --- |
-| Instalar y levantar la plataforma | [Instalación](/guia-inicio/instalacion) |
+| Ingresar a la plataforma por primera vez | [Cómo ingresar](/guia-inicio/instalacion) |
+| Poner una obra en marcha paso a paso | [Primeros pasos](/guia-inicio/primeros-pasos) |
 | Entender qué exige el DS 44 | [¿Qué es el DS 44?](/ds44/) |
+| Aprender a usar cada parte de la plataforma | [Módulos](/modulos/) |
 | Saber qué puede hacer mi rol | [Roles de Usuario](/roles/) |
-| Integrar la API | [Referencia API](/api/) |
-| Conocer el modelo de datos | [Base de datos](/arquitectura/base-de-datos) |

@@ -48,7 +48,7 @@ arbitraria.
 
 ## Trazabilidad ante fiscalización
 
-Cada acta firmada queda registrada en `SignaturesTable` con PIN, IP y timestamp, lo
+Cada acta firmada queda registrada con PIN, fecha/hora y código de verificación, lo
 que permite demostrar ante un fiscalizador:
 
 - **Qué** EPP se entregó.

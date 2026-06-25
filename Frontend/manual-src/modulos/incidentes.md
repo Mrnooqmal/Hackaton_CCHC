@@ -1,92 +1,94 @@
-# Módulo: Incidentes
+# Incidentes y hallazgos
 
-**Ubicación:** `Frontend/src/pages/Incidents.tsx` · `Backend/handlers/incidents-module/`
+El módulo de **Incidentes** te permite registrar y dar seguimiento a todo lo que ocurre en
+materia de seguridad: desde un **hallazgo** (una condición o acto inseguro que detectaste a
+tiempo) hasta un **incidente** o un **accidente** que afectó a un trabajador.
 
-Sistema completo para la gestión de eventos de seguridad laboral: hallazgos, incidentes,
-accidentes y condiciones subestándar, con reporte, seguimiento y análisis estadístico.
+Registrar estos eventos no es solo una obligación normativa: es la base para prevenir que
+vuelvan a ocurrir. La plataforma transforma esos registros en **estadísticas** (tasa de
+accidentabilidad, días perdidos, siniestralidad) que te ayudan a entender dónde están los
+riesgos de tu obra.
 
-## Tipos y clasificación
+## Entrar al módulo
 
-| Clasificación | Tipo | Descripción |
-| --- | --- | --- |
-| Hallazgo | Acción | Acto subestándar observado (conducta insegura) |
-| Hallazgo | Condición | Condición subestándar del entorno |
-| Incidente | — | Evento que pudo causar daño (cuasi-accidente) |
-| Accidente | — | Evento con lesión o daño efectivo |
+En el menú lateral, haz clic en **Incidentes**. Verás la pantalla **"Incidentes y
+hallazgos"**, que combina dos cosas:
 
-**Niveles de gravedad:** `leve`, `grave`, `fatal`.
+- Un **consolidado estadístico** con los números y gráficos de tu obra.
+- El **listado de eventos** registrados, con su estado.
 
-## Reporte de incidentes
+![Pantalla de Incidentes con el consolidado estadístico y el listado de eventos](/img/incidentes/inicio.png)
 
-El formulario captura:
+## Registrar un hallazgo, incidente o accidente
 
-- **Clasificación y tipo** (hallazgo/incidente/accidente).
-- **Trabajador afectado**: nombre, RUT, cargo, género.
-- **Etapa constructiva** en que ocurrió el evento.
-- **Fecha, hora y centro de trabajo**.
-- **Gravedad** y **días perdidos**.
-- **Evidencias fotográficas** (múltiples archivos a S3).
-- **Confirmación de veracidad** del reporte.
+1. Haz clic en el botón para **registrar un nuevo evento**.
+2. Elige la **clasificación**: *hallazgo*, *incidente* o *accidente*.
+3. Completa el formulario. Según la clasificación verás campos como:
+   - **Tipo de Hallazgo** *(obligatorio)* — qué tipo de condición o acto detectaste.
+   - **Etapa Constructiva** — en qué etapa de la obra ocurrió.
+   - **Gravedad** *(obligatorio)* — qué tan serio es el evento.
+   - **Trabajador Afectado** — si corresponde, busca a la persona escribiendo su **nombre o
+     RUT**.
+   - **Detalle** *(obligatorio)* — describe qué pasó con la mayor claridad posible.
+4. Guarda. Verás una confirmación de **"Registro Exitoso"**.
 
-## Flujo de notificación automática
+> 📍 Si tu dispositivo lo permite, la plataforma puede registrar la **ubicación** del
+> evento automáticamente, para dejar constancia de dónde ocurrió.
 
-```
-1. Una persona reporta un incidente (POST /incidents)
-        ↓
-2. Se guarda en IncidentsTable con autoría y timestamp
-        ↓
-3. EventBus emite "incident.created"
-        ↓
-4. Notificación automática al prevencionista vía InboxTable
-        ↓
-5. (Opcional) Publicación en tópico SNS para integraciones externas
-```
+> 💡 **Registra los hallazgos aunque parezcan menores.** Un hallazgo a tiempo (una
+> herramienta en mal estado, una protección faltante) evita el accidente de mañana, y queda
+> como evidencia de tu gestión preventiva.
 
-## Visualización y análisis
+## El consolidado estadístico
 
-### Vista listado
-Tabla con filtros avanzados por tipo, estado y rango de fechas.
+En la parte superior verás tarjetas y gráficos que resumen la accidentabilidad de la obra:
 
-### Vista estadísticas (dashboard analítico)
+- **Accidentes** — total de accidentes registrados.
+- **Tasa de Accidentabilidad** — indicador estándar de seguridad.
+- **Días Perdidos** — días de trabajo perdidos por accidentes.
+- **Siniestralidad** — indicador de siniestralidad del periodo.
 
-| KPI | Qué mide |
-| --- | --- |
-| Tasa de accidentabilidad | Accidentes por cada 100 trabajadores |
-| Días perdidos | Total de días de ausencia por accidentes |
-| Siniestralidad | Severidad acumulada en el período |
+También hay **gráficos por mes y por etapa de obra**, y un **calendario** que marca los días
+con eventos. Todo esto se actualiza solo a medida que registras eventos.
 
-Incluye además:
+## Seguimiento y cierre de eventos
 
-- Gráfico de **evolución temporal** (líneas).
-- Distribución por **clasificación** (barras horizontales).
-- Distribución por **gravedad** (barras horizontales).
-- **Calendario heatmap** mensual con severidad por día.
-- Exportación de reportes en **CSV y PDF**.
+Cada evento tiene un **estado** (por ejemplo *reportado*, *en investigación*, *cerrado*).
+Los eventos más graves requieren una **investigación** y la definición de **medidas
+correctivas**, a las que luego se les da seguimiento hasta cerrarlas. Esto conecta con la
+fase **Actuar** del cumplimiento de la obra (ver [Obras](/modulos/obras)).
 
-## Detalle de un incidente
+## Exportar el reporte
 
-Modal con información completa: galería de evidencias con lightbox, datos del trabajador
-y del reportante, estado y seguimiento del evento.
+Puedes generar un **Reporte de Incidentes y Accidentes** en formato imprimible (PDF), con el
+consolidado y el detalle de los eventos. Es útil para reuniones de comité o para presentar
+ante una fiscalización.
 
-## Estados
+## Preguntas frecuentes
 
-```
-reportado → en_investigacion → cerrado
-```
+**¿Cuál es la diferencia entre hallazgo, incidente y accidente?**
+Un **hallazgo** es una condición o acto inseguro detectado *antes* de que cause daño. Un
+**incidente** es un evento que ocurrió pero no causó lesión (o casi-accidente). Un
+**accidente** sí causó lesión a un trabajador. Registrar los tres da una imagen completa de
+la seguridad de tu obra.
 
-El ciclo de investigación se alinea con la exigencia del DS 44 de **investigar
-incidentes con análisis de causa raíz**.
+**¿Cualquier persona puede registrar un evento?**
+Generalmente sí: se promueve que todos puedan reportar hallazgos. El seguimiento y cierre de
+la investigación lo realizan los roles de gestión. Consulta [Roles de Usuario](/roles/).
 
-## Endpoints relacionados
+**Registré un accidente por error.**
+Avisa a un prevencionista o administrador. Los registros se conservan para mantener la
+trazabilidad, pero pueden corregirse o aclararse en el seguimiento del evento.
 
-| Método | Ruta | Acción |
-| --- | --- | --- |
-| `POST` | `/incidents` | Crear incidente |
-| `GET` | `/incidents` | Listar con filtros |
-| `GET` | `/incidents/{id}` | Detalle |
-| `PUT` | `/incidents/{id}` | Actualizar |
-| `GET` | `/incidents/stats` | Estadísticas |
-| `GET` | `/incidents/analytics` | Datos del dashboard |
-| `POST` | `/incidents/quick-report` | Reporte rápido vía QR |
+**Los indicadores (tasa, siniestralidad) no me cuadran.**
+Esos indicadores se calculan automáticamente a partir de los eventos registrados y los días
+perdidos. Si un número no cuadra, revisa que todos los eventos estén bien clasificados y con
+sus datos completos.
 
-Ver detalle en [API · Incidentes](/api/incidentes).
+**¿Por qué me pide la ubicación?**
+Para dejar constancia de **dónde** ocurrió el evento. Es opcional según tu dispositivo y
+ayuda a la investigación, pero el registro funciona igual si no la entregas.
+
+**¿Para qué sirve el reporte en PDF?**
+Para tener una versión imprimible y compartible del consolidado y los eventos, ideal para
+reuniones del comité paritario o para responder a una fiscalización.

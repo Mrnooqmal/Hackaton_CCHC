@@ -1,89 +1,81 @@
 # Firmas digitales y DS 44
 
-El DS 44 exige que los registros de SST estén **firmados y disponibles** ante
-fiscalización. Build & Serve digitaliza la firma manteniendo una cadena de evidencia
-verificable para cada acto firmado.
+El DS 44 exige que los registros de seguridad estén **firmados y disponibles** ante una
+fiscalización. La plataforma digitaliza la firma manteniendo, por cada acto firmado, una
+**evidencia verificable**: quién firmó, cuándo y desde dónde.
 
 ::: warning Consulta legal pendiente
-La **validez jurídica del PIN como firma electrónica** ante un fiscalizador del DS 44
-está siendo evaluada con la Dirección del Trabajo y el proveedor de firma certificada
-(acuerdo reunión CCHC 2026-06-10). La funcionalidad opera con normalidad, pero **no
-debe usarse como única prueba legal** hasta obtener respuesta oficial.
-
-La implementación actual (`FirmaService`: PIN + token + IP + timestamp en
-`SignaturesTable`) **no debe modificarse** hasta entonces. Aplica a firmas de
-documentos, firma asistida, firma cruzada de relator (`CAPACITACION_SST`) y validación
-de entregas de EPP.
+La **validez jurídica del PIN como firma electrónica** ante un fiscalizador del DS 44 está
+siendo evaluada con la Dirección del Trabajo. La funcionalidad opera con normalidad y deja
+trazabilidad completa, pero **por ahora no debe usarse como única prueba legal** hasta tener
+la respuesta oficial.
 :::
 
-## Estrategias de firma
+## Formas de firmar
 
-`FirmaService` implementa un patrón de estrategia con cuatro métodos de validación
-(`metodoValidacion`):
+La plataforma ofrece distintas formas de firmar según la situación:
 
-| Estrategia | Código | Uso |
-| --- | --- | --- |
-| PIN | `PIN` | Firma estándar con PIN personal de la persona |
-| Offline | `OFFLINE` | Firma en terreno sin conexión, sincronizada después |
-| Presencial | `PRESENCIAL` | Firma asistida ante un relator o supervisor presente |
-| Biométrica | `BIOMETRIC` | Reservada (stub) — no implementada aún |
+| Forma | ¿Cuándo se usa? |
+| --- | --- |
+| **PIN** | Firma estándar: la persona confirma con su PIN personal de 4 dígitos. |
+| **Offline** | Firma en terreno **sin conexión**, que se sincroniza al recuperar la red. |
+| **Presencial** | Firma asistida ante un relator o supervisor presente. |
 
-## Registro inmutable
+## Un registro que no se altera
 
-Cada firma genera un registro en `SignaturesTable` que **no se modifica ni elimina**.
-Los campos clave de evidencia son:
+Cada firma queda guardada como un **registro que no se modifica ni se elimina**. Por cada
+firma se conserva, entre otros datos:
 
-```
-signatureId      Identificador único de la firma
-personaId        Quién firmó
-personaRut       RUT del firmante
-tipoFirma        trabajador | relator | supervisor
-referenciaId     Documento o actividad firmada
-referenciaTipo   Tipo de la referencia
-fecha / horario / timestamp   Marca temporal
-ipAddress        IP desde la que se firmó
-metodoValidacion PIN | OFFLINE | PRESENCIAL | BIOMETRIC
-estado           valida | disputada | anulada
-```
+- **Quién firmó** (nombre y RUT).
+- **Qué firmó** (el documento o la actividad).
+- **Fecha y hora** exactas.
+- **Desde dónde** se firmó.
+- Un **código de verificación** que permite comprobar la autenticidad.
 
-Esta tríada **PIN + IP + timestamp** constituye la evidencia mínima que la plataforma
-conserva por cada firma.
+> 🔒 Esta combinación de **PIN + fecha/hora + verificación** es la evidencia que la
+> plataforma conserva por cada firma, y es lo que da respaldo al cumplimiento.
 
-## Firma offline en terreno
+## Firma sin conexión en terreno
 
-Las obras suelen tener conectividad limitada. El flujo offline garantiza que la firma
-se capture igual y se sincronice al recuperar la red:
+Como muchas obras tienen mala señal, la firma puede capturarse **sin internet** y
+sincronizarse después:
 
 ```
-1. La persona firma en tablet/móvil sin conexión
+1. La persona firma en el celular o tablet, sin conexión
         ↓
-2. La firma se guarda cifrada (AES) en IndexedDB (cola local)
+2. La firma se guarda de forma segura en el dispositivo
         ↓
-3. Al recuperar conexión, se sincroniza por lotes con reintentos exponenciales
-        ↓
-4. Resolución de conflictos por timestamp del servidor
-        ↓
-5. Registro definitivo en SignaturesTable
+3. Al recuperar la señal, se sincroniza automáticamente con el sistema
 ```
 
-Detalles operativos del módulo en [Firmas Digitales](/modulos/firmas).
+Cómo usarlo en el día a día, en el módulo de [Firmas Digitales](/modulos/firmas).
 
-## Tipos de firma según el documento
+## Quién firma según el documento
 
-| Contexto | Quién firma | Tipo |
-| --- | --- | --- |
-| Documento de obra (DS 44) | Prevencionista / Trabajador | Según documento |
-| Entrega de EPP | Trabajador + Supervisor | `trabajador`, `supervisor` |
-| Capacitación SST | Asistentes + Relator | `trabajador`, `relator` |
-| Documento diario asignado | Persona asignada | `trabajador` |
+| Situación | Quién firma |
+| --- | --- |
+| Documento de obra (DS 44) | Prevencionista y/o Trabajador, según el documento |
+| Entrega de EPP | Trabajador + Supervisor |
+| Capacitación SST | Asistentes + Relator |
+| Documento diario asignado | La persona asignada |
 
-## Estados de una firma
+## Estado de una firma
 
-```
-valida ──▶ disputada (si se cuestiona su autenticidad)
-       └─▶ anulada   (si se invalida formalmente)
-```
+Una firma normalmente está **Válida** (es la evidencia activa de cumplimiento). Si su
+autenticidad se cuestiona, puede quedar marcada como **Disputada**, y si se invalida
+formalmente, como **Anulada**. En todos los casos el registro original **se conserva**, para
+no perder la trazabilidad que exige el DS 44.
 
-Una firma `valida` es la evidencia activa de cumplimiento. Los estados `disputada` y
-`anulada` permiten gestionar controversias sin borrar el registro original, preservando
-la trazabilidad exigida por el DS 44.
+## Preguntas frecuentes
+
+**¿El PIN tiene validez legal?**
+Su validez ante un fiscalizador está en evaluación (ver el aviso arriba). La firma funciona y
+deja trazabilidad completa, pero por ahora no debe ser la única prueba legal.
+
+**¿Puedo firmar sin internet?**
+Sí. Usa la firma **offline**: se guarda en tu dispositivo y se sincroniza sola cuando vuelvas
+a tener señal.
+
+**Una firma quedó como "disputada". ¿Se borró la original?**
+No. El registro original se conserva siempre. Los estados "disputada" o "anulada" solo dejan
+constancia de la controversia, sin eliminar la evidencia.

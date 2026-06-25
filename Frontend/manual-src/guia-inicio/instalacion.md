@@ -1,112 +1,68 @@
-# Instalación y configuración
+# Cómo ingresar a la plataforma
 
-Build & Serve se compone de dos proyectos: **Backend** (serverless, AWS) y **Frontend**
-(React + Vite). Esta guía cubre la instalación local y el despliegue.
+Build & Serve funciona desde el **navegador** (Chrome, Edge, Safari, etc.), tanto en
+computador como en el teléfono. No necesitas instalar ninguna aplicación: basta con abrir la
+dirección web que te entregue tu empresa e iniciar sesión.
 
-## Prerrequisitos
+## Iniciar sesión
 
-- Node.js 18.x o superior
-- AWS CLI configurado
-- Cuenta AWS activa
-- Serverless Framework instalado globalmente (`npm i -g serverless`)
+1. Abre el **enlace de la plataforma** que te compartió tu empresa.
+2. En la pantalla **"Iniciar sesión"**, ingresa:
+   - **RUT** — tu RUT (por ejemplo *12.345.678-9*).
+   - **Contraseña** — la contraseña de tu cuenta.
+3. Haz clic en **Ingresar**.
 
-## Backend
+![Pantalla de inicio de sesión con los campos RUT y Contraseña](/img/guia-inicio/login.png)
 
-```bash
-# Navegar al directorio backend
-cd Backend
+> 👁️ Puedes usar el ícono del ojo en el campo de contraseña para **mostrar u ocultar** lo
+> que escribes y asegurarte de no equivocarte.
 
-# Instalar dependencias
-npm install
+## Primer ingreso
 
-# Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus credenciales AWS
+Si es la primera vez que entras, lo más probable es que tu empresa te haya entregado una
+**contraseña temporal**. Al ingresar con ella, el sistema te pedirá **crear tu propia
+contraseña**. Elige una que recuerdes y no compartas con nadie.
 
-# Desplegar a AWS
-serverless deploy
+Durante la configuración de tu cuenta también definirás tu **PIN de 4 dígitos**, que es el
+que usarás para **firmar documentos** (es distinto de tu contraseña). Consulta el módulo de
+[Firmas Digitales](/modulos/firmas).
 
-# O usar el npm script
-npm run deploy
-```
+## Olvidé mi contraseña
 
-### Variables de entorno (Backend)
+Si no recuerdas tu contraseña:
 
-```ini
-AWS_REGION=us-east-1
-AWS_ACCOUNT_ID=123456789012
-TENANTS_TABLE=hackaton-tenants-dev
-PERSONAS_TABLE=hackaton-personas-dev
-OBRAS_TABLE=hackaton-obras-dev
-DOCUMENTS_TABLE=hackaton-documents-dev
-INCIDENTS_TABLE=hackaton-incidents-dev
-INBOX_TABLE=hackaton-inbox-dev
-SIGNATURES_TABLE=hackaton-signatures-dev
-DOCUMENTS_BUCKET=hackaton-documents-dev
-JWT_SECRET=tu-secreto-super-seguro
-GEMINI_API_KEY=tu-api-key
-```
+1. En la pantalla de inicio de sesión, haz clic en **"¿Olvidaste tu contraseña?"**.
+2. Sigue las instrucciones para restablecerla.
 
-### Desarrollo local del backend
+Si el problema persiste, contacta al **administrador de tu empresa**, que puede ayudarte a
+restablecer tu acceso.
 
-```bash
-# Serverless Offline (puerto 3001)
-npm run dev
-```
+## Recomendaciones de acceso
 
-## Frontend
+- Usa un navegador actualizado para una mejor experiencia.
+- Desde el teléfono funciona igual: ideal para firmar y registrar asistencia **en terreno**.
+- Si trabajas en una obra **sin señal**, revisa las [Firmas Offline](/modulos/firmas): te
+  permiten operar sin conexión y sincronizar después.
+- Cierra sesión si usas un equipo compartido.
 
-```bash
-# Navegar al directorio frontend
-cd Frontend
+## Preguntas frecuentes
 
-# Instalar dependencias
-npm install
+**¿Necesito instalar algo?**
+No. La plataforma funciona en el navegador. Solo necesitas el enlace y tu RUT y contraseña.
 
-# Configurar variables de entorno
-cp .env.example .env
-# Editar .env con la URL de tu API
+**¿Puedo entrar desde el celular?**
+Sí. Está pensada para usarse también desde el teléfono, especialmente para firmar y registrar
+actividades en obra.
 
-# Desarrollo local
-npm run dev
+**Ingreso mi RUT y contraseña pero no entra.**
+Revisa que el RUT esté bien escrito (con guion y dígito verificador) y que la contraseña sea
+la correcta. Si tienes una contraseña temporal, puede haber caducado: usa "¿Olvidaste tu
+contraseña?" o pide ayuda al administrador.
 
-# Build para producción
-npm run build
+**¿La contraseña y el PIN son lo mismo?**
+No. La **contraseña** sirve para iniciar sesión; el **PIN** (4 dígitos) sirve para **firmar**
+documentos dentro de la plataforma. Son independientes.
 
-# Desplegar a S3
-aws s3 sync dist/ s3://tu-bucket-frontend --delete
-```
-
-### Variables de entorno (Frontend)
-
-```ini
-VITE_API_URL=https://tu-api-gateway.execute-api.us-east-1.amazonaws.com/dev
-VITE_INCIDENT_EVIDENCE_BASE_URL=https://tu-bucket.s3.amazonaws.com
-```
-
-## Manual de uso (este sitio)
-
-La documentación que estás leyendo vive en `Frontend/manual-src/` y se construye con VitePress.
-
-```bash
-# Navegar al directorio del manual
-cd Frontend/manual-src
-
-# Instalar dependencias
-npm install
-
-# Desarrollo local
-npm run dev
-
-# Build
-npm run build
-
-# Integrar el manual en la app React (lo copia a Frontend/public/manual)
-npm run build:to-app
-```
-
-::: tip Integración con el footer
-El manual se sirve bajo la ruta `/manual/`. El footer de la app React enlaza a esta
-ruta desde "Ver manual de uso". Tras ejecutar `npm run build:to-app`, el manual queda
-disponible en producción dentro de la misma aplicación.
-:::
+**No tengo cuenta. ¿Cómo consigo una?**
+Las cuentas las crea el administrador de tu empresa en el módulo de
+[Personas](/modulos/personas). Pídele que te registre y te entregue tu acceso.

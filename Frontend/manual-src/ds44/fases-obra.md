@@ -1,38 +1,29 @@
 # Fases de obra
 
-Build & Serve maneja **dos dimensiones de fases** que conviene no confundir:
+En la plataforma, una obra avanza en **dos dimensiones** que conviene no confundir:
 
-1. **Fase física** de construcción — el avance real de la obra.
-2. **Ciclo normativo (Deming / PDCA)** — la lógica de gestión preventiva del DS 44.
+1. **Etapa física** de construcción — el avance real de lo que se está construyendo.
+2. **Ciclo de gestión preventiva** — cómo se gestiona la seguridad, según el DS 44.
 
-## Fases físicas
+## Etapas físicas
 
-El campo `etapaActual` de la tabla `ObrasTable` registra la etapa física actual:
+La obra pasa por cuatro etapas físicas, en orden:
 
-| Etapa | Código | Descripción |
-| --- | --- | --- |
-| Excavación | `excavacion` | Movimiento de tierras, fundaciones, inicio de faena |
-| Obra gruesa | `obra_gruesa` | Estructura, hormigón, albañilería |
-| Terminaciones | `terminaciones` | Instalaciones, revestimientos, acabados |
-| Entrega | `entrega` | Cierre, recepción y entrega de la obra |
+| Etapa | ¿Qué ocurre? |
+| --- | --- |
+| **Excavación** | Movimiento de tierras, fundaciones, inicio de faena. |
+| **Obra gruesa** | Estructura, hormigón, albañilería. |
+| **Terminaciones** | Instalaciones, revestimientos, acabados. |
+| **Entrega** | Cierre, recepción y entrega de la obra. |
 
-Cada fase tiene asociado un conjunto de **documentos obligatorios** en el campo
-`fasesConfig`, que se prellenan al crear la obra:
+Cada etapa tiene asociado un conjunto de **documentos obligatorios** que la plataforma
+prepara automáticamente al crear la obra.
 
-```
-fasesConfig:
-  excavacion:     [IRL, POLITICA_SSO, REGLAMENTO_INTERNO, ENCUESTA_SALUD, ...]
-  obra_gruesa:    [PROCEDIMIENTO_TRABAJO, ENTREGA_EPP, MAPA_RIESGOS, ...]
-  terminaciones:  [PROCEDIMIENTO_TRABAJO, ENTREGA_EPP, ...]
-  entrega:        [CAPACITACION_SST, ...]
-```
+## Avance de etapa con verificación
 
-## Avance de fase con verificación
-
-Al cambiar `etapaActual`, la plataforma puede **verificar automáticamente** si todos
-los documentos obligatorios de la fase anterior se encuentran firmados
-(estado `completado`). Esto evita avanzar en la obra dejando brechas de cumplimiento
-documental.
+Antes de avanzar de una etapa a la siguiente, la plataforma **verifica que los documentos
+obligatorios de la etapa actual estén firmados**. Esto evita avanzar dejando vacíos de
+cumplimiento.
 
 ```
 ┌──────────────┐   verifica    ┌──────────────┐   verifica    ┌────────────────┐
@@ -40,24 +31,38 @@ documental.
 └──────────────┘  docs OK ✓   └──────────────┘  docs OK ✓   └────────────────┘
 ```
 
-## El ciclo de Deming (PDCA)
+## El ciclo de mejora continua (Planificar–Hacer–Verificar–Actuar)
 
-Independiente de la etapa física, el DS 44 exige un ciclo continuo de mejora. La
-plataforma lo modela así:
+Además de la etapa física, el DS 44 exige un **ciclo continuo de mejora**. La plataforma lo
+organiza en cuatro fases que verás en la pestaña **DS44 — Cumplimiento** de cada obra:
 
-| Etapa PDCA | En la plataforma |
+| Fase | ¿Qué haces en la plataforma? |
 | --- | --- |
-| **Planificar** | Definir MIPPER, política SSO, procedimientos y documentos por fase |
-| **Hacer** | Ejecutar capacitaciones, entregar EPP, registrar actividades |
-| **Verificar** | Auditorías, inspecciones, seguimiento de KPIs e incidentes |
-| **Actuar** | Acciones correctivas, actualización de matrices y procedimientos |
+| **Planificar** | Cargar la matriz de riesgos, la política, los procedimientos y los documentos base. |
+| **Hacer** | Ejecutar capacitaciones, entregar EPP y registrar las actividades. |
+| **Verificar** | Auditar, inspeccionar y dar seguimiento a indicadores e incidentes. |
+| **Actuar** | Aplicar medidas correctivas y actualizar matrices y procedimientos. |
 
-Una obra avanza simultáneamente en su fase física (qué se está construyendo) y en su
-ciclo de gestión (cómo se gestiona la prevención). Ambas quedan trazadas en el módulo
-de [Obras](/modulos/obras).
+Una obra avanza **a la vez** en su etapa física (qué se construye) y en su ciclo de gestión
+(cómo se gestiona la prevención). Ambas quedan registradas en el módulo de
+[Obras](/modulos/obras).
 
-::: info Configuración por tenant
-Qué fases aplican a una obra depende de `tenant.reglas.fasesObligatorias`. Un tenant
-puede personalizar qué etapas exige y qué documentos son obligatorios en cada una.
-Ver [Tenants](/modulos/tenants).
+::: info Configuración por empresa
+Qué etapas y documentos aplican a una obra puede variar según la configuración de tu empresa.
+Cada empresa puede personalizar qué se exige en cada etapa. Ver [Mi Empresa](/modulos/tenants).
 :::
+
+## Preguntas frecuentes
+
+**¿La etapa física y el ciclo de mejora son lo mismo?**
+No. La **etapa física** es el avance constructivo (excavación, obra gruesa…). El **ciclo de
+mejora** (Planificar–Hacer–Verificar–Actuar) es cómo se gestiona la seguridad. Una obra
+avanza en ambas dimensiones a la vez.
+
+**¿Por qué no me deja avanzar de etapa?**
+Porque faltan documentos obligatorios firmados en la etapa actual. Complétalos en la pestaña
+**DS44 — Cumplimiento** de la obra y vuelve a intentar.
+
+**¿Puedo volver a una etapa anterior?**
+El avance de etapa está pensado para ir hacia adelante a medida que progresa la obra. Si
+necesitas corregir algo, contacta a un administrador.

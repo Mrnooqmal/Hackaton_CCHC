@@ -1,61 +1,73 @@
-# Módulo: Encuestas
+# Encuestas
 
-**Ubicación:** `Frontend/src/pages/Surveys.tsx` · `Backend/handlers/surveys/`
+El módulo de **Encuestas** te permite consultar a los trabajadores de forma rápida y dejar
+registro de sus respuestas. Sirve para muchas cosas: encuestas de clima de seguridad,
+verificación de comprensión tras una capacitación, levantamiento de condiciones inseguras o
+cualquier consulta que quieras documentar.
 
-Sistema de encuestas y evaluaciones para trabajadores. Permite levantar información de
-salud, clima de seguridad y evaluaciones de conocimiento, con lógica condicional.
+Hay dos miradas del módulo, según tu rol:
 
-## Creación de encuestas
+- Como **trabajador**, ves **las encuestas que te asignaron** y las respondes.
+- Como **gestor**, **creas encuestas**, eliges a quién van dirigidas y revisas los resultados.
 
-Constructor de preguntas con distintos tipos:
+## Responder una encuesta (trabajador)
 
-| Tipo de pregunta | Uso |
-| --- | --- |
-| Opción múltiple | Selección entre alternativas |
-| Texto libre | Respuesta abierta |
-| Escala numérica | Valoración (ej. 1 a 5) |
-| Sí / No | Respuesta binaria |
+1. En el menú lateral, entra a **Encuestas**.
+2. En la sección **"Mis encuestas"** verás las que tienes asignadas. Si no hay ninguna,
+   aparecerá *"No tienes encuestas asignadas por ahora"*.
+3. Abre la encuesta, responde cada pregunta (en las preguntas abiertas, usa el campo
+   *"Comparte tu respuesta"*) y envíala.
 
-Soporta **lógica condicional (skip logic)**: ciertas preguntas se muestran solo según
-respuestas anteriores.
+![Sección Mis encuestas con el seguimiento personal del trabajador](/img/encuestas/mis-encuestas.png)
 
-## Distribución
+> 💡 Las encuestas que te asignan también aparecen como pendiente en tu
+> [Dashboard](/modulos/dashboard) y tu [Bandeja de Entrada](/modulos/bandeja-entrada).
 
-- Asignación a trabajadores específicos.
-- Asignación por rol o área.
-- Programación de envío.
+## Crear una encuesta (gestor)
 
-Las asignaciones se registran con `personaId` (identidad unificada). Ver
-[Personas](/modulos/personas).
+1. Entra a **Encuestas** y haz clic en **Nueva Encuesta**.
+2. El asistente te guía por pasos:
+   - **Paso 1 · Información general** — escribe el **Título** *(obligatorio)* y una
+     **Descripción** *(opcional)* con el objetivo o la duración estimada.
+   - **Paso 2 · Audiencia destino** — elige el **Cargo destino** *(obligatorio)*: a qué
+     cargos o trabajadores se enviará la encuesta.
+   - Agrega las **preguntas** que quieras hacer.
+3. Crea la encuesta. Cada destinatario la recibirá como pendiente de responder.
 
-## Relación con el DS 44
+![Asistente de Nueva Encuesta con los pasos de información y audiencia](/img/encuestas/nueva-encuesta.png)
 
-Las encuestas alimentan documentos como la `ENCUESTA_SALUD` (declaración de salud al
-ingreso), un insumo relevante para la evaluación de riesgos por cargo y la
-[MIPPER](/ds44/documentos-obligatorios).
+## Revisar resultados
 
-## Estructura
+En la vista de gestión verás un resumen con indicadores:
 
-```
-surveyId      UUID
-tenantId      FK
-obraId        FK
-preguntas     Lista de preguntas con tipo y lógica condicional
-asignaciones  [{ personaId, estado }]
-resultados    Respuestas agregadas
-```
+- **Encuestas creadas** — cuántas has lanzado.
+- **Trabajadores alcanzados** — a cuántas personas llegaron.
+- **Tasa de respuesta** — qué porcentaje ya respondió.
 
-## Resultados
+Cada encuesta de la lista muestra cuántas **Preguntas** tiene, cuántos **Destinatarios** y
+cuántas respuestas **Respondidas** lleva. Puedes usar el filtro **"Mostrar"** para ver solo
+las tuyas o todas, y el buscador **"Buscar encuestas…"** para encontrar una específica.
 
-Los resultados se agregan para análisis: distribución de respuestas, tasa de
-participación y resultados por área o cargo.
+## Preguntas frecuentes
 
-## Endpoints relacionados
+**¿Quién puede crear encuestas?**
+Los roles de gestión (Administrador, Prevencionista, Jefe de Obra). Un trabajador solo
+responde las que le asignan. Consulta [Roles de Usuario](/roles/).
 
-| Método | Ruta | Acción |
-| --- | --- | --- |
-| `POST` | `/surveys` | Crear encuesta |
-| `GET` | `/surveys` | Listar encuestas |
-| `GET` | `/surveys/{id}` | Obtener encuesta |
-| `POST` | `/surveys/{id}/respond` | Responder encuesta |
-| `GET` | `/surveys/{id}/results` | Obtener resultados |
+**Asigné la encuesta pero nadie responde.**
+Los destinatarios la verán en su sección "Mis encuestas", en su Dashboard y en su Bandeja de
+Entrada. Si la **tasa de respuesta** está baja, puedes recordarles por la
+[Bandeja de Entrada](/modulos/bandeja-entrada).
+
+**¿Puedo dirigir una encuesta solo a ciertos cargos?**
+Sí. En el **Paso 2 · Audiencia destino** eliges el cargo destino, de modo que la encuesta
+llega solo a las personas que cumplen ese cargo.
+
+**¿Las respuestas son anónimas?**
+Las respuestas quedan asociadas para poder dar seguimiento al cumplimiento (saber quién
+respondió). Si necesitas una consulta anónima, indícalo en la descripción y maneja las
+preguntas en consecuencia.
+
+**¿Una encuesta puede cerrar un ítem de capacitación?**
+Sí. Cuando una encuesta está vinculada a un ítem de onboarding de un trabajador, responderla
+puede dar por cumplido ese ítem. Lo verás reflejado en la ficha de la obra.
