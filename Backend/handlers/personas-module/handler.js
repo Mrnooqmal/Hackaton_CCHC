@@ -14,7 +14,7 @@ const { ObraService } = require('../../lib/services/ObraService');
 const { EppService } = require('../../lib/services/EppService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
-const { normalizeRol } = require('../../lib/utils/validation');
+const { normalizeRol, validateRut } = require('../../lib/utils/validation');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
@@ -62,7 +62,8 @@ const TEMPLATE_HEADERS = [
     'telefono',
     'rol',
     'cargo',
-    'obraId',
+    'obra',
+    'supervisor',
     'nivelEscolar',
     'contactoEmergenciaNombre',
     'contactoEmergenciaTelefono',
@@ -78,21 +79,22 @@ const TEMPLATE_HEADERS = [
 // de onboarding). Un rol de gestión (Prevencionista, Jefe de Obra, Admin) NO lleva
 // cargo de terreno: deja la columna cargo vacía.
 const TEMPLATE_EXAMPLE_ROWS = [
-    ['12.345.678-9', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Persona trabajadora', 'Carpintero', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
-    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Prevencionista', 'Prevencionista', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
+    ['12.345.678-5', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Persona trabajadora', 'Carpintero', 'OBRA-001', '11.111.111-1', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
+    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Supervisor', '', 'OBRA-001', '', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
 ];
 
 const TEMPLATE_INSTRUCTIONS = [
     '1. Las columnas rut, nombre y rol son obligatorias.',
     '2. El rol debe coincidir con uno de los roles definidos para la empresa (ej. Prevencionista, Jefe de Obra, Supervisor, Persona trabajadora o Administrador).',
     '3. cargo: cargo del trabajador (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Prevencionista).',
-    '4. obraId: codigo (ej. OBRA-001) o UUID de la obra. Puedes copiarlo desde el detalle de la obra. Para asignar a varias obras, separalas por coma (ej. OBRA-001, OBRA-002). Si se deja vacio, la persona se crea en la empresa sin obra (se vincula despues); si la carga se hace desde una obra, se asigna a esa obra.',
-    '5. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
-    '6. Si el email es valido, se genera una contraseña temporal para el acceso web: los primeros 4 digitos del RUT. La persona debera cambiarla en su primer ingreso.',
-    '7. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
-    '8. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
-    '9. Reemplaza el obraId de ejemplo con el ID real de tu obra antes de importar.',
-    '10. Elimine las filas de ejemplo antes de cargar el archivo.'
+    '4. obra: elige la obra del desplegable (muestra "Nombre (CODIGO)"). Tambien puedes escribir el codigo (ej. OBRA-001). Para asignar a varias obras, separalas por coma. Si se deja vacio, la persona se crea en la empresa sin obra (se vincula despues); si la carga se hace desde una obra, se asigna a esa obra.',
+    '5. supervisor: RUT del supervisor de la cuadrilla. Puede venir en este mismo Excel con rol "Supervisor". Si se deja vacio, la persona queda sin cuadrilla y se le asigna un supervisor despues.',
+    '6. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
+    '7. Si el email es valido, se genera una contraseña temporal para el acceso web: los primeros 4 digitos del RUT. La persona debera cambiarla en su primer ingreso.',
+    '8. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
+    '9. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
+    '10. Reemplaza los datos de ejemplo por los de tus trabajadores antes de importar.',
+    '11. Elimine las filas de ejemplo antes de cargar el archivo.'
 ];
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
@@ -192,6 +194,9 @@ const headerAliases = {
     obracodigo: 'obra',
     obraid: 'obra',
     iddeobra: 'obra',
+    supervisor: 'supervisor',
+    rutsupervisor: 'supervisor',
+    supervisorrut: 'supervisor',
     nivelescolar: 'nivelEscolar',
     escolaridad: 'nivelEscolar',
     contactoemergencianombre: 'contactoEmergenciaNombre',
@@ -900,8 +905,13 @@ const RELACION_EMERGENCIA_OPCIONES = [
 ];
 
 // Columnas (1-based) de la hoja Personas que llevan desplegable.
-const COL = { rol: 8, cargo: 9, nivelEscolar: 11, relacion: 14 };
+const COL = { rol: 8, cargo: 9, obra: 10, nivelEscolar: 12, relacion: 15 };
 const TEMPLATE_FILAS_VALIDADAS = 500; // filas de datos con desplegable activo
+
+// Etiqueta de obra para el desplegable de la plantilla y su resolución: "Nombre
+// (CÓDIGO)" si tiene código, si no solo "Nombre". Ambos lados usan esta misma
+// función para que lo que el usuario elige en el Excel resuelva sin ambigüedad.
+const obraDisplayLabel = (o) => (o?.codigo ? `${o.nombre} (${o.codigo})` : String(o?.nombre || '')).trim();
 
 /**
  * Genera la plantilla Excel de carga masiva con LISTAS DESPLEGABLES por columna
@@ -913,11 +923,14 @@ const TEMPLATE_FILAS_VALIDADAS = 500; // filas de datos con desplegable activo
  * @param {{ roles?: string[], cargos?: string[] }} listas
  * @returns {Promise<Buffer>}
  */
-const createTemplateBuffer = async ({ roles, cargos } = {}) => {
+const createTemplateBuffer = async ({ roles, cargos, obras } = {}) => {
     const rolesList = (Array.isArray(roles) && roles.length) ? roles
         : ['Administrador', 'Prevencionista', 'Jefe de Obra', 'Supervisor', 'Persona trabajadora'];
     const cargosList = (Array.isArray(cargos) && cargos.length) ? cargos
         : ['Carpintero', 'Maestro albañil', 'Jornal de aseo y acarreo', 'Prevencionista'];
+    // Obras: etiquetas "Nombre (CODIGO)" del tenant. Si no hay, no se pone
+    // desplegable de obra (el usuario escribe el código a mano; ver instrucciones).
+    const obrasList = (Array.isArray(obras) && obras.length) ? obras : [];
 
     const wb = new ExcelJS.Workbook();
 
@@ -940,6 +953,10 @@ const createTemplateBuffer = async ({ roles, cargos } = {}) => {
         { col: COL.nivelEscolar, formula: rango('C', NIVEL_ESCOLAR_OPCIONES.length), msg: 'Selecciona el nivel escolar.' },
         { col: COL.relacion, formula: rango('D', RELACION_EMERGENCIA_OPCIONES.length), msg: 'Selecciona la relación del contacto.' },
     ];
+    // Desplegable de obra (columna E de Listas) solo si el tenant tiene obras.
+    if (obrasList.length) {
+        validaciones.push({ col: COL.obra, formula: rango('E', obrasList.length), msg: 'Selecciona una obra de la empresa (o escribe su código).' });
+    }
 
     // Aplica el desplegable a las filas de datos (desde la fila 2).
     for (let fila = 2; fila <= TEMPLATE_FILAS_VALIDADAS + 1; fila++) {
@@ -968,12 +985,141 @@ const createTemplateBuffer = async ({ roles, cargos } = {}) => {
     listas.state = 'veryHidden';
     const columnasLista = [rolesList, cargosList, NIVEL_ESCOLAR_OPCIONES, RELACION_EMERGENCIA_OPCIONES];
     const letras = ['A', 'B', 'C', 'D'];
+    if (obrasList.length) { columnasLista.push(obrasList); letras.push('E'); }
     columnasLista.forEach((valores, c) => {
         valores.forEach((v, r) => { listas.getCell(`${letras[c]}${r + 1}`).value = v; });
     });
 
     const buffer = await wb.xlsx.writeBuffer();
     return Buffer.from(buffer);
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// CARGA MASIVA — Wizard: parseo + validación (dry-run) + confirmación (2 pasadas)
+// ════════════════════════════════════════════════════════════════════════════
+
+const bulkRutKey = (r) => String(r || '').replace(/[.\-]/g, '').toLowerCase();
+
+// Procesa `items` en lotes de `size` con concurrencia acotada (Promise.all por
+// lote). Sube el throughput sin saturar DynamoDB. JS es single-thread, así que
+// los push/set a estructuras compartidas dentro de `fn` son seguros.
+const BULK_CONCURRENCIA = 10;
+const runInBatches = async (items, fn, size = BULK_CONCURRENCIA) => {
+    for (let i = 0; i < items.length; i += size) {
+        await Promise.all(items.slice(i, i + size).map(fn));
+    }
+};
+
+// Lee el workbook y devuelve filas planas normalizadas (sin validar todavía).
+const parseBulkWorkbook = (buffer) => {
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    if (!workbook.SheetNames || !workbook.SheetNames.length) {
+        return { headerError: 'El archivo Excel no contiene hojas de trabajo.', filas: [] };
+    }
+    const sheetName = workbook.SheetNames.includes('Personas') ? 'Personas' : workbook.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' });
+    if (!rows.length) return { headerError: 'La plantilla no tiene filas.', filas: [] };
+
+    const headerMap = {};
+    rows[0].map(normalizeHeader).forEach((h, i) => { const c = headerAliases[h]; if (c && headerMap[c] === undefined) headerMap[c] = i; });
+    const faltan = ['rut', 'nombre', 'rol'].filter((h) => headerMap[h] === undefined);
+    if (faltan.length) return { headerError: `Faltan columnas obligatorias: ${faltan.join(', ')}`, filas: [] };
+
+    const filas = [];
+    for (let i = 1; i < rows.length; i += 1) {
+        const row = rows[i];
+        if (!row.some((c) => String(c || '').trim() !== '')) continue;
+        const get = (k) => { const idx = headerMap[k]; if (idx === undefined) return ''; const v = row[idx]; return v == null ? '' : String(v).trim(); };
+        const { apellidoPaterno, apellidoMaterno } = resolveApellidos(get('apellidoPaterno'), get('apellidoMaterno'), get('apellido'));
+        filas.push({
+            filaExcel: i + 1,
+            rut: get('rut'), nombre: get('nombre'), apellidoPaterno, apellidoMaterno,
+            fechaNacimiento: get('fechaNacimiento'), email: get('email'), telefono: get('telefono'),
+            rol: get('rol'), cargo: get('cargo'), obra: get('obra'), supervisor: get('supervisor'),
+            nivelEscolar: get('nivelEscolar'),
+            contactoEmergenciaNombre: get('contactoEmergenciaNombre'),
+            contactoEmergenciaTelefono: get('contactoEmergenciaTelefono'),
+            contactoEmergenciaRelacion: get('contactoEmergenciaRelacion'),
+            cursos: get('cursos'),
+        });
+    }
+    return { headerError: null, filas };
+};
+
+// Contexto del tenant (obras, roles, RUTs existentes, supervisores) — se arma 1 vez.
+const buildBulkContext = async (tenantId) => {
+    const tenant = await tenantService.getById(tenantId).catch(() => null);
+    const obrasTenant = await obraService.listByTenant(tenantId).catch(() => []);
+    const personasTenant = await personaService.listByTenant(tenantId).catch(() => []);
+
+    const obraPorCodigo = {}, obraPorUUID = {}, obraPorLabel = {};
+    (obrasTenant || []).forEach((o) => {
+        if (o.codigo) obraPorCodigo[String(o.codigo).trim().toLowerCase()] = o.obraId;
+        if (o.obraId) obraPorUUID[String(o.obraId).trim().toLowerCase()] = o.obraId;
+        const label = obraDisplayLabel(o); if (label) obraPorLabel[label.toLowerCase()] = o.obraId;
+    });
+
+    const existentesPorRut = new Map();      // rutKey -> persona (para duplicados)
+    const supervisoresPorRut = new Map();    // rutKey -> personaId (supervisores existentes)
+    (personasTenant || []).forEach((p) => {
+        existentesPorRut.set(bulkRutKey(p.rut), p);
+        if (tipoDeRol(p, tenant) === 'supervisor') supervisoresPorRut.set(bulkRutKey(p.rut), p.personaId);
+    });
+
+    const rolesValidos = Array.isArray(tenant?.roles) ? tenant.roles.map((r) => r.nombre).filter(Boolean) : [];
+    return { tenant, obrasTenant, obraPorCodigo, obraPorUUID, obraPorLabel, existentesPorRut, supervisoresPorRut, rolesValidos };
+};
+
+// Resuelve la celda "obra" (código/UUID/label, coma-separadas) a obraIds.
+const resolverObrasBulk = (cellRaw, ctx) => {
+    const obraIds = [], noResueltas = [], seen = new Set();
+    if (!cellRaw) return { obraIds, noResueltas };
+    for (const tok of String(cellRaw).split(',')) {
+        const v = tok.trim().toLowerCase();
+        if (!v) continue;
+        const id = ctx.obraPorCodigo[v] || ctx.obraPorUUID[v] || ctx.obraPorLabel[v] || null;
+        if (id) { if (!seen.has(id)) { seen.add(id); obraIds.push(id); } }
+        else noResueltas.push(tok.trim());
+    }
+    return { obraIds, noResueltas };
+};
+
+// ¿El rol de esta fila es de tipo supervisor? (para la resolución en el archivo)
+const filaEsSupervisor = (fila, ctx) => {
+    const r = resolverRol(fila.rol, ctx.tenant);
+    return (r?.tipo || normalizeRol(fila.rol)) === 'supervisor';
+};
+
+// Valida y resuelve una fila. Devuelve errores (bloquean), advertencias (no
+// bloquean) y lo resuelto (obraIds, supervisorRutKey). `seenRut` acumula RUTs
+// del lote; `supRutsLote` = RUTs con rol supervisor presentes en el archivo.
+const validarFilaBulk = (fila, ctx, supRutsLote, seenRut) => {
+    const errores = [], advertencias = [];
+    const rk = bulkRutKey(fila.rut);
+    let esDuplicado = false;
+
+    if (!fila.rut) errores.push('Falta el RUT');
+    else if (!validateRut(fila.rut).valid) errores.push('RUT inválido');
+    if (!fila.nombre) errores.push('Falta el nombre');
+    if (!fila.rol) errores.push('Falta el rol');
+    else if (ctx.rolesValidos.length && !ctx.rolesValidos.some((r) => normalizeRol(r) === normalizeRol(fila.rol))) {
+        errores.push(`El rol "${fila.rol}" no existe en la empresa`);
+    }
+    if (rk && seenRut.has(rk)) { errores.push('RUT duplicado en el archivo'); esDuplicado = true; }
+    if (rk && ctx.existentesPorRut.has(rk)) { errores.push('Ya existe una persona con este RUT'); esDuplicado = true; }
+
+    const { obraIds, noResueltas } = resolverObrasBulk(fila.obra, ctx);
+    if (noResueltas.length) advertencias.push(`Obra no encontrada: ${noResueltas.join(', ')}`);
+
+    let supervisorRutKey = null;
+    if (fila.supervisor) {
+        const sk = bulkRutKey(fila.supervisor);
+        if (ctx.supervisoresPorRut.has(sk) || supRutsLote.has(sk)) supervisorRutKey = sk;
+        else advertencias.push(`Supervisor no encontrado (RUT ${fila.supervisor})`);
+    }
+
+    const estado = errores.length ? 'error' : (advertencias.length ? 'advertencia' : 'ok');
+    return { errores, advertencias, estado, esDuplicado, obraIds, supervisorRutKey };
 };
 
 // Broadcast retroactivo de plantillas (lo invoca el guardado de cargos del tenant).
@@ -999,17 +1145,19 @@ module.exports.personasHandler = async (event) => {
 
         // GET /personas/plantilla — Descargar plantilla Excel
         if (method === 'GET' && personaId === 'plantilla') {
-            // Plantilla tenant-aware: pobla los desplegables de rol y cargo con los
-            // valores reales de la empresa cuando hay tenantId disponible.
-            let roles, cargos;
+            // Plantilla tenant-aware: pobla los desplegables de rol, cargo y obra con
+            // los valores reales de la empresa cuando hay tenantId disponible.
+            let roles, cargos, obras;
             if (tenantId) {
                 const tenant = await tenantService.getById(tenantId).catch(() => null);
                 if (tenant) {
                     roles = Array.isArray(tenant.roles) ? tenant.roles.map(r => r.nombre).filter(Boolean) : undefined;
                     cargos = Array.isArray(tenant.reglas?.cargos) ? tenant.reglas.cargos.map(c => c.label || c.codigo).filter(Boolean) : undefined;
                 }
+                const obrasTenant = await obraService.listByTenant(tenantId).catch(() => []);
+                obras = (obrasTenant || []).map(obraDisplayLabel).filter(Boolean);
             }
-            const buffer = await createTemplateBuffer({ roles, cargos });
+            const buffer = await createTemplateBuffer({ roles, cargos, obras });
             return {
                 statusCode: 200,
                 headers: {
@@ -1104,8 +1252,145 @@ module.exports.personasHandler = async (event) => {
             return success({ trabajadores, errores, total: trabajadores.length });
         }
 
-        // POST /personas/carga-masiva — Procesar Excel
-        if (method === 'POST' && personaId === 'carga-masiva') {
+        // POST /personas/carga-masiva/validar — Wizard paso 1: parsea + valida SIN crear.
+        if (method === 'POST' && personaId === 'carga-masiva' && action === 'validar') {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+            const fileBase64 = body.fileBase64 || body.archivoBase64 || '';
+            if (!fileBase64) return error('No se proporcionó ningún archivo');
+            let buffer;
+            try {
+                const b64 = fileBase64.includes('base64,') ? fileBase64.split('base64,')[1] : fileBase64;
+                buffer = Buffer.from(b64, 'base64');
+            } catch { return error('No se pudo decodificar el archivo.'); }
+
+            let parsed;
+            try { parsed = parseBulkWorkbook(buffer); }
+            catch (e) { return error('No se pudo leer el Excel. Verifica que sea un .xlsx válido: ' + e.message); }
+            if (parsed.headerError) return error(parsed.headerError);
+
+            const ctx = await buildBulkContext(tenantId);
+            const supRutsLote = new Set();
+            parsed.filas.forEach((f) => { if (filaEsSupervisor(f, ctx)) supRutsLote.add(bulkRutKey(f.rut)); });
+
+            const seenRut = new Set();
+            const filas = parsed.filas.map((f) => {
+                const v = validarFilaBulk(f, ctx, supRutsLote, seenRut);
+                if (bulkRutKey(f.rut)) seenRut.add(bulkRutKey(f.rut));
+                return { ...f, ...v };
+            });
+
+            const catalogos = {
+                roles: ctx.rolesValidos,
+                cargos: Array.isArray(ctx.tenant?.reglas?.cargos) ? ctx.tenant.reglas.cargos.map((c) => c.label || c.codigo).filter(Boolean) : [],
+                obras: (ctx.obrasTenant || []).map((o) => ({ label: obraDisplayLabel(o), codigo: o.codigo || null, obraId: o.obraId })),
+                // Supervisores ofrecibles: existentes + los que vienen en el archivo con rol supervisor.
+                supervisores: [
+                    ...(Array.from(ctx.supervisoresPorRut.keys())).map((rk) => {
+                        const p = ctx.existentesPorRut.get(rk);
+                        return p ? { rut: p.rut, nombre: [p.nombre, p.apellido].filter(Boolean).join(' ').trim(), enSistema: true } : null;
+                    }).filter(Boolean),
+                    ...parsed.filas.filter((f) => filaEsSupervisor(f, ctx)).map((f) => ({ rut: f.rut, nombre: `${f.nombre} ${f.apellidoPaterno || ''}`.trim(), enSistema: false })),
+                ],
+            };
+            const resumen = {
+                total: filas.length,
+                ok: filas.filter((x) => x.estado === 'ok').length,
+                advertencias: filas.filter((x) => x.estado === 'advertencia').length,
+                errores: filas.filter((x) => x.estado === 'error').length,
+            };
+            return success({ filas, catalogos, resumen });
+        }
+
+        // POST /personas/carga-masiva/confirmar — Wizard paso 2: crea (2 pasadas) las filas aprobadas (JSON).
+        if (method === 'POST' && personaId === 'carga-masiva' && action === 'confirmar') {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+            const filasInput = Array.isArray(body.filas) ? body.filas : [];
+            const sendEmails = Boolean(body.sendWelcomeEmail);
+            if (!filasInput.length) return error('No hay filas para cargar');
+
+            const ctx = await buildBulkContext(tenantId);
+            const supRutsLote = new Set();
+            filasInput.forEach((f) => { if (filaEsSupervisor(f, ctx)) supRutsLote.add(bulkRutKey(f.rut)); });
+
+            const resultados = { creados: [], errores: [], duplicados: [], totalProcesados: filasInput.length };
+            const seenRut = new Set();
+            const rutKeyToPersonaId = new Map();      // recién creados (para supervisor en pasada 2)
+            const pendientesSupervisor = [];          // { personaId, obraIds, supervisorRutKey }
+
+            // FASE 0 — validación + dedup SÍNCRONA (determinística, antes de crear en paralelo)
+            const aCrear = [];
+            for (const f of filasInput) {
+                const v = validarFilaBulk(f, ctx, supRutsLote, seenRut);
+                if (bulkRutKey(f.rut)) seenRut.add(bulkRutKey(f.rut));
+                if (v.errores.length) {
+                    if (v.esDuplicado) resultados.duplicados.push({ fila: f.filaExcel, rut: f.rut, motivo: v.errores.join('; ') });
+                    else resultados.errores.push({ fila: f.filaExcel, rut: f.rut, error: v.errores.join('; ') });
+                } else {
+                    aCrear.push({ f, v });
+                }
+            }
+
+            // PASADA 1 — crear personas en lotes concurrentes
+            await runInBatches(aCrear, async ({ f, v }) => {
+                try {
+                    const { persona, passwordTemporal } = await personaService.crear(tenantId, {
+                        rut: f.rut, nombre: f.nombre, apellidoPaterno: f.apellidoPaterno, apellidoMaterno: f.apellidoMaterno,
+                        fechaNacimiento: f.fechaNacimiento, email: f.email, telefono: f.telefono,
+                        rol: f.rol, cargo: f.cargo ? normalizeCargoCodigo(f.cargo) : '',
+                        obraIds: v.obraIds, nivelEscolar: f.nivelEscolar,
+                        contactoEmergencia: { nombre: f.contactoEmergenciaNombre, telefono: f.contactoEmergenciaTelefono, relacion: f.contactoEmergenciaRelacion },
+                        cursos: String(f.cursos || '').split(';').map((c) => c.trim()).filter(Boolean).map((nombre) => ({ nombre })),
+                        tieneAccesoWeb: true,
+                    });
+                    rutKeyToPersonaId.set(bulkRutKey(f.rut), persona.personaId);
+
+                    if (sendEmails && persona.email && passwordTemporal) {
+                        try { await sendWelcomeEmail(persona.email, persona.nombre, persona.rut, passwordTemporal); }
+                        catch (emailErr) { console.error('Error welcome email (carga masiva):', emailErr.message); }
+                    }
+                    if (normalizeRol(persona.rol) !== 'admin') {
+                        await ensureCompanyDocsForPersona({ tenantId, persona, solicitante: null }).catch((e) => console.error(`Docs empresa fila ${f.filaExcel}:`, e.message));
+                    }
+                    if (normalizeRol(persona.rol) !== 'admin' && Array.isArray(persona.obraIds)) {
+                        for (const oId of persona.obraIds) {
+                            await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null }).catch((e) => console.error(`Onboarding fila ${f.filaExcel} obra ${oId}:`, e.message));
+                        }
+                    }
+                    if (v.supervisorRutKey && v.obraIds.length) {
+                        pendientesSupervisor.push({ personaId: persona.personaId, obraIds: v.obraIds, supervisorRutKey: v.supervisorRutKey });
+                    }
+                    resultados.creados.push({ fila: f.filaExcel, personaId: persona.personaId, rut: persona.rut, passwordTemporal: passwordTemporal || undefined });
+                } catch (err) {
+                    const m = err?.message || 'Error al crear persona';
+                    if (m.includes('Ya existe una persona')) resultados.duplicados.push({ fila: f.filaExcel, rut: f.rut, motivo: 'Ya existe en el tenant' });
+                    else resultados.errores.push({ fila: f.filaExcel, rut: f.rut, error: m });
+                }
+            });
+
+            // PASADA 2 — asignar supervisor en lotes (resuelve por RUT: existentes o recién creados)
+            await runInBatches(pendientesSupervisor, async (p) => {
+                const supId = ctx.supervisoresPorRut.get(p.supervisorRutKey) || rutKeyToPersonaId.get(p.supervisorRutKey) || null;
+                if (!supId) return; // no encontrado → queda sin cuadrilla
+                for (const oId of p.obraIds) {
+                    try {
+                        // Preserva los cargos ya asignados en la obra; solo fija el supervisor.
+                        const persona = await personaService.getById(p.personaId).catch(() => null);
+                        const asig = persona?.asignaciones?.find((a) => a.obraId === oId);
+                        await personaService.setAsignacionObra(tenantId, p.personaId, oId, asig?.cargos || [], supId);
+                    } catch (e) { console.error('Asignación de supervisor falló:', e.message); }
+                }
+            });
+
+            if (resultados.creados.length > 0) {
+                await tenantService.ajustarCantidadTrabajadores(tenantId, resultados.creados.length).catch((countErr) => console.error('No se pudo actualizar cantidad de trabajadores:', countErr.message));
+            }
+            return success({ mensaje: `Carga masiva completada. ${resultados.creados.length} personas creadas.`, resultados });
+        }
+
+        // POST /personas/carga-masiva — Procesar Excel (flujo directo, sin wizard)
+        if (method === 'POST' && personaId === 'carga-masiva' && !action) {
             if (!tenantId) return error('tenantId es requerido');
             const body = JSON.parse(event.body || '{}');
             const fileBase64 = body.fileBase64 || body.archivoBase64 || '';
@@ -1157,9 +1442,12 @@ module.exports.personasHandler = async (event) => {
             const obrasTenant = await obraService.listByTenant(tenantId).catch(() => []);
             const obraPorCodigo = {};
             const obraPorUUID = {};
+            const obraPorLabel = {}; // "Nombre (CODIGO)" (o solo "Nombre") -> obraId, para el desplegable
             (obrasTenant || []).forEach((o) => {
                 if (o.codigo) obraPorCodigo[String(o.codigo).trim().toLowerCase()] = o.obraId;
                 if (o.obraId) obraPorUUID[String(o.obraId).trim().toLowerCase()] = o.obraId;
+                const label = obraDisplayLabel(o);
+                if (label) obraPorLabel[label.toLowerCase()] = o.obraId;
             });
 
             const resultados = { creados: [], errores: [], duplicados: [], totalProcesados: 0 };
@@ -1207,7 +1495,7 @@ module.exports.personasHandler = async (event) => {
                     for (const token of obraCellRaw.split(',')) {
                         const v = token.trim().toLowerCase();
                         if (!v) continue;
-                        const resolved = obraPorCodigo[v] || obraPorUUID[v] || null;
+                        const resolved = obraPorCodigo[v] || obraPorUUID[v] || obraPorLabel[v] || null;
                         if (resolved && !seenObra.has(resolved)) {
                             seenObra.add(resolved);
                             obraIds.push(resolved);

@@ -161,22 +161,32 @@ export const Obras: React.FC = () => {
       width: '140px',
       render: (o) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {o.codigo
-            ? <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{o.codigo}</span>
-            : <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>—</span>
-          }
-          {o.obraId && (
+          {o.codigo ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{o.codigo}</span>
+              <button
+                type="button"
+                title="Copiar código de obra"
+                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.codigo || ''); }}
+                style={{ background: 'none', border: '1px solid var(--surface-border)', borderRadius: 4, padding: '1px 4px', cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}
+              >
+                <FiCopy size={9} />
+              </button>
+            </div>
+          ) : o.obraId ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
               <span style={{ fontFamily: 'monospace', fontSize: '10px', color: 'var(--text-muted)' }}>{o.obraId.slice(0, 8)}…</span>
               <button
                 type="button"
-                title="Copiar ID de obra"
+                title="Copiar ID interno (esta obra no tiene código)"
                 onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.obraId || ''); }}
                 style={{ background: 'none', border: '1px solid var(--surface-border)', borderRadius: 4, padding: '1px 4px', cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}
               >
                 <FiCopy size={9} />
               </button>
             </div>
+          ) : (
+            <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}>—</span>
           )}
         </div>
       ),
@@ -278,19 +288,31 @@ export const Obras: React.FC = () => {
               <div className="text-muted" style={{ fontSize: 'var(--text-sm)' }}>
                 {obra.comuna || '-'}, {obra.region || '-'}
               </div>
-              {obra.obraId && (
+              {obra.codigo ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 5 }}>
+                  <span style={{ fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-secondary)' }}>{obra.codigo}</span>
+                  <button
+                    type="button"
+                    title="Copiar código de obra"
+                    onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(obra.codigo || ''); }}
+                    style={{ background: 'none', border: '1px solid rgba(0,0,0,0.15)', borderRadius: 4, padding: '1px 4px', cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}
+                  >
+                    <FiCopy size={9} />
+                  </button>
+                </div>
+              ) : obra.obraId ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 5 }}>
                   <span style={{ fontFamily: 'monospace', fontSize: '10px', color: 'var(--text-muted)' }}>{obra.obraId.slice(0, 8)}…</span>
                   <button
                     type="button"
-                    title="Copiar ID de obra"
+                    title="Copiar ID interno (esta obra no tiene código)"
                     onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(obra.obraId || ''); }}
                     style={{ background: 'none', border: '1px solid rgba(0,0,0,0.15)', borderRadius: 4, padding: '1px 4px', cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}
                   >
                     <FiCopy size={9} />
                   </button>
                 </div>
-              )}
+              ) : null}
               {alertCount > 0 && (
                 <div style={{
                   marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6,

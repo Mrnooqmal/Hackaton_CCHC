@@ -1,6 +1,50 @@
 import { apiRequest, apiBaseUrl } from './client';
 import type { PersonaResponse } from './types';
 
+// ── Tipos del wizard de carga masiva ────────────────────────────────────────
+// Campos editables de una fila (los que el usuario puede corregir en la tabla).
+export interface BulkRowInput {
+    filaExcel: number;
+    rut: string;
+    nombre: string;
+    apellidoPaterno?: string;
+    apellidoMaterno?: string;
+    fechaNacimiento?: string;
+    email?: string;
+    telefono?: string;
+    rol: string;
+    cargo?: string;
+    obra?: string;
+    supervisor?: string;
+    nivelEscolar?: string;
+    contactoEmergenciaNombre?: string;
+    contactoEmergenciaTelefono?: string;
+    contactoEmergenciaRelacion?: string;
+    cursos?: string;
+}
+// Fila del preview: los campos + el resultado de validación del backend.
+export interface BulkPreviewRow extends BulkRowInput {
+    estado: 'ok' | 'advertencia' | 'error';
+    errores: string[];
+    advertencias: string[];
+    esDuplicado: boolean;
+    obraIds: string[];
+    supervisorRutKey: string | null;
+}
+export interface BulkCatalogos {
+    roles: string[];
+    cargos: string[];
+    obras: Array<{ label: string; codigo: string | null; obraId: string }>;
+    supervisores: Array<{ rut: string; nombre: string; enSistema: boolean }>;
+}
+export interface BulkResumen { total: number; ok: number; advertencias: number; errores: number }
+export interface BulkResultados {
+    creados: Array<{ fila: number; personaId: string; rut: string; passwordTemporal?: string }>;
+    errores: Array<{ fila: number; rut?: string; error: string }>;
+    duplicados: Array<{ fila: number; rut?: string; motivo: string }>;
+    totalProcesados: number;
+}
+
 // ========================================
 // PERSONAS API (Multi-tenant)
 // ========================================
@@ -130,6 +174,20 @@ export const personasApi = {
 
     bulkUpload: (tenantId: string, data: { fileBase64: string; fileName: string; sendWelcomeEmail?: boolean; obraId?: string }) =>
         apiRequest<{ mensaje: string; resultados: any }>(`/personas/carga-masiva?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    // Wizard paso 1: valida el Excel SIN crear nada. Devuelve filas con estado + catálogos.
+    bulkValidate: (tenantId: string, data: { fileBase64: string; fileName: string }) =>
+        apiRequest<{ filas: BulkPreviewRow[]; catalogos: BulkCatalogos; resumen: BulkResumen }>(`/personas/carga-masiva/validar?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    // Wizard paso 2: crea las filas aprobadas (JSON, no el Excel).
+    bulkConfirm: (tenantId: string, data: { filas: BulkRowInput[]; sendWelcomeEmail?: boolean }) =>
+        apiRequest<{ mensaje: string; resultados: BulkResultados }>(`/personas/carga-masiva/confirmar?tenantId=${tenantId}`, {
             method: 'POST',
             body: JSON.stringify(data),
         }),

@@ -211,7 +211,8 @@ export default function ObraDetalle() {
   const [activeTab, setActiveTab] = useState<'resumen' | 'ds44' | 'equipo'>('ds44');
   const [copiedId, setCopiedId] = useState(false);
   const handleCopyId = () => {
-    navigator.clipboard.writeText(obraId || '');
+    // Copia el código que puso el creador; si la obra no tiene código, el ID interno.
+    navigator.clipboard.writeText(obra?.codigo || obraId || '');
     setCopiedId(true);
     setTimeout(() => setCopiedId(false), 1500);
   };
@@ -1733,10 +1734,10 @@ export default function ObraDetalle() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span>{obra.codigo ? `${obra.codigo} · ` : ''}{obra.comuna || '-'}, {obra.region || '-'}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontFamily: 'monospace', fontSize: '0.72rem', opacity: 0.65 }}>{obraId}</span>
+                <span style={{ fontFamily: 'monospace', fontSize: '0.72rem', opacity: 0.65 }}>{obra.codigo || obraId}</span>
                 <button
                   type="button"
-                  title="Copiar ID de obra"
+                  title={obra.codigo ? 'Copiar código de obra' : 'Copiar ID interno (esta obra no tiene código)'}
                   onClick={handleCopyId}
                   style={{
                     background: copiedId ? 'rgba(16,185,129,0.22)' : 'rgba(255,255,255,0.1)',
@@ -1793,12 +1794,12 @@ export default function ObraDetalle() {
                   <LuPencil /> Editar
                 </button>
               </div>
-              <div className="text-muted" style={{ fontSize: '0.8rem' }}>ID de Obra</div>
+              <div className="text-muted" style={{ fontSize: '0.8rem' }}>{obra.codigo ? 'Código de Obra' : 'ID de Obra'}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 'var(--space-3)' }}>
-                <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-secondary)' }}>{obraId}</span>
+                <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-secondary)' }}>{obra.codigo || obraId}</span>
                 <button
                   type="button"
-                  title="Copiar ID de obra"
+                  title={obra.codigo ? 'Copiar código de obra' : 'Copiar ID interno (esta obra no tiene código)'}
                   onClick={handleCopyId}
                   style={{
                     flexShrink: 0,
