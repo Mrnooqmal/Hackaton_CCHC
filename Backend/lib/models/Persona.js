@@ -76,6 +76,13 @@ class Persona {
         // saber en qué obras está la persona). Nunca se escribe a mano: se deriva.
         this.obraIds = this.asignaciones.map((a) => a.obraId);
 
+        // Historial de asignaciones finalizadas (auditoría, append-only). Cada tramo
+        // por obra que termina (egreso o transferencia) queda registrado aquí sin
+        // borrarse: { obraId, cargos, supervisorPersonaId, fechaIngreso, fechaEgreso,
+        // asignadaPor, finalizadaPor, motivo }. No afecta a `asignaciones`/`obraIds`,
+        // que reflejan SOLO las obras activas.
+        this.historialAsignaciones = Array.isArray(data.historialAsignaciones) ? data.historialAsignaciones : [];
+
         // Evidencias persona-level con vigencia (examen de altura, SPDC anual, etc.).
         // Reutilizables entre obras mientras estén vigentes — no se re-piden por obra.
         // [{ tipo, fileKey?, nombre?, emitidoEn?, venceEn?, origenObraId?, estado }]
@@ -152,6 +159,8 @@ class Persona {
                     // una persona puede tener distinto supervisor en cada obra.
                     supervisorPersonaId: a.supervisorPersonaId || null,
                     fechaIngreso: a.fechaIngreso || null,
+                    // Quién realizó la asignación (auditoría). Se conserva al historial.
+                    asignadaPor: a.asignadaPor || null,
                     estado: a.estado || 'activa',
                 }))
                 .filter((a) => a.obraId);
@@ -225,6 +234,7 @@ class Persona {
             cargo: this.cargo,
             obraIds: this.obraIds,
             asignaciones: this.asignaciones,
+            historialAsignaciones: this.historialAsignaciones,
             evidencias: this.evidencias,
             contactoEmergencia: this.contactoEmergencia,
             nivelEscolar: this.nivelEscolar,
@@ -279,6 +289,7 @@ class Persona {
             cargo: this.cargo,
             obraIds: this.obraIds,
             asignaciones: this.asignaciones,
+            historialAsignaciones: this.historialAsignaciones,
             evidencias: this.evidencias,
             contactoEmergencia: this.contactoEmergencia,
             nivelEscolar: this.nivelEscolar,

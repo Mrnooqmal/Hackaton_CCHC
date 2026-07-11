@@ -1817,14 +1817,15 @@ module.exports.personasHandler = async (event) => {
                 }
             }
 
+            const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
             const { persona, esNueva } = await personaService.setAsignacionObra(
                 tenantId, personaId, body.obraId, cargos,
-                supervisorEnviado ? body.supervisorPersonaId : undefined
+                supervisorEnviado ? body.supervisorPersonaId : undefined,
+                solicitanteId
             );
 
             try {
                 if (esNueva && normalizeRol(persona.rol) !== 'admin') {
-                    const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
                     const solicitante = solicitanteId ? await personaService.getById(solicitanteId) : null;
                     await runOnboardingForObra({ tenantId, obraId: body.obraId, persona, solicitante });
                 }
@@ -1835,11 +1836,17 @@ module.exports.personasHandler = async (event) => {
             return success({ message: 'Asignación guardada', persona: persona.toSafeFormat() });
         }
 
-        // DELETE /personas/{id}/asignaciones/{obraId} — Quita al trabajador de una obra.
+        // DELETE /personas/{id}/asignaciones/{obraId} — Quita al trabajador de una obra
+        // (mueve la asignación al historial con egreso + auditoría; no la borra).
         if (method === 'DELETE' && personaId && action === 'asignaciones' && segments[2]) {
             if (!tenantId) return error('tenantId es requerido');
             const obraIdQuitar = segments[2];
-            const persona = await personaService.quitarDeObra(tenantId, personaId, obraIdQuitar);
+            const delBody = (() => { try { return JSON.parse(event.body || '{}'); } catch { return {}; } })();
+            const finalizadaPor = delBody.solicitanteId || delBody.finalizadaPor || event.requestContext?.authorizer?.claims?.sub || null;
+            const persona = await personaService.quitarDeObra(tenantId, personaId, obraIdQuitar, {
+                finalizadaPor,
+                motivo: delBody.motivo || 'egreso',
+            });
 
             // Consistencia por obra: al sacar a la persona de la obra, sus documentos
             // de onboarding de ESA obra se archivan (no se borran: preservan firmas y
@@ -1858,6 +1865,64 @@ module.exports.personasHandler = async (event) => {
             return success({ message: 'Asignación eliminada', persona: persona.toSafeFormat() });
         }
 
+        // POST /personas/{id}/transferir — Mueve a la persona de una obra a otra:
+        // finaliza el tramo en origen (→ historial + archiva docs) y crea la asignación
+        // en destino (+ onboarding). El currículum (cursos/evidencias) se conserva.
+        // Body: { obraOrigen, obraDestino, cargos?, supervisorPersonaId?, solicitanteId?, motivo? }
+        if (method === 'POST' && personaId && action === 'transferir') {
+            if (!tenantId) return error('tenantId es requerido');
+            const body = JSON.parse(event.body || '{}');
+            const { obraOrigen, obraDestino } = body;
+            if (!obraOrigen || !obraDestino) return error('obraOrigen y obraDestino son requeridos');
+            if (obraOrigen === obraDestino) return error('La obra de origen y destino no pueden ser la misma');
+
+            const personaActual = await personaService.getById(personaId);
+            if (!personaActual) return error('Persona no encontrada', 404);
+            if (!personaActual.asignaciones.some((a) => a.obraId === obraOrigen)) {
+                return error('La persona no está asignada a la obra de origen', 400);
+            }
+
+            const tenantDef = await tenantSafe(tenantId);
+            const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
+            const cargos = Array.isArray(body.cargos) ? body.cargos
+                : (body.cargo ? [body.cargo] : personaActual.cargosEnObra(obraOrigen));
+
+            // Cuadrilla: si es trabajador y la obra destino ya tiene supervisores, exige uno.
+            const esTrabajador = tipoDeRol(personaActual, tenantDef) === 'trabajador';
+            const supervisorEnviado = body.supervisorPersonaId !== undefined;
+            if (esTrabajador && !(supervisorEnviado ? body.supervisorPersonaId : null)) {
+                const enDestino = await personaService.listByTenant(tenantId, { obraId: obraDestino });
+                const haySupervisores = enDestino.some((p) => p.personaId !== personaId && tipoDeRol(p, tenantDef) === 'supervisor');
+                if (haySupervisores) return error('Una persona trabajadora debe tener un supervisor (cuadrilla) en la obra destino.', 400);
+            }
+
+            // 1) Finaliza el tramo en origen (mueve al historial) + archiva sus documentos.
+            await personaService.quitarDeObra(tenantId, personaId, obraOrigen, {
+                finalizadaPor: solicitanteId, motivo: body.motivo || 'transferencia',
+            });
+            try {
+                const docs = await getOnboardingDocsForPersonaObra(tenantId, obraOrigen, personaId);
+                for (const d of docs) {
+                    if (d.estado !== 'archivado') await setOnboardingDocEstado(d.documentId, 'archivado').catch(() => {});
+                }
+            } catch (e) { console.error('Archivar docs origen (transferencia):', e.message); }
+
+            // 2) Crea la asignación en destino + onboarding de esa obra.
+            const { persona } = await personaService.setAsignacionObra(
+                tenantId, personaId, obraDestino, cargos,
+                supervisorEnviado ? body.supervisorPersonaId : undefined,
+                solicitanteId
+            );
+            try {
+                if (normalizeRol(persona.rol) !== 'admin') {
+                    const solicitante = solicitanteId ? await personaService.getById(solicitanteId) : null;
+                    await runOnboardingForObra({ tenantId, obraId: obraDestino, persona, solicitante });
+                }
+            } catch (e) { console.error('Onboarding destino (transferencia):', e.message); }
+
+            return success({ message: 'Transferencia realizada', persona: persona.toSafeFormat() });
+        }
+
         // POST /personas/{id}/evidencias — Registra evidencia persona-level con
         // vigencia (examen altura, SPDC…), reutilizable entre obras.
         // Body: { tipo, fileKey?, nombre?, emitidoEn?, venceEn?, origenObraId? }
@@ -1874,6 +1939,46 @@ module.exports.personasHandler = async (event) => {
             if (!tenantId) return error('tenantId es requerido');
             const historial = await eppService.getHistorial({ tenantId, personaId });
             return success(historial);
+        }
+
+        // GET /personas/{id}/capacitaciones — Historial de actividades/capacitaciones
+        // donde la persona asistió (cross-obra). Fuente: tabla Activities. Sirve para
+        // que el supervisor evalúe recapacitación al recibir a la persona en su obra.
+        if (method === 'GET' && personaId && action === 'capacitaciones') {
+            if (!tenantId) return error('tenantId es requerido');
+            const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE || 'Activities';
+            let items = [];
+            try {
+                const res = await docClient.send(new QueryCommand({
+                    TableName: ACTIVITIES_TABLE,
+                    IndexName: 'tenantId-index',
+                    KeyConditionExpression: 'tenantId = :t',
+                    ExpressionAttributeValues: { ':t': tenantId },
+                }));
+                items = res.Items || [];
+            } catch (e) {
+                console.error('No se pudieron leer actividades (capacitaciones):', e.message);
+            }
+            const capacitaciones = items
+                .filter((a) => Array.isArray(a.asistentes) && a.asistentes.some((x) => x.personaId === personaId))
+                .map((a) => {
+                    const asis = a.asistentes.find((x) => x.personaId === personaId);
+                    return {
+                        activityId: a.activityId,
+                        tipo: a.tipo,
+                        tipoDescripcion: a.tipoDescripcion || null,
+                        subtipo: a.subtipo || null,
+                        subtipoDescripcion: a.subtipoDescripcion || null,
+                        titulo: a.titulo,
+                        fecha: a.fecha || null,
+                        obraId: a.obraId || null,
+                        estado: a.estado || null,
+                        firmaToken: asis?.firma?.token || null,
+                        firmadaEn: asis?.firma?.fecha || null,
+                    };
+                })
+                .sort((x, y) => String(y.fecha || '').localeCompare(String(x.fecha || '')));
+            return success({ capacitaciones });
         }
 
         // POST /personas/{id}/epp — Crear entrega/reposicion de EPP (solo instancia superior)

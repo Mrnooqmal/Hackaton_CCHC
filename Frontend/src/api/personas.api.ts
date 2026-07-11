@@ -38,6 +38,21 @@ export interface BulkCatalogos {
     supervisores: Array<{ rut: string; nombre: string; enSistema: boolean }>;
 }
 export interface BulkResumen { total: number; ok: number; advertencias: number; errores: number }
+
+// Capacitación/actividad a la que asistió la persona (historial cross-obra).
+export interface Capacitacion {
+    activityId: string;
+    tipo: string;
+    tipoDescripcion: string | null;
+    subtipo: string | null;
+    subtipoDescripcion: string | null;
+    titulo: string;
+    fecha: string | null;
+    obraId: string | null;
+    estado: string | null;
+    firmaToken: string | null;
+    firmadaEn: string | null;
+}
 export interface BulkResultados {
     creados: Array<{ fila: number; personaId: string; rut: string; passwordTemporal?: string }>;
     errores: Array<{ fila: number; rut?: string; error: string }>;
@@ -114,11 +129,25 @@ export const personasApi = {
             body: JSON.stringify({ obraId, cargos, solicitanteId, ...(supervisorPersonaId !== undefined ? { supervisorPersonaId } : {}) }),
         }),
 
-    // Quita al trabajador de una obra (no borra evidencias persona-level).
-    quitarAsignacion: (tenantId: string, id: string, obraId: string) =>
+    // Quita al trabajador de una obra (mueve la asignación al historial con auditoría;
+    // conserva evidencias persona-level). opts.solicitanteId = quién lo saca.
+    quitarAsignacion: (tenantId: string, id: string, obraId: string, opts?: { solicitanteId?: string; motivo?: string }) =>
         apiRequest<{ message: string; persona: PersonaResponse }>(`/personas/${id}/asignaciones/${obraId}?tenantId=${tenantId}`, {
             method: 'DELETE',
+            ...(opts ? { body: JSON.stringify(opts) } : {}),
         }),
+
+    // Transfiere a la persona de una obra a otra: finaliza el tramo en origen
+    // (→ historial + archiva docs) y crea la asignación en destino (+ onboarding).
+    transferir: (tenantId: string, id: string, data: { obraOrigen: string; obraDestino: string; cargos?: string[]; supervisorPersonaId?: string | null; solicitanteId?: string; motivo?: string }) =>
+        apiRequest<{ message: string; persona: PersonaResponse }>(`/personas/${id}/transferir?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    // Historial de capacitaciones/actividades (cross-obra) donde la persona asistió.
+    getCapacitaciones: (tenantId: string, id: string) =>
+        apiRequest<{ capacitaciones: Capacitacion[] }>(`/personas/${id}/capacitaciones?tenantId=${tenantId}`),
 
     // Registra evidencia persona-level con vigencia (examen altura, SPDC…),
     // reutilizable entre obras mientras esté vigente.

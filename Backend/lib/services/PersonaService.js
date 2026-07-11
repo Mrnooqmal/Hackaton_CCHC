@@ -226,7 +226,7 @@ class PersonaService {
     async actualizar(tenantId, personaId, updates) {
         const allowedFields = ['nombre', 'apellido', 'apellidoPaterno', 'apellidoMaterno', 'email', 'telefono',
             'fechaNacimiento', 'fotoPerfil', 'notificacionesSms',
-            'rol', 'cargo', 'estado', 'preferencias', 'obraIds', 'asignaciones', 'evidencias',
+            'rol', 'cargo', 'estado', 'preferencias', 'obraIds', 'asignaciones', 'historialAsignaciones', 'evidencias',
             'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44',
             'contactoEmergencia', 'nivelEscolar', 'cursos'];
 
@@ -278,7 +278,7 @@ class PersonaService {
      * lista COMPLETA de cargos en esa obra (multi-cargo). Devuelve la persona y
      * los obraId nuevos (para que el caller dispare onboarding solo en esos).
      */
-    async setAsignacionObra(tenantId, personaId, obraId, cargos = [], supervisorPersonaId = undefined) {
+    async setAsignacionObra(tenantId, personaId, obraId, cargos = [], supervisorPersonaId = undefined, asignadaPor = undefined) {
         const persona = await this.getById(personaId);
         if (!persona) throw new Error('Persona no encontrada');
         const yaAsignada = persona.asignaciones.some((a) => a.obraId === obraId);
@@ -292,18 +292,41 @@ class PersonaService {
                 ? (supervisorPersonaId || null)
                 : (prev?.supervisorPersonaId || null),
             fechaIngreso: prev?.fechaIngreso || new Date().toISOString(),
+            // Quién asignó: al crear se toma el actor; al editar se conserva el original.
+            asignadaPor: yaAsignada ? (prev?.asignadaPor || null) : (asignadaPor || null),
             estado: 'activa',
         });
         const actualizada = await this._persistAsignaciones(tenantId, personaId, asignaciones);
         return { persona: actualizada, esNueva: !yaAsignada };
     }
 
-    /** Quita la asignación de la persona a una obra (sin borrar evidencias persona-level). */
-    async quitarDeObra(tenantId, personaId, obraId) {
+    /**
+     * Quita la asignación de la persona a una obra. NO la borra: la mueve a
+     * `historialAsignaciones[]` con egreso + auditoría (finalizadaPor, motivo).
+     * Las evidencias persona-level se conservan intactas.
+     * @param {{ finalizadaPor?: string, motivo?: string }} opts
+     */
+    async quitarDeObra(tenantId, personaId, obraId, opts = {}) {
         const persona = await this.getById(personaId);
         if (!persona) throw new Error('Persona no encontrada');
+        const asignacion = persona.asignaciones.find((a) => a.obraId === obraId);
         const asignaciones = persona.asignaciones.filter((a) => a.obraId !== obraId);
-        return this._persistAsignaciones(tenantId, personaId, asignaciones);
+        const obraIds = [...new Set(asignaciones.map((a) => a.obraId))];
+
+        const historialAsignaciones = [...(persona.historialAsignaciones || [])];
+        if (asignacion) {
+            historialAsignaciones.push({
+                obraId: asignacion.obraId,
+                cargos: asignacion.cargos || [],
+                supervisorPersonaId: asignacion.supervisorPersonaId || null,
+                fechaIngreso: asignacion.fechaIngreso || null,
+                fechaEgreso: new Date().toISOString(),
+                asignadaPor: asignacion.asignadaPor || null,
+                finalizadaPor: opts.finalizadaPor || null,
+                motivo: opts.motivo || 'egreso',
+            });
+        }
+        return this.actualizar(tenantId, personaId, { asignaciones, obraIds, historialAsignaciones });
     }
 
     /**

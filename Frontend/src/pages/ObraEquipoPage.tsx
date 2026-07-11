@@ -12,7 +12,7 @@ import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import {
     FiSearch, FiUserPlus, FiCheck, FiX, FiChevronDown,
     FiAlertTriangle, FiUsers, FiEdit2, FiList, FiGrid,
-    FiUser, FiPenTool,
+    FiUser, FiPenTool, FiArrowRight,
 } from 'react-icons/fi';
 import { LuCircleCheck } from 'react-icons/lu';
 
@@ -252,6 +252,14 @@ export default function ObraEquipoPage() {
     const [assignSupervisor, setAssignSupervisor] = useState<Record<string, string>>({});
     const [firmaOpen, setFirmaOpen] = useState(false);
     const [firmaWorkerId, setFirmaWorkerId] = useState<string | undefined>(undefined);
+    // Transferencia de una persona a otra obra.
+    const [allObras, setAllObras] = useState<any[]>([]);
+    const [transferWorker, setTransferWorker] = useState<any | null>(null);
+    const [transferDest, setTransferDest] = useState('');
+    const [transferSup, setTransferSup] = useState('');
+    const [transferMotivo, setTransferMotivo] = useState('');
+    const [transferSups, setTransferSups] = useState<Array<{ personaId: string; nombre: string; apellido?: string }>>([]);
+    const [transferring, setTransferring] = useState(false);
     const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set());
 
     // View + drag state
@@ -349,6 +357,53 @@ export default function ObraEquipoPage() {
         return w.cargo ? [w.cargo] : [];
     };
     const supervisorDe = (w: any): string | null => asignacionDe(w)?.supervisorPersonaId || null;
+
+    // Obras destino para transferir (todas las del tenant).
+    useEffect(() => {
+        obrasApi.list().then((res) => {
+            if (res.success && res.data) {
+                const arr = Array.isArray(res.data) ? res.data : ((res.data as any).obras || []);
+                setAllObras(arr);
+            }
+        }).catch(() => {});
+    }, []);
+
+    // Supervisores de la obra destino (para elegir cuadrilla al transferir).
+    useEffect(() => {
+        if (!transferDest) { setTransferSups([]); return; }
+        workersApi.list({ obraId: transferDest }).then((res) => {
+            const arr = (res.success && res.data) ? (res.data as any[]) : [];
+            setTransferSups(arr.filter((p) => rolTipoDe(p) === 'supervisor').map((p) => ({ personaId: p.personaId, nombre: p.nombre, apellido: p.apellido })));
+        }).catch(() => setTransferSups([]));
+        setTransferSup('');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transferDest]);
+
+    const openTransfer = (w: any) => {
+        setTransferWorker(w); setTransferDest(''); setTransferSup(''); setTransferMotivo('');
+    };
+
+    const handleTransferir = async () => {
+        if (!transferWorker || !obraId || !transferDest) return;
+        setTransferring(true);
+        try {
+            const res = await workersApi.transferir(transferWorker.personaId, {
+                obraOrigen: obraId,
+                obraDestino: transferDest,
+                supervisorPersonaId: transferSup || undefined,
+                solicitanteId: user?.personaId || user?.userId,
+                motivo: transferMotivo || 'transferencia',
+            });
+            if (res.success) {
+                showToast(`${transferWorker.nombre} transferido`);
+                setTransferWorker(null);
+                await reloadWorkers();
+            } else {
+                setError(res.error || 'No se pudo transferir');
+            }
+        } catch { setError('No se pudo transferir'); }
+        finally { setTransferring(false); }
+    };
 
     const assigned = useMemo(
         () => workers.filter((w) => Array.isArray(w.obraIds) && w.obraIds.includes(obraId)),
@@ -856,6 +911,15 @@ export default function ObraEquipoPage() {
                                 </button>
                             )}
                             <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ color: '#006edc' }}
+                                disabled={updating === w.personaId || w.rol === 'admin'}
+                                onClick={() => openTransfer(w)}
+                                title="Mover a otra obra (conserva historial y currículum)"
+                            >
+                                <FiArrowRight size={13} /> Transferir
+                            </button>
+                            <button
                                 className="btn btn-ghost btn-sm eq2-baja-btn"
                                 disabled={updating === w.personaId || w.rol === 'admin'}
                                 onClick={() => handleBaja(w)}
@@ -1131,6 +1195,64 @@ export default function ObraEquipoPage() {
                 initialWorkerId={firmaWorkerId}
             />
 
+            {/* Modal: transferir a otra obra */}
+            <Modal
+                isOpen={!!transferWorker}
+                onClose={() => setTransferWorker(null)}
+                title="Transferir a otra obra"
+                subtitle={transferWorker ? `${transferWorker.nombre} ${transferWorker.apellido || ''}`.trim() : ''}
+                size="sm"
+                footer={
+                    <>
+                        <button className="btn btn-secondary" onClick={() => setTransferWorker(null)} disabled={transferring}>Cancelar</button>
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleTransferir}
+                            disabled={transferring || !transferDest || (transferWorker && rolTipoDe(transferWorker) === 'trabajador' && transferSups.length > 0 && !transferSup)}
+                        >
+                            {transferring ? 'Transfiriendo…' : 'Transferir'}
+                        </button>
+                    </>
+                }
+            >
+                {transferWorker && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', background: 'var(--surface-elevated)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', lineHeight: 1.5 }}>
+                            Se archiva el onboarding de la obra actual (queda para auditoría) y se genera el de la obra destino. El currículum (cursos, evidencias, capacitaciones) se conserva.
+                        </div>
+                        <label className="eq-ctrl eq-ctrl--wide">
+                            <span className="eq-ctrl-label">Obra destino *</span>
+                            <select className="eq-select" value={transferDest} onChange={(e) => setTransferDest(e.target.value)}>
+                                <option value="">Selecciona una obra…</option>
+                                {allObras
+                                    .filter((o) => o.obraId !== obraId && !(transferWorker.obraIds || []).includes(o.obraId))
+                                    .map((o) => <option key={o.obraId} value={o.obraId}>{o.nombre}{o.codigo ? ` (${o.codigo})` : ''}</option>)}
+                            </select>
+                        </label>
+                        {transferDest && rolTipoDe(transferWorker) === 'trabajador' && (
+                            transferSups.length > 0 ? (
+                                <label className="eq-ctrl eq-ctrl--wide">
+                                    <span className="eq-ctrl-label">Cuadrilla (supervisor) *</span>
+                                    <select className="eq-select" value={transferSup} onChange={(e) => setTransferSup(e.target.value)}>
+                                        <option value="">Selecciona supervisor…</option>
+                                        {transferSups.map((s) => <option key={s.personaId} value={s.personaId}>{s.nombre} {s.apellido || ''}</option>)}
+                                    </select>
+                                </label>
+                            ) : (
+                                <div className="eq-sup-warn">
+                                    <FiAlertTriangle size={14} style={{ flexShrink: 0 }} />
+                                    <span>La obra destino aún no tiene supervisores; quedará sin cuadrilla y se le asigna después.</span>
+                                </div>
+                            )
+                        )}
+                        <label className="eq-ctrl eq-ctrl--wide">
+                            <span className="eq-ctrl-label">Motivo (opcional)</span>
+                            <input className="eq-select" value={transferMotivo} onChange={(e) => setTransferMotivo(e.target.value)} placeholder="Ej. refuerzo de cuadrilla" />
+                        </label>
+                    </div>
+                )}
+            </Modal>
+
             {/* Popover de acciones por card asignado */}
             {cardAction && createPortal(
                 <>
@@ -1327,6 +1449,15 @@ export default function ObraEquipoPage() {
                                     style={{ marginRight: 'auto' }}
                                 >
                                     <FiX size={13} /> Dar de baja
+                                </button>
+                                <button
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ color: '#006edc' }}
+                                    disabled={updating === w.personaId || w.rol === 'admin'}
+                                    onClick={() => { setEditModal(null); openTransfer(w); }}
+                                    title="Mover a otra obra (conserva historial y currículum)"
+                                >
+                                    <FiArrowRight size={13} /> Transferir
                                 </button>
                                 {isDirty && (
                                     <button

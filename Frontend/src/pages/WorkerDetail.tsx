@@ -32,6 +32,7 @@ import {
     obrasApi,
     type Worker as ApiWorker,
     type DigitalSignature,
+    type Capacitacion,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
@@ -132,6 +133,8 @@ export default function WorkerDetail() {
     const [vigSaving, setVigSaving] = useState(false);
     // Historial de EPP (Art. 13) — entregas/reposiciones validadas por instancia superior
     const [eppHistorial, setEppHistorial] = useState<any[]>([]);
+    // Historial de capacitaciones/actividades (cross-obra) para revisar recapacitación.
+    const [capacitaciones, setCapacitaciones] = useState<Capacitacion[]>([]);
     const [eppModalOpen, setEppModalOpen] = useState(false);
     const [eppForm, setEppForm] = useState({ esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
     const [eppItems, setEppItems] = useState<EppItemDraft[]>([{ descripcion: '', cantidad: 1, talla: '' }]);
@@ -291,13 +294,28 @@ export default function WorkerDetail() {
         }
     };
 
+    const loadCapacitaciones = async (personaId: string) => {
+        try {
+            const res = await personasApi.getCapacitaciones(authTenantId, personaId);
+            if (res.success && res.data) setCapacitaciones(res.data.capacitaciones || []);
+        } catch (err) {
+            console.error('Error cargando capacitaciones:', err);
+        }
+    };
+
     useEffect(() => {
-        if (worker?.personaId) loadEppHistorial(worker.personaId);
+        if (worker?.personaId) { loadEppHistorial(worker.personaId); loadCapacitaciones(worker.personaId); }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [worker?.personaId]);
 
     useEffect(() => {
-        const ids: string[] = (worker as any)?.obraIds || [];
+        // Obras a resolver: activas + del historial + de las capacitaciones (cross-obra),
+        // para que el historial/currículum muestre el nombre y no el UUID.
+        const ids: string[] = Array.from(new Set<string>([
+            ...(worker?.obraIds || []),
+            ...(worker?.historialAsignaciones || []).map((h) => h.obraId),
+            ...capacitaciones.map((c) => c.obraId).filter((x): x is string => !!x),
+        ].filter(Boolean)));
         if (!ids.length) return;
         Promise.allSettled(ids.map((id) => obrasApi.getById(id))).then((results) => {
             const map: Record<string, { nombre?: string; codigo?: string }> = {};
@@ -310,7 +328,11 @@ export default function WorkerDetail() {
             });
             setObrasInfo(map);
         });
-    }, [(worker as any)?.obraIds?.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [
+        worker?.obraIds?.join(','),
+        (worker?.historialAsignaciones || []).map((h) => h.obraId).join(','),
+        capacitaciones.map((c) => c.obraId).join(','),
+    ]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const resetEppForm = () => {
         setEppForm({ esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
@@ -903,6 +925,78 @@ Generado por PrevencionApp
                                 </div>
                             )}
                         </div>
+
+                        {/* ── Historial de obras (auditoría) ── */}
+                        {Array.isArray(worker.historialAsignaciones) && worker.historialAsignaciones.length > 0 && (
+                            <div className="wd-side-card">
+                                <div className="wd-side-title">Historial de obras</div>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    {worker.historialAsignaciones.slice().reverse().map((h, i) => {
+                                        const oi = obrasInfo[h.obraId];
+                                        const fmt = (d?: string | null) => d ? new Date(d).toLocaleDateString('es-CL') : '—';
+                                        return (
+                                            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 'var(--space-3) 0', borderTop: i > 0 ? '1px solid var(--surface-border)' : 'none' }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{oi?.nombre || oi?.codigo || h.obraId}</div>
+                                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                                                        {(h.cargos || []).join(', ') || 'sin cargo'} · {fmt(h.fechaIngreso)} → {fmt(h.fechaEgreso)}
+                                                    </div>
+                                                </div>
+                                                <span className={`badge badge-sm ${h.motivo === 'transferencia' ? 'badge-info' : 'badge-warning'}`}>{h.motivo || 'egreso'}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Currículum: cursos, evidencias y capacitaciones (para recapacitación) ── */}
+                        <div className="wd-side-card">
+                            <div className="wd-side-title">Currículum</div>
+
+                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '4px 0 6px' }}>Cursos y certificaciones</div>
+                            {Array.isArray(worker.cursos) && worker.cursos.length > 0 ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 'var(--space-3)' }}>
+                                    {worker.cursos.map((c, i) => <span key={i} className="badge badge-sm badge-neutral">{c.nombre}</span>)}
+                                </div>
+                            ) : <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>Sin cursos registrados.</div>}
+
+                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '4px 0 6px' }}>Evidencias vigentes</div>
+                            {Array.isArray(worker.evidencias) && worker.evidencias.length > 0 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 'var(--space-3)' }}>
+                                    {worker.evidencias.map((e, i) => {
+                                        const vencida = e.venceEn ? new Date(e.venceEn).getTime() < Date.now() : false;
+                                        return (
+                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
+                                                <span style={{ flex: 1, minWidth: 0 }}>{e.nombre || e.tipo}</span>
+                                                {e.venceEn && <span className={`badge badge-sm ${vencida ? 'badge-danger' : 'badge-success'}`}>{vencida ? 'Vencida' : 'Vigente'} · {new Date(e.venceEn).toLocaleDateString('es-CL')}</span>}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>Sin evidencias registradas.</div>}
+
+                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '4px 0 6px' }}>Capacitaciones y actividades</div>
+                            {capacitaciones.length > 0 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    {capacitaciones.map((c) => {
+                                        const oi = c.obraId ? obrasInfo[c.obraId] : null;
+                                        return (
+                                            <div key={c.activityId} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', borderTop: '1px solid var(--surface-border)' }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: '0.86rem', fontWeight: 500 }}>{c.subtipoDescripcion || c.tipoDescripcion || c.titulo}</div>
+                                                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 1 }}>
+                                                        {c.fecha ? new Date(c.fecha).toLocaleDateString('es-CL') : '—'}
+                                                        {oi && <> · {oi.nombre || oi.codigo}</>}
+                                                    </div>
+                                                </div>
+                                                <Link to={`/activities?activity=${c.activityId}`} className="btn btn-ghost btn-sm" style={{ fontSize: '0.72rem', flexShrink: 0 }}>Ver</Link>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Sin capacitaciones registradas.</div>}
+                        </div>
                     </div>
                 )}
 
@@ -1246,6 +1340,20 @@ Generado por PrevencionApp
                     border-left: 3px solid #006edc;
                     background: rgba(0,110,220,0.04);
                     border-radius: 0 var(--radius-md) var(--radius-md) 0;
+                }
+
+                /* ── Tarjetas laterales (historial de obras, currículum) ── */
+                .wd-side-card {
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    background: var(--surface-card);
+                    padding: var(--space-4) var(--space-5);
+                }
+                .wd-side-title {
+                    font-weight: 700;
+                    font-size: var(--text-base);
+                    color: var(--text-primary);
+                    margin-bottom: var(--space-3);
                 }
 
                 /* ── DS44 panel ── */
