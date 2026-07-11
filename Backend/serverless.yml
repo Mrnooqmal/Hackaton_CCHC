@@ -1,4 +1,7 @@
-service: hackatonbackendv2
+# Service parametrizable: default 'hackatonbackendv2' (backend de DESARROLLO).
+# Para la prueba en vivo/producción (EBCO): SLS_SERVICE=hackatonbackendv2-testeo
+# (o usar `npm run deploy:testeo`). Ver DEPLOY.md. Nunca editar esta línea a mano.
+service: ${env:SLS_SERVICE, 'hackatonbackendv2'}
 
 plugins:
   - serverless-prune-plugin
@@ -12,6 +15,12 @@ custom:
     httpPort: 3001
     lambdaPort: 3002
   bucketName: ${self:service}-documents-v245-${self:provider.stage}-${aws:accountId}
+  # Protección de datos: 'Retain' SOLO en producción (-testeo) para que un remove/
+  # reemplazo de stack no borre tablas ni buckets. En dev = 'Delete' (teardown limpio).
+  # Se resuelve por nombre de service. Ver DEPLOY.md.
+  deletionPolicies:
+    hackatonbackendv2-testeo: Retain
+  deletionPolicy: ${self:custom.deletionPolicies.${self:service}, 'Delete'}
 
 provider:
   name: aws
@@ -645,6 +654,8 @@ resources:
     # ==========================================
     DocumentsBucket:
       Type: AWS::S3::Bucket
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         BucketName: ${self:custom.bucketName}
         CorsConfiguration:
@@ -656,6 +667,8 @@ resources:
 
     IncidentEvidenceBucket:
       Type: AWS::S3::Bucket
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         BucketName: ${self:provider.environment.INCIDENT_EVIDENCE_BUCKET}
         CorsConfiguration:
@@ -681,6 +694,8 @@ resources:
     # Tenants - Empresas clientes del SaaS
     TenantsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.TENANTS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -715,6 +730,8 @@ resources:
     # Obras - Proyectos de construccion por tenant
     ObrasTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.OBRAS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -741,6 +758,8 @@ resources:
     # Personas - Identidad unificada (reemplaza Users + Workers)
     PersonasTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.PERSONAS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -791,6 +810,8 @@ resources:
     # Documents Table - with tenant and obra GSIs
     DocumentsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.DOCUMENTS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -814,6 +835,8 @@ resources:
     # Suggestions Table
     SuggestionsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SUGGESTIONS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -841,6 +864,8 @@ resources:
     # Activities Table - with tenant GSI
     ActivitiesTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.ACTIVITIES_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -863,6 +888,8 @@ resources:
     # Incidents Table - rename empresaId to tenantId
     IncidentsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.INCIDENTS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -889,6 +916,8 @@ resources:
     # Signatures Table - with tenant and persona GSIs
     SignaturesTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SIGNATURES_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -927,6 +956,8 @@ resources:
     # Signature Requests Table - with tenant GSI
     SignatureRequestsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SIGNATURE_REQUESTS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -949,6 +980,8 @@ resources:
     # Surveys Table - with tenant GSI
     SurveysTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SURVEYS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -971,6 +1004,8 @@ resources:
     # Inbox Messages Table
     InboxTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.INBOX_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -1001,6 +1036,8 @@ resources:
     # Sessions Table - with TTL
     SessionsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SESSIONS_TABLE}
         BillingMode: PAY_PER_REQUEST
