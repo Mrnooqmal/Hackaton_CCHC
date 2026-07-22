@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
+import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido } from '../utils/documentoFirmado';
 import { LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl, PageHeader } from '../components/ui';
@@ -929,13 +930,25 @@ export default function ObraDetalle() {
     }
   };
 
+  // Abre el PDF de un documento: si ya tiene firmas, la versión con el anexo
+  // de firmas estampado (única con validez legal); si no, el archivo
+  // original. La pestaña se abre en el click (ver utils/documentoFirmado)
+  // para que el navegador no la bloquee mientras se espera el estampado.
+  const abrirDocumentoFirmable = (params: { documentId?: string | null; firmas?: any[]; fileKey?: string | null }) =>
+    abrirDocumentoFirmableCompartido({
+      ...params,
+      onPreparando: () => setObraToast('Preparando documento firmado, esto puede tardar unos segundos...'),
+      onError: (mensaje) => alert(mensaje),
+    });
+
   const handlePreviewDoDocument = async () => {
-    const fileKey = selectedDoDetail?.s3Key || selectedDoDetail?.archivoUrl;
-    if (!fileKey) return;
     setDoPreviewing(true);
     try {
-      const res = await uploadsApi.getDownloadUrl(fileKey);
-      if (res.success && res.data?.downloadUrl) window.open(res.data.downloadUrl, '_blank');
+      await abrirDocumentoFirmable({
+        documentId: selectedDoDetail?.documentId,
+        firmas: selectedDoDetail?.firmas,
+        fileKey: selectedDoDetail?.s3Key || selectedDoDetail?.archivoUrl,
+      });
     } catch (error) {
       console.error('Error abriendo documento DO:', error);
     } finally {
@@ -1402,14 +1415,13 @@ export default function ObraDetalle() {
   };
 
   const handlePreviewDocumentFromCard = async (doc: Ds44Item) => {
-    const fileKey = doc.document?.s3Key || doc.document?.archivoUrl;
-    if (!fileKey) return;
     setDs44Previewing(true);
     try {
-      const res = await uploadsApi.getDownloadUrl(fileKey);
-      if (res.success && res.data?.downloadUrl) {
-        window.open(res.data.downloadUrl, '_blank');
-      }
+      await abrirDocumentoFirmable({
+        documentId: doc.documentId || doc.document?.documentId,
+        firmas: doc.document?.firmas,
+        fileKey: doc.document?.s3Key || doc.document?.archivoUrl,
+      });
     } catch (error) {
       console.error('Error opening document:', error);
     } finally {
@@ -1432,14 +1444,13 @@ export default function ObraDetalle() {
   };
 
   const handlePreviewDocument = async () => {
-    const fileKey = selectedDs44Detail?.s3Key || selectedDs44Detail?.archivoUrl;
-    if (!fileKey) return;
     setDs44Previewing(true);
     try {
-      const res = await uploadsApi.getDownloadUrl(fileKey);
-      if (res.success && res.data?.downloadUrl) {
-        window.open(res.data.downloadUrl, '_blank');
-      }
+      await abrirDocumentoFirmable({
+        documentId: selectedDs44Doc?.documentId || selectedDs44Detail?.documentId,
+        firmas: selectedDs44Detail?.firmas,
+        fileKey: selectedDs44Detail?.s3Key || selectedDs44Detail?.archivoUrl,
+      });
     } catch (error) {
       console.error('Error opening document:', error);
     } finally {

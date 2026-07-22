@@ -17,6 +17,7 @@ import {
     FiUser
 } from 'react-icons/fi';
 import { documentsApi, uploadsApi, tenantsApi, type Document } from '../api/client';
+import { abrirDocumentoFirmable } from '../utils/documentoFirmado';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
@@ -315,19 +316,17 @@ export default function DocumentsRepository() {
     const [preview, setPreview] = useState<{ url: string | null; name: string; doc: RepoDocument } | null>(null);
 
     const handleDownload = async (doc: RepoDocument) => {
-        const fileKey = doc.s3Key || doc.archivoUrl;
-        if (!fileKey) return;
-        try {
-            const response = await uploadsApi.getDownloadUrl(fileKey);
-            if (response.success && response.data?.downloadUrl) {
-                window.open(response.data.downloadUrl, '_blank');
-            } else {
-                toast.error('No se pudo descargar el archivo');
-            }
-        } catch (err) {
-            console.error('Download error:', err);
-            toast.error('No se pudo descargar el archivo');
-        }
+        // Documentos con firmas: se descarga la versión con el anexo de
+        // firmas estampado (validez legal), no el archivo original. La
+        // pestaña se abre ya en el click (ver utils/documentoFirmado) para
+        // que el navegador no la bloquee mientras se espera el estampado.
+        await abrirDocumentoFirmable({
+            documentId: doc.documentId,
+            firmas: doc.firmas,
+            fileKey: doc.s3Key || doc.archivoUrl,
+            onPreparando: () => toast.info('Preparando documento firmado, esto puede tardar unos segundos...'),
+            onError: (mensaje) => toast.error(mensaje),
+        });
     };
 
     const handlePreview = async (doc: RepoDocument) => {

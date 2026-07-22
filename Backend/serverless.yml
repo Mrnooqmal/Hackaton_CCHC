@@ -46,6 +46,7 @@ provider:
     DOCUMENTS_BUCKET: ${self:custom.bucketName}
     INCIDENT_EVIDENCE_BUCKET: ${self:service}-evidence-${self:provider.stage}-${aws:accountId}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
+    DOCUMENT_STAMP_QUEUE_URL: !Ref DocumentStampQueue
     # --- External ---
     SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
     # SMS (AWS SNS). SMS_ENABLED=false apaga el envío sin tocar código (útil en
@@ -133,6 +134,14 @@ provider:
             - s3:DeleteObject
           Resource:
             - !Sub 'arn:aws:s3:::${self:custom.bucketName}/*'
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - !GetAtt DocumentStampQueue.Arn
         - Effect: Allow
           Action:
             - sns:Publish
@@ -413,6 +422,21 @@ functions:
           path: /documents/{id}/sign-assisted
           method: POST
 
+  downloadSignedDocument:
+    handler: handlers/documents/handler.downloadFirmado
+    events:
+      - httpApi:
+          path: /documents/{id}/download-firmado
+          method: GET
+
+  stampSignedDocument:
+    handler: handlers/documents/handler.stamp
+    timeout: 60
+    events:
+      - sqs:
+          arn: !GetAtt DocumentStampQueue.Arn
+          batchSize: 1
+
   # ========================================
   # SIGNATURES (Firmas Digitales)
   # ========================================
@@ -686,6 +710,33 @@ resources:
       Properties:
         TopicName: ${self:provider.environment.INCIDENT_NOTIFICATION_TOPIC}
         DisplayName: Notificaciones de Incidentes y Accidentes
+
+    # ==========================================
+    # SQS - Estampado de PDF firmado (serializado por documento)
+    # ==========================================
+    # Cola FIFO: el estampado se dispara "bajo demanda" (al pedir la descarga
+    # del PDF firmado) pero varios triggers casi simultáneos sobre el MISMO
+    # documento (varias descargas pedidas a la vez, o varias firmas llegando
+    # justo cuando el documento se completa) deben serializarse para no
+    # regenerar el PDF en paralelo y pisarse entre sí. MessageGroupId =
+    # documentId garantiza que SQS FIFO procese de a un job por documento.
+    DocumentStampDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-document-stamp-dlq-${self:provider.stage}.fifo
+        FifoQueue: true
+        MessageRetentionPeriod: 1209600 # 14 días
+
+    DocumentStampQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-document-stamp-${self:provider.stage}.fifo
+        FifoQueue: true
+        ContentBasedDeduplication: false
+        VisibilityTimeout: 120
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt DocumentStampDLQ.Arn
+          maxReceiveCount: 3
 
     # ==========================================
     # MULTI-TENANT CORE TABLES

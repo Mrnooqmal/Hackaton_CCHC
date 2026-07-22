@@ -21,6 +21,7 @@ import {
     FiChevronUp
 } from 'react-icons/fi';
 import { documentsApi, workersApi, uploadsApi, type Document, type Worker } from '../api/client';
+import { abrirDocumentoFirmable } from '../utils/documentoFirmado';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
@@ -394,18 +395,18 @@ export default function Documents() {
         return () => { cancelled = true; };
     }, [showDetailModal, selectedDocument]);
 
-    const handleDownloadFile = async (fileKey: string) => {
-        try {
-            const response = await uploadsApi.getDownloadUrl(fileKey);
-            if (response.success && response.data?.downloadUrl) {
-                window.open(response.data.downloadUrl, '_blank');
-            } else {
-                toast.error('Error al obtener el archivo');
-            }
-        } catch (error) {
-            console.error('Error downloading file:', error);
-            toast.error('Error al descargar archivo');
-        }
+    const handleDownloadFile = async (doc: Document) => {
+        // Documentos con firmas: se descarga la versión con el anexo de
+        // firmas estampado (validez legal), no el archivo original. La
+        // pestaña se abre ya en el click (ver utils/documentoFirmado) para
+        // que el navegador no la bloquee mientras se espera el estampado.
+        await abrirDocumentoFirmable({
+            documentId: doc.documentId,
+            firmas: doc.firmas,
+            fileKey: doc.archivoUrl,
+            onPreparando: () => toast.info('Preparando documento firmado, esto puede tardar unos segundos...'),
+            onError: (mensaje) => toast.error(mensaje),
+        });
     };
 
     const formatDateTime = (value?: string | null) => {
@@ -795,7 +796,7 @@ export default function Documents() {
                                                         {doc.archivoUrl && (
                                                             <button
                                                                 className="btn btn-ghost btn-icon btn-sm"
-                                                                onClick={() => handleDownloadFile(doc.archivoUrl!)}
+                                                                onClick={() => handleDownloadFile(doc)}
                                                                 title="Descargar archivo"
                                                             >
                                                                 <FiDownload />
@@ -1042,7 +1043,7 @@ export default function Documents() {
                                         <div className="flex gap-2">
                                             <button
                                                 className="btn btn-primary"
-                                                onClick={() => handleDownloadFile(selectedDocument.archivoUrl!)}
+                                                onClick={() => handleDownloadFile(selectedDocument)}
                                             >
                                                 <FiDownload />
                                                 Descargar Documento

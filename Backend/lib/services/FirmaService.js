@@ -287,6 +287,53 @@ class FirmaService {
             ip: firma.ipAddress
         };
     }
+
+    /**
+     * Construye las piezas (SET clauses / names / values) de una UpdateCommand
+     * atómica para registrar firmas sobre un documento. Usada por CUALQUIER
+     * endpoint que marque un documento como firmado (documents.sign,
+     * documents.signAssisted, documents.signBulk, signatures.create vía
+     * SignatureRequests) para que todos alimenten el mismo array `firmas`
+     * (fuente para el estampado del PDF) de forma consistente.
+     *
+     * 'firmas' se actualiza con list_append (DynamoDB lo resuelve server-side
+     * sobre el valor actual, sin necesitar leer-antes-de-escribir) y cada
+     * asignación tocada se actualiza por índice (asignaciones[idx].campo), no
+     * reescribiendo el array completo. Así, firmas concurrentes sobre el mismo
+     * documento (varias personas firmando casi al mismo tiempo) no se pisan
+     * entre sí: cada UpdateItem solo toca los paths que le corresponden.
+     */
+    static buildFirmaUpdateParts({ documentData, nuevasFirmas, asignacionUpdates = [] }) {
+        const now = new Date().toISOString();
+        const names = { '#estado': 'estado' };
+        const values = {
+            ':nuevasFirmas': nuevasFirmas,
+            ':emptyList': [],
+            ':updatedAt': now,
+            ':firmado': 'firmado',
+        };
+        const setClauses = [
+            'firmas = list_append(if_not_exists(firmas, :emptyList), :nuevasFirmas)',
+            'updatedAt = :updatedAt',
+        ];
+
+        const asignaciones = documentData.asignaciones || [];
+        asignacionUpdates.forEach((upd, i) => {
+            const idx = asignaciones.findIndex((a) => a.personaId === upd.personaId && a.estado === 'pendiente');
+            if (idx === -1) return;
+            const fechaKey = `:fechaFirma${i}`;
+            values[fechaKey] = now;
+            setClauses.push(`asignaciones[${idx}].#estado = :firmado`);
+            setClauses.push(`asignaciones[${idx}].fechaFirma = ${fechaKey}`);
+            if (upd.asistidoPor) {
+                const apKey = `:asistidoPor${i}`;
+                values[apKey] = upd.asistidoPor;
+                setClauses.push(`asignaciones[${idx}].asistidoPor = ${apKey}`);
+            }
+        });
+
+        return { setClauses, names, values, now };
+    }
 }
 
 module.exports = { FirmaService, ESTRATEGIAS_VALIDACION };

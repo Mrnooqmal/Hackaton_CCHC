@@ -3,6 +3,7 @@ const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = req
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
 const { validateRequired, generateSignatureToken, verifyPin } = require('../../lib/utils/validation');
+const { FirmaService } = require('../../lib/services/FirmaService');
 const signatureRequests = require('../signature-requests/handler');
 
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
@@ -150,7 +151,11 @@ module.exports.create = async (event) => {
         // Actualizar la solicitud con esta firma
         const updateResult = await signatureRequests.updateOnSignature(requestId, inputPersonaId, signatureId);
 
-        // Si la solicitud referencia un documento, marcar asignacion como firmada
+        // Si la solicitud referencia un documento, marcar la asignación como
+        // firmada Y agregar la firma al array `firmas` del documento (fuente
+        // que usa el estampado del PDF). Usa el mismo helper atómico que
+        // documents.sign/signAssisted/signBulk (list_append + path indexado)
+        // para que firmas concurrentes sobre el mismo documento no se pisen.
         const referencedDocumentId = request.referenciaId || request.documentId || null;
         if (request.referenciaTipo === 'document' && referencedDocumentId) {
             try {
@@ -162,23 +167,31 @@ module.exports.create = async (event) => {
                 );
 
                 if (docResult.Item) {
-                    const nowIso = new Date().toISOString();
-                    const asignaciones = (docResult.Item.asignaciones || []).map((a) => {
-                        if (a.personaId === inputPersonaId && a.estado !== 'firmado') {
-                            return { ...a, estado: 'firmado', fechaFirma: nowIso };
-                        }
-                        return a;
+                    const documentData = docResult.Item;
+                    const firmaEmbebida = {
+                        token: signature.token,
+                        personaId: signature.personaId,
+                        nombre: signature.workerNombre,
+                        rut: signature.workerRut,
+                        tipoFirma: 'trabajador',
+                        fecha: signature.fecha,
+                        horario: signature.horario,
+                        timestamp: signature.timestamp,
+                        ip: signature.ipAddress
+                    };
+                    const parts = FirmaService.buildFirmaUpdateParts({
+                        documentData,
+                        nuevasFirmas: [firmaEmbebida],
+                        asignacionUpdates: [{ personaId: inputPersonaId }]
                     });
 
                     await docClient.send(
                         new UpdateCommand({
                             TableName: DOCUMENTS_TABLE,
                             Key: { documentId: referencedDocumentId },
-                            UpdateExpression: 'SET asignaciones = :asignaciones, updatedAt = :updatedAt',
-                            ExpressionAttributeValues: {
-                                ':asignaciones': asignaciones,
-                                ':updatedAt': nowIso
-                            }
+                            UpdateExpression: 'SET ' + parts.setClauses.join(', '),
+                            ExpressionAttributeNames: parts.names,
+                            ExpressionAttributeValues: parts.values
                         })
                     );
                 }
