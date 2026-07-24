@@ -365,6 +365,13 @@ functions:
           path: /activities/stats
           method: GET
 
+  patchActivity:
+    handler: handlers/activities/handler.patch
+    events:
+      - httpApi:
+          path: /activities/{id}
+          method: PATCH
+
   # Documents (Documentos)
   listDocuments:
     handler: handlers/documents/handler.list

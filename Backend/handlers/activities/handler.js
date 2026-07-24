@@ -5,6 +5,9 @@ const { success, error, created } = require('../../lib/utils/response');
 const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { TenantService } = require('../../lib/services/TenantService');
+const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { resolveCatalogos, validatePlanificacion, validatePermisosTrabajo } = require('../../lib/catalogos-actividad');
 const { eventBus } = require('../../lib/events/EventBus');
 
 const TABLE_NAME = process.env.ACTIVITIES_TABLE || 'Activities';
@@ -35,6 +38,40 @@ const CAPACITACION_SUBTIPOS = {
 
 // Tope de ocurrencias por serie, para evitar crear cantidades desmedidas.
 const MAX_OCURRENCIAS = 180;
+
+/**
+ * Valida planificacion + permisosTrabajo de un body contra el catálogo del
+ * tenant y las personas reales. Devuelve { planificacion, permisosTrabajo }
+ * o lanza un Error cuyo message es apto para responder 400.
+ */
+const validarBloquesActividad = async ({ tenantId, tipo, planificacion, permisosTrabajo }) => {
+    const tenantService = new TenantService();
+    const personaService = new PersonaService();
+    const tenant = await tenantService.getById(tenantId).catch(() => null);
+    const catalogos = resolveCatalogos(tenant);
+
+    const rPlan = validatePlanificacion(planificacion, catalogos, tipo);
+    if (rPlan.errores.length) throw new Error(`Planificación inválida: ${rPlan.errores.join('; ')}`);
+
+    // Responsables de permisos: deben ser personas existentes del tenant.
+    const responsablesValidos = new Set();
+    const nombres = {};
+    for (const p of (Array.isArray(permisosTrabajo) ? permisosTrabajo : [])) {
+        const rid = String(p?.responsableId || '').trim();
+        if (!rid || responsablesValidos.has(rid)) continue;
+        const persona = await personaService.getById(rid).catch(() => null);
+        if (persona && persona.tenantId === tenantId) {
+            responsablesValidos.add(rid);
+            nombres[rid] = `${persona.nombre} ${persona.apellidoPaterno || persona.apellido || ''}`.trim();
+        }
+    }
+    const rPerm = validatePermisosTrabajo(permisosTrabajo, responsablesValidos);
+    if (rPerm.errores.length) throw new Error(`Permisos de trabajo inválidos: ${rPerm.errores.join('; ')}`);
+    // Nombre denormalizado para el reporte (fuente: la persona real, no el cliente).
+    for (const p of rPerm.value) p.responsableNombre = nombres[p.responsableId] || p.responsableNombre;
+
+    return { planificacion: rPlan.value, permisosTrabajo: rPerm.value };
+};
 
 /**
  * Genera la lista de fechas (YYYY-MM-DD) de una serie recurrente entre la fecha
@@ -85,6 +122,17 @@ module.exports.create = async (event) => {
             }
         }
 
+        let bloques;
+        try {
+            bloques = await validarBloquesActividad({
+                tenantId, tipo: body.tipo,
+                planificacion: body.planificacion,
+                permisosTrabajo: body.permisosTrabajo,
+            });
+        } catch (validationErr) {
+            return error(validationErr.message, 400);
+        }
+
         const now = new Date().toISOString();
 
         // Periodicidad: si la actividad se repite, generamos una ocurrencia por
@@ -125,6 +173,8 @@ module.exports.create = async (event) => {
             // Vínculo con el ítem del kit de onboarding (trazabilidad): si esta
             // actividad se agendó para cumplir un ítem, al asistir se cierra ese ítem.
             kitItemKey: body.kitItemKey || null,
+            planificacion: bloques.planificacion,
+            permisosTrabajo: bloques.permisosTrabajo,
             createdAt: now,
             updatedAt: now,
         };
@@ -451,6 +501,62 @@ module.exports.getStats = async (event) => {
         return success(stats);
     } catch (err) {
         console.error('Error getting stats:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * PATCH /activities/{id} - Completar el registro post-charla.
+ * SOLO puede modificar planificacion y permisosTrabajo: las asistencias y
+ * firmas son registro de auditoría y no se tocan por esta vía. Autorizado:
+ * el relator de la actividad o quien tenga el permiso de crear actividades.
+ */
+module.exports.patch = async (event) => {
+    try {
+        const { id } = event.pathParameters || {};
+        if (!id) return error('ID de actividad requerido');
+        const body = JSON.parse(event.body || '{}');
+
+        const actResult = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { activityId: id } }));
+        if (!actResult.Item) return error('Actividad no encontrada', 404);
+        const activity = actResult.Item;
+
+        const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
+        if (!solicitanteId) return error('solicitanteId es requerido', 400);
+        const personaService = new PersonaService();
+        const solicitante = await personaService.getById(solicitanteId).catch(() => null);
+        if (!solicitante || solicitante.tenantId !== activity.tenantId) {
+            return error('No autorizado para editar esta actividad', 403);
+        }
+        if (solicitante.personaId !== activity.relatorId) {
+            const tenant = await new TenantService().getById(activity.tenantId).catch(() => null);
+            if (!personaPuede(solicitante, tenant, PERMISSIONS.ACTIVIDADES_CREAR)) {
+                return error('No autorizado para editar esta actividad', 403);
+            }
+        }
+
+        let bloques;
+        try {
+            bloques = await validarBloquesActividad({
+                tenantId: activity.tenantId, tipo: activity.tipo,
+                planificacion: body.planificacion !== undefined ? body.planificacion : activity.planificacion,
+                permisosTrabajo: body.permisosTrabajo !== undefined ? body.permisosTrabajo : activity.permisosTrabajo,
+            });
+        } catch (validationErr) {
+            return error(validationErr.message, 400);
+        }
+
+        const now = new Date().toISOString();
+        await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { activityId: id },
+            UpdateExpression: 'SET planificacion = :p, permisosTrabajo = :pt, updatedAt = :u',
+            ExpressionAttributeValues: { ':p': bloques.planificacion, ':pt': bloques.permisosTrabajo, ':u': now },
+        }));
+
+        return success({ ...activity, planificacion: bloques.planificacion, permisosTrabajo: bloques.permisosTrabajo, updatedAt: now });
+    } catch (err) {
+        console.error('Error patching activity:', err);
         return error(err.message, 500);
     }
 };
