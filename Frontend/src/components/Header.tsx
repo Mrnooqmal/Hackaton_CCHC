@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FiMenu, FiChevronDown, FiChevronRight, FiBell, FiHome, FiSun, FiMoon } from 'react-icons/fi';
+import { FiMenu, FiChevronDown, FiChevronRight, FiBell, FiHome, FiSun, FiMoon, FiHelpCircle } from 'react-icons/fi';
 import { useLayout } from '../context/LayoutContext';
 import { useObraContext } from '../context/ObraContext';
 import { useAuth } from '../context/AuthContext';
@@ -33,6 +33,36 @@ const SECTION: Record<string, { label: string; path?: string }> = {
     settings: { label: 'Configuración' },
     'change-password': { label: 'Cambiar contraseña' },
     'enroll-me': { label: 'Mi enrolamiento' },
+};
+
+// Ayuda contextual: primer segmento de la ruta → página del módulo en el manual
+// (/manual/modulos/*). Las rutas sin página propia caen a la portada del manual.
+const MANUAL_SECTION: Record<string, string> = {
+    '': 'dashboard',
+    personas: 'personas',
+    workers: 'personas',
+    users: 'personas',
+    obras: 'obras',
+    documents: 'documentos',
+    'documents-repository': 'documentos',
+    surveys: 'encuestas',
+    incidents: 'incidentes',
+    activities: 'actividades',
+    'catalogos-actividad': 'actividades',
+    'my-signatures': 'firmas',
+    'offline-signatures': 'firmas',
+    'signature-requests': 'firmas',
+    inbox: 'bandeja-entrada',
+    'ai-assistant': 'asistente-ia',
+    'mi-empresa': 'tenants',
+    'cargos-onboarding': 'tenants',
+};
+
+/** URL del manual correspondiente a la ruta actual (portada si no hay módulo). */
+const manualUrlFor = (pathname: string): string => {
+    const primer = pathname.split('/').filter(Boolean)[0] || '';
+    const slug = MANUAL_SECTION[primer];
+    return slug ? `/manual/modulos/${slug}.html` : '/manual/';
 };
 
 // Etiqueta de la hoja para páginas de detalle (rutas con id dinámico)
@@ -294,6 +324,18 @@ export default function Header() {
                             )}
                         </div>
                     )}
+
+                    {/* Ayuda contextual: abre el manual en la página del módulo actual */}
+                    <a
+                        href={manualUrlFor(location.pathname)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="header-action"
+                        aria-label="Abrir el manual de uso de esta sección"
+                        title="Ayuda de esta sección"
+                    >
+                        <FiHelpCircle />
+                    </a>
 
                     <button
                         type="button"

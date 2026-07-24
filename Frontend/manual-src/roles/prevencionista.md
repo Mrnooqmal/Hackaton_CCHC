@@ -8,6 +8,9 @@ Es quien opera el día a día del cumplimiento del DS 44 en la obra.
 - Elaborar y mantener las matrices de riesgo (MIPER / MIPPER).
 - Crear y asignar documentos de seguridad.
 - Programar y registrar capacitaciones y charlas.
+- **Armar la planificación mensual de actividades**: el esqueleto de charlas, ART e
+  inspecciones por tipo, periodicidad y responsable, que los supervisores completan
+  día a día.
 - Investigar incidentes y accidentes.
 - Hacer seguimiento del cumplimiento documental por fase.
 
@@ -20,7 +23,7 @@ Es quien opera el día a día del cumplimiento del DS 44 en la obra.
 | Documentos | ✓ Crear, asignar, gestionar |
 | Firmas | ✓ Completo |
 | Incidentes | ✓ Crear, investigar, cerrar |
-| Actividades | ✓ Programar, registrar |
+| Actividades | ✓ Programar, planificar el mes, registrar |
 | Encuestas | ✓ Crear, distribuir, analizar |
 | Asistente IA | ✓ Generar matrices de riesgo |
 | Personas | 👁 Solo lectura |
@@ -29,6 +32,10 @@ Es quien opera el día a día del cumplimiento del DS 44 en la obra.
 
 ## Tareas clave en la plataforma
 
+- **Planificación mensual de actividades**: con [Planificar mes](/modulos/actividades#planificar-el-mes-completo)
+  genera el esqueleto del mes (charla diaria, inspecciones semanales, etc.) diferenciado
+  por tipo de trabajo y asignado a los supervisores que corresponda. Los fines de semana
+  se excluyen automáticamente.
 - **MIPPER asistida por IA**: usa el [Asistente IA](/modulos/asistente-ia) para generar
   matrices por cargo, que revisa y firma.
 - **Asignación de documentos diarios**: asigna documentos a personas, generando

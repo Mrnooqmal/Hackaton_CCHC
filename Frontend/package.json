@@ -4,8 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/build-manual.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/build-manual.mjs",
     "build": "tsc -b && vite build",
+    "build:manual": "node scripts/build-manual.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

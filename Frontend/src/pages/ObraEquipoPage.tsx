@@ -249,7 +249,6 @@ export default function ObraEquipoPage() {
     const [search, setSearch] = useState('');
     const [searchAssigned, setSearchAssigned] = useState('');
     const [assignCargos, setAssignCargos] = useState<Record<string, string[]>>({});
-    const [assignSupervisor, setAssignSupervisor] = useState<Record<string, string>>({});
     const [firmaOpen, setFirmaOpen] = useState(false);
     const [firmaWorkerId, setFirmaWorkerId] = useState<string | undefined>(undefined);
     // Transferencia de una persona a otra obra.
@@ -426,30 +425,8 @@ export default function ObraEquipoPage() {
     }, [unassigned, search]);
 
     // ── Acciones ─────────────────────────────────────────────────────────────
-    const handleAdd = async (w: any) => {
-        if (!obraId) return;
-        const esTrabajador = rolTipoDe(w) === 'trabajador';
-        const haySupervisores = supervisorSelectOptions.length > 0;
-        const supervisorId = assignSupervisor[w.personaId];
-        if (esTrabajador && haySupervisores && !supervisorId) {
-            showToast('Selecciona un supervisor para esta persona trabajadora.');
-            return;
-        }
-        setUpdating(w.personaId);
-        try {
-            const cargos = assignCargos[w.personaId] || (w.cargo ? [w.cargo] : []);
-            await workersApi.setAsignacion(
-                w.personaId, obraId, cargos, user?.personaId || user?.userId,
-                esTrabajador ? supervisorId : null,
-            );
-            if (w.estado === 'inactivo') await workersApi.update(w.personaId, { estado: 'activo' } as any);
-            await reloadWorkers();
-            setAssignCargos((p) => { const n = { ...p }; delete n[w.personaId]; return n; });
-            setAssignSupervisor((p) => { const n = { ...p }; delete n[w.personaId]; return n; });
-            showToast(`${w.nombre} ${w.apellido || ''} agregado a la obra`);
-        } catch (e: any) { setError(e?.message || 'No se pudo agregar el trabajador'); }
-        finally { setUpdating(null); }
-    };
+    // (La incorporación a la obra se hace vía handleAddToContainer, que asigna
+    // directamente al contenedor/cuadrilla de destino.)
 
     const handleBaja = async (w: any) => {
         if (!obraId || w.rol === 'admin') return;

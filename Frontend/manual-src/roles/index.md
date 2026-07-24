@@ -19,13 +19,13 @@ Leyenda: ✓ acceso completo · 👁 solo lectura · ✗ sin acceso
 | --- | :---: | :---: | :---: | :---: | :---: |
 | Dashboard | ✓ | ✓ | ✓ | ✓ | 👁 |
 | Obras | ✓ | 👁 | ✓ | 👁 | ✗ |
-| Documentos | ✓ | ✓ | 👁 | 👁 | 👁 |
+| Documentos | ✓ | ✓ | ✓ | 👁 | 👁 |
 | Firmas | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Incidentes | ✓ | ✓ | ✓ | ✓ | 👁 |
-| Actividades | ✓ | ✓ | 👁 | ✓ | 👁 |
-| Encuestas | ✓ | ✓ | 👁 | 👁 | 👁 |
-| Asistente IA | ✓ | ✓ | 👁 | ✗ | ✗ |
-| Personas | ✓ | 👁 | 👁 | 👁 | ✗ |
+| Actividades | ✓ | ✓ | ✓ | ✓ | 👁 |
+| Encuestas | ✓ | ✓ | ✓ | 👁 | 👁 |
+| Asistente IA | ✓ | ✓ | ✓ | ✗ | ✗ |
+| Personas | ✓ | 👁 | ✓ | 👁 | ✗ |
 | Bandeja de Entrada | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Mi Empresa | ✓ | ✗ | ✗ | ✗ | ✗ |
 
@@ -36,6 +36,11 @@ Leyenda: ✓ acceso completo · 👁 solo lectura · ✗ sin acceso
 
 - **Firmas** es transversal: todo rol puede firmar lo que le corresponde (un trabajador
   firma su recepción de EPP, un supervisor firma como relator, etc.).
+- En **Actividades**, el supervisor puede **crear sus propias actividades** y **completar
+  los borradores** que le asigna la planificación mensual. La **planificación del mes**
+  (armar el esqueleto) corresponde a admin, prevencionista y jefe de obra, y la empresa
+  puede **delegarla a otros roles** (por ejemplo, representantes del Comité Paritario)
+  desde Mi Empresa → Roles.
 - **Tenants** es exclusivo del admin (configuración de la empresa).
 - **Asistente IA** suele restringirse a roles técnicos (admin, prevencionista) y al
   plan contratado del tenant.

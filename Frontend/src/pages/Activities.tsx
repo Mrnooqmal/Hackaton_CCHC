@@ -570,12 +570,12 @@ export default function Activities() {
     };
 
     const handleSaveRegistro = async () => {
-        if (!editActivity || editSaving) return;
+        if (!editActivity || editSaving || !user?.personaId) return;
         setEditSaving(true);
         try {
             const res = await activitiesApi.patch(editActivity.activityId, {
                 ...editDraft,
-                solicitanteId: user?.personaId,
+                solicitanteId: user.personaId,
             });
             if (res.success && res.data) {
                 setActivities((prev) => prev.map((a) => a.activityId === res.data!.activityId ? res.data! : a));

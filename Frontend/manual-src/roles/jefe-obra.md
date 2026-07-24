@@ -7,6 +7,8 @@ vela porque la obra avance cumpliendo los requisitos de seguridad.
 
 - Gestionar la obra y su avance de fase.
 - Coordinar a supervisores y equipos.
+- Gestionar el personal de la obra (alta de trabajadores, onboarding, EPP).
+- **Planificar el mes de actividades** junto con el prevencionista (o en su ausencia).
 - Velar por el cumplimiento de los documentos obligatorios antes de avanzar de fase.
 - Revisar incidentes y el estado general de seguridad de la obra.
 
@@ -15,14 +17,14 @@ vela porque la obra avance cumpliendo los requisitos de seguridad.
 | Módulo | Acceso |
 | --- | --- |
 | Dashboard | ✓ Visión completa de la obra |
-| Obras | ✓ Editar, avanzar fase |
-| Documentos | 👁 Solo lectura |
-| Firmas | ✓ Firmar lo que le corresponde |
-| Incidentes | ✓ Revisar y dar seguimiento |
-| Actividades | 👁 Solo lectura |
-| Encuestas | 👁 Solo lectura |
-| Asistente IA | 👁 Consultas |
-| Personas | 👁 Solo lectura |
+| Obras | ✓ Crear, editar, avanzar fase, asignar trabajadores |
+| Documentos | ✓ Ver y subir documentos de obra |
+| Firmas | ✓ Firmar lo que le corresponde y firma asistida |
+| Incidentes | ✓ Reportar, calificar y dar seguimiento |
+| Actividades | ✓ Crear, planificar el mes, registrar |
+| Encuestas | ✓ Crear |
+| Asistente IA | ✓ Consultas |
+| Personas | ✓ Añadir, gestionar onboarding, EPP y vigilancia de salud |
 | Bandeja de Entrada | ✓ Completo |
 | Tenants | ✗ Sin acceso |
 

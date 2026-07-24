@@ -14,7 +14,7 @@ detallada.
 | 📄 [Documentos](/modulos/documentos) | Cargar, asignar y consultar los documentos de seguridad. |
 | ✍️ [Firmas Digitales](/modulos/firmas) | Firmar con tu PIN y solicitar firmas a otros (incluso sin internet). |
 | ⚠️ [Incidentes](/modulos/incidentes) | Reportar hallazgos, incidentes y accidentes, y ver estadísticas. |
-| 🎓 [Actividades](/modulos/actividades) | Programar capacitaciones y charlas, y registrar la asistencia. |
+| 🎓 [Actividades](/modulos/actividades) | Planificar el mes en calendario, programar capacitaciones y charlas, y registrar la asistencia. |
 | 📋 [Encuestas](/modulos/encuestas) | Crear y responder encuestas de seguridad. |
 | 🤖 [Asistente IA](/modulos/asistente-ia) | Generar matrices de riesgo y documentos con ayuda de la IA. |
 | 👤 [Personas](/modulos/personas) | Registrar a los trabajadores y definir su rol y cargo. |
