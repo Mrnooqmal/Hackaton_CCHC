@@ -13,8 +13,20 @@ import {
     FiFileText,
     FiFilter
 } from 'react-icons/fi';
-import { activitiesApi, workersApi, type Activity, type Worker } from '../api/client';
+import {
+    activitiesApi,
+    workersApi,
+    tenantsApi,
+    type Activity,
+    type Worker,
+    type CatalogosActividad,
+    type PermisosTrabajoDef,
+    type PlanificacionActividad,
+    type PermisoTrabajo,
+} from '../api/client';
 import SignatureModal from '../components/SignatureModal';
+import PlanificacionDiariaForm from '../components/actividades/PlanificacionDiariaForm';
+import PermisosTrabajoForm from '../components/actividades/PermisosTrabajoForm';
 import { Modal, Select, PageHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
@@ -29,6 +41,8 @@ const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React
     CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)', icon: <FiBook /> },
     INDUCCION: { label: 'Inducción', color: 'var(--success-500)', icon: <FiAward /> },
     INSPECCION: { label: 'Inspección', color: 'var(--accent-500)', icon: <FiSearch /> },
+    REUNION_COMITE: { label: 'Reunión Comité Paritario', color: 'var(--secondary-500, #7c3aed)', icon: <FiUsers /> },
+    SIMULACRO: { label: 'Simulacro de Emergencia', color: 'var(--danger-500, #dc2626)', icon: <FiAlertTriangle /> },
 };
 
 // Subtipos de CAPACITACION segun el DS44 (deben coincidir con CAPACITACION_SUBTIPOS del backend).
@@ -77,6 +91,8 @@ export default function Activities() {
     const [signingResults, setSigningResults] = useState<{ signed: number; skipped: number }>({ signed: 0, skipped: 0 });
     const [showSelfSignModal, setShowSelfSignModal] = useState(false);
     const [selfSignActivity, setSelfSignActivity] = useState<Activity | null>(null);
+    const [catalogos, setCatalogos] = useState<CatalogosActividad | null>(null);
+    const [permisosDef, setPermisosDef] = useState<PermisosTrabajoDef>({});
 
     // Check if user is a worker (can self-sign)
     const canSelfSign = user?.rol === 'trabajador' && user?.personaId;
@@ -99,6 +115,8 @@ export default function Activities() {
         repetirHasta: '',
         // Vínculo con un ítem de onboarding (si se agendó desde el Equipo).
         kitItemKey: '' as string,
+        planificacion: { observaciones: '' } as PlanificacionActividad,
+        permisosTrabajo: [] as PermisoTrabajo[],
     };
     const [newActivity, setNewActivity] = useState(emptyActivity);
     const location = useLocation();
@@ -106,6 +124,19 @@ export default function Activities() {
     useEffect(() => {
         loadData();
     }, [selectedObraId]);
+
+    // Catálogos de planificación diaria (temas/recursos/riesgos/medidas) y
+    // definición de permisos de trabajo del tenant, para el formulario de creación.
+    useEffect(() => {
+        if (!user?.tenantId) return;
+        tenantsApi.getCatalogosActividad(user.tenantId).then((res) => {
+            if (res.success && res.data) {
+                setCatalogos(res.data.catalogos);
+                setPermisosDef(res.data.permisosTrabajoDef);
+            }
+        }).catch(() => {});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.tenantId]);
 
     // Prefill desde el Equipo de la obra: "Agendar" una capacitación para una persona.
     useEffect(() => {
@@ -194,6 +225,13 @@ export default function Activities() {
                 toast.error('La fecha de término debe ser posterior a la fecha de inicio');
                 setSubmitting(false);
                 return;
+            }
+            // La planificación completa solo aplica a charlas/ART; para el resto
+            // solo viajan las observaciones (si las hay).
+            if (!['CHARLA_5MIN', 'ART'].includes(payload.tipo)) {
+                const obs = payload.planificacion?.observaciones?.trim();
+                payload.planificacion = obs ? { observaciones: obs } : undefined;
+                payload.permisosTrabajo = undefined;
             }
             const response = await activitiesApi.create(payload);
             if (response.success && response.data) {
@@ -856,6 +894,24 @@ export default function Activities() {
                                 placeholder="Ej: Frente de obra, sala de charlas..."
                             />
                         </div>
+
+                        {catalogos && (
+                            <PlanificacionDiariaForm
+                                value={newActivity.planificacion}
+                                onChange={(planificacion) => setNewActivity({ ...newActivity, planificacion })}
+                                catalogos={catalogos}
+                                tipoActividad={newActivity.tipo}
+                            />
+                        )}
+
+                        {['CHARLA_5MIN', 'ART'].includes(newActivity.tipo) && Object.keys(permisosDef).length > 0 && (
+                            <PermisosTrabajoForm
+                                value={newActivity.permisosTrabajo}
+                                onChange={(permisosTrabajo) => setNewActivity({ ...newActivity, permisosTrabajo })}
+                                permisosDef={permisosDef}
+                                workers={workers}
+                            />
+                        )}
 
                         <div className="form-group">
                             <label className="form-label">
