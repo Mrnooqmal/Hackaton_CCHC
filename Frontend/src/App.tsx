@@ -41,8 +41,12 @@ import About from './pages/About';
 import OfflineBanner from './components/OfflineBanner';
 import SuggestionsWidget from './components/SuggestionsWidget';
 import Footer from './components/Footer';
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
+
+// El manual (react-markdown + minisearch + contenido) se carga como chunk aparte:
+// solo se descarga al visitar /manual, sin engordar el bundle inicial de la app.
+const ManualLayout = lazy(() => import('./manual/ManualLayout'));
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ToastProvider } from './context/ToastContext';
@@ -121,6 +125,12 @@ function AppContent() {
       <Route path="/unauthorized" element={<Unauthorized />} />
       <Route path="/equipo" element={<Equipo />} />
       <Route path="/about" element={<About />} />
+      {/* Manual de uso: sección nativa React (público + dentro del shell) */}
+      <Route path="/manual/*" element={
+        <Suspense fallback={<div className="route-outlet" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Cargando manual…</div>}>
+          <ManualLayout />
+        </Suspense>
+      } />
 
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/personas" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_VER}><PersonasManagement /></ProtectedRoute>} />
@@ -172,6 +182,21 @@ function AppContent() {
           </div>
         </main>
       </>
+    );
+  }
+
+  // El manual se muestra a pantalla completa, fuera del shell de la app (sin
+  // header, sidebar ni footer): es un sitio de documentación con su propia
+  // navegación interna, pero mantiene el diseño y el ruteo in-app.
+  const isManualRoute = location.pathname === '/manual' || location.pathname.startsWith('/manual/');
+  if (isManualRoute) {
+    return (
+      <div className="manual-standalone">
+        <SessionExpiredModal />
+        <div className="route-outlet">
+          {routes}
+        </div>
+      </div>
     );
   }
 

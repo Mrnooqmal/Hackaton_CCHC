@@ -58,11 +58,11 @@ const MANUAL_SECTION: Record<string, string> = {
     'cargos-onboarding': 'tenants',
 };
 
-/** URL del manual correspondiente a la ruta actual (portada si no hay módulo). */
+/** Ruta SPA del manual correspondiente a la ruta actual (portada si no hay módulo). */
 const manualUrlFor = (pathname: string): string => {
     const primer = pathname.split('/').filter(Boolean)[0] || '';
     const slug = MANUAL_SECTION[primer];
-    return slug ? `/manual/modulos/${slug}.html` : '/manual/';
+    return slug ? `/manual/modulos/${slug}` : '/manual';
 };
 
 // Etiqueta de la hoja para páginas de detalle (rutas con id dinámico)
@@ -326,16 +326,14 @@ export default function Header() {
                     )}
 
                     {/* Ayuda contextual: abre el manual en la página del módulo actual */}
-                    <a
-                        href={manualUrlFor(location.pathname)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    <Link
+                        to={manualUrlFor(location.pathname)}
                         className="header-action"
                         aria-label="Abrir el manual de uso de esta sección"
                         title="Ayuda de esta sección"
                     >
                         <FiHelpCircle />
-                    </a>
+                    </Link>
 
                     <button
                         type="button"
