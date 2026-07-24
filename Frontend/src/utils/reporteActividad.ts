@@ -1,5 +1,13 @@
 import type { Activity, Worker, CatalogosActividad, PermisosTrabajoDef } from '../api/client';
 
+// Etiquetas de respaldo de los permisos de trabajo, para que el acta impresa
+// nunca muestre el código crudo si no se cargó la definición del backend.
+const PERMISO_TIPO_LABEL: Record<string, string> = {
+    ALTURA: 'Trabajo en altura',
+    ESPACIO_CONFINADO: 'Espacio confinado',
+    TRABAJO_CALIENTE: 'Trabajo en caliente',
+};
+
 export interface FilaAsistencia {
     personaId: string;
     nombre: string;
@@ -108,12 +116,19 @@ ${p.tipoTrabajo === 'exterior' && p.protectorSolar != null ? `<div><b>Aplicació
 ${p.observaciones ? `<h3>${activity.tipo === 'REUNION_COMITE' ? 'Participación y consulta' : 'Observaciones'}</h3><div style="white-space:pre-wrap;font-size:13px">${esc(p.observaciones)}</div>` : ''}` : ''}
 
 ${(activity.permisosTrabajo || []).map((permiso) => {
+        const resp = (v: string) => (({ si: 'Sí', no: 'No', na: 'N/A' } as Record<string, string>)[v] || '—');
         const def = permisosDef[permiso.tipo];
-        if (!def) return '';
-        return `<h2>Permiso de trabajo — ${esc(def.label)} ${permiso.completo ? '' : '(incompleto)'}</h2>
+        // Un permiso de trabajo es evidencia de cumplimiento: nunca se omite del
+        // acta. Si por algún motivo no se cargó su definición (checklist con
+        // labels), se imprime igual con el tipo y las respuestas crudas.
+        const titulo = def?.label || PERMISO_TIPO_LABEL[permiso.tipo] || permiso.tipo;
+        const filasChecklist = def
+            ? def.checklist.map((i) => `<tr><td>${esc(i.label)}</td><td>${resp(permiso.checklist[i.key])}</td></tr>`).join('')
+            : Object.entries(permiso.checklist || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${resp(v)}</td></tr>`).join('');
+        return `<h2>Permiso de trabajo — ${esc(titulo)} ${permiso.completo ? '' : '(incompleto)'}</h2>
 <div><b>Responsable:</b> ${esc(permiso.responsableNombre || permiso.responsableId)} · <b>Vigencia:</b> ${esc(permiso.horaInicio || '—')} – ${esc(permiso.horaFin || '—')}${permiso.ubicacion ? ' · ' + esc(permiso.ubicacion) : ''}</div>
 <table><thead><tr><th>Verificación</th><th>Respuesta</th></tr></thead><tbody>
-${def.checklist.map((i) => `<tr><td>${esc(i.label)}</td><td>${({ si: 'Sí', no: 'No', na: 'N/A' } as Record<string, string>)[permiso.checklist[i.key]] || '—'}</td></tr>`).join('')}
+${filasChecklist}
 </tbody></table>`;
     }).join('')}
 

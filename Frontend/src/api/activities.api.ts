@@ -27,7 +27,9 @@ export interface Activity {
 }
 
 export interface Attendee {
-    workerId: string;
+    // El backend registra a los asistentes por personaId; workerId es el nombre
+    // legacy y ya no viene en asistencias nuevas, por eso es opcional.
+    workerId?: string;
     personaId?: string;
     nombre: string;
     rut: string;
