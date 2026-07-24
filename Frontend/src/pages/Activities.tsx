@@ -126,6 +126,8 @@ export default function Activities() {
     // grupo del relator (su cuadrilla / las cuadrillas de sus supervisores). El
     // toggle permite expandir a toda la obra por si algún vínculo no está cargado.
     const [verTodaLaObra, setVerTodaLaObra] = useState(false);
+    const [newAttendeeSearch, setNewAttendeeSearch] = useState('');
+    const [attendanceSearch, setAttendanceSearch] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('');
     const [showSignatureModal, setShowSignatureModal] = useState(false);
@@ -156,6 +158,7 @@ export default function Activities() {
     const [completeActivity, setCompleteActivity] = useState<Activity | null>(null);
     const [completeForm, setCompleteForm] = useState({ titulo: '', descripcion: '', horaInicio: '', horaFin: '', ubicacion: '', asistentesRequeridos: [] as string[] });
     const [completeSubmitting, setCompleteSubmitting] = useState(false);
+    const [completeAttendeeSearch, setCompleteAttendeeSearch] = useState('');
 
     // Check if user is a worker (can self-sign)
     const canSelfSign = user?.rol === 'trabajador' && user?.personaId;
@@ -421,6 +424,7 @@ export default function Activities() {
             ubicacion: a.ubicacion || '',
             asistentesRequeridos: a.asistentesRequeridos || [],
         });
+        setCompleteAttendeeSearch('');
         setShowCompleteModal(true);
     };
 
@@ -462,6 +466,16 @@ export default function Activities() {
             setCompleteSubmitting(false);
         }
     };
+
+    // Limpia la búsqueda de asistentes cada vez que se abre "Nueva actividad".
+    useEffect(() => {
+        if (showModal) setNewAttendeeSearch('');
+    }, [showModal]);
+
+    // Limpia la búsqueda de asistentes cada vez que se abre "Registrar Asistencia".
+    useEffect(() => {
+        if (showAttendanceModal) setAttendanceSearch('');
+    }, [showAttendanceModal]);
 
     // Click en un día del calendario: abre el panel con las actividades de ese día.
     const handleCalendarDayClick = (fechaISO: string) => setDayModalFecha(fechaISO);
@@ -1310,13 +1324,31 @@ export default function Activities() {
                             </div>
                             {(() => {
                                 const visibles = visibleWorkersFor(newActivity.relatorId).list;
+                                const q = newAttendeeSearch.trim().toLowerCase();
+                                const visiblesFiltrados = !q
+                                    ? visibles
+                                    : visibles.filter((worker) => `${worker.nombre} ${worker.apellido} ${worker.cargo}`.toLowerCase().includes(q));
                                 return workers.length === 0 ? (
                                 <div className="text-sm text-muted">No hay trabajadores asignados a esta obra.</div>
                             ) : visibles.length === 0 ? (
                                 <div className="text-sm text-muted">Este relator no tiene trabajadores en su grupo. Usa "Ver toda la obra" para elegir de todos modos.</div>
                             ) : (
-                                <div className="flex flex-col gap-2" style={{ maxHeight: '220px', overflowY: 'auto' }}>
-                                    {visibles.map((worker) => {
+                                <>
+                                    {visibles.length > 6 && (
+                                        <div className="tbar-search mb-2" style={{ maxWidth: 'none', width: '100%' }}>
+                                            <FiSearch size={15} />
+                                            <input
+                                                type="text"
+                                                placeholder="Buscar trabajador por nombre o cargo…"
+                                                value={newAttendeeSearch}
+                                                onChange={(e) => setNewAttendeeSearch(e.target.value)}
+                                            />
+                                        </div>
+                                    )}
+                                    <div className="flex flex-col gap-2" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                                    {visiblesFiltrados.length === 0 ? (
+                                        <div className="text-sm text-muted">Sin resultados para "{newAttendeeSearch}".</div>
+                                    ) : visiblesFiltrados.map((worker) => {
                                         const isSelected = newActivity.asistentesRequeridos.includes(worker.personaId);
                                         return (
                                             <div
@@ -1343,7 +1375,8 @@ export default function Activities() {
                                             </div>
                                         );
                                     })}
-                                </div>
+                                    </div>
+                                </>
                             );
                             })()}
                         </div>
@@ -1376,6 +1409,10 @@ export default function Activities() {
                         const hayScope = scopeWorkersFor(selectedActivity.relatorId).scoped;
                         const visiblesIds = visiblesAsist.map(w => w.personaId);
                         const todosVisiblesSel = visiblesIds.length > 0 && visiblesIds.every(id => selectedWorkers.includes(id));
+                        const qAsist = attendanceSearch.trim().toLowerCase();
+                        const visiblesAsistFiltrados = !qAsist
+                            ? visiblesAsist
+                            : visiblesAsist.filter((worker) => `${worker.nombre} ${worker.apellido} ${worker.cargo}`.toLowerCase().includes(qAsist));
                         return (
                         <>
                             <div className="flex justify-between items-center mb-4" style={{ gap: 'var(--space-2)' }}>
@@ -1392,11 +1429,26 @@ export default function Activities() {
                                 </div>
                             </div>
 
+                            {visiblesAsist.length > 6 && (
+                                <div className="tbar-search mb-2" style={{ maxWidth: 'none', width: '100%' }}>
+                                    <FiSearch size={15} />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar trabajador por nombre o cargo…"
+                                        value={attendanceSearch}
+                                        onChange={(e) => setAttendanceSearch(e.target.value)}
+                                    />
+                                </div>
+                            )}
+
                             <div className="flex flex-col gap-2" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                                 {visiblesAsist.length === 0 && (
                                     <div className="text-sm text-muted">Este relator no tiene trabajadores en su grupo. Usa "Ver toda la obra" para registrar de todos modos.</div>
                                 )}
-                                {visiblesAsist.map((worker) => {
+                                {visiblesAsist.length > 0 && visiblesAsistFiltrados.length === 0 && (
+                                    <div className="text-sm text-muted">Sin resultados para "{attendanceSearch}".</div>
+                                )}
+                                {visiblesAsistFiltrados.map((worker) => {
                                     const isSelected = selectedWorkers.includes(worker.personaId);
                                     const alreadyAttended = selectedActivity.asistentes.some(a => (a as any).personaId === worker.personaId || a.workerId === worker.personaId);
                                     return (
@@ -1977,7 +2029,11 @@ export default function Activities() {
                 >
                     <form id="complete-form" onSubmit={handleCompleteBorrador}>
                         <div className="alert alert-info mb-4">
-                            Este es un borrador del plan. Completa el detalle del día: al guardar queda <strong>programada</strong> y sus asistentes reciben el aviso.
+                            <span>
+                                Este es un borrador del plan. Completa el detalle del día.
+                                <br />
+                                Al guardar, la actividad queda <strong>programada</strong> y sus asistentes reciben el aviso.
+                            </span>
                         </div>
 
                         <div className="form-group">
@@ -2045,8 +2101,28 @@ export default function Activities() {
                             {workers.length === 0 ? (
                                 <div className="text-sm text-muted">No hay trabajadores asignados a esta obra.</div>
                             ) : (
-                                <div className="flex flex-col gap-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                                    {workers.map((worker) => {
+                                <>
+                                    {workers.length > 6 && (
+                                        <div className="tbar-search mb-2" style={{ maxWidth: 'none', width: '100%' }}>
+                                            <FiSearch size={15} />
+                                            <input
+                                                type="text"
+                                                placeholder="Buscar trabajador por nombre o cargo…"
+                                                value={completeAttendeeSearch}
+                                                onChange={(e) => setCompleteAttendeeSearch(e.target.value)}
+                                            />
+                                        </div>
+                                    )}
+                                    <div className="flex flex-col gap-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                    {(() => {
+                                        const q = completeAttendeeSearch.trim().toLowerCase();
+                                        const filteredWorkers = !q
+                                            ? workers
+                                            : workers.filter((worker) => `${worker.nombre} ${worker.apellido} ${worker.cargo}`.toLowerCase().includes(q));
+                                        if (filteredWorkers.length === 0) {
+                                            return <div className="text-sm text-muted">Sin resultados para "{completeAttendeeSearch}".</div>;
+                                        }
+                                        return filteredWorkers.map((worker) => {
                                         const isSelected = completeForm.asistentesRequeridos.includes(worker.personaId);
                                         return (
                                             <div
@@ -2072,8 +2148,10 @@ export default function Activities() {
                                                 </div>
                                             </div>
                                         );
-                                    })}
-                                </div>
+                                        });
+                                    })()}
+                                    </div>
+                                </>
                             )}
                         </div>
                     </form>

@@ -2645,6 +2645,8 @@ select.form-input option {
   padding: var(--space-4);
   border-radius: var(--radius-md);
   margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+  line-height: 1.6;
 }
 
 .alert-success {
