@@ -139,7 +139,9 @@ export default function Activities() {
                 setCatalogos(res.data.catalogos);
                 setPermisosDef(res.data.permisosTrabajoDef);
             }
-        }).catch(() => {});
+        }).catch(() => {
+            toast.error('No se pudieron cargar los catálogos de actividades. Recarga la página para crear charlas o ART.');
+        });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.tenantId]);
 
@@ -207,6 +209,10 @@ export default function Activities() {
         if (submitting) return;
         if (!selectedObraId) {
             toast.error('Seleccione una obra antes de crear una actividad');
+            return;
+        }
+        if (['CHARLA_5MIN', 'ART'].includes(newActivity.tipo) && !catalogos) {
+            toast.error('No se pudieron cargar los catálogos de actividades. Recarga la página para crear charlas o ART.');
             return;
         }
 

@@ -24,7 +24,11 @@ export default function PermisosTrabajoForm({ value, onChange, permisosDef, work
     const toggle = (tipo: PermisoTrabajoTipo) => {
         const existente = permisoDe(tipo);
         if (existente) {
-            const tieneDatos = existente.responsableId || Object.keys(existente.checklist).length > 0;
+            const tieneDatos = existente.responsableId
+                || Object.keys(existente.checklist).length > 0
+                || !!existente.horaInicio
+                || !!existente.horaFin
+                || !!existente.ubicacion;
             if (tieneDatos && !window.confirm('Se descartarán los datos de este permiso. ¿Continuar?')) return;
             onChange(value.filter((p) => p.tipo !== tipo));
         } else {

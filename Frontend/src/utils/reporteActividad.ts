@@ -92,7 +92,7 @@ export function abrirReporteImpresion(
 <div class="muted">${esc(activity.tipoDescripcion || activity.tipo)} · ${esc(activity.fecha)} · ${esc(activity.horaInicio)}${activity.horaFin ? ' – ' + esc(activity.horaFin) : ''}${activity.ubicacion ? ' · ' + esc(activity.ubicacion) : ''}</div>
 
 <h2>Asistencia</h2>
-<div>Convocados: <b>${filas.requeridos}</b> · Participantes: <b>${filas.asistieron}</b> · Asistencia: <b>${filas.porcentaje}%</b></div>
+<div>Convocados: <b>${filas.requeridos}</b> · Participantes: <b>${filas.asistieron}</b> · Asistencia: <b>${filas.requeridos > 0 ? filas.porcentaje + '%' : '—'}</b></div>
 <table><thead><tr><th>Nombre</th><th>Cargo</th><th>Asistió</th><th>Hora firma</th></tr></thead><tbody>
 ${filas.filas.map((f) => `<tr><td>${esc(f.nombre)}${f.convocado ? '' : ' <span class="muted">(no convocado)</span>'}</td><td>${esc(f.cargo)}</td><td class="${f.asistio ? 'si' : 'no'}">${f.asistio ? 'Sí' : 'No'}</td><td>${esc(f.hora || '—')}</td></tr>`).join('')}
 </tbody></table>
