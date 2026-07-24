@@ -8,6 +8,7 @@ const { PersonaService } = require('../../lib/services/PersonaService');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const { buildDefaultCargoCatalog, sanitizeCargoCatalog } = require('../../lib/ds44');
+const { sanitizeCatalogosActividad, resolveCatalogos, PERMISOS_TRABAJO_DEF } = require('../../lib/catalogos-actividad');
 const { PutObjectCommand } = require('@aws-sdk/client-s3');
 const { s3Client } = require('../../lib/clients/s3');
 
@@ -312,6 +313,36 @@ module.exports.tenantsHandler = async (event) => {
                 documentosSincronizados: sincronizados,
                 documentosRemovidos: removidos
             });
+        }
+
+        // GET /tenants/{id}/catalogos-actividad — Catálogos de la planificación
+        // diaria (temas/recursos/riesgos/medidas). Si el tenant no los ha
+        // personalizado devuelve la semilla de fábrica sin persistirla.
+        if (method === 'GET' && tenantId && action === 'catalogos-actividad') {
+            const tenant = await tenantService.getById(tenantId);
+            if (!tenant) return error('Tenant no encontrado', 404);
+            return success({
+                catalogos: resolveCatalogos(tenant),
+                permisosTrabajoDef: PERMISOS_TRABAJO_DEF,
+                sembrado: !(tenant.reglas?.catalogosActividad),
+            });
+        }
+
+        // PUT /tenants/{id}/catalogos-actividad — Guarda los catálogos.
+        // Mergea en reglas.catalogosActividad sin pisar el resto de reglas.
+        if (method === 'PUT' && tenantId && action === 'catalogos-actividad') {
+            const body = JSON.parse(event.body || '{}');
+            let catalogos;
+            try {
+                catalogos = sanitizeCatalogosActividad(body.catalogos);
+            } catch (validationErr) {
+                return error(validationErr.message, 400);
+            }
+            const tenant = await tenantService.getById(tenantId);
+            if (!tenant) return error('Tenant no encontrado', 404);
+            const reglas = { ...(tenant.reglas || {}), catalogosActividad: catalogos };
+            await tenantService.updateConfig(tenantId, { reglas });
+            return success({ message: 'Catálogos guardados', catalogos });
         }
 
         return error('Ruta no encontrada', 404);
