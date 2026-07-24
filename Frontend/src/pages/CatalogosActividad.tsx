@@ -129,6 +129,7 @@ export default function CatalogosActividad() {
                                         value={nuevos[key] || ''}
                                         onChange={(e) => setNuevos({ ...nuevos, [key]: e.target.value })}
                                         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregar(key); } }}
+                                        aria-label={`Nuevo ítem en ${titulo}`}
                                     />
                                     <button className="btn btn-secondary btn-sm" onClick={() => agregar(key)}>
                                         <FiPlus /> Agregar
