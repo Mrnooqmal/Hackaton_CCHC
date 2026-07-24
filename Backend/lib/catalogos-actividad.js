@@ -153,10 +153,14 @@ const resolveCatalogos = (tenant) => {
 
 const validarSeleccion = (nombre, input, catalogo, errores) => {
     const codigos = [];
-    for (const c of (Array.isArray(input?.codigos) ? input.codigos : [])) {
-        const cod = String(c || '').trim();
-        if (!catalogo.some((i) => i.codigo === cod)) errores.push(`${nombre}: código desconocido "${cod}"`);
-        else if (!codigos.includes(cod)) codigos.push(cod);
+    if (Array.isArray(input?.codigos) && input.codigos.length > MAX_ITEMS_POR_LISTA) {
+        errores.push(`${nombre}: demasiados códigos seleccionados`);
+    } else {
+        for (const c of (Array.isArray(input?.codigos) ? input.codigos : [])) {
+            const cod = String(c || '').trim();
+            if (!catalogo.some((i) => i.codigo === cod)) errores.push(`${nombre}: código desconocido "${cod}"`);
+            else if (!codigos.includes(cod)) codigos.push(cod);
+        }
     }
     let otro = input?.otro == null ? null : String(input.otro).trim() || null;
     if (otro && otro.length > MAX_OTRO) { errores.push(`${nombre}: "otro" supera ${MAX_OTRO} caracteres`); otro = null; }
@@ -241,6 +245,9 @@ const validatePermisosTrabajo = (input, responsablesValidos) => {
         const horaFin = String(p?.horaFin || '').trim();
         if (horaInicio && !HORA_RE.test(horaInicio)) errores.push(`${def.label}: hora de inicio inválida`);
         if (horaFin && !HORA_RE.test(horaFin)) errores.push(`${def.label}: hora de término inválida`);
+        if (HORA_RE.test(horaInicio) && HORA_RE.test(horaFin) && horaFin <= horaInicio) {
+            errores.push(`${def.label}: la hora de término debe ser posterior a la de inicio`);
+        }
 
         const ubicacion = String(p?.ubicacion || '').trim();
         if (ubicacion.length > MAX_UBICACION) errores.push(`${def.label}: ubicación supera ${MAX_UBICACION} caracteres`);

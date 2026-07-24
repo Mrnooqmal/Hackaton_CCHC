@@ -152,3 +152,23 @@ test('claves de checklist ajenas a la definición → error; lista vacía/undefi
     assert.ok(validatePermisosTrabajo([p], RESP).errores.length > 0);
     assert.deepEqual(validatePermisosTrabajo(undefined, RESP), { value: [], errores: [] });
 });
+
+test('rango horario invertido → error', () => {
+    const p = { ...permisoBase, horaInicio: '13:00', horaFin: '08:00' };
+    const { errores } = validatePermisosTrabajo([p], RESP);
+    assert.ok(errores.length > 0);
+});
+
+test('horaInicio igual a horaFin → error', () => {
+    const p = { ...permisoBase, horaInicio: '08:00', horaFin: '08:00' };
+    const { errores } = validatePermisosTrabajo([p], RESP);
+    assert.ok(errores.length > 0);
+});
+
+test('demasiados códigos seleccionados en recursos → error', () => {
+    const { errores } = validatePlanificacion({
+        tema: { codigo: 'FRAGUADO' },
+        recursos: { codigos: Array(101).fill('BETONERA') },
+    }, CAT, 'CHARLA_5MIN');
+    assert.ok(errores.some((e) => /demasiados/.test(e)));
+});
