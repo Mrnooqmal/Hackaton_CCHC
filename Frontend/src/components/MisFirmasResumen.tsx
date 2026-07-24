@@ -41,16 +41,26 @@ export default function MisFirmasResumen({ personaId }: MisFirmasResumenProps) {
             try {
                 const [pendRes, docsRes, histRes] = await Promise.allSettled([
                     signatureRequestsApi.getPendingByWorker(personaId),
-                    documentsApi.list({ clasificacion: 'diario', pendienteDe: personaId }),
+                    // TODOS los documentos asignados a la persona (incluye los de empresa
+                    // clasificacion 'empresa', ej. Reglamento/Política), no solo 'diario'.
+                    // Así el avance coincide con el cumplimiento del panel.
+                    documentsApi.list({ asignadoA: personaId }),
                     signatureRequestsApi.getHistoryByWorker(personaId),
                 ]);
                 if (!active) return;
 
                 const rows: PendingRow[] = [];
+                let docsFirmadas = 0;
 
-                // Documentos de onboarding firmables (mismo orden que MySignatures).
+                // Documentos asignados: pendientes (con archivo, accionables) y firmados.
                 if (docsRes.status === 'fulfilled' && docsRes.value.success && docsRes.value.data?.documents) {
                     docsRes.value.data.documents.forEach((doc: any) => {
+                        const asig = (doc.asignaciones || []).find((a: any) => a.personaId === personaId || a.workerId === personaId);
+                        if (!asig) return;
+                        const firmado = asig.estado === 'firmado' || Boolean(asig.fechaFirma);
+                        const tieneArchivo = Boolean(doc.s3Key || doc.archivoUrl);
+                        if (firmado) { docsFirmadas += 1; return; }
+                        if (!tieneArchivo) return; // sin archivo aún no es accionable
                         rows.push({
                             requestId: `doc:${doc.documentId}`,
                             titulo: doc.titulo || doc.tipoDescripcion || 'Documento de onboarding',
@@ -60,6 +70,7 @@ export default function MisFirmasResumen({ personaId }: MisFirmasResumenProps) {
                 }
 
                 // Solicitudes de firma pendientes.
+                let reqFirmadas = 0;
                 if (pendRes.status === 'fulfilled' && pendRes.value.success && pendRes.value.data) {
                     pendRes.value.data.pendientes.forEach((req) => {
                         rows.push({
@@ -74,8 +85,9 @@ export default function MisFirmasResumen({ personaId }: MisFirmasResumenProps) {
                 setPendientes(rows);
 
                 if (histRes.status === 'fulfilled' && histRes.value.success && histRes.value.data) {
-                    setFirmadas(histRes.value.data.totalFirmas ?? histRes.value.data.historial.length);
+                    reqFirmadas = histRes.value.data.totalFirmas ?? histRes.value.data.historial.length;
                 }
+                setFirmadas(docsFirmadas + reqFirmadas);
             } catch (err) {
                 console.error('Error loading firmas resumen:', err);
             } finally {

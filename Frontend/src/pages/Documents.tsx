@@ -809,13 +809,15 @@ export default function Documents() {
                                                             <FiEye size={14} />
                                                             Ver
                                                         </button>
-                                                        <button
-                                                            className="btn btn-primary btn-sm"
-                                                            onClick={() => handleOpenAssignModal(doc)}
-                                                        >
-                                                            <FiUserCheck size={14} />
-                                                            Asignar
-                                                        </button>
+                                                        {canSubirDocumento && (
+                                                            <button
+                                                                className="btn btn-primary btn-sm"
+                                                                onClick={() => handleOpenAssignModal(doc)}
+                                                            >
+                                                                <FiUserCheck size={14} />
+                                                                Asignar
+                                                            </button>
+                                                        )}
                                                         {isPendingForMe && (
                                                             <button
                                                                 className="btn btn-success btn-sm"
@@ -995,9 +997,11 @@ export default function Documents() {
                                 </button>
                             )}
                             <button className="btn btn-secondary" onClick={() => setShowDetailModal(false)}>Cerrar</button>
-                            <button className="btn btn-primary" onClick={() => { setShowDetailModal(false); selectedDocument && handleOpenAssignModal(selectedDocument); }}>
-                                <FiUserCheck />Asignar a mas personas
-                            </button>
+                            {canSubirDocumento && (
+                                <button className="btn btn-primary" onClick={() => { setShowDetailModal(false); selectedDocument && handleOpenAssignModal(selectedDocument); }}>
+                                    <FiUserCheck />Asignar a mas personas
+                                </button>
+                            )}
                         </>
                     }
                 >

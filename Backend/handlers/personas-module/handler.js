@@ -301,17 +301,24 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
 
     await docClient.send(new PutCommand({ TableName: DOCUMENTS_TABLE, Item: document }));
 
-    try {
-        await eventBus.emit('document.assigned', {
-            documentId,
-            userIds: [persona.personaId],
-            assignedBy: solicitante?.personaId || 'system',
-            creatorName: document.creatorName,
-            documentName: docConfig.titulo,
-            dueDate: null
-        });
-    } catch (eventError) {
-        console.error('Error emitting document.assigned event (onboarding):', eventError);
+    // Solo se notifica "revisa y firma" para ítems que el trabajador efectivamente
+    // FIRMA. Evidencias externas (examen de altura) o ingreso a vigilancia NO son
+    // documentos a firmar (son evidencia que se carga / gestiona aparte): no se avisa
+    // como firma ni se reutilizó ya (en cuyo caso nace completo).
+    const esEvidencia = docConfig.accion === 'EVIDENCIA_EXTERNA' || docConfig.accion === 'INGRESO_VIGILANCIA';
+    if (!esEvidencia && !reuse) {
+        try {
+            await eventBus.emit('document.assigned', {
+                documentId,
+                userIds: [persona.personaId],
+                assignedBy: solicitante?.personaId || 'system',
+                creatorName: document.creatorName,
+                documentName: docConfig.titulo,
+                dueDate: null
+            });
+        } catch (eventError) {
+            console.error('Error emitting document.assigned event (onboarding):', eventError);
+        }
     }
 
     return documentId;
@@ -445,6 +452,23 @@ const setOnboardingDocEstado = async (documentId, estado) => {
     }));
 };
 
+// CAMBIO DE CARGO: archiva los documentos de onboarding (por-cargo, no firmados) que
+// pertenecían SOLO a cargos que la persona ya no tiene en la obra. El IRL/PTS del
+// cargo anterior se saca; los del cargo nuevo los crea runOnboardingForObra. Los
+// transversales (sin cargosOrigen) y los firmados (historial) se preservan.
+const reconcileCargoDocs = async (tenantId, obraId, personaId, nuevosCargosNorm) => {
+    const docs = await getOnboardingDocsForPersonaObra(tenantId, obraId, personaId).catch(() => []);
+    for (const d of docs) {
+        if (d.estado === 'archivado') continue;
+        const dc = (d.cargosOrigen || []).map((c) => normalizeCargoCodigo(String(c))).filter(Boolean);
+        if (!dc.length) continue; // transversal / sin cargo → no se toca
+        if (dc.some((c) => nuevosCargosNorm.includes(c))) continue; // aún aplica a un cargo actual
+        const firmado = (d.asignaciones || []).some((a) => a.estado === 'firmado' || a.fechaFirma);
+        if (firmado) continue; // preservar firmas / historial
+        await setOnboardingDocEstado(d.documentId, 'archivado').catch(() => {});
+    }
+};
+
 // Marca como 'superada' las firmas válidas de unas personas para una referencia
 // (al renovar un documento: la firma anterior es de una versión previa). Las firmas
 // no se borran (auditoría); cambiar el estado permite volver a firmar la versión
@@ -513,12 +537,15 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
     const plantillasPorCargo = (obra && obra.plantillasOnboarding) || {};
 
     // Idempotencia: documentos de onboarding ya existentes de esta persona en la
-    // obra (de una asignación previa), indexados por la key del kit / tipo.
+    // obra (de una asignación previa), agrupados por la key del kit / tipo. Se guardan
+    // TODOS (no solo el primero) para poder distinguir por cargo al reconciliar.
     const existentes = await getOnboardingDocsForPersonaObra(tenantId, obraId, persona.personaId).catch(() => []);
-    const existentePorKey = new Map();
+    const existentePorKey = new Map(); // key -> doc[]
     for (const d of existentes) {
         const k = d.kitItemKey || d.tipo;
-        if (k && !existentePorKey.has(k)) existentePorKey.set(k, d);
+        if (!k) continue;
+        if (!existentePorKey.has(k)) existentePorKey.set(k, []);
+        existentePorKey.get(k).push(d);
     }
 
     const faltantes = [];
@@ -536,12 +563,20 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
             const excluido = origenes.length > 0 && origenes.every((cg) => aplicabilidad?.[cg]?.[item.key] === 'no_aplica');
             if (excluido) continue;
 
-            // IDEMPOTENCIA: si el ítem ya existe (asignación previa), no se duplica.
-            // Si estaba archivado (la persona fue desasignada antes), se reactiva.
-            const yaExiste = existentePorKey.get(item.key) || existentePorKey.get(item.tipo);
-            if (yaExiste) {
-                if (yaExiste.estado === 'archivado') {
-                    await setOnboardingDocEstado(yaExiste.documentId, 'activo').catch(() => {});
+            // IDEMPOTENCIA + CARGO: el ítem ya existe si hay un doc del mismo cargo
+            // (o transversal/sin cargo). Al CAMBIAR de cargo, el IRL/PTS del cargo
+            // anterior NO se reactiva: se crea el del cargo actual y el viejo queda
+            // archivado por reconcileCargoDocs. Documentos firmados se preservan.
+            const docsDeItem = existentePorKey.get(item.key) || existentePorKey.get(item.tipo) || [];
+            const origenesNorm = origenes.map((c) => normalizeCargoCodigo(String(c))).filter(Boolean);
+            const esTransversal = item.alcancePlantilla === 'tenant';
+            const match = docsDeItem.find((d) => {
+                const dc = (d.cargosOrigen || []).map((c) => normalizeCargoCodigo(String(c))).filter(Boolean);
+                return esTransversal || !dc.length || origenesNorm.some((c) => dc.includes(c));
+            });
+            if (match) {
+                if (match.estado === 'archivado') {
+                    await setOnboardingDocEstado(match.documentId, 'activo').catch(() => {});
                 }
                 continue;
             }
@@ -1818,6 +1853,11 @@ module.exports.personasHandler = async (event) => {
             }
 
             const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
+            // Cargos previos vs nuevos (normalizados) para detectar cambio de cargo.
+            const cargosPrevNorm = (asignacionPrevia?.cargos || []).map((c) => normalizeCargoCodigo(String(c))).filter(Boolean).sort();
+            const cargosNewNorm = cargos.map((c) => normalizeCargoCodigo(String(c))).filter(Boolean);
+            const cargoCambio = Boolean(asignacionPrevia) && cargosPrevNorm.join(',') !== [...cargosNewNorm].sort().join(',');
+
             const { persona, esNueva } = await personaService.setAsignacionObra(
                 tenantId, personaId, body.obraId, cargos,
                 supervisorEnviado ? body.supervisorPersonaId : undefined,
@@ -1825,8 +1865,13 @@ module.exports.personasHandler = async (event) => {
             );
 
             try {
-                if (esNueva && normalizeRol(persona.rol) !== 'admin') {
+                if ((esNueva || cargoCambio) && normalizeRol(persona.rol) !== 'admin') {
                     const solicitante = solicitanteId ? await personaService.getById(solicitanteId) : null;
+                    // Si cambió el cargo, primero se sacan los documentos del cargo anterior
+                    // que ya no aplican; luego se generan los del cargo nuevo (idempotente).
+                    if (cargoCambio) {
+                        await reconcileCargoDocs(tenantId, body.obraId, personaId, cargosNewNorm);
+                    }
                     await runOnboardingForObra({ tenantId, obraId: body.obraId, persona, solicitante });
                 }
             } catch (onboardingError) {

@@ -30,6 +30,7 @@ import {
     surveysApi,
     personasApi,
     obrasApi,
+    tenantsApi,
     type Worker as ApiWorker,
     type DigitalSignature,
     type Capacitacion,
@@ -119,6 +120,16 @@ export default function WorkerDetail() {
         contactoNombre: '', contactoTelefono: '', contactoRelacion: '',
     });
     const [editSaving, setEditSaving] = useState(false);
+    // Roles del tenant para mostrar el NOMBRE real del rol (ej. "Persona trabajadora")
+    // en vez de un genérico, ya que persona.rol guarda el id.
+    const [tenantRoles, setTenantRoles] = useState<{ id?: string; nombre?: string }[]>([]);
+    const rolLabel = (rol?: string) => {
+        if (!rol) return 'Trabajador';
+        if (rol === 'admin') return 'Administrador';
+        const r = tenantRoles.find((x) => x.id === rol || (x.nombre || '').toLowerCase() === rol.toLowerCase());
+        if (r?.nombre) return r.nombre;
+        return rol.charAt(0).toUpperCase() + rol.slice(1).replace(/_/g, ' ');
+    };
     const [stats, setStats] = useState<WorkerStats | null>(null);
     const [signatures, setSignatures] = useState<DigitalSignature[]>([]);
     const [, setCompliance] = useState({ completed: 0, assigned: 0 });
@@ -192,6 +203,14 @@ export default function WorkerDetail() {
             loadWorkerData();
         }
     }, [rut, selectedObraId]);
+
+    // Carga los roles del tenant para resolver el nombre del rol de la persona.
+    useEffect(() => {
+        if (!authTenantId) return;
+        tenantsApi.get(authTenantId).then((res) => {
+            if (res.success && (res.data as any)?.roles) setTenantRoles((res.data as any).roles);
+        }).catch(() => {});
+    }, [authTenantId]);
 
     // Sincroniza el formulario de vigilancia con los datos del trabajador.
     useEffect(() => {
@@ -1053,7 +1072,7 @@ Generado por PrevencionApp
                             </div>
                             <div className="wd-info-field">
                                 <div className="wd-info-label">Rol de sistema</div>
-                                <div className="wd-info-value">{worker.rol === 'admin' ? 'Administrador' : worker.rol === 'prevencionista' ? 'Prevencionista' : 'Trabajador'}</div>
+                                <div className="wd-info-value">{rolLabel(worker.rol)}</div>
                             </div>
                             <div className="wd-info-field">
                                 <div className="wd-info-label">Teléfono</div>
