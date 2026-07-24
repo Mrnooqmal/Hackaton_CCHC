@@ -288,6 +288,15 @@ export default function PinInput({
                     75% { transform: translateX(4px); }
                 }
 
+                /* Móvil angosto (≤480px): los 4 dígitos + padding anidado (PinInput dentro de
+                   SignatureModal dentro de Modal) se desbordaban en teléfonos de 320–360px.
+                   Se reducen dígitos, gap y padding para que el PIN entre sin scroll horizontal. */
+                @media (max-width: 480px) {
+                    .pin-input-container { padding: var(--space-4); }
+                    .pin-inputs { gap: var(--space-2); }
+                    .pin-digit { width: 48px; height: 56px; font-size: var(--text-xl); }
+                }
+
                 .pin-toggle {
                     display: flex;
                     align-items: center;

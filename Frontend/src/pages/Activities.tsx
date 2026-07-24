@@ -980,6 +980,16 @@ export default function Activities() {
                                 .activity-today-card { transition: background 0.12s, border-color 0.12s; }
                                 .activity-today-card:hover { background: var(--surface-hover) !important; border-color: var(--accent) !important; }
                                 .activity-today-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+                                /* Móvil vertical: la tarjeta pasa a columna para que el botón de firma
+                                   ("Registrar Asistencia") no se salga de pantalla. Antes solo se veía en horizontal. */
+                                @media (max-width: 640px) {
+                                    .activity-today-card { flex-direction: column; align-items: stretch; gap: var(--space-3); }
+                                    .activity-today-card > div { width: 100%; min-width: 0; }
+                                    .activity-today-card > div:last-child { flex-wrap: wrap; justify-content: space-between; }
+                                    /* El botón de firma vive en un grupo anidado; que ocupe todo el ancho y sea legible */
+                                    .activity-today-card > div:last-child > div:last-child { flex: 1 1 100%; }
+                                    .activity-today-card > div:last-child .btn { flex: 1 1 auto; justify-content: center; }
+                                }
                             `}</style>
                             {todayActivities.map((activity) => {
                                 const typeInfo = ACTIVITY_TYPES[activity.tipo] || {
