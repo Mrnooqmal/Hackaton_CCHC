@@ -11,7 +11,11 @@ import {
     FiCalendar,
     FiClock,
     FiFileText,
-    FiFilter
+    FiFilter,
+    FiList,
+    FiEdit3,
+    FiTrash2,
+    FiGrid
 } from 'react-icons/fi';
 import {
     activitiesApi,
@@ -23,11 +27,13 @@ import {
     type PermisosTrabajoDef,
     type PlanificacionActividad,
     type PermisoTrabajo,
+    type PlanItem,
 } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
 import PlanificacionDiariaForm from '../components/actividades/PlanificacionDiariaForm';
 import PermisosTrabajoForm from '../components/actividades/PermisosTrabajoForm';
 import ReporteActividad from '../components/actividades/ReporteActividad';
+import ActivityCalendar from '../components/ActivityCalendar';
 import { Modal, Select, PageHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
@@ -44,6 +50,17 @@ const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React
     INSPECCION: { label: 'Inspección', color: 'var(--accent-500)', icon: <FiSearch /> },
     REUNION_COMITE: { label: 'Reunión Comité Paritario', color: 'var(--secondary-500, #7c3aed)', icon: <FiUsers /> },
     SIMULACRO: { label: 'Simulacro de Emergencia', color: 'var(--danger-500, #dc2626)', icon: <FiAlertTriangle /> },
+    // Casos no contemplados en el catálogo: el detalle va en el título/descripción.
+    OTRO: { label: 'Otra actividad', color: 'var(--gray-500)', icon: <FiFileText /> },
+};
+
+// Etapas constructivas de la obra: dimensión "tipo de trabajo" de la planificación
+// (misma nomenclatura que Obra.etapaConstructivaActual en el backend).
+const TIPOS_TRABAJO: Record<string, string> = {
+    excavacion: 'Excavación',
+    obra_gruesa: 'Obra gruesa',
+    terminaciones: 'Terminaciones',
+    entrega: 'Entrega',
 };
 
 // Subtipos de CAPACITACION segun el DS44 (deben coincidir con CAPACITACION_SUBTIPOS del backend).
@@ -66,9 +83,31 @@ const FRECUENCIA_OPCIONES: Record<'unica' | 'diaria' | 'semanal' | 'mensual', st
 };
 const labelFrecuencia = (f: 'unica' | 'diaria' | 'semanal' | 'mensual') => FRECUENCIA_OPCIONES[f].toLowerCase();
 
+// Ítem del formulario del planificador (esqueleto mensual).
+interface PlanItemForm {
+    tipo: string;
+    periodicidad: 'diaria' | 'semanal' | 'mensual';
+    tipoTrabajo: string;
+    responsables: string[];
+    tituloBase: string;
+    horaInicio: string;
+    ubicacion: string;
+}
+
+const emptyPlanItem: PlanItemForm = {
+    tipo: 'CHARLA_5MIN',
+    periodicidad: 'diaria',
+    tipoTrabajo: '',
+    responsables: [],
+    tituloBase: '',
+    horaInicio: '09:00',
+    ubicacion: '',
+};
+
 export default function Activities() {
     const { user, hasPermission } = useAuth();
     const canCrearActividad = hasPermission(PERMISSIONS.ACTIVIDADES_CREAR);
+    const canPlanificar = hasPermission(PERMISSIONS.ACTIVIDADES_PLANIFICAR);
     const { isOnline, pendingCount, signActivity, syncPendingSignatures } = useOfflineSignature();
     const { toast } = useToast();
     const { selectedObraId, obras } = useObraContext();
@@ -102,6 +141,21 @@ export default function Activities() {
     const [editActivity, setEditActivity] = useState<Activity | null>(null);
     const [editDraft, setEditDraft] = useState<{ planificacion: PlanificacionActividad; permisosTrabajo: PermisoTrabajo[] }>({ planificacion: {}, permisosTrabajo: [] });
     const [editSaving, setEditSaving] = useState(false);
+    // Vista: lista clásica o calendario mensual.
+    const [viewMode, setViewMode] = useState<'lista' | 'calendario'>('lista');
+    const [calendarMonth, setCalendarMonth] = useState(new Date());
+    // Planificador (esqueleto mensual): rango + ítems por tipo/periodicidad/responsables.
+    const [showPlanModal, setShowPlanModal] = useState(false);
+    const [planSubmitting, setPlanSubmitting] = useState(false);
+    const [planRango, setPlanRango] = useState({ desde: '', hasta: '' });
+    const [planItems, setPlanItems] = useState<PlanItemForm[]>([{ ...emptyPlanItem }]);
+    // Detalle de un día del calendario (todas sus actividades + pendientes).
+    const [dayModalFecha, setDayModalFecha] = useState<string | null>(null);
+    // Completar borrador (rellenar el detalle del día → programada).
+    const [showCompleteModal, setShowCompleteModal] = useState(false);
+    const [completeActivity, setCompleteActivity] = useState<Activity | null>(null);
+    const [completeForm, setCompleteForm] = useState({ titulo: '', descripcion: '', horaInicio: '', horaFin: '', ubicacion: '', asistentesRequeridos: [] as string[] });
+    const [completeSubmitting, setCompleteSubmitting] = useState(false);
 
     // Check if user is a worker (can self-sign)
     const canSelfSign = user?.rol === 'trabajador' && user?.personaId;
@@ -270,6 +324,159 @@ export default function Activities() {
         } finally {
             setSubmitting(false);
         }
+    };
+
+    // ── Planificador (esqueleto mensual) ─────────────────────────────────────
+
+    const openPlanModal = () => {
+        // Rango por defecto: el mes visible del calendario completo.
+        const base = viewMode === 'calendario' ? calendarMonth : new Date();
+        const desde = new Date(base.getFullYear(), base.getMonth(), 1);
+        const hasta = new Date(base.getFullYear(), base.getMonth() + 1, 0);
+        const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        setPlanRango({ desde: iso(desde), hasta: iso(hasta) });
+        setPlanItems([{ ...emptyPlanItem }]);
+        setShowPlanModal(true);
+    };
+
+    const updatePlanItem = (index: number, patch: Partial<PlanItemForm>) =>
+        setPlanItems(prev => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
+
+    const togglePlanResponsable = (index: number, personaId: string) =>
+        setPlanItems(prev => prev.map((it, i) => {
+            if (i !== index) return it;
+            const responsables = it.responsables.includes(personaId)
+                ? it.responsables.filter(id => id !== personaId)
+                : [...it.responsables, personaId];
+            return { ...it, responsables };
+        }));
+
+    const handleGeneratePlan = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (planSubmitting || !selectedObraId || !user?.personaId) return;
+        if (!planRango.desde || !planRango.hasta || planRango.hasta < planRango.desde) {
+            toast.error('Indica un rango de fechas válido');
+            return;
+        }
+        const sinResponsables = planItems.findIndex(it => it.responsables.length === 0);
+        if (sinResponsables >= 0) {
+            toast.error(`El ítem ${sinResponsables + 1} no tiene responsables asignados`);
+            return;
+        }
+
+        setPlanSubmitting(true);
+        try {
+            const items: PlanItem[] = planItems.map(it => ({
+                tipo: it.tipo,
+                periodicidad: it.periodicidad,
+                tipoTrabajo: it.tipoTrabajo || undefined,
+                responsables: it.responsables,
+                tituloBase: it.tituloBase || undefined,
+                camposPrellenados: {
+                    horaInicio: it.horaInicio || undefined,
+                    ubicacion: it.ubicacion || undefined,
+                },
+            }));
+            const response = await activitiesApi.plan({
+                obraId: selectedObraId,
+                rangoDesde: planRango.desde,
+                rangoHasta: planRango.hasta,
+                solicitanteId: user.personaId,
+                items,
+            });
+            if (response.success && response.data) {
+                await loadData();
+                const { count, omitidas } = response.data;
+                toast.success(`${count} actividad(es) planificada(s)${omitidas > 0 ? ` · ${omitidas} ya existían` : ''}`);
+                setShowPlanModal(false);
+                setViewMode('calendario');
+            } else {
+                toast.error(response.error || 'Error al generar la planificación');
+            }
+        } catch (error) {
+            console.error('Error generating plan:', error);
+            toast.error('Error al generar la planificación');
+        } finally {
+            setPlanSubmitting(false);
+        }
+    };
+
+    // ── Completar borrador (rellenar el detalle del día) ─────────────────────
+
+    // Puede completar: un responsable del borrador, o quien puede crear actividades.
+    const puedeCompletar = (a: Activity) =>
+        a.estado === 'borrador' && (
+            canCrearActividad ||
+            a.relatorId === user?.personaId ||
+            (a.responsables || []).includes(user?.personaId || '')
+        );
+
+    const openCompleteModal = (a: Activity) => {
+        setCompleteActivity(a);
+        setCompleteForm({
+            titulo: a.titulo || '',
+            descripcion: a.descripcion || '',
+            horaInicio: (a.horaInicio || '09:00').slice(0, 5),
+            horaFin: a.horaFin || '',
+            ubicacion: a.ubicacion || '',
+            asistentesRequeridos: a.asistentesRequeridos || [],
+        });
+        setShowCompleteModal(true);
+    };
+
+    const toggleCompleteAttendee = (personaId: string) =>
+        setCompleteForm(prev => ({
+            ...prev,
+            asistentesRequeridos: prev.asistentesRequeridos.includes(personaId)
+                ? prev.asistentesRequeridos.filter(id => id !== personaId)
+                : [...prev.asistentesRequeridos, personaId],
+        }));
+
+    const handleCompleteBorrador = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (completeSubmitting || !completeActivity || !user?.personaId) return;
+        setCompleteSubmitting(true);
+        try {
+            const response = await activitiesApi.patch(completeActivity.activityId, {
+                solicitanteId: user.personaId,
+                titulo: completeForm.titulo,
+                descripcion: completeForm.descripcion,
+                horaInicio: completeForm.horaInicio,
+                horaFin: completeForm.horaFin || undefined,
+                ubicacion: completeForm.ubicacion,
+                asistentesRequeridos: completeForm.asistentesRequeridos,
+                estado: 'programada',
+            });
+            if (response.success) {
+                await loadData();
+                toast.success('Actividad completada y programada');
+                setShowCompleteModal(false);
+                setCompleteActivity(null);
+            } else {
+                toast.error(response.error || 'Error al completar la actividad');
+            }
+        } catch (error) {
+            console.error('Error completing draft:', error);
+            toast.error('Error al completar la actividad');
+        } finally {
+            setCompleteSubmitting(false);
+        }
+    };
+
+    // Click en un día del calendario: abre el panel con las actividades de ese día.
+    const handleCalendarDayClick = (fechaISO: string) => setDayModalFecha(fechaISO);
+
+    // Crear ad-hoc con la fecha del día pre-cargada (desde el panel del día).
+    const crearEnFecha = (fechaISO: string) => {
+        setDayModalFecha(null);
+        setNewActivity({ ...emptyActivity, fecha: fechaISO });
+        setShowModal(true);
+    };
+
+    // Click en un chip del calendario: borrador propio → completar; resto → detalle.
+    const handleCalendarActivityClick = (a: Activity) => {
+        if (puedeCompletar(a)) openCompleteModal(a);
+        else openDetailModal(a);
     };
 
     // Inicia la firma asistida SECUENCIAL: empieza por el primer trabajador.
@@ -493,11 +700,19 @@ export default function Activities() {
         return matchesSearch && matchesType;
     };
 
-    const todayActivities = activities.filter(a => a.fecha === today && matchesFilters(a));
+    // Los borradores (planificados sin completar) no se mezclan con las listas
+    // operativas: viven en el calendario y en su propia sección de pendientes.
+    const noBorrador = (a: Activity) => a.estado !== 'borrador';
+    const todayActivities = activities.filter(a => a.fecha === today && noBorrador(a) && matchesFilters(a));
     // "Historial" = solo actividades que YA pasaron (fecha anterior a hoy). Las de hoy
     // van en su propia sección y las futuras son recordatorios (no historial).
-    const filteredActivities = activities.filter(a => a.fecha < today && matchesFilters(a));
-    const upcomingActivities = activities.filter(a => a.fecha > today && matchesFilters(a));
+    const filteredActivities = activities.filter(a => a.fecha < today && noBorrador(a) && matchesFilters(a));
+    const upcomingActivities = activities.filter(a => a.fecha > today && noBorrador(a) && matchesFilters(a));
+    // Borradores pendientes de completar (propios primero, próximos primero).
+    const borradores = activities
+        .filter(a => a.estado === 'borrador' && a.fecha >= today && matchesFilters(a))
+        .sort((x, y) => x.fecha.localeCompare(y.fecha));
+    const misBorradores = borradores.filter(puedeCompletar);
 
     // Una actividad solo es FIRMABLE cuando ya empezó (fecha+hora de inicio <= ahora).
     // Antes de eso es un recordatorio de asistencia, no se puede firmar todavía.
@@ -521,15 +736,29 @@ export default function Activities() {
                     title="Actividades y capacitación"
                     description="Charlas de 5 minutos, inducciones, ART y capacitación técnica, con asistencia y firma de los participantes."
                     actions={
-                        canCrearActividad ? (
-                            <button
-                                className="btn btn-save"
-                                disabled={!selectedObraId}
-                                title={!selectedObraId ? 'Selecciona una obra en la barra superior para crear una actividad' : undefined}
-                                onClick={() => { setVerTodaLaObra(false); setShowModal(true); }}
-                            >
-                                <FiPlus /> Nueva actividad
-                            </button>
+                        (canCrearActividad || canPlanificar) ? (
+                            <div className="flex items-center gap-2">
+                                {canPlanificar && (
+                                    <button
+                                        className="btn btn-secondary"
+                                        disabled={!selectedObraId}
+                                        title={!selectedObraId ? 'Selecciona una obra para planificar el mes' : 'Armar el esqueleto de actividades del mes'}
+                                        onClick={openPlanModal}
+                                    >
+                                        <FiCalendar /> Planificar mes
+                                    </button>
+                                )}
+                                {canCrearActividad && (
+                                    <button
+                                        className="btn btn-save"
+                                        disabled={!selectedObraId}
+                                        title={!selectedObraId ? 'Selecciona una obra en la barra superior para crear una actividad' : undefined}
+                                        onClick={() => { setVerTodaLaObra(false); setShowModal(true); }}
+                                    >
+                                        <FiPlus /> Nueva actividad
+                                    </button>
+                                )}
+                            </div>
                         ) : undefined
                     }
                 />
@@ -615,8 +844,93 @@ export default function Activities() {
                             ]}
                         />
                     </div>
+                    {/* Toggle Lista / Calendario */}
+                    <div className="flex items-center gap-1" role="tablist" aria-label="Modo de vista">
+                        <button
+                            className={`btn btn-sm ${viewMode === 'lista' ? 'btn-primary' : 'btn-secondary'}`}
+                            role="tab"
+                            aria-selected={viewMode === 'lista'}
+                            onClick={() => setViewMode('lista')}
+                        >
+                            <FiList size={14} /> Lista
+                        </button>
+                        <button
+                            className={`btn btn-sm ${viewMode === 'calendario' ? 'btn-primary' : 'btn-secondary'}`}
+                            role="tab"
+                            aria-selected={viewMode === 'calendario'}
+                            onClick={() => setViewMode('calendario')}
+                        >
+                            <FiGrid size={14} /> Calendario
+                        </button>
+                    </div>
                 </div>
 
+                {/* Vista CALENDARIO: coordinación visual del mes */}
+                {viewMode === 'calendario' && (
+                    <div className="mb-6">
+                        <ActivityCalendar
+                            month={calendarMonth}
+                            activities={activities.filter(matchesFilters)}
+                            typeColors={ACTIVITY_TYPES}
+                            onMonthChange={setCalendarMonth}
+                            onActivityClick={handleCalendarActivityClick}
+                            onDayClick={handleCalendarDayClick}
+                        />
+                    </div>
+                )}
+
+                {/* Borradores por completar (planificación pendiente del usuario) */}
+                {misBorradores.length > 0 && (
+                    <div className="card mb-6">
+                        <div className="card-header">
+                            <div>
+                                <h2 className="card-title">Planificadas por completar</h2>
+                                <p className="card-subtitle">
+                                    {misBorradores.length} actividad(es) del plan esperan que completes su detalle.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            {misBorradores.slice(0, 5).map((a) => {
+                                const typeInfo = ACTIVITY_TYPES[a.tipo] || { label: a.tipo, color: 'var(--gray-500)', icon: <FiFileText /> };
+                                return (
+                                    <div
+                                        key={a.activityId}
+                                        className="flex items-center justify-between"
+                                        style={{
+                                            padding: 'var(--space-3)',
+                                            background: 'var(--surface-elevated)',
+                                            borderRadius: 'var(--radius-md)',
+                                            border: '1px dashed var(--surface-border)',
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="avatar avatar-sm" style={{ background: typeInfo.color }}>{typeInfo.icon}</div>
+                                            <div>
+                                                <div className="font-bold">{a.titulo}</div>
+                                                <div className="text-sm text-muted">
+                                                    {new Date(`${a.fecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                    {a.tipoTrabajo && TIPOS_TRABAJO[a.tipoTrabajo] && ` · ${TIPOS_TRABAJO[a.tipoTrabajo]}`}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button className="btn btn-primary btn-sm" onClick={() => openCompleteModal(a)}>
+                                            <FiEdit3 size={14} /> Completar
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                            {misBorradores.length > 5 && (
+                                <div className="text-sm text-muted" style={{ textAlign: 'center' }}>
+                                    +{misBorradores.length - 5} más en el calendario
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Vista LISTA */}
+                {viewMode === 'lista' && <>
                 {/* Today's Activities */}
                 <div className="card mb-6">
                     <div className="card-header">
@@ -796,6 +1110,7 @@ export default function Activities() {
                         </table>
                     </div>
                 </div>
+                </>}{/* fin vista lista */}
 
                 </>}
 
@@ -1331,6 +1646,437 @@ export default function Activities() {
                             )}
                         </>
                     )}
+                </Modal>
+
+                {/* Detalle de un día del calendario */}
+                <Modal
+                    isOpen={!!dayModalFecha}
+                    onClose={() => setDayModalFecha(null)}
+                    title="Actividades del día"
+                    subtitle={dayModalFecha
+                        ? new Date(`${dayModalFecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                        : undefined}
+                    size="lg"
+                    footer={
+                        <>
+                            {canCrearActividad && dayModalFecha && (
+                                <button className="btn btn-primary" onClick={() => crearEnFecha(dayModalFecha)}>
+                                    <FiPlus /> Nueva actividad este día
+                                </button>
+                            )}
+                            <button className="btn btn-secondary" onClick={() => setDayModalFecha(null)}>Cerrar</button>
+                        </>
+                    }
+                >
+                    {dayModalFecha && (() => {
+                        const delDia = activities
+                            .filter(a => a.fecha === dayModalFecha)
+                            .sort((x, y) => {
+                                // Pendientes por completar primero; luego por hora.
+                                const px = x.estado === 'borrador' ? 0 : 1;
+                                const py = y.estado === 'borrador' ? 0 : 1;
+                                if (px !== py) return px - py;
+                                return (x.horaInicio || '').localeCompare(y.horaInicio || '');
+                            });
+                        const pendientes = delDia.filter(a => a.estado === 'borrador');
+
+                        if (delDia.length === 0) {
+                            return (
+                                <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
+                                    <div className="empty-state-icon"><FiCalendar size={40} style={{ color: 'var(--text-muted)' }} /></div>
+                                    <h3 className="empty-state-title">Sin actividades este día</h3>
+                                    <p className="empty-state-description">
+                                        {canCrearActividad
+                                            ? 'Puedes crear una actividad para esta fecha con el botón de abajo.'
+                                            : 'No hay actividades registradas ni planificadas para esta fecha.'}
+                                    </p>
+                                </div>
+                            );
+                        }
+
+                        const estadoBadge = (a: Activity) => {
+                            switch (a.estado) {
+                                case 'borrador': return <span className="badge badge-warning">Por completar</span>;
+                                case 'completada': return <span className="badge badge-success">Completada</span>;
+                                case 'cancelada': return <span className="badge badge-danger">Cancelada</span>;
+                                case 'en_curso': return <span className="badge badge-warning">En curso</span>;
+                                default: return <span className="badge badge-neutral">Programada</span>;
+                            }
+                        };
+
+                        return (
+                            <div className="flex flex-col gap-3">
+                                {pendientes.length > 0 && (
+                                    <div className="alert alert-warning">
+                                        <strong>{pendientes.length}</strong> actividad(es) de este día aún está(n) <strong>por completar</strong>.
+                                    </div>
+                                )}
+                                {delDia.map((a) => {
+                                    const typeInfo = ACTIVITY_TYPES[a.tipo] || { label: a.tipoDescripcion || a.tipo, color: 'var(--gray-500)', icon: <FiFileText /> };
+                                    const responsable = workers.find(w => w.personaId === a.relatorId);
+                                    return (
+                                        <div
+                                            key={a.activityId}
+                                            className="flex items-center justify-between"
+                                            style={{
+                                                padding: 'var(--space-3)',
+                                                background: 'var(--surface-elevated)',
+                                                borderRadius: 'var(--radius-md)',
+                                                border: a.estado === 'borrador' ? '1px dashed var(--warning-500)' : '1px solid var(--surface-border)',
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
+                                                <div className="avatar avatar-sm" style={{ background: typeInfo.color, flexShrink: 0 }}>{typeInfo.icon}</div>
+                                                <div style={{ minWidth: 0 }}>
+                                                    <div className="font-bold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.titulo}</div>
+                                                    <div className="text-sm text-muted">
+                                                        {typeInfo.label}
+                                                        {a.horaInicio && ` · ${a.horaInicio.slice(0, 5)}`}
+                                                        {a.horaFin && `–${a.horaFin.slice(0, 5)}`}
+                                                        {responsable && ` · ${responsable.nombre} ${responsable.apellido || ''}`.trimEnd()}
+                                                        {a.tipoTrabajo && TIPOS_TRABAJO[a.tipoTrabajo] && ` · ${TIPOS_TRABAJO[a.tipoTrabajo]}`}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                                                {estadoBadge(a)}
+                                                {puedeCompletar(a) ? (
+                                                    <button
+                                                        className="btn btn-primary btn-sm"
+                                                        onClick={() => { setDayModalFecha(null); openCompleteModal(a); }}
+                                                    >
+                                                        <FiEdit3 size={14} /> Completar
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        className="btn btn-secondary btn-sm"
+                                                        onClick={() => { setDayModalFecha(null); openDetailModal(a); }}
+                                                    >
+                                                        Ver detalle
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        );
+                    })()}
+                </Modal>
+
+                {/* Planificador: esqueleto de actividades del mes */}
+                <Modal
+                    isOpen={showPlanModal}
+                    onClose={() => !planSubmitting && setShowPlanModal(false)}
+                    preventClose={planSubmitting}
+                    title="Planificar actividades del mes"
+                    subtitle="Arma el esqueleto: cada ítem genera actividades en borrador que los responsables completan día a día. Sábados y domingos se excluyen automáticamente."
+                    size="lg"
+                    footer={
+                        <>
+                            <button type="button" className="btn btn-secondary" disabled={planSubmitting} onClick={() => setShowPlanModal(false)}>Cancelar</button>
+                            <button type="submit" form="plan-form" className="btn btn-primary" disabled={planSubmitting}>
+                                {planSubmitting ? 'Generando…' : 'Generar planificación'}
+                            </button>
+                        </>
+                    }
+                >
+                    <form id="plan-form" onSubmit={handleGeneratePlan}>
+                        <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                            <div className="form-group">
+                                <label className="form-label">Desde *</label>
+                                <input
+                                    type="date"
+                                    value={planRango.desde}
+                                    onChange={(e) => setPlanRango({ ...planRango, desde: e.target.value })}
+                                    className="form-input"
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Hasta *</label>
+                                <input
+                                    type="date"
+                                    value={planRango.hasta}
+                                    min={planRango.desde}
+                                    onChange={(e) => setPlanRango({ ...planRango, hasta: e.target.value })}
+                                    className="form-input"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        {planItems.map((item, index) => (
+                            <div
+                                key={index}
+                                style={{
+                                    padding: 'var(--space-4)',
+                                    background: 'var(--surface-elevated)',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: '1px solid var(--surface-border)',
+                                    marginBottom: 'var(--space-4)',
+                                }}
+                            >
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="font-bold">Ítem {index + 1}</span>
+                                    {planItems.length > 1 && (
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary btn-sm"
+                                            aria-label={`Quitar ítem ${index + 1}`}
+                                            onClick={() => setPlanItems(prev => prev.filter((_, i) => i !== index))}
+                                        >
+                                            <FiTrash2 size={14} />
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Tipo de actividad *</label>
+                                        <Select
+                                            ariaLabel={`Tipo de actividad del ítem ${index + 1}`}
+                                            value={item.tipo}
+                                            onChange={(v) => updatePlanItem(index, { tipo: v })}
+                                            options={Object.entries(ACTIVITY_TYPES).map(([key, { label, icon }]) => ({ value: key, label, icon }))}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Periodicidad *</label>
+                                        <Select
+                                            ariaLabel={`Periodicidad del ítem ${index + 1}`}
+                                            value={item.periodicidad}
+                                            onChange={(v) => updatePlanItem(index, { periodicidad: v as PlanItemForm['periodicidad'] })}
+                                            options={[
+                                                { value: 'diaria', label: 'Diaria (lunes a viernes)' },
+                                                { value: 'semanal', label: 'Semanal' },
+                                                { value: 'mensual', label: 'Mensual' },
+                                            ]}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Tipo de trabajo</label>
+                                        <Select
+                                            ariaLabel={`Tipo de trabajo del ítem ${index + 1}`}
+                                            placeholder="(Todos)"
+                                            value={item.tipoTrabajo}
+                                            onChange={(v) => updatePlanItem(index, { tipoTrabajo: v })}
+                                            options={[
+                                                { value: '', label: 'Todos / no aplica' },
+                                                ...Object.entries(TIPOS_TRABAJO).map(([value, label]) => ({ value, label })),
+                                            ]}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Hora por defecto</label>
+                                        <input
+                                            type="time"
+                                            value={item.horaInicio}
+                                            onChange={(e) => updatePlanItem(index, { horaInicio: e.target.value })}
+                                            className="form-input"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Título base</label>
+                                        <input
+                                            type="text"
+                                            value={item.tituloBase}
+                                            onChange={(e) => updatePlanItem(index, { tituloBase: e.target.value })}
+                                            className="form-input"
+                                            placeholder={ACTIVITY_TYPES[item.tipo]?.label || 'Título de la actividad'}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Ubicación por defecto</label>
+                                        <input
+                                            type="text"
+                                            value={item.ubicacion}
+                                            onChange={(e) => updatePlanItem(index, { ubicacion: e.target.value })}
+                                            className="form-input"
+                                            placeholder="Ej: Frente de obra"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                    <label className="form-label">
+                                        Responsables * {item.responsables.length > 0 && `(${item.responsables.length})`}
+                                    </label>
+                                    <p className="text-xs text-muted" style={{ marginTop: 0 }}>
+                                        Solo a quienes corresponde esta actividad (ej. inspección de andamios → quienes la realizan).
+                                        Se genera un borrador por día para cada responsable.
+                                    </p>
+                                    {workers.length === 0 ? (
+                                        <div className="text-sm text-muted">No hay trabajadores asignados a esta obra.</div>
+                                    ) : (
+                                        <div className="flex flex-col gap-1" style={{ maxHeight: '160px', overflowY: 'auto' }}>
+                                            {workers.map((worker) => {
+                                                const isSelected = item.responsables.includes(worker.personaId);
+                                                return (
+                                                    <div
+                                                        key={worker.personaId}
+                                                        className="flex items-center justify-between cursor-pointer"
+                                                        style={{
+                                                            padding: 'var(--space-1) var(--space-2)',
+                                                            background: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'transparent',
+                                                            borderRadius: 'var(--radius-md)',
+                                                            border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
+                                                        }}
+                                                        onClick={() => togglePlanResponsable(index, worker.personaId)}
+                                                    >
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>
+                                                            <div>
+                                                                <div className="text-sm font-bold">{worker.nombre} {worker.apellido}</div>
+                                                                <div className="text-xs text-muted">{worker.cargo}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: '2px solid var(--surface-border)', background: isSelected ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            {isSelected && <FiCheck size={12} style={{ color: 'white' }} />}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => setPlanItems(prev => [...prev, { ...emptyPlanItem }])}
+                        >
+                            <FiPlus size={14} /> Agregar otro ítem
+                        </button>
+                    </form>
+                </Modal>
+
+                {/* Completar borrador: rellenar el detalle del día */}
+                <Modal
+                    isOpen={showCompleteModal && !!completeActivity}
+                    onClose={() => !completeSubmitting && setShowCompleteModal(false)}
+                    preventClose={completeSubmitting}
+                    title="Completar actividad planificada"
+                    subtitle={completeActivity ? `${ACTIVITY_TYPES[completeActivity.tipo]?.label || completeActivity.tipo} · ${new Date(`${completeActivity.fecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}` : undefined}
+                    footer={
+                        <>
+                            <button type="button" className="btn btn-secondary" disabled={completeSubmitting} onClick={() => setShowCompleteModal(false)}>Cancelar</button>
+                            <button type="submit" form="complete-form" className="btn btn-primary" disabled={completeSubmitting}>
+                                {completeSubmitting ? 'Guardando…' : 'Guardar y programar'}
+                            </button>
+                        </>
+                    }
+                >
+                    <form id="complete-form" onSubmit={handleCompleteBorrador}>
+                        <div className="alert alert-info mb-4">
+                            Este es un borrador del plan. Completa el detalle del día: al guardar queda <strong>programada</strong> y sus asistentes reciben el aviso.
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Título *</label>
+                            <input
+                                type="text"
+                                value={completeForm.titulo}
+                                onChange={(e) => setCompleteForm({ ...completeForm, titulo: e.target.value })}
+                                className="form-input"
+                                placeholder="Ej: Charla — Trabajos en altura sector B"
+                                required
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Descripción / tema del día</label>
+                            <textarea
+                                value={completeForm.descripcion}
+                                onChange={(e) => setCompleteForm({ ...completeForm, descripcion: e.target.value })}
+                                className="form-input"
+                                rows={3}
+                                placeholder="Detalle específico de esta jornada (cada día puede tratar un tema distinto)…"
+                                style={{ resize: 'vertical' }}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                            <div className="form-group">
+                                <label className="form-label">Hora inicio *</label>
+                                <input
+                                    type="time"
+                                    value={completeForm.horaInicio}
+                                    onChange={(e) => setCompleteForm({ ...completeForm, horaInicio: e.target.value })}
+                                    className="form-input"
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Hora fin</label>
+                                <input
+                                    type="time"
+                                    value={completeForm.horaFin}
+                                    onChange={(e) => setCompleteForm({ ...completeForm, horaFin: e.target.value })}
+                                    className="form-input"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Ubicación</label>
+                            <input
+                                type="text"
+                                value={completeForm.ubicacion}
+                                onChange={(e) => setCompleteForm({ ...completeForm, ubicacion: e.target.value })}
+                                className="form-input"
+                                placeholder="Ej: Frente de obra, sala de charlas…"
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">
+                                Asistentes requeridos
+                                {completeForm.asistentesRequeridos.length > 0 && ` (${completeForm.asistentesRequeridos.length})`}
+                            </label>
+                            {workers.length === 0 ? (
+                                <div className="text-sm text-muted">No hay trabajadores asignados a esta obra.</div>
+                            ) : (
+                                <div className="flex flex-col gap-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                    {workers.map((worker) => {
+                                        const isSelected = completeForm.asistentesRequeridos.includes(worker.personaId);
+                                        return (
+                                            <div
+                                                key={worker.personaId}
+                                                className="flex items-center justify-between cursor-pointer"
+                                                style={{
+                                                    padding: 'var(--space-2) var(--space-3)',
+                                                    background: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'var(--surface-elevated)',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
+                                                }}
+                                                onClick={() => toggleCompleteAttendee(worker.personaId)}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>
+                                                    <div>
+                                                        <div className="font-bold">{worker.nombre} {worker.apellido}</div>
+                                                        <div className="text-sm text-muted">{worker.cargo}</div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ width: '22px', height: '22px', borderRadius: '4px', border: '2px solid var(--surface-border)', background: isSelected ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    {isSelected && <FiCheck style={{ color: 'white' }} />}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </form>
                 </Modal>
             </div>
         </>

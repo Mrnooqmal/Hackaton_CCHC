@@ -44,6 +44,9 @@ export const PERMISSIONS = {
     // Actividades
     ACTIVIDADES_VER: 'actividades.ver',
     ACTIVIDADES_CREAR: 'actividades.crear',
+    // Armar el esqueleto de planificación mensual (genera borradores por rango).
+    // Delegable por tenant a otros roles (ej. Comité Paritario) desde Mi Empresa.
+    ACTIVIDADES_PLANIFICAR: 'actividades.planificar',
     // Documentos de obra
     DOCUMENTOS_VER: 'documentos.ver',
     DOCUMENTOS_SUBIR: 'documentos.subir',
@@ -123,6 +126,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         permisos: [
             { key: PERMISSIONS.ACTIVIDADES_VER, label: 'Ver módulo de actividades' },
             { key: PERMISSIONS.ACTIVIDADES_CREAR, label: 'Crear actividad' },
+            { key: PERMISSIONS.ACTIVIDADES_PLANIFICAR, label: 'Planificar actividades del mes (esqueleto)' },
         ],
     },
     {
@@ -170,7 +174,7 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
         PERMISSIONS.IA_VER,
-        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
         PERMISSIONS.CARGOS_GESTIONAR,
     ],
@@ -185,7 +189,7 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
         PERMISSIONS.IA_VER,
-        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
     ],
     supervisor: [
@@ -195,7 +199,9 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.REPOSITORIO_VER,
         PERMISSIONS.FIRMAS_CREAR,
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
-        PERMISSIONS.ACTIVIDADES_VER,
+        // El supervisor puede crear sus propias actividades (trabaja solo o tiene
+        // tareas adicionales no asignadas por la planificación).
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
         PERMISSIONS.DOCUMENTOS_VER,
     ],
     // Acceso mínimo para ver/firmar lo asignado (docs y actividades). Encuestas y

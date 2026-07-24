@@ -44,6 +44,9 @@ const PERMISSIONS = {
     // Actividades
     ACTIVIDADES_VER: 'actividades.ver',
     ACTIVIDADES_CREAR: 'actividades.crear',
+    // Armar el esqueleto de planificación mensual (genera borradores por rango).
+    // Delegable por tenant a otros roles (ej. Comité Paritario) desde Mi Empresa.
+    ACTIVIDADES_PLANIFICAR: 'actividades.planificar',
     // Documentos
     DOCUMENTOS_VER: 'documentos.ver',
     DOCUMENTOS_SUBIR: 'documentos.subir',
@@ -72,7 +75,7 @@ const DEFAULT_ROLE_PRESETS = {
         PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
         PERMISSIONS.IA_VER,
-        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
         PERMISSIONS.CARGOS_GESTIONAR,
     ],
@@ -87,7 +90,7 @@ const DEFAULT_ROLE_PRESETS = {
         PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
         PERMISSIONS.IA_VER,
-        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
     ],
     supervisor: [
@@ -97,7 +100,9 @@ const DEFAULT_ROLE_PRESETS = {
         PERMISSIONS.REPOSITORIO_VER,
         PERMISSIONS.FIRMAS_CREAR,
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
-        PERMISSIONS.ACTIVIDADES_VER,
+        // El supervisor puede crear sus propias actividades (trabaja solo o tiene
+        // tareas adicionales no asignadas por la planificación).
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
         PERMISSIONS.DOCUMENTOS_VER,
     ],
     // Colaborador/trabajador: acceso mínimo para VER y firmar lo que se les asigna

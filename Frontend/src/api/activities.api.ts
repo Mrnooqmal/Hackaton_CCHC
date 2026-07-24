@@ -13,15 +13,26 @@ export interface Activity {
     horaInicio: string;
     horaFin?: string;
     relatorId: string;
+    /** Responsables de la actividad (multi-asignación); relatorId = responsables[0]. */
+    responsables?: string[];
     empresaId: string;
     obraId?: string | null;
     ubicacion?: string;
     asistentesRequeridos?: string[];
     asistentes: Attendee[];
     firmaRelator?: Signature;
-    estado: 'programada' | 'en_curso' | 'completada' | 'cancelada';
+    /** 'borrador' = planificada por esqueleto, pendiente de completar. */
+    estado: 'borrador' | 'programada' | 'en_curso' | 'completada' | 'cancelada';
     planificacion?: PlanificacionActividad | null;
     permisosTrabajo?: PermisoTrabajo[];
+    /** 'planificacion' = generada por el esqueleto; 'ad_hoc' = creada suelta. */
+    origen?: 'planificacion' | 'ad_hoc' | null;
+    /** Etapa constructiva del trabajo (obra_gruesa, terminaciones, etc). */
+    tipoTrabajo?: string | null;
+    /** Agrupa las ocurrencias generadas por un mismo esqueleto. */
+    planId?: string | null;
+    /** Campos que vinieron pre-llenados del esqueleto. */
+    camposPrellenados?: string[];
     createdAt: string;
     updatedAt: string;
 }
@@ -87,6 +98,10 @@ export interface CreateActivityData {
     obraId?: string | null;
     ubicacion?: string;
     asistentesRequeridos?: string[];
+    /** Responsables adicionales (multi-asignación); el relator siempre queda incluido. */
+    responsables?: string[];
+    /** Etapa constructiva del trabajo (obra_gruesa, terminaciones, etc). */
+    tipoTrabajo?: string;
     /** Periodicidad: 'unica' (default) o repetir hasta `repetirHasta`. */
     frecuencia?: 'unica' | 'diaria' | 'semanal' | 'mensual';
     repetirHasta?: string;
@@ -101,6 +116,68 @@ export interface ActivityListParams {
     estado?: string;
     fecha?: string;
     relatorId?: string;
+    /** Busca en responsables[] con fallback a relatorId. */
+    responsableId?: string;
+    planId?: string;
+    tipoTrabajo?: string;
+    /** Rango de fechas (para cargar el mes del calendario de una vez). */
+    fechaDesde?: string;
+    fechaHasta?: string;
+}
+
+/** Ítem del esqueleto de planificación mensual. */
+export interface PlanItem {
+    tipo: string;
+    subtipo?: string;
+    periodicidad: 'diaria' | 'semanal' | 'mensual';
+    /** Etapa constructiva a la que aplica (obra_gruesa, terminaciones, etc). */
+    tipoTrabajo?: string;
+    /** Responsables de ESTE ítem (filtrado por corresponsalía). */
+    responsables: string[];
+    tituloBase?: string;
+    /** Defaults que quedan pre-llenados en cada borrador. */
+    camposPrellenados?: {
+        horaInicio?: string;
+        ubicacion?: string;
+        descripcion?: string;
+    };
+}
+
+export interface PlanData {
+    obraId: string;
+    rangoDesde: string;
+    rangoHasta: string;
+    solicitanteId: string;
+    items: PlanItem[];
+}
+
+export interface PlanResult {
+    planId: string;
+    count: number;
+    /** Duplicados omitidos por idempotencia (misma obra/fecha/tipo/responsable). */
+    omitidas: number;
+    activities: Activity[];
+}
+
+/**
+ * Campos editables vía PATCH: completar borrador / editar contenido y/o el
+ * registro post-charla (planificacion + permisosTrabajo). El backend congela el
+ * contenido (salvo descripción) cuando ya hay firmas registradas.
+ */
+export interface PatchActivityData {
+    solicitanteId: string;
+    titulo?: string;
+    descripcion?: string;
+    ubicacion?: string;
+    horaInicio?: string;
+    horaFin?: string;
+    fecha?: string;
+    asistentesRequeridos?: string[];
+    subtipo?: string;
+    tipoTrabajo?: string;
+    estado?: 'borrador' | 'programada' | 'cancelada';
+    planificacion?: PlanificacionActividad;
+    permisosTrabajo?: PermisoTrabajo[];
 }
 
 export interface ActivityListResponse {
@@ -155,6 +232,23 @@ export const activitiesApi = {
             body: JSON.stringify(activity),
         }),
 
+    /** Genera el esqueleto de planificación: borradores por (fecha × responsable). */
+    plan: (data: PlanData) =>
+        apiRequest<PlanResult>('/activities/plan', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    /**
+     * Completa/edita una actividad: borrador → programada, contenido, y/o el
+     * registro post-charla (planificacion + permisosTrabajo). Nunca toca firmas.
+     */
+    patch: (id: string, data: PatchActivityData) =>
+        apiRequest<Activity>(`/activities/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+        }),
+
     registerAttendance: (id: string, data: AttendanceData) =>
         apiRequest<AttendanceResult>(`/activities/${id}/attendance`, {
             method: 'POST',
@@ -165,8 +259,4 @@ export const activitiesApi = {
         const query = new URLSearchParams(params as Record<string, string>).toString();
         return apiRequest<ActivityStats>(`/activities/stats${query ? `?${query}` : ''}`);
     },
-
-    /** Completar registro post-charla: SOLO planificacion y permisosTrabajo. */
-    patch: (id: string, data: { planificacion?: PlanificacionActividad; permisosTrabajo?: PermisoTrabajo[]; solicitanteId?: string }) =>
-        apiRequest<Activity>(`/activities/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 };

@@ -96,15 +96,20 @@ test('PATCH lo permite un admin aunque no sea el relator', async () => {
 test('PATCH solo escribe planificacion, permisosTrabajo y updatedAt (nunca asistentes/firmas)', async () => {
     store.activity = { activityId: 'a-1', tenantId: 't-1', tipo: 'REUNION_COMITE', relatorId: 'p-1', asistentes: [{ personaId: 'x' }], firmaRelator: { token: 'z' } };
     store.personas['p-1'] = persona({ personaId: 'p-1', tenantId: 't-1' });
-    await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({ solicitanteId: 'p-1', planificacion: { observaciones: 'acta' } }) }));
+    // Con firmas registradas se intenta colar contenido (titulo) y firmas: el
+    // handler debe ignorarlos y escribir solo el registro post-charla.
+    await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-1', planificacion: { observaciones: 'acta' },
+        titulo: 'hackeado', asistentes: [], firmaRelator: null,
+    }) }));
     assert.equal(store.updates.length, 1);
-    const expr = store.updates[0].UpdateExpression;
-    assert.match(expr, /SET planificacion = :p, permisosTrabajo = :pt, updatedAt = :u/);
-    assert.doesNotMatch(expr, /asistentes/);
-    assert.doesNotMatch(expr, /firmaRelator/);
-    // Los valores escritos no incluyen asistentes ni firmas.
-    const vals = store.updates[0].ExpressionAttributeValues;
-    assert.deepEqual(Object.keys(vals).sort(), [':p', ':pt', ':u']);
+    // El UpdateExpression es dinámico (#fN = :vN): se valida por los NOMBRES de
+    // atributo realmente escritos, no por la forma literal de la expresión.
+    const campos = Object.values(store.updates[0].ExpressionAttributeNames || {});
+    assert.deepEqual([...campos].sort(), ['permisosTrabajo', 'planificacion', 'updatedAt']);
+    assert.ok(!campos.includes('asistentes'));
+    assert.ok(!campos.includes('firmaRelator'));
+    assert.ok(!campos.includes('titulo')); // contenido congelado con firmas
 });
 
 test('PATCH 400 si la planificación trae un código de catálogo desconocido', async () => {

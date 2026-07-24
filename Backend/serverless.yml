@@ -75,6 +75,7 @@ provider:
         - GET
         - POST
         - PUT
+        - PATCH
         - DELETE
         - OPTIONS
   iam:
@@ -351,6 +352,20 @@ functions:
           path: /activities/{id}
           method: GET
 
+  planActivities:
+    handler: handlers/activities/handler.plan
+    events:
+      - httpApi:
+          path: /activities/plan
+          method: POST
+
+  patchActivity:
+    handler: handlers/activities/handler.patch
+    events:
+      - httpApi:
+          path: /activities/{id}
+          method: PATCH
+
   registerActivityAttendance:
     handler: handlers/activities/handler.registerAttendance
     events:
@@ -364,13 +379,6 @@ functions:
       - httpApi:
           path: /activities/stats
           method: GET
-
-  patchActivity:
-    handler: handlers/activities/handler.patch
-    events:
-      - httpApi:
-          path: /activities/{id}
-          method: PATCH
 
   # Documents (Documentos)
   listDocuments:
