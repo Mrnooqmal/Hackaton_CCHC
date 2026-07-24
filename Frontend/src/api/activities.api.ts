@@ -20,12 +20,15 @@ export interface Activity {
     asistentes: Attendee[];
     firmaRelator?: Signature;
     estado: 'programada' | 'en_curso' | 'completada' | 'cancelada';
+    planificacion?: PlanificacionActividad | null;
+    permisosTrabajo?: PermisoTrabajo[];
     createdAt: string;
     updatedAt: string;
 }
 
 export interface Attendee {
     workerId: string;
+    personaId?: string;
     nombre: string;
     rut: string;
     cargo: string;
@@ -35,6 +38,38 @@ export interface Attendee {
         horario: string;
         timestamp: string;
     };
+}
+
+export interface SeleccionCatalogo {
+    codigos: string[];
+    otro?: string | null;
+}
+
+export interface PlanificacionActividad {
+    tema?: { codigo?: string | null; otro?: string | null } | null;
+    recursos?: SeleccionCatalogo | null;
+    riesgos?: SeleccionCatalogo | null;
+    medidas?: SeleccionCatalogo | null;
+    tipoTrabajo?: 'interior' | 'exterior' | null;
+    condicionClimatica?: 'despejado' | 'parcial' | 'nublado' | 'lluvia' | null;
+    /** Solo aplica cuando tipoTrabajo === 'exterior'; null en otro caso. */
+    protectorSolar?: boolean | null;
+    /** "Observaciones o participación y consulta" (Comité Paritario). */
+    observaciones?: string;
+}
+
+export type PermisoTrabajoTipo = 'ALTURA' | 'ESPACIO_CONFINADO' | 'TRABAJO_CALIENTE';
+
+export interface PermisoTrabajo {
+    tipo: PermisoTrabajoTipo;
+    responsableId: string;
+    responsableNombre?: string;
+    horaInicio: string;
+    horaFin: string;
+    ubicacion?: string;
+    checklist: Record<string, 'si' | 'no' | 'na'>;
+    /** Lo calcula el backend; el cliente solo lo muestra. */
+    completo?: boolean;
 }
 
 export interface CreateActivityData {
@@ -53,6 +88,8 @@ export interface CreateActivityData {
     /** Periodicidad: 'unica' (default) o repetir hasta `repetirHasta`. */
     frecuencia?: 'unica' | 'diaria' | 'semanal' | 'mensual';
     repetirHasta?: string;
+    planificacion?: PlanificacionActividad;
+    permisosTrabajo?: PermisoTrabajo[];
 }
 
 export interface ActivityListParams {
@@ -126,4 +163,8 @@ export const activitiesApi = {
         const query = new URLSearchParams(params as Record<string, string>).toString();
         return apiRequest<ActivityStats>(`/activities/stats${query ? `?${query}` : ''}`);
     },
+
+    /** Completar registro post-charla: SOLO planificacion y permisosTrabajo. */
+    patch: (id: string, data: { planificacion?: PlanificacionActividad; permisosTrabajo?: PermisoTrabajo[]; solicitanteId?: string }) =>
+        apiRequest<Activity>(`/activities/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 };

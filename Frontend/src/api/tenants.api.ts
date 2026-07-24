@@ -120,6 +120,20 @@ export interface TenantSetupResponse {
 }
 
 // ========================================
+// CATALOGOS Y PERMISOS DE TRABAJO
+// ========================================
+export interface CatalogoItem { codigo: string; label: string; }
+
+export interface CatalogosActividad {
+    temas: CatalogoItem[];
+    recursos: CatalogoItem[];
+    riesgos: CatalogoItem[];
+    medidas: CatalogoItem[];
+}
+
+export type PermisosTrabajoDef = Record<string, { label: string; checklist: { key: string; label: string }[] }>;
+
+// ========================================
 // TENANTS API
 // ========================================
 export const tenantsApi = {
@@ -183,5 +197,16 @@ export const tenantsApi = {
         apiRequest<{ message: string; cargos: TenantCargo[]; documentosSincronizados?: number }>(`/tenants/${id}/cargos`, {
             method: 'PUT',
             body: JSON.stringify({ cargos }),
+        }),
+
+    // Catálogos de planificación diaria (temas/recursos/riesgos/medidas).
+    // Devuelve la semilla de fábrica si el tenant no los ha personalizado.
+    getCatalogosActividad: (id: string) =>
+        apiRequest<{ catalogos: CatalogosActividad; permisosTrabajoDef: PermisosTrabajoDef; sembrado: boolean }>(`/tenants/${id}/catalogos-actividad`),
+
+    saveCatalogosActividad: (id: string, catalogos: CatalogosActividad) =>
+        apiRequest<{ message: string; catalogos: CatalogosActividad }>(`/tenants/${id}/catalogos-actividad`, {
+            method: 'PUT',
+            body: JSON.stringify({ catalogos }),
         }),
 };
