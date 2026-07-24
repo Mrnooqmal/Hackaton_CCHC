@@ -10,7 +10,8 @@
         "deploy:testeo": "cross-env SLS_SERVICE=hackatonbackendv2-testeo serverless deploy",
         "print:dev": "serverless print",
         "print:testeo": "cross-env SLS_SERVICE=hackatonbackendv2-testeo serverless print",
-        "remove": "serverless remove"
+        "remove": "serverless remove",
+        "test": "node --test tests/"
     },
     "dependencies": {
         "@aws-sdk/client-bedrock-runtime": "^3.956.0",
