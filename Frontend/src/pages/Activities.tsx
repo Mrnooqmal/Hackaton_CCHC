@@ -27,6 +27,7 @@ import {
 import SignatureModal from '../components/SignatureModal';
 import PlanificacionDiariaForm from '../components/actividades/PlanificacionDiariaForm';
 import PermisosTrabajoForm from '../components/actividades/PermisosTrabajoForm';
+import ReporteActividad from '../components/actividades/ReporteActividad';
 import { Modal, Select, PageHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
@@ -93,6 +94,10 @@ export default function Activities() {
     const [selfSignActivity, setSelfSignActivity] = useState<Activity | null>(null);
     const [catalogos, setCatalogos] = useState<CatalogosActividad | null>(null);
     const [permisosDef, setPermisosDef] = useState<PermisosTrabajoDef>({});
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editActivity, setEditActivity] = useState<Activity | null>(null);
+    const [editDraft, setEditDraft] = useState<{ planificacion: PlanificacionActividad; permisosTrabajo: PermisoTrabajo[] }>({ planificacion: {}, permisosTrabajo: [] });
+    const [editSaving, setEditSaving] = useState(false);
 
     // Check if user is a worker (can self-sign)
     const canSelfSign = user?.rol === 'trabajador' && user?.personaId;
@@ -344,6 +349,26 @@ export default function Activities() {
     const openDetailModal = (activity: Activity) => {
         setDetailActivity(activity);
         setShowDetailModal(true);
+    };
+
+    const handleSaveRegistro = async () => {
+        if (!editActivity || editSaving) return;
+        setEditSaving(true);
+        try {
+            const res = await activitiesApi.patch(editActivity.activityId, {
+                ...editDraft,
+                solicitanteId: user?.personaId,
+            });
+            if (res.success && res.data) {
+                setActivities((prev) => prev.map((a) => a.activityId === res.data!.activityId ? res.data! : a));
+                setShowEditModal(false);
+                toast.success('Registro actualizado');
+            } else {
+                toast.error(res.error || 'Error al guardar el registro');
+            }
+        } finally {
+            setEditSaving(false);
+        }
     };
 
     const toggleRequiredAttendee = (personaId: string) => {
@@ -1154,32 +1179,87 @@ export default function Activities() {
                                     </div>
                                 )}
 
-                                <div>
-                                    <div className="text-xs text-muted mb-2 flex items-center gap-1">
-                                        <FiUsers /> Asistencia registrada ({detailActivity.asistentes.length})
+                                <ReporteActividad
+                                    activity={detailActivity}
+                                    workers={workers}
+                                    catalogos={catalogos}
+                                    permisosDef={permisosDef}
+                                />
+
+                                {detailActivity.planificacion?.observaciones && (
+                                    <div>
+                                        <div className="text-xs text-muted">
+                                            {detailActivity.tipo === 'REUNION_COMITE' ? 'Participación y consulta' : 'Observaciones'}
+                                        </div>
+                                        <div style={{ whiteSpace: 'pre-wrap' }}>{detailActivity.planificacion.observaciones}</div>
                                     </div>
-                                    {detailActivity.asistentes.length === 0 ? (
-                                        <div className="text-sm text-muted">Aún no hay asistencias firmadas.</div>
-                                    ) : (
-                                        <div className="flex flex-col gap-2">
-                                            {detailActivity.asistentes.map((a, i) => (
-                                                <div key={(a as any).workerId || (a as any).personaId || i} className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="avatar avatar-sm">{a.nombre.charAt(0)}</div>
-                                                        <div>
-                                                            <div className="font-bold">{a.nombre}</div>
-                                                            <div className="text-sm text-muted">{a.cargo || a.rut}</div>
-                                                        </div>
-                                                    </div>
-                                                    <span className="badge badge-success">Firmado</span>
-                                                </div>
+                                )}
+                                {(detailActivity.permisosTrabajo || []).length > 0 && (
+                                    <div>
+                                        <div className="text-xs text-muted mb-2">Permisos de trabajo</div>
+                                        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                                            {detailActivity.permisosTrabajo!.map((pt) => (
+                                                <span key={pt.tipo} className={`badge ${pt.completo ? 'badge-success' : 'badge-warning'}`}>
+                                                    {permisosDef[pt.tipo]?.label || pt.tipo} {pt.completo ? '· completo' : '· incompleto'}
+                                                </span>
                                             ))}
                                         </div>
-                                    )}
-                                </div>
+                                    </div>
+                                )}
+
+                                {(canManage || detailActivity.relatorId === user?.personaId) && (
+                                    <div className="flex justify-end">
+                                        <button className="btn btn-secondary btn-sm" onClick={() => {
+                                            setEditActivity(detailActivity);
+                                            setEditDraft({
+                                                planificacion: detailActivity.planificacion || { observaciones: '' },
+                                                permisosTrabajo: detailActivity.permisosTrabajo || [],
+                                            });
+                                            setShowDetailModal(false);
+                                            setShowEditModal(true);
+                                        }}>
+                                            Completar registro
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         );
                     })()}
+                </Modal>
+
+                {/* Completar registro Modal — edición acotada de planificación + permisos de trabajo (PATCH) */}
+                <Modal
+                    isOpen={showEditModal && !!editActivity}
+                    onClose={() => !editSaving && setShowEditModal(false)}
+                    title="Completar registro"
+                    subtitle={editActivity?.titulo}
+                    footer={
+                        <>
+                            <button className="btn btn-secondary" disabled={editSaving} onClick={() => setShowEditModal(false)}>Cancelar</button>
+                            <button className="btn btn-primary" disabled={editSaving} onClick={handleSaveRegistro}>
+                                {editSaving ? 'Guardando…' : 'Guardar registro'}
+                            </button>
+                        </>
+                    }
+                >
+                    {editActivity && catalogos && (
+                        <>
+                            <PlanificacionDiariaForm
+                                value={editDraft.planificacion}
+                                onChange={(planificacion) => setEditDraft({ ...editDraft, planificacion })}
+                                catalogos={catalogos}
+                                tipoActividad={editActivity.tipo}
+                            />
+                            {['CHARLA_5MIN', 'ART'].includes(editActivity.tipo) && (
+                                <PermisosTrabajoForm
+                                    value={editDraft.permisosTrabajo}
+                                    onChange={(permisosTrabajo) => setEditDraft({ ...editDraft, permisosTrabajo })}
+                                    permisosDef={permisosDef}
+                                    workers={workers}
+                                />
+                            )}
+                        </>
+                    )}
                 </Modal>
             </div>
         </>
