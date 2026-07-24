@@ -278,7 +278,7 @@ class PersonaService {
      * lista COMPLETA de cargos en esa obra (multi-cargo). Devuelve la persona y
      * los obraId nuevos (para que el caller dispare onboarding solo en esos).
      */
-    async setAsignacionObra(tenantId, personaId, obraId, cargos = [], supervisorPersonaId = undefined, asignadaPor = undefined) {
+    async setAsignacionObra(tenantId, personaId, obraId, cargos = [], supervisorPersonaId = undefined, asignadaPor = undefined, prevencionistaPersonaId = undefined) {
         const persona = await this.getById(personaId);
         if (!persona) throw new Error('Persona no encontrada');
         const yaAsignada = persona.asignaciones.some((a) => a.obraId === obraId);
@@ -291,6 +291,11 @@ class PersonaService {
             supervisorPersonaId: supervisorPersonaId !== undefined
                 ? (supervisorPersonaId || null)
                 : (prev?.supervisorPersonaId || null),
+            // Prevencionista a cargo (para supervisores). Mismo criterio: si no se
+            // envía, se conserva el previo.
+            prevencionistaPersonaId: prevencionistaPersonaId !== undefined
+                ? (prevencionistaPersonaId || null)
+                : (prev?.prevencionistaPersonaId || null),
             fechaIngreso: prev?.fechaIngreso || new Date().toISOString(),
             // Quién asignó: al crear se toma el actor; al editar se conserva el original.
             asignadaPor: yaAsignada ? (prev?.asignadaPor || null) : (asignadaPor || null),
@@ -319,6 +324,7 @@ class PersonaService {
                 obraId: asignacion.obraId,
                 cargos: asignacion.cargos || [],
                 supervisorPersonaId: asignacion.supervisorPersonaId || null,
+                prevencionistaPersonaId: asignacion.prevencionistaPersonaId || null,
                 fechaIngreso: asignacion.fechaIngreso || null,
                 fechaEgreso: new Date().toISOString(),
                 asignadaPor: asignacion.asignadaPor || null,

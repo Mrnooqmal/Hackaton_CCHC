@@ -158,6 +158,10 @@ class Persona {
                     // Supervisor (cuadrilla) de esta persona en esta obra. Es por-obra:
                     // una persona puede tener distinto supervisor en cada obra.
                     supervisorPersonaId: a.supervisorPersonaId || null,
+                    // Prevencionista a cargo de ESTA persona (relevante cuando es
+                    // supervisor): define la cadena trabajador→supervisor→prevencionista
+                    // que scopea las charlas. También por-obra.
+                    prevencionistaPersonaId: a.prevencionistaPersonaId || null,
                     fechaIngreso: a.fechaIngreso || null,
                     // Quién realizó la asignación (auditoría). Se conserva al historial.
                     asignadaPor: a.asignadaPor || null,

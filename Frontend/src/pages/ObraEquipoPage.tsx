@@ -530,6 +530,40 @@ export default function ObraEquipoPage() {
         }
     };
 
+    // Fija/cambia el prevencionista a cargo de un supervisor en esta obra. Se refleja
+    // de inmediato en el scope de las charlas que dicte ese supervisor y su cadena.
+    const handlePrevencionistaChange = async (sup: any, prevencionistaId: string) => {
+        if (!obraId || prevencionistaId === (prevencionistaDe(sup) || '')) return;
+        const prevWorkers = workers;
+        const cargos = cargosActuales(sup);
+
+        setWorkers((prev) => prev.map((pw) => {
+            if (pw.personaId !== sup.personaId) return pw;
+            return {
+                ...pw,
+                asignaciones: (pw.asignaciones || []).map((a: any) =>
+                    a.obraId === obraId ? { ...a, prevencionistaPersonaId: prevencionistaId || null } : a
+                ),
+            };
+        }));
+
+        setUpdating(sup.personaId);
+        try {
+            // supervisorPersonaId undefined → se conserva (un supervisor no está en
+            // cuadrilla); solo se fija el prevencionista.
+            await workersApi.setAsignacion(
+                sup.personaId, obraId, cargos, user?.personaId || user?.userId, undefined, prevencionistaId || null,
+            );
+            showToast(prevencionistaId ? 'Prevencionista asignado' : 'Prevencionista quitado');
+            reloadWorkers();
+        } catch (e: any) {
+            setWorkers(prevWorkers);
+            setError(e?.message || 'No se pudo actualizar el prevencionista');
+        } finally {
+            setUpdating(null);
+        }
+    };
+
     const toggleCargo = (workerId: string, cargoCode: string, base: string[]) => {
         setAssignCargos((prev) => {
             const curr = prev[workerId] ?? base;
@@ -560,6 +594,10 @@ export default function ObraEquipoPage() {
         () => activeAssigned.filter((w) => !['supervisor', 'trabajador'].includes(rolTipoDe(w) || '')),
         [activeAssigned, roles]
     );
+    const prevencionistas = useMemo(
+        () => activeAssigned.filter((w) => rolTipoDe(w) === 'prevencionista'),
+        [activeAssigned, roles]
+    );
     const supervisorIds = useMemo(() => new Set(supervisores.map((s) => s.personaId)), [supervisores]);
 
     const cuadrillaDe = (supId: string) => trabajadores.filter((w) => supervisorDe(w) === supId);
@@ -569,6 +607,9 @@ export default function ObraEquipoPage() {
     );
 
     const supervisorSelectOptions = supervisores.map((s) => ({ value: s.personaId, label: `${s.nombre} ${s.apellido || ''}`.trim() }));
+    // Prevencionista a cargo de un supervisor (define el scope de sus charlas).
+    const prevencionistaDe = (w: any): string | null => asignacionDe(w)?.prevencionistaPersonaId || null;
+    const prevencionistaSelectOptions = prevencionistas.map((p) => ({ value: p.personaId, label: `${p.nombre} ${p.apellido || ''}`.trim() }));
     const obraName = obra?.nombre || obra?.codigo || obraId || '…';
 
     // ── Drag and drop ─────────────────────────────────────────────────────────
@@ -969,6 +1010,19 @@ export default function ObraEquipoPage() {
                         <span className="eq2-crew-hint eq2-crew-hint--warn">
                             Este equipo no acepta trabajadores de cuadrilla.
                         </span>
+                    )}
+                    {/* Prevencionista a cargo de esta cuadrilla: define el scope de las
+                        charlas del supervisor. Solo se ofrece si la obra tiene alguno. */}
+                    {supervisor && prevencionistaSelectOptions.length > 0 && (
+                        <div className="eq2-crew-prev" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 220 }}>
+                            <span className="eq2-crew-hint" style={{ flexShrink: 0 }}>Prevencionista:</span>
+                            <SupervisorAutocomplete
+                                options={prevencionistaSelectOptions}
+                                value={prevencionistaDe(supervisor) || ''}
+                                onChange={(pid) => handlePrevencionistaChange(supervisor, pid)}
+                                placeholder="Sin asignar…"
+                            />
+                        </div>
                     )}
                 </div>
 

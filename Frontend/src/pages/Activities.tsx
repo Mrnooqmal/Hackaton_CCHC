@@ -83,6 +83,10 @@ export default function Activities() {
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [detailActivity, setDetailActivity] = useState<Activity | null>(null);
     const [selectedWorkers, setSelectedWorkers] = useState<string[]>([]);
+    // Filtrado de asistentes por relator: por defecto la charla muestra solo el
+    // grupo del relator (su cuadrilla / las cuadrillas de sus supervisores). El
+    // toggle permite expandir a toda la obra por si algún vínculo no está cargado.
+    const [verTodaLaObra, setVerTodaLaObra] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('');
     const [showSignatureModal, setShowSignatureModal] = useState(false);
@@ -349,6 +353,7 @@ export default function Activities() {
 
     const openAttendanceModal = (activity: Activity) => {
         setSelectedActivity(activity);
+        setVerTodaLaObra(false);
         setShowAttendanceModal(true);
     };
 
@@ -430,11 +435,43 @@ export default function Activities() {
         );
     };
 
+    // Trabajadores visibles para un relator: si es supervisor, su cuadrilla; si es
+    // prevencionista, los supervisores a su cargo y las cuadrillas de ellos. Si el
+    // relator está por encima de la cadena (jefe de obra / admin) o no hay vínculos
+    // cargados, `scoped` es false y se muestra toda la obra.
+    const scopeWorkersFor = (relatorId: string): { list: Worker[]; scoped: boolean } => {
+        if (!relatorId) return { list: workers, scoped: false };
+        const asigOf = (w: Worker) => (w.asignaciones || []).find(a => a.obraId === selectedObraId);
+        const supsDelPrev = new Set(
+            workers.filter(w => asigOf(w)?.prevencionistaPersonaId === relatorId).map(w => w.personaId)
+        );
+        const list = workers.filter(w => {
+            const a = asigOf(w);
+            if (!a) return false;
+            if (a.supervisorPersonaId === relatorId) return true;                 // cuadrilla del supervisor-relator
+            if (supsDelPrev.has(w.personaId)) return true;                        // supervisores del prevencionista-relator
+            if (a.supervisorPersonaId && supsDelPrev.has(a.supervisorPersonaId)) return true; // sus trabajadores
+            return false;
+        });
+        return list.length ? { list, scoped: true } : { list: workers, scoped: false };
+    };
+
+    // Lista efectiva de asistentes para un relator, respetando el toggle "ver toda
+    // la obra". Compartida por el form de creación y el modal de asistencia.
+    const visibleWorkersFor = (relatorId: string): { list: Worker[]; scoped: boolean } => {
+        const s = scopeWorkersFor(relatorId);
+        if (verTodaLaObra || !s.scoped) return { list: workers, scoped: s.scoped };
+        return s;
+    };
+
     const selectAllWorkers = () => {
-        if (selectedWorkers.length === workers.length) {
-            setSelectedWorkers([]);
+        const visible = visibleWorkersFor(selectedActivity?.relatorId || '').list;
+        const visibleIds = visible.map(w => w.personaId);
+        const allSelected = visibleIds.every(id => selectedWorkers.includes(id));
+        if (allSelected) {
+            setSelectedWorkers(prev => prev.filter(id => !visibleIds.includes(id)));
         } else {
-            setSelectedWorkers(workers.map(w => w.personaId));
+            setSelectedWorkers(prev => Array.from(new Set([...prev, ...visibleIds])));
         }
     };
 
@@ -489,7 +526,7 @@ export default function Activities() {
                                 className="btn btn-save"
                                 disabled={!selectedObraId}
                                 title={!selectedObraId ? 'Selecciona una obra en la barra superior para crear una actividad' : undefined}
-                                onClick={() => setShowModal(true)}
+                                onClick={() => { setVerTodaLaObra(false); setShowModal(true); }}
                             >
                                 <FiPlus /> Nueva actividad
                             </button>
@@ -945,15 +982,26 @@ export default function Activities() {
                         )}
 
                         <div className="form-group">
-                            <label className="form-label">
-                                Asistentes requeridos
-                                {newActivity.asistentesRequeridos.length > 0 && ` (${newActivity.asistentesRequeridos.length})`}
-                            </label>
-                            {workers.length === 0 ? (
+                            <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-1)' }}>
+                                <label className="form-label" style={{ margin: 0 }}>
+                                    Asistentes requeridos
+                                    {newActivity.asistentesRequeridos.length > 0 && ` (${newActivity.asistentesRequeridos.length})`}
+                                </label>
+                                {scopeWorkersFor(newActivity.relatorId).scoped && (
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setVerTodaLaObra(v => !v)}>
+                                        {verTodaLaObra ? 'Ver solo mi grupo' : 'Ver toda la obra'}
+                                    </button>
+                                )}
+                            </div>
+                            {(() => {
+                                const visibles = visibleWorkersFor(newActivity.relatorId).list;
+                                return workers.length === 0 ? (
                                 <div className="text-sm text-muted">No hay trabajadores asignados a esta obra.</div>
+                            ) : visibles.length === 0 ? (
+                                <div className="text-sm text-muted">Este relator no tiene trabajadores en su grupo. Usa "Ver toda la obra" para elegir de todos modos.</div>
                             ) : (
                                 <div className="flex flex-col gap-2" style={{ maxHeight: '220px', overflowY: 'auto' }}>
-                                    {workers.map((worker) => {
+                                    {visibles.map((worker) => {
                                         const isSelected = newActivity.asistentesRequeridos.includes(worker.personaId);
                                         return (
                                             <div
@@ -981,7 +1029,8 @@ export default function Activities() {
                                         );
                                     })}
                                 </div>
-                            )}
+                            );
+                            })()}
                         </div>
                     </form>
                 </Modal>
@@ -1007,19 +1056,34 @@ export default function Activities() {
                         </>
                     }
                 >
-                    {selectedActivity && (
+                    {selectedActivity && (() => {
+                        const visiblesAsist = visibleWorkersFor(selectedActivity.relatorId).list;
+                        const hayScope = scopeWorkersFor(selectedActivity.relatorId).scoped;
+                        const visiblesIds = visiblesAsist.map(w => w.personaId);
+                        const todosVisiblesSel = visiblesIds.length > 0 && visiblesIds.every(id => selectedWorkers.includes(id));
+                        return (
                         <>
-                            <div className="flex justify-between items-center mb-4">
+                            <div className="flex justify-between items-center mb-4" style={{ gap: 'var(--space-2)' }}>
                                 <span className="font-bold">Seleccionar Trabajadores</span>
-                                <button className="btn btn-secondary btn-sm" onClick={selectAllWorkers}>
-                                    {selectedWorkers.length === workers.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    {hayScope && (
+                                        <button className="btn btn-ghost btn-sm" onClick={() => setVerTodaLaObra(v => !v)}>
+                                            {verTodaLaObra ? 'Ver solo su grupo' : 'Ver toda la obra'}
+                                        </button>
+                                    )}
+                                    <button className="btn btn-secondary btn-sm" onClick={selectAllWorkers}>
+                                        {todosVisiblesSel ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="flex flex-col gap-2" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                {workers.map((worker) => {
+                                {visiblesAsist.length === 0 && (
+                                    <div className="text-sm text-muted">Este relator no tiene trabajadores en su grupo. Usa "Ver toda la obra" para registrar de todos modos.</div>
+                                )}
+                                {visiblesAsist.map((worker) => {
                                     const isSelected = selectedWorkers.includes(worker.personaId);
-                                    const alreadyAttended = selectedActivity.asistentes.some(a => a.workerId === worker.personaId);
+                                    const alreadyAttended = selectedActivity.asistentes.some(a => (a as any).personaId === worker.personaId || a.workerId === worker.personaId);
                                     return (
                                         <div
                                             key={worker.personaId}
@@ -1060,7 +1124,8 @@ export default function Activities() {
                                 </div>
                             )}
                         </>
-                    )}
+                        );
+                    })()}
                 </Modal>
 
                 {/* Signature Modal — firma asistida SECUENCIAL (PIN por trabajador) */}

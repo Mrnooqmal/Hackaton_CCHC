@@ -1858,10 +1858,12 @@ module.exports.personasHandler = async (event) => {
             const cargosNewNorm = cargos.map((c) => normalizeCargoCodigo(String(c))).filter(Boolean);
             const cargoCambio = Boolean(asignacionPrevia) && cargosPrevNorm.join(',') !== [...cargosNewNorm].sort().join(',');
 
+            const prevencionistaEnviado = body.prevencionistaPersonaId !== undefined;
             const { persona, esNueva } = await personaService.setAsignacionObra(
                 tenantId, personaId, body.obraId, cargos,
                 supervisorEnviado ? body.supervisorPersonaId : undefined,
-                solicitanteId
+                solicitanteId,
+                prevencionistaEnviado ? body.prevencionistaPersonaId : undefined
             );
 
             try {

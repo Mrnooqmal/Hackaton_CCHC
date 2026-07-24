@@ -39,7 +39,7 @@ export interface Worker {
     onboardingDS44?: Ds44OnboardingOverrides;
     firmas?: Signature[];
     obraIds?: string[];
-    asignaciones?: Array<{ obraId: string; cargos: string[]; supervisorPersonaId?: string | null; fechaIngreso?: string | null; asignadaPor?: string | null; estado?: string }>;
+    asignaciones?: Array<{ obraId: string; cargos: string[]; supervisorPersonaId?: string | null; prevencionistaPersonaId?: string | null; fechaIngreso?: string | null; asignadaPor?: string | null; estado?: string }>;
     historialAsignaciones?: Array<{ obraId: string; cargos: string[]; supervisorPersonaId?: string | null; fechaIngreso?: string | null; fechaEgreso?: string | null; asignadaPor?: string | null; finalizadaPor?: string | null; motivo?: string }>;
     evidencias?: Array<{ tipo: string; nombre?: string; emitidoEn?: string; venceEn?: string; origenObraId?: string; estado?: string }>;
     cursos?: Array<{ nombre: string; institucion?: string; fecha?: string; vencimiento?: string }>;
@@ -102,10 +102,11 @@ export const workersApi = {
     },
 
     // Asigna al trabajador a una obra con sus cargos de terreno (multi-cargo) y,
-    // opcionalmente, su supervisor (cuadrilla) en esa obra.
-    setAsignacion: (id: string, obraId: string, cargos: string[], solicitanteId?: string, supervisorPersonaId?: string | null) => {
+    // opcionalmente, su supervisor (cuadrilla) en esa obra. Para supervisores,
+    // prevencionistaPersonaId fija el prevencionista a cargo.
+    setAsignacion: (id: string, obraId: string, cargos: string[], solicitanteId?: string, supervisorPersonaId?: string | null, prevencionistaPersonaId?: string | null) => {
         const tenantId = localStorage.getItem('tenant_id') || '';
-        return personasApi.setAsignacion(tenantId, id, obraId, cargos, solicitanteId, supervisorPersonaId);
+        return personasApi.setAsignacion(tenantId, id, obraId, cargos, solicitanteId, supervisorPersonaId, prevencionistaPersonaId);
     },
 
     quitarAsignacion: (id: string, obraId: string, opts?: { solicitanteId?: string; motivo?: string }) => {
