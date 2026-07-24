@@ -332,7 +332,7 @@ export default function ObraNueva() {
         </div>
       </FieldSection>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-5)', alignItems: 'start' }}>
+      <div className="grid-collapse-mobile" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-5)', alignItems: 'start' }}>
       <FieldSection title="Imagen de referencia" description="Foto del terreno u obra (opcional).">
         <div className="form-group full-width">
           <div style={{

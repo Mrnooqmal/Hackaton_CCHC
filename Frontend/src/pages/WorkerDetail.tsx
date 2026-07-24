@@ -855,7 +855,7 @@ Generado por PrevencionApp
                             <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 'var(--space-2)' }}>
                                 Asignar contenido
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)' }}>
+                            <div className="grid-collapse-mobile" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)' }}>
                                 {[
                                     { icon: <LuFileText size={18} style={{ color: '#006edc' }} />, titulo: 'Documento', href: `/documents?workerRut=${encodeURIComponent(worker.rut)}`, color: '#006edc' },
                                     { icon: <LuActivity size={18} style={{ color: '#10b981' }} />, titulo: 'Actividad', href: `/activities?workerRut=${encodeURIComponent(worker.rut)}`, color: '#10b981' },
@@ -1165,7 +1165,7 @@ Generado por PrevencionApp
                                     <span>En programa de vigilancia de la salud</span>
                                 </label>
                                 <div className="form-group"><label className="form-label">Protocolos</label><input type="text" className="form-input" placeholder="Ej: PLANESI, Ruido, Sílice" value={vigForm.protocolos} onChange={(e) => setVigForm({ ...vigForm, protocolos: e.target.value })} /><span className="form-hint">Separar con coma</span></div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                                <div className="grid-collapse-mobile" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                                     <div className="form-group"><label className="form-label">Último examen</label><input type="date" className="form-input" value={vigForm.fechaUltimoExamen} onChange={(e) => setVigForm({ ...vigForm, fechaUltimoExamen: e.target.value })} /></div>
                                     <div className="form-group"><label className="form-label">Aptitud laboral</label><input type="text" className="form-input" placeholder="apto / apto con restricciones / no apto" value={vigForm.aptitudLaboral} onChange={(e) => setVigForm({ ...vigForm, aptitudLaboral: e.target.value })} /></div>
                                 </div>
@@ -1817,7 +1817,7 @@ Generado por PrevencionApp
                     </div>
                 }
             >
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                <div className="grid-collapse-mobile" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                     <div className="form-group">
                         <label className="form-label">Nombre</label>
                         <input className="form-input" value={editForm.nombre} onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })} />
@@ -1857,7 +1857,7 @@ Generado por PrevencionApp
                 <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 'var(--space-4) 0 var(--space-2)' }}>
                     Contacto de emergencia
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
+                <div className="grid-collapse-mobile" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
                     <div className="form-group">
                         <label className="form-label">Nombre</label>
                         <input className="form-input" value={editForm.contactoNombre} onChange={(e) => setEditForm({ ...editForm, contactoNombre: e.target.value })} />

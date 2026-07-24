@@ -377,7 +377,7 @@ export default function PersonasCargaMasiva() {
                     {/* ── Paso 3: resultado ── */}
                     {step === 'result' && resultado && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', paddingBottom: 'var(--space-8)' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-4)' }}>
+                            <div className="grid-collapse-mobile" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-4)' }}>
                                 <div className="cm-stat cm-stat-ok"><FiCheckCircle size={26} /><div className="cm-stat-n">{resultado.creados.length}</div><div className="cm-stat-l">Creados</div></div>
                                 <div className="cm-stat cm-stat-adv"><FiInfo size={26} /><div className="cm-stat-n">{resultado.duplicados.length}</div><div className="cm-stat-l">Duplicados</div></div>
                                 <div className={`cm-stat ${resultado.errores.length ? 'cm-stat-err' : 'cm-stat-ok'}`}>{resultado.errores.length ? <FiAlertTriangle size={26} /> : <FiCheckCircle size={26} />}<div className="cm-stat-n">{resultado.errores.length}</div><div className="cm-stat-l">Errores</div></div>

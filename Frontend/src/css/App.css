@@ -3547,6 +3547,15 @@ select.form-input option {
   box-shadow: var(--shadow-sm);
 }
 
+/* Utilidad: colapsa a 1 sola columna en móvil los grids que en desktop usan
+   columnas fijas/múltiples (inline). Solo actúa ≤640px, así el desktop no cambia.
+   El !important es necesario porque los grids traen gridTemplateColumns inline. */
+@media (max-width: 640px) {
+  .grid-collapse-mobile {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 /* Mobile Modal */
 @media (max-width: 640px) {
   .signature-modal {
