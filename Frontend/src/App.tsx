@@ -34,6 +34,7 @@ import ObraEquipoPage from './pages/ObraEquipoPage';
 import Crear from './pages/Crear';
 import Contenido from './pages/Contenido';
 import CargosOnboarding from './pages/CargosOnboarding';
+import CatalogosActividad from './pages/CatalogosActividad';
 import MiEmpresa from './pages/MiEmpresa';
 import Equipo from './pages/Equipo';
 import About from './pages/About';
@@ -139,6 +140,7 @@ function AppContent() {
 
       {/* Constructor de cargos de onboarding (catálogo tenant). Admin + jefe de obra. */}
       <Route path="/cargos-onboarding" element={<ProtectedRoute requiredPermission={PERMISSIONS.CARGOS_GESTIONAR}><CargosOnboarding /></ProtectedRoute>} />
+      <Route path="/catalogos-actividad" element={<ProtectedRoute requiredPermission={PERMISSIONS.CARGOS_GESTIONAR}><CatalogosActividad /></ProtectedRoute>} />
       <Route path="/workers/enroll" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><WorkerEnroll /></ProtectedRoute>} />
       <Route path="/documents" element={<ProtectedRoute requiredPermission={PERMISSIONS.DOCUMENTOS_VER}><Documents /></ProtectedRoute>} />
       <Route path="/documents-repository" element={<ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}><DocumentsRepository /></ProtectedRoute>} />

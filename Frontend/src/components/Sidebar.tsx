@@ -12,7 +12,8 @@ import {
     FiAlertTriangle,
     FiCheckSquare,
     FiX,
-    FiLogOut
+    FiLogOut,
+    FiList
 } from 'react-icons/fi';
 import { surveysApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -69,6 +70,7 @@ const GENERIC_NAV: NavSection[] = [
         items: [
             { path: '/mi-empresa', icon: FiBriefcase, label: 'Mi Empresa', permission: PERMISSIONS.EMPRESA_VER },
             { path: '/cargos-onboarding', icon: FiCheckSquare, label: 'Onboarding', permission: PERMISSIONS.CARGOS_GESTIONAR },
+            { path: '/catalogos-actividad', icon: FiList, label: 'Catálogos', permission: PERMISSIONS.CARGOS_GESTIONAR },
             { path: '/settings', icon: FiSettings, label: 'Configuración' },
         ]
     }
