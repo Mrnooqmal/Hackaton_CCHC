@@ -121,6 +121,7 @@ export default function Activities() {
     const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [detailActivity, setDetailActivity] = useState<Activity | null>(null);
+    const [cerrando, setCerrando] = useState(false);
     const [selectedWorkers, setSelectedWorkers] = useState<string[]>([]);
     // Filtrado de asistentes por relator: por defecto la charla muestra solo el
     // grupo del relator (su cuadrilla / las cuadrillas de sus supervisores). El
@@ -603,6 +604,29 @@ export default function Activities() {
         }
     };
 
+    // Cierre EXPLÍCITO de la actividad. El backend exige al menos una firma y un
+    // registro con contenido; una actividad cerrada sigue admitiendo firmas de
+    // rezagados durante el día (no se bloquea la firma, solo se "cierra" el acta).
+    const handleCerrarActividad = async (activity: Activity) => {
+        if (!user?.personaId || cerrando) return;
+        setCerrando(true);
+        try {
+            const res = await activitiesApi.patch(activity.activityId, {
+                solicitanteId: user.personaId,
+                estado: 'completada',
+            });
+            if (res.success && res.data) {
+                setActivities((prev) => prev.map((a) => a.activityId === res.data!.activityId ? res.data! : a));
+                setDetailActivity(res.data);
+                toast.success('Actividad cerrada');
+            } else {
+                toast.error(res.error || 'No se pudo cerrar la actividad');
+            }
+        } finally {
+            setCerrando(false);
+        }
+    };
+
     const toggleRequiredAttendee = (personaId: string) => {
         setNewActivity(prev => ({
             ...prev,
@@ -737,6 +761,13 @@ export default function Activities() {
         const ahora = new Date().toTimeString().slice(0, 5);
         return ahora >= inicio;
     };
+
+    // Se puede firmar durante TODO el día de la actividad (con fecha, sin hora
+    // límite de cierre): una actividad ya cerrada (completada) sigue admitiendo
+    // firmas de rezagados mientras sea su día. Solo se excluye cancelada/borrador
+    // y el tramo previo a la hora de inicio.
+    const esFirmable = (a: Activity): boolean =>
+        a.fecha === today && a.estado !== 'cancelada' && a.estado !== 'borrador' && haComenzado(a);
 
     return (
         <>
@@ -1045,43 +1076,48 @@ export default function Activities() {
                                             </div>
 
                                             <span className={`badge badge-${activity.estado === 'completada' ? 'success' :
-                                                activity.estado === 'programada' ? 'neutral' : 'warning'
+                                                activity.estado === 'cancelada' ? 'danger' : 'neutral'
                                                 }`}>
                                                 {activity.estado === 'completada' ? 'Completada' :
-                                                    activity.estado === 'programada' ? 'Programada' : 'En curso'}
+                                                    activity.estado === 'cancelada' ? 'Cancelada' : 'Programada'}
                                             </span>
 
-                                            {activity.estado !== 'completada' && (
-                                                haComenzado(activity) ? (
-                                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                                        {/* Worker self-sign button */}
-                                                        {canSelfSign && !activity.asistentes.some(a => a.workerId === user?.personaId || (a as any).personaId === user?.personaId) && (
-                                                            <button
-                                                                className="btn btn-secondary btn-sm"
-                                                                onClick={() => openSelfSignModal(activity)}
-                                                            >
-                                                                <FiCheck />
-                                                                Registrar mi asistencia
-                                                            </button>
-                                                        )}
-                                                        {/* Manager mass attendance button */}
-                                                        {canManage && (
-                                                            <button
-                                                                className="btn btn-primary btn-sm"
-                                                                onClick={() => openAttendanceModal(activity)}
-                                                            >
-                                                                <FiCheck />
-                                                                Registrar Asistencia
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-muted" title={`Disponible para firmar a las ${(activity.horaInicio || '').slice(0,5)}`}>
-                                                        <FiClock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                                                        Aún no comienza · firma disponible desde {(activity.horaInicio || '').slice(0, 5)}
-                                                    </span>
-                                                )
-                                            )}
+                                            {esFirmable(activity) ? (
+                                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                                    {/* Actividad cerrada que aún admite rezagados durante el día */}
+                                                    {activity.estado === 'completada' && (
+                                                        <span className="text-xs text-muted" title="La actividad está cerrada; aún puedes registrar firmas de rezagados durante el día">
+                                                            <FiClock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                                                            Cerrada · admite rezagados
+                                                        </span>
+                                                    )}
+                                                    {/* Worker self-sign button */}
+                                                    {canSelfSign && !activity.asistentes.some(a => a.workerId === user?.personaId || (a as any).personaId === user?.personaId) && (
+                                                        <button
+                                                            className="btn btn-secondary btn-sm"
+                                                            onClick={() => openSelfSignModal(activity)}
+                                                        >
+                                                            <FiCheck />
+                                                            Registrar mi asistencia
+                                                        </button>
+                                                    )}
+                                                    {/* Manager mass attendance button */}
+                                                    {canManage && (
+                                                        <button
+                                                            className="btn btn-primary btn-sm"
+                                                            onClick={() => openAttendanceModal(activity)}
+                                                        >
+                                                            <FiCheck />
+                                                            {activity.estado === 'completada' ? 'Agregar firma' : 'Registrar Asistencia'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : activity.fecha === today && !haComenzado(activity) ? (
+                                                <span className="text-xs text-muted" title={`Disponible para firmar a las ${(activity.horaInicio || '').slice(0,5)}`}>
+                                                    <FiClock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                                                    Aún no comienza · firma disponible desde {(activity.horaInicio || '').slice(0, 5)}
+                                                </span>
+                                            ) : null}
                                         </div>
                                     </div>
                                 );
@@ -1420,9 +1456,14 @@ export default function Activities() {
                         const visiblesIds = visiblesAsist.map(w => w.personaId);
                         const todosVisiblesSel = visiblesIds.length > 0 && visiblesIds.every(id => selectedWorkers.includes(id));
                         const qAsist = attendanceSearch.trim().toLowerCase();
-                        const visiblesAsistFiltrados = !qAsist
+                        // Convocados (asistentesRequeridos): se resaltan y se ordenan
+                        // primero, sin excluir a los no convocados (que igual pueden firmar).
+                        const requeridosSet = new Set(selectedActivity.asistentesRequeridos || []);
+                        const visiblesAsistFiltrados = (!qAsist
                             ? visiblesAsist
-                            : visiblesAsist.filter((worker) => `${worker.nombre} ${worker.apellido} ${worker.cargo}`.toLowerCase().includes(qAsist));
+                            : visiblesAsist.filter((worker) => `${worker.nombre} ${worker.apellido} ${worker.cargo}`.toLowerCase().includes(qAsist)))
+                            .slice()
+                            .sort((a, b) => Number(requeridosSet.has(b.personaId)) - Number(requeridosSet.has(a.personaId)));
                         return (
                         <>
                             <div className="flex justify-between items-center mb-4" style={{ gap: 'var(--space-2)' }}>
@@ -1461,15 +1502,21 @@ export default function Activities() {
                                 {visiblesAsistFiltrados.map((worker) => {
                                     const isSelected = selectedWorkers.includes(worker.personaId);
                                     const alreadyAttended = selectedActivity.asistentes.some(a => (a as any).personaId === worker.personaId || a.workerId === worker.personaId);
+                                    const esConvocado = requeridosSet.has(worker.personaId);
                                     return (
                                         <div
                                             key={worker.personaId}
                                             className={`flex items-center justify-between ${alreadyAttended ? '' : 'cursor-pointer'}`}
                                             style={{
                                                 padding: 'var(--space-3)',
-                                                background: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'var(--surface-elevated)',
+                                                background: isSelected
+                                                    ? 'var(--accent-tint)'
+                                                    : esConvocado
+                                                        ? 'color-mix(in srgb, var(--accent) 8%, var(--surface-elevated))'
+                                                        : 'var(--surface-elevated)',
                                                 borderRadius: 'var(--radius-md)',
                                                 border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
+                                                borderLeft: esConvocado ? '3px solid var(--accent)' : (isSelected ? '1px solid var(--primary-500)' : '3px solid transparent'),
                                                 opacity: alreadyAttended ? 0.5 : 1
                                             }}
                                             onClick={() => !alreadyAttended && toggleWorkerSelection(worker.personaId)}
@@ -1477,7 +1524,18 @@ export default function Activities() {
                                             <div className="flex items-center gap-3">
                                                 <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>
                                                 <div>
-                                                    <div className="font-bold">{worker.nombre} {worker.apellido}</div>
+                                                    <div className="font-bold flex items-center gap-2">
+                                                        {worker.nombre} {worker.apellido}
+                                                        {esConvocado && (
+                                                            <span
+                                                                className="badge badge-sm"
+                                                                style={{ background: 'var(--accent-tint)', color: 'var(--accent-text)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)' }}
+                                                                title="Trabajador convocado a esta actividad"
+                                                            >
+                                                                Convocado
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="text-sm text-muted">{worker.cargo}</div>
                                                 </div>
                                             </div>
@@ -1655,21 +1713,68 @@ export default function Activities() {
                                     </div>
                                 )}
 
-                                {(canManage || detailActivity.relatorId === user?.personaId) && (
-                                    <div className="flex justify-end">
-                                        <button className="btn btn-secondary btn-sm" onClick={() => {
-                                            setEditActivity(detailActivity);
-                                            setEditDraft({
-                                                planificacion: detailActivity.planificacion || { observaciones: '' },
-                                                permisosTrabajo: detailActivity.permisosTrabajo || [],
-                                            });
-                                            setShowDetailModal(false);
-                                            setShowEditModal(true);
-                                        }}>
-                                            Completar registro
-                                        </button>
-                                    </div>
-                                )}
+                                {(canManage || detailActivity.relatorId === user?.personaId) && (() => {
+                                    // Guarda de UI del cierre (el backend es la validación dura):
+                                    // requiere al menos una firma y un registro con contenido.
+                                    const sinFirmas = (detailActivity.asistentes || []).length === 0;
+                                    const plan = detailActivity.planificacion || {};
+                                    const tema = plan.tema || {};
+                                    const registroVacio = !(
+                                        (detailActivity.descripcion || '').trim() ||
+                                        (detailActivity.ubicacion || '').trim() ||
+                                        requeridos.length > 0 ||
+                                        (detailActivity.permisosTrabajo || []).length > 0 ||
+                                        tema.codigo || (tema.otro || '').trim()
+                                    );
+                                    const motivoBloqueo = sinFirmas
+                                        ? 'Requiere al menos una firma registrada'
+                                        : registroVacio
+                                            ? 'Completa el registro antes de cerrar'
+                                            : undefined;
+                                    const estaCerrada = detailActivity.estado === 'completada';
+                                    return (
+                                        <div
+                                            style={{
+                                                display: 'flex', flexDirection: 'column', gap: 'var(--space-2)',
+                                                borderTop: '1px solid var(--surface-border)',
+                                                paddingTop: 'var(--space-4)', marginTop: 'var(--space-2)',
+                                            }}
+                                        >
+                                            {!estaCerrada && (
+                                                <>
+                                                    <button
+                                                        className="btn btn-save btn-lg"
+                                                        style={{ width: '100%', justifyContent: 'center' }}
+                                                        disabled={cerrando || !!motivoBloqueo}
+                                                        title={motivoBloqueo}
+                                                        onClick={() => handleCerrarActividad(detailActivity)}
+                                                    >
+                                                        <FiCheck size={18} />
+                                                        {cerrando ? 'Cerrando…' : 'Cerrar actividad'}
+                                                    </button>
+                                                    {motivoBloqueo && (
+                                                        <div className="text-xs text-muted" style={{ textAlign: 'center' }}>
+                                                            {motivoBloqueo}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                            <div className="flex justify-center">
+                                                <button className="btn btn-ghost btn-sm" onClick={() => {
+                                                    setEditActivity(detailActivity);
+                                                    setEditDraft({
+                                                        planificacion: detailActivity.planificacion || { observaciones: '' },
+                                                        permisosTrabajo: detailActivity.permisosTrabajo || [],
+                                                    });
+                                                    setShowDetailModal(false);
+                                                    setShowEditModal(true);
+                                                }}>
+                                                    Completar registro
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         );
                     })()}

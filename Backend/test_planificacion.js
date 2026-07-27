@@ -3,7 +3,8 @@
  * Ejecutar: node test_planificacion.js
  */
 process.env.ACTIVITIES_TABLE = 'test';
-const { generarFechasRecurrencia } = require('./handlers/activities/handler');
+const handler = require('./handlers/activities/handler');
+const { generarFechasRecurrencia, _calcularAtraso: calcularAtraso, _registroTieneContenido: registroTieneContenido } = handler;
 
 let ok = 0, fail = 0;
 const assert = (cond, msg) => {
@@ -44,6 +45,36 @@ assert(fechas.length === 4, `4 miércoles (obtuvo ${fechas.length})`);
 console.log('— Rango inválido devuelve solo inicio (comportamiento previo) —');
 fechas = generarFechasRecurrencia('2026-07-20', '2026-07-10', 'diaria', true);
 assert(fechas.length === 1 && fechas[0] === '2026-07-20', 'rango invertido → [inicio]');
+
+console.log('— Etiqueta de atraso de firmas —');
+let a = calcularAtraso('09:15', '09:00');
+assert(a.atraso === true && a.minutosAtraso === 15, 'firma 15 min tarde → atraso 15');
+a = calcularAtraso('09:00', '09:00');
+assert(a.atraso === false && a.minutosAtraso === 0, 'firma en punto → sin atraso');
+a = calcularAtraso('08:50', '09:00');
+assert(a.atraso === false && a.minutosAtraso === 0, 'firma anticipada → sin atraso');
+a = calcularAtraso('09:05:30', '09:00');
+assert(a.atraso === true && a.minutosAtraso === 5, 'acepta HH:MM:SS → atraso 5');
+a = calcularAtraso(undefined, '09:00');
+assert(a.atraso === false && a.minutosAtraso === 0, 'hora de firma faltante → sin atraso (defensivo)');
+a = calcularAtraso('09:10', null);
+assert(a.atraso === false && a.minutosAtraso === 0, 'hora programada faltante → sin atraso (defensivo)');
+
+console.log('— Registro con contenido (guarda de cierre) —');
+assert(registroTieneContenido({ tipo: 'CHARLA_5MIN', descripcion: 'Charla de andamios' }) === true,
+    'con descripción → tiene contenido');
+assert(registroTieneContenido({ tipo: 'CHARLA_5MIN', planificacion: { tema: { codigo: 'ANDAMIOS' } } }) === true,
+    'con tema de planificación → tiene contenido');
+assert(registroTieneContenido({ tipo: 'CHARLA_5MIN', planificacion: { tema: { otro: 'Tema libre' } } }) === true,
+    'con tema "otro" → tiene contenido');
+assert(registroTieneContenido({ tipo: 'INSPECCION', asistentesRequeridos: ['p1'] }) === true,
+    'con asistentes requeridos → tiene contenido');
+assert(registroTieneContenido({ tipo: 'CHARLA_5MIN', permisosTrabajo: [{ tipo: 'ALTURA' }] }) === true,
+    'con permiso de trabajo → tiene contenido');
+assert(registroTieneContenido({ tipo: 'CHARLA_5MIN' }) === false,
+    'sin ningún dato → registro vacío');
+assert(registroTieneContenido({ tipo: 'CHARLA_5MIN', descripcion: '   ', planificacion: { tema: { otro: '  ' } } }) === false,
+    'solo espacios en blanco → registro vacío');
 
 console.log(`\n${ok} OK, ${fail} fallidas`);
 process.exit(fail > 0 ? 1 : 0);

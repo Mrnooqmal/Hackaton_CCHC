@@ -133,7 +133,7 @@ export default function SignatureModal({
                             type="button"
                             onClick={onSecondaryAction}
                             disabled={isProcessing || loading}
-                            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 'var(--text-sm)', textDecoration: 'underline' }}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--text-sm)', textDecoration: 'underline' }}
                         >
                             {secondaryActionLabel}
                         </button>
@@ -157,9 +157,9 @@ export default function SignatureModal({
                         position: relative;
                         width: 100%;
                         max-width: 420px;
-                        background: #1a1a2e;
+                        background: var(--surface-card);
                         border-radius: var(--radius-xl);
-                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        border: 1px solid var(--surface-border);
                         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
                         overflow: hidden;
                         animation: signatureModalSlideIn 0.3s ease;
@@ -253,8 +253,8 @@ export default function SignatureModal({
 
                     .signature-modal-description {
                         padding: var(--space-4) var(--space-6);
-                        background: #16162a;
-                        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                        background: var(--surface-elevated);
+                        border-bottom: 1px solid var(--surface-border);
                     }
 
                     .signature-modal-description p {
@@ -269,10 +269,10 @@ export default function SignatureModal({
                         align-items: flex-start;
                         gap: var(--space-3);
                         padding: var(--space-4) var(--space-6);
-                        background: #16162a;
+                        background: var(--surface-elevated);
                         margin: var(--space-4) var(--space-6) 0;
                         border-radius: var(--radius-lg);
-                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        border: 1px solid var(--surface-border);
                     }
 
                     .signature-modal-info-icon {
@@ -305,8 +305,8 @@ export default function SignatureModal({
                     }
 
                     .signature-modal-pin-wrapper .pin-digit {
-                        background: #0f0f1a;
-                        border-color: rgba(255, 255, 255, 0.2);
+                        background: var(--surface-bg);
+                        border-color: var(--surface-border);
                     }
 
                     .signature-modal-pin-wrapper .pin-digit:focus {
@@ -314,7 +314,7 @@ export default function SignatureModal({
                     }
 
                     .signature-modal-pin-wrapper .pin-digit.filled {
-                        background: #16162a;
+                        background: var(--surface-hover);
                         border-color: var(--primary-400);
                     }
 

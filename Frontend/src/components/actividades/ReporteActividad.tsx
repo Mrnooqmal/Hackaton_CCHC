@@ -41,6 +41,11 @@ export default function ReporteActividad({ activity, workers, catalogos, permiso
                                         <span className={`badge badge-sm ${f.asistio ? 'badge-success' : 'badge-danger'}`}>
                                             {f.asistio ? 'Sí' : 'No'}
                                         </span>
+                                        {f.atraso && (
+                                            <span className="badge badge-sm badge-warning" style={{ marginLeft: 'var(--space-1)' }} title={`Firmó ${f.minutosAtraso} min después de la hora programada`}>
+                                                Atraso {f.minutosAtraso}′
+                                            </span>
+                                        )}
                                     </td>
                                     <td>{f.hora || '—'}</td>
                                 </tr>

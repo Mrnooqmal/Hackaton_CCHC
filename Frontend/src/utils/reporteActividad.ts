@@ -15,7 +15,38 @@ export interface FilaAsistencia {
     asistio: boolean;
     hora: string | null;
     convocado: boolean;
+    /** Firmó después de la hora programada de la charla. */
+    atraso: boolean;
+    /** Minutos de atraso respecto de la hora de inicio (0 si no hubo). */
+    minutosAtraso: number;
 }
+
+// Chile (America/Santiago). Las firmas guardan el timestamp en UTC (FirmaService
+// corre en Lambda con reloj UTC), pero horaInicio la ingresa el usuario en hora
+// local. Para que la "hora de firma" y el atraso sean correctos, se convierte el
+// timestamp a hora de Chile antes de compararlo/mostrarlo.
+const CHILE_TZ = 'America/Santiago';
+
+const horaChileDesdeISO = (iso?: string | null): string | null => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleTimeString('es-CL', { timeZone: CHILE_TZ, hour12: false, hour: '2-digit', minute: '2-digit' });
+};
+
+const hhmmAMin = (hora?: string | null): number | null => {
+    if (typeof hora !== 'string') return null;
+    const m = hora.match(/^(\d{1,2}):(\d{2})/);
+    return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
+};
+
+const calcAtraso = (horaFirma: string | null, horaInicio?: string | null) => {
+    const f = hhmmAMin(horaFirma);
+    const p = hhmmAMin(horaInicio);
+    if (f === null || p === null) return { atraso: false, minutosAtraso: 0 };
+    const diff = f - p;
+    return { atraso: diff > 0, minutosAtraso: diff > 0 ? diff : 0 };
+};
 
 /**
  * Cruza asistentesRequeridos × asistentes: cada requerido sale Sí/No; quien
@@ -23,10 +54,25 @@ export interface FilaAsistencia {
  * Los asistentes guardan personaId (o workerId legacy).
  */
 export function construirFilasAsistencia(activity: Activity, workers: Worker[]) {
-    const firmadoPor = new Map<string, { hora: string | null; nombre: string; cargo: string }>();
+    const firmadoPor = new Map<string, { hora: string | null; nombre: string; cargo: string; atraso: boolean; minutosAtraso: number }>();
     for (const a of activity.asistentes || []) {
         const id = (a as any).personaId || a.workerId;
-        if (id) firmadoPor.set(id, { hora: a.firma?.horario || null, nombre: a.nombre, cargo: a.cargo || '' });
+        if (!id) continue;
+        // Hora de firma en horario de Chile, derivada del timestamp (autoritativo).
+        // Si no hay timestamp (datos muy antiguos), se cae al horario guardado.
+        const horaLocal = horaChileDesdeISO(a.firma?.timestamp) || a.firma?.horario || null;
+        // El atraso se recalcula acá (no se confía en el valor guardado, que pudo
+        // computarse contra un horario UTC): compara la hora local con horaInicio.
+        const { atraso, minutosAtraso } = a.firma?.timestamp
+            ? calcAtraso(horaLocal, activity.horaInicio)
+            : { atraso: !!a.atraso, minutosAtraso: a.minutosAtraso || 0 };
+        firmadoPor.set(id, {
+            hora: horaLocal,
+            nombre: a.nombre,
+            cargo: a.cargo || '',
+            atraso,
+            minutosAtraso,
+        });
     }
 
     const filas: FilaAsistencia[] = [];
@@ -41,11 +87,13 @@ export function construirFilasAsistencia(activity: Activity, workers: Worker[]) 
             asistio: !!firma,
             hora: firma?.hora || null,
             convocado: true,
+            atraso: firma?.atraso || false,
+            minutosAtraso: firma?.minutosAtraso || 0,
         });
     }
     for (const [id, firma] of firmadoPor) {
         if (requeridosIds.includes(id)) continue;
-        filas.push({ personaId: id, nombre: firma.nombre, cargo: firma.cargo, asistio: true, hora: firma.hora, convocado: false });
+        filas.push({ personaId: id, nombre: firma.nombre, cargo: firma.cargo, asistio: true, hora: firma.hora, convocado: false, atraso: firma.atraso, minutosAtraso: firma.minutosAtraso });
     }
 
     const requeridos = requeridosIds.length;
@@ -102,7 +150,7 @@ export function abrirReporteImpresion(
 <h2>Asistencia</h2>
 <div>Convocados: <b>${filas.requeridos}</b> · Participantes: <b>${filas.asistieron}</b> · Asistencia: <b>${filas.requeridos > 0 ? filas.porcentaje + '%' : '—'}</b></div>
 <table><thead><tr><th>Nombre</th><th>Cargo</th><th>Asistió</th><th>Hora firma</th></tr></thead><tbody>
-${filas.filas.map((f) => `<tr><td>${esc(f.nombre)}${f.convocado ? '' : ' <span class="muted">(no convocado)</span>'}</td><td>${esc(f.cargo)}</td><td class="${f.asistio ? 'si' : 'no'}">${f.asistio ? 'Sí' : 'No'}</td><td>${esc(f.hora || '—')}</td></tr>`).join('')}
+${filas.filas.map((f) => `<tr><td>${esc(f.nombre)}${f.convocado ? '' : ' <span class="muted">(no convocado)</span>'}</td><td>${esc(f.cargo)}</td><td class="${f.asistio ? 'si' : 'no'}">${f.asistio ? 'Sí' : 'No'}</td><td>${esc(f.hora || '—')}${f.atraso ? ` <span class="muted">(atraso ${f.minutosAtraso} min)</span>` : ''}</td></tr>`).join('')}
 </tbody></table>
 
 ${p ? `<h2>Planificación diaria</h2>

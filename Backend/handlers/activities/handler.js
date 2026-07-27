@@ -44,6 +44,48 @@ const MAX_OCURRENCIAS = 180;
 // (suma de fechas × responsables de todos los ítems del esqueleto).
 const MAX_ACTIVIDADES_PLAN = 500;
 
+// Convierte "HH:MM" o "HH:MM:SS" a minutos desde medianoche. Devuelve null si
+// el formato no es reconocible (render/validación defensivos con datos viejos).
+const horaAMinutos = (hora) => {
+    if (typeof hora !== 'string') return null;
+    const m = hora.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+};
+
+// Calcula el atraso de una firma respecto de la hora programada de la charla.
+// No bloquea nada: solo etiqueta. Si falta alguna hora, atraso = false.
+const calcularAtraso = (horaFirma, horaProgramada) => {
+    const f = horaAMinutos(horaFirma);
+    const p = horaAMinutos(horaProgramada);
+    if (f === null || p === null) return { atraso: false, minutosAtraso: 0 };
+    const diff = f - p;
+    return { atraso: diff > 0, minutosAtraso: diff > 0 ? diff : 0 };
+};
+
+// Regla de "registro completamente vacío" para impedir el cierre de una
+// actividad sin contenido. Tiene contenido si hay descripción, ubicación,
+// asistentes requeridos, algún permiso de trabajo, o una planificación con
+// tema (código u "otro"). Para CHARLA_5MIN/ART se exige además el tema.
+const registroTieneContenido = (activity) => {
+    const plan = activity.planificacion || {};
+    const tema = plan.tema || {};
+    const tieneTema = !!(tema.codigo || (typeof tema.otro === 'string' && tema.otro.trim()));
+    const tienePermisos = Array.isArray(activity.permisosTrabajo) && activity.permisosTrabajo.length > 0;
+    const tieneBase = !!(
+        (typeof activity.descripcion === 'string' && activity.descripcion.trim()) ||
+        (typeof activity.ubicacion === 'string' && activity.ubicacion.trim()) ||
+        (Array.isArray(activity.asistentesRequeridos) && activity.asistentesRequeridos.length > 0) ||
+        tienePermisos
+    );
+    if (activity.tipo === 'CHARLA_5MIN' || activity.tipo === 'ART') {
+        return tieneTema || tieneBase;
+    }
+    return tieneTema || tieneBase;
+};
+module.exports._registroTieneContenido = registroTieneContenido;
+module.exports._calcularAtraso = calcularAtraso;
+
 /**
  * Valida planificacion + permisosTrabajo de un body contra el catálogo del
  * tenant y las personas reales. Devuelve { planificacion, permisosTrabajo }
@@ -580,6 +622,16 @@ module.exports.registerAttendance = async (event) => {
         if (!actResult.Item) return error('Actividad no encontrada', 404);
         const activity = actResult.Item;
 
+        // Se puede firmar durante todo el día: una actividad completada (cerrada)
+        // sigue admitiendo firmas de rezagados. Solo se bloquea si está cancelada
+        // o si aún es un borrador sin programar.
+        if (activity.estado === 'cancelada') {
+            return error('La actividad está cancelada y no admite firmas', 409);
+        }
+        if (activity.estado === 'borrador') {
+            return error('La actividad es un borrador sin programar; complétala antes de firmar', 409);
+        }
+
         const personaService = new PersonaService();
         const now = new Date();
         const nuevosAsistentes = [];
@@ -611,11 +663,23 @@ module.exports.registerAttendance = async (event) => {
                 persona
             });
 
+            // Etiqueta de atraso: se firmó después de la hora programada de la
+            // charla. No bloquea; solo queda registrado para el reporte.
+            // OJO: firma.horario viene en UTC (FirmaService corre en Lambda con
+            // reloj UTC), pero horaInicio se ingresa en hora de Chile. Se compara
+            // contra la hora local de Chile para no marcar un atraso falso.
+            const horaFirmaChile = now.toLocaleTimeString('es-CL', {
+                timeZone: 'America/Santiago', hour12: false, hour: '2-digit', minute: '2-digit',
+            });
+            const { atraso, minutosAtraso } = calcularAtraso(horaFirmaChile, activity.horaInicio);
+
             nuevosAsistentes.push({
                 personaId: pid,
                 nombre: persona.nombre,
                 rut: persona.rut,
                 cargo: persona.cargo || '',
+                atraso,
+                minutosAtraso,
                 firma: {
                     token: firma.token,
                     fecha: firma.fecha,
@@ -644,17 +708,16 @@ module.exports.registerAttendance = async (event) => {
             }
         }
 
-        const estado = asistentes.length > 0 ? 'completada' : activity.estado;
-
+        // La firma NO cierra la actividad ni fija horaFin: registrar asistencia y
+        // cerrar la charla son acciones distintas. El estado se mantiene
+        // (programada / completada) y el cierre es explícito vía PATCH.
         await docClient.send(new UpdateCommand({
             TableName: TABLE_NAME,
             Key: { activityId: id },
-            UpdateExpression: 'SET asistentes = :asistentes, firmaRelator = :firmaRelator, estado = :estado, horaFin = :horaFin, updatedAt = :updatedAt',
+            UpdateExpression: 'SET asistentes = :asistentes, firmaRelator = :firmaRelator, updatedAt = :updatedAt',
             ExpressionAttributeValues: {
                 ':asistentes': asistentes,
                 ':firmaRelator': firmaRelator,
-                ':estado': estado,
-                ':horaFin': now.toTimeString().split(' ')[0].substring(0, 5),
                 ':updatedAt': now.toISOString()
             }
         }));
@@ -754,6 +817,9 @@ module.exports.getStats = async (event) => {
  *   firmas registradas. Con firmas, solo descripcion (más los bloques de arriba).
  * - Un `borrador` (generado por /activities/plan) pasa a `programada` al
  *   completarse, notificando a los asistentes requeridos.
+ * - `estado: 'completada'` = CIERRE EXPLÍCITO: requiere al menos una firma y un
+ *   registro con contenido; fija horaFin. Una actividad cerrada sigue admitiendo
+ *   firmas de rezagados (eso lo maneja registerAttendance, no esta vía).
  * - Las asistencias y firmas son registro de auditoría y NO se tocan por esta
  *   vía. Autorizado: el relator/responsables de la actividad o quien tenga el
  *   permiso de crear actividades.
@@ -829,17 +895,33 @@ module.exports.patch = async (event) => {
             else updates.subtipoDescripcion = CAPACITACION_SUBTIPOS[updates.subtipo];
         }
 
-        // Cambio de estado: solo transiciones administrativas. `completada` la fija
-        // exclusivamente el registro de asistencia (no se puede forzar por acá).
-        const ESTADOS_PATCH = ['borrador', 'programada', 'cancelada'];
+        // Cambio de estado. `completada` = CIERRE EXPLÍCITO de la actividad, con
+        // guardas: exige al menos una firma y un registro con contenido. El resto
+        // son transiciones administrativas (borrador/programada/cancelada).
+        const ESTADOS_PATCH = ['borrador', 'programada', 'completada', 'cancelada'];
         if (body.estado !== undefined) {
             if (!ESTADOS_PATCH.includes(body.estado)) {
                 return error(`Estado inválido. Válidos vía edición: ${ESTADOS_PATCH.join(', ')}`);
             }
-            if (activity.estado === 'completada') {
-                return error('No se puede cambiar el estado de una actividad completada');
+            if (body.estado === 'completada') {
+                // Proyección: aplica los cambios de este mismo request antes de validar
+                // (se puede completar el registro y cerrar en una sola llamada).
+                const proyectada = { ...activity, ...updates };
+                if ((proyectada.asistentes || []).length === 0) {
+                    return error('No se puede cerrar la actividad sin al menos una firma registrada', 409);
+                }
+                if (!registroTieneContenido(proyectada)) {
+                    return error('No se puede cerrar la actividad con el registro vacío: completa el detalle antes de cerrar', 409);
+                }
+                updates.estado = 'completada';
+                // horaFin real = hora de cierre.
+                updates.horaFin = new Date().toTimeString().slice(0, 5);
+            } else {
+                if (activity.estado === 'completada') {
+                    return error('No se puede cambiar el estado de una actividad completada');
+                }
+                updates.estado = body.estado;
             }
-            updates.estado = body.estado;
         } else if (activity.estado === 'borrador' && Object.keys(updates).length > 0) {
             // Al completar un borrador sin estado explícito, pasa a programada.
             updates.estado = 'programada';

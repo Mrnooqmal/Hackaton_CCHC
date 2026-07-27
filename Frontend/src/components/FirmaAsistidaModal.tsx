@@ -336,12 +336,12 @@ export default function FirmaAsistidaModal({
                     color: var(--danger-500);
                 }
                 .fa-banner--ok {
-                    background: color-mix(in srgb, var(--success-500, #10b981) 10%, transparent);
-                    border: 1px solid color-mix(in srgb, var(--success-500, #10b981) 30%, transparent);
-                    color: var(--success-600, #059669);
+                    background: color-mix(in srgb, var(--success-500) 10%, transparent);
+                    border: 1px solid color-mix(in srgb, var(--success-500) 30%, transparent);
+                    color: var(--success-600);
                 }
-                [data-theme="dark"] .fa-banner--ok { color: var(--success-400, #34d399); }
-                @media (prefers-color-scheme: dark) { .fa-banner--ok { color: var(--success-400, #34d399); } }
+                [data-theme="dark"] .fa-banner--ok { color: var(--success-500); }
+                @media (prefers-color-scheme: dark) { .fa-banner--ok { color: var(--success-500); } }
 
                 /* ── Worker strip ────────────────────────────────────────── */
                 .fa-worker {
@@ -355,8 +355,8 @@ export default function FirmaAsistidaModal({
                     width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
                     display: flex; align-items: center; justify-content: center;
                     font-weight: 700; font-size: var(--text-sm); text-transform: uppercase;
-                    background: rgba(0,110,220,0.12); color: var(--accent-text, #4d9fff);
-                    border: 1.5px solid rgba(0,110,220,0.2);
+                    background: var(--accent-tint); color: var(--accent-text);
+                    border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);
                 }
                 .fa-worker-info { display: flex; flex-direction: column; min-width: 0; }
                 .fa-worker-name {
@@ -377,7 +377,7 @@ export default function FirmaAsistidaModal({
                     gap: var(--space-2); padding: var(--space-6);
                     font-size: var(--text-sm); color: var(--text-muted); text-align: center;
                 }
-                .fa-empty-icon { color: var(--success-500, #10b981); opacity: 0.7; }
+                .fa-empty-icon { color: var(--success-500); opacity: 0.7; }
 
                 /* ── Document list ───────────────────────────────────────── */
                 .fa-doc-list { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -388,7 +388,7 @@ export default function FirmaAsistidaModal({
                     padding: var(--space-3) var(--space-4);
                     background: var(--surface-elevated);
                     border: 1px solid var(--surface-border);
-                    border-left: 3px solid var(--warning-400, #fbbf24);
+                    border-left: 3px solid var(--accent);
                     border-radius: var(--radius-md);
                     cursor: pointer;
                     transition: background 0.13s, transform 0.13s, box-shadow 0.13s;
@@ -406,9 +406,9 @@ export default function FirmaAsistidaModal({
                     display: flex; align-items: center; justify-content: center;
                     width: 32px; height: 32px; flex-shrink: 0;
                     border-radius: var(--radius-md);
-                    background: var(--surface-card);
+                    background: var(--accent-tint);
                     border: 1px solid var(--surface-border);
-                    color: var(--warning-500, #f59e0b);
+                    color: var(--accent-text);
                 }
 
                 .fa-doc-body {

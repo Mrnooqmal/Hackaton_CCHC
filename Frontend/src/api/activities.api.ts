@@ -45,6 +45,10 @@ export interface Attendee {
     nombre: string;
     rut: string;
     cargo: string;
+    /** Firma registrada después de la hora programada de la charla. */
+    atraso?: boolean;
+    /** Minutos de atraso respecto de horaInicio (0 si no hubo atraso). */
+    minutosAtraso?: number;
     firma: {
         token: string;
         fecha: string;
@@ -175,7 +179,8 @@ export interface PatchActivityData {
     asistentesRequeridos?: string[];
     subtipo?: string;
     tipoTrabajo?: string;
-    estado?: 'borrador' | 'programada' | 'cancelada';
+    /** 'completada' = cierre explícito de la actividad (requiere firma + contenido). */
+    estado?: 'borrador' | 'programada' | 'completada' | 'cancelada';
     planificacion?: PlanificacionActividad;
     permisosTrabajo?: PermisoTrabajo[];
 }
