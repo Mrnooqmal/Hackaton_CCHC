@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { FiArrowRight, FiUser, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 
@@ -110,10 +110,9 @@ export default function Login() {
                     {error && <p className="lp-error" role="alert">{error}</p>}
 
                     <p className="lp-register-hint">
-                        ¿No perteneces a una empresa?{' '}
-                        <a href="/onboarding" className="lp-register-link">
-                            Registra tu empresa
-                        </a>
+                        <Link to="/recuperar-clave" className="lp-register-link">
+                            ¿Olvidaste tu contraseña?
+                        </Link>
                     </p>
 
                     <button type="submit" className="lp-submit" disabled={loading}>

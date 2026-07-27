@@ -1,4 +1,7 @@
-service: hackatonbackendv2
+# Service parametrizable: default 'hackatonbackendv2' (backend de DESARROLLO).
+# Para la prueba en vivo/producción (EBCO): SLS_SERVICE=hackatonbackendv2-testeo
+# (o usar `npm run deploy:testeo`). Ver DEPLOY.md. Nunca editar esta línea a mano.
+service: ${env:SLS_SERVICE, 'hackatonbackendv2-testeo'}
 
 plugins:
   - serverless-prune-plugin
@@ -12,6 +15,12 @@ custom:
     httpPort: 3001
     lambdaPort: 3002
   bucketName: ${self:service}-documents-v245-${self:provider.stage}-${aws:accountId}
+  # Protección de datos: 'Retain' SOLO en producción (-testeo) para que un remove/
+  # reemplazo de stack no borre tablas ni buckets. En dev = 'Delete' (teardown limpio).
+  # Se resuelve por nombre de service. Ver DEPLOY.md.
+  deletionPolicies:
+    hackatonbackendv2-testeo: Retain
+  deletionPolicy: ${self:custom.deletionPolicies.${self:service}, 'Delete'}
 
 provider:
   name: aws
@@ -37,10 +46,23 @@ provider:
     DOCUMENTS_BUCKET: ${self:custom.bucketName}
     INCIDENT_EVIDENCE_BUCKET: ${self:service}-evidence-${self:provider.stage}-${aws:accountId}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
+    DOCUMENT_STAMP_QUEUE_URL: !Ref DocumentStampQueue
     # --- External ---
-    SES_SENDER_EMAIL: 'thecodecookers2026@gmail.com'
+    SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
+    # SMS (AWS SNS). SMS_ENABLED=false apaga el envío sin tocar código (útil en
+    # sandbox de SNS, que solo permite enviar a números verificados).
+    SMS_ENABLED: ${env:SMS_ENABLED, 'true'}
+    SMS_SENDER_ID: ${env:SMS_SENDER_ID, 'BuildServe'}
+    # URL del frontend para construir enlaces (ej. recuperación de contraseña).
+    # No es secreto (URL pública), así que el default apunta a la demo en CloudFront
+    # para que funcione aunque no se cargue el .env. Overridable por env var.
+    FRONTEND_URL: ${env:FRONTEND_URL, 'https://d30jksx91fodea.cloudfront.net'}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
+    # --- Gating de alta de empresas (Fase 1: PIN estático) ---
+    # Código de habilitación requerido para crear una empresa via /tenants/setup.
+    # El valor vive en el .env de Backend (TENANT_SIGNUP_CODE). Si queda vacío, no se gatea.
+    TENANT_SIGNUP_CODE: ${env:TENANT_SIGNUP_CODE, ''}
 
   httpApi:
     cors:
@@ -53,6 +75,7 @@ provider:
         - GET
         - POST
         - PUT
+        - PATCH
         - DELETE
         - OPTIONS
   iam:
@@ -114,9 +137,25 @@ provider:
             - !Sub 'arn:aws:s3:::${self:custom.bucketName}/*'
         - Effect: Allow
           Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - !GetAtt DocumentStampQueue.Arn
+        - Effect: Allow
+          Action:
             - sns:Publish
           Resource:
             - !Ref IncidentNotificationTopic
+        # SMS directo a número (sin topic): SNS exige Resource "*" porque no hay
+        # ARN de topic. SetSMSAttributes permite fijar atributos de cuenta si se
+        # requiere (ej. tipo de mensaje por defecto / sender ID).
+        - Effect: Allow
+          Action:
+            - sns:Publish
+            - sns:SetSMSAttributes
+          Resource: "*"
         - Effect: Allow
           Action:
             - bedrock:InvokeModel
@@ -194,6 +233,20 @@ functions:
     events:
       - httpApi:
           path: /auth/change-password
+          method: POST
+
+  authForgotPassword:
+    handler: handlers/auth/handler.forgotPassword
+    events:
+      - httpApi:
+          path: /auth/forgot-password
+          method: POST
+
+  authResetPassword:
+    handler: handlers/auth/handler.resetPassword
+    events:
+      - httpApi:
+          path: /auth/reset-password
           method: POST
 
   authLogout:
@@ -299,6 +352,20 @@ functions:
           path: /activities/{id}
           method: GET
 
+  planActivities:
+    handler: handlers/activities/handler.plan
+    events:
+      - httpApi:
+          path: /activities/plan
+          method: POST
+
+  patchActivity:
+    handler: handlers/activities/handler.patch
+    events:
+      - httpApi:
+          path: /activities/{id}
+          method: PATCH
+
   registerActivityAttendance:
     handler: handlers/activities/handler.registerAttendance
     events:
@@ -369,6 +436,21 @@ functions:
       - httpApi:
           path: /documents/{id}/sign-assisted
           method: POST
+
+  downloadSignedDocument:
+    handler: handlers/documents/handler.downloadFirmado
+    events:
+      - httpApi:
+          path: /documents/{id}/download-firmado
+          method: GET
+
+  stampSignedDocument:
+    handler: handlers/documents/handler.stamp
+    timeout: 60
+    events:
+      - sqs:
+          arn: !GetAtt DocumentStampQueue.Arn
+          batchSize: 1
 
   # ========================================
   # SIGNATURES (Firmas Digitales)
@@ -611,6 +693,8 @@ resources:
     # ==========================================
     DocumentsBucket:
       Type: AWS::S3::Bucket
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         BucketName: ${self:custom.bucketName}
         CorsConfiguration:
@@ -622,6 +706,8 @@ resources:
 
     IncidentEvidenceBucket:
       Type: AWS::S3::Bucket
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         BucketName: ${self:provider.environment.INCIDENT_EVIDENCE_BUCKET}
         CorsConfiguration:
@@ -641,12 +727,41 @@ resources:
         DisplayName: Notificaciones de Incidentes y Accidentes
 
     # ==========================================
+    # SQS - Estampado de PDF firmado (serializado por documento)
+    # ==========================================
+    # Cola FIFO: el estampado se dispara "bajo demanda" (al pedir la descarga
+    # del PDF firmado) pero varios triggers casi simultáneos sobre el MISMO
+    # documento (varias descargas pedidas a la vez, o varias firmas llegando
+    # justo cuando el documento se completa) deben serializarse para no
+    # regenerar el PDF en paralelo y pisarse entre sí. MessageGroupId =
+    # documentId garantiza que SQS FIFO procese de a un job por documento.
+    DocumentStampDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-document-stamp-dlq-${self:provider.stage}.fifo
+        FifoQueue: true
+        MessageRetentionPeriod: 1209600 # 14 días
+
+    DocumentStampQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-document-stamp-${self:provider.stage}.fifo
+        FifoQueue: true
+        ContentBasedDeduplication: false
+        VisibilityTimeout: 120
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt DocumentStampDLQ.Arn
+          maxReceiveCount: 3
+
+    # ==========================================
     # MULTI-TENANT CORE TABLES
     # ==========================================
 
     # Tenants - Empresas clientes del SaaS
     TenantsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.TENANTS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -681,6 +796,8 @@ resources:
     # Obras - Proyectos de construccion por tenant
     ObrasTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.OBRAS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -707,6 +824,8 @@ resources:
     # Personas - Identidad unificada (reemplaza Users + Workers)
     PersonasTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.PERSONAS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -757,6 +876,8 @@ resources:
     # Documents Table - with tenant and obra GSIs
     DocumentsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.DOCUMENTS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -780,6 +901,8 @@ resources:
     # Suggestions Table
     SuggestionsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SUGGESTIONS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -807,6 +930,8 @@ resources:
     # Activities Table - with tenant GSI
     ActivitiesTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.ACTIVITIES_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -829,6 +954,8 @@ resources:
     # Incidents Table - rename empresaId to tenantId
     IncidentsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.INCIDENTS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -855,6 +982,8 @@ resources:
     # Signatures Table - with tenant and persona GSIs
     SignaturesTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SIGNATURES_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -893,6 +1022,8 @@ resources:
     # Signature Requests Table - with tenant GSI
     SignatureRequestsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SIGNATURE_REQUESTS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -915,6 +1046,8 @@ resources:
     # Surveys Table - with tenant GSI
     SurveysTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SURVEYS_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -937,6 +1070,8 @@ resources:
     # Inbox Messages Table
     InboxTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.INBOX_TABLE}
         BillingMode: PAY_PER_REQUEST
@@ -967,6 +1102,8 @@ resources:
     # Sessions Table - with TTL
     SessionsTable:
       Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
       Properties:
         TableName: ${self:provider.environment.SESSIONS_TABLE}
         BillingMode: PAY_PER_REQUEST

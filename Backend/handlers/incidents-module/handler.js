@@ -49,6 +49,7 @@ router
     .post('/incidents/quick-report', quickReport)
     .get('/incidents/:id', get)
     .put('/incidents/:id', update)
+    .put('/incidents/:id/calificar-accidente', calificarAccidente)
     .post('/incidents/:id/viewed', markViewed)
     .post('/incidents/:id/investigations', addInvestigation)
     .put('/incidents/:id/gobernanza', updateGobernanza)
@@ -183,8 +184,8 @@ async function create(request) {
 async function list(request) {
     try {
         console.log('List Incidents Request:', request.query);
-        const { tenantId, tipo, estado, fechaInicio, fechaFin } = request.query || {};
-        const { items, total } = await incidentsRepo.list({ tenantId, tipo, estado, fechaInicio, fechaFin });
+        const { tenantId, obraId, tipo, estado, fechaInicio, fechaFin } = request.query || {};
+        const { items, total } = await incidentsRepo.list({ tenantId, obraId, tipo, estado, fechaInicio, fechaFin });
 
         // Return in format expected by frontend: data is the array, total is top-level
         return jsonResponse({
@@ -236,6 +237,24 @@ async function update(request) {
     }
 }
 
+async function calificarAccidente(request) {
+    try {
+        const body = parseBody(request.event);
+        const actorId = body.actorId || null;
+        const actor = actorId ? await personaService.getById(actorId).catch(() => null) : null;
+        if (!actor || !personaPuede(actor, await tenantDe(actor), PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE)) {
+            return jsonResponse({ success: false, error: 'No tienes permiso para calificar como accidente.' }, 403);
+        }
+        const result = await incidentsRepo.update(request.params.id, {
+            tipo: 'accidente',
+            clasificacion: 'incidente',
+        });
+        return jsonResponse({ success: true, data: result.incident, message: 'Calificado como accidente.' });
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
 async function uploadEvidence(request) {
     try {
         const body = parseBody(request.event);
@@ -248,8 +267,8 @@ async function uploadEvidence(request) {
 
 async function getStats(request) {
     try {
-        const { tenantId, mes, masaLaboral } = request.query || {};
-        const result = await incidentsRepo.getStats({ tenantId, mes, masaLaboral });
+        const { tenantId, obraId, mes, masaLaboral } = request.query || {};
+        const result = await incidentsRepo.getStats({ tenantId, obraId, mes, masaLaboral });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
@@ -343,8 +362,8 @@ async function getDocuments(request) {
 
 async function getAnalytics(request) {
     try {
-        const { tenantId, fechaInicio, fechaFin } = request.query || {};
-        const result = await incidentsRepo.getAnalytics({ tenantId, fechaInicio, fechaFin });
+        const { tenantId, obraId, fechaInicio, fechaFin } = request.query || {};
+        const result = await incidentsRepo.getAnalytics({ tenantId, obraId, fechaInicio, fechaFin });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
@@ -366,10 +385,22 @@ module.exports.incidentsHandler = async (event) => {
     // Adapt Lambda event to itty-router request
     const path = event.rawPath || event.path;
 
+    // itty-router v5 reconstruye request.query EXCLUSIVAMENTE desde el query string
+    // de la URL (ignora cualquier `query` que le pasemos). Como rawPath/path no
+    // incluyen el query string, hay que reanexarlo a la URL o se pierden TODOS los
+    // filtros (obraId, tenantId, tipo, …) y el listado devuelve todo sin filtrar.
+    const queryString = event.rawQueryString
+        || (event.queryStringParameters
+            ? new URLSearchParams(
+                Object.entries(event.queryStringParameters).filter(([, v]) => v != null)
+            ).toString()
+            : '');
+    const fullUrl = `https://${event.headers.host}${path}${queryString ? `?${queryString}` : ''}`;
+
     // Construct simplified Request-like object
     const request = {
         method: event.requestContext?.http?.method || event.httpMethod,
-        url: `https://${event.headers.host}${path}`,
+        url: fullUrl,
         params: {}, // Will be populated by router
         query: event.queryStringParameters || {},
         event // Pass full event for body parsing and context
@@ -383,7 +414,7 @@ module.exports.incidentsHandler = async (event) => {
         // We will create a fake request object that satisfies what router needs (url, method)
         const fakeReq = {
             method: request.method,
-            url: request.url,
+            url: fullUrl,
             headers: new Map(Object.entries(event.headers || {})),
             text: async () => event.body || '',
             json: async () => JSON.parse(event.body || '{}'),

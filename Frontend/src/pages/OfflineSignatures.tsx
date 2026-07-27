@@ -543,7 +543,7 @@ export default function OfflineSignatures() {
 
                 {/* View Mode: Collect Signatures */}
                 {viewMode === 'collect' && activeRequest && (
-                    <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 400px' }}>
+                    <div className="grid gap-6 grid-collapse-mobile" style={{ gridTemplateColumns: '1fr 400px' }}>
                         {/* Formulario de firma */}
                         <div className="card">
                             <div className="card-header">

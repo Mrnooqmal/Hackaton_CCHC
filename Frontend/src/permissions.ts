@@ -26,6 +26,7 @@ export const PERMISSIONS = {
     PERSONA_ONBOARDING: 'persona.onboarding',
     PERSONA_EPP: 'persona.epp',
     PERSONA_VIGILANCIA_SALUD: 'persona.vigilancia_salud',
+    PERSONA_DESVINCULAR: 'persona.desvincular',
     // Repositorio de archivos
     REPOSITORIO_VER: 'repositorio.ver',
     REPOSITORIO_SUBIR: 'repositorio.subir',
@@ -35,6 +36,7 @@ export const PERMISSIONS = {
     INCIDENTES_ESTADISTICAS: 'incidentes.estadisticas',
     INCIDENTES_HISTORIAL: 'incidentes.historial',
     INCIDENTES_REPORTAR: 'incidentes.reportar',
+    INCIDENTES_CALIFICAR_ACCIDENTE: 'incidentes.calificar_accidente',
     // Encuestas
     ENCUESTAS_CREAR: 'encuestas.crear',
     // Asistente IA
@@ -42,9 +44,19 @@ export const PERMISSIONS = {
     // Actividades
     ACTIVIDADES_VER: 'actividades.ver',
     ACTIVIDADES_CREAR: 'actividades.crear',
+    // Armar el esqueleto de planificación mensual (genera borradores por rango).
+    // Delegable por tenant a otros roles (ej. Comité Paritario) desde Mi Empresa.
+    ACTIVIDADES_PLANIFICAR: 'actividades.planificar',
     // Documentos de obra
     DOCUMENTOS_VER: 'documentos.ver',
     DOCUMENTOS_SUBIR: 'documentos.subir',
+    // Cargos de onboarding (catálogo de cargos + kits DS44, nivel empresa)
+    CARGOS_GESTIONAR: 'cargos.gestionar',
+    // Mi Empresa (configuración de la empresa: roles, cargos e identidad)
+    EMPRESA_VER: 'empresa.ver',
+    EMPRESA_ROLES: 'empresa.roles',
+    EMPRESA_CARGOS: 'empresa.cargos',
+    EMPRESA_IDENTIDAD: 'empresa.identidad',
 } as const;
 
 export type PermissionKey = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -65,6 +77,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
             { key: PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES, label: 'Asignar trabajadores a la obra' },
             { key: PERMISSIONS.OBRA_SUBIR_DOCUMENTOS, label: 'Subir documentos de fases' },
             { key: PERMISSIONS.OBRA_FIRMA_ASISTIDA, label: 'Firma asistida' },
+            { key: PERMISSIONS.CARGOS_GESTIONAR, label: 'Gestionar cargos y kits de onboarding' },
         ],
     },
     {
@@ -77,6 +90,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
             { key: PERMISSIONS.PERSONA_ONBOARDING, label: 'Actualizar documentos de onboarding' },
             { key: PERMISSIONS.PERSONA_EPP, label: 'Interactuar con historial EPP' },
             { key: PERMISSIONS.PERSONA_VIGILANCIA_SALUD, label: 'Editar vigilancia de salud' },
+            { key: PERMISSIONS.PERSONA_DESVINCULAR, label: 'Desvincular persona de la empresa' },
         ],
     },
     {
@@ -98,6 +112,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
             { key: PERMISSIONS.INCIDENTES_ESTADISTICAS, label: 'Ver estadísticas' },
             { key: PERMISSIONS.INCIDENTES_HISTORIAL, label: 'Ver historial de hallazgos/incidentes' },
             { key: PERMISSIONS.INCIDENTES_REPORTAR, label: 'Reportar incidente (hallazgo siempre permitido)' },
+            { key: PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE, label: 'Calificar como accidente' },
         ],
     },
     {
@@ -111,6 +126,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         permisos: [
             { key: PERMISSIONS.ACTIVIDADES_VER, label: 'Ver módulo de actividades' },
             { key: PERMISSIONS.ACTIVIDADES_CREAR, label: 'Crear actividad' },
+            { key: PERMISSIONS.ACTIVIDADES_PLANIFICAR, label: 'Planificar actividades del mes (esqueleto)' },
         ],
     },
     {
@@ -124,6 +140,15 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         grupo: 'Asistente IA',
         permisos: [
             { key: PERMISSIONS.IA_VER, label: 'Ver Asistente IA' },
+        ],
+    },
+    {
+        grupo: 'Mi Empresa',
+        permisos: [
+            { key: PERMISSIONS.EMPRESA_VER, label: 'Ver módulo Mi Empresa' },
+            { key: PERMISSIONS.EMPRESA_ROLES, label: 'Gestionar roles y permisos' },
+            { key: PERMISSIONS.EMPRESA_CARGOS, label: 'Gestionar cargos predefinidos' },
+            { key: PERMISSIONS.EMPRESA_IDENTIDAD, label: 'Configurar identidad (nombre, logo, color)' },
         ],
     },
 ];
@@ -142,13 +167,16 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES, PERMISSIONS.OBRA_SUBIR_DOCUMENTOS, PERMISSIONS.OBRA_FIRMA_ASISTIDA,
         PERMISSIONS.PERSONAS_VER, PERMISSIONS.PERSONAS_CREAR, PERMISSIONS.PERSONAS_DETALLE,
         PERMISSIONS.PERSONA_EXPORTAR, PERMISSIONS.PERSONA_ONBOARDING, PERMISSIONS.PERSONA_EPP, PERMISSIONS.PERSONA_VIGILANCIA_SALUD,
+        PERMISSIONS.PERSONA_DESVINCULAR,
         PERMISSIONS.REPOSITORIO_VER, PERMISSIONS.REPOSITORIO_SUBIR,
         PERMISSIONS.FIRMAS_CREAR,
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
+        PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
         PERMISSIONS.IA_VER,
-        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
+        PERMISSIONS.CARGOS_GESTIONAR,
     ],
     prevencionista: [
         PERMISSIONS.OBRAS_VER, PERMISSIONS.OBRAS_DETALLE,
@@ -158,9 +186,10 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.REPOSITORIO_VER, PERMISSIONS.REPOSITORIO_SUBIR,
         PERMISSIONS.FIRMAS_CREAR,
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
+        PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
         PERMISSIONS.IA_VER,
-        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
     ],
     supervisor: [
@@ -170,9 +199,19 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.REPOSITORIO_VER,
         PERMISSIONS.FIRMAS_CREAR,
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
-        PERMISSIONS.ACTIVIDADES_VER,
+        // El supervisor puede crear sus propias actividades (trabaja solo o tiene
+        // tareas adicionales no asignadas por la planificación).
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
         PERMISSIONS.DOCUMENTOS_VER,
     ],
-    colaborador: [],
-    trabajador: [],
+    // Acceso mínimo para ver/firmar lo asignado (docs y actividades). Encuestas y
+    // "mis firmas" no requieren permiso; las páginas filtran a sus ítems asignados.
+    colaborador: [
+        PERMISSIONS.DOCUMENTOS_VER,
+        PERMISSIONS.ACTIVIDADES_VER,
+    ],
+    trabajador: [
+        PERMISSIONS.DOCUMENTOS_VER,
+        PERMISSIONS.ACTIVIDADES_VER,
+    ],
 };

@@ -68,21 +68,33 @@ class PersonaService {
             telefono: data.telefono || '',
             rol: data.rol,
             permisos: rolConfig ? rolConfig.permisos : [],
-            cargo: data.cargo || (rolConfig ? rolConfig.nombre : data.rol),
+            // El cargo es el oficio DS44 (del catálogo de /onboarding), NO el rol.
+            // Si no se indica, queda vacío: antes se rellenaba con el nombre del rol
+            // ("Trabajador"), creando cargos fantasma que no existen en el catálogo.
+            cargo: data.cargo || null,
             obraIds: data.obraIds || [],
+            // Si vienen asignaciones explícitas (obra+cargos), priman; si no, el
+            // modelo las deriva de obraIds + cargo (shim de compatibilidad).
+            asignaciones: Array.isArray(data.asignaciones) ? data.asignaciones : undefined,
+            evidencias: Array.isArray(data.evidencias) ? data.evidencias : [],
             contactoEmergencia: data.contactoEmergencia || { nombre: '', telefono: '', relacion: '' },
             nivelEscolar: data.nivelEscolar || '',
             cursos: Array.isArray(data.cursos) ? data.cursos : [],
             tieneAccesoWeb,
             habilitado: false,
             estado: 'pendiente',
+            creadoPor: data.creadoPor || null,
             createdAt: now,
             updatedAt: now
         };
 
-        // Generar password temporal si tiene acceso web
+        // Generar password temporal si tiene acceso web.
+        // Convención: los primeros 4 dígitos del RUT (sin puntos ni dígito verificador).
+        // El usuario debe cambiarla en el primer ingreso (passwordTemporal = true).
         if (tieneAccesoWeb && data.email) {
-            passwordTemporal = generateTempPassword(10);
+            const rutDigits = rutValidation.formatted.replace(/[^0-9]/g, '').slice(0, -1); // quita DV
+            const first4 = rutDigits.slice(0, 4);
+            passwordTemporal = first4.length === 4 ? first4 : generateTempPassword(10);
             personaData.passwordHash = hashPassword(passwordTemporal, personaId);
             personaData.passwordTemporal = true;
         }
@@ -177,11 +189,17 @@ class PersonaService {
             expressionValues[':rol'] = filters.rol;
         }
         if (filters.estado) {
-            filterExpression += filterExpression ? ' AND estado = :estado' : 'estado = :estado';
+            filterExpression += filterExpression ? ' AND #estado = :estado' : '#estado = :estado';
+            expressionNames['#estado'] = 'estado';
             expressionValues[':estado'] = filters.estado;
+        } else {
+            // Por defecto excluir personas desvinculadas
+            filterExpression += filterExpression ? ' AND #estado <> :desvinculado' : '#estado <> :desvinculado';
+            expressionNames['#estado'] = 'estado';
+            expressionValues[':desvinculado'] = 'desvinculado';
         }
         if (filters.obraId) {
-            filterExpression += filterExpression ? ' AND contains(obraIds, :obraId)' : 'contains(obraIds, :obraId)';
+            filterExpression += ' AND contains(obraIds, :obraId)';
             expressionValues[':obraId'] = filters.obraId;
         }
 
@@ -206,8 +224,10 @@ class PersonaService {
      * Actualizar datos de una persona
      */
     async actualizar(tenantId, personaId, updates) {
-        const allowedFields = ['nombre', 'apellido', 'email', 'telefono', 'fotoPerfil', 'notificacionesSms',
-            'cargo', 'estado', 'preferencias', 'obraIds', 'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44',
+        const allowedFields = ['nombre', 'apellido', 'apellidoPaterno', 'apellidoMaterno', 'email', 'telefono',
+            'fechaNacimiento', 'fotoPerfil', 'notificacionesSms',
+            'rol', 'cargo', 'estado', 'preferencias', 'obraIds', 'asignaciones', 'historialAsignaciones', 'evidencias',
+            'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44',
             'contactoEmergencia', 'nivelEscolar', 'cursos'];
 
         const updateExpressions = [];
@@ -244,6 +264,92 @@ class PersonaService {
     }
 
     /**
+     * Persiste asignaciones + mantiene el espejo obraIds en el mismo update
+     * (DynamoDB UpdateCommand es parcial: hay que escribir ambos juntos para que
+     * no queden inconsistentes).
+     */
+    async _persistAsignaciones(tenantId, personaId, asignaciones) {
+        const obraIds = [...new Set(asignaciones.map((a) => a.obraId))];
+        return this.actualizar(tenantId, personaId, { asignaciones, obraIds });
+    }
+
+    /**
+     * Asigna (o reemplaza) los cargos de la persona en una obra. cargos es la
+     * lista COMPLETA de cargos en esa obra (multi-cargo). Devuelve la persona y
+     * los obraId nuevos (para que el caller dispare onboarding solo en esos).
+     */
+    async setAsignacionObra(tenantId, personaId, obraId, cargos = [], supervisorPersonaId = undefined, asignadaPor = undefined, prevencionistaPersonaId = undefined) {
+        const persona = await this.getById(personaId);
+        if (!persona) throw new Error('Persona no encontrada');
+        const yaAsignada = persona.asignaciones.some((a) => a.obraId === obraId);
+        const prev = persona.asignaciones.find((a) => a.obraId === obraId);
+        const asignaciones = persona.asignaciones.filter((a) => a.obraId !== obraId);
+        asignaciones.push({
+            obraId,
+            cargos: Persona._normalizeCargos(cargos),
+            // Si no se envía supervisor se conserva el previo (no se borra al editar cargos).
+            supervisorPersonaId: supervisorPersonaId !== undefined
+                ? (supervisorPersonaId || null)
+                : (prev?.supervisorPersonaId || null),
+            // Prevencionista a cargo (para supervisores). Mismo criterio: si no se
+            // envía, se conserva el previo.
+            prevencionistaPersonaId: prevencionistaPersonaId !== undefined
+                ? (prevencionistaPersonaId || null)
+                : (prev?.prevencionistaPersonaId || null),
+            fechaIngreso: prev?.fechaIngreso || new Date().toISOString(),
+            // Quién asignó: al crear se toma el actor; al editar se conserva el original.
+            asignadaPor: yaAsignada ? (prev?.asignadaPor || null) : (asignadaPor || null),
+            estado: 'activa',
+        });
+        const actualizada = await this._persistAsignaciones(tenantId, personaId, asignaciones);
+        return { persona: actualizada, esNueva: !yaAsignada };
+    }
+
+    /**
+     * Quita la asignación de la persona a una obra. NO la borra: la mueve a
+     * `historialAsignaciones[]` con egreso + auditoría (finalizadaPor, motivo).
+     * Las evidencias persona-level se conservan intactas.
+     * @param {{ finalizadaPor?: string, motivo?: string }} opts
+     */
+    async quitarDeObra(tenantId, personaId, obraId, opts = {}) {
+        const persona = await this.getById(personaId);
+        if (!persona) throw new Error('Persona no encontrada');
+        const asignacion = persona.asignaciones.find((a) => a.obraId === obraId);
+        const asignaciones = persona.asignaciones.filter((a) => a.obraId !== obraId);
+        const obraIds = [...new Set(asignaciones.map((a) => a.obraId))];
+
+        const historialAsignaciones = [...(persona.historialAsignaciones || [])];
+        if (asignacion) {
+            historialAsignaciones.push({
+                obraId: asignacion.obraId,
+                cargos: asignacion.cargos || [],
+                supervisorPersonaId: asignacion.supervisorPersonaId || null,
+                prevencionistaPersonaId: asignacion.prevencionistaPersonaId || null,
+                fechaIngreso: asignacion.fechaIngreso || null,
+                fechaEgreso: new Date().toISOString(),
+                asignadaPor: asignacion.asignadaPor || null,
+                finalizadaPor: opts.finalizadaPor || null,
+                motivo: opts.motivo || 'egreso',
+            });
+        }
+        return this.actualizar(tenantId, personaId, { asignaciones, obraIds, historialAsignaciones });
+    }
+
+    /**
+     * Registra/actualiza una evidencia persona-level con vigencia (examen altura,
+     * SPDC…). Se guarda la última por tipo (la vigente que reutilizan las obras).
+     */
+    async addEvidencia(tenantId, personaId, evidencia) {
+        const persona = await this.getById(personaId);
+        if (!persona) throw new Error('Persona no encontrada');
+        const evidencias = [
+            ...persona.evidencias.filter((e) => e.tipo !== evidencia.tipo),
+            { ...evidencia, registradoEn: new Date().toISOString() },
+        ];
+        return this.actualizar(tenantId, personaId, { evidencias });
+    }
+
+    /**
      * Configurar PIN — un solo hash, un solo update (no dos como antes)
      */
     async setPin(tenantId, personaId, pin, pinActual) {
@@ -253,11 +359,18 @@ class PersonaService {
         const persona = await this.getById(personaId);
         if (!persona) throw new Error('Persona no encontrada');
 
-        // Verificar PIN actual si ya tiene uno
-        if (persona._pinHash && persona.habilitado) {
-            if (!pinActual) throw new Error('PIN actual es requerido para cambiar el PIN');
+        const yaTienePin = !!persona._pinHash;
+
+        // Verificacion opcional del PIN actual: si el cliente lo envia, se valida.
+        // No es obligatorio, lo que permite la actualizacion directa del PIN.
+        if (yaTienePin && pinActual) {
             const pinValido = verifyPin(pinActual, persona._pinHash, personaId);
             if (!pinValido) throw new Error('PIN actual incorrecto');
+        }
+
+        // Validacion de duplicados: el nuevo PIN no puede ser identico al registrado.
+        if (yaTienePin && verifyPin(pin, persona._pinHash, personaId)) {
+            throw new Error('El nuevo PIN no puede ser igual al PIN actual');
         }
 
         const now = new Date().toISOString();
@@ -365,6 +478,33 @@ class PersonaService {
             passwordTemporal,
             personaId
         };
+    }
+
+    /**
+     * Desvincular una persona de la empresa (soft delete).
+     * Marca estado='desvinculado' y registra quién y cuándo desvinculó.
+     * El ajuste del conteo de trabajadores del tenant lo realiza el handler.
+     */
+    async eliminar(tenantId, personaId, desvinculadoPor = null) {
+        const now = new Date().toISOString();
+        await this.dynamo.send(new UpdateCommand({
+            TableName: this.table,
+            Key: {
+                PK: `TENANT#${tenantId}`,
+                SK: `PERSONA#${personaId}`
+            },
+            UpdateExpression: 'SET #estado = :estado, desvinculacion = :desvinculacion, updatedAt = :updatedAt',
+            ExpressionAttributeNames: { '#estado': 'estado' },
+            ExpressionAttributeValues: {
+                ':estado': 'desvinculado',
+                ':desvinculacion': {
+                    fechaDesvinculacion: now,
+                    desvinculadoPor: desvinculadoPor || null
+                },
+                ':updatedAt': now
+            }
+        }));
+        return { message: 'Persona desvinculada de la empresa', personaId };
     }
 }
 

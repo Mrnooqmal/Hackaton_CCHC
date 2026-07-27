@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FiMenu, FiChevronDown, FiChevronRight, FiBell, FiHome, FiSun, FiMoon } from 'react-icons/fi';
+import { FiMenu, FiChevronDown, FiChevronRight, FiBell, FiHome, FiSun, FiMoon, FiHelpCircle } from 'react-icons/fi';
 import { useLayout } from '../context/LayoutContext';
 import { useObraContext } from '../context/ObraContext';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
+import { useBrand } from '../context/BrandContext';
+import { inboxApi } from '../api/client';
+import { Badge } from './ui';
 
 interface Crumb {
     label: string;
@@ -32,11 +35,55 @@ const SECTION: Record<string, { label: string; path?: string }> = {
     'enroll-me': { label: 'Mi enrolamiento' },
 };
 
+// Ayuda contextual: primer segmento de la ruta → página del módulo en el manual
+// (/manual/modulos/*). Las rutas sin página propia caen a la portada del manual.
+const MANUAL_SECTION: Record<string, string> = {
+    '': 'dashboard',
+    personas: 'personas',
+    workers: 'personas',
+    users: 'personas',
+    obras: 'obras',
+    documents: 'documentos',
+    'documents-repository': 'documentos',
+    surveys: 'encuestas',
+    incidents: 'incidentes',
+    activities: 'actividades',
+    'catalogos-actividad': 'actividades',
+    'my-signatures': 'firmas',
+    'offline-signatures': 'firmas',
+    'signature-requests': 'firmas',
+    inbox: 'bandeja-entrada',
+    'ai-assistant': 'asistente-ia',
+    'mi-empresa': 'tenants',
+    'cargos-onboarding': 'tenants',
+};
+
+/** Ruta SPA del manual correspondiente a la ruta actual (portada si no hay módulo). */
+const manualUrlFor = (pathname: string): string => {
+    const primer = pathname.split('/').filter(Boolean)[0] || '';
+    const slug = MANUAL_SECTION[primer];
+    return slug ? `/manual/modulos/${slug}` : '/manual';
+};
+
 // Etiqueta de la hoja para páginas de detalle (rutas con id dinámico)
 const DETAIL_LEAF: Record<string, string> = {
     workers: 'Detalle de persona',
     personas: 'Detalle de persona',
     obras: 'Detalle de obra',
+};
+
+// Etiqueta de la hoja para sub-rutas de acción (no dinámicas), por `sección/acción`.
+// Tiene prioridad sobre DETAIL_LEAF para que /personas/nueva no diga "Detalle".
+const ACTION_LEAF: Record<string, string> = {
+    'personas/nueva': 'Nueva persona',
+    'personas/carga-masiva': 'Carga masiva',
+    'obras/nueva': 'Nueva obra',
+};
+
+// Etiqueta de la hoja para sub-rutas que cuelgan de una página de detalle,
+// por `sección/sub-acción` (la sub-acción es el segmento posterior al id).
+const SUBDETAIL_LEAF: Record<string, string> = {
+    'obras/equipo': 'Equipo de obra',
 };
 
 function buildCrumbs(pathname: string): Crumb[] {
@@ -57,7 +104,20 @@ function buildCrumbs(pathname: string): Crumb[] {
     });
 
     if (segments.length > 1) {
-        crumbs.push({ label: DETAIL_LEAF[first] ?? 'Detalle' });
+        const actionLabel = ACTION_LEAF[`${first}/${segments[1]}`];
+        const detailLabel = actionLabel ?? DETAIL_LEAF[first] ?? 'Detalle';
+        const hasSubRoute = segments.length > 2;
+        // Con una sub-ruta (ej. /obras/:id/equipo) el detalle pasa a ser enlace
+        crumbs.push({
+            label: detailLabel,
+            to: hasSubRoute ? `/${first}/${segments[1]}` : undefined,
+        });
+
+        if (hasSubRoute) {
+            const sub = segments[2];
+            const subLabel = SUBDETAIL_LEAF[`${first}/${sub}`];
+            crumbs.push({ label: subLabel ?? sub.charAt(0).toUpperCase() + sub.slice(1) });
+        }
     }
 
     // Elimina duplicados consecutivos
@@ -69,15 +129,45 @@ export default function Header() {
     const { toggleMobileMenu, toggleSidebarCollapsed } = useLayout();
     const { obras, selectedObraId, setSelectedObraId, isLoadingObras } = useObraContext();
     const { theme, toggleTheme } = useTheme();
+    const { logo } = useBrand();
     const location = useLocation();
     const [obraMenuOpen, setObraMenuOpen] = useState(false);
     const obraMenuRef = useRef<HTMLDivElement | null>(null);
 
+    // Badge de notificaciones no leidas en la campana del header.
+    // Se refresca al cambiar de ruta (ej. tras leer mensajes en /inbox) y cada 60s.
+    const [unreadCount, setUnreadCount] = useState(0);
+    useEffect(() => {
+        const personaId = user?.personaId;
+        if (!personaId) return;
+        let active = true;
+        const loadCount = async () => {
+            try {
+                const res = await inboxApi.getUnreadCount(personaId);
+                if (active && res.success && res.data) setUnreadCount(res.data.unreadCount || 0);
+            } catch { /* sin red: se reintenta en el proximo ciclo */ }
+        };
+        loadCount();
+        const interval = setInterval(loadCount, 60000);
+        return () => { active = false; clearInterval(interval); };
+    }, [user?.personaId, location.pathname]);
+
     const crumbs = buildCrumbs(location.pathname);
 
-    const selectedObra = selectedObraId
-        ? obras.find((o) => o.obraId === selectedObraId)?.nombre || 'Obra desconocida'
-        : 'Todas las obras';
+    const isAdmin = user?.rol === 'admin';
+    const selectedObraObj = selectedObraId ? obras.find((o) => o.obraId === selectedObraId) : null;
+    const selectedObraLabel = selectedObraObj
+        ? [selectedObraObj.codigo, selectedObraObj.nombre].filter(Boolean).join(' · ')
+        : (isAdmin ? 'Vista empresa' : 'Todas las obras');
+
+    const obraEstadoBadge = (estado: string) => {
+        const map: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
+            activa: 'success', activo: 'success',
+            pausada: 'warning', pausa: 'warning',
+            finalizada: 'neutral', inactiva: 'neutral',
+        };
+        return map[estado?.toLowerCase()] ?? 'neutral';
+    };
 
     // El botón hamburguesa colapsa el sidebar en escritorio y abre el overlay en móvil
     const handleToggleSidebar = () => {
@@ -124,11 +214,17 @@ export default function Header() {
                         <FiMenu />
                     </button>
 
-                    <Link to="/" className="header-brand" aria-label="Build & Serve — Inicio">
-                        <span className="header-brand-primary">Build</span>
-                        <span className="header-brand-amp">&amp;</span>
-                        <span className="header-brand-secondary">Serve</span>
-                    </Link>
+                    {logo ? (
+                        <Link to="/" className="header-brand" aria-label="Inicio">
+                            <img src={logo} alt="Logo empresa" className="header-brand-logo" />
+                        </Link>
+                    ) : (
+                        <Link to="/" className="header-brand" aria-label="Build &amp; Serve — Inicio">
+                            <span className="header-brand-primary">Build</span>
+                            <span className="header-brand-amp">&amp;</span>
+                            <span className="header-brand-secondary">Serve</span>
+                        </Link>
+                    )}
 
                     <span className="header-divider" aria-hidden="true" />
 
@@ -169,24 +265,32 @@ export default function Header() {
                                 aria-expanded={obraMenuOpen}
                             >
                                 <span className="header-obra-label">
-                                    {isLoadingObras ? 'Cargando…' : selectedObra}
+                                    {isLoadingObras ? 'Cargando…' : selectedObraLabel}
                                 </span>
+                                {selectedObraObj && (
+                                    <Badge variant={obraEstadoBadge(selectedObraObj.estado)} size="sm">
+                                        {selectedObraObj.estado}
+                                    </Badge>
+                                )}
                                 <FiChevronDown className="header-obra-caret" />
                             </button>
 
                             {obraMenuOpen && (
                                 <div className="header-dropdown" role="menu">
-                                    <button
-                                        type="button"
-                                        className={`header-dropdown-item ${!selectedObraId ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setSelectedObraId(null);
-                                            setObraMenuOpen(false);
-                                        }}
-                                    >
-                                        Todas las obras
-                                    </button>
-                                    {obras.length > 0 && <div className="header-dropdown-divider" />}
+                                    {isAdmin && (
+                                        <button
+                                            type="button"
+                                            className={`header-dropdown-item ${!selectedObraId ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setSelectedObraId(null);
+                                                setObraMenuOpen(false);
+                                            }}
+                                        >
+                                            <span className="header-dropdown-item-title">Vista empresa</span>
+                                            <span className="header-dropdown-item-sub">Todas las obras</span>
+                                        </button>
+                                    )}
+                                    {obras.length > 0 && isAdmin && <div className="header-dropdown-divider" />}
                                     {obras.map((obra) => (
                                         <button
                                             key={obra.obraId}
@@ -197,8 +301,20 @@ export default function Header() {
                                                 setObraMenuOpen(false);
                                             }}
                                         >
-                                            <span className="header-dropdown-item-title">{obra.nombre}</span>
-                                            <span className="header-dropdown-item-sub">{obra.etapaActual}</span>
+                                            <div className="header-dropdown-item-info">
+                                                <span className="header-dropdown-item-title">
+                                                    {obra.codigo && <span className="header-dropdown-item-code">{obra.codigo}</span>}
+                                                    {obra.nombre}
+                                                </span>
+                                                <span className="header-dropdown-item-sub" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                    {obra.etapaActual && <span>{obra.etapaActual}</span>}
+                                                    {obra.etapaActual && obra.obraId && <span>·</span>}
+                                                    {obra.obraId && <span style={{ fontFamily: 'monospace', fontSize: '10px', opacity: 0.65 }}>{obra.obraId.slice(0, 8)}…</span>}
+                                                </span>
+                                            </div>
+                                            <Badge variant={obraEstadoBadge(obra.estado)} size="sm">
+                                                {obra.estado}
+                                            </Badge>
                                         </button>
                                     ))}
                                     {obras.length === 0 && !isLoadingObras && (
@@ -208,6 +324,16 @@ export default function Header() {
                             )}
                         </div>
                     )}
+
+                    {/* Ayuda contextual: abre el manual en la página del módulo actual */}
+                    <Link
+                        to={manualUrlFor(location.pathname)}
+                        className="header-action"
+                        aria-label="Abrir el manual de uso de esta sección"
+                        title="Ayuda de esta sección"
+                    >
+                        <FiHelpCircle />
+                    </Link>
 
                     <button
                         type="button"
@@ -222,10 +348,23 @@ export default function Header() {
                     <Link
                         to="/inbox"
                         className={`header-action ${location.pathname === '/inbox' ? 'active' : ''}`}
-                        aria-label="Notificaciones"
-                        title="Notificaciones"
+                        aria-label={unreadCount > 0 ? `Notificaciones (${unreadCount} sin leer)` : 'Notificaciones'}
+                        title={unreadCount > 0 ? `${unreadCount} notificacion(es) sin leer` : 'Notificaciones'}
+                        style={{ position: 'relative' }}
                     >
                         <FiBell />
+                        {unreadCount > 0 && (
+                            <span style={{
+                                position: 'absolute', top: '2px', right: '2px',
+                                minWidth: '16px', height: '16px', padding: '0 4px',
+                                borderRadius: '999px', background: 'var(--danger-500, #ef4444)',
+                                color: 'white', fontSize: '10px', fontWeight: 700,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                lineHeight: 1
+                            }}>
+                                {unreadCount > 99 ? '99+' : unreadCount}
+                            </span>
+                        )}
                     </Link>
                 </div>
             </div>

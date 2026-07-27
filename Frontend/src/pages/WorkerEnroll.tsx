@@ -5,6 +5,8 @@ import { FiUser, FiMail, FiPhone, FiBriefcase, FiCheck, FiArrowRight, FiArrowLef
 import { workersApi, type CreateWorkerData } from '../api/client';
 import { useObraContext } from '../context/ObraContext';
 import { Select } from '../components/ui';
+import { getCargoLabel } from '../utils/ds44';
+import { useCargoCatalog } from '../hooks/useCargoCatalog';
 
 type Step = 'data' | 'create-pin' | 'confirm-pin' | 'sign' | 'complete';
 
@@ -153,19 +155,9 @@ export default function WorkerEnroll() {
         }
     });
 
-    const cargos = [
-        'Operario',
-        'Soldador',
-        'Electricista',
-        'Maestro de Obra',
-        'Supervisor',
-        'Jefe de Cuadrilla',
-        'Ayudante',
-        'Carpintero',
-        'Albañil',
-        'Jornal',
-        'Otro'
-    ];
+    // Catálogo de cargos del tenant (constructor): value = código, label =
+    // nombre. El código resuelve el kit de onboarding del trabajador.
+    const { options: cargoOptions } = useCargoCatalog();
 
     const getStepNumber = () => {
         switch (step) {
@@ -362,7 +354,7 @@ export default function WorkerEnroll() {
                                     className={errors.cargo ? 'error' : ''}
                                     value={formData.cargo}
                                     onChange={(v) => setFormData(prev => ({ ...prev, cargo: v }))}
-                                    options={cargos.map((cargo) => ({ value: cargo, label: cargo }))}
+                                    options={cargoOptions}
                                 />
                                 {errors.cargo && <div className="form-error">{errors.cargo}</div>}
                             </div>
@@ -588,7 +580,7 @@ export default function WorkerEnroll() {
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted">Cargo:</span>
-                                <span className="font-bold">{formData.cargo}</span>
+                                <span className="font-bold">{getCargoLabel(formData.cargo)}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted">Fecha:</span>

@@ -1,8 +1,10 @@
-import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
 import PinInput from '../components/PinInput';
+import { OnboardingShell } from '../components/ui';
+import type { StepperStep } from '../components/ui';
 import { FiCheckCircle, FiShield, FiLock, FiArrowRight, FiKey, FiUser, FiPhone, FiMessageSquare, FiCamera, FiSkipForward } from 'react-icons/fi';
 
 type EnrollmentStep = 'welcome' | 'create-pin' | 'confirm-pin' | 'processing' | 'profile' | 'success';
@@ -32,11 +34,26 @@ function resizeImageToBase64(file: File, maxSize = 256): Promise<string> {
 export default function EnrollMe() {
     const { user, updateUser } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
 
-    const [currentStep, setCurrentStep] = useState<EnrollmentStep>('welcome');
+    // Modo "cambio de PIN": el usuario ya está enrolado y sólo quiere actualizar su PIN.
+    // Llega desde Configuración → "Cambiar PIN". Omite la bienvenida y el paso de perfil.
+    const isChangePin = Boolean((location.state as any)?.changePin);
+
+    const [currentStep, setCurrentStep] = useState<EnrollmentStep>(isChangePin ? 'create-pin' : 'welcome');
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
+    const [pinCreateKey, setPinCreateKey] = useState(0);
+    const [pinConfirmKey, setPinConfirmKey] = useState(0);
     const [enrollmentData, setEnrollmentData] = useState<any>(null);
+
+    // Si el usuario ya está enrolado (ej. recargó en el paso de perfil), saltar directo ahí.
+    // En modo cambio de PIN NO redirigimos: el usuario debe poder fijar un nuevo PIN.
+    useEffect(() => {
+        if (!isChangePin && (user as any)?.habilitado === true) {
+            setCurrentStep('profile');
+        }
+    }, [user, isChangePin]);
 
     // Profile step state
     const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
@@ -63,6 +80,7 @@ export default function EnrollMe() {
     const handlePinConfirm = async (confirmedPin: string) => {
         if (confirmedPin !== pin) {
             setError('El PIN no coincide. Inténtalo nuevamente.');
+            setPinConfirmKey(k => k + 1);
             return;
         }
 
@@ -78,6 +96,14 @@ export default function EnrollMe() {
             const setPinResponse = await personasApi.setPin(targetTenant, targetId, pin);
             if (!setPinResponse.success) throw new Error(setPinResponse.error || 'Error al configurar el PIN');
 
+            // Modo cambio de PIN: el usuario ya estaba enrolado. Omitimos el paso de
+            // perfil y completarEnrolamiento; vamos directo a la confirmación de éxito.
+            if (isChangePin) {
+                setCurrentStep('success');
+                setTimeout(() => navigate('/settings', { replace: true }), 3000);
+                return;
+            }
+
             const enrollResponse = await personasApi.completarEnrolamiento(targetTenant, targetId, pin);
             if (!enrollResponse.success || !enrollResponse.data) throw new Error(enrollResponse.error || 'Error al completar el enrolamiento');
 
@@ -87,7 +113,9 @@ export default function EnrollMe() {
         } catch (err) {
             console.error('Error en enrolamiento:', err);
             setError(err instanceof Error ? err.message : 'Error desconocido');
-            setCurrentStep('confirm-pin');
+            // En cambio de PIN volvemos a "crear" para que elija otro (p. ej. PIN duplicado).
+            setCurrentStep(isChangePin ? 'create-pin' : 'confirm-pin');
+            if (isChangePin) setPinCreateKey(k => k + 1);
         }
     };
 
@@ -131,95 +159,33 @@ export default function EnrollMe() {
         }
     };
 
-    const steps = [
-        { key: 'welcome', label: 'Bienvenida' },
-        { key: 'create-pin', label: 'Crear PIN' },
-        { key: 'confirm-pin', label: 'Confirmar' },
-        { key: 'profile', label: 'Perfil' },
-        { key: 'success', label: 'Completado' },
-    ];
+    const steps: StepperStep[] = isChangePin
+        ? [
+            { id: 'create-pin', label: 'Nuevo PIN' },
+            { id: 'confirm-pin', label: 'Confirmar' },
+            { id: 'success', label: 'Completado' },
+        ]
+        : [
+            { id: 'welcome', label: 'Bienvenida' },
+            { id: 'create-pin', label: 'Crear PIN' },
+            { id: 'confirm-pin', label: 'Confirmar' },
+            { id: 'profile', label: 'Perfil' },
+            { id: 'success', label: 'Completado' },
+        ];
     const currentIndex = steps.findIndex(s =>
-        s.key === currentStep || (currentStep === 'processing' && s.key === 'profile')
+        s.id === currentStep
+        || (currentStep === 'processing' && s.id === (isChangePin ? 'confirm-pin' : 'profile'))
     );
 
     return (
-        <div style={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--surface-base)',
-            padding: 'var(--space-6)',
-        }}>
-            <div style={{ width: '100%', maxWidth: '520px', animation: 'fadeInUp 0.4s ease-out' }}>
-
-                {/* Barra de progreso */}
-                <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    position: 'relative',
-                    marginBottom: 'var(--space-6)',
-                }}>
-                    <div style={{
-                        position: 'absolute',
-                        top: '18px',
-                        left: '10%',
-                        right: '10%',
-                        height: '2px',
-                        background: 'var(--surface-border)',
-                    }} />
-                    <div style={{
-                        position: 'absolute',
-                        top: '18px',
-                        left: '10%',
-                        height: '2px',
-                        background: 'var(--accent)',
-                        width: `${(currentIndex / (steps.length - 1)) * 80}%`,
-                        transition: 'width 0.4s ease',
-                    }} />
-
-                    {steps.map((step, index) => {
-                        const isCompleted = index < currentIndex;
-                        const isActive = index === currentIndex;
-                        return (
-                            <div key={step.key} style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: 'var(--space-2)',
-                                flex: 1,
-                                position: 'relative',
-                                zIndex: 1,
-                            }}>
-                                <div style={{
-                                    width: '36px',
-                                    height: '36px',
-                                    borderRadius: '50%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontWeight: 600,
-                                    fontSize: 'var(--text-sm)',
-                                    transition: 'all 0.3s ease',
-                                    background: isCompleted ? 'var(--accent)' : 'var(--surface-card)',
-                                    border: `2px solid ${isCompleted || isActive ? 'var(--accent)' : 'var(--surface-border)'}`,
-                                    color: isCompleted ? 'white' : isActive ? 'var(--accent)' : 'var(--text-muted)',
-                                }}>
-                                    {isCompleted ? <FiCheckCircle size={15} /> : index + 1}
-                                </div>
-                                <span style={{
-                                    fontSize: '11px',
-                                    fontWeight: isActive ? 600 : 400,
-                                    color: isActive ? 'var(--accent-text)' : 'var(--text-muted)',
-                                    textAlign: 'center',
-                                }}>
-                                    {step.label}
-                                </span>
-                            </div>
-                        );
-                    })}
-                </div>
-
+        <OnboardingShell
+            user={user as any}
+            steps={steps}
+            currentIndex={currentIndex < 0 ? 0 : currentIndex}
+            sideHint={isChangePin
+                ? 'Actualiza tu PIN de firma digital (4 dígitos). El nuevo PIN debe ser distinto al actual.'
+                : 'Crea tu firma digital (PIN de 4 dígitos) y completa tu perfil para terminar de habilitar tu cuenta.'}
+        >
                 {/* Card principal */}
                 <div className="card" style={{ padding: 'var(--space-8)' }}>
 
@@ -299,17 +265,19 @@ export default function EnrollMe() {
                     {currentStep === 'create-pin' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeInScale 0.35s ease-out' }}>
                             <PinInput
+                                key={pinCreateKey}
                                 mode="create"
                                 onComplete={handlePinCreate}
-                                title="Crea tu PIN de Seguridad"
-                                subtitle="Este PIN será tu firma digital. Recuérdalo bien."
+                                title={isChangePin ? 'Crea tu nuevo PIN' : 'Crea tu PIN de Seguridad'}
+                                subtitle={isChangePin ? 'Elige un PIN distinto al actual. Recuérdalo bien.' : 'Este PIN será tu firma digital. Recuérdalo bien.'}
+                                error={error}
                             />
                             <button
                                 className="btn btn-ghost btn-sm"
                                 style={{ alignSelf: 'center' }}
-                                onClick={() => setCurrentStep('welcome')}
+                                onClick={() => isChangePin ? navigate('/settings') : setCurrentStep('welcome')}
                             >
-                                Volver
+                                {isChangePin ? 'Cancelar' : 'Volver'}
                             </button>
                         </div>
                     )}
@@ -318,6 +286,7 @@ export default function EnrollMe() {
                     {currentStep === 'confirm-pin' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeInScale 0.35s ease-out' }}>
                             <PinInput
+                                key={pinConfirmKey}
                                 mode="confirm"
                                 onComplete={handlePinConfirm}
                                 title="Confirma tu PIN"
@@ -346,7 +315,7 @@ export default function EnrollMe() {
                             }} />
                             <div style={{ textAlign: 'center' }}>
                                 <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-1)' }}>
-                                    Creando tu firma digital…
+                                    {isChangePin ? 'Actualizando tu PIN…' : 'Creando tu firma digital…'}
                                 </h3>
                                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
                                     Estamos configurando tu cuenta de forma segura
@@ -554,7 +523,7 @@ export default function EnrollMe() {
                     )}
 
                     {/* STEP: Éxito */}
-                    {currentStep === 'success' && enrollmentData && (
+                    {currentStep === 'success' && (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-5)', animation: 'fadeInScale 0.35s ease-out' }}>
                             <div style={{
                                 width: '72px', height: '72px',
@@ -570,54 +539,55 @@ export default function EnrollMe() {
 
                             <div style={{ textAlign: 'center' }}>
                                 <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-ui)', marginBottom: 'var(--space-2)' }}>
-                                    ¡Enrolamiento completado!
+                                    {isChangePin ? '¡PIN actualizado!' : '¡Enrolamiento completado!'}
                                 </h2>
                                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                                    Tu firma digital ha sido creada exitosamente.
+                                    {isChangePin ? 'Tu PIN ha sido actualizado exitosamente.' : 'Tu firma digital ha sido creada exitosamente.'}
                                 </p>
                             </div>
 
-                            <div style={{
-                                width: '100%',
-                                background: 'var(--surface-elevated)',
-                                border: '1px solid var(--surface-border)',
-                                borderRadius: 'var(--radius-lg)',
-                                overflow: 'hidden',
-                            }}>
+                            {enrollmentData && (
                                 <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-                                    padding: 'var(--space-3) var(--space-4)',
-                                    borderBottom: '1px solid var(--surface-border)',
-                                    background: 'var(--surface-card)',
+                                    width: '100%',
+                                    background: 'var(--surface-elevated)',
+                                    border: '1px solid var(--surface-border)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    overflow: 'hidden',
                                 }}>
-                                    <FiShield size={14} style={{ color: 'var(--accent)' }} />
-                                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
-                                        Datos de la firma
-                                    </span>
-                                </div>
-                                {[
-                                    { label: 'Token', value: enrollmentData.firma.token },
-                                    { label: 'Fecha', value: enrollmentData.firma.fecha },
-                                    { label: 'Hora', value: enrollmentData.firma.horario },
-                                ].map((field, i, arr) => (
-                                    <div key={i} style={{
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
                                         padding: 'var(--space-3) var(--space-4)',
-                                        borderBottom: i < arr.length - 1 ? '1px solid var(--surface-border)' : 'none',
+                                        borderBottom: '1px solid var(--surface-border)',
+                                        background: 'var(--surface-card)',
                                     }}>
-                                        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 500 }}>{field.label}</span>
-                                        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{field.value}</span>
+                                        <FiShield size={14} style={{ color: 'var(--accent)' }} />
+                                        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
+                                            Datos de la firma
+                                        </span>
                                     </div>
-                                ))}
-                            </div>
+                                    {[
+                                        { label: 'Token', value: enrollmentData.firma.token },
+                                        { label: 'Fecha', value: enrollmentData.firma.fecha },
+                                        { label: 'Hora', value: enrollmentData.firma.horario },
+                                    ].map((field, i, arr) => (
+                                        <div key={i} style={{
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            padding: 'var(--space-3) var(--space-4)',
+                                            borderBottom: i < arr.length - 1 ? '1px solid var(--surface-border)' : 'none',
+                                        }}>
+                                            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 500 }}>{field.label}</span>
+                                            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{field.value}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
 
                             <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontStyle: 'italic', animation: 'pulse 2s ease-in-out infinite' }}>
-                                Redirigiendo al panel principal…
+                                {isChangePin ? 'Redirigiendo a configuración…' : 'Redirigiendo al panel principal…'}
                             </p>
                         </div>
                     )}
                 </div>
-            </div>
 
             <style>{`
                 @keyframes fadeInUp {
@@ -637,6 +607,6 @@ export default function EnrollMe() {
                     to { transform: rotate(360deg); }
                 }
             `}</style>
-        </div>
+        </OnboardingShell>
     );
 }

@@ -4,7 +4,7 @@ const { success, error } = require('../../lib/utils/response');
 const sesClient = new SESClient({ region: 'us-east-1' });
 
 // Email verificado en SES (DEBES VERIFICAR ESTE EMAIL EN AWS SES CONSOLE)
-const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'noreply@prevencionapp.cl';
+const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'thecodecookers@gmail.com';
 
 /**
  * Envía un email de bienvenida con credenciales temporales
@@ -18,6 +18,8 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
         console.log('No email provided, skipping notification');
         return { sent: false, reason: 'no_email' };
     }
+
+    const loginUrl = `${process.env.FRONTEND_URL || 'https://d30jksx91fodea.cloudfront.net'}/login`;
 
     const htmlBody = `
 <!DOCTYPE html>
@@ -59,6 +61,18 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
     .step p { margin: 0; font-size: 13px; color: #475569; line-height: 1.55; padding-top: 3px; }
     .footer { background: #f8fafc; border-top: 1px solid #e8edf3; padding: 20px 40px;
               text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.6; }
+    .btn-login { display: inline-block; background: #006edc; color: #ffffff; text-decoration: none;
+                 font-size: 15px; font-weight: 600; padding: 14px 32px; border-radius: 10px; }
+    /* Responsive: en móvil reducimos el padding lateral para que el texto no se parta */
+    @media only screen and (max-width: 600px) {
+      .wrapper { padding: 16px 8px !important; }
+      .header { padding: 28px 20px !important; }
+      .body { padding: 28px 20px !important; }
+      .cred-box { padding: 16px 16px !important; }
+      .footer { padding: 18px 20px !important; }
+      .logo { font-size: 24px !important; }
+      .btn-login { display: block !important; text-align: center !important; }
+    }
   </style>
 </head>
 <body>
@@ -77,14 +91,16 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
 
         <div class="cred-box">
           <p class="cred-title">Tus credenciales</p>
-          <div class="cred-row">
-            <span class="cred-label">RUT (usuario)</span>
-            <span class="cred-value">${rut}</span>
-          </div>
-          <div class="cred-row">
-            <span class="cred-label">Contraseña temporal</span>
-            <span class="cred-value">${passwordTemporal}</span>
-          </div>
+          <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+            <tr>
+              <td style="font-size:13px;color:#64748b;padding:10px 0;border-bottom:1px solid #e8edf3;">RUT (usuario)</td>
+              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;border-bottom:1px solid #e8edf3;">${rut}</td>
+            </tr>
+            <tr>
+              <td style="font-size:13px;color:#64748b;padding:10px 0;">Contraseña temporal</td>
+              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;">${passwordTemporal}</td>
+            </tr>
+          </table>
         </div>
 
         <div class="alert">
@@ -93,19 +109,37 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
           primer inicio de sesión.</p>
         </div>
 
+        <div style="text-align:center;margin:0 0 28px;">
+          <a href="${loginUrl}" class="btn-login" style="display:inline-block;background:#006edc;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;font-family:'Segoe UI',Helvetica,Arial,sans-serif;padding:14px 32px;border-radius:10px;">Ingresar al sistema</a>
+        </div>
+
         <p class="steps-title">Primeros pasos</p>
-        <div class="step">
-          <div class="step-num">1</div>
-          <p>Accede al sistema con el RUT y la contraseña temporal indicados arriba.</p>
-        </div>
-        <div class="step">
-          <div class="step-num">2</div>
-          <p>Crea una contraseña nueva y segura cuando el sistema lo solicite.</p>
-        </div>
-        <div class="step">
-          <div class="step-num">3</div>
-          <p>Completa tu perfil y el proceso de enrolamiento para habilitar tu firma digital.</p>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+          <tr>
+            <td width="38" valign="top" style="padding:6px 0;">
+              <table cellpadding="0" cellspacing="0" role="presentation"><tr>
+                <td width="26" height="26" align="center" valign="middle" style="width:26px;height:26px;background:#002855;color:#ffffff;border-radius:13px;font-size:12px;font-weight:700;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">1</td>
+              </tr></table>
+            </td>
+            <td valign="top" style="font-size:13px;color:#475569;line-height:1.55;padding:6px 0;">Accede al sistema con el RUT y la contraseña temporal indicados arriba.</td>
+          </tr>
+          <tr>
+            <td width="38" valign="top" style="padding:6px 0;">
+              <table cellpadding="0" cellspacing="0" role="presentation"><tr>
+                <td width="26" height="26" align="center" valign="middle" style="width:26px;height:26px;background:#002855;color:#ffffff;border-radius:13px;font-size:12px;font-weight:700;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">2</td>
+              </tr></table>
+            </td>
+            <td valign="top" style="font-size:13px;color:#475569;line-height:1.55;padding:6px 0;">Crea una contraseña nueva y segura cuando el sistema lo solicite.</td>
+          </tr>
+          <tr>
+            <td width="38" valign="top" style="padding:6px 0;">
+              <table cellpadding="0" cellspacing="0" role="presentation"><tr>
+                <td width="26" height="26" align="center" valign="middle" style="width:26px;height:26px;background:#002855;color:#ffffff;border-radius:13px;font-size:12px;font-weight:700;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">3</td>
+              </tr></table>
+            </td>
+            <td valign="top" style="font-size:13px;color:#475569;line-height:1.55;padding:6px 0;">Completa tu perfil y el proceso de enrolamiento para habilitar tu firma digital.</td>
+          </tr>
+        </table>
       </div>
       <div class="footer">
         Build &amp; Serve &mdash; Plataforma de Gestión de Obras<br>
@@ -177,6 +211,139 @@ Este es un mensaje automático. Por favor no respondas a este correo.
 };
 
 /**
+ * Envía un email de recuperación de contraseña con un enlace de un solo uso.
+ * @param {string} email - Email del destinatario
+ * @param {string} nombre - Nombre del usuario
+ * @param {string} resetUrl - Enlace temporal para restablecer la contraseña
+ * @param {number} minutosVigencia - Minutos de validez del enlace (para el texto)
+ */
+const sendPasswordResetEmail = async (email, nombre, resetUrl, minutosVigencia = 30) => {
+    if (!email) {
+        console.log('No email provided, skipping password reset notification');
+        return { sent: false, reason: 'no_email' };
+    }
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; padding: 0; background: #f0f4f8; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .wrapper { padding: 32px 16px; }
+    .card { max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.10); }
+    .header { background: linear-gradient(135deg, #002855 0%, #006edc 100%); padding: 36px 40px; text-align: center; }
+    .logo { font-size: 28px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; margin: 0; }
+    .logo-amp { color: #df3601; }
+    .logo-sub { font-size: 13px; color: rgba(255,255,255,0.70); margin: 6px 0 0; font-weight: 400; }
+    .body { padding: 36px 40px; }
+    .greeting { font-size: 16px; color: #0f172a; margin: 0 0 12px; }
+    .intro { font-size: 14px; color: #475569; line-height: 1.65; margin: 0 0 28px; }
+    .btn-wrap { text-align: center; margin: 0 0 28px; }
+    .btn { display: inline-block; background: #006edc; color: #ffffff; text-decoration: none;
+           font-size: 15px; font-weight: 600; padding: 14px 32px; border-radius: 10px; }
+    .link-fallback { font-size: 12px; color: #94a3b8; line-height: 1.6; margin: 0 0 28px; word-break: break-all; }
+    .alert { background: #fff8f0; border: 1px solid #fed7a0; border-left: 4px solid #df3601;
+             border-radius: 8px; padding: 14px 18px; margin: 0 0 28px; }
+    .alert p { margin: 0; font-size: 13px; color: #7c2d12; line-height: 1.55; }
+    .alert strong { color: #df3601; }
+    .footer { background: #f8fafc; border-top: 1px solid #e8edf3; padding: 20px 40px;
+              text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.6; }
+    /* Responsive: en móvil reducimos el padding lateral para que el texto no se parta */
+    @media only screen and (max-width: 600px) {
+      .wrapper { padding: 16px 8px !important; }
+      .header { padding: 28px 20px !important; }
+      .body { padding: 28px 20px !important; }
+      .footer { padding: 18px 20px !important; }
+      .logo { font-size: 24px !important; }
+      .btn, .btn-login { display: block !important; text-align: center !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="card">
+      <div class="header">
+        <p class="logo">Build <span class="logo-amp">&amp;</span> Serve</p>
+        <p class="logo-sub">Plataforma de Gestión de Obras y Prevención de Riesgos</p>
+      </div>
+      <div class="body">
+        <p class="greeting">Hola, <strong>${nombre}</strong></p>
+        <p class="intro">
+          Recibimos una solicitud para restablecer la contraseña de tu cuenta. Haz clic en el
+          botón para crear una nueva contraseña. Este enlace caduca en ${minutosVigencia} minutos.
+        </p>
+
+        <div class="btn-wrap">
+          <a href="${resetUrl}" class="btn" style="display:inline-block;background:#006edc;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;font-family:'Segoe UI',Helvetica,Arial,sans-serif;padding:14px 32px;border-radius:10px;">Restablecer contraseña</a>
+        </div>
+
+        <p class="link-fallback">
+          Si el botón no funciona, copia y pega este enlace en tu navegador:<br>${resetUrl}
+        </p>
+
+        <div class="alert">
+          <p><strong>¿No fuiste tú?</strong> Si no solicitaste este cambio, ignora este correo:
+          tu contraseña actual seguirá siendo válida.</p>
+        </div>
+      </div>
+      <div class="footer">
+        Build &amp; Serve &mdash; Plataforma de Gestión de Obras<br>
+        Este es un mensaje automático. Por favor no respondas a este correo.
+      </div>
+    </div>
+  </div>
+</body>
+</html>`.trim();
+
+    const textBody = `
+Hola ${nombre},
+
+Recibimos una solicitud para restablecer la contraseña de tu cuenta en Build & Serve.
+
+Abre este enlace para crear una nueva contraseña (caduca en ${minutosVigencia} minutos):
+${resetUrl}
+
+¿No fuiste tú? Si no solicitaste este cambio, ignora este correo: tu contraseña actual
+seguirá siendo válida.
+
+---
+Build & Serve — Plataforma de Gestión de Obras
+Este es un mensaje automático. Por favor no respondas a este correo.
+    `.trim();
+
+    try {
+        const command = new SendEmailCommand({
+            Source: SENDER_EMAIL,
+            Destination: { ToAddresses: [email] },
+            Message: {
+                Subject: {
+                    Data: 'Build & Serve — Restablece tu contraseña',
+                    Charset: 'UTF-8'
+                },
+                Body: {
+                    Html: { Data: htmlBody, Charset: 'UTF-8' },
+                    Text: { Data: textBody, Charset: 'UTF-8' }
+                }
+            }
+        });
+
+        console.log(`Attempting to send SES password reset email from ${SENDER_EMAIL} to ${email}`);
+        await sesClient.send(command);
+        console.log(`SES password reset email sent for ${email}`);
+        return { sent: true, email };
+    } catch (err) {
+        console.error('Error sending password reset email:', err);
+        if (err.name === 'MessageRejected') {
+            return { sent: false, error: 'Email no verificado en SES sandbox', code: 'SANDBOX_RESTRICTION' };
+        }
+        return { sent: false, error: err.message };
+    }
+};
+
+/**
  * POST /notifications/welcome - Enviar email de bienvenida manualmente
  */
 module.exports.sendWelcome = async (event) => {
@@ -203,3 +370,4 @@ module.exports.sendWelcome = async (event) => {
 };
 
 module.exports.sendWelcomeEmail = sendWelcomeEmail;
+module.exports.sendPasswordResetEmail = sendPasswordResetEmail;

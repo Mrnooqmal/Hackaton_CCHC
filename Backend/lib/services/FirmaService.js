@@ -67,6 +67,7 @@ class FirmaService {
         const {
             personaId,
             tenantId,
+            obraId = null,
             metodo = 'PIN',
             credencial,
             tipoFirma,
@@ -105,6 +106,33 @@ class FirmaService {
             throw new Error(`Validación de ${metodo} fallida`);
         }
 
+        // IDEMPOTENCIA: si ya existe una firma válida de esta persona para la misma
+        // referencia (documento/actividad), se devuelve esa en vez de crear un
+        // duplicado (protege contra doble envío / reintentos de red).
+        if (referenciaId && referenciaTipo && tipoFirma !== 'enrolamiento') {
+            try {
+                const existing = await docClient.send(new QueryCommand({
+                    TableName: SIGNATURES_TABLE,
+                    IndexName: 'personaId-index',
+                    KeyConditionExpression: 'personaId = :p',
+                    FilterExpression: 'referenciaId = :r AND referenciaTipo = :rt AND tipoFirma = :tf AND #st = :e',
+                    ExpressionAttributeNames: { '#st': 'estado' },
+                    ExpressionAttributeValues: {
+                        ':p': persona.personaId,
+                        ':r': referenciaId,
+                        ':rt': referenciaTipo,
+                        ':tf': tipoFirma,
+                        ':e': 'valida',
+                    },
+                }));
+                if (existing.Items && existing.Items.length > 0) {
+                    return existing.Items[0];
+                }
+            } catch (idemErr) {
+                console.error('Idempotencia firma: verificación falló, se continúa:', idemErr.message);
+            }
+        }
+
         // Crear firma
         const now = new Date();
         const signatureId = uuidv4();
@@ -125,6 +153,9 @@ class FirmaService {
             tipoFirma,
             referenciaId: referenciaId || null,
             referenciaTipo: referenciaTipo || null,
+            // Obra a la que pertenece la firma (trazabilidad por obra). Se deriva del
+            // documento/actividad firmado; null para firmas sin obra (ej. enrolamiento).
+            obraId: obraId || null,
 
             // Timestamps según DS 44
             fecha: now.toISOString().split('T')[0],
@@ -255,6 +286,53 @@ class FirmaService {
             timestamp: firma.timestamp,
             ip: firma.ipAddress
         };
+    }
+
+    /**
+     * Construye las piezas (SET clauses / names / values) de una UpdateCommand
+     * atómica para registrar firmas sobre un documento. Usada por CUALQUIER
+     * endpoint que marque un documento como firmado (documents.sign,
+     * documents.signAssisted, documents.signBulk, signatures.create vía
+     * SignatureRequests) para que todos alimenten el mismo array `firmas`
+     * (fuente para el estampado del PDF) de forma consistente.
+     *
+     * 'firmas' se actualiza con list_append (DynamoDB lo resuelve server-side
+     * sobre el valor actual, sin necesitar leer-antes-de-escribir) y cada
+     * asignación tocada se actualiza por índice (asignaciones[idx].campo), no
+     * reescribiendo el array completo. Así, firmas concurrentes sobre el mismo
+     * documento (varias personas firmando casi al mismo tiempo) no se pisan
+     * entre sí: cada UpdateItem solo toca los paths que le corresponden.
+     */
+    static buildFirmaUpdateParts({ documentData, nuevasFirmas, asignacionUpdates = [] }) {
+        const now = new Date().toISOString();
+        const names = { '#estado': 'estado' };
+        const values = {
+            ':nuevasFirmas': nuevasFirmas,
+            ':emptyList': [],
+            ':updatedAt': now,
+            ':firmado': 'firmado',
+        };
+        const setClauses = [
+            'firmas = list_append(if_not_exists(firmas, :emptyList), :nuevasFirmas)',
+            'updatedAt = :updatedAt',
+        ];
+
+        const asignaciones = documentData.asignaciones || [];
+        asignacionUpdates.forEach((upd, i) => {
+            const idx = asignaciones.findIndex((a) => a.personaId === upd.personaId && a.estado === 'pendiente');
+            if (idx === -1) return;
+            const fechaKey = `:fechaFirma${i}`;
+            values[fechaKey] = now;
+            setClauses.push(`asignaciones[${idx}].#estado = :firmado`);
+            setClauses.push(`asignaciones[${idx}].fechaFirma = ${fechaKey}`);
+            if (upd.asistidoPor) {
+                const apKey = `:asistidoPor${i}`;
+                values[apKey] = upd.asistidoPor;
+                setClauses.push(`asignaciones[${idx}].asistidoPor = ${apKey}`);
+            }
+        });
+
+        return { setClauses, names, values, now };
     }
 }
 

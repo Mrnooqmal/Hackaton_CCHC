@@ -18,7 +18,7 @@ export default function CredentialCard({
     rut,
     password,
     title = 'Credenciales de acceso',
-    hint = 'El usuario deberá cambiar esta contraseña al iniciar sesión.',
+    hint = 'Contraseña temporal: los primeros 4 dígitos del RUT. El usuario deberá cambiarla al iniciar sesión.',
     variant = 'primary',
 }: CredentialCardProps) {
     const [copiedField, setCopiedField] = useState<'rut' | 'password' | null>(null);

@@ -1,21 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import ConfirmModal from './ConfirmModal';
 import {
     FiHome,
     FiUsers,
     FiFileText,
     FiCalendar,
     FiEdit3,
-    FiMessageSquare,
     FiSettings,
+    FiBriefcase,
     FiAlertTriangle,
-    FiClipboard,
-    FiMail,
-    FiBell,
+    FiCheckSquare,
     FiX,
-    FiLogOut
+    FiLogOut,
+    FiList
 } from 'react-icons/fi';
-import { surveysApi, workersApi, type InboxMessage } from '../api/client';
+import { surveysApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 
@@ -37,45 +37,11 @@ interface NavSection {
     items: NavItem[];
 }
 
-// ─────────────────────────────────────────────────────────────
-// Navegación basada en permisos.
-//
-// El ADMIN conserva su navegación global predefinida. Cualquier otro
-// rol usa GENERIC_NAV: cada ítem declara el permiso de vista que lo
-// habilita; el render filtra por hasPermission y oculta secciones vacías.
-// Los módulos siempre visibles (Inicio, Firma, Incidentes, Encuestas,
-// Configuración) no declaran permiso — sus subacciones se gatean en la página.
-// ─────────────────────────────────────────────────────────────
-const ADMIN_NAV: NavSection[] = [
-    {
-        section: 'Empresa',
-        items: [
-            { path: '/', icon: FiHome, label: 'Inicio' },
-        ]
-    },
-    {
-        section: 'Gestión',
-        items: [
-            { path: '/obras', icon: FiHome, label: 'Obras' },
-            { path: '/personas', icon: FiUsers, label: 'Personas' },
-            { path: '/documents-repository', icon: FiFileText, label: 'Archivos' },
-        ]
-    },
-    {
-        section: 'Cumplimiento',
-        items: [
-            { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
-        ]
-    },
-    {
-        section: 'Sistema',
-        items: [
-            { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA' },
-            { path: '/settings', icon: FiSettings, label: 'Configuración' },
-        ]
-    }
-];
-
+// Cada ítem declara el permiso de vista que lo habilita; el render filtra
+// por hasPermission y oculta secciones vacías. Los módulos sin permiso
+// (Inicio, Firma, Incidentes, Encuestas, Configuración) son siempre visibles;
+// sus subacciones se gatean dentro de la página.
+// El admin tiene bypass total en hasPermission, por lo que ve todos los ítems.
 const GENERIC_NAV: NavSection[] = [
     {
         section: 'Principal',
@@ -88,53 +54,40 @@ const GENERIC_NAV: NavSection[] = [
         items: [
             { path: '/obras', icon: FiHome, label: 'Obras', permission: PERMISSIONS.OBRAS_VER },
             { path: '/personas', icon: FiUsers, label: 'Personas', permission: PERMISSIONS.PERSONAS_VER },
-            { path: '/documents-repository', icon: FiFileText, label: 'Archivos', permission: PERMISSIONS.REPOSITORIO_VER },
-            { path: '/documents', icon: FiFileText, label: 'Documentos', permission: PERMISSIONS.DOCUMENTOS_VER },
-            { path: '/activities', icon: FiCalendar, label: 'Actividades', permission: PERMISSIONS.ACTIVIDADES_VER },
+            { path: '/contenido', icon: FiCalendar, label: 'Contenido' },
+            { path: '/documents-repository', icon: FiFileText, label: 'Repositorio', permission: PERMISSIONS.REPOSITORIO_VER },
         ]
     },
     {
         section: 'Cumplimiento',
         items: [
-            { path: '/signature-requests', icon: FiEdit3, label: 'Firma Electrónica' },
+            { path: '/my-signatures', icon: FiEdit3, label: 'Mis firmas' },
             { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
-            { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
         ]
     },
     {
         section: 'Sistema',
         items: [
-            { path: '/ai-assistant', icon: FiMessageSquare, label: 'Asistente IA', permission: PERMISSIONS.IA_VER },
+            { path: '/mi-empresa', icon: FiBriefcase, label: 'Mi Empresa', permission: PERMISSIONS.EMPRESA_VER },
+            { path: '/cargos-onboarding', icon: FiCheckSquare, label: 'Onboarding', permission: PERMISSIONS.CARGOS_GESTIONAR },
+            { path: '/catalogos-actividad', icon: FiList, label: 'Catálogos', permission: PERMISSIONS.CARGOS_GESTIONAR },
             { path: '/settings', icon: FiSettings, label: 'Configuración' },
         ]
     }
 ];
 
-const getNavItems = (role: string): NavSection[] => (role === 'admin' ? ADMIN_NAV : GENERIC_NAV);
-
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, hasPermission, logout } = useAuth();
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
     const sidebarRef = useRef<HTMLElement>(null);
     const [workerId, setWorkerId] = useState<string | null>(null);
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
     const pendingBadgeLabel = pendingSurveyCount > 99 ? '99+' : String(pendingSurveyCount);
 
-    // Inbox notifications state
-    const [unreadInboxCount] = useState(0);
-    const [recentMessages] = useState<InboxMessage[]>([]);
-    const [showNotificationPopup, setShowNotificationPopup] = useState(false);
-    const inboxBadgeLabel = unreadInboxCount > 99 ? '99+' : String(unreadInboxCount);
-
-    // Load inbox unread count
-    useEffect(() => {
-        if (!user?.userId) return;
-
-        // Inbox auto-refresh está deshabilitado por ahora
-        return () => { };
-    }, [user?.userId]);
+    // Las notificaciones viven en el Header (campana con badge), no en el sidebar.
 
     useEffect(() => {
         if (!canRespondSurveys) {
@@ -266,6 +219,17 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 />
             )}
 
+            <ConfirmModal
+                isOpen={showLogoutConfirm}
+                title="Cerrar sesión"
+                message="¿Estás seguro de que deseas cerrar sesión?"
+                confirmLabel="Cerrar sesión"
+                cancelLabel="Cancelar"
+                variant="danger"
+                onConfirm={() => { setShowLogoutConfirm(false); logout(); }}
+                onCancel={() => setShowLogoutConfirm(false)}
+            />
+
             <aside ref={sidebarRef} className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
                 {/* Mobile close button */}
                 {onClose && (
@@ -279,7 +243,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 )}
 
                 <nav className="sidebar-nav">
-                    {getNavItems(user?.rol || '').map((section: NavSection) => {
+                    {GENERIC_NAV.map((section: NavSection) => {
                         // Permissions are already filtered by role, but keep this for double-checking
                         const visibleItems = section.items.filter((item: NavItem) =>
                             !item.permission || hasPermission(item.permission)
@@ -294,8 +258,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                     const Icon = item.icon;
                                     const isActive = location.pathname === item.path;
                                     const showSurveyBadge = item.path === '/surveys' && canRespondSurveys && pendingSurveyCount > 0;
-                                    const showInboxBadge = item.path === '/inbox' && unreadInboxCount > 0;
-                                    const showStaticBadge = !showSurveyBadge && !showInboxBadge && typeof item.badge === 'number' && item.badge > 0;
+                                    const showStaticBadge = !showSurveyBadge && typeof item.badge === 'number' && item.badge > 0;
 
                                     return (
                                         <Link
@@ -313,11 +276,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                                     {pendingBadgeLabel}
                                                 </span>
                                             )}
-                                            {showInboxBadge && (
-                                                <span className="nav-item-badge inbox-badge">
-                                                    {inboxBadgeLabel}
-                                                </span>
-                                            )}
                                             {showStaticBadge && (
                                                 <span className="nav-item-badge">
                                                     {item.badge}
@@ -330,49 +288,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                         );
                     })}
                 </nav>
-                {/* Notification Popup - Bottom Right */}
-                {showNotificationPopup && recentMessages.length > 0 && (
-                    <div className="notification-popup">
-                        <div className="notification-popup-header">
-                            <span><FiBell /> Notificaciones</span>
-                            <button onClick={() => setShowNotificationPopup(false)}><FiX /></button>
-                        </div>
-                        <div className="notification-popup-list">
-                            {recentMessages.slice(0, 5).map((msg) => (
-                                <Link
-                                    key={msg.messageId}
-                                    to="/inbox"
-                                    className="notification-popup-item"
-                                    onClick={() => setShowNotificationPopup(false)}
-                                >
-                                    <div className="notification-popup-icon">
-                                        <FiMail />
-                                    </div>
-                                    <div className="notification-popup-content">
-                                        <div className="notification-popup-title">{msg.subject || 'Sin asunto'}</div>
-                                        <div className="notification-popup-meta">{msg.senderName || 'Sistema'}</div>
-                                    </div>
-                                </Link>
-                            ))}
-                        </div>
-                        <Link to="/inbox" className="notification-popup-footer" onClick={() => setShowNotificationPopup(false)}>
-                            Ver todos los mensajes
-                        </Link>
-                    </div>
-                )}
-
-                {/* Floating notification bell for large screens */}
-                {unreadInboxCount > 0 && !showNotificationPopup && (
-                    <button
-                        className="notification-fab"
-                        onClick={() => setShowNotificationPopup(true)}
-                        title={`${unreadInboxCount} mensaje(s) sin leer`}
-                    >
-                        <FiBell />
-                        <span className="notification-fab-badge">{inboxBadgeLabel}</span>
-                    </button>
-                )}
-
                 {user && (() => {
                     const initials = [user.nombre, user.apellido]
                         .filter(Boolean)
@@ -408,7 +323,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                 </button>
                                 <button
                                     className="sidebar-user-logout"
-                                    onClick={logout}
+                                    onClick={() => setShowLogoutConfirm(true)}
                                     title="Cerrar sesión"
                                     aria-label="Cerrar sesión"
                                 >

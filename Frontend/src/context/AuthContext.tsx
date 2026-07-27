@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { authApi, type User, type SessionInfo } from '../api/client';
 
 interface AuthContextType {
@@ -6,6 +6,8 @@ interface AuthContextType {
     session: SessionInfo | null;
     loading: boolean;
     error: string | null;
+    sessionExpired: boolean;
+    clearSessionExpired: () => void;
     login: (rut: string, password: string) => Promise<{ success: boolean; error?: string; requiresChangePassword?: boolean; requiresEnrollment?: boolean }>;
     logout: () => Promise<void>;
     updateUser: (userData: Partial<User>) => void;
@@ -19,6 +21,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [session, setSession] = useState<SessionInfo | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [sessionExpired, setSessionExpired] = useState(false);
+    const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearSessionExpired = useCallback(() => setSessionExpired(false), []);
+
+    const scheduleAutoLogout = useCallback((expiresAt: string) => {
+        if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
+        const ms = new Date(expiresAt).getTime() - Date.now();
+        if (ms <= 0) return;
+        expiryTimerRef.current = setTimeout(() => {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('session_id');
+            localStorage.removeItem('tenant_id');
+            setUser(null);
+            setSession(null);
+            setSessionExpired(true);
+        }, ms);
+    }, []);
 
     const checkAuth = useCallback(async () => {
         const token = localStorage.getItem('auth_token');
@@ -38,6 +58,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 };
                 setUser(enrichedUser);
                 setSession(response.data.session);
+                if (response.data.session?.expiresAt) {
+                    scheduleAutoLogout(response.data.session.expiresAt);
+                }
                 // Ensure tenant_id is set in localStorage
                 if (enrichedUser.tenantId) {
                     localStorage.setItem('tenant_id', enrichedUser.tenantId);
@@ -52,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [scheduleAutoLogout]);
 
     useEffect(() => {
         checkAuth();
@@ -87,6 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     expiresAt,
                     lastActivity: new Date().toISOString()
                 });
+                scheduleAutoLogout(expiresAt);
 
                 return {
                     success: true,
@@ -106,6 +130,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const logout = async () => {
+        if (expiryTimerRef.current) {
+            clearTimeout(expiryTimerRef.current);
+            expiryTimerRef.current = null;
+        }
         const sessionId = localStorage.getItem('session_id');
         if (sessionId) {
             await authApi.logout(sessionId);
@@ -131,7 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, session, loading, error, login, logout, updateUser, hasPermission }}>
+        <AuthContext.Provider value={{ user, session, loading, error, sessionExpired, clearSessionExpired, login, logout, updateUser, hasPermission }}>
             {children}
         </AuthContext.Provider>
     );

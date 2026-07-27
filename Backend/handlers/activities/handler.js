@@ -5,6 +5,9 @@ const { success, error, created } = require('../../lib/utils/response');
 const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { TenantService } = require('../../lib/services/TenantService');
+const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { resolveCatalogos, validatePlanificacion, validatePermisosTrabajo } = require('../../lib/catalogos-actividad');
 const { eventBus } = require('../../lib/events/EventBus');
 
 const TABLE_NAME = process.env.ACTIVITIES_TABLE || 'Activities';
@@ -18,6 +21,7 @@ const ACTIVITY_TYPES = {
     REUNION_COMITE: 'Reunión Comité Paritario',
     SIMULACRO: 'Simulacro de Emergencia',
     INSPECCION: 'Inspección de Seguridad',
+    OTRO: 'Otra actividad',
 };
 
 // Subtipos de CAPACITACION segun el DS44 (Excel de Elementos). Permiten
@@ -32,6 +36,79 @@ const CAPACITACION_SUBTIPOS = {
     ENCARGADO: 'Encargado Gestión del Riesgo — Art. 65',
     OTRA: 'Otra capacitación',
 };
+
+// Tope de ocurrencias por serie, para evitar crear cantidades desmedidas.
+const MAX_OCURRENCIAS = 180;
+
+// Tope total de actividades generadas en una sola llamada a /activities/plan
+// (suma de fechas × responsables de todos los ítems del esqueleto).
+const MAX_ACTIVIDADES_PLAN = 500;
+
+/**
+ * Valida planificacion + permisosTrabajo de un body contra el catálogo del
+ * tenant y las personas reales. Devuelve { planificacion, permisosTrabajo }
+ * o lanza un Error cuyo message es apto para responder 400.
+ */
+const validarBloquesActividad = async ({ tenantId, tipo, planificacion, permisosTrabajo }) => {
+    const tenantService = new TenantService();
+    const personaService = new PersonaService();
+    const tenant = await tenantService.getById(tenantId).catch(() => null);
+    const catalogos = resolveCatalogos(tenant);
+
+    const rPlan = validatePlanificacion(planificacion, catalogos, tipo);
+    if (rPlan.errores.length) throw new Error(`Planificación inválida: ${rPlan.errores.join('; ')}`);
+
+    // Responsables de permisos: deben ser personas existentes del tenant.
+    const responsablesValidos = new Set();
+    const nombres = {};
+    for (const p of (Array.isArray(permisosTrabajo) ? permisosTrabajo : [])) {
+        const rid = String(p?.responsableId || '').trim();
+        if (!rid || responsablesValidos.has(rid)) continue;
+        const persona = await personaService.getById(rid).catch(() => null);
+        if (persona && persona.tenantId === tenantId) {
+            responsablesValidos.add(rid);
+            nombres[rid] = `${persona.nombre} ${persona.apellidoPaterno || persona.apellido || ''}`.trim();
+        }
+    }
+    const rPerm = validatePermisosTrabajo(permisosTrabajo, responsablesValidos);
+    if (rPerm.errores.length) throw new Error(`Permisos de trabajo inválidos: ${rPerm.errores.join('; ')}`);
+    // Nombre denormalizado para el reporte (fuente: la persona real, no el cliente).
+    for (const p of rPerm.value) p.responsableNombre = nombres[p.responsableId] || p.responsableNombre;
+
+    return { planificacion: rPlan.value, permisosTrabajo: rPerm.value };
+};
+
+/**
+ * Genera la lista de fechas (YYYY-MM-DD) de una serie recurrente entre la fecha
+ * de inicio y `hasta` (inclusive), según la frecuencia. Devuelve solo la fecha
+ * de inicio si no hay repetición o los parámetros son inválidos.
+ *
+ * Con `excluirFinDeSemana` se omiten sábados y domingos (días no trabajados en
+ * obra): la fecha se salta pero el cursor sigue avanzando. Los feriados se
+ * ignoran a propósito (decisión de diseño: solo se excluye el fin de semana).
+ */
+function generarFechasRecurrencia(inicio, hasta, frecuencia, excluirFinDeSemana = false) {
+    if (frecuencia === 'unica' || !hasta) return [inicio];
+    const cur = new Date(`${inicio}T00:00:00`);
+    const fin = new Date(`${hasta}T00:00:00`);
+    if (isNaN(cur.getTime()) || isNaN(fin.getTime()) || fin < cur) return [inicio];
+
+    const fechas = [];
+    while (cur <= fin && fechas.length < MAX_OCURRENCIAS) {
+        const dia = cur.getDay(); // 0 = domingo, 6 = sábado
+        if (!excluirFinDeSemana || (dia !== 0 && dia !== 6)) {
+            fechas.push(cur.toISOString().split('T')[0]);
+        }
+        if (frecuencia === 'diaria') cur.setDate(cur.getDate() + 1);
+        else if (frecuencia === 'semanal') cur.setDate(cur.getDate() + 7);
+        else if (frecuencia === 'mensual') cur.setMonth(cur.getMonth() + 1);
+        else break;
+    }
+    return fechas;
+}
+
+// Exportada para tests (ver Backend/test_planificacion.js).
+module.exports.generarFechasRecurrencia = generarFechasRecurrencia;
 
 /**
  * POST /activities - Crear nueva actividad
@@ -60,11 +137,42 @@ module.exports.create = async (event) => {
             }
         }
 
-        const now = new Date().toISOString();
-        const activityId = uuidv4();
+        let bloques;
+        try {
+            bloques = await validarBloquesActividad({
+                tenantId, tipo: body.tipo,
+                planificacion: body.planificacion,
+                permisosTrabajo: body.permisosTrabajo,
+            });
+        } catch (validationErr) {
+            return error(validationErr.message, 400);
+        }
 
-        const activity = {
-            activityId,
+        const now = new Date().toISOString();
+
+        // Periodicidad: si la actividad se repite, generamos una ocurrencia por
+        // fecha (ej. una charla de 5 min cada día a las 9am). Todas comparten un
+        // serieId para poder agruparlas/identificarlas. 'unica' = sin repetición.
+        const FRECUENCIAS = ['unica', 'diaria', 'semanal', 'mensual'];
+        const frecuencia = FRECUENCIAS.includes(body.frecuencia) ? body.frecuencia : 'unica';
+        const fechaInicio = body.fecha || now.split('T')[0];
+        const repetirHasta = body.repetirHasta || null;
+
+        const fechas = generarFechasRecurrencia(fechaInicio, repetirHasta, frecuencia);
+        const esSerie = frecuencia !== 'unica' && fechas.length > 1;
+        const serieId = esSerie ? uuidv4() : null;
+
+        const asistentesRequeridos = Array.isArray(body.asistentesRequeridos)
+            ? body.asistentesRequeridos
+            : (Array.isArray(body.attendees) ? body.attendees : []);
+
+        // Multi-responsable: se acepta responsables[] (el relator debe estar incluido).
+        // relatorId se mantiene como responsables[0] por compatibilidad con firmas.
+        const responsables = Array.isArray(body.responsables) && body.responsables.length > 0
+            ? [...new Set([body.relatorId, ...body.responsables.filter((r) => typeof r === 'string' && r)])]
+            : [body.relatorId];
+
+        const baseActivity = {
             tenantId,
             obraId: body.obraId || null,
             tipo: body.tipo,
@@ -73,39 +181,250 @@ module.exports.create = async (event) => {
             subtipoDescripcion: subtipo ? CAPACITACION_SUBTIPOS[subtipo] : null,
             titulo: body.titulo,
             descripcion: body.descripcion || '',
-            fecha: body.fecha || now.split('T')[0],
             horaInicio: body.horaInicio || now.split('T')[1].substring(0, 5),
             horaFin: body.horaFin || null,
             relatorId: body.relatorId,
+            responsables,
             ubicacion: body.ubicacion || '',
+            asistentesRequeridos,
             asistentes: [],
             firmaRelator: null,
             estado: 'programada',
+            // Toda actividad creada por este endpoint es "suelta" (no viene de un
+            // esqueleto de planificación); las planificadas nacen en /activities/plan.
+            origen: 'ad_hoc',
+            tipoTrabajo: body.tipoTrabajo || null,
+            planId: null,
+            recurrencia: esSerie ? { frecuencia, repetirHasta, serieId } : { frecuencia: 'unica' },
+            serieId,
+            // Vínculo con el ítem del kit de onboarding (trazabilidad): si esta
+            // actividad se agendó para cumplir un ítem, al asistir se cierra ese ítem.
+            kitItemKey: body.kitItemKey || null,
+            planificacion: bloques.planificacion,
+            permisosTrabajo: bloques.permisosTrabajo,
             createdAt: now,
             updatedAt: now,
         };
 
-        await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: activity }));
+        const actividades = fechas.map((fecha) => ({
+            ...baseActivity,
+            activityId: uuidv4(),
+            fecha,
+        }));
 
-        // Notificar asistentes
+        for (const act of actividades) {
+            await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: act }));
+        }
+
+        // Notificar asistentes (un solo evento por la serie/actividad, con la primera fecha).
         try {
-            if (body.attendees && body.attendees.length > 0) {
+            if (asistentesRequeridos.length > 0) {
+                const primera = actividades[0];
                 await eventBus.emit('activity.created', {
-                    activityId: activity.activityId,
-                    attendeeIds: body.attendees,
+                    activityId: primera.activityId,
+                    attendeeIds: asistentesRequeridos,
                     createdBy: body.relatorId,
-                    activityName: activity.titulo,
-                    fecha: activity.fecha,
-                    tipo: activity.tipo
+                    activityName: primera.titulo,
+                    fecha: primera.fecha,
+                    tipo: primera.tipo,
+                    obraId: primera.obraId,
+                    serie: esSerie ? { serieId, ocurrencias: actividades.length } : undefined,
                 });
             }
         } catch (eventError) {
             console.error('Error emitting activity.created event:', eventError);
         }
 
-        return created(activity);
+        // Compatibilidad: una sola actividad devuelve el objeto; una serie devuelve
+        // la lista creada junto con la primera ocurrencia.
+        if (!esSerie) return created(actividades[0]);
+        return created({ serie: true, serieId, count: actividades.length, activities: actividades, first: actividades[0] });
     } catch (err) {
         console.error('Error creating activity:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * POST /activities/plan - Generar el esqueleto de planificación
+ *
+ * Recibe un esqueleto (lista de ítems con tipo, periodicidad y responsables) y un
+ * rango de fechas, y pre-genera actividades reales en estado `borrador`, una por
+ * (fecha × responsable). Cada borrador es independiente y editable: el supervisor
+ * solo rellena el detalle del día (no se copia el mismo contenido a toda la serie).
+ *
+ * Reglas:
+ * - Se excluyen sábados y domingos (días no trabajados). Feriados se ignoran.
+ * - Filtrado por corresponsalía: cada ítem lleva SU propia lista de responsables
+ *   (así una "inspección de andamios" se asigna solo a quienes la realizan). El
+ *   `tipoTrabajo` del ítem queda en cada borrador para filtrar/visualizar.
+ * - Idempotencia: si ya existe una actividad planificada del mismo (obra, fecha,
+ *   tipo, responsable) —de cualquier plan anterior— no se duplica; se omite.
+ */
+module.exports.plan = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+        const tenantId = body.tenantId || event.queryStringParameters?.tenantId;
+        if (!tenantId) return error('tenantId es requerido');
+
+        const validation = validateRequired(body, ['obraId', 'rangoDesde', 'rangoHasta', 'solicitanteId']);
+        if (!validation.valid) {
+            return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
+        }
+        if (!Array.isArray(body.items) || body.items.length === 0) {
+            return error('El esqueleto debe incluir al menos un ítem (items)');
+        }
+
+        const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
+        if (!FECHA_RE.test(body.rangoDesde) || !FECHA_RE.test(body.rangoHasta)) {
+            return error('rangoDesde y rangoHasta deben tener formato YYYY-MM-DD');
+        }
+        if (body.rangoHasta < body.rangoDesde) {
+            return error('rangoHasta debe ser igual o posterior a rangoDesde');
+        }
+
+        const personaService = new PersonaService();
+
+        // Autorización: el solicitante debe poder planificar (actividades.planificar).
+        // Se resuelve contra la definición de roles del tenant para respetar roles
+        // personalizados (ej. un rol "Comité Paritario" con el permiso delegado).
+        const solicitante = await personaService.getById(body.solicitanteId);
+        if (!solicitante || solicitante.tenantId !== tenantId) {
+            return error('Solicitante no encontrado en la empresa', 403);
+        }
+        let tenant = null;
+        try {
+            const { TenantService } = require('../../lib/services/TenantService');
+            tenant = await new TenantService().getById(tenantId);
+        } catch (e) {
+            console.error('No se pudo cargar el tenant para resolver permisos:', e.message);
+        }
+        if (!personaPuede(solicitante, tenant, PERMISSIONS.ACTIVIDADES_PLANIFICAR)) {
+            return error('No tienes permiso para planificar actividades', 403);
+        }
+
+        // Validación de ítems: tipo, periodicidad y responsables.
+        const PERIODICIDADES = ['diaria', 'semanal', 'mensual'];
+        const responsableIds = new Set();
+        for (let i = 0; i < body.items.length; i++) {
+            const item = body.items[i];
+            if (!ACTIVITY_TYPES[item.tipo]) {
+                return error(`Ítem ${i + 1}: tipo inválido. Válidos: ${Object.keys(ACTIVITY_TYPES).join(', ')}`);
+            }
+            if (item.tipo === 'CAPACITACION' && item.subtipo && !CAPACITACION_SUBTIPOS[item.subtipo]) {
+                return error(`Ítem ${i + 1}: subtipo de capacitación inválido`);
+            }
+            if (!PERIODICIDADES.includes(item.periodicidad)) {
+                return error(`Ítem ${i + 1}: periodicidad inválida. Válidas: ${PERIODICIDADES.join(', ')}`);
+            }
+            if (!Array.isArray(item.responsables) || item.responsables.length === 0) {
+                return error(`Ítem ${i + 1}: debe indicar al menos un responsable`);
+            }
+            item.responsables.forEach((r) => responsableIds.add(r));
+        }
+
+        // Los responsables deben ser personas del tenant.
+        const responsablesValidos = new Map();
+        for (const pid of responsableIds) {
+            const persona = await personaService.getById(pid);
+            if (!persona || persona.tenantId !== tenantId) {
+                return error(`Responsable ${pid} no encontrado en la empresa`);
+            }
+            responsablesValidos.set(pid, persona);
+        }
+
+        // Idempotencia: actividades planificadas ya existentes de esta obra, para
+        // no duplicar (obra, fecha, tipo, responsable) al re-generar un plan.
+        const existentesRes = await docClient.send(new QueryCommand({
+            TableName: TABLE_NAME,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :tenantId',
+            FilterExpression: 'obraId = :obraId AND origen = :origen',
+            ExpressionAttributeValues: {
+                ':tenantId': tenantId,
+                ':obraId': body.obraId,
+                ':origen': 'planificacion',
+            },
+        }));
+        const yaPlanificadas = new Set(
+            (existentesRes.Items || []).map((a) => `${a.fecha}|${a.tipo}|${a.relatorId}`)
+        );
+
+        const now = new Date().toISOString();
+        const planId = uuidv4();
+        const actividades = [];
+        let omitidas = 0;
+
+        for (const item of body.items) {
+            // Siempre sin fines de semana: en obra no se planifican sábados/domingos.
+            const fechas = generarFechasRecurrencia(body.rangoDesde, body.rangoHasta, item.periodicidad, true);
+            const pre = item.camposPrellenados || {};
+            const subtipo = item.tipo === 'CAPACITACION' ? (item.subtipo || 'OTRA') : null;
+
+            // Qué campos vienen pre-llenados del esqueleto (la UI los distingue del
+            // detalle que debe completar el supervisor).
+            const prellenados = [];
+            if (item.tituloBase) prellenados.push('titulo');
+            if (pre.horaInicio) prellenados.push('horaInicio');
+            if (pre.ubicacion) prellenados.push('ubicacion');
+            if (pre.descripcion) prellenados.push('descripcion');
+
+            for (const fecha of fechas) {
+                for (const responsableId of item.responsables) {
+                    if (yaPlanificadas.has(`${fecha}|${item.tipo}|${responsableId}`)) {
+                        omitidas++;
+                        continue;
+                    }
+                    actividades.push({
+                        activityId: uuidv4(),
+                        tenantId,
+                        obraId: body.obraId,
+                        tipo: item.tipo,
+                        tipoDescripcion: ACTIVITY_TYPES[item.tipo],
+                        subtipo,
+                        subtipoDescripcion: subtipo ? CAPACITACION_SUBTIPOS[subtipo] : null,
+                        titulo: item.tituloBase || ACTIVITY_TYPES[item.tipo],
+                        descripcion: pre.descripcion || '',
+                        fecha,
+                        horaInicio: pre.horaInicio || '09:00',
+                        horaFin: null,
+                        relatorId: responsableId,
+                        responsables: [responsableId],
+                        ubicacion: pre.ubicacion || '',
+                        asistentesRequeridos: [],
+                        asistentes: [],
+                        firmaRelator: null,
+                        estado: 'borrador',
+                        origen: 'planificacion',
+                        tipoTrabajo: item.tipoTrabajo || null,
+                        planId,
+                        camposPrellenados: prellenados,
+                        recurrencia: { frecuencia: item.periodicidad, repetirHasta: body.rangoHasta, planId },
+                        serieId: null,
+                        kitItemKey: null,
+                        createdBy: body.solicitanteId,
+                        createdAt: now,
+                        updatedAt: now,
+                    });
+                    if (actividades.length > MAX_ACTIVIDADES_PLAN) {
+                        return error(`El plan generaría más de ${MAX_ACTIVIDADES_PLAN} actividades. Reduce el rango de fechas o la cantidad de ítems/responsables.`);
+                    }
+                }
+            }
+        }
+
+        for (const act of actividades) {
+            await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: act }));
+        }
+
+        return created({
+            planId,
+            count: actividades.length,
+            omitidas,
+            activities: actividades,
+        });
+    } catch (err) {
+        console.error('Error generating activity plan:', err);
         return error(err.message, 500);
     }
 };
@@ -115,7 +434,8 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId, tipo, estado, fecha, relatorId } = event.queryStringParameters || {};
+        const { tenantId, obraId, tipo, estado, fecha, relatorId,
+            planId, responsableId, tipoTrabajo, fechaDesde, fechaHasta } = event.queryStringParameters || {};
         if (!tenantId) return error('tenantId es requerido');
 
         // Query por GSI tenantId-index (no Scan)
@@ -129,6 +449,10 @@ module.exports.list = async (event) => {
         let filterParts = [];
         const expressionAttributeNames = {};
 
+        if (obraId) {
+            filterParts.push('obraId = :obraId');
+            params.ExpressionAttributeValues[':obraId'] = obraId;
+        }
         if (tipo) {
             filterParts.push('tipo = :tipo');
             params.ExpressionAttributeValues[':tipo'] = tipo;
@@ -142,9 +466,34 @@ module.exports.list = async (event) => {
             expressionAttributeNames['#fecha'] = 'fecha';
             params.ExpressionAttributeValues[':fecha'] = fecha;
         }
+        // Rango de fechas (para cargar el mes del calendario en una sola llamada).
+        if (fechaDesde) {
+            filterParts.push('#fecha >= :fechaDesde');
+            expressionAttributeNames['#fecha'] = 'fecha';
+            params.ExpressionAttributeValues[':fechaDesde'] = fechaDesde;
+        }
+        if (fechaHasta) {
+            filterParts.push('#fecha <= :fechaHasta');
+            expressionAttributeNames['#fecha'] = 'fecha';
+            params.ExpressionAttributeValues[':fechaHasta'] = fechaHasta;
+        }
         if (relatorId) {
             filterParts.push('relatorId = :relatorId');
             params.ExpressionAttributeValues[':relatorId'] = relatorId;
+        }
+        // Responsable: busca en responsables[] con fallback a relatorId (registros
+        // antiguos sin el campo nuevo).
+        if (responsableId) {
+            filterParts.push('(contains(responsables, :responsableId) OR relatorId = :responsableId)');
+            params.ExpressionAttributeValues[':responsableId'] = responsableId;
+        }
+        if (planId) {
+            filterParts.push('planId = :planId');
+            params.ExpressionAttributeValues[':planId'] = planId;
+        }
+        if (tipoTrabajo) {
+            filterParts.push('tipoTrabajo = :tipoTrabajo');
+            params.ExpressionAttributeValues[':tipoTrabajo'] = tipoTrabajo;
         }
 
         if (filterParts.length > 0) {
@@ -206,12 +555,20 @@ module.exports.registerAttendance = async (event) => {
 
         if (!id) return error('ID de actividad requerido');
 
-        // Acepta personaId o workerId (legacy) 
+        // Acepta personaId o workerId (legacy)
         const { personaId, personaIds, workerId, workerIds, incluirFirmaRelator, pin } = body;
         const personas = personaIds || (personaId ? [personaId] : workerIds || (workerId ? [workerId] : []));
 
         if (personas.length === 0) {
             return error('Se requiere al menos un trabajador');
+        }
+
+        // Firma con PIN del trabajador (no presencial): la asistencia se firma de
+        // forma INDIVIDUAL porque un PIN solo autentica a su dueño. El cliente
+        // registra un trabajador a la vez con su propio PIN.
+        if (!pin) return error('Se requiere el PIN del trabajador para registrar la asistencia', 400);
+        if (personas.length > 1) {
+            return error('La firma con PIN es individual: registra un trabajador a la vez con su propio PIN', 400);
         }
 
         // Obtener actividad
@@ -239,36 +596,33 @@ module.exports.registerAttendance = async (event) => {
             const persona = await personaService.getById(pid);
             if (!persona) continue;
 
-            // Crear firma en SignaturesTable
-            const metodo = pin ? 'PIN' : 'PRESENCIAL';
-            try {
-                const firma = await FirmaService.crear({
-                    personaId: pid,
-                    tenantId: activity.tenantId,
-                    metodo,
-                    credencial: pin || {},
-                    tipoFirma: 'actividad',
-                    referenciaId: id,
-                    referenciaTipo: 'activity',
-                    contexto,
-                    persona
-                });
+            // Crear firma en SignaturesTable (siempre con PIN del trabajador).
+            const metodo = 'PIN';
+            const firma = await FirmaService.crear({
+                personaId: pid,
+                tenantId: activity.tenantId,
+                obraId: activity.obraId || null,
+                metodo,
+                credencial: pin || {},
+                tipoFirma: 'actividad',
+                referenciaId: id,
+                referenciaTipo: 'activity',
+                contexto,
+                persona
+            });
 
-                nuevosAsistentes.push({
-                    personaId: pid,
-                    nombre: persona.nombre,
-                    rut: persona.rut,
-                    cargo: persona.cargo || '',
-                    firma: {
-                        token: firma.token,
-                        fecha: firma.fecha,
-                        horario: firma.horario,
-                        timestamp: firma.timestamp
-                    }
-                });
-            } catch (firmaErr) {
-                console.error(`Error creando firma para ${pid}:`, firmaErr.message);
-            }
+            nuevosAsistentes.push({
+                personaId: pid,
+                nombre: persona.nombre,
+                rut: persona.rut,
+                cargo: persona.cargo || '',
+                firma: {
+                    token: firma.token,
+                    fecha: firma.fecha,
+                    horario: firma.horario,
+                    timestamp: firma.timestamp
+                }
+            });
         }
 
         const asistentes = [...(activity.asistentes || []), ...nuevosAsistentes];
@@ -352,6 +706,7 @@ module.exports.getStats = async (event) => {
             completadas: filteredActivities.filter(a => a.estado === 'completada').length,
             programadas: filteredActivities.filter(a => a.estado === 'programada').length,
             canceladas: filteredActivities.filter(a => a.estado === 'cancelada').length,
+            borradores: filteredActivities.filter(a => a.estado === 'borrador').length,
             porTipo: {},
             totalAsistentes: 0,
             promedioAsistentesPorActividad: 0,
@@ -384,6 +739,159 @@ module.exports.getStats = async (event) => {
         return success(stats);
     } catch (err) {
         console.error('Error getting stats:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * PATCH /activities/{id} - Completar el registro post-charla y/o un borrador
+ * planificado.
+ *
+ * - planificacion / permisosTrabajo: siempre editables (registro post-charla),
+ *   validados contra el catálogo del tenant.
+ * - Campos de CONTENIDO (titulo, descripcion, horas, ubicación, asistentes
+ *   requeridos, subtipo, tipoTrabajo, fecha): solo editables mientras NO haya
+ *   firmas registradas. Con firmas, solo descripcion (más los bloques de arriba).
+ * - Un `borrador` (generado por /activities/plan) pasa a `programada` al
+ *   completarse, notificando a los asistentes requeridos.
+ * - Las asistencias y firmas son registro de auditoría y NO se tocan por esta
+ *   vía. Autorizado: el relator/responsables de la actividad o quien tenga el
+ *   permiso de crear actividades.
+ */
+module.exports.patch = async (event) => {
+    try {
+        const { id } = event.pathParameters || {};
+        if (!id) return error('ID de actividad requerido');
+        const body = JSON.parse(event.body || '{}');
+
+        const actResult = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { activityId: id } }));
+        if (!actResult.Item) return error('Actividad no encontrada', 404);
+        const activity = actResult.Item;
+
+        const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
+        if (!solicitanteId) return error('solicitanteId es requerido', 400);
+        const personaService = new PersonaService();
+        const solicitante = await personaService.getById(solicitanteId).catch(() => null);
+        if (!solicitante || solicitante.tenantId !== activity.tenantId) {
+            return error('No autorizado para editar esta actividad', 403);
+        }
+        // Responsable = relator o cualquiera de responsables[] (multi-asignación).
+        const esResponsable = solicitante.personaId === activity.relatorId
+            || (Array.isArray(activity.responsables) && activity.responsables.includes(solicitante.personaId));
+        if (!esResponsable) {
+            const tenant = await new TenantService().getById(activity.tenantId).catch(() => null);
+            if (!personaPuede(solicitante, tenant, PERMISSIONS.ACTIVIDADES_CREAR)) {
+                return error('No autorizado para editar esta actividad', 403);
+            }
+        }
+
+        const updates = {};
+
+        // Bloques del registro post-charla: se validan contra el catálogo solo si
+        // el request los trae (una edición de contenido puro no debe fallar por
+        // una planificación previa incompleta).
+        if (body.planificacion !== undefined || body.permisosTrabajo !== undefined) {
+            let bloques;
+            try {
+                bloques = await validarBloquesActividad({
+                    tenantId: activity.tenantId, tipo: activity.tipo,
+                    planificacion: body.planificacion !== undefined ? body.planificacion : activity.planificacion,
+                    permisosTrabajo: body.permisosTrabajo !== undefined ? body.permisosTrabajo : activity.permisosTrabajo,
+                });
+            } catch (validationErr) {
+                return error(validationErr.message, 400);
+            }
+            updates.planificacion = bloques.planificacion;
+            updates.permisosTrabajo = bloques.permisosTrabajo;
+        }
+
+        // Campos de contenido: congelados una vez que hay firmas (auditoría),
+        // salvo la descripción, que puede completarse después de la charla.
+        const tieneFirmas = (activity.asistentes || []).length > 0 || !!activity.firmaRelator;
+        const CAMPOS_CONTENIDO = ['titulo', 'descripcion', 'ubicacion', 'horaInicio', 'horaFin',
+            'fecha', 'asistentesRequeridos', 'subtipo', 'tipoTrabajo'];
+        const editables = tieneFirmas ? ['descripcion'] : CAMPOS_CONTENIDO;
+        for (const campo of editables) {
+            if (body[campo] === undefined) continue;
+            updates[campo] = body[campo];
+        }
+
+        // Validaciones puntuales del contenido.
+        if (updates.fecha !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(updates.fecha)) {
+            return error('fecha debe tener formato YYYY-MM-DD');
+        }
+        if (updates.asistentesRequeridos !== undefined && !Array.isArray(updates.asistentesRequeridos)) {
+            return error('asistentesRequeridos debe ser una lista');
+        }
+        if (updates.subtipo !== undefined) {
+            if (activity.tipo !== 'CAPACITACION') delete updates.subtipo;
+            else if (!CAPACITACION_SUBTIPOS[updates.subtipo]) return error('Subtipo de capacitación inválido');
+            else updates.subtipoDescripcion = CAPACITACION_SUBTIPOS[updates.subtipo];
+        }
+
+        // Cambio de estado: solo transiciones administrativas. `completada` la fija
+        // exclusivamente el registro de asistencia (no se puede forzar por acá).
+        const ESTADOS_PATCH = ['borrador', 'programada', 'cancelada'];
+        if (body.estado !== undefined) {
+            if (!ESTADOS_PATCH.includes(body.estado)) {
+                return error(`Estado inválido. Válidos vía edición: ${ESTADOS_PATCH.join(', ')}`);
+            }
+            if (activity.estado === 'completada') {
+                return error('No se puede cambiar el estado de una actividad completada');
+            }
+            updates.estado = body.estado;
+        } else if (activity.estado === 'borrador' && Object.keys(updates).length > 0) {
+            // Al completar un borrador sin estado explícito, pasa a programada.
+            updates.estado = 'programada';
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return error('No se envió ningún campo editable');
+        }
+        updates.updatedAt = new Date().toISOString();
+
+        // UpdateExpression dinámico (alias para palabras reservadas como fecha/estado).
+        const setParts = [];
+        const names = {};
+        const values = {};
+        Object.entries(updates).forEach(([campo, valor], i) => {
+            setParts.push(`#f${i} = :v${i}`);
+            names[`#f${i}`] = campo;
+            values[`:v${i}`] = valor;
+        });
+
+        await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { activityId: id },
+            UpdateExpression: `SET ${setParts.join(', ')}`,
+            ExpressionAttributeNames: names,
+            ExpressionAttributeValues: values,
+        }));
+
+        const actualizada = { ...activity, ...updates };
+
+        // Si un borrador quedó programado con asistentes requeridos, se notifica
+        // igual que al crear una actividad (aviso en el inbox de cada asistente).
+        try {
+            const requeridos = actualizada.asistentesRequeridos || [];
+            if (activity.estado === 'borrador' && actualizada.estado === 'programada' && requeridos.length > 0) {
+                await eventBus.emit('activity.created', {
+                    activityId: id,
+                    attendeeIds: requeridos,
+                    createdBy: solicitanteId,
+                    activityName: actualizada.titulo,
+                    fecha: actualizada.fecha,
+                    tipo: actualizada.tipo,
+                    obraId: actualizada.obraId,
+                });
+            }
+        } catch (eventError) {
+            console.error('Error emitting activity.created event (patch):', eventError);
+        }
+
+        return success(actualizada);
+    } catch (err) {
+        console.error('Error patching activity:', err);
         return error(err.message, 500);
     }
 };

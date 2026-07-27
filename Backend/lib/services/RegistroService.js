@@ -295,6 +295,7 @@ class RegistroService {
         const firma = await FirmaService.crear({
             personaId: persona.personaId,
             tenantId,
+            obraId: obraId || null,
             metodo,
             credencial,
             tipoFirma: 'documento',
@@ -485,6 +486,7 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
         const firma = await FirmaService.crear({
             personaId: persona.personaId,
             tenantId,
+            obraId: incident.obraId || null,
             metodo,
             credencial,
             tipoFirma: 'documento',

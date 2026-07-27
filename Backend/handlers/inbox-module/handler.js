@@ -176,8 +176,12 @@ async function getUnreadCount(request) {
 
 async function getRecipients(request) {
     try {
-        const { userId, tenantId } = request.query || {};
-        const result = await inboxRepo.getRecipients({ currentUserId: userId, tenantId });
+        const { userId, tenantId, empresaId, obraId } = request.query || {};
+        const result = await inboxRepo.getRecipients({
+            currentUserId: userId,
+            tenantId: tenantId || empresaId,
+            obraId
+        });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);

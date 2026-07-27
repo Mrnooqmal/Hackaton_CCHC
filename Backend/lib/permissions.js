@@ -26,6 +26,7 @@ const PERMISSIONS = {
     PERSONA_ONBOARDING: 'persona.onboarding',
     PERSONA_EPP: 'persona.epp',
     PERSONA_VIGILANCIA_SALUD: 'persona.vigilancia_salud',
+    PERSONA_DESVINCULAR: 'persona.desvincular',
     // Repositorio
     REPOSITORIO_VER: 'repositorio.ver',
     REPOSITORIO_SUBIR: 'repositorio.subir',
@@ -35,6 +36,7 @@ const PERMISSIONS = {
     INCIDENTES_ESTADISTICAS: 'incidentes.estadisticas',
     INCIDENTES_HISTORIAL: 'incidentes.historial',
     INCIDENTES_REPORTAR: 'incidentes.reportar',
+    INCIDENTES_CALIFICAR_ACCIDENTE: 'incidentes.calificar_accidente',
     // Encuestas
     ENCUESTAS_CREAR: 'encuestas.crear',
     // Asistente IA
@@ -42,9 +44,19 @@ const PERMISSIONS = {
     // Actividades
     ACTIVIDADES_VER: 'actividades.ver',
     ACTIVIDADES_CREAR: 'actividades.crear',
+    // Armar el esqueleto de planificación mensual (genera borradores por rango).
+    // Delegable por tenant a otros roles (ej. Comité Paritario) desde Mi Empresa.
+    ACTIVIDADES_PLANIFICAR: 'actividades.planificar',
     // Documentos
     DOCUMENTOS_VER: 'documentos.ver',
     DOCUMENTOS_SUBIR: 'documentos.subir',
+    // Cargos de onboarding (catálogo de cargos + kits DS44, nivel empresa)
+    CARGOS_GESTIONAR: 'cargos.gestionar',
+    // Mi Empresa (configuración de la empresa: roles, cargos e identidad)
+    EMPRESA_VER: 'empresa.ver',
+    EMPRESA_ROLES: 'empresa.roles',
+    EMPRESA_CARGOS: 'empresa.cargos',
+    EMPRESA_IDENTIDAD: 'empresa.identidad',
 };
 
 const ALL_PERMISSION_KEYS = Object.values(PERMISSIONS);
@@ -56,13 +68,16 @@ const DEFAULT_ROLE_PRESETS = {
         PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES, PERMISSIONS.OBRA_SUBIR_DOCUMENTOS, PERMISSIONS.OBRA_FIRMA_ASISTIDA,
         PERMISSIONS.PERSONAS_VER, PERMISSIONS.PERSONAS_CREAR, PERMISSIONS.PERSONAS_DETALLE,
         PERMISSIONS.PERSONA_EXPORTAR, PERMISSIONS.PERSONA_ONBOARDING, PERMISSIONS.PERSONA_EPP, PERMISSIONS.PERSONA_VIGILANCIA_SALUD,
+        PERMISSIONS.PERSONA_DESVINCULAR,
         PERMISSIONS.REPOSITORIO_VER, PERMISSIONS.REPOSITORIO_SUBIR,
         PERMISSIONS.FIRMAS_CREAR,
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
+        PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
         PERMISSIONS.IA_VER,
-        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
+        PERMISSIONS.CARGOS_GESTIONAR,
     ],
     prevencionista: [
         PERMISSIONS.OBRAS_VER, PERMISSIONS.OBRAS_DETALLE,
@@ -72,9 +87,10 @@ const DEFAULT_ROLE_PRESETS = {
         PERMISSIONS.REPOSITORIO_VER, PERMISSIONS.REPOSITORIO_SUBIR,
         PERMISSIONS.FIRMAS_CREAR,
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
+        PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
         PERMISSIONS.IA_VER,
-        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
     ],
     supervisor: [
@@ -84,11 +100,23 @@ const DEFAULT_ROLE_PRESETS = {
         PERMISSIONS.REPOSITORIO_VER,
         PERMISSIONS.FIRMAS_CREAR,
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
-        PERMISSIONS.ACTIVIDADES_VER,
+        // El supervisor puede crear sus propias actividades (trabaja solo o tiene
+        // tareas adicionales no asignadas por la planificación).
+        PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
         PERMISSIONS.DOCUMENTOS_VER,
     ],
-    colaborador: [],
-    trabajador: [],
+    // Colaborador/trabajador: acceso mínimo para VER y firmar lo que se les asigna
+    // (documentos y actividades). Las encuestas y "mis firmas" no requieren permiso.
+    // Las páginas filtran a solo sus ítems asignados; firmar lo asignado no requiere
+    // un permiso aparte.
+    colaborador: [
+        PERMISSIONS.DOCUMENTOS_VER,
+        PERMISSIONS.ACTIVIDADES_VER,
+    ],
+    trabajador: [
+        PERMISSIONS.DOCUMENTOS_VER,
+        PERMISSIONS.ACTIVIDADES_VER,
+    ],
 };
 
 /**
@@ -100,15 +128,25 @@ const DEFAULT_ROLE_PRESETS = {
  */
 const resolvePersonaPermisos = (persona, tenant) => {
     if (!persona) return [];
-    if (normalizeRol(persona.rol) === 'admin') return [...ALL_PERMISSION_KEYS];
+    const normRol = normalizeRol(persona.rol);
+    if (normRol === 'admin') return [...ALL_PERMISSION_KEYS];
 
+    const preset = DEFAULT_ROLE_PRESETS[normRol] || [];
     const roles = Array.isArray(tenant?.roles) ? tenant.roles : [];
     const role = roles.find(
         (r) => r.id === persona.rol || normalizeRol(r.nombre) === normalizeRol(persona.rol)
     );
-    if (role && Array.isArray(role.permisos)) return role.permisos;
+    if (role && Array.isArray(role.permisos)) {
+        // Para colaborador/trabajador se garantiza el MÍNIMO de acceso (ver/firmar lo
+        // asignado) uniéndolo con el preset, aunque el rol guardado venga con permisos
+        // vacíos de tenants creados antes (no requiere migración de datos).
+        if (normRol === 'colaborador' || normRol === 'trabajador') {
+            return [...new Set([...role.permisos, ...preset])];
+        }
+        return role.permisos;
+    }
 
-    return DEFAULT_ROLE_PRESETS[normalizeRol(persona.rol)] || [];
+    return preset;
 };
 
 /**

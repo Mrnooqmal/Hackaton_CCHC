@@ -54,6 +54,14 @@ export const DS44_PLAN_DOCS: Ds44DocDefinition[] = [
         tipos: ['REGLAMENTO_INTERNO'],
         titulo: 'Reglamento Interno (RIHS/RIOHS)',
         estadoFirma: 'Jefe de Obra'
+    },
+    {
+        // Plan de Emergencias: documento BASE de la obra (específico del sitio,
+        // se sube una vez por obra). Antes vivía en el kit por-cargo; se movió aquí.
+        key: 'PLAN_EMERGENCIAS',
+        tipos: ['PLAN_EMERGENCIAS'],
+        titulo: 'Plan de Emergencias de la Obra',
+        estadoFirma: 'Jefe de Obra'
     }
 ];
 
@@ -312,3 +320,329 @@ export const DS44_ACT_ACTUALIZACIONES = [
     { key: 'CAPACITACION', titulo: 'Reforzar capacitación', articulo: 'Arts. 15-16', tipoOrigen: 'PLAN_CAPACITACION' },
     { key: 'CONSULTA_CPHS', titulo: 'Consulta a CPHS', articulo: 'Art. 17', tipoOrigen: 'CONSULTA_REPRESENTANTES' }
 ];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CATÁLOGO DE CARGOS Y ONBOARDING POR CARGO (DS44 — PoC EBCO)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// ESPEJO de Backend/lib/ds44.js — mantener ambos sincronizados.
+//
+// Arquitectura de datos (decisión): el CATÁLOGO de cargos y la PLANTILLA del kit
+// (qué tipos de documento exige cada cargo) viven a nivel TENANT, porque:
+//   - El cargo es un atributo estable de la persona (un carpintero lo es en
+//     cualquier obra; Persona.obraIds es lista → el cargo no puede ser por-obra).
+//   - Los procedimientos corporativos (PR-PO-xx, RI, Política) son documentos de
+//     empresa, idénticos entre obras → estandarización que el DS44 busca.
+// El ARCHIVO/plantilla concreto se resuelve por ALCANCE, no por cargo:
+//   - 'tenant'  → un PDF corporativo aplica a todas las obras (PR-PO, RI, Política).
+//   - 'obra'    → se sube por obra porque deriva del MIPER de esa obra (IRL, Plan
+//                 de Emergencias). Aquí es donde la realidad es "por obra".
+//   - 'persona' → evidencia individual del trabajador (entrega EPP, examen de
+//                 altura, encuestas) — no es plantilla reutilizable.
+// El TenantsTable.reglas podrá sobreescribir el kit por empresa (fuera de etapa 1).
+
+export type Ds44Cargo = {
+    codigo: string;
+    label: string;
+    // legacy: cargos de texto libre previos al catálogo. Caen al kit genérico
+    // (compatibilidad con personas ya creadas) en vez de fallar.
+    legacy?: boolean;
+};
+
+// Naturaleza del ítem → determina DÓNDE vive la plantilla (ver alcance) y cómo se
+// completa. Es la abstracción que el flujograma EBCO hace evidente.
+export type Ds44ItemNaturaleza =
+    | 'procedimiento_corporativo'   // PR-PO-xx, RI, Política: PDF de empresa
+    | 'derivado_miper'              // IRL, Plan Emergencias: depende del MIPER de la obra
+    | 'evidencia_individual';       // entrega EPP, examen, encuesta: por trabajador
+
+export type Ds44PlantillaAlcance = 'tenant' | 'obra' | 'persona' | 'ninguno';
+
+// Tipo de acción de onboarding (lo que el trabajador debe "cerrar").
+export type Ds44AccionTipo =
+    | 'DIFUSION_FIRMA'              // difusión + firma de toma de conocimiento
+    | 'CAPACITACION_EVALUACION'    // capacitación + evaluación con nota mínima
+    | 'ENTREGA_EPP'                // entrega física + firma de recepción (Art. 13)
+    | 'EVIDENCIA_EXTERNA'          // certificado/examen externo (proveedor/mutualidad)
+    | 'INGRESO_VIGILANCIA'         // alta en vigilancia de salud MINSAL (no es un PDF)
+    | 'ENCUESTA';                  // aplicación de instrumento (psicosocial)
+
+export type Ds44ProtocoloMinsal = 'PREXOR' | 'SILICE' | 'TMERT' | 'MMC' | 'RUV' | 'PSICOSOCIAL';
+
+export type Ds44EppItem = { descripcion: string; critico?: boolean };
+
+export type Ds44KitItem = {
+    key: string;                   // único dentro del kit del cargo
+    tipo: string;                  // tipo en DocumentsTable / SignatureRequests
+    titulo: string;
+    articulo?: string;
+    codigoEbco?: string;           // PR-PO-08, PR-FR-85, RI 76…
+    naturaleza: Ds44ItemNaturaleza;
+    alcancePlantilla: Ds44PlantillaAlcance;
+    accion: Ds44AccionTipo;
+    // bloqueante: cuenta para el estado "apto para ingresar a terreno". NUNCA
+    // bloquea el registro/vinculación del trabajador (solo informa el semáforo).
+    bloqueante?: boolean;
+    condicion?: 'siempre' | 'segun_miper';
+    notaMinima?: 70 | 90;          // según PR-PDO-04 (70% gral) / altura-SPDC (90%)
+    requiereFirmaRelator?: boolean;
+    matrizEpp?: Ds44EppItem[];     // solo accion ENTREGA_EPP
+    protocolo?: Ds44ProtocoloMinsal;
+    // Plantilla cargada (solo ítems de alcance 'tenant': PR-PO, RI, Política…).
+    // El archivo vive en S3; aquí se guarda la referencia. Para alcance 'obra'
+    // (IRL/MIPER) la plantilla se sube por obra (no aquí).
+    plantilla?: { fileKey: string; nombre: string; tipo?: string; subidoEn?: string };
+};
+
+// ─── Catálogo de cargos (nivel tenant) ───────────────────────────────────────
+// Los 5 cargos EBCO de la PoC + los heredados de texto libre (WorkerEnroll).
+export const DS44_CARGOS: Ds44Cargo[] = [
+    { codigo: 'CARPINTERO', label: 'Carpintero' },
+    { codigo: 'JORNAL_ASEO', label: 'Jornal de aseo y acarreo' },
+    { codigo: 'MAESTRO_TERMINACIONES', label: 'Maestro de Terminaciones' },
+    { codigo: 'MAESTRO_ALBANIL', label: 'Maestro Albañil' },
+    { codigo: 'TRAZADOR', label: 'Trazador' },
+    // Heredados (kit genérico): preservan datos previos sin romper.
+    { codigo: 'OPERARIO', label: 'Operario', legacy: true },
+    { codigo: 'SOLDADOR', label: 'Soldador', legacy: true },
+    { codigo: 'ELECTRICISTA', label: 'Electricista', legacy: true },
+    { codigo: 'MAESTRO_OBRA', label: 'Maestro de Obra', legacy: true },
+    { codigo: 'JEFE_CUADRILLA', label: 'Jefe de Cuadrilla', legacy: true },
+    { codigo: 'AYUDANTE', label: 'Ayudante', legacy: true },
+    { codigo: 'ALBANIL', label: 'Albañil', legacy: true },
+    { codigo: 'JORNAL', label: 'Jornal', legacy: true },
+    { codigo: 'OTRO', label: 'Otro', legacy: true }
+];
+
+// ─── Matrices EPP por cargo (PR-FR-85, EPP de cada PR-PO) ─────────────────────
+export const DS44_EPP_MATRIZ: Record<string, Ds44EppItem[]> = {
+    CARPINTERO: [
+        { descripcion: 'Casco de seguridad' }, { descripcion: 'Barbiquejo' },
+        { descripcion: 'Legionario' }, { descripcion: 'Lentes de seguridad' },
+        { descripcion: 'Guantes de cabritilla' }, { descripcion: 'Botines de seguridad' },
+        { descripcion: 'Protección auditiva' },
+        { descripcion: 'Arnés de cuerpo completo', critico: true },
+        { descripcion: 'Doble cabo de vida con amortiguador', critico: true },
+        { descripcion: 'Bloqueador solar (PR-FR-121)' }
+    ],
+    JORNAL_ASEO: [
+        { descripcion: 'Casco de seguridad' }, { descripcion: 'Barbiquejo' },
+        { descripcion: 'Lentes de seguridad' }, { descripcion: 'Tapones auditivos' },
+        { descripcion: 'Guantes multiflex' }, { descripcion: 'Botines de seguridad' },
+        { descripcion: 'Bloqueador solar' }
+    ],
+    MAESTRO_TERMINACIONES: [
+        { descripcion: 'Casco de seguridad' }, { descripcion: 'Lentes de seguridad con sello' },
+        { descripcion: 'Guantes de seguridad' }, { descripcion: 'Rodilleras' },
+        { descripcion: 'Botines de seguridad' }, { descripcion: 'Careta facial' },
+        { descripcion: 'Respirador medio rostro (filtro según HDS)', critico: true },
+        { descripcion: 'Buzo desechable' }
+    ],
+    MAESTRO_ALBANIL: [
+        { descripcion: 'Casco de seguridad' }, { descripcion: 'Barbiquejo' },
+        { descripcion: 'Lentes de seguridad' }, { descripcion: 'Guantes de seguridad' },
+        { descripcion: 'Botines de seguridad' }, { descripcion: 'Protección auditiva' },
+        { descripcion: 'Arnés de cuerpo completo', critico: true }
+    ],
+    TRAZADOR: [
+        { descripcion: 'Casco de seguridad' }, { descripcion: 'Barbiquejo' },
+        { descripcion: 'Lentes de seguridad' }, { descripcion: 'Guantes anticorte' },
+        { descripcion: 'Botines de seguridad' },
+        { descripcion: 'Arnés de cuerpo completo', critico: true },
+        { descripcion: 'Caleros con tapa (EPP sílice)', critico: true },
+        { descripcion: 'Bloqueador solar' }
+    ]
+};
+
+const EPP_GENERICO: Ds44EppItem[] = [
+    { descripcion: 'Casco de seguridad' }, { descripcion: 'Lentes de seguridad' },
+    { descripcion: 'Guantes de seguridad' }, { descripcion: 'Botines de seguridad' }
+];
+
+// ─── Bloque transversal (aplica a los 5 cargos EBCO) ──────────────────────────
+const itemEppDeCargo = (cargo: string): Ds44KitItem => ({
+    key: 'ENTREGA_EPP', tipo: 'ENTREGA_EPP', codigoEbco: 'PR-FR-85',
+    titulo: 'Entrega y capacitación de EPP', articulo: 'Art. 13',
+    naturaleza: 'evidencia_individual', alcancePlantilla: 'persona',
+    accion: 'ENTREGA_EPP', matrizEpp: DS44_EPP_MATRIZ[cargo] || EPP_GENERICO
+});
+
+// Plan de Emergencias ya NO vive en el kit por-cargo: es un DOCUMENTO BASE DE LA OBRA
+// (específico del sitio, se sube una vez por obra → ver DS44_PLAN_DOCS). El IRL es
+// específico del CARGO y se define UNA VEZ por empresa (alcance 'tenant' → su plantilla
+// se sube en Onboarding por cargo, no por obra).
+const kitTransversal = (cargo: string): Ds44KitItem[] => [
+    { key: 'RI_76', tipo: 'REGLAMENTO_INTERNO', codigoEbco: 'RI 76', titulo: 'Reglamento Interno (RIHS/RIOHS)', articulo: 'Art. 156 CT', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' },
+    { key: 'POLITICA_SST', tipo: 'POLITICA_SSO', titulo: 'Política SST', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' },
+    { key: 'IRL', tipo: 'IRL', titulo: 'IRL — Información de Riesgos Laborales del cargo', articulo: 'Art. 15', naturaleza: 'derivado_miper', alcancePlantilla: 'tenant', accion: 'CAPACITACION_EVALUACION', notaMinima: 70, bloqueante: true },
+    itemEppDeCargo(cargo)
+];
+
+// Atajos para procedimientos corporativos PR-PO (capacitación + evaluación).
+const pp = (key: string, codigoEbco: string, titulo: string, articulo: string, notaMinima: 70 | 90 = 70): Ds44KitItem =>
+    ({ key, tipo: key, codigoEbco, titulo, articulo, naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'CAPACITACION_EVALUACION', notaMinima });
+const dif = (key: string, codigoEbco: string, titulo: string, articulo: string): Ds44KitItem =>
+    ({ key, tipo: key, codigoEbco, titulo, articulo, naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' });
+const ext = (key: string, titulo: string, articulo: string, bloqueante = false): Ds44KitItem =>
+    ({ key, tipo: key, titulo, articulo, naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'EVIDENCIA_EXTERNA', bloqueante });
+
+// ─── Kits específicos por cargo (PoC: solo los PR-PO con documento real + examen
+// de altura bloqueante). Simplificados respecto a la tabla EBCO completa: se omiten
+// los ítems sin plantilla (MINSAL/vigilancia, Ley Karin, encuestas de clima,
+// certificados de proveedor, HDS por producto) para no inflar el checklist. ────
+const ESPECIFICOS: Record<string, Ds44KitItem[]> = {
+    CARPINTERO: [
+        ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
+        pp('PR_PO_08', 'PR-PO-08', 'Trabajos en Altura', 'Art. 16', 90),
+        pp('PR_PO_11', 'PR-PO-11', 'Moldajes y Descimbre', 'Anexo 8.1', 70),
+        pp('PR_PO_23', 'PR-PO-23', 'Instalación de Sistemas de Seguridad', 'Cargo instalador', 70),
+        pp('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Art. 16', 70),
+        pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
+        pp('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Anexo 8.5', 70),
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16')
+    ],
+    JORNAL_ASEO: [
+        pp('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Anexo 8.1', 70),
+        dif('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Difusión'),
+        dif('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Difusión')
+    ],
+    MAESTRO_TERMINACIONES: [
+        ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
+        pp('PR_PO_22', 'PR-PO-22', 'Revestimiento', 'Procedimiento del cargo', 70),
+        pp('PR_PO_08', 'PR-PO-08', 'Trabajos en Altura', 'SPDC anual', 90),
+        pp('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Art. 16', 70),
+        pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16'),
+        dif('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Difusión')
+    ],
+    MAESTRO_ALBANIL: [
+        ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
+        pp('PR_PO_08', 'PR-PO-08', 'Trabajos en Altura', 'SPDC anual', 90),
+        pp('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo (banquillos/escala 3 peldaños)', 'Art. 16', 70),
+        pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
+        pp('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Distancia con maquinaria', 70),
+        dif('PR_PO_23', 'PR-PO-23', 'Instalación de Sistemas de Seguridad (usuario)', 'Usuario de anclajes'),
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16')
+    ],
+    TRAZADOR: [
+        ext('EXAMEN_ALTURA', 'Examen de altura física vigente', 'Examen ocupacional', true),
+        pp('PR_PO_08', 'PR-PO-08', 'Trabajos en Altura (montaje pilares)', 'SPDC anual', 90),
+        pp('PR_PO_41', 'PR-PO-41', 'SPDC y Protecciones Colectivas', 'Art. 16', 90),
+        pp('PR_PO_02', 'PR-PO-02', 'Vehículos y Maquinarias', 'Art. 16', 70),
+        dif('PR_PO_23', 'PR-PO-23', 'Instalación de Sistemas de Seguridad (banderas/fase amarilla)', 'Usuario'),
+        dif('PR_PO_24', 'PR-PO-24', 'Plataformas de Trabajo', 'Difusión'),
+        dif('PR_PO_14', 'PR-PO-14', 'Orden y Aseo', 'Art. 16')
+    ]
+};
+
+// Kit genérico (cargos legacy / OTRO): equivale al onboarding actual, para no
+// romper datos previos. Mantiene IRL, RI, capacitación, PTS, EPP e inducción.
+export const DS44_KIT_GENERICO: Ds44KitItem[] = [
+    { key: 'IRL', tipo: 'IRL', titulo: 'IRL — Información de Riesgos Laborales', articulo: 'Art. 15', naturaleza: 'derivado_miper', alcancePlantilla: 'obra', accion: 'CAPACITACION_EVALUACION', notaMinima: 70, bloqueante: true },
+    { key: 'CAPACITACION_SST', tipo: 'CAPACITACION_SST', titulo: 'Capacitación SST 8 horas', articulo: 'Art. 16', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'obra', accion: 'CAPACITACION_EVALUACION', notaMinima: 70, requiereFirmaRelator: true },
+    { key: 'RI_76', tipo: 'REGLAMENTO_INTERNO', titulo: 'Entrega RIHS/RIOHS', articulo: 'Art. 56', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'tenant', accion: 'DIFUSION_FIRMA' },
+    { key: 'PROCEDIMIENTO_TRABAJO', tipo: 'PROCEDIMIENTO_TRABAJO', titulo: 'Procedimientos de Trabajo Seguro', articulo: 'Art. 10', naturaleza: 'procedimiento_corporativo', alcancePlantilla: 'obra', accion: 'DIFUSION_FIRMA' },
+    { key: 'ENTREGA_EPP', tipo: 'ENTREGA_EPP', titulo: 'Entrega y Capacitación EPP', articulo: 'Art. 13', naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'ENTREGA_EPP', matrizEpp: EPP_GENERICO },
+    { key: 'INDUCCION', tipo: 'INDUCCION', titulo: 'Inducción Plan de Emergencia', articulo: 'Art. 19', naturaleza: 'evidencia_individual', alcancePlantilla: 'persona', accion: 'DIFUSION_FIRMA' }
+];
+
+// Kit base para un cargo nuevo: empresa (RI + Política) + IRL + Procedimiento + EPP.
+// Las 3 naturalezas (derivado_miper, procedimiento_corporativo, evidencia_individual)
+// quedan con al menos un ítem para que los 3 grupos aparezcan en cargos-onboarding.
+export const buildBaseCargoKit = (): Ds44KitItem[] => [
+    ...kitTransversal('OTRO').map((it) => ({ ...it })),
+    // Procedimiento de trabajo seguro (no es de empresa → aparece en "Procedimientos del cargo")
+    { key: 'PROCEDIMIENTO_TRABAJO', tipo: 'PROCEDIMIENTO_TRABAJO', titulo: 'Procedimiento de trabajo seguro del cargo', articulo: 'Art. 10', naturaleza: 'procedimiento_corporativo' as const, alcancePlantilla: 'tenant' as const, accion: 'DIFUSION_FIRMA' as const },
+    // Evidencia de inducción (persona → aparece en "Evidencia individual")
+    { key: 'INDUCCION', tipo: 'INDUCCION', titulo: 'Inducción Plan de Emergencia', articulo: 'Art. 19', naturaleza: 'evidencia_individual' as const, alcancePlantilla: 'persona' as const, accion: 'DIFUSION_FIRMA' as const },
+];
+
+// Kits precomputados por código de cargo (transversal + específicos).
+export const DS44_CARGO_KITS: Record<string, Ds44KitItem[]> = {
+    CARPINTERO: [...kitTransversal('CARPINTERO'), ...ESPECIFICOS.CARPINTERO],
+    JORNAL_ASEO: [...kitTransversal('JORNAL_ASEO'), ...ESPECIFICOS.JORNAL_ASEO],
+    MAESTRO_TERMINACIONES: [...kitTransversal('MAESTRO_TERMINACIONES'), ...ESPECIFICOS.MAESTRO_TERMINACIONES],
+    MAESTRO_ALBANIL: [...kitTransversal('MAESTRO_ALBANIL'), ...ESPECIFICOS.MAESTRO_ALBANIL],
+    TRAZADOR: [...kitTransversal('TRAZADOR'), ...ESPECIFICOS.TRAZADOR]
+};
+
+// ─── Helpers de catálogo / migración ─────────────────────────────────────────
+const CARGO_LABEL_INDEX: Record<string, string> = (() => {
+    const idx: Record<string, string> = {};
+    DS44_CARGOS.forEach((c) => { idx[c.codigo] = c.label; });
+    return idx;
+})();
+
+export function getCargoLabel(codigo?: string | null): string {
+    if (!codigo) return '';
+    return CARGO_LABEL_INDEX[codigo] || codigo;
+}
+
+// Normaliza texto libre / etiqueta / código a un código del catálogo. Mapea los
+// alias EBCO ("carpintero de seguridad" → CARPINTERO; "maestro pintor" →
+// terminaciones) y cae a OTRO si no reconoce. Usado en migración y carga masiva.
+export function normalizeCargoCodigo(input?: string | null): string {
+    if (!input) return 'OTRO';
+    const raw = String(input).trim();
+    if (CARGO_LABEL_INDEX[raw]) return raw; // ya es un código válido
+    const n = raw.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    if (n.includes('carpintero')) return 'CARPINTERO';
+    if (n.includes('jornal') && (n.includes('aseo') || n.includes('acarreo'))) return 'JORNAL_ASEO';
+    if (n.includes('terminacion') || n.includes('pintor') || n.includes('revestimiento')) return 'MAESTRO_TERMINACIONES';
+    if (n.includes('albanil') || (n.includes('maestro') && n.includes('alban'))) return 'MAESTRO_ALBANIL';
+    if (n.includes('trazador') || n.includes('topograf')) return 'TRAZADOR';
+    // Coincidencia directa por etiqueta de cualquier cargo (incl. legacy)
+    const byLabel = DS44_CARGOS.find((c) => c.label.toLowerCase() === n);
+    if (byLabel) return byLabel.codigo;
+    if (n.includes('jornal')) return 'JORNAL';
+    if (n.includes('operario')) return 'OPERARIO';
+    if (n.includes('soldador')) return 'SOLDADOR';
+    if (n.includes('electricista')) return 'ELECTRICISTA';
+    if (n.includes('ayudante')) return 'AYUDANTE';
+    return 'OTRO';
+}
+
+export function isCargoLegacy(codigo?: string | null): boolean {
+    const c = DS44_CARGOS.find((x) => x.codigo === codigo);
+    return Boolean(c?.legacy);
+}
+
+// Resuelve el kit de onboarding de un cargo. Cargos EBCO → kit específico;
+// legacy / OTRO / desconocido → kit genérico (compatibilidad).
+export function resolveCargoKit(codigo?: string | null): Ds44KitItem[] {
+    if (codigo && DS44_CARGO_KITS[codigo]) return DS44_CARGO_KITS[codigo];
+    return DS44_KIT_GENERICO;
+}
+
+// Ítem de kit con trazabilidad del/los cargo(s) que lo originan (multi-cargo).
+export type Ds44KitItemUnion = Ds44KitItem & { cargosOrigen: string[] };
+
+// Une los kits de varios cargos (trabajador multi-cargo en una obra): dedup por
+// `key`, conservando el criterio MÁS ESTRICTO (bloqueante OR, notaMinima MAX) y
+// los cargosOrigen. Espejo de resolveKitUnion del backend.
+export function unionKits(kitsPorCargo: { cargo: string; kit: Ds44KitItem[] }[]): Ds44KitItemUnion[] {
+    const map = new Map<string, Ds44KitItemUnion>();
+    for (const { cargo, kit } of kitsPorCargo) {
+        for (const it of kit) {
+            const prev = map.get(it.key);
+            if (!prev) {
+                map.set(it.key, { ...it, cargosOrigen: [cargo] });
+            } else {
+                map.set(it.key, {
+                    ...prev,
+                    bloqueante: Boolean(prev.bloqueante || it.bloqueante),
+                    notaMinima: (Math.max(prev.notaMinima || 0, it.notaMinima || 0) || undefined) as Ds44KitItem['notaMinima'],
+                    requiereFirmaRelator: prev.requiereFirmaRelator || it.requiereFirmaRelator,
+                    cargosOrigen: [...new Set([...prev.cargosOrigen, cargo])],
+                });
+            }
+        }
+    }
+    return [...map.values()];
+}
+
+// Ítems cuya evidencia vive en la persona y se reutiliza entre obras mientras
+// esté vigente (examen de altura, certificados externos, ingreso a vigilancia).
+export function esEvidenciaReutilizable(item: Pick<Ds44KitItem, 'accion'>): boolean {
+    return !!item && (item.accion === 'EVIDENCIA_EXTERNA' || item.accion === 'INGRESO_VIGILANCIA');
+}

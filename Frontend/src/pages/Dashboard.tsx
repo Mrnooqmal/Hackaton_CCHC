@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ObraProgressCard from '../components/ObraProgressCard';
+import MisFirmasResumen from '../components/MisFirmasResumen';
+import type { ReactNode } from 'react';
 import {
-    FiUsers,
     FiFileText,
     FiCalendar,
     FiAlertTriangle,
@@ -11,15 +12,18 @@ import {
     FiCheckSquare,
     FiAlertCircle,
     FiEdit3,
-    FiShield,
     FiBell,
-    FiMapPin
+    FiUsers,
+    FiClock,
+    FiTrendingUp,
+    FiFolder,
 } from 'react-icons/fi';
 import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi, signatureRequestsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import type { Worker, Activity, SignatureRequest } from '../api/client';
 import { DS44_ONBOARDING_ITEMS, DS44_PLAN_DOCS } from '../utils/ds44';
+import { PageHeader } from '../components/ui';
 
 interface PendingTask {
     id: string;
@@ -29,6 +33,44 @@ interface PendingTask {
     dueDate?: string;
     priority: 'high' | 'normal' | 'low';
     urgent?: boolean;
+}
+
+type MetricTint = 'primary' | 'warning' | 'danger' | 'success';
+
+const TINT_VALUE_COLOR: Record<MetricTint, string> = {
+    primary: 'var(--text-primary)',
+    warning: 'var(--warning-600)',
+    danger: 'var(--danger-600)',
+    success: 'var(--success-600)',
+};
+
+/** Tarjeta de métrica del dashboard: ícono con tinte + valor + etiqueta.
+ *  Opcionalmente navegable. Pensada para verse bien aunque haya poca info. */
+function MetricCard({
+    icon,
+    value,
+    label,
+    tint = 'primary',
+    emphasize = false,
+    to,
+}: {
+    icon: ReactNode;
+    value: ReactNode;
+    label: string;
+    tint?: MetricTint;
+    emphasize?: boolean;
+    to?: string;
+}) {
+    const card = (
+        <div className="dash-stat">
+            <div className={`dash-stat-icon tint-${tint}`}>{icon}</div>
+            <div className="dash-stat-body">
+                <div className="dash-stat-value" style={emphasize ? { color: TINT_VALUE_COLOR[tint] } : undefined}>{value}</div>
+                <div className="dash-stat-label">{label}</div>
+            </div>
+        </div>
+    );
+    return to ? <Link to={to} className="dash-stat-link">{card}</Link> : card;
 }
 
 interface DashboardStats {
@@ -57,6 +99,14 @@ export default function Dashboard() {
     const selectedObra = selectedObraId ? obras.find(o => o.obraId === selectedObraId) : null;
     const selectedObraProgress = selectedObra ? obraProgress[selectedObra.obraId] : null;
 
+    // Roles de gestión tienen su propio dashboard; cualquier otro rol no-admin
+    // (trabajador, colaborador o roles personalizados del tenant) cae a la vista
+    // personal. El resumen de firmas propias se muestra a todos los no-admin.
+    const rol = (user?.rol as string) || '';
+    const isManagementRole = ['prevencionista', 'jefe_obra', 'supervisor', 'admin'].includes(rol);
+    const isPersonalRole = !isManagementRole;
+    const personaId = user?.personaId;
+
     useEffect(() => {
         const activeRef = { current: true };
         const loadDashboardData = async () => {
@@ -64,19 +114,26 @@ export default function Dashboard() {
 
             setLoading(true);
             try {
-                if (user.rol === 'trabajador') {
-                    await loadWorkerDashboard();
-                } else if (user.rol === 'prevencionista') {
+                // Roles de gestión: cada uno tiene su dashboard. Cualquier otro rol
+                // (trabajador, colaborador, o roles personalizados del tenant) cae al
+                // dashboard de trabajador. Sin este fallback, un rol no contemplado
+                // dejaba el spinner colgado para siempre (no corría ningún loader).
+                const rol = (user.rol as string) || '';
+                if (rol === 'prevencionista') {
                     await loadPrevencionistaDashboard();
-                } else if ((user.rol as string) === 'jefe_obra') {
+                } else if (rol === 'jefe_obra') {
                     await loadJefeObraDashboard();
-                } else if ((user.rol as string) === 'supervisor') {
+                } else if (rol === 'supervisor') {
                     await loadSupervisorDashboard();
-                } else if (user.rol === 'admin') {
+                } else if (rol === 'admin') {
                     await loadAdminDashboard();
+                } else {
+                    await loadWorkerDashboard();
                 }
             } catch (error) {
                 console.error('Error loading dashboard:', error);
+            } finally {
+                // Garantiza que el spinner siempre se cierre, pase lo que pase.
                 if (activeRef.current) {
                     setLoading(false);
                 }
@@ -247,7 +304,10 @@ export default function Dashboard() {
     const loadWorkerDashboard = async () => {
         const pendingTasks: PendingTask[] = [];
         let completedCount = 0;
-        let totalRequiredCount = 7; // Base requirements
+        // El total refleja tareas REALES del trabajador: el enrolamiento (siempre
+        // requerido) más las asignaciones que efectivamente tenga (encuestas, etc.).
+        // Antes era un 7 fijo, lo que daba un 14% (1/7) apenas se enrolaba.
+        let totalRequiredCount = 1; // Enrolamiento
 
         // Check enrollment status (sync — no API needed)
         if (user?.habilitado) {
@@ -263,13 +323,73 @@ export default function Dashboard() {
             });
         }
 
-        // UI visible de inmediato; encuestas e inbox cargan en background
+        // UI visible de inmediato; el resto carga en background
         setLoading(false);
 
-        const [surveysResult, inboxResult] = await Promise.allSettled([
+        const myId = user?.personaId || '';
+
+        const [surveysResult, inboxResult, docsResult, activitiesResult] = await Promise.allSettled([
             surveysApi.list(),
-            (user?.personaId || user?.userId) ? inboxApi.getUnreadCount((user?.personaId || user?.userId)!) : Promise.resolve(null)
+            (user?.personaId || user?.userId) ? inboxApi.getUnreadCount((user?.personaId || user?.userId)!) : Promise.resolve(null),
+            // Documentos asignados a mí (firmados + pendientes), en todas mis obras.
+            myId ? documentsApi.list({ asignadoA: myId } as any) : Promise.resolve(null),
+            // Actividades del tenant (luego filtro donde soy asistente requerido).
+            activitiesApi.list({}),
         ]);
+
+        // ── Documentos asignados a mí ──────────────────────────────────────────
+        if (docsResult.status === 'fulfilled' && docsResult.value?.success && docsResult.value.data && myId) {
+            const myDocs = docsResult.value.data.documents || [];
+            myDocs.forEach((doc: any) => {
+                const asig = (doc.asignaciones || []).find((a: any) => a.personaId === myId || a.workerId === myId);
+                if (!asig) return;
+                const firmado = asig.estado === 'firmado' || Boolean(asig.fechaFirma);
+                // Solo cuentan/aparecen los documentos ACCIONABLES: con archivo cargado.
+                // Un documento de onboarding sin archivo aún no es responsabilidad del
+                // trabajador (espera que el admin suba la plantilla) → no se muestra.
+                const tieneArchivo = Boolean(doc.s3Key || doc.archivoUrl);
+                if (!firmado && !tieneArchivo) return;
+                totalRequiredCount += 1;
+                if (firmado) {
+                    completedCount += 1;
+                } else {
+                    pendingTasks.push({
+                        id: doc.documentId,
+                        type: 'document',
+                        title: `Firmar: ${doc.titulo}`,
+                        description: doc.tipoDescripcion || 'Documento pendiente de firma',
+                        priority: doc.bloqueante ? 'high' : 'normal',
+                        urgent: Boolean(doc.bloqueante),
+                    });
+                }
+            });
+        } else if (docsResult.status === 'rejected') {
+            console.error('Error loading my documents:', docsResult.reason);
+        }
+
+        // ── Actividades donde soy asistente requerido ──────────────────────────
+        if (activitiesResult.status === 'fulfilled' && activitiesResult.value?.success && activitiesResult.value.data && myId) {
+            const acts = activitiesResult.value.data.activities || [];
+            acts.forEach((act: any) => {
+                const requerido = (act.asistentesRequeridos || []).includes(myId);
+                if (!requerido) return;
+                const asistio = (act.asistentes || []).some((a: any) => a.personaId === myId);
+                totalRequiredCount += 1;
+                if (asistio) {
+                    completedCount += 1;
+                } else {
+                    pendingTasks.push({
+                        id: act.activityId,
+                        type: 'activity',
+                        title: `Asistir: ${act.titulo}`,
+                        description: `${act.tipoDescripcion || 'Actividad'}${act.fecha ? ` · ${act.fecha}` : ''}`,
+                        priority: 'normal',
+                    });
+                }
+            });
+        } else if (activitiesResult.status === 'rejected') {
+            console.error('Error loading my activities:', activitiesResult.reason);
+        }
 
         if (surveysResult.status === 'fulfilled') {
             const surveysRes = surveysResult.value;
@@ -292,6 +412,8 @@ export default function Dashboard() {
                     s.recipients?.some(r => r.workerId === user.personaId && r.estado === 'respondida')
                 ).length;
 
+                // Cada encuesta asignada (pendiente o respondida) suma al total real.
+                totalRequiredCount += mySurveys.length + completedSurveys;
                 completedCount += completedSurveys;
             }
         } else {
@@ -574,130 +696,64 @@ export default function Dashboard() {
         return (
             <div className="flex items-center justify-center" style={{ height: '100vh' }}>
                 <div className="spinner" />
+                <style>{`
+                    .spinner {
+                        width: 40px; height: 40px;
+                        border: 3px solid var(--surface-border);
+                        border-top-color: var(--primary-500);
+                        border-radius: 50%;
+                        animation: spin 0.8s linear infinite;
+                    }
+                    @keyframes spin { to { transform: rotate(360deg); } }
+                `}</style>
             </div>
         );
     }
 
+    const scopeLabel = selectedObra
+        ? [selectedObra.codigo, selectedObra.nombre].filter(Boolean).join(' · ')
+        : user?.rol === 'admin' ? 'Vista empresa' : '';
+
     return (
         <>
-
             <div className="page-content">
-                {/* Welcome Header */}
-                <div className="mb-6">
-                    <h1 className="text-2xl font-bold mb-1">
-                        Bienvenido, {user?.nombre} {user?.apellido}
-                    </h1>
-                    <div className="flex items-center gap-3 text-muted flex-wrap">
-                        <span className="flex items-center gap-1.5 text-sm font-medium">
-                            <FiShield size={14} />
-                            {user?.rol === 'admin' && 'Administrador'}
-                            {(user?.rol as string) === 'jefe_obra' && 'Jefe de Obra'}
-                            {user?.rol === 'prevencionista' && 'Prevencionista'}
-                            {(user?.rol as string) === 'supervisor' && 'Supervisor'}
-                            {user?.rol === 'trabajador' && 'Trabajador'}
-                        </span>
-                        {['jefe_obra', 'supervisor', 'prevencionista'].includes(user?.rol || '') && (
-                            <>
-                                <span className="text-gray-400">•</span>
-                                <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary-500/10 text-primary-500 text-xs font-semibold border border-primary-500/20">
-                                    <FiMapPin size={12} />
-                                    {selectedObraId ? obras.find(o => o.obraId === selectedObraId)?.nombre : 'Seleccionar Obra'}
-                                </span>
-                            </>
-                        )}
-                    </div>
-                </div>
+                <PageHeader
+                    title={`Hola, ${user?.nombre}`}
+                    scope={scopeLabel ? { label: scopeLabel } : undefined}
+                />
 
-                {/* TRABAJADOR VIEW */}
-                {user?.rol === 'trabajador' && (
-                    <>
-                        {/* Urgent Tasks Alert */}
+                {/* VISTA PERSONAL: trabajador, colaborador y roles personalizados no-admin */}
+                {isPersonalRole && (
+                    <div className="dash-role-view">
+                        {personaId && <MisFirmasResumen personaId={personaId} />}
+
                         {getUrgentTasks().length > 0 && (
-                            <div className="alert alert-warning mb-6">
+                            <div className="alert alert-warning">
                                 <FiAlertCircle />
                                 <div>
                                     <strong>Requieren tu atención urgente</strong>
-                                    <div className="text-sm mt-1">
-                                        {getUrgentTasks().length} tarea(s) pendiente(s)
-                                    </div>
+                                    <div className="text-sm mt-1">{getUrgentTasks().length} tarea(s) pendiente(s)</div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Progress Card */}
-                        <div className="card mb-6">
-                            <h3 className="card-title mb-4">Tu Progreso de Cumplimiento</h3>
-                            <div className="flex items-center gap-4">
-                                <div className="progress-ring">
-                                    <svg width="120" height="120">
-                                        <circle
-                                            cx="60"
-                                            cy="60"
-                                            r="54"
-                                            fill="none"
-                                            stroke="var(--surface-border)"
-                                            strokeWidth="8"
-                                        />
-                                        <circle
-                                            cx="60"
-                                            cy="60"
-                                            r="54"
-                                            fill="none"
-                                            stroke="var(--primary-500)"
-                                            strokeWidth="8"
-                                            strokeDasharray={`${progressPercentage * 3.39} 339`}
-                                            strokeLinecap="round"
-                                            transform="rotate(-90 60 60)"
-                                        />
-                                        <text
-                                            x="60"
-                                            y="60"
-                                            textAnchor="middle"
-                                            dy="7"
-                                            fontSize="24"
-                                            fontWeight="bold"
-                                            fill="var(--text-primary)"
-                                        >
-                                            {progressPercentage}%
-                                        </text>
-                                    </svg>
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-lg font-bold mb-2">
-                                        {progressPercentage}% Completado
-                                    </div>
-                                    <div className="progress">
-                                        <div
-                                            className="progress-bar"
-                                            style={{ width: `${progressPercentage}%` }}
-                                        />
-                                    </div>
-                                    <div className="text-sm text-muted mt-2">
-                                        {pendings.length} tarea(s) pendiente(s)
-                                    </div>
-                                </div>
-                            </div>
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiTrendingUp size={20} />} value={`${progressPercentage}%`} label="completado" tint="success" emphasize />
+                            <MetricCard icon={<FiClock size={20} />} value={pendings.length} label="pendientes" tint="warning" emphasize={pendings.length > 0} />
+                            {(stats.unreadMessages ?? 0) > 0 && (
+                                <MetricCard icon={<FiBell size={20} />} value={stats.unreadMessages} label="sin leer" tint="primary" to="/inbox" />
+                            )}
                         </div>
 
-                        {/* Pending Tasks */}
-                        <div className="card">
-                            <div className="card-header">
-                                <h3 className="card-title">Mis Pendientes</h3>
-                                {stats.unreadMessages! > 0 && (
-                                    <Link to="/inbox" className="btn btn-sm btn-secondary">
-                                        <FiBell /> {stats.unreadMessages} Notificaciones
-                                    </Link>
-                                )}
+                        {pendings.length === 0 ? (
+                            <div className="empty-state">
+                                <FiCheckSquare size={48} className="empty-state-icon" style={{ color: 'var(--success-500)' }} />
+                                <h3 className="empty-state-title">¡Todo al día!</h3>
+                                <p className="empty-state-description">No tienes tareas pendientes en este momento.</p>
                             </div>
-                            {pendings.length === 0 ? (
-                                <div className="empty-state">
-                                    <FiCheckSquare size={48} className="empty-state-icon" style={{ color: 'var(--success-500)' }} />
-                                    <h3 className="empty-state-title">¡Todo al día!</h3>
-                                    <p className="empty-state-description">
-                                        No tienes tareas pendientes en este momento.
-                                    </p>
-                                </div>
-                            ) : (
+                        ) : (
+                            <div>
+                                <h2 className="dash-section-title" style={{ marginBottom: 'var(--space-3)' }}>Mis pendientes</h2>
                                 <div className="flex flex-col gap-3">
                                     {pendings.map(task => (
                                         <div
@@ -706,7 +762,11 @@ export default function Dashboard() {
                                             onClick={() => {
                                                 if (task.type === 'survey') navigate('/surveys');
                                                 else if (task.type === 'signature') navigate('/enroll-me');
+                                                // Documento → abre su detalle (visualización + firmar) vía deep-link.
+                                                else if (task.type === 'document') navigate(`/documents?doc=${encodeURIComponent(task.id)}`);
+                                                else if (task.type === 'activity') navigate('/activities');
                                             }}
+                                            style={{ cursor: 'pointer' }}
                                         >
                                             <div className="flex items-start gap-3">
                                                 <div className={`avatar avatar-sm priority-${task.priority}`}>
@@ -724,66 +784,42 @@ export default function Dashboard() {
                                         </div>
                                     ))}
                                 </div>
-                            )}
-                        </div>
-                    </>
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {/* PREVENCIONISTA VIEW */}
                 {user?.rol === 'prevencionista' && (
-                    <>
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-4 mb-6">
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                        <FiUsers />
-                                    </div>
-                                    <span className="text-xs text-muted">Trabajadores</span>
-                                </div>
-                                <div className="stat-value">{stats.totalWorkers || 0}</div>
-                                <div className="stat-change">
-                                    {stats.pendingSignatures || 0} sin enrolar
-                                </div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
-                                        <FiCalendar />
-                                    </div>
-                                    <span className="text-xs text-muted">Actividades Hoy</span>
-                                </div>
-                                <div className="stat-value">{stats.activitiesToday || 0}</div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--warning-500)' }}>
-                                        <FiEdit3 />
-                                    </div>
-                                    <span className="text-xs text-muted">Mis Firmas Pendientes</span>
-                                </div>
-                                <div className="stat-value">{stats.ownPendingSignatures || 0}</div>
-                                <div className="stat-change" style={{ color: 'var(--warning-500)' }}>
-                                    Tus propias firmas
-                                </div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
-                                        <FiAlertTriangle />
-                                    </div>
-                                    <span className="text-xs text-muted">Incidentes</span>
-                                </div>
-                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
-                            </div>
+                    <div className="dash-role-view">
+                        {personaId && <MisFirmasResumen personaId={personaId} />}
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
+                            <MetricCard icon={<FiEdit3 size={20} />} value={stats.workersPendingSignatures || 0} label="firmas pendientes" tint="warning" emphasize={(stats.workersPendingSignatures || 0) > 0} />
+                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades hoy" tint="primary" />
+                            {(stats.pendingIncidents || 0) > 0 && (
+                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
+                            )}
                         </div>
 
+                        {(stats.workersPendingSignatures || 0) > 0 && (
+                            <div className="dash-action-banner">
+                                <div className="dash-action-banner-body">
+                                    <FiEdit3 size={20} />
+                                    <div>
+                                        <div className="dash-action-banner-count">{stats.workersPendingSignatures}</div>
+                                        <div className="dash-action-banner-label">firmas de trabajadores pendientes</div>
+                                    </div>
+                                </div>
+                                <Link to="/signature-requests" className="btn btn-secondary btn-sm">
+                                    Ver solicitudes <FiArrowRight />
+                                </Link>
+                            </div>
+                        )}
+
                         {selectedObra && selectedObraProgress && (
-                            <div className="mb-6">
-                                <h3 className="text-sm font-bold uppercase tracking-wider text-muted mb-4">Progreso de Fase (DS44)</h3>
+                            <div>
+                                <h2 className="dash-section-title" style={{ marginBottom: 'var(--space-3)' }}>DS44 · {selectedObra.nombre}</h2>
                                 <ObraProgressCard
                                     obra={selectedObra}
                                     progress={selectedObraProgress}
@@ -792,141 +828,67 @@ export default function Dashboard() {
                             </div>
                         )}
 
-                        {/* Workers Signatures Banner */}
-                        <div className="card mb-6" style={{
-                            background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08), rgba(234, 179, 8, 0.02))',
-                            border: '1px solid rgba(234, 179, 8, 0.25)',
-                            padding: 'var(--space-5)',
-                        }}>
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className="avatar" style={{
-                                        background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))',
-                                        width: '52px',
-                                        height: '52px',
-                                        boxShadow: '0 4px 12px rgba(234, 179, 8, 0.3)',
-                                    }}>
-                                        <FiEdit3 size={22} />
-                                    </div>
-                                    <div>
-                                        <div className="text-sm text-muted" style={{ marginBottom: '4px' }}>Firmas Pendientes de Trabajadores</div>
-                                        <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--warning-600)' }}>
-                                            {stats.workersPendingSignatures || 0}
-                                        </div>
-                                        <div className="text-sm text-muted" style={{ marginTop: '2px' }}>firmas pendientes en total de todos los trabajadores asignados</div>
-                                    </div>
-                                </div>
-                                <Link to="/signature-requests" className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
-                                    Ver Solicitudes <FiArrowRight />
-                                </Link>
+                        <div>
+                            <div className="dash-section-header">
+                                <h2 className="dash-section-title">Actividades recientes</h2>
+                                <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
                             </div>
-                        </div>
-
-                        {/* Actions Grid */}
-                        <div className="dashboard-main-grid">
-                            {/* Recent Activities */}
-                            <div className="card">
-                                <div className="card-header">
-                                    <div>
-                                        <h2 className="card-title">Actividades Recientes</h2>
-                                        <p className="card-subtitle">Últimas actividades creadas</p>
-                                    </div>
-                                    <Link to="/activities" className="btn btn-primary btn-sm">
-                                        <FiPlus /> Nueva
-                                    </Link>
+                            {recentActivities.length === 0 ? (
+                                <div className="dash-empty-card">
+                                    <FiCalendar size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+                                    <p className="text-sm text-muted">No hay actividades recientes</p>
                                 </div>
-
-                                {recentActivities.length === 0 ? (
-                                    <div className="empty-state">
-                                        <FiCalendar size={36} className="mb-3 opacity-20" />
-                                        <p>No hay actividades recientes</p>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col gap-3">
-                                        {recentActivities.map((activity) => (
-                                            <div
-                                                key={activity.activityId}
-                                                className="flex items-center justify-between"
-                                                style={{
-                                                    padding: 'var(--space-3)',
-                                                    background: 'var(--surface-elevated)',
-                                                    borderRadius: 'var(--radius-md)'
-                                                }}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                                        <FiCalendar />
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold">{activity.titulo}</div>
-                                                        <div className="text-sm text-muted">{activity.fecha}</div>
-                                                    </div>
+                            ) : (
+                                <div className="dash-list">
+                                    {recentActivities.map(activity => (
+                                        <div key={activity.activityId} className="dash-list-row">
+                                            <div className="flex items-center gap-3">
+                                                <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}><FiCalendar /></div>
+                                                <div>
+                                                    <div className="font-bold">{activity.titulo}</div>
+                                                    <div className="text-sm text-muted">{activity.fecha}</div>
                                                 </div>
-                                                <span className="badge badge-secondary">
-                                                    {activity.tipo}
-                                                </span>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
+                                            <span className="badge badge-secondary">{activity.tipo}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </>
+                    </div>
                 )}
 
                 {/* JEFE DE OBRA VIEW */}
                 {(user?.rol as string) === 'jefe_obra' && (
-                    <>
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-4 mb-6">
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                        <FiUsers />
-                                    </div>
-                                    <span className="text-xs text-muted">Trabajadores</span>
-                                </div>
-                                <div className="stat-value">{stats.totalWorkers || 0}</div>
-                                <div className="stat-change">
-                                    {stats.pendingSignatures || 0} sin enrolar
-                                </div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
-                                        <FiCalendar />
-                                    </div>
-                                    <span className="text-xs text-muted">Actividades Hoy</span>
-                                </div>
-                                <div className="stat-value">{stats.activitiesToday || 0}</div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--info-500)' }}>
-                                        <FiFileText />
-                                    </div>
-                                    <span className="text-xs text-muted">Documentos</span>
-                                </div>
-                                <div className="stat-value">{stats.totalDocuments || 0}</div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
-                                        <FiAlertTriangle />
-                                    </div>
-                                    <span className="text-xs text-muted">Incidentes</span>
-                                </div>
-                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
-                            </div>
+                    <div className="dash-role-view">
+                        {personaId && <MisFirmasResumen personaId={personaId} />}
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
+                            <MetricCard icon={<FiEdit3 size={20} />} value={stats.workersPendingSignatures || 0} label="firmas pendientes" tint="warning" emphasize={(stats.workersPendingSignatures || 0) > 0} />
+                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades hoy" tint="primary" />
+                            {(stats.pendingIncidents || 0) > 0 && (
+                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
+                            )}
                         </div>
 
+                        {(stats.workersPendingSignatures || 0) > 0 && (
+                            <div className="dash-action-banner">
+                                <div className="dash-action-banner-body">
+                                    <FiEdit3 size={20} />
+                                    <div>
+                                        <div className="dash-action-banner-count">{stats.workersPendingSignatures}</div>
+                                        <div className="dash-action-banner-label">firmas de trabajadores pendientes</div>
+                                    </div>
+                                </div>
+                                <Link to="/signature-requests" className="btn btn-secondary btn-sm">
+                                    Ver solicitudes <FiArrowRight />
+                                </Link>
+                            </div>
+                        )}
+
                         {selectedObra && selectedObraProgress && (
-                            <div className="mb-6">
-                                <h3 className="text-sm font-bold uppercase tracking-wider text-muted mb-4">Progreso de Fase (DS44)</h3>
+                            <div>
+                                <h2 className="dash-section-title" style={{ marginBottom: 'var(--space-3)' }}>DS44 · {selectedObra.nombre}</h2>
                                 <ObraProgressCard
                                     obra={selectedObra}
                                     progress={selectedObraProgress}
@@ -935,227 +897,94 @@ export default function Dashboard() {
                             </div>
                         )}
 
-                        {/* Firmas Pendientes Banner */}
-                        {(stats.workersPendingSignatures || 0) > 0 && (
-                            <div className="card mb-6" style={{
-                                background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08), rgba(234, 179, 8, 0.02))',
-                                border: '1px solid rgba(234, 179, 8, 0.25)',
-                                padding: 'var(--space-5)',
-                            }}>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
-                                        <div className="avatar" style={{
-                                            background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))',
-                                            width: '52px', height: '52px',
-                                            boxShadow: '0 4px 12px rgba(234, 179, 8, 0.3)',
-                                        }}>
-                                            <FiEdit3 size={22} />
-                                        </div>
-                                        <div>
-                                            <div className="text-sm text-muted" style={{ marginBottom: '4px' }}>Firmas Pendientes de Trabajadores</div>
-                                            <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--warning-600)' }}>
-                                                {stats.workersPendingSignatures || 0}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <Link to="/signature-requests" className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
-                                        Ver Solicitudes <FiArrowRight />
-                                    </Link>
-                                </div>
+                        <div>
+                            <div className="dash-section-header">
+                                <h2 className="dash-section-title">Actividades recientes</h2>
+                                <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
                             </div>
-                        )}
-
-                        {/* Removed redundant Obras list since selected via dropdown / navbar */}
-
-                        {/* Main grid: Activities + Quick Actions */}
-                        <div className="dashboard-main-grid">
-                            <div className="card">
-                                <div className="card-header">
-                                    <div>
-                                        <h2 className="card-title">Actividades Recientes</h2>
-                                        <p className="card-subtitle">Últimas actividades creadas</p>
-                                    </div>
-                                    <Link to="/activities" className="btn btn-primary btn-sm">
-                                        <FiPlus /> Nueva
-                                    </Link>
+                            {recentActivities.length === 0 ? (
+                                <div className="dash-empty-card">
+                                    <FiCalendar size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+                                    <p className="text-sm text-muted">No hay actividades recientes</p>
                                 </div>
-                                {recentActivities.length === 0 ? (
-                                    <div className="empty-state">
-                                        <FiCalendar size={36} className="mb-3 opacity-20" />
-                                        <p>No hay actividades recientes</p>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col gap-3">
-                                        {recentActivities.map((activity) => (
-                                            <div
-                                                key={activity.activityId}
-                                                className="flex items-center justify-between"
-                                                style={{
-                                                    padding: 'var(--space-3)',
-                                                    background: 'var(--surface-elevated)',
-                                                    borderRadius: 'var(--radius-md)'
-                                                }}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                                        <FiCalendar />
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold">{activity.titulo}</div>
-                                                        <div className="text-sm text-muted">{activity.fecha}</div>
-                                                    </div>
+                            ) : (
+                                <div className="dash-list">
+                                    {recentActivities.map(activity => (
+                                        <div key={activity.activityId} className="dash-list-row">
+                                            <div className="flex items-center gap-3">
+                                                <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}><FiCalendar /></div>
+                                                <div>
+                                                    <div className="font-bold">{activity.titulo}</div>
+                                                    <div className="text-sm text-muted">{activity.fecha}</div>
                                                 </div>
-                                                <span className="badge badge-secondary">{activity.tipo}</span>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
+                                            <span className="badge badge-secondary">{activity.tipo}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </>
+                    </div>
                 )}
 
                 {/* SUPERVISOR VIEW */}
                 {(user?.rol as any) === 'supervisor' && (
-                    <>
-                        <div className="grid grid-cols-3 mb-6">
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                        <FiUsers />
-                                    </div>
-                                    <span className="text-xs text-muted">Trabajadores</span>
-                                </div>
-                                <div className="stat-value">{stats.totalWorkers || 0}</div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
-                                        <FiCalendar />
-                                    </div>
-                                    <span className="text-xs text-muted">Actividades Hoy</span>
-                                </div>
-                                <div className="stat-value">{stats.activitiesToday || 0}</div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
-                                        <FiAlertTriangle />
-                                    </div>
-                                    <span className="text-xs text-muted">Incidentes</span>
-                                </div>
-                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
-                            </div>
+                    <div className="dash-role-view">
+                        {personaId && <MisFirmasResumen personaId={personaId} />}
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
+                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades hoy" tint="primary" />
+                            {(stats.pendingIncidents || 0) > 0 && (
+                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
+                            )}
                         </div>
 
-                        <div className="dashboard-main-grid">
-                            <div className="card">
-                                <div className="card-header">
-                                    <div>
-                                        <h2 className="card-title">Actividades Recientes</h2>
-                                        <p className="card-subtitle">Últimas actividades de tu equipo</p>
-                                    </div>
-                                    <Link to="/activities" className="btn btn-primary btn-sm">
-                                        <FiPlus /> Nueva
-                                    </Link>
+                        <div>
+                            <div className="dash-section-header">
+                                <h2 className="dash-section-title">Actividades recientes</h2>
+                                <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
+                            </div>
+                            {recentActivities.length === 0 ? (
+                                <div className="dash-empty-card">
+                                    <FiCalendar size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+                                    <p className="text-sm text-muted">No hay actividades recientes</p>
                                 </div>
-                                {recentActivities.length === 0 ? (
-                                    <div className="empty-state">
-                                        <FiCalendar size={36} className="mb-3 opacity-20" />
-                                        <p>No hay actividades recientes</p>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col gap-3">
-                                        {recentActivities.map((activity) => (
-                                            <div
-                                                key={activity.activityId}
-                                                className="flex items-center justify-between"
-                                                style={{
-                                                    padding: 'var(--space-3)',
-                                                    background: 'var(--surface-elevated)',
-                                                    borderRadius: 'var(--radius-md)'
-                                                }}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                                        <FiCalendar />
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold">{activity.titulo}</div>
-                                                        <div className="text-sm text-muted">{activity.fecha}</div>
-                                                    </div>
+                            ) : (
+                                <div className="dash-list">
+                                    {recentActivities.map(activity => (
+                                        <div key={activity.activityId} className="dash-list-row">
+                                            <div className="flex items-center gap-3">
+                                                <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}><FiCalendar /></div>
+                                                <div>
+                                                    <div className="font-bold">{activity.titulo}</div>
+                                                    <div className="text-sm text-muted">{activity.fecha}</div>
                                                 </div>
-                                                <span className="badge badge-secondary">{activity.tipo}</span>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
+                                            <span className="badge badge-secondary">{activity.tipo}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </>
+                    </div>
                 )}
 
                 {/* ADMIN VIEW */}
                 {user?.rol === 'admin' && (
-                    <>
-                        <div className="grid grid-cols-4 mb-6">
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                        <FiUsers />
-                                    </div>
-                                    <span className="text-xs text-muted">Trabajadores</span>
-                                </div>
-                                <div className="stat-value">{stats.totalWorkers || 0}</div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
-                                        <FiCalendar />
-                                    </div>
-                                    <span className="text-xs text-muted">Actividades</span>
-                                </div>
-                                <div className="stat-value">{stats.activitiesToday || 0}</div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--info-500)' }}>
-                                        <FiFileText />
-                                    </div>
-                                    <span className="text-xs text-muted">Documentos</span>
-                                </div>
-                                <div className="stat-value">{stats.totalDocuments || 0}</div>
-                            </div>
-
-                            <div className="card stat-card">
-                                <div className="flex items-center gap-3 mb-1">
-                                    <div className="avatar avatar-sm" style={{ background: 'var(--danger-500)' }}>
-                                        <FiAlertTriangle />
-                                    </div>
-                                    <span className="text-xs text-muted">Incidentes</span>
-                                </div>
-                                <div className="stat-value">{stats.pendingIncidents || 0}</div>
-                            </div>
+                    <div className="dash-role-view">
+                        <div className="dash-stats-grid">
+                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
+                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades" tint="primary" />
+                            <MetricCard icon={<FiFolder size={20} />} value={stats.totalDocuments || 0} label="documentos" tint="primary" />
+                            {(stats.pendingIncidents || 0) > 0 && (
+                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
+                            )}
                         </div>
 
-                        {/* Obras Cards instead of Recent Workers */}
-                        <div className="card">
-                            <div className="card-header">
-                                <div>
-                                    <h2 className="card-title">Resumen de Obras</h2>
-                                    <p className="card-subtitle">
-                                        {selectedObraId ? 'Detalles de la obra seleccionada' : 'Tus obras activas en la plataforma'}
-                                    </p>
-                                </div>
-                                <Link to="/obras" className="btn btn-secondary btn-sm">
-                                    Ver todas las obras
-                                </Link>
+                        <div>
+                            <div className="dash-section-header">
+                                <h2 className="dash-section-title">Obras</h2>
+                                <Link to="/obras" className="btn btn-secondary btn-sm">Ver todas</Link>
                             </div>
 
                             {obras.length === 0 ? (
@@ -1163,13 +992,11 @@ export default function Dashboard() {
                                     <FiAlertTriangle size={48} className="empty-state-icon" style={{ color: 'var(--warning-500)' }} />
                                     <h3 className="empty-state-title">No tienes obras creadas</h3>
                                     <p className="empty-state-description">
-                                        1. Crea tu primera Obra.<br/>
-                                        2. Enrola trabajadores y asígnalos.<br/>
+                                        1. Crea tu primera Obra.<br />
+                                        2. Enrola trabajadores y asígnalos.<br />
                                         3. Sube los documentos para comenzar.
                                     </p>
-                                    <Link to="/obras" className="btn btn-primary mt-4">
-                                        <FiPlus /> Crear Obra
-                                    </Link>
+                                    <Link to="/obras" className="btn btn-primary mt-4"><FiPlus /> Crear Obra</Link>
                                 </div>
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
@@ -1187,24 +1014,139 @@ export default function Dashboard() {
                                 </div>
                             )}
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
 
             <style>{`
-                .spinner {
-                    width: 40px;
-                    height: 40px;
-                    border: 3px solid var(--surface-border);
-                    border-top-color: var(--primary-500);
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
+                .dash-role-view {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-6);
                 }
-
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
+                .dash-stats-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+                    gap: var(--space-4);
                 }
-
+                .dash-stat-link { text-decoration: none; display: block; }
+                .dash-stat {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-3);
+                    padding: var(--space-4);
+                    background: var(--surface-card);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+                }
+                .dash-stat-link:hover .dash-stat {
+                    transform: translateY(-2px);
+                    box-shadow: var(--shadow-md);
+                    border-color: var(--primary-300);
+                }
+                .dash-stat-icon {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 46px;
+                    height: 46px;
+                    flex-shrink: 0;
+                    border-radius: var(--radius-md);
+                    background: var(--surface-elevated);
+                    color: var(--primary-600);
+                }
+                .dash-stat-icon.tint-primary { background: rgba(59, 130, 246, 0.12); color: var(--primary-600); }
+                .dash-stat-icon.tint-warning { background: rgba(234, 179, 8, 0.16); color: var(--warning-600); }
+                .dash-stat-icon.tint-danger  { background: rgba(239, 68, 68, 0.12); color: var(--danger-600); }
+                .dash-stat-icon.tint-success { background: rgba(16, 185, 129, 0.16); color: var(--success-600); }
+                .dash-stat-body {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 3px;
+                    min-width: 0;
+                }
+                .dash-stat-value {
+                    font-size: var(--text-2xl);
+                    font-weight: 700;
+                    color: var(--text-primary);
+                    line-height: 1;
+                }
+                .dash-stat-label {
+                    font-size: var(--text-xs);
+                    color: var(--text-secondary);
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                .dash-section-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    margin-bottom: var(--space-4);
+                }
+                .dash-section-title {
+                    font-size: var(--text-sm);
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
+                    color: var(--text-secondary);
+                    margin: 0;
+                }
+                .dash-action-banner {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: var(--space-4);
+                    padding: var(--space-4) var(--space-5);
+                    background: rgba(234, 179, 8, 0.06);
+                    border: 1px solid rgba(234, 179, 8, 0.22);
+                    border-radius: var(--radius-md);
+                }
+                .dash-action-banner-body {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-3);
+                    color: var(--warning-600);
+                }
+                .dash-action-banner-count {
+                    font-size: var(--text-2xl);
+                    font-weight: 700;
+                    color: var(--warning-600);
+                    line-height: 1;
+                }
+                .dash-action-banner-label {
+                    font-size: var(--text-sm);
+                    color: var(--text-secondary);
+                }
+                .dash-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1px;
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    overflow: hidden;
+                }
+                .dash-list-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: var(--space-3) var(--space-4);
+                    background: var(--surface-card);
+                    transition: background 0.15s;
+                }
+                .dash-list-row:hover { background: var(--surface-elevated); }
+                .dash-empty-card {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: var(--space-2);
+                    padding: var(--space-8) var(--space-4);
+                    border: 1px dashed var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    background: var(--surface-card);
+                    text-align: center;
+                }
                 .pending-task-card {
                     padding: var(--space-4);
                     background: var(--surface-elevated);
@@ -1213,33 +1155,18 @@ export default function Dashboard() {
                     cursor: pointer;
                     transition: all 0.2s;
                 }
-                
                 .pending-task-card:hover {
                     background: var(--surface-hover);
                     transform: translateY(-2px);
                     box-shadow: var(--shadow-md);
                 }
-                
                 .pending-task-card.urgent {
                     border-left: 4px solid var(--danger-500);
                     background: rgba(var(--danger-rgb), 0.05);
                 }
-                
-                .priority-high {
-                    background: var(--danger-500) !important;
-                }
-                
-                .priority-normal {
-                    background: var(--primary-500) !important;
-                }
-                
-                .priority-low {
-                    background: var(--gray-500) !important;
-                }
-                
-                .progress-ring {
-                    flex-shrink: 0;
-                }
+                .priority-high { background: var(--danger-500) !important; }
+                .priority-normal { background: var(--primary-500) !important; }
+                .priority-low { background: var(--gray-500) !important; }
             `}</style>
         </>
     );

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import PinInput from '../components/PinInput';
 import {
     FiCheck,
     FiClock,
-    FiFile,
     FiFileText,
     FiCalendar,
     FiUser,
@@ -12,56 +12,127 @@ import {
     FiDownload,
     FiEdit3,
     FiShield,
-    FiTrendingUp,
     FiRefreshCw,
 } from 'react-icons/fi';
+
 import {
     signatureRequestsApi,
     signaturesApi,
+    documentsApi,
     uploadsApi,
     type SignatureRequest,
     type NewSignature,
     REQUEST_TYPES,
 } from '../api/client';
+
+type PendingItem = SignatureRequest & {
+    __kind?: 'document';
+    __documentId?: string;
+    __tipoLabel?: string;
+};
+
+const docToPendingItem = (doc: any): PendingItem => {
+    const fileKey: string | null = doc.s3Key || doc.archivoUrl || null;
+    const nombre: string = doc.archivoNombre || doc.titulo || 'Documento';
+    return {
+        requestId: `doc:${doc.documentId}`,
+        tipo: doc.tipo,
+        tipoInfo: undefined as any,
+        titulo: doc.titulo || doc.tipoDescripcion || 'Documento de onboarding',
+        descripcion: doc.descripcion || '',
+        documentos: fileKey ? [{ nombre, url: fileKey, tipo: '', tamaño: 0 }] : [],
+        tieneDocumentos: Boolean(fileKey),
+        solicitanteId: doc.createdBy || 'system',
+        solicitanteNombre: doc.creatorName || 'Sistema DS44',
+        solicitanteRut: '',
+        trabajadores: [],
+        totalRequeridos: 1,
+        totalFirmados: 0,
+        fechaCreacion: doc.createdAt || new Date().toISOString(),
+        fechaLimite: null,
+        fechaCompletado: null,
+        ubicacion: null,
+        obraId: doc.obraId || null,
+        empresaId: doc.tenantId || '',
+        estado: 'pendiente',
+        createdAt: doc.createdAt || '',
+        updatedAt: doc.updatedAt || '',
+        __kind: 'document',
+        __documentId: doc.documentId,
+        __tipoLabel: doc.articulo ? `Onboarding · ${doc.articulo}` : 'Onboarding',
+    };
+};
 import { useAuth } from '../context/AuthContext';
-import { Modal } from '../components/ui';
+import { Modal, PageHeader } from '../components/ui';
 
 type TabType = 'pendientes' | 'historial';
 
+const formatLocalDateTime = (timestamp: string) => {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return { date: '—', time: '—' };
+    return {
+        date: d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' }),
+        time: d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+    };
+};
+
 export default function MySignatures() {
     const { user } = useAuth();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<TabType>('pendientes');
-    const [pendingRequests, setPendingRequests] = useState<SignatureRequest[]>([]);
+    const [pendingRequests, setPendingRequests] = useState<PendingItem[]>([]);
     const [signatureHistory, setSignatureHistory] = useState<{ firma: NewSignature; solicitud: SignatureRequest | null }[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selectedRequest, setSelectedRequest] = useState<SignatureRequest | null>(null);
+    const [expandedHistId, setExpandedHistId] = useState<string | null>(null);
+    const [selectedRequest, setSelectedRequest] = useState<PendingItem | null>(null);
     const [showSignModal, setShowSignModal] = useState(false);
     const [signing, setSigning] = useState(false);
     const [pin, setPin] = useState('');
+    const [declared, setDeclared] = useState(false);
     const [error, setError] = useState('');
 
     useEffect(() => {
         if (user?.personaId) {
             loadData();
         } else {
-            // Si no hay workerId, no hay datos que cargar
             setLoading(false);
         }
     }, [user?.personaId]);
 
+    useEffect(() => {
+        const target = (location.state as { firmarRequestId?: string } | null)?.firmarRequestId;
+        if (!target || pendingRequests.length === 0) return;
+        const item = pendingRequests.find(r => r.requestId === target);
+        if (item) {
+            setSelectedRequest(item);
+            setPin('');
+            setDeclared(false);
+            setError('');
+            setShowSignModal(true);
+            setActiveTab('pendientes');
+        }
+        navigate(location.pathname, { replace: true, state: null });
+    }, [pendingRequests, location.state]);
+
     const loadData = async () => {
         if (!user?.personaId) return;
-
         setLoading(true);
         try {
-            const [pendingRes, historyRes] = await Promise.all([
+            const [pendingRes, historyRes, onboardingDocsRes] = await Promise.all([
                 signatureRequestsApi.getPendingByWorker(user.personaId),
                 signatureRequestsApi.getHistoryByWorker(user.personaId),
+                documentsApi.list({ clasificacion: 'diario', pendienteDe: user.personaId }),
             ]);
 
-            if (pendingRes.success && pendingRes.data) {
-                setPendingRequests(pendingRes.data.pendientes);
-            }
+            const requests: PendingItem[] = (pendingRes.success && pendingRes.data)
+                ? pendingRes.data.pendientes
+                : [];
+            const onboardingDocs: PendingItem[] = (onboardingDocsRes.success && onboardingDocsRes.data?.documents)
+                ? onboardingDocsRes.data.documents.map(docToPendingItem)
+                : [];
+            setPendingRequests([...onboardingDocs, ...requests]);
+
             if (historyRes.success && historyRes.data) {
                 setSignatureHistory(historyRes.data.historial);
             }
@@ -74,24 +145,28 @@ export default function MySignatures() {
 
     const handleSign = async () => {
         if (!selectedRequest || !user?.personaId || pin.length !== 4) return;
-
         setSigning(true);
         setError('');
-
         try {
-            const response = await signaturesApi.create({
-                personaId: user.personaId,
-                workerId: user.personaId,
-                pin,
-                requestId: selectedRequest.requestId,
-            });
+            const response = selectedRequest.__kind === 'document' && selectedRequest.__documentId
+                ? await documentsApi.sign(selectedRequest.__documentId, {
+                    personaId: user.personaId,
+                    tipoFirma: 'documento',
+                    pin,
+                })
+                : await signaturesApi.create({
+                    personaId: user.personaId,
+                    workerId: user.personaId,
+                    pin,
+                    requestId: selectedRequest.requestId,
+                });
 
             if (response.success) {
-                // Refresh data
                 await loadData();
                 setShowSignModal(false);
                 setSelectedRequest(null);
                 setPin('');
+                setDeclared(false);
             } else {
                 setError(response.error || 'Error al firmar');
             }
@@ -103,9 +178,10 @@ export default function MySignatures() {
         }
     };
 
-    const openSignModal = (request: SignatureRequest) => {
+    const openSignModal = (request: PendingItem) => {
         setSelectedRequest(request);
         setPin('');
+        setDeclared(false);
         setError('');
         setShowSignModal(true);
     };
@@ -135,808 +211,584 @@ export default function MySignatures() {
 
     if (!user?.personaId) {
         return (
-            <>
-                <div className="main-content">
-                    <div className="empty-state">
-                        <div className="empty-state-icon"><FiAlertCircle size={48} style={{ color: 'var(--warning-500)' }} /></div>
-                        <h3 className="empty-state-title">No tienes acceso</h3>
-                        <p className="empty-state-description">
-                            Tu cuenta no está asociada a un perfil de trabajador.
-                        </p>
-                    </div>
+            <div className="main-content">
+                <div className="empty-state">
+                    <div className="empty-state-icon"><FiAlertCircle size={48} style={{ color: 'var(--warning-500)' }} /></div>
+                    <h3 className="empty-state-title">No tienes acceso</h3>
+                    <p className="empty-state-description">Tu cuenta no está asociada a un perfil de trabajador.</p>
                 </div>
-            </>
+            </div>
         );
     }
 
     return (
         <>
-
             <div className="page-content">
-                {/* Hero Section */}
-                <div className="survey-hero mb-6">
-                    <div className="survey-hero-icon">
-                        <FiEdit3 size={28} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <div className="survey-hero-eyebrow">Centro de Firmas</div>
-                        <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
-                            Bienvenido a tu panel de firmas digitales
-                        </h2>
-                        <p className="text-sm text-muted">
-                            Revisa y firma documentos de manera segura. Todas tus firmas quedan registradas con validación criptográfica.
-                        </p>
-                    </div>
-                    <button className="btn btn-secondary" onClick={loadData} disabled={loading}>
-                        <FiRefreshCw className={loading ? 'spin' : ''} /> Actualizar
-                    </button>
-                </div>
-
-                {/* Stats Cards */}
-                <div className="grid grid-cols-3 mb-6">
-                    <div className="card stat-card">
-                        <div className="flex items-center gap-3 mb-1">
-                            <div className="avatar avatar-sm" style={{ background: 'var(--warning-500)' }}>
-                                <FiClock />
-                            </div>
-                            <span className="text-xs text-muted">Pendientes de Firma</span>
-                        </div>
-                        <div className="stat-value">{pendingRequests.length}</div>
-                        {pendingRequests.length > 0 && (
-                            <div className="stat-change" style={{ color: 'var(--warning-500)' }}>
-                                <FiAlertCircle size={14} />
-                                Requieren tu atención
-                            </div>
-                        )}
-                    </div>
-                    <div className="card stat-card">
-                        <div className="flex items-center gap-3 mb-1">
-                            <div className="avatar avatar-sm" style={{ background: 'var(--success-500)' }}>
-                                <FiCheck />
-                            </div>
-                            <span className="text-xs text-muted">Documentos Firmados</span>
-                        </div>
-                        <div className="stat-value">{signatureHistory.length}</div>
-                        <div className="stat-change positive">
-                            <FiTrendingUp size={14} />
-                            Completados exitosamente
-                        </div>
-                    </div>
-                    <div className="card stat-card">
-                        <div className="flex items-center gap-3 mb-1">
-                            <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}>
-                                <FiShield />
-                            </div>
-                            <span className="text-xs text-muted">Total de Solicitudes</span>
-                        </div>
-                        <div className="stat-value">{pendingRequests.length + signatureHistory.length}</div>
-                        <div className="stat-change positive">
-                            <FiFileText size={14} />
-                            Documentos gestionados
-                        </div>
-                    </div>
-                </div>
+                <PageHeader
+                    banner
+                    scope={{ label: 'Firmas Digitales' }}
+                    title="Mis Firmas"
+                    description="Documentos pendientes de firma y registro de tu historial."
+                    actions={
+                        <button className="btn btn-secondary" onClick={loadData} disabled={loading}>
+                            <FiRefreshCw className={loading ? 'spin' : ''} /> Actualizar
+                        </button>
+                    }
+                />
 
                 {/* Tabs */}
-                <div
-                    className="flex gap-3 mb-6"
-                    style={{
-                        background: 'var(--surface-elevated)',
-                        padding: 'var(--space-2)',
-                        borderRadius: 'var(--radius-xl)',
-                        border: '1px solid var(--surface-border)',
-                    }}
-                >
+                <div className="msig-tabs">
                     <button
-                        className="flex items-center gap-3"
+                        className={`msig-tab ${activeTab === 'pendientes' ? 'active' : ''}`}
                         onClick={() => setActiveTab('pendientes')}
-                        style={{
-                            flex: 1,
-                            padding: 'var(--space-4)',
-                            borderRadius: 'var(--radius-lg)',
-                            border: activeTab === 'pendientes' ? '1px solid var(--warning-400)' : '1px solid transparent',
-                            background: activeTab === 'pendientes'
-                                ? 'linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 193, 7, 0.05))'
-                                : 'transparent',
-                            cursor: 'pointer',
-                            transition: 'all var(--transition-fast)',
-                            boxShadow: activeTab === 'pendientes' ? 'var(--shadow-md)' : 'none',
-                        }}
                     >
-                        <div
-                            className="avatar"
-                            style={{
-                                background: activeTab === 'pendientes' ? 'var(--warning-500)' : 'var(--surface-hover)',
-                                color: activeTab === 'pendientes' ? 'white' : 'var(--text-muted)',
-                                width: '44px',
-                                height: '44px',
-                                transition: 'all var(--transition-fast)',
-                            }}
-                        >
-                            <FiClock size={20} />
-                        </div>
-                        <div style={{ textAlign: 'left' }}>
-                            <div
-                                style={{
-                                    fontWeight: 600,
-                                    color: activeTab === 'pendientes' ? 'var(--warning-700)' : 'var(--text-secondary)',
-                                    fontSize: 'var(--text-base)',
-                                }}
-                            >
-                                Pendientes
-                            </div>
-                            <div
-                                style={{
-                                    fontSize: 'var(--text-sm)',
-                                    color: activeTab === 'pendientes' ? 'var(--warning-600)' : 'var(--text-muted)',
-                                }}
-                            >
-                                {pendingRequests.length} solicitud{pendingRequests.length !== 1 ? 'es' : ''}
-                            </div>
-                        </div>
+                        <FiClock size={15} />
+                        Pendientes
                         {pendingRequests.length > 0 && (
-                            <span
-                                className="badge"
-                                style={{
-                                    marginLeft: 'auto',
-                                    background: 'var(--warning-500)',
-                                    color: 'white',
-                                    fontWeight: 600,
-                                    minWidth: '28px',
-                                    height: '28px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    borderRadius: 'var(--radius-full)',
-                                }}
-                            >
-                                {pendingRequests.length}
-                            </span>
+                            <span className="msig-tab-count">{pendingRequests.length}</span>
                         )}
                     </button>
-
                     <button
-                        className="flex items-center gap-3"
+                        className={`msig-tab ${activeTab === 'historial' ? 'active' : ''}`}
                         onClick={() => setActiveTab('historial')}
-                        style={{
-                            flex: 1,
-                            padding: 'var(--space-4)',
-                            borderRadius: 'var(--radius-lg)',
-                            border: activeTab === 'historial' ? '1px solid var(--success-400)' : '1px solid transparent',
-                            background: activeTab === 'historial'
-                                ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05))'
-                                : 'transparent',
-                            cursor: 'pointer',
-                            transition: 'all var(--transition-fast)',
-                            boxShadow: activeTab === 'historial' ? 'var(--shadow-md)' : 'none',
-                        }}
                     >
-                        <div
-                            className="avatar"
-                            style={{
-                                background: activeTab === 'historial' ? 'var(--success-500)' : 'var(--surface-hover)',
-                                color: activeTab === 'historial' ? 'white' : 'var(--text-muted)',
-                                width: '44px',
-                                height: '44px',
-                                transition: 'all var(--transition-fast)',
-                            }}
-                        >
-                            <FiCheck size={20} />
-                        </div>
-                        <div style={{ textAlign: 'left' }}>
-                            <div
-                                style={{
-                                    fontWeight: 600,
-                                    color: activeTab === 'historial' ? 'var(--success-700)' : 'var(--text-secondary)',
-                                    fontSize: 'var(--text-base)',
-                                }}
-                            >
-                                Historial
-                            </div>
-                            <div
-                                style={{
-                                    fontSize: 'var(--text-sm)',
-                                    color: activeTab === 'historial' ? 'var(--success-600)' : 'var(--text-muted)',
-                                }}
-                            >
-                                {signatureHistory.length} firma{signatureHistory.length !== 1 ? 's' : ''} registrada{signatureHistory.length !== 1 ? 's' : ''}
-                            </div>
-                        </div>
+                        <FiCheck size={15} />
+                        Historial
                         {signatureHistory.length > 0 && (
-                            <span
-                                className="badge"
-                                style={{
-                                    marginLeft: 'auto',
-                                    background: activeTab === 'historial' ? 'var(--success-500)' : 'var(--surface-hover)',
-                                    color: activeTab === 'historial' ? 'white' : 'var(--text-muted)',
-                                    fontWeight: 600,
-                                    minWidth: '28px',
-                                    height: '28px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    borderRadius: 'var(--radius-full)',
-                                    transition: 'all var(--transition-fast)',
-                                }}
-                            >
-                                {signatureHistory.length}
-                            </span>
+                            <span className="msig-tab-count msig-tab-count--muted">{signatureHistory.length}</span>
                         )}
                     </button>
                 </div>
 
-                {/* Content */}
+                {/* Pendientes */}
                 {activeTab === 'pendientes' && (
-                    <div className="card">
-                        <div className="card-header">
-                            <div>
-                                <h2 className="card-title">Solicitudes Pendientes de Firma</h2>
-                                <p className="card-subtitle">Documentos que requieren tu firma digital</p>
+                    pendingRequests.length === 0 ? (
+                        <div className="empty-state" style={{ padding: 'var(--space-16)' }}>
+                            <div className="empty-state-icon">
+                                <FiCheck size={40} style={{ color: 'var(--success-500)' }} />
                             </div>
-                            {pendingRequests.length > 0 && (
-                                <span className="badge" style={{ background: 'var(--warning-500)', color: 'white' }}>
-                                    {pendingRequests.length} pendiente{pendingRequests.length !== 1 ? 's' : ''}
-                                </span>
-                            )}
+                            <h3 className="empty-state-title">Todo al día</h3>
+                            <p className="empty-state-description">
+                                No tienes solicitudes pendientes de firma. Te notificaremos cuando haya nuevos documentos.
+                            </p>
                         </div>
-
-                        {pendingRequests.length === 0 ? (
-                            <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
-                                <div className="empty-state-icon" style={{ marginBottom: 'var(--space-4)' }}>
-                                    <FiCheck size={48} style={{ color: 'var(--success-500)' }} />
-                                </div>
-                                <h3 className="empty-state-title">¡Todo al día!</h3>
-                                <p className="empty-state-description">
-                                    No tienes solicitudes pendientes de firma. <br />
-                                    Te notificaremos cuando haya nuevos documentos para firmar.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-4">
-                                {pendingRequests.map((request, index) => (
-                                    <div
-                                        key={request.requestId}
-                                        className="signature-request-card"
-                                        style={{
-                                            padding: 'var(--space-6)',
-                                            borderRadius: 'var(--radius-xl)',
-                                            backgroundColor: 'var(--surface-card)',
-                                            border: '1px solid var(--surface-border)',
-                                            boxShadow: 'var(--shadow-md)',
-                                            transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
-                                            position: 'relative',
-                                            overflow: 'hidden',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 'var(--space-4)',
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                            e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
-                                            e.currentTarget.style.borderColor = 'var(--warning-300)';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.transform = 'translateY(0)';
-                                            e.currentTarget.style.boxShadow = 'var(--shadow-md)';
-                                            e.currentTarget.style.borderColor = 'var(--surface-border)';
-                                        }}
-                                    >
-                                        {/* Glowing priority indicator */}
-                                        <div style={{
-                                            position: 'absolute',
-                                            top: 0,
-                                            left: 0,
-                                            width: '5px',
-                                            height: '100%',
-                                            background: 'linear-gradient(to bottom, var(--warning-400), var(--warning-600))',
-                                            boxShadow: '2px 0 10px rgba(234, 179, 8, 0.4)',
-                                        }} />
-
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div className="flex items-start gap-4" style={{ flex: 1 }}>
-                                                <div
-                                                    className="avatar"
-                                                    style={{
-                                                        fontSize: '1.75rem',
-                                                        background: 'var(--surface-elevated)',
-                                                        color: 'var(--warning-600)',
-                                                        width: '60px',
-                                                        height: '60px',
-                                                        borderRadius: 'var(--radius-lg)',
-                                                        boxShadow: 'var(--shadow-sm)',
-                                                        border: '1px solid var(--surface-border)',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                    }}
-                                                >
-                                                    {REQUEST_TYPES[request.tipo]?.icon || <FiFileText />}
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span className="badge" style={{ background: 'var(--warning-100)', color: 'var(--warning-700)', fontSize: '12px', fontWeight: 600, padding: '4px 10px' }}>
-                                                            #{index + 1} • {REQUEST_TYPES[request.tipo]?.label}
-                                                        </span>
-                                                    </div>
-                                                    <h3 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, marginBottom: 'var(--space-2)', color: 'var(--text-primary)' }}>
-                                                        {request.titulo}
-                                                    </h3>
-                                                    <div className="flex flex-wrap items-center gap-4 text-sm text-muted">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="avatar avatar-sm" style={{ width: '24px', height: '24px', background: 'var(--primary-100)', color: 'var(--primary-700)' }}>
-                                                                <FiUser size={12} />
-                                                            </div>
-                                                            <span>Solicitado por: <strong style={{ color: 'var(--text-primary)' }}>{request.solicitanteNombre}</strong></span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="avatar avatar-sm" style={{ width: '24px', height: '24px', background: 'var(--info-100)', color: 'var(--info-700)' }}>
-                                                                <FiCalendar size={12} />
-                                                            </div>
-                                                            <span>
-                                                                {new Date(request.fechaCreacion).toLocaleDateString('es-CL', {
-                                                                    weekday: 'long',
-                                                                    day: 'numeric',
-                                                                    month: 'long',
-                                                                    year: 'numeric',
-                                                                })}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-
-                                                    {request.descripcion && (
-                                                        <div
-                                                            className="mt-4 p-4 text-sm"
-                                                            style={{
-                                                                background: 'var(--surface-elevated)',
-                                                                borderRadius: 'var(--radius-md)',
-                                                                borderLeft: '4px solid var(--warning-400)',
-                                                                color: 'var(--text-secondary)',
-                                                                lineHeight: '1.5'
-                                                            }}
-                                                        >
-                                                            {request.descripcion}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-col items-end gap-3" style={{ justifyContent: 'center' }}>
-                                                <button
-                                                    className="btn btn-primary"
-                                                    onClick={() => openSignModal(request)}
-                                                    style={{
-                                                        padding: '12px 24px',
-                                                        fontSize: 'var(--text-base)',
-                                                        fontWeight: 600,
-                                                        borderRadius: 'var(--radius-lg)',
-                                                        boxShadow: 'var(--shadow-glow-primary)',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: '8px',
-                                                        transition: 'transform 0.2s, box-shadow 0.2s',
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                        e.currentTarget.style.transform = 'translateY(-1px)';
-                                                        e.currentTarget.style.boxShadow = '0 0 25px rgba(76, 175, 80, 0.5)';
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        e.currentTarget.style.transform = 'translateY(0)';
-                                                        e.currentTarget.style.boxShadow = 'var(--shadow-glow-primary)';
-                                                    }}
-                                                >
-                                                    <FiEdit3 size={20} />
-                                                    Firmar
-                                                </button>
-                                            </div>
+                    ) : (
+                        <div className="msig-list">
+                            {pendingRequests.map((request) => (
+                                <div key={request.requestId} className="msig-card">
+                                    <div className="msig-card-main">
+                                        <div className="msig-card-icon">
+                                            {REQUEST_TYPES[request.tipo]?.icon || <FiFileText size={18} />}
                                         </div>
-
-                                        {/* Documents preview */}
-                                        {request.documentos.length > 0 && (
-                                            <div
-                                                className="mt-2 pt-4"
-                                                style={{
-                                                    borderTop: '1px solid var(--surface-border)',
-                                                }}
-                                            >
-                                                <div className="flex items-center gap-2 mb-3">
-                                                    <FiFile size={16} style={{ color: 'var(--warning-500)' }} />
-                                                    <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Documentos adjuntos ({request.documentos.length})</span>
-                                                </div>
-                                                <div className="flex gap-3 flex-wrap">
+                                        <div className="msig-card-body">
+                                            <div className="msig-card-type">
+                                                {REQUEST_TYPES[request.tipo]?.label || request.__tipoLabel || 'Documento'}
+                                            </div>
+                                            <h3 className="msig-card-title">{request.titulo}</h3>
+                                            <div className="msig-card-meta">
+                                                <span className="msig-meta-item">
+                                                    <FiUser size={12} />
+                                                    {request.solicitanteNombre}
+                                                </span>
+                                                <span className="msig-meta-sep">·</span>
+                                                <span className="msig-meta-item">
+                                                    <FiCalendar size={12} />
+                                                    {new Date(request.fechaCreacion).toLocaleDateString('es-CL', {
+                                                        day: 'numeric',
+                                                        month: 'short',
+                                                        year: 'numeric',
+                                                    })}
+                                                </span>
+                                            </div>
+                                            {request.descripcion && (
+                                                <p className="msig-card-desc">{request.descripcion}</p>
+                                            )}
+                                            {request.documentos.length > 0 && (
+                                                <div className="msig-docs">
                                                     {request.documentos.map((doc, idx) => (
                                                         <button
                                                             key={idx}
-                                                            className="btn btn-secondary btn-sm"
+                                                            className="msig-doc-chip"
                                                             onClick={() => downloadDocument(doc.url, doc.nombre)}
-                                                            style={{
-                                                                background: 'var(--surface-elevated)',
-                                                                borderColor: 'var(--surface-border)',
-                                                                color: 'var(--text-primary)',
-                                                                borderRadius: 'var(--radius-md)',
-                                                                padding: '6px 12px',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '6px',
-                                                                transition: 'background 0.2s',
-                                                            }}
-                                                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-hover)'}
-                                                            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--surface-elevated)'}
                                                         >
-                                                            <FiDownload size={14} style={{ color: 'var(--primary-500)' }} /> 
-                                                            <span style={{ fontWeight: 500 }}>{doc.nombre}</span>
+                                                            <FiDownload size={12} />
+                                                            {doc.nombre}
                                                         </button>
                                                     ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="msig-card-action">
+                                            <button
+                                                className="btn btn-primary btn-sm"
+                                                onClick={() => openSignModal(request)}
+                                            >
+                                                <FiEdit3 size={14} /> Firmar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )
+                )}
+
+                {/* Historial */}
+                {activeTab === 'historial' && (
+                    signatureHistory.length === 0 ? (
+                        <div className="empty-state" style={{ padding: 'var(--space-16)' }}>
+                            <div className="empty-state-icon">
+                                <FiFileText size={40} style={{ color: 'var(--text-muted)' }} />
+                            </div>
+                            <h3 className="empty-state-title">Sin historial</h3>
+                            <p className="empty-state-description">
+                                Aún no has firmado ningún documento. Aparecerán aquí con su información de validación.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="msig-history">
+                            {signatureHistory.map(({ firma, solicitud }) => {
+                                const isExpanded = expandedHistId === firma.signatureId;
+                                const { date, time } = formatLocalDateTime(firma.timestamp || firma.createdAt);
+                                const titulo = firma.requestTitulo || solicitud?.titulo || REQUEST_TYPES[firma.requestTipo]?.label || 'Firma';
+                                const badgeKey = firma.estado === 'valida' ? 'valid' : firma.estado === 'disputada' ? 'warn' : 'err';
+                                return (
+                                    <div key={firma.signatureId} className={`msig-hist-row ${isExpanded ? 'msig-hist-row--expanded' : ''}`}>
+                                        <button
+                                            className="msig-hist-summary"
+                                            onClick={() => setExpandedHistId(isExpanded ? null : firma.signatureId)}
+                                            aria-expanded={isExpanded}
+                                        >
+                                            <div className="msig-hist-icon">
+                                                {REQUEST_TYPES[firma.requestTipo]?.icon || <FiFileText size={16} />}
+                                            </div>
+                                            <div className="msig-hist-body">
+                                                <div className="msig-hist-title">{titulo}</div>
+                                                <div className="msig-hist-meta">
+                                                    <span className="msig-meta-item"><FiCalendar size={11} />{date} · {time}</span>
+                                                    {firma.solicitanteNombre && (
+                                                        <>
+                                                            <span className="msig-meta-sep">·</span>
+                                                            <span className="msig-meta-item"><FiUser size={11} />{firma.solicitanteNombre}</span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="msig-hist-right">
+                                                <span className={`msig-badge msig-badge--${badgeKey}`}>
+                                                    {firma.estado === 'valida' ? <><FiCheck size={11} /> Válida</> : firma.estado === 'disputada' ? <><FiAlertCircle size={11} /> Disputada</> : <><FiX size={11} /> {firma.estado}</>}
+                                                </span>
+                                            </div>
+                                        </button>
+
+                                        {isExpanded && (
+                                            <div className="msig-hist-detail">
+                                                <div className="msig-hist-detail-grid">
+                                                    <div className="msig-hist-detail-item">
+                                                        <span className="msig-hist-detail-label">Tipo</span>
+                                                        <span>{REQUEST_TYPES[firma.requestTipo]?.label || firma.requestTipo || '—'}</span>
+                                                    </div>
+                                                    <div className="msig-hist-detail-item">
+                                                        <span className="msig-hist-detail-label">Fecha y hora</span>
+                                                        <span>{date} a las {time}</span>
+                                                    </div>
+                                                    {firma.solicitanteNombre && (
+                                                        <div className="msig-hist-detail-item">
+                                                            <span className="msig-hist-detail-label">Solicitado por</span>
+                                                            <span>{firma.solicitanteNombre}</span>
+                                                        </div>
+                                                    )}
+                                                    {solicitud?.documentos && solicitud.documentos.length > 0 && (
+                                                        <div className="msig-hist-detail-item">
+                                                            <span className="msig-hist-detail-label">Documentos</span>
+                                                            <div className="msig-docs">
+                                                                {solicitud.documentos.map((doc, idx) => (
+                                                                    <button key={idx} className="msig-doc-chip" onClick={() => downloadDocument(doc.url, doc.nombre)}>
+                                                                        <FiDownload size={11} />{doc.nombre}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    <div className="msig-hist-detail-item" style={{ gridColumn: '1 / -1' }}>
+                                                        <span className="msig-hist-detail-label">Token de verificación</span>
+                                                        <span className="msig-token" style={{ fontSize: '12px' }}>
+                                                            <FiShield size={12} />{firma.token}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {activeTab === 'historial' && (
-                    <div className="card">
-                        <div className="card-header">
-                            <div>
-                                <h2 className="card-title">Historial de Firmas</h2>
-                                <p className="card-subtitle">Registro completo de tus firmas digitales</p>
-                            </div>
-                            {signatureHistory.length > 0 && (
-                                <span className="badge badge-success" style={{ background: 'var(--success-100)', color: 'var(--success-700)' }}>
-                                    <FiShield size={12} /> {signatureHistory.length} firma{signatureHistory.length !== 1 ? 's' : ''} registrada{signatureHistory.length !== 1 ? 's' : ''}
-                                </span>
-                            )}
+                                );
+                            })}
                         </div>
-
-                        {signatureHistory.length === 0 ? (
-                            <div className="empty-state" style={{ padding: 'var(--space-10)' }}>
-                                <div className="empty-state-icon" style={{ marginBottom: 'var(--space-4)' }}>
-                                    <FiFileText size={48} style={{ color: 'var(--text-muted)' }} />
-                                </div>
-                                <h3 className="empty-state-title">Sin historial</h3>
-                                <p className="empty-state-description">
-                                    Aún no has firmado ningún documento. <br />
-                                    Cuando firmes documentos, aparecerán aquí con su información de validación.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="table-container" style={{ borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-                                <table className="table">
-                                    <thead>
-                                        <tr>
-                                            <th style={{ width: '30%' }}>Cumplimiento</th>
-                                            <th>Tipo</th>
-                                            <th>Solicitante</th>
-                                            <th>Fecha de Firma</th>
-                                            <th>Token de Verificación</th>
-                                            <th>Estado</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {signatureHistory.map(({ firma, solicitud }) => (
-                                            <tr
-                                                key={firma.signatureId}
-                                                style={{
-                                                    transition: 'background var(--transition-fast)',
-                                                }}
-                                            >
-                                                <td>
-                                                    <div className="flex items-center gap-3">
-                                                        <div
-                                                            className="avatar avatar-sm"
-                                                            style={{
-                                                                fontSize: '1.25rem',
-                                                                background: 'var(--surface-elevated)',
-                                                                border: '1px solid var(--surface-border)',
-                                                            }}
-                                                        >
-                                                            {REQUEST_TYPES[firma.requestTipo]?.icon || <FiFileText />}
-                                                        </div>
-                                                        <div>
-                                                            <div className="font-medium" style={{ marginBottom: '2px' }}>
-                                                                {firma.requestTitulo || REQUEST_TYPES[firma.requestTipo]?.label || 'Sin título'}
-                                                            </div>
-                                                            {solicitud?.documentos && solicitud.documentos.length > 0 && (
-                                                                <div className="flex items-center gap-1 text-xs text-muted">
-                                                                    <FiFile size={10} />
-                                                                    {solicitud.documentos.length} documento{solicitud.documentos.length !== 1 ? 's' : ''}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <span
-                                                        className="badge"
-                                                        style={{
-                                                            background: 'var(--primary-100)',
-                                                            color: 'var(--primary-700)',
-                                                            fontWeight: 500,
-                                                        }}
-                                                    >
-                                                        {REQUEST_TYPES[firma.requestTipo]?.label || firma.requestTipo}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <div className="flex items-center gap-2">
-                                                        <FiUser size={14} className="text-muted" />
-                                                        <span>{firma.solicitanteNombre}</span>
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <div className="flex flex-col">
-                                                        <span className="font-medium">{firma.fecha}</span>
-                                                        <span className="text-xs text-muted flex items-center gap-1">
-                                                            <FiClock size={10} />
-                                                            {firma.horario}
-                                                        </span>
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <div
-                                                        className="flex items-center gap-2"
-                                                        style={{
-                                                            fontFamily: 'monospace',
-                                                            fontSize: 'var(--text-xs)',
-                                                            background: 'var(--surface-elevated)',
-                                                            padding: '6px 10px',
-                                                            borderRadius: 'var(--radius-md)',
-                                                            border: '1px solid var(--surface-border)',
-                                                            width: 'fit-content',
-                                                        }}
-                                                    >
-                                                        <FiShield size={12} style={{ color: 'var(--success-500)' }} />
-                                                        <span>{firma.token.slice(0, 12)}...</span>
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    {firma.estado === 'valida' ? (
-                                                        <span
-                                                            className="badge"
-                                                            style={{
-                                                                background: 'linear-gradient(135deg, var(--success-500), var(--success-600))',
-                                                                color: 'white',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: '4px',
-                                                                boxShadow: '0 2px 4px rgba(76, 175, 80, 0.3)',
-                                                            }}
-                                                        >
-                                                            <FiCheck size={14} /> Válida
-                                                        </span>
-                                                    ) : firma.estado === 'disputada' ? (
-                                                        <span
-                                                            className="badge"
-                                                            style={{
-                                                                background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))',
-                                                                color: 'white',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: '4px',
-                                                            }}
-                                                        >
-                                                            <FiAlertCircle size={14} /> Disputada
-                                                        </span>
-                                                    ) : (
-                                                        <span
-                                                            className="badge"
-                                                            style={{
-                                                                background: 'var(--error-500)',
-                                                                color: 'white',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: '4px',
-                                                            }}
-                                                        >
-                                                            <FiX size={14} /> {firma.estado}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
+                    )
                 )}
             </div>
 
-            {/* Sign Modal */}
             <Modal
                 isOpen={showSignModal && !!selectedRequest}
                 onClose={() => setShowSignModal(false)}
-                title="Confirmar Firma Digital"
-                subtitle="Revisa los detalles antes de firmar"
+                title="Firma digital"
+                size="sm"
                 preventClose={signing}
                 footer={
                     <>
-                        <button className="btn btn-secondary" onClick={() => setShowSignModal(false)} disabled={signing} style={{ flex: 1 }}><FiX size={16} />Cancelar</button>
-                        <button className="btn btn-primary" onClick={handleSign} disabled={signing || pin.length !== 4} style={{ flex: 2, boxShadow: pin.length === 4 ? 'var(--shadow-glow-primary)' : 'none' }}>
-                            {signing ? (<><div className="spinner" style={{ width: '16px', height: '16px' }} />Firmando...</>) : (<><FiCheck size={18} />Confirmar Firma</>)}
+                        <button className="btn btn-secondary" onClick={() => setShowSignModal(false)} disabled={signing} style={{ flex: 1 }}>
+                            <FiX size={16} /> Cancelar
+                        </button>
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleSign}
+                            disabled={signing || pin.length !== 4 || !declared}
+                            style={{ flex: 2 }}
+                        >
+                            {signing
+                                ? <><div className="spinner" style={{ width: '16px', height: '16px' }} /> Firmando...</>
+                                : <><FiCheck size={18} /> Confirmar Firma</>
+                            }
                         </button>
                     </>
                 }
-                >
+            >
                 {selectedRequest && (
-                    <div className="modal-body">
-                        {/* Request Details */}
-                        <div
-                            className="survey-section mb-4"
-                            style={{
-                                background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.08), rgba(76, 175, 80, 0.02))',
-                                border: '1px solid rgba(76, 175, 80, 0.2)',
-                                marginBottom: 'var(--space-4)',
-                                padding: 'var(--space-4)',
-                            }}
-                        >
-                            <div className="flex items-start gap-4">
-                                    <div
-                                        className="avatar"
-                                        style={{
-                                            fontSize: '2rem',
-                                            background: 'white',
-                                            width: '64px',
-                                            height: '64px',
-                                            boxShadow: 'var(--shadow-md)',
-                                            border: '2px solid var(--primary-200)',
-                                        }}
-                                    >
-                                        {REQUEST_TYPES[selectedRequest.tipo]?.icon || <FiFileText />}
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                        <div className="survey-section-eyebrow" style={{ marginBottom: '4px' }}>
-                                            {REQUEST_TYPES[selectedRequest.tipo]?.label}
-                                        </div>
-                                        <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>
-                                            {selectedRequest.titulo}
-                                        </h3>
-                                        <div className="flex flex-wrap items-center gap-3 text-sm">
-                                            <div className="flex items-center gap-2 text-muted">
-                                                <FiUser size={14} style={{ color: 'var(--primary-500)' }} />
-                                                <strong>{selectedRequest.solicitanteNombre}</strong>
-                                            </div>
-                                            <div className="flex items-center gap-2 text-muted">
-                                                <FiCalendar size={14} style={{ color: 'var(--info-500)' }} />
-                                                {new Date(selectedRequest.fechaCreacion).toLocaleDateString('es-CL', {
-                                                    day: 'numeric',
-                                                    month: 'short',
-                                                    year: 'numeric'
-                                                })}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {selectedRequest.descripcion && (
-                                    <p
-                                        className="text-sm mt-4 p-3"
-                                        style={{
-                                            background: 'rgba(255,255,255,0.6)',
-                                            borderRadius: 'var(--radius-md)',
-                                            borderLeft: '3px solid var(--primary-400)',
-                                        }}
-                                    >
-                                        {selectedRequest.descripcion}
-                                    </p>
-                                )}
-                            </div>
-
-                            {/* Documents to sign */}
-                            {selectedRequest.documentos.length > 0 && (
-                                <div
-                                    className="mb-4 p-4"
-                                    style={{
-                                        background: 'var(--surface-elevated)',
-                                        borderRadius: 'var(--radius-lg)',
-                                        border: '1px solid var(--surface-border)',
-                                    }}
-                                >
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <FiFileText size={16} style={{ color: 'var(--primary-500)' }} />
-                                        <span className="font-medium">Documentos a firmar</span>
-                                        <span className="badge badge-neutral" style={{ marginLeft: 'auto' }}>
-                                            {selectedRequest.documentos.length}
-                                        </span>
-                                    </div>
-                                    <div className="flex flex-col gap-2">
-                                        {selectedRequest.documentos.map((doc, idx) => (
-                                            <div
-                                                key={idx}
-                                                className="flex items-center justify-between p-3"
-                                                style={{
-                                                    background: 'white',
-                                                    borderRadius: 'var(--radius-md)',
-                                                    border: '1px solid var(--surface-border)',
-                                                }}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div
-                                                        className="avatar avatar-sm"
-                                                        style={{
-                                                            background: 'var(--info-100)',
-                                                            color: 'var(--info-600)',
-                                                        }}
-                                                    >
-                                                        <FiFile size={16} />
-                                                    </div>
-                                                    <span className="text-sm font-medium">{doc.nombre}</span>
-                                                </div>
-                                                <button
-                                                    className="btn btn-ghost btn-sm"
-                                                    onClick={() => downloadDocument(doc.url, doc.nombre)}
-                                                    title="Descargar documento"
-                                                >
-                                                    <FiDownload size={16} />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Warning */}
-                            <div
-                                className="mb-5"
-                                style={{
-                                    background: 'linear-gradient(135deg, rgba(255, 193, 7, 0.12), rgba(255, 193, 7, 0.04))',
-                                    border: '1px solid var(--warning-300)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    padding: 'var(--space-4)',
-                                }}
-                            >
-                                <div className="flex items-start gap-3">
-                                    <div
-                                        className="avatar avatar-sm"
-                                        style={{
-                                            background: 'var(--warning-500)',
-                                            flexShrink: 0,
-                                        }}
-                                    >
-                                        <FiAlertCircle size={16} />
-                                    </div>
-                                    <div className="text-sm">
-                                        <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--warning-700)' }}>
-                                            Declaración de conformidad
-                                        </strong>
-                                        <span className="text-muted">
-                                            Al ingresar tu PIN confirmas que has leído y comprendido los documentos adjuntos, y aceptas los términos establecidos.
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* PIN Input */}
-                            <div
-                                className="text-center p-5"
-                                style={{
-                                    background: 'var(--surface-elevated)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    border: '1px solid var(--surface-border)',
-                                }}
-                            >
-                                <div className="flex items-center justify-center gap-2 mb-3">
-                                    <FiShield size={18} style={{ color: 'var(--primary-500)' }} />
-                                    <label className="font-medium">Ingresa tu PIN de 4 dígitos</label>
-                                </div>
-                                <PinInput
-                                    onComplete={(completedPin) => setPin(completedPin)}
-                                    disabled={signing}
-                                    mode="verify"
-                                    error={error}
-                                />
-                                {error && (
-                                    <div className="mt-3 text-sm" style={{ color: 'var(--error-500)' }}>
-                                        <FiAlertCircle style={{ display: 'inline', marginRight: '4px' }} />
-                                        {error}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                    <div className="msig-modal-pin">
+                        <PinInput
+                            onComplete={(completedPin) => setPin(completedPin)}
+                            disabled={signing}
+                            mode="verify"
+                            error={error}
+                        />
+                        <label className="msig-declare-check" style={{ marginTop: 'var(--space-3)' }}>
+                            <input
+                                type="checkbox"
+                                checked={declared}
+                                onChange={e => setDeclared(e.target.checked)}
+                                disabled={signing}
+                            />
+                            <span>Declaro haber leído conscientemente la solicitud de firma</span>
+                        </label>
+                    </div>
                 )}
             </Modal>
+
+            <style>{`
+                /* ── Tabs ── */
+                .msig-tabs {
+                    display: flex;
+                    gap: var(--space-1);
+                    background: var(--surface-elevated);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    padding: var(--space-1);
+                    width: fit-content;
+                    margin-bottom: var(--space-5);
+                }
+                .msig-tab {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-2);
+                    padding: var(--space-2) var(--space-4);
+                    border-radius: var(--radius-md);
+                    border: none;
+                    background: transparent;
+                    color: var(--text-muted);
+                    font-size: var(--text-sm);
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.15s;
+                    white-space: nowrap;
+                }
+                .msig-tab:hover { color: var(--text-primary); background: var(--surface-hover); }
+                .msig-tab.active {
+                    background: var(--surface-card);
+                    color: var(--text-primary);
+                    box-shadow: var(--shadow-sm);
+                    border: 1px solid var(--surface-border);
+                }
+                .msig-tab-count {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-width: 20px;
+                    height: 20px;
+                    padding: 0 6px;
+                    border-radius: var(--radius-full);
+                    font-size: 11px;
+                    font-weight: 700;
+                    background: var(--warning-500);
+                    color: white;
+                }
+                .msig-tab-count--muted {
+                    background: var(--surface-border);
+                    color: var(--text-secondary);
+                }
+
+                /* ── Lista de pendientes ── */
+                .msig-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-3);
+                }
+                .msig-card {
+                    background: var(--surface-card);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-xl);
+                    padding: var(--space-4) var(--space-5);
+                    transition: border-color 0.15s, box-shadow 0.15s;
+                }
+                .msig-card:hover {
+                    border-color: var(--primary-300);
+                    box-shadow: var(--shadow-md);
+                }
+                .msig-card-main {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: var(--space-4);
+                }
+                .msig-card-icon {
+                    flex-shrink: 0;
+                    width: 40px;
+                    height: 40px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: var(--surface-elevated);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    color: var(--text-secondary);
+                    font-size: 18px;
+                }
+                .msig-card-body { flex: 1; min-width: 0; }
+                .msig-card-type {
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.05em;
+                    text-transform: uppercase;
+                    color: var(--accent-text);
+                    margin-bottom: var(--space-1);
+                }
+                .msig-card-title {
+                    font-size: var(--text-base);
+                    font-weight: 600;
+                    color: var(--text-primary);
+                    margin: 0 0 var(--space-2);
+                    line-height: 1.3;
+                }
+                .msig-card-meta {
+                    display: flex;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: var(--space-1);
+                    font-size: var(--text-xs);
+                    color: var(--text-muted);
+                }
+                .msig-meta-item {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                }
+                .msig-meta-sep { color: var(--surface-border); }
+                .msig-card-desc {
+                    font-size: var(--text-sm);
+                    color: var(--text-secondary);
+                    margin: var(--space-2) 0 0;
+                    line-height: 1.5;
+                    padding: var(--space-2) var(--space-3);
+                    background: var(--surface-elevated);
+                    border-left: 3px solid var(--surface-border);
+                    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+                }
+                .msig-docs {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: var(--space-2);
+                    margin-top: var(--space-3);
+                    padding-top: var(--space-3);
+                    border-top: 1px solid var(--surface-border);
+                }
+                .msig-doc-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: var(--space-1);
+                    padding: 4px 10px;
+                    background: var(--surface-elevated);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    font-size: var(--text-xs);
+                    color: var(--text-secondary);
+                    cursor: pointer;
+                    transition: background 0.15s, color 0.15s;
+                }
+                .msig-doc-chip:hover {
+                    background: var(--surface-hover);
+                    color: var(--text-primary);
+                }
+                .msig-card-action {
+                    flex-shrink: 0;
+                    padding-top: 2px;
+                }
+
+                /* ── Historial ── */
+                .msig-history {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0;
+                    background: var(--surface-card);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-xl);
+                    overflow: hidden;
+                }
+                .msig-hist-row {
+                    display: flex;
+                    flex-direction: column;
+                    border-bottom: 1px solid var(--surface-border);
+                }
+                .msig-hist-row:last-child { border-bottom: none; }
+                .msig-hist-row--expanded { background: var(--surface-elevated); }
+                .msig-hist-summary {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-3);
+                    padding: var(--space-3) var(--space-4);
+                    background: none;
+                    border: none;
+                    text-align: left;
+                    width: 100%;
+                    cursor: pointer;
+                    transition: background 0.12s;
+                }
+                .msig-hist-summary:hover { background: var(--surface-hover); }
+                .msig-hist-detail {
+                    padding: var(--space-3) var(--space-4) var(--space-4);
+                    border-top: 1px dashed var(--surface-border);
+                }
+                .msig-hist-detail-grid {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: var(--space-3) var(--space-6);
+                }
+                .msig-hist-detail-item {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                    font-size: var(--text-sm);
+                    color: var(--text-primary);
+                }
+                .msig-hist-detail-label {
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    color: var(--text-muted);
+                }
+                .msig-hist-icon {
+                    flex-shrink: 0;
+                    width: 32px;
+                    height: 32px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: var(--surface-elevated);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md);
+                    color: var(--text-muted);
+                    font-size: 15px;
+                }
+                .msig-hist-body { flex: 1; min-width: 0; }
+                .msig-hist-title {
+                    font-size: var(--text-sm);
+                    font-weight: 500;
+                    color: var(--text-primary);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    margin-bottom: 2px;
+                }
+                .msig-hist-meta {
+                    display: flex;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: var(--space-1);
+                    font-size: 11px;
+                    color: var(--text-muted);
+                }
+                .msig-hist-right {
+                    flex-shrink: 0;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: flex-end;
+                    gap: var(--space-1);
+                }
+                .msig-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 3px;
+                    padding: 3px 8px;
+                    border-radius: var(--radius-full);
+                    font-size: 11px;
+                    font-weight: 600;
+                }
+                .msig-badge--valid { background: var(--success-500); color: #fff; }
+                .msig-badge--warn  { background: var(--warning-500); color: #fff; }
+                .msig-badge--err   { background: var(--danger-500);  color: #fff; }
+                .msig-token {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    font-family: monospace;
+                    font-size: 10px;
+                    color: var(--text-muted);
+                }
+
+                .msig-declare-check {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: var(--space-3);
+                    margin-top: var(--space-4);
+                    padding: var(--space-3) var(--space-4);
+                    background: var(--surface-elevated);
+                    border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-lg);
+                    cursor: pointer;
+                    transition: border-color 0.15s;
+                    font-size: var(--text-sm);
+                    color: var(--text-secondary);
+                    line-height: 1.4;
+                    user-select: none;
+                }
+                .msig-declare-check:has(input:checked) {
+                    border-color: var(--primary-400);
+                    background: var(--accent-tint);
+                    color: var(--text-primary);
+                }
+                .msig-declare-check input[type="checkbox"] {
+                    flex-shrink: 0;
+                    width: 16px;
+                    height: 16px;
+                    margin-top: 1px;
+                    accent-color: var(--primary-500);
+                    cursor: pointer;
+                }
+
+                /* ── Dark mode ── */
+                [data-theme="dark"] .msig-modal-warning { border-color: rgba(251,191,36,0.25); }
+                @media (prefers-color-scheme: dark) {
+                    .msig-modal-warning { border-color: rgba(251,191,36,0.25); }
+                }
+
+                /* ── Mobile ── */
+                @media (max-width: 640px) {
+                    .msig-tabs { width: 100%; }
+                    .msig-tab { flex: 1; justify-content: center; }
+                    .msig-card-main { flex-wrap: wrap; }
+                    .msig-card-action { width: 100%; padding-top: var(--space-3); border-top: 1px solid var(--surface-border); }
+                    .msig-card-action .btn { width: 100%; justify-content: center; }
+                    .msig-hist-row { flex-wrap: wrap; gap: var(--space-2); }
+                    .msig-hist-right { flex-direction: row; width: 100%; justify-content: space-between; }
+                }
+            `}</style>
         </>
     );
 }

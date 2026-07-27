@@ -30,6 +30,17 @@ class ObraService {
             throw new Error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
+        // Código único por tenant. Es opcional (fallback: obra sin código); pero si
+        // viene, no puede repetirse dentro de la empresa (comparación case-insensitive).
+        if (data.codigo && String(data.codigo).trim()) {
+            const codigoNorm = String(data.codigo).trim().toLowerCase();
+            const existentes = await this.listByTenant(tenantId).catch(() => []);
+            const dup = (existentes || []).find(o => String(o.codigo || '').trim().toLowerCase() === codigoNorm);
+            if (dup) {
+                throw new Error(`Ya existe una obra con el código "${String(data.codigo).trim()}" en esta empresa.`);
+            }
+        }
+
         const obraId = uuidv4();
         const obra = new Obra({
             obraId,
@@ -107,10 +118,21 @@ class ObraService {
      * Actualizar obra
      */
     async actualizar(tenantId, obraId, updates) {
+        // Código único por tenant al editar (excluyendo la propia obra). Opcional.
+        if (updates.codigo !== undefined && String(updates.codigo).trim()) {
+            const codigoNorm = String(updates.codigo).trim().toLowerCase();
+            const existentes = await this.listByTenant(tenantId).catch(() => []);
+            const dup = (existentes || []).find(o => o.obraId !== obraId && String(o.codigo || '').trim().toLowerCase() === codigoNorm);
+            if (dup) {
+                throw new Error(`Ya existe una obra con el código "${String(updates.codigo).trim()}" en esta empresa.`);
+            }
+        }
+
         const allowedFields = ['nombre', 'codigo', 'direccion', 'comuna',
             'region', 'mandante', 'estado', 'etapaConstructivaActual', 'etapaActual',
             'faenaCompartida', 'tieneMaquinaria', 'agentesFQB',
-            'fasesConfig', 'faseDeming', 'cumplimientoDS44', 'imagenKey'];
+            'fasesConfig', 'faseDeming', 'cumplimientoDS44', 'imagenKey',
+            'plantillasOnboarding', 'aplicabilidadKit'];
 
         const updateExpressions = [];
         const expressionNames = {};

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import type { IconType } from 'react-icons';
 import {
     surveysApi,
@@ -25,7 +26,6 @@ import {
     FiClipboard,
     FiList,
     FiX,
-    FiFileText,
     FiLock,
     FiSearch,
     FiCalendar
@@ -34,7 +34,7 @@ import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 import SignatureModal from '../components/SignatureModal';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
-import { Modal, Select } from '../components/ui';
+import { Modal, Select, PageHeader } from '../components/ui';
 
 interface QuestionDraft {
     id: string;
@@ -118,12 +118,32 @@ export default function Surveys() {
         cargoDestino: '',
         selectedRuts: [] as string[],
         selectedWorkerId: '',
+        // Vínculo con un ítem de onboarding (si se asignó desde el Equipo).
+        kitItemKey: '' as string,
     });
 
     const [questions, setQuestions] = useState<QuestionDraft[]>([defaultQuestion()]);
 
+    const location = useLocation();
+
     useEffect(() => {
         loadData();
+    }, []);
+
+    // Prefill desde el Equipo de la obra: "Asignar encuesta" precargada a una persona.
+    useEffect(() => {
+        const prefill = (location.state as any)?.prefill;
+        if (!prefill || !prefill.rut) return;
+        setForm((prev) => ({
+            ...prev,
+            audienceType: 'personalizado' as SurveyAudienceType,
+            selectedRuts: [prefill.rut],
+            titulo: prefill.titulo ? `Encuesta: ${prefill.titulo}` : prev.titulo,
+            kitItemKey: prefill.kitItemKey || '',
+        }));
+        setShowModal(true);
+        window.history.replaceState({}, ''); // evita reabrir al volver
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Sync pending offline signatures when online
@@ -358,6 +378,7 @@ export default function Surveys() {
             cargoDestino: '',
             selectedRuts: [],
             selectedWorkerId: '',
+            kitItemKey: '',
         });
         setQuestions([defaultQuestion()]);
     };
@@ -422,11 +443,11 @@ export default function Surveys() {
             titulo: form.titulo,
             descripcion: form.descripcion,
             preguntas,
-            audience: {
-                tipo: form.audienceType,
-                cargo: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
-                ruts: form.audienceType === 'personalizado' ? form.selectedRuts : undefined,
-            },
+            // El backend lee estos campos a nivel raíz (no anidados en `audience`).
+            audienceType: form.audienceType,
+            cargoDestino: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
+            ruts: form.audienceType === 'personalizado' ? form.selectedRuts : undefined,
+            kitItemKey: form.kitItemKey || undefined,
             createdBy: user?.personaId || user?.userId,
             creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined,
         };
@@ -740,20 +761,17 @@ export default function Surveys() {
             )}
 
             <div className="page-content">
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <h2 className="page-header-title">
-                            <FiFileText className="text-primary-500" />
-                            {canManageSurveys ? 'Diseña y distribuye encuestas' : 'Responde tus encuestas asignadas'}
-                        </h2>
-                        <p className="page-header-description">
-                            Implementa diagnósticos de seguridad, encuestas y evaluaciones rápidas.
-                        </p>
-                    </div>
-                    {canManageSurveys && (
-                        <div className="page-header-actions">
+                <PageHeader
+                    banner
+                    scope={{ label: 'Encuestas' }}
+                    title={canManageSurveys ? 'Encuestas y diagnósticos' : 'Mis encuestas asignadas'}
+                    description={canManageSurveys
+                        ? 'Diseña y distribuye diagnósticos de seguridad, evaluaciones de riesgo y encuestas de cumplimiento.'
+                        : 'Responde las encuestas que te han asignado y revisa tu historial.'}
+                    actions={
+                        canManageSurveys ? (
                             <button
-                                className="btn btn-primary"
+                                className="btn btn-save"
                                 onClick={() => {
                                     setForm({
                                         titulo: '',
@@ -762,17 +780,17 @@ export default function Surveys() {
                                         cargoDestino: '',
                                         selectedRuts: [],
                                         selectedWorkerId: '',
+                                        kitItemKey: '',
                                     });
                                     setQuestions([defaultQuestion()]);
                                     setShowModal(true);
                                 }}
                             >
-                                <FiPlus className="mr-2" />
-                                Nueva Encuesta
+                                <FiPlus /> Nueva encuesta
                             </button>
-                        </div>
-                    )}
-                </div>
+                        ) : undefined
+                    }
+                />
 
                 {/* Offline Banner */}
                 {(!isOnline || pendingCount > 0) && (
@@ -892,17 +910,15 @@ export default function Surveys() {
 
                 {canManageSurveys && (
                     <>
-                        {/* Search Bar */}
-                        <div className="flex gap-3 mb-4" style={{ alignItems: 'center' }}>
-                            <div className="flex items-center gap-2" style={{ flex: 1, background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-lg)', padding: '10px 16px' }}>
-                                <FiSearch style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        {/* Toolbar: búsqueda */}
+                        <div className="tbar">
+                            <div className="tbar-search" style={{ maxWidth: 'none' }}>
+                                <FiSearch size={15} />
                                 <input
                                     type="text"
-                                    placeholder="Buscar encuestas..."
+                                    placeholder="Buscar encuestas…"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="form-control"
-                                    style={{ border: 'none', background: 'transparent', padding: 0, boxShadow: 'none', color: 'var(--text-primary)' }}
                                 />
                             </div>
                         </div>

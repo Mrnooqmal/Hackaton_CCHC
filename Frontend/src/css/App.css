@@ -56,6 +56,14 @@
   width: 100%;
 }
 
+.onboarding-content {
+  min-height: 100vh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--surface-bg);
+}
+
 /* Contenedor interno para cada vista, evita duplicar el offset del sidebar */
 .page-content {
   width: 100%;
@@ -484,7 +492,7 @@
 }
 
 .header-brand-primary {
-  color: var(--brand-ink);
+  color: var(--logo-build);
 }
 
 .header-brand-amp {
@@ -493,7 +501,15 @@
 }
 
 .header-brand-secondary {
-  color: var(--accent);
+  color: var(--logo-serve);
+}
+
+.header-brand-logo {
+  height: 30px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+  display: block;
 }
 
 .header-divider {
@@ -635,9 +651,9 @@
 .header-dropdown-item {
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
   text-align: left;
   background: none;
   border: none;
@@ -648,6 +664,30 @@
   font-size: var(--text-sm);
   font-weight: 500;
   transition: background var(--transition-fast);
+}
+.header-dropdown-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.header-dropdown-item-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.header-dropdown-item-code {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--accent-text);
+  background: var(--accent-tint);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .header-dropdown-item:hover {
@@ -742,10 +782,6 @@
 }
 
 @media (max-width: 1024px) {
-  .header-topbar {
-    display: none;
-  }
-
   .header-mainbar {
     height: var(--mobile-header-height);
     padding: 0 var(--space-3);
@@ -1258,6 +1294,73 @@
   background: var(--primary-600);
   transform: translateY(-1px);
   box-shadow: var(--shadow-glow-primary);
+}
+
+/* Acción de guardar cambios — naranja de marca CChC para contrastar con
+   el azul del resto de la UI. Pensado para vivir sobre el PageHeader. */
+.btn-save {
+  background: #f13800;
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(223, 54, 1, 0.28);
+}
+
+.btn-save:hover:not(:disabled) {
+  background: #df3601;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(223, 54, 1, 0.38);
+}
+
+/* Sobre el banner navy del PageHeader mantiene su color de marca */
+.ui-page-header--banner .btn-save {
+  background: #f13800;
+  color: #fff;
+}
+.ui-page-header--banner .btn-save:hover:not(:disabled) {
+  background: #ff4a12;
+}
+
+/* ── Toolbar + búsqueda reutilizable (listados) ────────────────────────── */
+.tbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+.tbar-left { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1; }
+.tbar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 360px;
+  min-width: 200px;
+}
+.tbar-search > svg {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.tbar-search input {
+  width: 100%;
+  padding: 9px 12px 9px 36px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+.tbar-search input:focus {
+  outline: none;
+  border-color: var(--primary-400);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+@media (max-width: 560px) {
+  .tbar { flex-direction: column; align-items: stretch; }
+  .tbar-search { max-width: none; }
 }
 
 .btn-secondary {
@@ -2542,6 +2645,8 @@ select.form-input option {
   padding: var(--space-4);
   border-radius: var(--radius-md);
   margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+  line-height: 1.6;
 }
 
 .alert-success {
@@ -3440,6 +3545,15 @@ select.form-input option {
   background: linear-gradient(135deg, rgba(76, 175, 80, 0.12), rgba(76, 175, 80, 0.06));
   border-color: var(--primary-400);
   box-shadow: var(--shadow-sm);
+}
+
+/* Utilidad: colapsa a 1 sola columna en móvil los grids que en desktop usan
+   columnas fijas/múltiples (inline). Solo actúa ≤640px, así el desktop no cambia.
+   El !important es necesario porque los grids traen gridTemplateColumns inline. */
+@media (max-width: 640px) {
+  .grid-collapse-mobile {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 /* Mobile Modal */

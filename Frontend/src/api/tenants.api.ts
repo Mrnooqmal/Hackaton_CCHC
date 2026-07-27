@@ -1,4 +1,15 @@
 import { apiRequest } from './client';
+import type { Ds44KitItem } from '../utils/ds44';
+
+// Cargo editable del catálogo del tenant (constructor de cargos). Lleva su kit
+// de onboarding embebido. Se persiste en Tenant.reglas.cargos.
+export interface TenantCargo {
+    codigo: string;
+    label: string;
+    legacy?: boolean;
+    seed?: boolean;          // proviene de la semilla EBCO (no editado aún)
+    kit: Ds44KitItem[];
+}
 
 // ========================================
 // TENANT TYPES
@@ -27,6 +38,9 @@ export interface TenantPreferencias {
 
 export interface TenantRole {
     id: string;
+    // Esencia estable del rol (admin|jefe_obra|prevencionista|supervisor|trabajador).
+    // Los roles con `tipo` son los mínimos protegidos: solo el nombre es editable.
+    tipo?: string | null;
     nombre: string;
     descripcion?: string;
     permisos?: string[];
@@ -37,9 +51,6 @@ export interface Tenant {
     slug: string;
     nombre: string;
     rutEmpresa: string;
-    email: string;
-    telefono: string;
-    plan: 'starter' | 'professional' | 'enterprise';
     tamano: 'micro' | 'pequena' | 'mediana' | 'grande';
     cantidadTrabajadores: number;
     estado: 'setup' | 'activo' | 'suspendido';
@@ -55,13 +66,14 @@ export interface Tenant {
 export interface TenantSetupData {
     nombre: string;
     rutEmpresa: string;
-    cantidadTrabajadores: number;
-    email?: string;
-    telefono?: string;
-    plan?: 'starter' | 'professional' | 'enterprise';
+    /** Código de habilitación (gating de alta de empresa). Validado server-side. */
+    codigoHabilitacion?: string;
+    // La empresa parte con tamaño 1 (solo el administrador) y crece automáticamente
+    // al registrar trabajadores. El backend lo fuerza a 1 en el setup.
+    cantidadTrabajadores?: number;
     settings?: Partial<TenantSettings>;
     reglas?: Partial<TenantReglas>;
-    preferencias?: Partial<TenantPreferencias>;
+    preferencias?: Partial<TenantPreferencias> & { logoBase64?: string };
     roles?: TenantRole[];
     admin?: {
         rut: string;
@@ -71,6 +83,18 @@ export interface TenantSetupData {
         fechaNacimiento?: string;
         email: string;
     };
+    /** Trabajadores iniciales creados junto al tenant (opcional). */
+    trabajadores?: Array<{
+        rut: string;
+        nombre: string;
+        apellidoPaterno?: string;
+        apellidoMaterno?: string;
+        fechaNacimiento?: string;
+        email?: string;
+        rol?: string;
+        cargo?: string;
+        tieneAccesoWeb?: boolean;
+    }>;
 }
 
 export interface TenantSetupResponse {
@@ -85,7 +109,29 @@ export interface TenantSetupResponse {
         rol: string;
         estado: string;
     } | null;
+    trabajadores?: Array<{
+        rut: string;
+        nombre: string;
+        apellido: string;
+        password?: string;
+        emailNotificado?: boolean;
+        error?: string;
+    }>;
 }
+
+// ========================================
+// CATALOGOS Y PERMISOS DE TRABAJO
+// ========================================
+export interface CatalogoItem { codigo: string; label: string; }
+
+export interface CatalogosActividad {
+    temas: CatalogoItem[];
+    recursos: CatalogoItem[];
+    riesgos: CatalogoItem[];
+    medidas: CatalogoItem[];
+}
+
+export type PermisosTrabajoDef = Record<string, { label: string; checklist: { key: string; label: string }[] }>;
 
 // ========================================
 // TENANTS API
@@ -116,5 +162,51 @@ export const tenantsApi = {
         apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
+        }),
+
+    // Guarda la definición de roles del tenant (Mi Empresa › Roles y permisos).
+    updateRoles: (id: string, roles: TenantRole[]) =>
+        apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ roles }),
+        }),
+
+    // Guarda la identidad de la empresa (nombre, color principal, logo). El logo
+    // viaja como data URL en logoBase64; el backend lo sube a S3 y persiste logoKey.
+    // logoBase64 === '' elimina el logo actual; undefined lo deja sin cambios.
+    updateBranding: (id: string, data: { nombre?: string; colorPrimario?: string; logoBase64?: string }) => {
+        const preferencias: Record<string, unknown> = {};
+        if (data.colorPrimario !== undefined) preferencias.colorPrimario = data.colorPrimario;
+        if (data.logoBase64) preferencias.logoBase64 = data.logoBase64;
+        else if (data.logoBase64 === '') preferencias.logoKey = null;
+        return apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                ...(data.nombre !== undefined ? { nombre: data.nombre } : {}),
+                preferencias,
+            }),
+        });
+    },
+
+    // Catálogo de cargos del tenant. `sembrado: true` ⇒ aún es la semilla EBCO
+    // (no persistida); el constructor la guarda con saveCargos.
+    getCargos: (id: string) =>
+        apiRequest<{ cargos: TenantCargo[]; sembrado: boolean }>(`/tenants/${id}/cargos`),
+
+    saveCargos: (id: string, cargos: TenantCargo[]) =>
+        apiRequest<{ message: string; cargos: TenantCargo[]; documentosSincronizados?: number }>(`/tenants/${id}/cargos`, {
+            method: 'PUT',
+            body: JSON.stringify({ cargos }),
+        }),
+
+    // Catálogos de planificación diaria (temas/recursos/riesgos/medidas).
+    // Devuelve la semilla de fábrica si el tenant no los ha personalizado.
+    getCatalogosActividad: (id: string) =>
+        apiRequest<{ catalogos: CatalogosActividad; permisosTrabajoDef: PermisosTrabajoDef; sembrado: boolean }>(`/tenants/${id}/catalogos-actividad`),
+
+    saveCatalogosActividad: (id: string, catalogos: CatalogosActividad) =>
+        apiRequest<{ message: string; catalogos: CatalogosActividad }>(`/tenants/${id}/catalogos-actividad`, {
+            method: 'PUT',
+            body: JSON.stringify({ catalogos }),
         }),
 };

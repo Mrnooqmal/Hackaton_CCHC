@@ -21,6 +21,10 @@
   --accent-tint: rgba(77, 159, 255, 0.16); /* fondo tenue de hover/activo */
   --brand-ink: #e8eefb;                    /* "Build" sobre header oscuro */
 
+  /* Logo Build & Serve: colores fijos, nunca sobreescritos por applyPrimaryColor */
+  --logo-build: #e8eefb;  /* near-white en modo oscuro */
+  --logo-serve: #4d9fff;  /* azul B&S fijo */
+
   /* Tipografía institucional CChC: Lora (display) + Roboto (texto) */
   --font-display: 'Lora', Georgia, 'Times New Roman', serif;
   --font-ui: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -190,6 +194,8 @@
   --accent-text: #0052a3;
   --accent-tint: rgba(0, 110, 220, 0.10);
   --brand-ink: #003b75;
+  --logo-build: #1a2e4a;  /* navy oscuro para contraste en header blanco */
+  --logo-serve: #006edc;  /* azul B&S más profundo en modo claro */
 
   --text-primary: #0f172a;
   --text-secondary: #424b5a;

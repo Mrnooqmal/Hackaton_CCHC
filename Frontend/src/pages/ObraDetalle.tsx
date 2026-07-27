@@ -1,11 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi } from '../api/client';
-import { LuArrowLeft, LuBuilding2, LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload } from 'react-icons/lu';
-import { FiUploadCloud, FiEye, FiAlertTriangle } from 'react-icons/fi';
-import { Modal, Select, SegmentedControl } from '../components/ui';
-import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
+import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
+import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido } from '../utils/documentoFirmado';
+import { LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings } from 'react-icons/lu';
+import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
+import { Modal, Select, SegmentedControl, PageHeader } from '../components/ui';
+import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, normalizeCargoCodigo, unionKits, getCargoLabel, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
+
+// Roles de gestión/staff que NO entran al onboarding de terreno (espejo del backend).
+const ROLES_GESTION_ONBOARDING = new Set(['admin', 'jefe_obra', 'supervisor', 'prevencionista', 'relator']);
+const esRolGestion = (rol?: string): boolean => {
+  const n = String(rol || '').toLowerCase().trim().replace(/\s+/g, '_');
+  const canon = n === 'administrador' ? 'admin' : (n === 'jefe_de_obra' ? 'jefe_obra' : (n === 'colaborador' ? 'trabajador' : n));
+  return ROLES_GESTION_ONBOARDING.has(canon);
+};
+import { useCargoCatalog } from '../hooks/useCargoCatalog';
+import { useObraContext } from '../context/ObraContext';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import type { SignatureRequest } from '../api/client';
 import { PERMISSIONS } from '../permissions';
@@ -18,7 +29,52 @@ interface Ds44Item {
   documentId?: string;
   archivoSubido: boolean;
   document?: any;
+  /** Documento que se gestiona EXCLUSIVAMENTE a nivel empresa (Onboarding):
+   *  no se sube por obra, la obra solo refleja el estado corporativo. */
+  tenantLevel?: boolean;
+  /** El requisito está cubierto por el documento corporativo subido en Onboarding
+   *  (1 documento para todas las obras). */
+  fromEmpresa?: boolean;
+  empresaPlantilla?: { fileKey: string; nombre?: string; subidoEn?: string };
 }
+
+// Documentos base que viven a NIVEL EMPRESA (Onboarding) y se comparten entre
+// todas las obras. No se vuelven a subir por obra: la obra hereda el corporativo.
+const TENANT_LEVEL_PLAN_KEYS = new Set(['POLITICA_SSO', 'REGLAMENTO_INTERNO']);
+
+// Extrae las plantillas corporativas (por tipo de documento) del catálogo de
+// cargos del tenant. Estas plantillas son las que se suben en /cargos-onboarding.
+const extractEmpresaDocs = (cargos: any[]): Record<string, { fileKey: string; nombre?: string; subidoEn?: string }> => {
+  const out: Record<string, { fileKey: string; nombre?: string; subidoEn?: string }> = {};
+  for (const c of cargos || []) {
+    for (const it of (c?.kit || [])) {
+      const fileKey = it?.plantilla?.fileKey;
+      if (fileKey && it?.tipo && !out[it.tipo]) {
+        out[it.tipo] = { fileKey, nombre: it.plantilla.nombre, subidoEn: it.plantilla.subidoEn };
+      }
+    }
+  }
+  return out;
+};
+
+// Construye la lista de documentos base de la obra reconciliando:
+//  1) documentos propios de la obra (clasificacion 'obra'), y
+//  2) documentos corporativos heredados (Política SST, Reglamento Interno).
+const buildDs44PlanDocs = (
+  docsObra: any[],
+  empresaDocs: Record<string, { fileKey: string; nombre?: string; subidoEn?: string }>,
+): Ds44Item[] =>
+  DS44_PLAN_DOCS.map((required) => {
+    // Documentos corporativos: fuente única en Onboarding. No se suben por obra;
+    // la obra refleja el estado de empresa (presente / falta en empresa).
+    if (TENANT_LEVEL_PLAN_KEYS.has(required.key)) {
+      const emp = required.tipos.map((t) => empresaDocs[t]).find(Boolean);
+      return { ...required, tenantLevel: true, archivoSubido: Boolean(emp), fromEmpresa: Boolean(emp), empresaPlantilla: emp };
+    }
+    const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
+    const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
+    return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
+  });
 
 interface DoItem {
   key: string;
@@ -34,12 +90,27 @@ interface DoItem {
 
 export default function ObraDetalle() {
   const { user, hasPermission } = useAuth();
+  const { cargos: cargoCatalog } = useCargoCatalog();
+  // Cargos de terreno seleccionables al asignar (excluye legacy de texto libre).
+  const cargoOptions = cargoCatalog.filter((c) => !c.legacy).map((c) => ({ value: c.codigo, label: c.label }));
   const canAsignarTrabajadores = hasPermission(PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES);
   const canSubirDocumentos = hasPermission(PERMISSIONS.OBRA_SUBIR_DOCUMENTOS);
   const canFirmaAsistida = hasPermission(PERMISSIONS.OBRA_FIRMA_ASISTIDA);
   const navigate = useNavigate();
   const { obraId } = useParams();
+  const { setSelectedObraId } = useObraContext();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Atajo: agendar/asignar un ítem de onboarding precargado para una persona desde
+  // el Equipo. Fija la obra activa y abre el flujo correspondiente con prefill.
+  const agendarItem = (worker: any, item: any) => {
+    if (obraId) setSelectedObraId(obraId);
+    if (item.accion === 'ENCUESTA') {
+      navigate('/surveys', { state: { prefill: { rut: worker.rut, nombre: worker.nombre, titulo: item.label, kitItemKey: item.key } } });
+    } else {
+      navigate('/activities', { state: { prefill: { obraId, personaId: worker.workerId, nombre: worker.nombre, subtipo: item.subtipo || 'OTRA', titulo: item.label, kitItemKey: item.key } } });
+    }
+  };
 
   const [loading, setLoading] = useState(true);
   const [obra, setObra] = useState<any | null>(null);
@@ -48,8 +119,10 @@ export default function ObraDetalle() {
   const [documentosPrevencion, setDocumentosPrevencion] = useState<any[]>([]);
   const [incidentes, setIncidentes] = useState<any[]>([]);
   const [actividades, setActividades] = useState<any[]>([]);
+  const [encuestas, setEncuestas] = useState<any[]>([]);
   const [obraSignatureRequests, setObraSignatureRequests] = useState<SignatureRequest[]>([]);
   const [ds44Docs, setDs44Docs] = useState<Ds44Item[]>([]);
+  const [empresaDocsByTipo, setEmpresaDocsByTipo] = useState<Record<string, { fileKey: string; nombre?: string; subidoEn?: string }>>({});
   const [obraDocs, setObraDocs] = useState<any[]>([]); // documentos clasificacion 'obra' (incluye procedimientos DO)
   const [tenantSize, setTenantSize] = useState<number | null>(null); // cantidadTrabajadores de la entidad (condicionales DO)
   const [firmaAsistidaOpen, setFirmaAsistidaOpen] = useState(false);
@@ -98,6 +171,9 @@ export default function ObraDetalle() {
   const [isWorkersModalOpen, setIsWorkersModalOpen] = useState(false);
   const [updatingWorkers, setUpdatingWorkers] = useState<string | null>(null);
   const [selectedUnassignedWorkerIds, setSelectedUnassignedWorkerIds] = useState<string[]>([]);
+  // Cargos elegidos por trabajador al asignarlo a la obra (multi-cargo). El cargo
+  // de terreno vive en la asignación persona×obra, no en la persona.
+  const [assignCargos, setAssignCargos] = useState<Record<string, string[]>>({});
 
   // Fase 2 (DO/HACER) state — modal DO listo para conectar cuando se agregue lista de docs DO
   const [doDocs] = useState<DoItem[]>([]);
@@ -133,6 +209,14 @@ export default function ObraDetalle() {
 
   const faseDeming = obra?.faseDeming || 'plan';
   const [selectedDemingPhase, setSelectedDemingPhase] = useState(faseDeming);
+  const [activeTab, setActiveTab] = useState<'resumen' | 'ds44' | 'equipo'>('ds44');
+  const [copiedId, setCopiedId] = useState(false);
+  const handleCopyId = () => {
+    // Copia el código que puso el creador; si la obra no tiene código, el ID interno.
+    navigator.clipboard.writeText(obra?.codigo || obraId || '');
+    setCopiedId(true);
+    setTimeout(() => setCopiedId(false), 1500);
+  };
 
   const onboardingSummary = useMemo(() => {
     const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
@@ -174,77 +258,126 @@ export default function ObraDetalle() {
       });
     });
 
+    // TRAZABILIDAD: ítems de onboarding cumplidos vía actividad o encuesta VINCULADA
+    // (kitItemKey). Asistir a la actividad / responder la encuesta cierra el ítem.
+    const kitDoneByLink = new Map<string, boolean>(); // `${personaId}:${kitItemKey}`
+    const kitAssignedByLink = new Map<string, boolean>();
+    actividades.forEach((act: any) => {
+      if (!act.kitItemKey) return;
+      (act.asistentesRequeridos || []).forEach((pid: string) => kitAssignedByLink.set(`${pid}:${act.kitItemKey}`, true));
+      (act.asistentes || []).forEach((a: any) => {
+        const pid = a.personaId || a.workerId;
+        if (pid) kitDoneByLink.set(`${pid}:${act.kitItemKey}`, true);
+      });
+    });
+    encuestas.forEach((survey: any) => {
+      if (!survey.kitItemKey) return;
+      (survey.recipients || []).forEach((r: any) => {
+        const pid = r.personaId || r.workerId;
+        if (!pid) return;
+        kitAssignedByLink.set(`${pid}:${survey.kitItemKey}`, true);
+        if (r.estado === 'respondida') kitDoneByLink.set(`${pid}:${survey.kitItemKey}`, true);
+      });
+    });
+
     let total = 0;
     let completed = 0;
 
+    // Kit por código de cargo: del catálogo del tenant (con plantillas) y, si no,
+    // de la semilla. El onboarding ahora se rige por el KIT del cargo, no por una
+    // lista fija. Cada ítem se cierra con firma real (cruzada si aplica).
+    const kitDeCargo = (codigo?: string): any[] => {
+      if (!codigo) return [];
+      const fromCatalog = cargoCatalog.find((c) => c.codigo === codigo)?.kit;
+      return (fromCatalog && fromCatalog.length ? fromCatalog : resolveCargoKit(codigo)) as any[];
+    };
+
+    // Cargos que el trabajador ejecuta EN esta obra (asignación, multi-cargo).
+    // Fallback al cargo legacy global por compatibilidad con personas sin migrar.
+    const cargosEnObra = (worker: any): string[] => {
+      const asig = (worker.asignaciones || []).find((a: any) => a.obraId === (obraId || ''));
+      const raw = (asig && Array.isArray(asig.cargos) && asig.cargos.length)
+        ? asig.cargos
+        : (worker.cargo ? [worker.cargo] : []);
+      // Normaliza a CÓDIGO de catálogo ("Carpintero" → CARPINTERO) para resolver el
+      // kit real, igual que el backend. Dedup.
+      return [...new Set(raw.map((c: string) => normalizeCargoCodigo(c)).filter(Boolean))] as string[];
+    };
+    const aplicabilidad = (obra?.aplicabilidadKit) || {};
+
     const byWorker = activeWorkers.map((worker) => {
       const workerId = worker.personaId;
+      // Roles de gestión/staff no entran al onboarding de terreno (coherente con el
+      // backend, que no genera sus documentos). Evita el ruido "admin 0/6".
+      if (esRolGestion(worker.rol)) return null;
+      const cargos = cargosEnObra(worker);
+      // Unión de kits de todos los cargos de la persona en la obra (dedup + estricto).
+      let kit: any[] = unionKits(cargos.map((c) => ({ cargo: c, kit: kitDeCargo(c) })));
+      // Aplicabilidad MIPER (manual): excluir ítems marcados 'no_aplica' para TODOS
+      // sus cargos de origen en esta obra (PR-PO excluidos según MIPER).
+      kit = kit.filter((it: any) => !(it.cargosOrigen || []).every((cg: string) => aplicabilidad?.[cg]?.[it.key] === 'no_aplica'));
+      // Sin cargo/kit (personal de oficina/gestión) → no entra al onboarding de terreno.
+      if (!kit.length) return null;
       let workerTotal = 0;
       let workerCompleted = 0;
       const obraKey = obraId || '';
       const manualOverrides = obraKey ? (worker as any).onboardingDS44?.[obraKey]?.items || {} : {};
 
-      // Capacitacion grupal: completa solo si el trabajador asistio y firmo.
-      const hasCapacitacion = actividades.some(
-        (act: any) => (act.obraId === obraId || !obraId) &&
-          (act.tipo === 'CAPACITACION' || act.titulo?.toLowerCase().includes('capacitacion') || act.titulo?.toLowerCase().includes('capacitación')) &&
-          (act.asistentes || []).some((a: any) => (a.personaId) === workerId && a.asistio !== false)
-      );
-      const hasCapacitacionProgramada = actividades.some(
-        (act: any) => (act.obraId === obraId || !obraId) &&
-          (act.tipo === 'CAPACITACION' || act.titulo?.toLowerCase().includes('capacitacion') || act.titulo?.toLowerCase().includes('capacitación'))
-      );
-
-      const itemDetail = DS44_ONBOARDING_ITEMS.map((item) => {
+      const itemDetail = kit.map((item: any) => {
         const manualDone = Boolean(manualOverrides[item.tipo]);
         const key = `${workerId}:${item.tipo}`;
+        const linkKey = `${workerId}:${item.key}`;
+        // Señal unificada: documento del onboarding (incl. ENTREGA_EPP), solicitud de
+        // firma del mismo tipo, o actividad/encuesta VINCULADA (kitItemKey) cumplida.
+        const cumplidoPorLink = Boolean(kitDoneByLink.get(linkKey));
+        const trabajadorFirmo = Boolean(docSigned.get(key)) || Boolean(requestSigned.get(key)) || cumplidoPorLink;
+        const firmaRelatorPendiente = Boolean(docRelatorPendiente.get(key)) && !cumplidoPorLink;
+        const tieneArchivoOAsignado = Boolean(docHasFile.get(key)) || Boolean(requestAssigned.get(key)) || Boolean(kitAssignedByLink.get(linkKey));
 
         let estado: 'pendiente_asignar' | 'pendiente_firma' | 'completo' = 'pendiente_asignar';
-        let firmaRelatorPendiente = false;
-
-        if (item.kind === 'document') {
-          const trabajadorFirmo = Boolean(docSigned.get(key));
-          firmaRelatorPendiente = Boolean(docRelatorPendiente.get(key));
-          if (trabajadorFirmo && !firmaRelatorPendiente) estado = 'completo';
-          else if (trabajadorFirmo || docHasFile.get(key)) estado = 'pendiente_firma';
-          else estado = 'pendiente_asignar';
-        } else if (item.kind === 'signature') {
-          if (requestSigned.get(key)) estado = 'completo';
-          else if (requestAssigned.get(key)) estado = 'pendiente_firma';
-          else estado = 'pendiente_asignar';
-        } else if (item.kind === 'actividad') {
-          if (hasCapacitacion) estado = 'completo';
-          else if (hasCapacitacionProgramada) estado = 'pendiente_firma';
-          else estado = 'pendiente_asignar';
-        }
-
-        // Override manual persistido (firma en papel registrada previamente).
+        if (trabajadorFirmo && !firmaRelatorPendiente) estado = 'completo';
+        else if (trabajadorFirmo || tieneArchivoOAsignado) estado = 'pendiente_firma';
         if (manualDone) estado = 'completo';
 
         const done = estado === 'completo';
         workerTotal += 1;
         if (done) workerCompleted += 1;
 
-        return { key: item.key, tipo: item.tipo, label: item.label, articulo: item.articulo, done, estado, firmaRelatorPendiente, trabajadorFirmo: Boolean(docSigned.get(key)), documentId: docIdPorKey.get(key) || null, kind: item.kind, actionLabel: item.actionLabel, actionRoute: item.actionRoute };
+        return {
+          key: item.key, tipo: item.tipo, label: item.titulo, articulo: item.articulo || '',
+          done, estado, firmaRelatorPendiente, trabajadorFirmo,
+          documentId: docIdPorKey.get(key) || null,
+          kind: 'document' as const,
+          // Naturaleza del ítem: define el atajo (firmar doc, agendar capacitación, asignar encuesta).
+          accion: item.accion || 'DIFUSION_FIRMA',
+          subtipo: item.subtipo || null,
+          bloqueante: Boolean(item.bloqueante)
+        };
       });
 
       total += workerTotal;
       completed += workerCompleted;
 
+      // "Apto para ingresar a terreno": todos los ítems bloqueantes completos.
+      const bloqueantesPendientes = itemDetail.filter((i) => i.bloqueante && !i.done).length;
+
       return {
         workerId,
+        rut: worker.rut,
         nombre: `${worker.nombre} ${worker.apellido || ''}`.trim(),
-        cargo: worker.cargo || '',
+        cargo: cargos.length ? cargos.map((c) => getCargoLabel(c)).join(', ') : (worker.cargo || ''),
         fechaIngreso: (worker.obraIds || []).length > 0 ? (worker.createdAt || null) : null,
         completed: workerCompleted,
         total: workerTotal,
+        bloqueantesPendientes,
+        aptoTerreno: bloqueantesPendientes === 0,
         itemDetail
       };
-    });
+    }).filter(Boolean) as any[];
 
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { completed, total, progress, byWorker };
-  }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, obraId]);
+  }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, encuestas, obraId, cargoCatalog, obra]);
 
   const getSignatureStats = (doc: any) => {
     // Prefer obraSignatureRequests (live data) over doc.asignaciones (may be absent in list responses)
@@ -376,35 +509,49 @@ export default function ObraDetalle() {
 
         setLoading(false); // UI visible aquí
 
-        // Fase 2 — background paralelo: documentos, incidentes, actividades, firmas
+        // Fase 2 — background paralelo: documentos, incidentes, actividades, firmas,
+        // y catálogo de cargos (para heredar documentos corporativos de la obra).
         const tenantId = obraData?.tenantId || localStorage.getItem('tenant_id') || '';
-        const [docsObraRes, docsPrevRes, incidentsRes, activitiesRes, sigRes] = await Promise.all([
+        const [docsObraRes, docsPrevRes, docsEmpresaRes, incidentsRes, activitiesRes, sigRes, cargosRes, surveysRes] = await Promise.all([
           documentsApi.list({ obraId, clasificacion: 'obra' } as any),
           documentsApi.list({ obraId, clasificacion: 'diario' } as any),
+          // Documentos de empresa (RI/Política) a nivel tenant: se cuentan en TODAS
+          // las obras porque toda persona debe cumplirlos, aunque no sean por-obra.
+          documentsApi.list({ clasificacion: 'empresa' } as any),
           incidentsApi.list(),
           activitiesApi.list(),
           signatureRequestsApi.list({ tenantId, obraId }),
+          tenantsApi.getCargos(tenantId),
+          surveysApi.list(),
         ]);
 
+        const empresaDocs = extractEmpresaDocs(cargosRes.success && cargosRes.data ? cargosRes.data.cargos || [] : []);
+        setEmpresaDocsByTipo(empresaDocs);
+
         const docsObra = docsObraRes.success && docsObraRes.data ? docsObraRes.data.documents || [] : [];
-        setDs44Docs(DS44_PLAN_DOCS.map((required) => {
-          const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-          return { ...required, documentId: existing?.documentId, archivoSubido: Boolean(existing?.s3Key || existing?.archivoUrl), document: existing };
-        }));
+        setDs44Docs(buildDs44PlanDocs(docsObra, empresaDocs));
         setObraDocs(docsObra);
 
         const ds44Types = new Set([...DS44_ONBOARDING_ITEMS.map(i => i.tipo), ...DS44_PLAN_DOCS.flatMap(req => req.tipos)]);
+        const empresaDocsList = docsEmpresaRes.success && docsEmpresaRes.data ? docsEmpresaRes.data.documents || [] : [];
+        const candidatos = [
+          ...(docsPrevRes.success && docsPrevRes.data ? docsPrevRes.data.documents || [] : [])
+            .filter((d: any) => d.clasificacion === 'diario' || (!ds44Types.has(d.tipo) && d.clasificacion !== 'obra' && d.clasificacion !== 'trabajador')),
+          // Documentos de empresa (tenant-level) — cuentan en la obra para cada persona.
+          ...empresaDocsList,
+        ];
+        // Dedup por documentId (NO por tipo): cada persona tiene su propio documento
+        // del mismo tipo; deduplicar por tipo perdía a todas las personas menos una.
         const uniqueDocsPrev: any[] = [];
         const seenIds = new Set();
-        for (const doc of (docsPrevRes.success && docsPrevRes.data ? docsPrevRes.data.documents || [] : [])
-          .filter((d: any) => d.clasificacion === 'diario' || (!ds44Types.has(d.tipo) && d.clasificacion !== 'obra' && d.clasificacion !== 'trabajador'))) {
-          const key = doc.tipo || doc.titulo;
-          if (!seenIds.has(key)) { seenIds.add(key); uniqueDocsPrev.push(doc); }
+        for (const doc of candidatos) {
+          if (!seenIds.has(doc.documentId)) { seenIds.add(doc.documentId); uniqueDocsPrev.push(doc); }
         }
         setDocumentosPrevencion(uniqueDocsPrev);
 
         setIncidentes((incidentsRes.success && incidentsRes.data ? incidentsRes.data : []).filter((inc: any) => inc.obraId === obraId));
         setActividades((activitiesRes.success && activitiesRes.data ? activitiesRes.data.activities || [] : []).filter((act: any) => act.obraId === obraId));
+        setEncuestas(surveysRes.success && surveysRes.data ? surveysRes.data.surveys || [] : []);
         if (sigRes.success && sigRes.data) setObraSignatureRequests(sigRes.data.requests || []);
 
         // Fase 3 — fire-and-forget: tamaño tenant (solo condicionales DO)
@@ -440,18 +587,13 @@ export default function ObraDetalle() {
     ]);
     if (docsObraRes.success && docsObraRes.data) {
       const docsObra = docsObraRes.data.documents || [];
-      const mappedDs44 = DS44_PLAN_DOCS.map((required) => {
-        const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-        const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-        return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
-      });
-      setDs44Docs(mappedDs44);
+      setDs44Docs(buildDs44PlanDocs(docsObra, empresaDocsByTipo));
       setObraDocs(docsObra);
     }
     if (sigRes.success && sigRes.data) {
       setObraSignatureRequests(sigRes.data.requests || []);
     }
-  }, [obraId]);
+  }, [obraId, empresaDocsByTipo]);
 
   const reloadActividades = useCallback(async () => {
     const res = await activitiesApi.list();
@@ -788,13 +930,25 @@ export default function ObraDetalle() {
     }
   };
 
+  // Abre el PDF de un documento: si ya tiene firmas, la versión con el anexo
+  // de firmas estampado (única con validez legal); si no, el archivo
+  // original. La pestaña se abre en el click (ver utils/documentoFirmado)
+  // para que el navegador no la bloquee mientras se espera el estampado.
+  const abrirDocumentoFirmable = (params: { documentId?: string | null; firmas?: any[]; fileKey?: string | null }) =>
+    abrirDocumentoFirmableCompartido({
+      ...params,
+      onPreparando: () => setObraToast('Preparando documento firmado, esto puede tardar unos segundos...'),
+      onError: (mensaje) => alert(mensaje),
+    });
+
   const handlePreviewDoDocument = async () => {
-    const fileKey = selectedDoDetail?.s3Key || selectedDoDetail?.archivoUrl;
-    if (!fileKey) return;
     setDoPreviewing(true);
     try {
-      const res = await uploadsApi.getDownloadUrl(fileKey);
-      if (res.success && res.data?.downloadUrl) window.open(res.data.downloadUrl, '_blank');
+      await abrirDocumentoFirmable({
+        documentId: selectedDoDetail?.documentId,
+        firmas: selectedDoDetail?.firmas,
+        fileKey: selectedDoDetail?.s3Key || selectedDoDetail?.archivoUrl,
+      });
     } catch (error) {
       console.error('Error abriendo documento DO:', error);
     } finally {
@@ -1261,14 +1415,13 @@ export default function ObraDetalle() {
   };
 
   const handlePreviewDocumentFromCard = async (doc: Ds44Item) => {
-    const fileKey = doc.document?.s3Key || doc.document?.archivoUrl;
-    if (!fileKey) return;
     setDs44Previewing(true);
     try {
-      const res = await uploadsApi.getDownloadUrl(fileKey);
-      if (res.success && res.data?.downloadUrl) {
-        window.open(res.data.downloadUrl, '_blank');
-      }
+      await abrirDocumentoFirmable({
+        documentId: doc.documentId || doc.document?.documentId,
+        firmas: doc.document?.firmas,
+        fileKey: doc.document?.s3Key || doc.document?.archivoUrl,
+      });
     } catch (error) {
       console.error('Error opening document:', error);
     } finally {
@@ -1276,15 +1429,28 @@ export default function ObraDetalle() {
     }
   };
 
-  const handlePreviewDocument = async () => {
-    const fileKey = selectedDs44Detail?.s3Key || selectedDs44Detail?.archivoUrl;
+  // Abre la plantilla corporativa heredada (Política SST / Reglamento Interno).
+  const previewEmpresaDoc = async (fileKey: string) => {
     if (!fileKey) return;
     setDs44Previewing(true);
     try {
       const res = await uploadsApi.getDownloadUrl(fileKey);
-      if (res.success && res.data?.downloadUrl) {
-        window.open(res.data.downloadUrl, '_blank');
-      }
+      if (res.success && res.data?.downloadUrl) window.open(res.data.downloadUrl, '_blank');
+    } catch (error) {
+      console.error('Error opening company document:', error);
+    } finally {
+      setDs44Previewing(false);
+    }
+  };
+
+  const handlePreviewDocument = async () => {
+    setDs44Previewing(true);
+    try {
+      await abrirDocumentoFirmable({
+        documentId: selectedDs44Doc?.documentId || selectedDs44Detail?.documentId,
+        firmas: selectedDs44Detail?.firmas,
+        fileKey: selectedDs44Detail?.s3Key || selectedDs44Detail?.archivoUrl,
+      });
     } catch (error) {
       console.error('Error opening document:', error);
     } finally {
@@ -1435,18 +1601,50 @@ export default function ObraDetalle() {
     setIsEditModalOpen(false);
   };
 
+  // Cargos efectivos a asignar: los elegidos en el modal, o el cargo legacy del
+  // trabajador como default (para no asignarlo "sin cargo" por accidente).
+  const cargosParaAsignar = (worker: any): string[] => {
+    const elegidos = assignCargos[worker.personaId];
+    if (Array.isArray(elegidos) && elegidos.length) return elegidos;
+    return worker.cargo ? [worker.cargo] : [];
+  };
+
+  // Cargos que el trabajador ya tiene en ESTA obra (para el editor de cargo).
+  const cargosActualesEnObra = (worker: any): string[] => {
+    const a = (worker.asignaciones || []).find((x: any) => x.obraId === obraId);
+    if (a && Array.isArray(a.cargos) && a.cargos.length) return a.cargos;
+    return worker.cargo ? [worker.cargo] : [];
+  };
+
+  // Editor de cargo para un trabajador YA asignado: actualiza los cargos de su
+  // asignación. El checklist de onboarding se recalcula solo (lee la asignación).
+  const handleUpdateCargos = async (worker: any) => {
+    if (!obraId) return;
+    setUpdatingWorkers(worker.personaId);
+    try {
+      const cargos = assignCargos[worker.personaId] ?? cargosActualesEnObra(worker);
+      await workersApi.setAsignacion(worker.personaId, obraId, cargos, user?.personaId || user?.userId);
+      const refreshed = await workersApi.list();
+      if (refreshed.success && refreshed.data) {
+        const workers = refreshed.data as any[];
+        setAllWorkers(workers);
+        setTrabajadores(workers.filter((w: any) => Array.isArray(w.obraIds) && w.obraIds.includes(obraId)));
+      }
+      setObraToast('Cargo actualizado');
+    } catch (error) {
+      console.error('Error updating cargo:', error);
+    } finally {
+      setUpdatingWorkers(null);
+    }
+  };
+
   const handleAddWorker = async (worker: any) => {
     if (!obraId) return;
     setUpdatingWorkers(worker.personaId);
     try {
-      const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
-      if (!obraIds.includes(obraId)) {
-        await workersApi.update(worker.personaId, {
-          obraIds: [...obraIds, obraId],
-          estado: 'activo',
-          solicitanteId: user?.personaId || user?.userId
-        } as any);
-      }
+      // El cargo se asigna EN la obra (asignación). Dispara el onboarding del kit.
+      await workersApi.setAsignacion(worker.personaId, obraId, cargosParaAsignar(worker), user?.personaId || user?.userId);
+      if (worker.estado === 'inactivo') await workersApi.update(worker.personaId, { estado: 'activo' } as any);
       const refreshed = await workersApi.list();
       if (refreshed.success && refreshed.data) {
         const workers = refreshed.data as any[];
@@ -1468,14 +1666,8 @@ export default function ObraDetalle() {
     setUpdatingWorkers('multiple');
     try {
       for (const worker of workersToAdd) {
-        const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
-        if (!obraIds.includes(obraId)) {
-          await workersApi.update(worker.personaId, {
-            obraIds: [...obraIds, obraId],
-            estado: 'activo',
-            solicitanteId: user?.personaId || user?.userId
-          } as any);
-        }
+        await workersApi.setAsignacion(worker.personaId, obraId, cargosParaAsignar(worker), user?.personaId || user?.userId);
+        if (worker.estado === 'inactivo') await workersApi.update(worker.personaId, { estado: 'activo' } as any);
       }
       const refreshed = await workersApi.list();
       if (refreshed.success && refreshed.data) {
@@ -1525,14 +1717,11 @@ export default function ObraDetalle() {
     if (!obraId) return;
     setUpdatingWorkers(worker.personaId);
     try {
-      // set worker as active; also ensure obraId present in obraIds
-      const obraIds = Array.isArray(worker.obraIds) ? worker.obraIds : [];
-      const updated = {
-        estado: 'activo',
-        obraIds: obraIds.includes(obraId) ? obraIds : [...obraIds, obraId],
-        solicitanteId: user?.personaId || user?.userId
-      } as any;
-      await workersApi.update(worker.personaId, updated);
+      // Reactivar: asegurar asignación a la obra (con sus cargos previos) + estado activo.
+      const asig = (worker.asignaciones || []).find((a: any) => a.obraId === obraId);
+      const cargos = (asig && Array.isArray(asig.cargos) && asig.cargos.length) ? asig.cargos : (worker.cargo ? [worker.cargo] : []);
+      await workersApi.setAsignacion(worker.personaId, obraId, cargos, user?.personaId || user?.userId);
+      await workersApi.update(worker.personaId, { estado: 'activo' } as any);
       const refreshed = await workersApi.list();
       if (refreshed.success && refreshed.data) {
         const workers = refreshed.data as any[];
@@ -1549,251 +1738,224 @@ export default function ObraDetalle() {
   return (
     <>
       <div className="page-content">
-        <div className="page-header">
-          <div className="page-header-info">
-            <h2 className="page-header-title">
-              <LuBuilding2 className="text-primary-500" />
-              {obra.nombre}
-            </h2>
-            <p className="page-header-description">
-              {obra.comuna || '-'}, {obra.region || '-'}
-            </p>
-          </div>
-          <div className="page-header-actions">
-            <button className="btn btn-secondary" onClick={() => navigate('/obras')}>
-              <LuArrowLeft />
-              Volver a obras
+        <PageHeader
+          banner
+          title={obra.nombre}
+          description={
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span>{obra.codigo ? `${obra.codigo} · ` : ''}{obra.comuna || '-'}, {obra.region || '-'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontFamily: 'monospace', fontSize: '0.72rem', opacity: 0.65 }}>{obra.codigo || obraId}</span>
+                <button
+                  type="button"
+                  title={obra.codigo ? 'Copiar código de obra' : 'Copiar ID interno (esta obra no tiene código)'}
+                  onClick={handleCopyId}
+                  style={{
+                    background: copiedId ? 'rgba(16,185,129,0.22)' : 'rgba(255,255,255,0.1)',
+                    border: `1px solid ${copiedId ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.22)'}`,
+                    borderRadius: 6,
+                    padding: '2px 9px',
+                    cursor: 'pointer',
+                    color: copiedId ? '#6ee7b7' : 'rgba(255,255,255,0.75)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    fontSize: '0.72rem',
+                    fontWeight: 500,
+                    transition: 'all 0.2s',
+                    flexShrink: 0,
+                  }}
+                >
+                  {copiedId ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                  {copiedId ? 'Copiado' : 'Copiar ID'}
+                </button>
+              </div>
+            </div>
+          }
+          backTo="/obras"
+          actions={
+            <button className="btn btn-secondary" onClick={handleEditToggle}>
+              <LuPencil /> Editar
             </button>
-          </div>
-        </div>
+          }
+        />
 
-        <div style={{ display: 'grid', gap: 'var(--space-4)', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: 'var(--space-6)' }}>
+        <div style={{ display: 'grid', gap: 'var(--space-3)', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: 'var(--space-5)' }}>
           {indicadores.map((item) => (
-            <div key={item.label} className="card stat-card">
+            <div key={item.label} className="card stat-card" style={{ padding: 'var(--space-3)' }}>
               <div className="stat-value">{item.value}</div>
               <div className="stat-label">{item.label}</div>
             </div>
           ))}
         </div>
 
-        <div className="obra-dashboard-grid">
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Resumen de Obra</div>
-              <button className="btn btn-ghost btn-sm" onClick={handleEditToggle}>
-                <LuPencil />
-                Editar
-              </button>
-            </div>
-            <>
-              <div className="text-muted">Mandante</div>
-              <div className="font-medium">{obra.mandante || '-'}</div>
-              <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Direccion</div>
-              <div className="font-medium">{obra.direccion || '-'}</div>
-              <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Region / Comuna</div>
-              <div className="font-medium">{obra.region || '-'} · {obra.comuna || '-'}</div>
-              <div className="text-muted" style={{ marginTop: 'var(--space-3)' }}>Estado</div>
-              <div className="badge badge-success" style={{ width: 'fit-content' }}>{obra.estado || '-'}</div>
-            </>
-          </div>
+        <div className="od-tab-nav">
+          <button className={activeTab === 'resumen' ? 'od-tab od-tab--active' : 'od-tab'} onClick={() => setActiveTab('resumen')}>Resumen</button>
+          <button className={activeTab === 'ds44' ? 'od-tab od-tab--active' : 'od-tab'} onClick={() => setActiveTab('ds44')}>DS44 — Cumplimiento</button>
+          <button className={activeTab === 'equipo' ? 'od-tab od-tab--active' : 'od-tab'} onClick={() => setActiveTab('equipo')}>Equipo ({activeWorkers.length})</button>
+        </div>
 
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Trabajadores Asignados</div>
-              <LuUsers className="text-muted" />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-              <div className="text-muted">{trabajadores.length} trabajadores asociados</div>
-              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                {canFirmaAsistida && (
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setFirmaAsistidaOpen(true)}
-                    title="El trabajador firma con su PIN en este dispositivo"
-                  >
-                    Firma asistida
-                  </button>
-                )}
-                {canAsignarTrabajadores && (
-                  <button
-                    className="btn btn-sm"
-                    style={{ backgroundColor: 'var(--success-500, #10b981)', color: 'white', border: 'none' }}
-                    onClick={() => setIsWorkersModalOpen(true)}
-                  >
-                    <LuUserPlus />
-                    Gestionar
-                  </button>
-                )}
+        {/* ── TAB: RESUMEN ────────────────────────────────────────────────────── */}
+        {activeTab === 'resumen' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 'var(--space-4)' }}>
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">Información de la Obra</div>
+                <button className="btn btn-ghost btn-sm" onClick={handleEditToggle}>
+                  <LuPencil /> Editar
+                </button>
               </div>
+              <div className="text-muted" style={{ fontSize: '0.8rem' }}>{obra.codigo ? 'Código de Obra' : 'ID de Obra'}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 'var(--space-3)' }}>
+                <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-secondary)' }}>{obra.codigo || obraId}</span>
+                <button
+                  type="button"
+                  title={obra.codigo ? 'Copiar código de obra' : 'Copiar ID interno (esta obra no tiene código)'}
+                  onClick={handleCopyId}
+                  style={{
+                    flexShrink: 0,
+                    background: copiedId ? 'rgba(16,185,129,0.1)' : 'var(--surface-elevated)',
+                    border: `1px solid ${copiedId ? 'rgba(16,185,129,0.4)' : 'var(--surface-border)'}`,
+                    borderRadius: 6,
+                    padding: '2px 8px',
+                    cursor: 'pointer',
+                    color: copiedId ? '#059669' : 'var(--text-muted)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: '0.72rem',
+                    fontWeight: 500,
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {copiedId ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                  {copiedId ? 'Copiado' : 'Copiar'}
+                </button>
+              </div>
+              <div className="text-muted" style={{ fontSize: '0.8rem' }}>Mandante</div>
+              <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>{obra.mandante || '-'}</div>
+              <div className="text-muted" style={{ fontSize: '0.8rem' }}>Dirección</div>
+              <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>{obra.direccion || '-'}</div>
+              <div className="text-muted" style={{ fontSize: '0.8rem' }}>Región / Comuna</div>
+              <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>{obra.region || '-'} · {obra.comuna || '-'}</div>
+              <div className="text-muted" style={{ fontSize: '0.8rem' }}>Estado</div>
+              <div style={{ display: 'inline-flex', marginBottom: 'var(--space-3)' }}>
+                <span className="badge badge-success">{obra.estado || '-'}</span>
+              </div>
+              {(obra.faenaCompartida || obra.tieneMaquinaria || obra.agentesFQB) && (
+                <div style={{ marginTop: 'var(--space-2)', display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {obra.faenaCompartida && <span style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '999px', background: 'rgba(0,110,220,0.10)', color: '#004a8f', border: '1px solid rgba(0,110,220,0.25)' }}>Faena compartida</span>}
+                  {obra.tieneMaquinaria && <span style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '999px', background: 'rgba(0,110,220,0.10)', color: '#004a8f', border: '1px solid rgba(0,110,220,0.25)' }}>Maquinaria DS44</span>}
+                  {obra.agentesFQB && <span style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '999px', background: 'rgba(245,158,11,0.10)', color: '#92400e', border: '1px solid rgba(245,158,11,0.25)' }}>Agentes FQB/Físicos</span>}
+                </div>
+              )}
             </div>
-            {trabajadores.length === 0 ? (
-              <div className="text-muted">No hay trabajadores asociados a esta obra.</div>
-            ) : (
-              <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                  {activeWorkers.map((worker) => (
-                    <div key={worker.personaId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
-                        <div className="text-muted">{worker.cargo || 'Trabajador'}</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                        <span className="text-muted">{worker.rut}</span>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          type="button"
-                          onClick={() => handleDeactivateWorker(worker)}
-                          disabled={updatingWorkers === worker.personaId || worker.rol === 'admin'}
-                          title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
-                        >
-                          Dar de baja
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  {inactiveWorkers.length > 0 && (
-                    <div style={{ marginTop: 'var(--space-3)' }}>
-                      <div className="text-muted" style={{ marginBottom: 'var(--space-2)' }}>Dados de baja</div>
-                      {inactiveWorkers.map((worker) => (
-                        <div key={worker.personaId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <div className="font-medium">{worker.nombre} {worker.apellido || ''}</div>
-                            <div className="text-muted">{worker.cargo || 'Trabajador'}</div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                            <span className="badge badge-warning">Baja</span>
-                            <button
-                              className="btn btn-primary btn-sm"
-                              type="button"
-                              onClick={() => handleReactivateWorker(worker)}
-                              disabled={updatingWorkers === worker.personaId}
-                            >
-                              Reactivar
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">Cumplimiento DS44</div>
+              </div>
+              <div style={{ marginBottom: 'var(--space-4)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                  <span className="text-muted" style={{ fontSize: '0.85rem' }}>Fase {faseLabel}</span>
+                  <span style={{ fontWeight: 700, fontSize: '1.2rem', color: ds44Progress >= 80 ? '#10b981' : ds44Progress >= 50 ? '#f59e0b' : '#ef4444' }}>{ds44Progress}%</span>
+                </div>
+                <div style={{ height: '10px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)' }}>
+                  <div style={{ width: `${ds44Progress}%`, height: '100%', background: ds44Progress >= 80 ? '#10b981' : ds44Progress >= 50 ? '#f59e0b' : '#ef4444', transition: 'width 300ms' }} />
                 </div>
               </div>
-            )}
-          </div>
-
-          <div className="card" style={{ gridColumn: '1 / -1', padding: 'var(--space-4)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-              <div className="font-medium">Ciclo DS44 (Deming)</div>
-              <div className="text-muted" style={{ fontSize: '0.85rem' }}>
-                Selecciona una fase para revisar sus documentos.
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <button className="btn btn-secondary" onClick={() => setActiveTab('ds44')} style={{ justifyContent: 'flex-start' }}>Ver DS44 completo →</button>
+                <button className="btn btn-secondary" onClick={() => navigate(`/incidents?obraId=${obraId}`)} style={{ justifyContent: 'flex-start' }}>Incidentes · {incidentes.length}</button>
+                <button className="btn btn-secondary" onClick={() => navigate(`/documents?obraId=${obraId}`)} style={{ justifyContent: 'flex-start' }}>Documentos de obra</button>
+                <button className="btn btn-secondary" onClick={() => setActiveTab('equipo')} style={{ justifyContent: 'flex-start' }}>Equipo · {activeWorkers.length} activos</button>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', marginTop: 'var(--space-3)' }}>
+          </div>
+        )}
+
+        {/* ── TAB: DS44 ───────────────────────────────────────────────────────── */}
+        {activeTab === 'ds44' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+
+
+          <div className="ds44-panel">
+            <div className="ds44-stepper">
               {FASES_DEMING.map((fase, idx) => {
                 const isActive = fase.key === faseDeming;
                 const isDone = idx < idxFaseDeming;
                 const isSelected = fase.key === selectedDemingPhase;
+                const circleColor = isDone ? '#10b981' : isActive ? '#006edc' : 'var(--surface-border)';
+                const textColor = isDone ? '#10b981' : isActive ? '#006edc' : isSelected ? 'var(--text-primary)' : 'var(--text-muted)';
                 return (
                   <React.Fragment key={fase.key}>
                     <button
                       type="button"
+                      className={`ds44-phase-btn${isSelected ? ' ds44-phase-btn--selected' : ''}`}
                       onClick={() => setSelectedDemingPhase(fase.key)}
-                      style={{
-                        padding: 'var(--space-1) var(--space-3)',
-                        borderRadius: 'var(--radius-full)',
-                        fontWeight: isSelected ? 700 : 500,
-                        fontSize: isSelected ? '0.9rem' : '0.85rem',
-                        cursor: 'pointer',
-                        background: isDone
-                          ? 'var(--success-500, #10b981)'
-                          : isActive
-                            ? 'var(--primary-500, #3b82f6)'
-                            : isSelected
-                              ? 'rgba(15, 23, 42, 0.06)'
-                              : 'var(--surface-elevated)',
-                        color: isDone || isActive ? 'white' : isSelected ? 'var(--text-primary)' : 'var(--text-muted)',
-                        border: isSelected
-                          ? `2px solid ${isDone || isActive ? 'rgba(255,255,255,0.8)' : 'var(--primary-400,#60a5fa)'}`
-                          : `1px solid ${isDone ? 'var(--success-500,#10b981)' : isActive ? 'var(--primary-500,#3b82f6)' : 'var(--surface-border)'}`,
-                        boxShadow: isSelected ? '0 8px 18px rgba(15, 23, 42, 0.16)' : 'none',
-                        transform: isSelected ? 'scale(1.02)' : 'none'
-                      }}
                     >
-                      {isDone ? '✓ ' : ''}{fase.label}
+                      <div className="ds44-phase-circle" style={{
+                        background: isDone ? '#10b981' : isActive ? '#006edc' : 'var(--surface-card)',
+                        borderColor: circleColor,
+                        color: isDone || isActive ? 'white' : textColor,
+                        boxShadow: isSelected ? `0 0 0 3px ${isDone ? 'rgba(16,185,129,0.2)' : isActive ? 'rgba(0,110,220,0.2)' : 'rgba(0,0,0,0.08)'}` : 'none',
+                      }}>
+                        {isDone ? '✓' : idx + 1}
+                      </div>
+                      <span className="ds44-phase-label" style={{ color: textColor, fontWeight: isSelected ? 700 : isActive ? 600 : 400 }}>
+                        {fase.label}
+                      </span>
                     </button>
                     {idx < FASES_DEMING.length - 1 && (
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
+                      <div className="ds44-phase-connector" style={{ background: isDone ? '#10b981' : 'var(--surface-border)' }} />
                     )}
                   </React.Fragment>
                 );
               })}
             </div>
-          </div>
-
-          <div className="card" style={{ gridColumn: '1 / -1' }}>
-            <div className="card-header">
-              <div>
-                <div className="card-title">Cumplimiento DS44 — Fase {faseLabel}</div>
-                <div className="text-muted" style={{ fontSize: '0.85rem' }}>
-                  {isPlanPhase
-                    ? 'Documentos base de la obra (PLAN)'
-                    : isDoPhase
-                      ? 'Checklist de onboarding por trabajador (HACER)'
-                      : isCheckPhase
-                        ? 'Evaluacion anual y consolidacion de evidencias (CHECK)'
-                        : 'Seguimiento de mejora continua'}
+            <div className="ds44-progress-bar">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, color: 'var(--text-secondary)' }}>Fase {faseLabel}</span>
+                <span style={{ fontWeight: 700, fontSize: '1rem', color: ds44Progress >= 80 ? '#10b981' : ds44Progress >= 50 ? '#f59e0b' : '#ef4444' }}>{ds44Progress}%</span>
+              </div>
+              <div className="ds44-progress-track">
+                <div className="ds44-progress-fill" style={{
+                  width: `${ds44Progress}%`,
+                  background: ds44Progress >= 80 ? '#10b981' : ds44Progress >= 50 ? '#f59e0b' : '#ef4444',
+                }} />
+              </div>
+              <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 5 }}>{ds44Uploaded}/{ds44Total} documentos completados</div>
+            </div>
+            <div className="ds44-content-section">
+              <div className="ds44-content-header">
+                <div className="ds44-content-title">
+                  {isPlanPhase ? 'Documentos base de la obra · etapa actual' : isDoPhase ? 'Onboarding por trabajador' : isCheckPhase ? 'Evaluación anual de evidencias' : 'Seguimiento de mejora continua'}
                 </div>
               </div>
-              <LuFileText className="text-muted" />
-            </div>
 
             {isPlanPhase && (
               <>
-                <div style={{ display: 'grid', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-                    <div className="font-medium">Progreso PLAN</div>
-                    <div className="text-muted">{ds44Uploaded}/{ds44Total} documentos completos (subidos y firmados)</div>
+                {(documentosPendientes.length > 0 || documentosPendientesFirma.length > 0 || documentosVencidos.length > 0) && (
+                  <div className="ds44-alerts">
+                    {documentosPendientesFirma.length > 0 && (
+                      <div className="ds44-alert ds44-alert-warning">
+                        <span className="ds44-alert-icon"><LuClock size={14} /></span>
+                        <span>Pendientes de firma: {documentosPendientesFirma.map((d) => d.titulo).join(', ')}.</span>
+                      </div>
+                    )}
+                    {documentosPendientes.length > 0 && (
+                      <div className="ds44-alert ds44-alert-danger">
+                        <span className="ds44-alert-icon"><FiAlertTriangle size={14} /></span>
+                        <span>Faltantes: {documentosPendientesTitulos.join(', ')}.</span>
+                      </div>
+                    )}
+                    {documentosVencidos.length > 0 && (
+                      <div className="ds44-alert ds44-alert-warning">
+                        <span className="ds44-alert-icon"><LuClock size={14} /></span>
+                        <span>{documentosVencidos.length} documento{documentosVencidos.length === 1 ? '' : 's'} vencido{documentosVencidos.length === 1 ? '' : 's'}.</span>
+                      </div>
+                    )}
                   </div>
-                  <div
-                    style={{
-                      height: '10px',
-                      borderRadius: '999px',
-                      overflow: 'hidden',
-                      background: 'var(--surface-elevated)',
-                      border: '1px solid var(--surface-border)'
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${ds44Progress}%`,
-                        height: '100%',
-                        background: 'var(--gradient-primary)',
-                        transition: 'width 200ms ease'
-                      }}
-                    />
-                  </div>
-                  {(documentosPendientes.length > 0 || documentosPendientesFirma.length > 0 || documentosVencidos.length > 0) && (
-                    <div className="ds44-alerts">
-                      {documentosPendientesFirma.length > 0 && (
-                        <div className="ds44-alert ds44-alert-warning">
-                          <span className="ds44-alert-icon"><LuClock size={16} /></span>
-                          <span>Pendientes de firma (no completan la fase): {documentosPendientesFirma.map((d) => d.titulo).join(', ')}.</span>
-                        </div>
-                      )}
-                      {documentosPendientes.length > 0 && (
-                        <div className="ds44-alert ds44-alert-danger">
-                          <span className="ds44-alert-icon"><FiAlertTriangle size={16} /></span>
-                          <span>Documentos faltantes: {documentosPendientesTitulos.join(', ')}.</span>
-                        </div>
-                      )}
-                      {documentosVencidos.length > 0 && (
-                        <div className="ds44-alert ds44-alert-warning">
-                          <span className="ds44-alert-icon"><LuClock size={16} /></span>
-                          <span>Hay {documentosVencidos.length} documento{documentosVencidos.length === 1 ? '' : 's'} DS44 vencido{documentosVencidos.length === 1 ? '' : 's'}.</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                )}
                 <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                   {ds44Docs.map((doc) => {
@@ -1801,10 +1963,49 @@ export default function ObraDetalle() {
                     const fechaCaducidad = getDocExpiryDate(doc.document);
                     const isExpired = Boolean(fechaCaducidad && new Date(fechaCaducidad) < new Date());
                     const firmasCompletas = total > 0 && firmadas === total;
+
+                    // Documento corporativo (Política SST / Reglamento Interno): fuente
+                    // única en Onboarding, aplica a todas las obras. No se sube por obra.
+                    if (doc.tenantLevel) {
+                      return (
+                        <div key={doc.key} className="ds44-doc-row">
+                          <div style={{ minWidth: 0 }}>
+                            <div className="font-medium" style={{ fontSize: '0.9rem' }}>{doc.titulo}</div>
+                            <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                              {doc.fromEmpresa
+                                ? <>Documento de empresa · aplica a todas las obras{doc.empresaPlantilla?.nombre && ` · ${doc.empresaPlantilla.nombre}`}</>
+                                : 'Documento de empresa · se gestiona en Onboarding'}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
+                            <span className={`badge ${doc.fromEmpresa ? 'badge-info' : 'badge-danger'}`}>
+                              {doc.fromEmpresa ? 'Empresa' : 'Falta en empresa'}
+                            </span>
+                            {doc.fromEmpresa && doc.empresaPlantilla?.fileKey && (
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                type="button"
+                                onClick={() => previewEmpresaDoc(doc.empresaPlantilla!.fileKey)}
+                              >
+                                Ver
+                              </button>
+                            )}
+                            <button
+                              className={doc.fromEmpresa ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
+                              type="button"
+                              onClick={() => navigate('/cargos-onboarding')}
+                            >
+                              {doc.fromEmpresa ? 'Gestionar' : 'Subir en Onboarding'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     const badgeClass = isExpired ? 'badge-danger' : firmasCompletas ? 'badge-success' : doc.archivoSubido ? 'badge-warning' : 'badge-danger';
                     const badgeLabel = isExpired ? 'Vencido' : firmasCompletas ? 'Completo' : doc.archivoSubido ? 'Pendiente de firma' : 'Sin documento';
                     return (
-                      <div key={doc.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                      <div key={doc.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
                           <div className="font-medium" style={{ fontSize: '0.9rem' }}>{doc.titulo}</div>
                           <div className="text-muted" style={{ fontSize: '0.78rem' }}>
@@ -1847,13 +2048,18 @@ export default function ObraDetalle() {
                   })}
                 </div>
                 </div>
+
+                {/* El IRL y los documentos del cargo se definen UNA vez a nivel empresa
+                    (Onboarding por cargo), no por obra. Aquí no se suben plantillas de cargo:
+                    la obra solo lleva sus documentos base (arriba) y el cumplimiento por
+                    persona se revisa en la fase HACER / sección de onboarding por trabajador. */}
               </>
             )}
 
             {isDoPhase && (
               <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
                 {/* ── Sección A: Registro AT/EP/Incidentes Peligrosos (Arts. 72-73) ── */}
-                <div className="card" style={{ padding: 'var(--space-4)', marginBottom: 'var(--space-3)', border: '1px solid var(--surface-border)', background: 'var(--surface-elevated)' }}>
+                <div className="ds44-activity-block">
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
                     {/* Info */}
                     <div style={{ minWidth: 0 }}>
@@ -1903,24 +2109,9 @@ export default function ObraDetalle() {
                   </div>
                 </div>
 
-                {/* ── Cumplimiento HACER de la obra (procedimientos + capacitaciones + registro Art.72) ── */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: 'var(--space-3) 0 var(--space-2)' }}>
-                  <div>
-                    <div className="font-medium">Cumplimiento DO de la obra</div>
-                    <div className="text-muted" style={{ fontSize: '0.8rem' }}>
-                      Solo elementos aplicables a esta obra. NO incluye el onboarding por persona.
-                    </div>
-                  </div>
-                  <div className="text-muted" style={{ fontSize: '0.85rem' }}>
-                    {doCumplimiento.completados}/{doCumplimiento.total} · {doCumplimiento.progress}%
-                  </div>
-                </div>
-                <div style={{ height: '8px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', marginBottom: 'var(--space-4)' }}>
-                  <div style={{ width: `${doCumplimiento.progress}%`, height: '100%', background: 'var(--gradient-primary)', transition: 'width 300ms ease' }} />
-                </div>
 
                 {/* ── Sección: Procedimientos operativos (documento de obra) ── */}
-                <div className="font-medium" style={{ marginBottom: 'var(--space-2)' }}>Procedimientos operativos</div>
+                <div className="ds44-section-label">Procedimientos operativos</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
                   {doProcedimientos.filter((p) => p.aplicabilidad !== 'no_aplica').map(({ el, aplicabilidad, estado, firmadas, totalFirmas }) => {
                     const verificar = aplicabilidad === 'verificar';
@@ -1928,7 +2119,7 @@ export default function ObraDetalle() {
                     const badgeClass = estado === 'completo' ? 'badge-success' : estado === 'pendiente_firma' ? 'badge-warning' : 'badge-danger';
                     const badgeLabel = estado === 'completo' ? 'Completo' : estado === 'pendiente_firma' ? 'Pendiente de firma' : 'Faltante';
                     return (
-                      <div key={el.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                      <div key={el.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
                           <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
                           <div className="text-muted" style={{ fontSize: '0.78rem' }}>
@@ -1958,7 +2149,7 @@ export default function ObraDetalle() {
                 </div>
 
                 {/* ── Sección: Capacitaciones (vinculadas a Actividades) ── */}
-                <div className="font-medium" style={{ marginBottom: 'var(--space-2)' }}>Capacitaciones</div>
+                <div className="ds44-section-label">Capacitaciones</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
                   {doCapacitaciones.filter((c) => c.aplicabilidad !== 'no_aplica').map(({ el, aplicabilidad, estado }) => {
                     const verificar = aplicabilidad === 'verificar';
@@ -1966,7 +2157,7 @@ export default function ObraDetalle() {
                     const badgeClass = estado === 'completo' ? 'badge-success' : estado === 'pendiente_firma' ? 'badge-warning' : 'badge-danger';
                     const badgeLabel = estado === 'completo' ? 'Ejecutada' : estado === 'pendiente_firma' ? 'Programada (faltan firmas)' : 'Sin actividad';
                     return (
-                      <div key={el.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                      <div key={el.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
                           <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
                           <div className="text-muted" style={{ fontSize: '0.78rem' }}>{el.articulo} · Se registra como actividad con asistencia firmada</div>
@@ -1993,7 +2184,7 @@ export default function ObraDetalle() {
                 </div>
 
                 {/* ── Sección: Registros de gestión (read-models, datos del sistema) ── */}
-                <div className="font-medium" style={{ marginBottom: 'var(--space-2)' }}>Registros de gestión</div>
+                <div className="ds44-section-label">Registros de gestión</div>
                 <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: 'var(--space-2)' }}>
                   Se nutren de los datos del sistema; no son documentos a subir y no afectan el %.
                 </div>
@@ -2005,7 +2196,7 @@ export default function ObraDetalle() {
                     const hasSimulacro = actividades.some((a: any) => a.tipo === 'SIMULACRO');
                     const enVigilancia = trabajadores.filter((w: any) => w.vigilanciaSalud?.enVigilancia).length;
                     return (
-                      <div key={el.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                      <div key={el.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
                           <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
                           <div className="text-muted" style={{ fontSize: '0.78rem' }}>
@@ -2042,7 +2233,7 @@ export default function ObraDetalle() {
                 </div>
 
                 {/* ── Sección: Eventos sobrevinientes ── */}
-                <div className="font-medium" style={{ marginBottom: 'var(--space-2)' }}>Eventos sobrevinientes</div>
+                <div className="ds44-section-label">Eventos sobrevinientes</div>
                 <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: 'var(--space-2)' }}>
                   Se generan solo ante el hecho. No cuentan como faltante en el cumplimiento.
                 </div>
@@ -2050,7 +2241,7 @@ export default function ObraDetalle() {
                   {DS44_DO_EVENTOS.map((ev) => {
                     const ocurrencias = obraDocs.filter((d: any) => d.tipo === ev.tipo).length;
                     return (
-                      <div key={ev.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                      <div key={ev.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
                           <div className="font-medium" style={{ fontSize: '0.9rem' }}>{ev.titulo}</div>
                           <div className="text-muted" style={{ fontSize: '0.78rem' }}>{ev.articulo} · {ocurrencias > 0 ? `${ocurrencias} registro(s)` : 'Sin eventos'}</div>
@@ -2283,228 +2474,309 @@ export default function ObraDetalle() {
                 </div>
               </div>
             )}
+            </div>
           </div>
-
-          {/* Onboarding de trabajadores — seccion separada (track por persona, no es parte de las fases) */}
-          <div className="card" style={{ gridColumn: '1 / -1' }}>
-            <div className="card-header">
-              <div>
-                <div className="card-title">Onboarding de trabajadores</div>
-                <div className="text-muted" style={{ fontSize: '0.85rem' }}>Track por persona, se dispara al vincular. Independiente de la fase y del cumplimiento DS44 de la obra.</div>
-              </div>
-              <LuUsers className="text-muted" />
-            </div>
-                {/* Barra global */}
-                <div style={{ height: '8px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', marginBottom: 'var(--space-3)' }}>
-                  <div style={{ width: `${onboardingSummary.progress}%`, height: '100%', background: 'linear-gradient(90deg,#10b981,#059669)', transition: 'width 300ms ease' }} />
-                </div>
-
-                {onboardingSummary.byWorker.length === 0 ? (
-                  <div className="text-muted" style={{ padding: 'var(--space-3)', textAlign: 'center' }}>
-                    No hay trabajadores activos asignados a esta obra.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                    {onboardingSummary.byWorker.map((worker) => {
-                      const pct = worker.total > 0 ? Math.round((worker.completed / worker.total) * 100) : 0;
-                      const isExpanded = expandedWorkers.has(worker.workerId);
-                      return (
-                        <div key={worker.workerId} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                          {/* Cabecera del worker — clic para expandir */}
-                          <button
-                            onClick={() => toggleExpandWorker(worker.workerId)}
-                            style={{ width: '100%', background: 'none', border: 'none', padding: 'var(--space-3)', cursor: 'pointer', textAlign: 'left' }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-                              <div style={{ minWidth: 0 }}>
-                                <div className="font-medium" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>{worker.nombre}</div>
-                                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>{(worker as any).cargo || 'Trabajador'}</div>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
-                                <div style={{ width: '80px', height: '6px', borderRadius: '999px', background: 'var(--surface-elevated)', overflow: 'hidden' }}>
-                                  <div style={{ width: `${pct}%`, height: '100%', background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444', transition: 'width 300ms' }} />
-                                </div>
-                                <span className={`badge ${pct >= 80 ? 'badge-success' : pct >= 50 ? 'badge-warning' : 'badge-danger'}`} style={{ minWidth: '48px', textAlign: 'center' }}>
-                                  {worker.completed}/{worker.total}
-                                </span>
-                                {isExpanded ? <LuChevronUp size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} /> : <LuChevronDown size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
-                              </div>
-                            </div>
-                          </button>
-
-                          {/* Checklist expandible */}
-                          {isExpanded && (
-                            <div style={{ borderTop: '1px solid var(--surface-border)', padding: 'var(--space-2) var(--space-3)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                              {((worker as any).itemDetail as any[]).map((item) => {
-                                const estado = item.estado as 'pendiente_asignar' | 'pendiente_firma' | 'completo';
-                                const soloFaltaRelator = estado === 'pendiente_firma' && item.firmaRelatorPendiente && item.trabajadorFirmo;
-                                const estadoLabel = estado === 'completo' ? 'Completo'
-                                  : soloFaltaRelator ? 'Pendiente firma relator'
-                                  : estado === 'pendiente_firma' ? 'Pendiente de firma'
-                                  : 'Pendiente de asignar';
-                                const estadoColor = estado === 'completo' ? '#10b981' : estado === 'pendiente_firma' ? '#f59e0b' : 'var(--text-muted)';
-                                return (
-                                <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--surface-border)', gap: 'var(--space-2)' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
-                                    {estado === 'completo'
-                                      ? <LuCircleCheck size={16} style={{ color: '#10b981', flexShrink: 0 }} />
-                                      : <LuClock size={16} style={{ color: estadoColor, flexShrink: 0 }} />
-                                    }
-                                    <div style={{ minWidth: 0 }}>
-                                      <div style={{ fontSize: '0.87rem', fontWeight: estado === 'completo' ? 400 : 500, color: estado === 'completo' ? 'var(--text-muted)' : 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        {item.label}
-                                      </div>
-                                      <div style={{ fontSize: '0.75rem', color: estadoColor }}>{item.articulo} · {estadoLabel}</div>
-                                    </div>
-                                  </div>
-                                  {estado !== 'completo' && (
-                                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                                      {/* Paso 1 — documento sin archivo: subir (no firma, queda pendiente de firma) */}
-                                      {item.kind === 'document' && estado === 'pendiente_asignar' && canSubirDocumentos && (
-                                        <>
-                                          <input
-                                            type="file"
-                                            id={`wd-${worker.workerId}-${item.key}`}
-                                            style={{ display: 'none' }}
-                                            accept="application/pdf,image/*"
-                                            onChange={(e) => {
-                                              const file = e.target.files?.[0];
-                                              if (file) handleInlineWorkerUpload(worker.workerId, item.tipo, file);
-                                              e.target.value = '';
-                                            }}
-                                          />
-                                          <button
-                                            className="btn btn-secondary"
-                                            style={{ padding: '2px 10px', fontSize: '0.78rem' }}
-                                            disabled={uploadingWorkerDoc === `${worker.workerId}:${item.tipo}`}
-                                            onClick={() => document.getElementById(`wd-${worker.workerId}-${item.key}`)?.click()}
-                                          >
-                                            {uploadingWorkerDoc === `${worker.workerId}:${item.tipo}` ? '...' : 'Subir'}
-                                          </button>
-                                        </>
-                                      )}
-                                      {/* Paso 2 — pendiente de firma: el trabajador firma con su PIN (firma asistida) */}
-                                      {estado === 'pendiente_firma' && !item.trabajadorFirmo && (item.kind === 'document' || item.kind === 'signature') && canFirmaAsistida && (
-                                        <button
-                                          className="btn btn-primary"
-                                          style={{ padding: '2px 10px', fontSize: '0.78rem' }}
-                                          onClick={() => { setFirmaAsistidaWorkerId(worker.workerId); setFirmaAsistidaTipo(item.tipo); setFirmaAsistidaOpen(true); }}
-                                        >
-                                          Firma asistida
-                                        </button>
-                                      )}
-                                      {/* Firma cruzada — el relator firma con su propio PIN (requiere permiso firmar_relator) */}
-                                      {estado === 'pendiente_firma' && item.firmaRelatorPendiente && item.documentId && user?.permisos?.includes('firmar_relator') && (
-                                        <button
-                                          className="btn btn-secondary"
-                                          style={{ padding: '2px 10px', fontSize: '0.78rem' }}
-                                          onClick={() => { setRelatorSign({ documentId: item.documentId, titulo: item.label }); setRelatorPin(''); setRelatorModalidad(''); setRelatorError(null); }}
-                                        >
-                                          Firmar como relator
-                                        </button>
-                                      )}
-                                      {/* Firma sin asignar (no debería pasar: el onboarding crea la solicitud) */}
-                                      {item.kind === 'signature' && estado === 'pendiente_asignar' && (
-                                        <span className="text-muted" style={{ fontSize: '0.75rem' }}>Pendiente de asignar</span>
-                                      )}
-                                      {/* Capacitación: se gestiona como actividad con asistencia firmada */}
-                                      {item.kind === 'actividad' && (
-                                        <button
-                                          className="btn btn-secondary"
-                                          style={{ padding: '2px 10px', fontSize: '0.78rem' }}
-                                          onClick={() => navigate('/activities')}
-                                        >
-                                          {estado === 'pendiente_firma' ? 'Ver actividad' : 'Programar'}
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
-                                  {estado === 'completo' && (
-                                    <LuCircleCheck size={16} style={{ color: '#10b981', flexShrink: 0 }} />
-                                  )}
-                                </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-          </div>
-
-          {/* Toast flotante: confirmacion de acciones inline (crear/programar) */}
-          {obraToast && (
-            <div style={{
-              position: 'fixed', top: '24px', right: '24px', zIndex: 9999,
-              background: 'linear-gradient(135deg,#10b981,#059669)', color: 'white',
-              padding: '14px 20px', borderRadius: '12px', boxShadow: '0 4px 24px rgba(16,185,129,0.4)',
-              display: 'flex', alignItems: 'center', gap: '10px',
-              animation: 'fadeInRight 0.3s ease',
-              maxWidth: '340px', fontSize: '0.9rem', fontWeight: 500
-            }}>
-              <LuCircleCheck size={20} style={{ flexShrink: 0 }} />
-              <div>{obraToast}</div>
-            </div>
-          )}
-
-          {/* Toast flotante: PLAN completado (3 segundos) */}
-          {planToast && (
-            <div style={{
-              position: 'fixed', top: '24px', right: '24px', zIndex: 9999,
-              background: 'linear-gradient(135deg,#10b981,#059669)', color: 'white',
-              padding: '14px 20px', borderRadius: '12px', boxShadow: '0 4px 24px rgba(16,185,129,0.4)',
-              display: 'flex', alignItems: 'center', gap: '10px',
-              animation: 'fadeInRight 0.3s ease',
-              maxWidth: '340px', fontSize: '0.9rem', fontWeight: 500
-            }}>
-              <LuCircleCheck size={20} style={{ flexShrink: 0 }} />
-              <div>
-                <div style={{ fontWeight: 700 }}>¡Fase PLAN completada!</div>
-                <div style={{ opacity: 0.9, fontSize: '0.82rem' }}>La obra avanza automáticamente a la Fase DO.</div>
-              </div>
-            </div>
-          )}
-
-          {/* Banner activación Fase HACER cuando PLAN está completo */}
           {faseDeming === 'plan' && planCompleto && (
-            <div className="card" style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none' }}>
+            <div className="card" style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '1.1rem', marginBottom: 'var(--space-1)' }}>
                     <LuCircleCheck size={18} /> Fase PLANIFICAR completada
                   </div>
                   <div style={{ opacity: 0.9, fontSize: '0.9rem' }}>
-                    Todos los documentos de la Fase PLAN han sido subidos. La Fase HACER (DO) se activará automáticamente para continuar con la implementación del PTP.
+                    Todos los documentos de la Fase PLAN han sido subidos. La Fase HACER (DO) se activará automáticamente.
                   </div>
                 </div>
                 <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                  {activatingFaseDeming ? 'Activando Fase HACER...' : 'Activación automática en curso'}
+                  {activatingFaseDeming ? 'Activando Fase HACER...' : 'Activación en curso'}
                 </div>
               </div>
             </div>
           )}
+          </div>
+        )}
 
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Incidentes y Hallazgos</div>
-              <LuShieldAlert className="text-muted" />
+        {/* ── TAB: EQUIPO ─────────────────────────────────────────────────────── */}
+        {activeTab === 'equipo' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            {/* Cabecera de sección */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--text-primary)' }}>
+                  Equipo en obra
+                </div>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginTop: 2 }}>
+                  {activeWorkers.length} activos · {onboardingSummary.progress}% onboarding completado
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                {canFirmaAsistida && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => setFirmaAsistidaOpen(true)}>
+                    Firma asistida
+                  </button>
+                )}
+                {hasPermission(PERMISSIONS.CARGOS_GESTIONAR) && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => navigate('/cargos-onboarding')} title="Kit de onboarding por cargo (nivel empresa)">
+                    <LuSettings size={14} /> Kit empresa
+                  </button>
+                )}
+                {canAsignarTrabajadores && (
+                  <button className="btn btn-primary btn-sm" onClick={() => navigate(`/obras/${obraId}/equipo`)}>
+                    <LuUserPlus size={14} /> Gestionar equipo
+                  </button>
+                )}
+              </div>
             </div>
-            {incidentes.length === 0 ? (
-              <div className="text-muted">No hay incidentes reportados en esta obra.</div>
+
+            {/* Barra de progreso global */}
+            {activeWorkers.length > 0 && (
+              <div style={{ height: '6px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)' }}>
+                <div style={{ width: `${onboardingSummary.progress}%`, height: '100%', background: 'linear-gradient(90deg, #006edc, #004fa3)', transition: 'width 300ms ease' }} />
+              </div>
+            )}
+
+            {/* Lista de trabajadores */}
+            {trabajadores.length === 0 ? (
+              <div className="card" style={{ padding: 'var(--space-6)', textAlign: 'center' }}>
+                <LuUsers size={28} style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-2)' }} />
+                <div style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                  No hay trabajadores asignados.{canAsignarTrabajadores && <> <button className="btn-link" style={{ fontSize: 'inherit', color: 'var(--accent)' }} onClick={() => navigate(`/obras/${obraId}/equipo`)}>Agregar trabajadores</button>.</>}
+                </div>
+              </div>
             ) : (
-              <div style={{ maxHeight: '320px', overflowY: 'auto', paddingRight: 'var(--space-2)', display: 'grid', gap: 'var(--space-3)' }}>
-                {incidentes.map((item) => (
-                  <div key={item.incidentId} className="card" style={{ padding: 'var(--space-3)' }}>
-                    <div className="stat-value">{item.tipo}</div>
-                    <div className="stat-label">{item.estado}</div>
-                  </div>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                {onboardingSummary.byWorker.map((worker) => {
+                  const pct = worker.total > 0 ? Math.round((worker.completed / worker.total) * 100) : 0;
+                  const isExpanded = expandedWorkers.has(worker.workerId);
+                  const hasPendingFirma = ((worker as any).itemDetail as any[]).some(
+                    (item) => item.estado === 'pendiente_firma' && !item.trabajadorFirmo && (item.kind === 'document' || item.kind === 'signature')
+                  );
+                  const ini = `${(worker.nombre || '')[0] ?? ''}${(worker.nombre || '').split(' ')[1]?.[0] ?? ''}`.toUpperCase();
+                  return (
+                    <div key={worker.workerId} style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', background: 'var(--surface)' }}>
+                      {/* Fila principal */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', flexWrap: 'wrap' }}>
+                        {/* Avatar */}
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem', background: 'rgba(0,110,220,0.1)', color: '#4d9fff', border: '1.5px solid rgba(0,110,220,0.2)' }}>
+                          {ini || <LuUsers size={14} />}
+                        </div>
+                        {/* Info */}
+                        <div style={{ flex: 1, minWidth: 120 }}>
+                          <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{worker.nombre}</div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{(worker as any).cargo || 'Trabajador'}</div>
+                        </div>
+                        {/* Progreso + badge */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
+                          <div style={{ width: 72, height: 5, borderRadius: '999px', background: 'var(--surface-elevated)', overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444', transition: 'width 300ms' }} />
+                          </div>
+                          <span className={`badge ${pct >= 80 ? 'badge-success' : pct >= 50 ? 'badge-warning' : 'badge-danger'}`} style={{ minWidth: 42, textAlign: 'center', fontSize: '0.7rem' }}>
+                            {worker.completed}/{worker.total}
+                          </span>
+                          {(worker as any).aptoTerreno
+                            ? <span style={{ fontSize: '0.7rem', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}><LuCircleCheck size={11} /> Apto</span>
+                            : <span style={{ fontSize: '0.7rem', color: '#ef4444', display: 'inline-flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}><LuShieldAlert size={11} /> {(worker as any).bloqueantesPendientes} bloq.</span>
+                          }
+                        </div>
+                        {/* Acciones */}
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          {canFirmaAsistida && hasPendingFirma && (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              style={{ fontSize: '0.75rem', padding: '3px 10px' }}
+                              onClick={() => { setFirmaAsistidaWorkerId(worker.workerId); setFirmaAsistidaOpen(true); }}
+                            >
+                              Firmar
+                            </button>
+                          )}
+                          <button
+                            onClick={() => toggleExpandWorker(worker.workerId)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px', display: 'flex', alignItems: 'center' }}
+                          >
+                            {isExpanded ? <LuChevronUp size={16} /> : <LuChevronDown size={16} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Checklist expandible */}
+                      {isExpanded && (
+                        <div style={{ borderTop: '1px solid var(--surface-border)', padding: 'var(--space-2) var(--space-3)', display: 'flex', flexDirection: 'column', gap: '4px', background: 'var(--surface-base)' }}>
+                          {((worker as any).itemDetail as any[]).map((item) => {
+                            const estado = item.estado as 'pendiente_asignar' | 'pendiente_firma' | 'completo';
+                            const soloFaltaRelator = estado === 'pendiente_firma' && item.firmaRelatorPendiente && item.trabajadorFirmo;
+                            const estadoLabel = estado === 'completo' ? 'Completo'
+                              : soloFaltaRelator ? 'Pendiente firma relator'
+                              : estado === 'pendiente_firma' ? 'Pendiente de firma'
+                              : 'Pendiente de asignar';
+                            const estadoColor = estado === 'completo' ? '#10b981' : estado === 'pendiente_firma' ? '#f59e0b' : 'var(--text-muted)';
+                            return (
+                              <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--surface-border)', gap: 'var(--space-2)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
+                                  {estado === 'completo'
+                                    ? <LuCircleCheck size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                                    : <LuClock size={14} style={{ color: estadoColor, flexShrink: 0 }} />
+                                  }
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: '0.84rem', fontWeight: estado === 'completo' ? 400 : 500, color: estado === 'completo' ? 'var(--text-muted)' : 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {item.label}
+                                    </div>
+                                    <div style={{ fontSize: '0.72rem', color: estadoColor }}>{item.articulo} · {estadoLabel}</div>
+                                  </div>
+                                </div>
+                                {estado !== 'completo' && (
+                                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                    {/* Naturaleza encuesta → asignar encuesta precargada a esta persona. */}
+                                    {item.accion === 'ENCUESTA' && canAsignarTrabajadores && (
+                                      <button
+                                        className="btn btn-primary"
+                                        style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                        onClick={() => agendarItem(worker, item)}
+                                      >
+                                        Asignar encuesta
+                                      </button>
+                                    )}
+                                    {/* Naturaleza capacitación → agendar actividad precargada (cargo/obra/persona). */}
+                                    {item.accion === 'CAPACITACION_EVALUACION' && estado === 'pendiente_asignar' && canAsignarTrabajadores && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                        onClick={() => agendarItem(worker, item)}
+                                        title="Agendar la capacitación de este ítem para esta persona"
+                                      >
+                                        Agendar
+                                      </button>
+                                    )}
+                                    {item.kind === 'document' && item.accion !== 'ENCUESTA' && estado === 'pendiente_asignar' && canSubirDocumentos && (
+                                      <>
+                                        <input
+                                          type="file"
+                                          id={`wd-${worker.workerId}-${item.key}`}
+                                          style={{ display: 'none' }}
+                                          accept="application/pdf,image/*"
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) handleInlineWorkerUpload(worker.workerId, item.tipo, file);
+                                            e.target.value = '';
+                                          }}
+                                        />
+                                        <button
+                                          className="btn btn-secondary"
+                                          style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                          disabled={uploadingWorkerDoc === `${worker.workerId}:${item.tipo}`}
+                                          onClick={() => document.getElementById(`wd-${worker.workerId}-${item.key}`)?.click()}
+                                        >
+                                          {uploadingWorkerDoc === `${worker.workerId}:${item.tipo}` ? '...' : 'Subir'}
+                                        </button>
+                                      </>
+                                    )}
+                                    {estado === 'pendiente_firma' && !item.trabajadorFirmo && (item.kind === 'document' || item.kind === 'signature') && canFirmaAsistida && (
+                                      <button
+                                        className="btn btn-primary"
+                                        style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                        onClick={() => { setFirmaAsistidaWorkerId(worker.workerId); setFirmaAsistidaTipo(item.tipo); setFirmaAsistidaOpen(true); }}
+                                      >
+                                        Firma asistida
+                                      </button>
+                                    )}
+                                    {estado === 'pendiente_firma' && item.firmaRelatorPendiente && item.documentId && user?.permisos?.includes('firmar_relator') && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                        onClick={() => { setRelatorSign({ documentId: item.documentId, titulo: item.label }); setRelatorPin(''); setRelatorModalidad(''); setRelatorError(null); }}
+                                      >
+                                        Firmar como relator
+                                      </button>
+                                    )}
+                                    {item.kind === 'signature' && estado === 'pendiente_asignar' && (
+                                      <span className="text-muted" style={{ fontSize: '0.72rem' }}>Pendiente de asignar</span>
+                                    )}
+                                    {item.kind === 'actividad' && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                        onClick={() => navigate('/activities')}
+                                      >
+                                        {estado === 'pendiente_firma' ? 'Ver actividad' : 'Programar'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                {estado === 'completo' && (
+                                  <LuCircleCheck size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Inactivos */}
+                {inactiveWorkers.length > 0 && (
+                  <details style={{ marginTop: 'var(--space-1)' }}>
+                    <summary style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', padding: 'var(--space-2) 0', listStyle: 'none' }}>
+                      ▶ Dados de baja · {inactiveWorkers.length}
+                    </summary>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                      {inactiveWorkers.map((worker) => (
+                        <div key={worker.personaId} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', opacity: 0.65, background: 'var(--surface)' }}>
+                          <div style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-hover)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                            {`${(worker.nombre || '')[0] ?? ''}${(worker.nombre || '').split(' ')[1]?.[0] ?? ''}`.toUpperCase() || '?'}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{worker.nombre} {worker.apellido || ''}</div>
+                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{worker.cargo || 'Trabajador'} · {worker.rut}</div>
+                          </div>
+                          <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Baja</span>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            type="button"
+                            onClick={() => handleReactivateWorker(worker)}
+                            disabled={updatingWorkers === worker.personaId}
+                          >
+                            Reactivar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
             )}
           </div>
-        </div>
+        )}
+
+        {obraToast && (
+          <div style={{
+            position: 'fixed', top: '24px', right: '24px', zIndex: 9999,
+            background: 'linear-gradient(135deg,#10b981,#059669)', color: 'white',
+            padding: '14px 20px', borderRadius: '12px', boxShadow: '0 4px 24px rgba(16,185,129,0.4)',
+            display: 'flex', alignItems: 'center', gap: '10px',
+            animation: 'fadeInRight 0.3s ease',
+            maxWidth: '340px', fontSize: '0.9rem', fontWeight: 500
+          }}>
+            <LuCircleCheck size={20} style={{ flexShrink: 0 }} />
+            <div>{obraToast}</div>
+          </div>
+        )}
+        {planToast && (
+          <div style={{
+            position: 'fixed', top: '24px', right: '24px', zIndex: 9999,
+            background: 'linear-gradient(135deg,#10b981,#059669)', color: 'white',
+            padding: '14px 20px', borderRadius: '12px', boxShadow: '0 4px 24px rgba(16,185,129,0.4)',
+            display: 'flex', alignItems: 'center', gap: '10px',
+            animation: 'fadeInRight 0.3s ease',
+            maxWidth: '340px', fontSize: '0.9rem', fontWeight: 500
+          }}>
+            <LuCircleCheck size={20} style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 700 }}>¡Fase PLAN completada!</div>
+              <div style={{ opacity: 0.9, fontSize: '0.82rem' }}>La obra avanza automáticamente a la Fase DO.</div>
+            </div>
+          </div>
+        )}
       </div>
 
       <Modal
@@ -2969,7 +3241,7 @@ export default function ObraDetalle() {
             const isDone = bulkUploadDone[item.tipo];
             const isUploading = bulkUploadingTipo === item.tipo;
             return (
-              <div key={item.key} className="card" style={{ padding: 'var(--space-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <div key={item.key} className="ds44-doc-row">
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)', minWidth: 0 }}>
                   {isDone
                     ? <LuCircleCheck size={16} style={{ color: '#10b981', marginTop: '2px', flexShrink: 0 }} />
@@ -3095,37 +3367,97 @@ export default function ObraDetalle() {
                       </div>
                     </div>
                     {isAssigned ? (
-                      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                        <span className={`badge ${isInactive ? 'badge-warning' : 'badge-success'}`}>
-                          {isInactive ? 'Baja' : 'Activo'}
-                        </span>
-                        {!isInactive ? (
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => handleDeactivateWorker(worker)}
-                            disabled={updatingWorkers === workerId || worker.rol === 'admin'}
-                            title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
-                          >
-                            Dar de baja
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => handleReactivateWorker(worker)}
-                            disabled={updatingWorkers === workerId}
-                          >
-                            Reactivar
-                          </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                        {/* Editor de cargo: cambia el/los cargo(s) del trabajador en la obra. */}
+                        {!isInactive && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end', maxWidth: 360 }}>
+                            {cargoOptions.map((opt) => {
+                              const actuales = assignCargos[workerId] ?? cargosActualesEnObra(worker);
+                              const sel = actuales.includes(opt.value);
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  className={`badge ${sel ? 'badge-success' : ''}`}
+                                  style={{ cursor: 'pointer', border: '1px solid var(--surface-border)', background: sel ? undefined : 'transparent' }}
+                                  onClick={() => setAssignCargos((prev) => {
+                                    const base = prev[workerId] ?? cargosActualesEnObra(worker);
+                                    const next = base.includes(opt.value) ? base.filter((c) => c !== opt.value) : [...base, opt.value];
+                                    return { ...prev, [workerId]: next };
+                                  })}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                          <span className={`badge ${isInactive ? 'badge-warning' : 'badge-success'}`}>
+                            {isInactive ? 'Baja' : 'Activo'}
+                          </span>
+                          {!isInactive && assignCargos[workerId] && (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleUpdateCargos(worker)}
+                              disabled={updatingWorkers === workerId}
+                              title="Guardar el/los cargo(s) del trabajador en esta obra"
+                            >
+                              Guardar cargo
+                            </button>
+                          )}
+                          {!isInactive ? (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleDeactivateWorker(worker)}
+                              disabled={updatingWorkers === workerId || worker.rol === 'admin'}
+                              title={worker.rol === 'admin' ? 'No se puede dar de baja a administradores' : undefined}
+                            >
+                              Dar de baja
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleReactivateWorker(worker)}
+                              disabled={updatingWorkers === workerId}
+                            >
+                              Reactivar
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ) : (
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={() => handleAddWorker(worker)}
-                        disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
-                      >
-                        Agregar a obra
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                        {/* Cargo(s) de terreno EN esta obra (multi-cargo). Define el kit. */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end', maxWidth: 360 }}>
+                          {cargoOptions.map((opt) => {
+                            const sel = (assignCargos[workerId] || (worker.cargo ? [worker.cargo] : [])).includes(opt.value);
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                className={`badge ${sel ? 'badge-success' : ''}`}
+                                style={{ cursor: 'pointer', border: '1px solid var(--surface-border)', background: sel ? undefined : 'transparent' }}
+                                onClick={() => setAssignCargos((prev) => {
+                                  const base = prev[workerId] || (worker.cargo ? [worker.cargo] : []);
+                                  const next = base.includes(opt.value) ? base.filter((c) => c !== opt.value) : [...base, opt.value];
+                                  return { ...prev, [workerId]: next };
+                                })}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => handleAddWorker(worker)}
+                          disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
+                          title="Asigna al trabajador a la obra con el/los cargo(s) marcados"
+                        >
+                          Agregar a obra
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -3322,6 +3654,180 @@ export default function ObraDetalle() {
           </div>
         </div>
       </Modal>
+      <style>{`
+        .od-tab-nav {
+          display: flex;
+          gap: 0;
+          border-bottom: 2px solid var(--surface-border);
+          margin-bottom: var(--space-5);
+        }
+        .od-tab {
+          flex: 1;
+          text-align: center;
+          background: none;
+          border: none;
+          border-bottom: 3px solid transparent;
+          margin-bottom: -2px;
+          padding: 10px 16px;
+          font-size: 0.9rem;
+          font-weight: 500;
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: color 0.15s, border-color 0.15s;
+          white-space: nowrap;
+        }
+        .od-tab:hover { color: var(--text-primary); }
+        .od-tab--active {
+          color: #006edc;
+          border-bottom-color: #006edc;
+          font-weight: 600;
+        }
+
+        /* ── DS44 Panel ── */
+        .ds44-panel {
+          border: 1px solid var(--surface-border);
+          border-radius: var(--radius-lg);
+          background: var(--surface-card);
+          overflow: hidden;
+        }
+        .ds44-stepper {
+          display: flex;
+          align-items: center;
+          padding: var(--space-5) var(--space-6);
+          border-bottom: 1px solid var(--surface-border);
+          background: var(--surface-base);
+          gap: 0;
+        }
+        .ds44-phase-btn {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 6px 12px;
+          border-radius: var(--radius-md);
+          transition: background 0.15s;
+          flex-shrink: 0;
+        }
+        .ds44-phase-btn:hover { background: var(--surface-elevated); }
+        .ds44-phase-btn--selected { background: var(--surface-elevated); }
+        .ds44-phase-circle {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          border: 2px solid;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.85rem;
+          font-weight: 700;
+          transition: all 0.2s;
+        }
+        .ds44-phase-label {
+          font-size: 0.7rem;
+          text-transform: uppercase;
+          letter-spacing: 0.07em;
+          transition: color 0.15s;
+        }
+        .ds44-phase-connector {
+          flex: 1;
+          height: 2px;
+          margin: 0 2px;
+          margin-bottom: 28px;
+          border-radius: 1px;
+          transition: background 0.2s;
+          min-width: 12px;
+        }
+        .ds44-progress-bar {
+          padding: var(--space-4) var(--space-6);
+          border-bottom: 1px solid var(--surface-border);
+        }
+        .ds44-progress-track {
+          height: 8px;
+          border-radius: 999px;
+          overflow: hidden;
+          background: var(--surface-elevated);
+          border: 1px solid var(--surface-border);
+        }
+        .ds44-progress-fill {
+          height: 100%;
+          border-radius: 999px;
+          transition: width 0.3s ease;
+        }
+        .ds44-content-section {
+          padding: var(--space-5) var(--space-6);
+        }
+        .ds44-content-header {
+          margin-bottom: var(--space-4);
+          padding-bottom: var(--space-3);
+          border-bottom: 1px solid var(--surface-border);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: var(--space-3);
+        }
+        .ds44-content-title {
+          font-size: 1rem;
+          font-weight: 700;
+          color: var(--text-primary);
+          font-family: var(--font-display);
+        }
+
+        /* ── DS44 content items ── */
+        .ds44-doc-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: var(--space-3);
+          flex-wrap: wrap;
+          padding: var(--space-3) 0;
+          border-bottom: 1px solid var(--surface-border);
+        }
+        .ds44-doc-row:last-child { border-bottom: none; }
+        .ds44-section-label {
+          font-size: 0.75rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.07em;
+          color: var(--text-muted);
+          padding: var(--space-4) 0 var(--space-2);
+          border-top: 1px solid var(--surface-border);
+          margin-top: var(--space-2);
+        }
+        .ds44-section-label:first-of-type { border-top: none; padding-top: var(--space-2); margin-top: 0; }
+        .ds44-activity-block {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: var(--space-3);
+          padding: var(--space-4);
+          border-radius: var(--radius-md);
+          background: var(--surface-elevated);
+          border: 1px solid var(--surface-border);
+          margin-bottom: var(--space-3);
+        }
+        .ds44-alerts {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-2);
+          margin-bottom: var(--space-4);
+        }
+        .ds44-alert {
+          display: flex;
+          align-items: flex-start;
+          gap: var(--space-2);
+          padding: var(--space-2) var(--space-3);
+          border-radius: var(--radius-sm);
+          font-size: 0.8rem;
+          line-height: 1.5;
+        }
+        .ds44-alert-warning { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); color: #92400e; }
+        .ds44-alert-danger  { background: rgba(239,68,68,0.08);  border: 1px solid rgba(239,68,68,0.25);  color: #991b1b; }
+        .ds44-alert-icon { flex-shrink: 0; margin-top: 2px; }
+      `}</style>
     </>
   );
 }

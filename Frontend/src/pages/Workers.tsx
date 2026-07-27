@@ -8,6 +8,7 @@ import {
     type Worker as ApiWorker
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { getCargoLabel } from '../utils/ds44';
 
 // Extender la interfaz Worker para incluir rol (que viene del backend para usuarios legacy)
 interface WorkerWithRole extends ApiWorker {
@@ -209,7 +210,7 @@ export default function Workers() {
                                                     </code>
                                                 </td>
                                                 <td>
-                                                    <div className="font-medium text-sm">{worker.cargo}</div>
+                                                    <div className="font-medium text-sm">{getCargoLabel(worker.cargo)}</div>
                                                 </td>
                                                 <td>
                                                     <span className={`badge badge-${worker.rol === 'prevencionista' ? 'info' : 'secondary'}`}>

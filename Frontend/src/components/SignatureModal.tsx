@@ -15,6 +15,9 @@ interface SignatureModalProps {
     description?: string;
     loading?: boolean;
     error?: string;
+    /** Acción secundaria opcional (ej. "Saltar trabajador" en firma secuencial). */
+    secondaryActionLabel?: string;
+    onSecondaryAction?: () => void;
 }
 
 const typeConfig: Record<SignatureType, { icon: React.ReactNode; label: string; color: string }> = {
@@ -35,6 +38,8 @@ export default function SignatureModal({
     description,
     loading = false,
     error,
+    secondaryActionLabel,
+    onSecondaryAction,
 }: SignatureModalProps) {
     const [isProcessing, setIsProcessing] = useState(false);
     const [pinError, setPinError] = useState('');
@@ -118,6 +123,20 @@ export default function SignatureModal({
                     <div className="signature-modal-processing">
                         <div className="spinner"></div>
                         <span>Procesando firma...</span>
+                    </div>
+                )}
+
+                {/* Acción secundaria (ej. saltar trabajador ausente en firma secuencial) */}
+                {secondaryActionLabel && onSecondaryAction && (
+                    <div style={{ padding: '0 var(--space-6) var(--space-6)', textAlign: 'center' }}>
+                        <button
+                            type="button"
+                            onClick={onSecondaryAction}
+                            disabled={isProcessing || loading}
+                            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 'var(--text-sm)', textDecoration: 'underline' }}
+                        >
+                            {secondaryActionLabel}
+                        </button>
                     </div>
                 )}
 

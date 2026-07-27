@@ -38,6 +38,11 @@ export interface Worker {
     };
     onboardingDS44?: Ds44OnboardingOverrides;
     firmas?: Signature[];
+    obraIds?: string[];
+    asignaciones?: Array<{ obraId: string; cargos: string[]; supervisorPersonaId?: string | null; prevencionistaPersonaId?: string | null; fechaIngreso?: string | null; asignadaPor?: string | null; estado?: string }>;
+    historialAsignaciones?: Array<{ obraId: string; cargos: string[]; supervisorPersonaId?: string | null; fechaIngreso?: string | null; fechaEgreso?: string | null; asignadaPor?: string | null; finalizadaPor?: string | null; motivo?: string }>;
+    evidencias?: Array<{ tipo: string; nombre?: string; emitidoEn?: string; venceEn?: string; origenObraId?: string; estado?: string }>;
+    cursos?: Array<{ nombre: string; institucion?: string; fecha?: string; vencimiento?: string }>;
     createdAt: string;
     updatedAt: string;
 }
@@ -94,6 +99,36 @@ export const workersApi = {
     update: (id: string, data: Partial<Worker>) => {
         const tenantId = localStorage.getItem('tenant_id') || '';
         return personasApi.update(tenantId, id, data as any);
+    },
+
+    // Asigna al trabajador a una obra con sus cargos de terreno (multi-cargo) y,
+    // opcionalmente, su supervisor (cuadrilla) en esa obra. Para supervisores,
+    // prevencionistaPersonaId fija el prevencionista a cargo.
+    setAsignacion: (id: string, obraId: string, cargos: string[], solicitanteId?: string, supervisorPersonaId?: string | null, prevencionistaPersonaId?: string | null) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.setAsignacion(tenantId, id, obraId, cargos, solicitanteId, supervisorPersonaId, prevencionistaPersonaId);
+    },
+
+    quitarAsignacion: (id: string, obraId: string, opts?: { solicitanteId?: string; motivo?: string }) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.quitarAsignacion(tenantId, id, obraId, opts);
+    },
+
+    // Transfiere al trabajador de una obra a otra (finaliza origen + onboarding destino).
+    transferir: (id: string, data: { obraOrigen: string; obraDestino: string; cargos?: string[]; supervisorPersonaId?: string | null; solicitanteId?: string; motivo?: string }) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.transferir(tenantId, id, data);
+    },
+
+    // Historial de capacitaciones/actividades (cross-obra) de la persona.
+    getCapacitaciones: (id: string) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.getCapacitaciones(tenantId, id);
+    },
+
+    addEvidencia: (id: string, evidencia: { tipo: string; fileKey?: string; nombre?: string; emitidoEn?: string; venceEn?: string; origenObraId?: string }) => {
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        return personasApi.addEvidencia(tenantId, id, evidencia);
     },
 
     sign: (id: string, signData: SignData) =>

@@ -162,19 +162,13 @@ class IncidentsRepository {
         const incidentId = uuidv4();
         const now = new Date().toISOString();
 
-        // Strict validation
-        if (!data.tipo || !data.centroTrabajo || !data.trabajador || !data.descripcion) {
-            console.error('[CREATE] Validation failed - missing required fields');
-            throw new Error('Faltan campos obligatorios: tipo, centroTrabajo, trabajador, descripcion');
+        // Validation: tipo siempre requerido; descripcion requerida; resto opcional.
+        if (!data.tipo) {
+            console.error('[CREATE] Validation failed - missing tipo');
+            throw new Error('El tipo de reporte es requerido');
         }
 
-        // Additional validation to prevent empty data
-        if (!data.trabajador.nombre || data.trabajador.nombre.trim() === '') {
-            console.error('[CREATE] Validation failed - empty worker name');
-            throw new Error('El nombre del trabajador es requerido');
-        }
-
-        if (data.descripcion.trim() === '') {
+        if (!data.descripcion || data.descripcion.trim() === '') {
             console.error('[CREATE] Validation failed - empty description');
             throw new Error('La descripción es requerida');
         }
@@ -188,12 +182,12 @@ class IncidentsRepository {
                 || (['condicion_subestandar', 'accion_subestandar'].includes(data.tipo) ? 'hallazgo' : 'incidente'),
             gobernanza: data.gobernanza || null,
             reporteFlash: data.reporteFlash || null,
-            centroTrabajo: data.centroTrabajo,
+            centroTrabajo: data.centroTrabajo || '',
             trabajador: {
-                nombre: data.trabajador.nombre,
-                rut: data.trabajador.rut,
-                genero: data.trabajador.genero || '',
-                cargo: data.trabajador.cargo || ''
+                nombre: data.trabajador?.nombre || '',
+                rut: data.trabajador?.rut || '',
+                genero: data.trabajador?.genero || '',
+                cargo: data.trabajador?.cargo || ''
             },
             fecha: data.fecha || now.split('T')[0],
             hora: data.hora || now.split('T')[1].split('.')[0],
@@ -207,78 +201,27 @@ class IncidentsRepository {
                 jefeDirecto: null,
                 comiteParitario: null
             },
-            estado: 'reportado', // abierto | en_investigacion | cerrado | archivado
+            estado: 'reportado', // reportado | en_investigacion | cerrado
 
-            // ─── DS44 Art. 71 — Cabecera del Informe ──────────────────────────────────
+            // Etapa constructiva (filtro/estadística "Por etapa constructiva")
+            etapaConstructiva: data.etapaConstructiva || '',
+            // Ubicación GPS capturada al reportar
+            ubicacion: data.ubicacion || null,
+
+            // Cabecera del informe — quién genera el reporte (lo muestra el frontend)
             realizadoPor: data.realizadoPor || {
                 personaId: null,
                 nombre: '',
                 cargo: ''
             },
-            dirigidoA: data.dirigidoA || {
-                personaId: null,
-                nombre: '',
-                cargo: '',
-                direccionCentroTrabajo: ''
-            },
 
-            // ─── DS44 — Afectado extendido ────────────────────────────────────────────
-            afectado: data.afectado || {
-                personaId: null,
-                nombreCompleto: data.trabajador?.nombre || '',
-                rut: data.trabajador?.rut || '',
-                fechaNacimiento: null,
-                genero: data.trabajador?.genero || '',
-                nacionalidad: '',
-                edad: null,
-                telefono: '',
-                mail: '',
-                cargo: data.trabajador?.cargo || '',
-                categoriaOcupacional: '',  // 'trabajador_dependiente' | 'independiente' | 'empleador'
-                antiguedadEmpresa: '',
-                puestoAlMomentoAccidente: '',
-                experienciaPuesto: '',
-                turno: false,
-                tipoTurno: ''
-            },
-
-            // ─── DS44 — Datos del accidente extendido ─────────────────────────────────
-            diaSemana: data.diaSemana || '',
-            horasTrabajadas: data.horasTrabajadas || null,
-            direccionAccidente: data.direccionAccidente || data.centroTrabajo || '',
-            comunaAccidente: data.comunaAccidente || '',
-            regionAccidente: data.regionAccidente || '',
-            esFatal: data.esFatal || false,
-            fechaDefuncion: data.fechaDefuncion || null,
-            lugarDefuncion: data.lugarDefuncion || null,
-
-            // ─── DS44 — Investigación (Árbol de Causas) ───────────────────────────────
-            entrevistados: data.entrevistados || [],         // [{ nombre, rut, cargo }]
-            relatoAccidente: data.relatoAccidente || '',
-            antecedentesConsiderados: data.antecedentesConsiderados || [], // [{ tipo, descripcion, documentoId? }]
-            listaHechos: data.listaHechos || [],             // [{ numero, descripcion }]
-            arbolCausasUrl: data.arbolCausasUrl || null,     // S3 URL del diagrama
-            causasRaiz: data.causasRaiz || [],               // [{ descripcion }]
-
-            // ─── DS44 — Medidas correctivas ───────────────────────────────────────────
+            // Medidas correctivas (Art. 71) — read-model de la Fase ACT en ObraDetalle.
+            // [{ numero, causaRaiz, medida, responsableId, responsableNombre, fechaMaxEjecucion, estado:'pendiente'|'en_proceso'|'completada'|'verificada' }]
             medidasCorrectivas: data.medidasCorrectivas || [],
-            // [{ numero, causaRaiz, medida, responsableId, responsableNombre, fechaMaxEjecucion, estado:'pendiente'|'en_proceso'|'completada' }]
-
-            // ─── DS44 — Colaboradores del proceso investigativo ───────────────────────
-            colaboradores: data.colaboradores || [],         // [{ nombre, rut, cargo, tipoColaboracion }]
-
-            // ─── DS44 — Firmas del informe (solo investigadores, NO todos los trabajadores) ─
-            firmas: data.firmas || [],
-            // [{ personaId, nombre, cargo, rol:'prevencionista'|'supervisor'|'cphs'|'colaborador', firmado:false, fechaFirma:null, signatureId:null }]
-
-            // ─── DS44 — Seguimiento de medidas ────────────────────────────────────────
-            fechaVerificacionMedidas: data.fechaVerificacionMedidas || null,
-            medidasVerificadas: data.medidasVerificadas || false,
-            fechaRealizacion: data.fechaRealizacion || now,
-            fechaCierre: data.fechaCierre || null,
 
             reportadoPor: data.reportadoPor || 'sistema',
-            tenantId: data.tenantId || 'default',
+            // El frontend envía tenantId; empresaId se acepta como alias legacy.
+            tenantId: data.tenantId || data.empresaId || 'default',
             obraId: data.obraId || null,
             viewedBy: [],
             createdAt: now,
@@ -330,7 +273,7 @@ class IncidentsRepository {
     }
 
     // LIST
-    async list({ tenantId, tipo, estado, fechaInicio, fechaFin }) {
+    async list({ tenantId, obraId, tipo, estado, fechaInicio, fechaFin }) {
         console.log('Repo.list called');
         let items = [];
 
@@ -350,8 +293,10 @@ class IncidentsRepository {
             items = result.Items || [];
         }
 
+        if (obraId) items = items.filter(item => item.obraId === obraId);
         if (tipo) items = items.filter(item => item.tipo === tipo);
         if (estado) items = items.filter(item => item.estado === estado);
+        if (fechaInicio) items = items.filter(item => item.fecha >= fechaInicio);
         if (fechaFin) items = items.filter(item => item.fecha <= fechaFin);
 
         items.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
@@ -551,6 +496,14 @@ class IncidentsRepository {
         let updateExpression = 'SET updatedAt = :updatedAt';
         const expressionAttributeValues = { ':updatedAt': now };
 
+        if (data.tipo) {
+            updateExpression += ', tipo = :tipo';
+            expressionAttributeValues[':tipo'] = data.tipo;
+        }
+        if (data.clasificacion) {
+            updateExpression += ', clasificacion = :clasificacion';
+            expressionAttributeValues[':clasificacion'] = data.clasificacion;
+        }
         if (data.estado) {
             updateExpression += ', estado = :estado';
             expressionAttributeValues[':estado'] = data.estado;
@@ -627,7 +580,7 @@ class IncidentsRepository {
     }
 
     // GET STATS
-    async getStats({ tenantId, mes, masaLaboral }) {
+    async getStats({ tenantId, obraId, mes, masaLaboral }) {
         mes = mes || new Date().toISOString().slice(0, 7);
         masaLaboral = parseInt(masaLaboral) || 100;
 
@@ -646,6 +599,7 @@ class IncidentsRepository {
             }));
             items = result.Items || [];
         }
+        if (obraId) items = items.filter(item => item.obraId === obraId);
         items = items.filter(item => item.fecha && item.fecha.startsWith(mes));
 
         const accidentes = items.filter(i => i.tipo === 'accidente');
@@ -789,7 +743,7 @@ class IncidentsRepository {
     }
 
     // GET ANALYTICS
-    async getAnalytics({ tenantId, fechaInicio, fechaFin }) {
+    async getAnalytics({ tenantId, obraId, fechaInicio, fechaFin }) {
         fechaFin = fechaFin || new Date().toISOString().split('T')[0];
         let items = [];
 
@@ -808,6 +762,7 @@ class IncidentsRepository {
             items = result.Items || [];
         }
 
+        if (obraId) items = items.filter(item => item.obraId === obraId);
         if (fechaInicio) items = items.filter(item => item.fecha >= fechaInicio);
         if (fechaFin) items = items.filter(item => item.fecha <= fechaFin);
 
@@ -897,9 +852,10 @@ class IncidentsRepository {
             reportadoPor: data.reportadoPor || 'QR-Publico',
             qrToken: data.qrToken || null,
             firmaConfirmacion: data.firmaConfirmacion || null,
-            tenantId: data.tenantId || 'default',
+            tenantId: data.tenantId || data.empresaId || 'default',
             obraId: data.obraId || null,
             origenReporte: 'qr_publico',
+            viewedBy: [],
             createdAt: now,
             updatedAt: now
         };

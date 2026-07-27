@@ -1,15 +1,27 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { SQSClient, SendMessageCommand } = require('@aws-sdk/client-sqs');
 const { docClient } = require('../../lib/clients/dynamodb');
+const { s3Client } = require('../../lib/clients/s3');
 const { success, error, created } = require('../../lib/utils/response');
 const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
+const { PdfStampingService } = require('../../lib/services/PdfStampingService');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { eventBus } = require('../../lib/events/EventBus');
 
 const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
+const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET;
+const DOCUMENT_STAMP_QUEUE_URL = process.env.DOCUMENT_STAMP_QUEUE_URL;
+const sqsClient = new SQSClient({ region: process.env.AWS_REGION || 'us-east-1' });
+
+// Construye las piezas de la UpdateCommand atómica de firmas — ver
+// FirmaService.buildFirmaUpdateParts (compartida con handlers/signatures).
+const buildFirmaUpdateParts = FirmaService.buildFirmaUpdateParts;
 
 // Permisos que habilitan subir/crear documentos (repositorio o documentos de obra).
 const PERMISOS_SUBIR_DOC = [
@@ -66,6 +78,12 @@ const DOCUMENT_TYPES = {
     // Fase ACTUAR (ACT)
     PLAN_MEJORA: 'Plan de Mejora / Medidas Correctivas (Art. 2.16, Art. 14)',
     OTRO: 'Documento General',
+    // Tipos de libre creación desde /documents (no gestionados por onboarding/obra).
+    COMUNICADO: 'Comunicado interno',
+    INSTRUCTIVO: 'Instructivo / Manual',
+    OTRO_NORMATIVO: 'Otro documento de empresa',
+    ACTA_REGISTRO: 'Acta / Registro',
+    OTRO_DIARIO: 'Otro registro de obra',
 };
 
 /**
@@ -158,7 +176,7 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId, tipo, estado, clasificacion, obraId } = event.queryStringParameters || {};
+        const { tenantId, tipo, estado, clasificacion, obraId, pendienteDe, asignadoA } = event.queryStringParameters || {};
         if (!tenantId) return error('tenantId es requerido');
 
         // Query por GSI tenantId-index (no Scan)
@@ -192,9 +210,38 @@ module.exports.list = async (event) => {
         }
 
         const result = await docClient.send(new QueryCommand(params));
+        let documents = result.Items || [];
+
+        // Por defecto se ocultan los archivados (soft-delete al desasignar de la
+        // obra). Solo aparecen si se piden explícitamente con estado=archivado.
+        if (estado !== 'archivado') {
+            documents = documents.filter((doc) => doc.estado !== 'archivado');
+        }
+
+        // pendienteDe={personaId}: documentos de onboarding listos para que ESA
+        // persona los firme — tiene asignación pendiente Y el doc ya tiene archivo
+        // (plantilla pegada). DynamoDB no filtra dentro de listas de mapas, por eso
+        // se filtra en código (la query ya está acotada por tenant).
+        if (pendienteDe) {
+            documents = documents.filter((doc) => {
+                const tieneArchivo = Boolean(doc.s3Key || doc.archivoUrl);
+                if (!tieneArchivo) return false;
+                return (doc.asignaciones || []).some(
+                    (a) => a.personaId === pendienteDe && a.estado === 'pendiente'
+                );
+            });
+        }
+
+        // asignadoA={personaId}: TODOS los documentos donde esa persona tiene una
+        // asignación (firmada o pendiente), para calcular su cumplimiento personal.
+        if (asignadoA) {
+            documents = documents.filter((doc) =>
+                (doc.asignaciones || []).some((a) => a.personaId === asignadoA)
+            );
+        }
 
         return success({
-            documents: result.Items || [],
+            documents,
             types: DOCUMENT_TYPES,
         });
     } catch (err) {
@@ -434,6 +481,7 @@ module.exports.sign = async (event) => {
             firmaResult = await FirmaService.crear({
                 personaId: signerPersonaId,
                 tenantId: documentData.tenantId,
+                obraId: documentData.obraId || null,
                 metodo,
                 credencial: body.pin || {},
                 tipoFirma: body.tipoFirma,
@@ -447,42 +495,34 @@ module.exports.sign = async (event) => {
             return error(firmaErr.message, 400);
         }
 
-        const now = new Date().toISOString();
         const firmaEmbebida = FirmaService.toDocumentFirmaFormat(firmaResult);
-        const firmas = [...(documentData.firmas || []), firmaEmbebida];
-
-        let updateExpression = 'SET firmas = :firmas, updatedAt = :updatedAt';
-        const expressionValues = { ':firmas': firmas, ':updatedAt': now };
+        const parts = buildFirmaUpdateParts({
+            documentData,
+            nuevasFirmas: [firmaEmbebida],
+            asignacionUpdates: esFirmaRelator ? [] : [{ personaId: signerPersonaId }]
+        });
 
         if (esFirmaRelator) {
             // La firma del relator no toca asignaciones: registra firmaRelator.
-            updateExpression += ', firmaRelator = :firmaRelator';
-            expressionValues[':firmaRelator'] = {
+            parts.setClauses.push('firmaRelator = :firmaRelator');
+            parts.values[':firmaRelator'] = {
                 personaId: persona.personaId,
                 nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
-                timestamp: now,
+                timestamp: parts.now,
                 estado: 'firmado'
             };
             if (body.modalidad) {
-                updateExpression += ', modalidad = :modalidad';
-                expressionValues[':modalidad'] = String(body.modalidad);
+                parts.setClauses.push('modalidad = :modalidad');
+                parts.values[':modalidad'] = String(body.modalidad);
             }
-        } else {
-            const asignaciones = (documentData.asignaciones || []).map((a) => {
-                if (a.personaId === signerPersonaId && a.estado === 'pendiente') {
-                    return { ...a, estado: 'firmado', fechaFirma: now };
-                }
-                return a;
-            });
-            updateExpression += ', asignaciones = :asignaciones';
-            expressionValues[':asignaciones'] = asignaciones;
         }
 
         await docClient.send(new UpdateCommand({
             TableName: TABLE_NAME,
             Key: { documentId: id },
-            UpdateExpression: updateExpression,
-            ExpressionAttributeValues: expressionValues
+            UpdateExpression: 'SET ' + parts.setClauses.join(', '),
+            ExpressionAttributeNames: parts.names,
+            ExpressionAttributeValues: parts.values
         }));
 
         return success({
@@ -513,9 +553,14 @@ module.exports.signAssisted = async (event) => {
         const body = JSON.parse(event.body || '{}');
         if (!id) return error('ID de documento requerido');
 
-        const { firmanteId, asistidoPor, metodo = 'PIN' } = body;
+        const { firmanteId, asistidoPor } = body;
         if (!firmanteId) return error('firmanteId (trabajador) es requerido');
         if (!asistidoPor) return error('asistidoPor (quien asiste la firma) es requerido');
+
+        // Solo firma con PIN del trabajador: sin PIN no hay evidencia real, así que
+        // la modalidad presencial queda descartada en la firma asistida.
+        const metodo = 'PIN';
+        if (!body.pin) return error('El trabajador debe ingresar su PIN para firmar', 400);
 
         const personaService = new PersonaService();
 
@@ -564,15 +609,14 @@ module.exports.signAssisted = async (event) => {
             ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
             userAgent: event.headers?.['user-agent'] || 'unknown'
         };
-        const credencial = metodo === 'PIN'
-            ? (body.pin || {})
-            : { firmaManuscrita: body.firmaManuscrita || null };
+        const credencial = body.pin;
 
         let firmaResult;
         try {
             firmaResult = await FirmaService.crear({
                 personaId: firmanteId,
                 tenantId: firmante.tenantId,
+                obraId: documentData.obraId || null,
                 metodo,
                 credencial,
                 tipoFirma: 'documento',
@@ -587,24 +631,18 @@ module.exports.signAssisted = async (event) => {
         }
 
         const firmaEmbebida = FirmaService.toDocumentFirmaFormat(firmaResult);
-        const firmas = [...(documentData.firmas || []), firmaEmbebida];
-        const now = new Date().toISOString();
-        const asignaciones = (documentData.asignaciones || []).map((a) => {
-            if (a.personaId === firmanteId && a.estado === 'pendiente') {
-                return { ...a, estado: 'firmado', fechaFirma: now, asistidoPor };
-            }
-            return a;
+        const parts = buildFirmaUpdateParts({
+            documentData,
+            nuevasFirmas: [firmaEmbebida],
+            asignacionUpdates: [{ personaId: firmanteId, asistidoPor }]
         });
 
         await docClient.send(new UpdateCommand({
             TableName: TABLE_NAME,
             Key: { documentId: id },
-            UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
-            ExpressionAttributeValues: {
-                ':firmas': firmas,
-                ':asignaciones': asignaciones,
-                ':updatedAt': now
-            }
+            UpdateExpression: 'SET ' + parts.setClauses.join(', '),
+            ExpressionAttributeNames: parts.names,
+            ExpressionAttributeValues: parts.values
         }));
 
         return success({
@@ -651,6 +689,7 @@ module.exports.signBulk = async (event) => {
         const metodo = pin ? 'PIN' : 'PRESENCIAL';
         const resultado = await FirmaService.crearBatch(personaIds, {
             tenantId: documentData.tenantId,
+            obraId: documentData.obraId || null,
             metodo,
             credencial: pin || {},
             tipoFirma: tipoFirma || 'trabajador',
@@ -660,26 +699,24 @@ module.exports.signBulk = async (event) => {
         });
 
         const nuevasFirmas = resultado.exitosas.map(f => FirmaService.toDocumentFirmaFormat(f));
-        const firmas = [...(documentData.firmas || []), ...nuevasFirmas];
 
-        const asignaciones = (documentData.asignaciones || []).map((a) => {
-            const firmado = personaIds.includes(a.personaId);
-            if (firmado && a.estado === 'pendiente') {
-                return { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() };
-            }
-            return a;
-        });
+        if (nuevasFirmas.length > 0) {
+            const parts = buildFirmaUpdateParts({
+                documentData,
+                nuevasFirmas,
+                // Solo se marca "firmado" a quienes realmente firmaron con éxito
+                // (antes se marcaba a todo personaIds, incluyendo fallidas).
+                asignacionUpdates: resultado.exitosas.map(f => ({ personaId: f.personaId }))
+            });
 
-        await docClient.send(new UpdateCommand({
-            TableName: TABLE_NAME,
-            Key: { documentId: id },
-            UpdateExpression: 'SET firmas = :firmas, asignaciones = :asignaciones, updatedAt = :updatedAt',
-            ExpressionAttributeValues: {
-                ':firmas': firmas,
-                ':asignaciones': asignaciones,
-                ':updatedAt': new Date().toISOString()
-            }
-        }));
+            await docClient.send(new UpdateCommand({
+                TableName: TABLE_NAME,
+                Key: { documentId: id },
+                UpdateExpression: 'SET ' + parts.setClauses.join(', '),
+                ExpressionAttributeNames: parts.names,
+                ExpressionAttributeValues: parts.values
+            }));
+        }
 
         return success({
             message: `${resultado.exitosas.length} firmas registradas exitosamente`,
@@ -689,5 +726,145 @@ module.exports.signBulk = async (event) => {
     } catch (err) {
         console.error('Error bulk signing document:', err);
         return error(err.message, 500);
+    }
+};
+
+/**
+ * Deriva la key S3 del PDF estampado a partir de la key del PDF original.
+ * Siempre la misma key por documento (se sobreescribe en cada regeneración):
+ * la prueba legal vive en las firmas (inmutables en Signatures/firmas), el
+ * PDF estampado es solo su renderización más reciente.
+ */
+function keyDocumentoFirmado(s3Key) {
+    return s3Key.replace(/\.[^/.]+$/, '') + '.firmado.pdf';
+}
+
+/**
+ * GET /documents/{id}/download-firmado - Descarga el PDF con el anexo de
+ * firmas estampado.
+ *
+ * El estampado se genera "bajo demanda" (lazy), no en cada firma: si la
+ * versión cacheada ya refleja todas las firmas actuales, se devuelve de
+ * inmediato (200). Si no (falta generarla o hay firmas nuevas desde la
+ * última vez), se encola su regeneración en una cola SQS FIFO agrupada por
+ * documentId -- así, si varias personas piden la descarga a la vez (o el
+ * documento se completa justo cuando llegan las últimas firmas), los jobs
+ * se serializan solos sin locks manuales -- y se responde 202 para que el
+ * cliente reintente en unos segundos.
+ */
+module.exports.downloadFirmado = async (event) => {
+    try {
+        const { id } = event.pathParameters || {};
+        if (!id) return error('ID de documento requerido');
+
+        const docResult = await docClient.send(new GetCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id }
+        }));
+        if (!docResult.Item) return error('Documento no encontrado', 404);
+        const documentData = docResult.Item;
+
+        // El archivo puede haber quedado guardado en s3Key o en archivoUrl
+        // según el flujo de creación (ver documents.create / documents.list).
+        const fileKey = documentData.s3Key || documentData.archivoUrl;
+        if (!fileKey) return error('El documento no tiene archivo asociado', 400);
+
+        const firmasCount = (documentData.firmas || []).length;
+
+        // Sin firmas todavía: no hay nada que estampar, se sirve el original.
+        if (firmasCount === 0) {
+            const url = await getSignedUrl(s3Client, new GetObjectCommand({
+                Bucket: DOCUMENTS_BUCKET,
+                Key: fileKey
+            }), { expiresIn: 300 });
+            return success({ estado: 'listo', url, firmasCount });
+        }
+
+        const estampadoAlDia = documentData.documentoFirmadoS3Key
+            && (documentData.documentoFirmadoFirmaCount || 0) === firmasCount;
+
+        if (estampadoAlDia) {
+            const url = await getSignedUrl(s3Client, new GetObjectCommand({
+                Bucket: DOCUMENTS_BUCKET,
+                Key: documentData.documentoFirmadoS3Key
+            }), { expiresIn: 300 });
+            return success({ estado: 'listo', url, firmasCount });
+        }
+
+        // Cache miss: encolar regeneración. MessageDeduplicationId incluye el
+        // conteo de firmas para no encolar trabajo duplicado si varias
+        // personas piden la descarga con el mismo estado de firmas.
+        await sqsClient.send(new SendMessageCommand({
+            QueueUrl: DOCUMENT_STAMP_QUEUE_URL,
+            MessageBody: JSON.stringify({ documentId: id }),
+            MessageGroupId: id,
+            MessageDeduplicationId: `${id}-${firmasCount}`
+        }));
+
+        return success({ estado: 'generando', firmasCount }, 202);
+    } catch (err) {
+        console.error('Error downloading signed document:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * Worker SQS: regenera el PDF estampado de un documento.
+ *
+ * Nunca confía en el estado capturado al encolar el mensaje: vuelve a leer
+ * el documento en este momento y estampa el set de firmas más reciente,
+ * siempre desde el PDF ORIGINAL (nunca desde una versión ya estampada, para
+ * no ir arrastrando anexos duplicados).
+ */
+module.exports.stamp = async (event) => {
+    for (const record of event.Records || []) {
+        let documentId;
+        try {
+            ({ documentId } = JSON.parse(record.body));
+
+            const docResult = await docClient.send(new GetCommand({
+                TableName: TABLE_NAME,
+                Key: { documentId }
+            }));
+            if (!docResult.Item) {
+                console.error(`stamp: documento ${documentId} no encontrado, se descarta el job`);
+                continue;
+            }
+            const documentData = docResult.Item;
+            const firmas = documentData.firmas || [];
+            const fileKey = documentData.s3Key || documentData.archivoUrl;
+
+            // Si mientras el job esperaba en la cola ya se generó una versión
+            // igual o más reciente (job anterior del mismo grupo), no repetir.
+            if ((documentData.documentoFirmadoFirmaCount || 0) >= firmas.length) {
+                continue;
+            }
+            if (!fileKey) {
+                console.error(`stamp: documento ${documentId} no tiene archivo asociado, se descarta el job`);
+                continue;
+            }
+
+            const original = await PdfStampingService.descargarOriginal(DOCUMENTS_BUCKET, fileKey);
+            const estampado = await PdfStampingService.estamparAnexo(original, firmas, { titulo: documentData.titulo });
+
+            const estampadoKey = keyDocumentoFirmado(fileKey);
+            await PdfStampingService.subirEstampado(DOCUMENTS_BUCKET, estampadoKey, estampado);
+
+            await docClient.send(new UpdateCommand({
+                TableName: TABLE_NAME,
+                Key: { documentId },
+                UpdateExpression: 'SET documentoFirmadoS3Key = :key, documentoFirmadoFirmaCount = :count, documentoFirmadoAt = :now',
+                ExpressionAttributeValues: {
+                    ':key': estampadoKey,
+                    ':count': firmas.length,
+                    ':now': new Date().toISOString()
+                }
+            }));
+        } catch (err) {
+            console.error(`Error estampando documento ${documentId}:`, err);
+            // Se relanza para que SQS reintente (y, tras agotar los reintentos,
+            // el mensaje caiga al DLQ en vez de perderse silenciosamente).
+            throw err;
+        }
     }
 };

@@ -8,9 +8,12 @@ export interface User {
     tenantId: string;
     rut: string;
     nombre: string;
+    apellidoPaterno: string;
+    apellidoMaterno: string;
     apellido: string;
     rol: PersonaRol;
     permisos?: string[];
+    branding?: { logoUrl?: string | null; colorPrimario?: string | null } | null;
     email?: string;
     telefono?: string;
     fotoPerfil?: string;
@@ -35,6 +38,11 @@ export interface Ds44OnboardingOverrides {
     };
 }
 
+export interface PersonaDesvinculacion {
+    fechaDesvinculacion: string;
+    desvinculadoPor: string | null;
+}
+
 export interface PersonaResponse {
     personaId: string;
     tenantId: string;
@@ -47,8 +55,11 @@ export interface PersonaResponse {
     notificacionesSms?: boolean;
     fechaNacimiento?: string;
     rol: string;
+    // Resueltos por el backend desde la def. de roles del tenant (GET /personas).
+    rolNombre?: string;
+    rolTipo?: 'admin' | 'jefe_obra' | 'prevencionista' | 'supervisor' | 'trabajador' | null;
     cargo: string;
-    estado: string;
+    estado: 'pendiente' | 'activo' | 'inactivo' | 'suspendido' | 'desvinculado';
     tieneAccesoWeb: boolean;
     habilitado: boolean;
     pinConfigurado: boolean;
@@ -59,6 +70,8 @@ export interface PersonaResponse {
     nivelEscolar?: string;
     cursos?: Array<{ nombre: string; institucion?: string; fecha?: string; vencimiento?: string }>;
     onboardingDS44?: Ds44OnboardingOverrides;
+    creadoPor?: string | null;
+    desvinculacion?: PersonaDesvinculacion | null;
     createdAt: string;
     updatedAt: string;
 }

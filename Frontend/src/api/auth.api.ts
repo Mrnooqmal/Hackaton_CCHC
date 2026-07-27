@@ -23,6 +23,13 @@ export interface SessionInfo {
     lastActivity: string;
 }
 
+export interface ResetPasswordData {
+    personaId: string;
+    token: string;
+    passwordNuevo: string;
+    confirmarPassword: string;
+}
+
 export const authApi = {
     login: (rut: string, password: string) =>
         apiRequest<LoginResponse>('/auth/login', {
@@ -32,6 +39,20 @@ export const authApi = {
 
     changePassword: (data: ChangePasswordData) =>
         apiRequest<{ message: string }>('/auth/change-password', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    // Solicitar recuperación de contraseña. Respuesta siempre genérica (anti-enumeración).
+    forgotPassword: (rut: string) =>
+        apiRequest<{ message: string }>('/auth/forgot-password', {
+            method: 'POST',
+            body: JSON.stringify({ rut }),
+        }),
+
+    // Restablecer contraseña con el token recibido por correo.
+    resetPassword: (data: ResetPasswordData) =>
+        apiRequest<{ message: string }>('/auth/reset-password', {
             method: 'POST',
             body: JSON.stringify(data),
         }),

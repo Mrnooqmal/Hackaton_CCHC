@@ -23,10 +23,15 @@ class TenantService {
      * Setup inicial de un nuevo tenant
      */
     async setup(data) {
-        const validation = validateRequired(data, ['nombre', 'rutEmpresa', 'cantidadTrabajadores']);
+        const validation = validateRequired(data, ['nombre', 'rutEmpresa']);
         if (!validation.valid) {
             throw new Error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
+
+        // La empresa parte con tamaño 1: solo se cuenta al administrador. Cada
+        // trabajador que se registre (manual o carga masiva) incrementa el conteo
+        // de forma automática. No se solicita un número manual al crear la empresa.
+        const cantidadTrabajadores = 1;
 
         // Verificar unicidad del nombre (via slug)
         const slug = this._generarSlug(data.nombre);
@@ -47,10 +52,7 @@ class TenantService {
             slug,
             nombre: data.nombre,
             rutEmpresa: data.rutEmpresa,
-            email: data.email || '',
-            telefono: data.telefono || '',
-            plan: data.plan || 'starter',
-            cantidadTrabajadores: data.cantidadTrabajadores,
+            cantidadTrabajadores,
             settings: data.settings,
             reglas: data.reglas,
             preferencias: data.preferencias,
@@ -97,9 +99,8 @@ class TenantService {
      * Actualizar configuración del tenant
      */
     async updateConfig(tenantId, updates) {
-        const allowedFields = ['nombre', 'email', 'telefono', 'plan',
-            'cantidadTrabajadores', 'settings', 'reglas', 'preferencias',
-            'roles', 'estado', 'adminPersonaId'];
+        const allowedFields = ['nombre', 'cantidadTrabajadores', 'settings',
+            'reglas', 'preferencias', 'roles', 'estado', 'adminPersonaId'];
 
         // Normalizar roles a { id, nombre, descripcion } antes de persistir
         if (Array.isArray(updates.roles)) {
@@ -153,6 +154,55 @@ class TenantService {
      */
     async activar(tenantId) {
         return this.updateConfig(tenantId, { estado: 'activo' });
+    }
+
+    /**
+     * Ajusta de forma atómica la cantidad de trabajadores del tenant (delta puede
+     * ser positivo al registrar personas o negativo al desvincularlas) y recalcula
+     * el tamaño de la empresa. Se usa ADD para evitar condiciones de carrera en la
+     * carga masiva. El conteo nunca baja de 1 (el administrador siempre cuenta).
+     */
+    async ajustarCantidadTrabajadores(tenantId, delta) {
+        if (!delta) return null;
+
+        const now = new Date().toISOString();
+        const result = await this.dynamo.send(new UpdateCommand({
+            TableName: this.table,
+            Key: {
+                PK: `TENANT#${tenantId}`,
+                SK: `METADATA#${tenantId}`
+            },
+            UpdateExpression: 'ADD cantidadTrabajadores :delta SET updatedAt = :updatedAt',
+            ExpressionAttributeValues: { ':delta': delta, ':updatedAt': now },
+            ReturnValues: 'ALL_NEW'
+        }));
+
+        let cantidad = result.Attributes?.cantidadTrabajadores ?? 0;
+
+        // Piso de seguridad: nunca menos de 1 (el administrador siempre cuenta).
+        if (cantidad < 1) {
+            cantidad = 1;
+            await this.dynamo.send(new UpdateCommand({
+                TableName: this.table,
+                Key: { PK: `TENANT#${tenantId}`, SK: `METADATA#${tenantId}` },
+                UpdateExpression: 'SET cantidadTrabajadores = :c',
+                ExpressionAttributeValues: { ':c': cantidad }
+            }));
+        }
+
+        // Recalcular el tamaño si cambió de tramo (micro/pequeña/mediana/grande).
+        const tamano = Tenant.calcularTamano(cantidad);
+        if (tamano !== result.Attributes?.tamano) {
+            await this.dynamo.send(new UpdateCommand({
+                TableName: this.table,
+                Key: { PK: `TENANT#${tenantId}`, SK: `METADATA#${tenantId}` },
+                UpdateExpression: 'SET #tamano = :tamano',
+                ExpressionAttributeNames: { '#tamano': 'tamano' },
+                ExpressionAttributeValues: { ':tamano': tamano }
+            }));
+        }
+
+        return cantidad;
     }
 
     /**

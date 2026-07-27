@@ -1,17 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { KeyboardEvent } from 'react';
 import {
-    FiPlus, FiAlertTriangle, FiFilter, FiX, FiUpload, FiImage,
-    FiUser, FiMapPin, FiCalendar, FiTrendingUp, FiActivity,
-    FiAlertCircle, FiFileText, FiSave, FiChevronDown, FiChevronUp,
+    FiPlus, FiAlertTriangle, FiX, FiUpload, FiImage,
+    FiUser, FiCalendar, FiActivity,
+    FiAlertCircle, FiFileText, FiSave,
     FiPieChart, FiList, FiBarChart2, FiCheck, FiArrowRight,
-    FiMic, FiCamera, FiStopCircle, FiRefreshCw, FiPlay, FiZap
+    FiMic, FiCamera, FiRefreshCw, FiChevronLeft, FiChevronRight
 } from 'react-icons/fi';
 import { incidentsApi, aiApi, workersApi } from '../api/client';
 import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData, IncidentLocation } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
-import { Modal, Select } from '../components/ui';
+import { Modal, Select, PageHeader } from '../components/ui';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
 
@@ -49,18 +50,22 @@ const ETAPAS_CONSTRUCTIVAS = [
 
 export default function Incidents() {
     const { user, hasPermission } = useAuth();
+    const { selectedObraId, obras } = useObraContext();
+    const selectedObra = obras.find(o => o.obraId === selectedObraId) ?? null;
     const [incidents, setIncidents] = useState<Incident[]>([]);
     const [stats, setStats] = useState<IncidentStats | null>(null);
-    const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+    const [_analytics, setAnalytics] = useState<AnalyticsData | null>(null);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailError, setDetailError] = useState('');
-    const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
-    const [showFilters, setShowFilters] = useState(false);
+    // Carrusel de evidencias: índice de la imagen abierta dentro de la galería
+    // navegable (o null si el visor está cerrado).
+    const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+    const [_showFilters, _setShowFilters] = useState(false);
     const [activeTab, setActiveTab] = useState<'listado' | 'estadisticas'>('listado');
-    const [filters, setFilters] = useState({
+    const [filters, _setFilters] = useState({
         tipo: '',
         estado: '',
         fechaInicio: '',
@@ -96,7 +101,7 @@ export default function Incidents() {
     // El mensaje de error de ubicación ya no se muestra en la UI; se conserva el setter
     const [, setLocationError] = useState('');
 
-    const [chartMetric, setChartMetric] = useState<'total' | 'accidentes' | 'incidentes'>('total');
+    const [_chartMetric, _setChartMetric] = useState<'total' | 'accidentes' | 'incidentes'>('total');
     const [calendarMonth, setCalendarMonth] = useState(new Date());
     const [showSuccess, setShowSuccess] = useState(false);
     const [formError, setFormError] = useState('');
@@ -106,6 +111,7 @@ export default function Incidents() {
     const canCreateIncidente = hasPermission(PERMISSIONS.INCIDENTES_REPORTAR);
     const canVerEstadisticas = hasPermission(PERMISSIONS.INCIDENTES_ESTADISTICAS);
     const canVerHistorial = hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL);
+    const canCalificarAccidente = hasPermission(PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE);
     const [listTab, setListTab] = useState<'hallazgos' | 'incidentes'>('incidentes');
     const esHallazgo = (inc: Incident) =>
         (inc as any).clasificacion === 'hallazgo' || ['condicion_subestandar', 'accion_subestandar'].includes(inc.tipo);
@@ -175,13 +181,13 @@ export default function Incidents() {
     useEffect(() => {
         loadIncidents();
         loadStats();
-    }, [filters]);
+    }, [filters, selectedObraId]);
 
     useEffect(() => {
         if (activeTab === 'estadisticas') {
             loadAnalytics();
         }
-    }, [activeTab]);
+    }, [activeTab, selectedObraId]);
 
     // Si el usuario no puede ver el historial pero sí estadísticas, abre esa pestaña.
     useEffect(() => {
@@ -200,14 +206,23 @@ export default function Incidents() {
     }, [showModal]);
 
     const loadIncidents = async () => {
+        if (!selectedObraId) {
+            setIncidents([]);
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
             const response = await incidentsApi.list({
-                empresaId: user?.empresaId,
+                tenantId: user?.tenantId,
+                obraId: selectedObraId,
                 ...filters
             });
             if (response.success && response.data) {
-                setIncidents(response.data);
+                // Garantía de aislamiento por obra: aunque el backend devuelva de más
+                // (registros legacy sin obraId, o respuesta sin filtrar), la tabla solo
+                // muestra reportes cuya obraId coincide EXACTAMENTE con la obra activa.
+                setIncidents(response.data.filter((inc) => inc.obraId === selectedObraId));
             }
         } catch (error) {
             console.error('Error cargando incidentes:', error);
@@ -217,10 +232,12 @@ export default function Incidents() {
     };
 
     const loadStats = async () => {
+        if (!selectedObraId) { setStats(null); return; }
         try {
             const response = await incidentsApi.getStats({
-                empresaId: user?.empresaId,
-                masaLaboral: 100 // TODO: Obtener de configuración
+                tenantId: user?.tenantId,
+                obraId: selectedObraId,
+                masaLaboral: 100
             });
             if (response.success && response.data) {
                 setStats(response.data);
@@ -232,9 +249,11 @@ export default function Incidents() {
     };
 
     const loadAnalytics = async () => {
+        if (!selectedObraId) { setAnalytics(null); return; }
         try {
             const response = await incidentsApi.getAnalytics({
-                empresaId: user?.tenantId || user?.empresaId
+                tenantId: user?.tenantId,
+                obraId: selectedObraId,
             });
             if (response.success && response.data) {
                 setAnalytics(response.data);
@@ -257,16 +276,26 @@ export default function Incidents() {
     };
 
     // AI Quick Report States
-    const [step, setStep] = useState(0); // 0: Quick Capture, 1: Form Details
-    const [isRecording, setIsRecording] = useState(false);
-    const [transcript, setTranscript] = useState('');
-    const [isProcessingAI, setIsProcessingAI] = useState(false);
-    const [isTranscribing, setIsTranscribing] = useState(false);
+    const [step, setStep] = useState(1);
     const [cameraActive, setCameraActive] = useState(false);
     const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioChunksRef = useRef<Blob[]>([]);
+
+    // Dictation for description field
+    const [isDictating, setIsDictating] = useState(false);
+    const [isTranscribingDesc, setIsTranscribingDesc] = useState(false);
+    const dictationRecorderRef = useRef<MediaRecorder | null>(null);
+    const dictationChunksRef = useRef<Blob[]>([]);
+
+    // Confirmación inline para calificar como accidente
+    const [confirmingAccidenteId, setConfirmingAccidenteId] = useState<string | null>(null);
+    const [markingAccidente, setMarkingAccidente] = useState(false);
+
+    // Multiple afectados for accion subestandar
+    const [afectados, setAfectados] = useState<Array<{ nombre: string; rut: string; cargo: string }>>([{ nombre: '', rut: '', cargo: '' }]);
+    const [afectadoSearch, setAfectadoSearch] = useState<string[]>(['']);
+    const [showAfectadoDropdown, setShowAfectadoDropdown] = useState<boolean[]>([false]);
 
     const requestLocation = useCallback(async (options?: { force?: boolean }) => {
         if (location && !options?.force) return location;
@@ -345,7 +374,6 @@ export default function Incidents() {
         if (!showModal) {
             stopCamera();
             stopRecording(); // ADDED: Ensure recording stops when modal closes
-            setTranscript('');
             setFormError('');
         }
     }, [showModal]);
@@ -395,62 +423,10 @@ export default function Incidents() {
     const handleCloseModal = () => {
         setShowModal(false);
         setShowSuccess(false);
-        setStep(0);
+        setStep(1);
         resetForm();
     };
 
-    const startRecording = async () => {
-        setIsRecording(true);
-        audioChunksRef.current = []; // Clear previous chunks
-
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mediaRecorder = new MediaRecorder(stream);
-            mediaRecorderRef.current = mediaRecorder;
-
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    audioChunksRef.current.push(event.data);
-                }
-            };
-
-            mediaRecorder.onstop = async () => {
-                setIsRecording(false);
-                setIsTranscribing(true); // Start loading state
-
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                const reader = new FileReader();
-                reader.readAsDataURL(audioBlob);
-                reader.onloadend = async () => {
-                    const base64String = (reader.result as string).split(',')[1];
-                    try {
-                        console.log('Enviando audio a transcribir...');
-                        const result = await aiApi.transcribeAudio(base64String, 'audio/webm');
-                        if (result.success && result.data) {
-                            setTranscript(result.data.text);
-                            console.log('Transcripción exitosa');
-                        } else {
-                            setFormError('No se pudo transcribir el audio.');
-                        }
-                    } catch (error) {
-                        console.error('Error en transcripción:', error);
-                        setFormError('Error al contactar el servicio de transcripción.');
-                    } finally {
-                        setIsTranscribing(false);
-                        // Clean up tracks
-                        stream.getTracks().forEach(track => track.stop());
-                    }
-                };
-            };
-
-            mediaRecorder.start();
-            setFormError('');
-        } catch (error) {
-            console.error('Error al acceder al micrófono:', error);
-            setFormError('Acceso al micrófono denegado o no soportado.');
-            setIsRecording(false);
-        }
-    };
 
     const stopRecording = () => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -458,36 +434,54 @@ export default function Incidents() {
         }
     };
 
-    const processWithAI = async () => {
-        if (!transcript) return;
-
-        setIsProcessingAI(true);
+    const startDictation = async () => {
+        setIsDictating(true);
+        dictationChunksRef.current = [];
         try {
-            const response = await aiApi.extractIncident(transcript);
-            if (response.success && response.data) {
-                const data = response.data;
-                setFormData(prev => ({
-                    ...prev,
-                    tipo: (data.tipo as any) || prev.tipo,
-                    centroTrabajo: data.centroTrabajo || prev.centroTrabajo,
-                    descripcion: data.descripcion || transcript,
-                    gravedad: (data.gravedad as any) || prev.gravedad,
-                    trabajador: {
-                        ...prev.trabajador,
-                        nombre: data.trabajador?.nombre || prev.trabajador.nombre,
-                        rut: data.trabajador?.rut || prev.trabajador.rut,
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            dictationRecorderRef.current = mediaRecorder;
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) dictationChunksRef.current.push(e.data);
+            };
+            mediaRecorder.onstop = async () => {
+                setIsDictating(false);
+                setIsTranscribingDesc(true);
+                stream.getTracks().forEach(t => t.stop());
+                const audioBlob = new Blob(dictationChunksRef.current, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = async () => {
+                    const base64 = (reader.result as string).split(',')[1];
+                    try {
+                        const result = await aiApi.transcribeAudio(base64, 'audio/webm');
+                        if (result.success && result.data) {
+                            setFormData(prev => ({
+                                ...prev,
+                                descripcion: prev.descripcion ? prev.descripcion + ' ' + result.data!.text : result.data!.text
+                            }));
+                        }
+                    } catch {
+                        setFormError('No se pudo transcribir el audio.');
+                    } finally {
+                        setIsTranscribingDesc(false);
                     }
-                }));
-            }
-            setStep(1); // Move to form details
-        } catch (err) {
-            console.error('Error processing with AI:', err);
-            setFormData(prev => ({ ...prev, descripcion: transcript }));
-            setStep(1);
-        } finally {
-            setIsProcessingAI(false);
+                };
+            };
+            mediaRecorder.start();
+            setFormError('');
+        } catch {
+            setIsDictating(false);
+            setFormError('No se pudo acceder al micrófono.');
         }
     };
+
+    const stopDictation = () => {
+        if (dictationRecorderRef.current && dictationRecorderRef.current.state !== 'inactive') {
+            dictationRecorderRef.current.stop();
+        }
+    };
+
 
     const uploadFiles = async (incidentId: string): Promise<string[]> => {
         const s3Keys: string[] = [];
@@ -535,13 +529,33 @@ export default function Incidents() {
                 ? (formData.tipoHallazgo === 'accion' ? 'accion_subestandar' : 'condicion_subestandar')
                 : formData.tipo;
 
-            const payload: CreateIncidentData = {
+            const nombreCompleto = [user?.nombre, user?.apellidoPaterno, user?.apellidoMaterno].filter(Boolean).join(' ');
+            const payload: CreateIncidentData & { realizadoPor: unknown } = {
                 ...formData,
                 tipo: tipoEfectivo as CreateIncidentData['tipo'],
+                obraId: selectedObraId || undefined,
                 solicitanteId: user?.personaId,
-                reportadoPor: user?.nombre || 'Usuario',
+                reportadoPor: nombreCompleto || 'Usuario',
+                realizadoPor: {
+                    personaId: user?.personaId || null,
+                    nombre: nombreCompleto || '',
+                    rut: user?.rut || '',
+                    cargo: '',
+                },
+                // El backend persiste tenantId; empresaId se mantiene como alias legacy.
+                tenantId: (user as any)?.tenantId,
                 empresaId: (user as any)?.tenantId,
-                ubicacion: currentLocation || undefined
+                ubicacion: currentLocation || undefined,
+                // centroTrabajo no se captura en el formulario actual — backend lo acepta vacío
+                centroTrabajo: formData.centroTrabajo || '',
+                // Para hallazgos el trabajador es opcional; se pasa null cuando no se seleccionó
+                ...(esHallazgoForm && !formData.trabajador.nombre
+                    ? { trabajador: { nombre: '', rut: '', genero: '', cargo: '' } }
+                    : {}),
+                // Afectados de acción subestándar (múltiples, opcional)
+                ...(esHallazgoForm && formData.tipoHallazgo === 'accion'
+                    ? { afectados: afectados.filter(a => a.nombre.trim() !== '') }
+                    : {})
             };
 
             if (esFlashForm) {
@@ -589,6 +603,26 @@ export default function Incidents() {
         }
     };
 
+    const handleMarcarAccidente = async (incidentId: string) => {
+        if (!user?.personaId) return;
+        setMarkingAccidente(true);
+        try {
+            const res = await incidentsApi.marcarAccidente(incidentId, user.personaId);
+            if (res.success) {
+                setIncidents(prev => prev.map(i =>
+                    i.incidentId === incidentId
+                        ? { ...i, tipo: 'accidente', clasificacion: 'incidente' }
+                        : i
+                ));
+            }
+        } catch {
+            // silencioso — el usuario puede reintentar
+        } finally {
+            setMarkingAccidente(false);
+            setConfirmingAccidenteId(null);
+        }
+    };
+
     const resetForm = () => {
         setFormData({
             tipo: 'incidente',
@@ -618,16 +652,13 @@ export default function Incidents() {
         setFlashUbicacion('');
         setTrabajadorSearch('');
         setShowTrabajadorDropdown(false);
+        setAfectados([{ nombre: '', rut: '', cargo: '' }]);
+        setAfectadoSearch(['']);
+        setShowAfectadoDropdown([false]);
+        setIsDictating(false);
+        setIsTranscribingDesc(false);
     };
 
-    const clearFilters = () => {
-        setFilters({
-            tipo: '',
-            estado: '',
-            fechaInicio: '',
-            fechaFin: ''
-        });
-    };
 
     const openIncidentDetail = async (incident: Incident) => {
         setDetailError('');
@@ -682,20 +713,13 @@ export default function Incidents() {
         return badges[gravedad] || 'badge-secondary';
     };
 
-    const getTipoIcon = (tipo: string) => {
-        const icons: Record<string, React.ReactElement> = {
-            accidente: <FiAlertCircle className="text-danger-500" />,
-            incidente: <FiAlertTriangle className="text-warning-500" />,
-            condicion_subestandar: <FiActivity className="text-info-500" />
-        };
-        return icons[tipo] || <FiAlertTriangle />;
-    };
 
     const getTipoLabel = (tipo: string) => {
         const labels: Record<string, string> = {
-            accidente: 'Accidente',
+            accidente: 'Incidente',
             incidente: 'Incidente',
-            condicion_subestandar: 'Condición Subestándar'
+            condicion_subestandar: 'Condición Subestándar',
+            accion_subestandar: 'Acción Subestándar',
         };
         return labels[tipo] || tipo;
     };
@@ -756,14 +780,6 @@ export default function Incidents() {
         return days;
     };
 
-    // Get chart metric label
-    const getMetricLabel = () => {
-        switch (chartMetric) {
-            case 'total': return 'Total Eventos';
-            case 'accidentes': return 'Accidentes';
-            case 'incidentes': return 'Incidentes';
-        }
-    };
 
     // Navigate calendar month
     const navigateMonth = (direction: number) => {
@@ -929,36 +945,87 @@ export default function Incidents() {
             }))
         : [];
 
+    // Solo las evidencias con imagen disponible son navegables en el carrusel.
+    const viewableEvidence = incidentEvidenceItems.filter(item => !!item.url);
+    const lightboxItem = lightboxIndex !== null ? viewableEvidence[lightboxIndex] : null;
+
+    const openLightbox = (item: { url?: string }) => {
+        const idx = viewableEvidence.findIndex(v => v.url === item.url);
+        if (idx >= 0) setLightboxIndex(idx);
+    };
+    const showPrevEvidence = () =>
+        setLightboxIndex(i => (i === null ? i : (i - 1 + viewableEvidence.length) % viewableEvidence.length));
+    const showNextEvidence = () =>
+        setLightboxIndex(i => (i === null ? i : (i + 1) % viewableEvidence.length));
+
+    // Navegación por teclado mientras el carrusel está abierto.
+    useEffect(() => {
+        if (lightboxIndex === null) return;
+        const onKey = (e: globalThis.KeyboardEvent) => {
+            if (e.key === 'Escape') setLightboxIndex(null);
+            else if (e.key === 'ArrowLeft') showPrevEvidence();
+            else if (e.key === 'ArrowRight') showNextEvidence();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lightboxIndex, viewableEvidence.length]);
+
     return (
         <>
             <div className="page-content">
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <h2 className="page-header-title">
-                            <FiAlertTriangle className="text-warning-500" />
-                            Control de Incidentes
-                        </h2>
-                        <p className="page-header-description">Sistema de reporte, seguimiento y análisis estadístico de seguridad.</p>
-                    </div>
-                    <div className="page-header-actions" style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'hallazgo' })); setFlashMode(false); setShowModal(true); }}
-                        >
-                            <FiPlus className="mr-2" />
-                            Reportar hallazgo
-                        </button>
-                        {canCreateIncidente && (
+                <PageHeader
+                    banner
+                    scope={{ label: selectedObra?.nombre ? `Obra · ${selectedObra.nombre}` : 'Seguridad' }}
+                    title="Incidentes y hallazgos"
+                    description="Reporte, seguimiento y análisis estadístico de incidentes, accidentes y hallazgos de seguridad."
+                    actions={
+                        <>
                             <button
-                                className="btn btn-primary"
-                                onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'incidente' })); setShowModal(true); }}
+                                className="btn btn-secondary"
+                                disabled={!selectedObraId}
+                                onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'hallazgo' })); setFlashMode(false); setStep(1); setShowModal(true); }}
                             >
-                                <FiPlus className="mr-2" />
-                                Reportar Incidente
+                                <FiPlus /> Reportar hallazgo
                             </button>
-                        )}
+                            {canCreateIncidente && (
+                                <button
+                                    className="btn btn-save"
+                                    disabled={!selectedObraId}
+                                    onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'incidente' })); setStep(1); setShowModal(true); }}
+                                >
+                                    <FiPlus /> Reportar incidente
+                                </button>
+                            )}
+                        </>
+                    }
+                />
+
+                {/* Gate: obra requerida */}
+                {!selectedObraId && (
+                    <div style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: 'var(--space-16) var(--space-6)', textAlign: 'center', gap: 'var(--space-4)'
+                    }}>
+                        <div style={{
+                            width: 64, height: 64, borderRadius: '50%',
+                            background: 'var(--warning-500, #f59e0b)', opacity: 0.12,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            position: 'relative'
+                        }}>
+                        </div>
+                        <FiAlertCircle size={40} style={{ color: 'var(--warning-500, #f59e0b)', marginTop: '-68px', position: 'relative', zIndex: 1 }} />
+                        <p style={{ fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--text-primary)', margin: 0 }}>
+                            Debe seleccionar una obra antes de acceder a los incidentes
+                        </p>
+                        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', maxWidth: 380, margin: 0 }}>
+                            Use el selector de obra en la barra superior para elegir la obra de la que desea ver o reportar incidentes y hallazgos.
+                        </p>
                     </div>
-                </div>
+                )}
+
+                {/* Contenido — solo visible cuando hay obra seleccionada */}
+                {selectedObraId && <>
 
                 {/* Tabs — cada pestaña requiere su permiso de vista */}
                 {(canVerHistorial || canVerEstadisticas) && (
@@ -985,397 +1052,247 @@ export default function Incidents() {
                 )}
 
                 {/* Statistics Dashboard Tab */}
-                {activeTab === 'estadisticas' && canVerEstadisticas && (
-                    <div className="stats-dashboard">
-                        {/* Dashboard Header with Download Buttons */}
-                        <div className="dashboard-header mb-6">
-                            <div className="flex items-center gap-2">
+                {activeTab === 'estadisticas' && canVerEstadisticas && (() => {
+                    const hallazgosCount = incidents.filter(esHallazgo).length;
+                    const accidentesCount = incidents.filter(i => i.tipo === 'accidente').length;
+                    const incidentesCount = incidents.filter(i => !esHallazgo(i) && i.tipo === 'incidente').length;
+                    const total = incidents.length;
+                    const tasaCorregida = total > 0 ? (accidentesCount / total * 100) : 0;
+                    const hallazgosCerrados = incidents.filter(i => esHallazgo(i) && (i as any).gobernanza?.estadoCierre === 'cerrado').length;
+                    const pctCerrados = hallazgosCount > 0 ? (hallazgosCerrados / hallazgosCount * 100) : 0;
+                    const indiceProactivo = total > 0 ? (hallazgosCount / total * 100) : 0;
+
+                    const now = new Date();
+                    const trendMonths = Array.from({ length: 6 }, (_, i) => {
+                        const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+                        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                        const label = d.toLocaleDateString('es-CL', { month: 'short' });
+                        const monthIncs = incidents.filter(inc => (inc.fecha || '').startsWith(key));
+                        return {
+                            label,
+                            hallazgos: monthIncs.filter(esHallazgo).length,
+                            incidentes: monthIncs.filter(inc => !esHallazgo(inc) && inc.tipo === 'incidente').length,
+                            accidentes: monthIncs.filter(inc => inc.tipo === 'accidente').length,
+                        };
+                    });
+                    const maxTrend = Math.max(...trendMonths.map(m => m.hallazgos + m.incidentes + m.accidentes), 1);
+
+                    const etapaData = ETAPAS_CONSTRUCTIVAS
+                        .map(e => ({ label: e, count: incidents.filter(i => (i as any).etapaConstructiva === e).length }))
+                        .filter(e => e.count > 0)
+                        .sort((a, b) => b.count - a.count);
+                    const maxEtapa = Math.max(...etapaData.map(e => e.count), 1);
+
+                    const gravedadTotal = Math.max(
+                        incidents.filter(i => i.gravedad === 'leve').length +
+                        incidents.filter(i => i.gravedad === 'grave').length +
+                        incidents.filter(i => i.gravedad === 'fatal').length, 1
+                    );
+
+                    const barW = 40;
+                    const gap = (400 - 6 * barW) / 7;
+                    const chartBottom = 128;
+                    const chartH = 110;
+
+                    return (
+                        <div className="stats-dashboard">
+                            {/* Header */}
+                            <div className="dashboard-header mb-6">
                                 <h3 className="text-lg font-bold">Consolidado Estadístico</h3>
-                            </div>
-                            <div className="flex gap-2">
-                                <button
-                                    className="btn btn-secondary btn-sm"
-                                    onClick={() => downloadReport('csv')}
-                                >
-                                    <FiFileText className="mr-1" /> CSV
-                                </button>
-                                <button
-                                    className="btn btn-primary btn-sm"
-                                    onClick={() => downloadReport('pdf')}
-                                >
-                                    <FiFileText className="mr-1" /> PDF
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Single Row of 4 Key Indicator Cards */}
-                        {stats && (
-                            <div className="stats-grid-4 mb-6">
-                                <div className="stat-card stat-card-compact">
-                                    <div className="stat-card-icon-sm" style={{ background: 'var(--danger-500)' }}>
-                                        <FiAlertCircle size={20} />
-                                    </div>
-                                    <div className="stat-card-content">
-                                        <div className="stat-card-value">{stats.numeroAccidentes}</div>
-                                        <div className="stat-card-label">Accidentes</div>
-                                    </div>
-                                </div>
-
-                                <div className="stat-card stat-card-compact">
-                                    <div className="stat-card-icon-sm" style={{ background: 'var(--warning-500)' }}>
-                                        <FiTrendingUp size={20} />
-                                    </div>
-                                    <div className="stat-card-content">
-                                        <div className="stat-card-value">{stats.tasaAccidentabilidad.toFixed(1)}%</div>
-                                        <div className="stat-card-label">Tasa Accidentabilidad</div>
-                                    </div>
-                                </div>
-
-                                <div className="stat-card stat-card-compact">
-                                    <div className="stat-card-icon-sm" style={{ background: 'var(--primary-500)' }}>
-                                        <FiCalendar size={20} />
-                                    </div>
-                                    <div className="stat-card-content">
-                                        <div className="stat-card-value">{stats.diasPerdidos}</div>
-                                        <div className="stat-card-label">Días Perdidos</div>
-                                    </div>
-                                </div>
-
-                                <div className="stat-card stat-card-compact">
-                                    <div className="stat-card-icon-sm" style={{ background: '#9c27b0' }}>
-                                        <FiActivity size={20} />
-                                    </div>
-                                    <div className="stat-card-content">
-                                        <div className="stat-card-value">{stats.siniestralidad.toFixed(1)}%</div>
-                                        <div className="stat-card-label">Siniestralidad</div>
-                                    </div>
+                                <div className="flex gap-2">
+                                    <button className="btn btn-secondary btn-sm" onClick={() => downloadReport('csv')}>
+                                        <FiFileText className="mr-1" /> CSV
+                                    </button>
+                                    <button className="btn btn-primary btn-sm" onClick={() => downloadReport('pdf')}>
+                                        <FiFileText className="mr-1" /> PDF
+                                    </button>
                                 </div>
                             </div>
-                        )}
 
-                        {/* ROW 1: 2 charts */}
-                        <div className="charts-row-2 mb-4">
-                            {/* Line Chart - Evolución */}
-                            <div className="card">
-                                <div className="card-header chart-header-controls">
-                                    <h3 className="font-semibold flex items-center gap-2">
-                                        <FiTrendingUp /> Evolución {getMetricLabel()}
-                                    </h3>
-                                    <div className="chart-controls" style={{ minWidth: '160px' }}>
-                                        <Select
-                                            ariaLabel="Métrica del gráfico"
-                                            value={chartMetric}
-                                            onChange={(v) => setChartMetric(v as 'total' | 'accidentes' | 'incidentes')}
-                                            options={[
-                                                { value: 'total', label: 'Total' },
-                                                { value: 'accidentes', label: 'Accidentes' },
-                                                { value: 'incidentes', label: 'Incidentes' },
-                                            ]}
-                                        />
+                            {/* 4 key metrics */}
+                            <div className="stats-grid-4 mb-4">
+                                {([
+                                    { label: 'Hallazgos', value: hallazgosCount },
+                                    { label: 'Incidentes', value: incidentesCount },
+                                    { label: 'Accidentes', value: accidentesCount },
+                                    { label: 'Tasa de accidentabilidad', value: `${tasaCorregida.toFixed(1)}%` },
+                                ] as { label: string; value: string | number }[]).map(({ label, value }) => (
+                                    <div key={label} className="stat-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-2)' }}>
+                                        <div className="stat-card-label">{label}</div>
+                                        <div className="stat-card-value" style={{ fontSize: '1.875rem', color: 'var(--primary-400)' }}>{value}</div>
                                     </div>
-                                </div>
-                                <div className="chart-container">
-                                    {analytics && analytics.tendencias && analytics.tendencias.length > 0 ? (
-                                        <svg viewBox="0 0 400 150" className="w-full h-full">
-                                            <defs>
-                                                <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="0%" stopColor="var(--primary-500)" stopOpacity="0.3" />
-                                                    <stop offset="100%" stopColor="var(--primary-500)" stopOpacity="0" />
-                                                </linearGradient>
-                                            </defs>
-                                            <polyline
-                                                fill="url(#lineGradient)"
-                                                points={`0,150 ${analytics.tendencias.map((d, i) => {
-                                                    const x = (i / (analytics.tendencias.length - 1)) * 400;
-                                                    const val = d[chartMetric] || 0;
-                                                    const max = Math.max(...analytics.tendencias.map(m => m[chartMetric] || 0), 1);
-                                                    return `${x},${150 - (val / max) * 120}`;
-                                                }).join(' ')} 400,150`}
-                                            />
-                                            <polyline
-                                                fill="none" stroke="var(--primary-500)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                                                points={analytics.tendencias.map((d, i) => {
-                                                    const x = (i / (analytics.tendencias.length - 1)) * 400;
-                                                    const val = d[chartMetric] || 0;
-                                                    const max = Math.max(...analytics.tendencias.map(m => m[chartMetric] || 0), 1);
-                                                    return `${x},${150 - (val / max) * 120}`;
-                                                }).join(' ')}
-                                            />
-                                            {analytics.tendencias.map((d, i) => {
-                                                const x = (i / (analytics.tendencias.length - 1)) * 400;
-                                                const val = d[chartMetric] || 0;
-                                                const max = Math.max(...analytics.tendencias.map(m => m[chartMetric] || 0), 1);
-                                                const y = 150 - (val / max) * 120;
+                                ))}
+                            </div>
+
+                            {/* 2 proportion metrics */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+                                {([
+                                    { label: '% Hallazgos cerrados', pct: pctCerrados, sub: `${hallazgosCerrados} de ${hallazgosCount} cerrados` },
+                                    { label: 'Índice proactivo', pct: indiceProactivo, sub: 'Hallazgos sobre total de eventos' },
+                                ] as { label: string; pct: number; sub: string }[]).map(({ label, pct, sub }) => (
+                                    <div key={label} className="stat-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'baseline' }}>
+                                            <div className="stat-card-label">{label}</div>
+                                            <div style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'var(--primary-400)' }}>{pct.toFixed(1)}%</div>
+                                        </div>
+                                        <div style={{ height: 5, background: 'var(--surface-border)', borderRadius: 3, width: '100%', overflow: 'hidden' }}>
+                                            <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, background: 'var(--primary-500)', borderRadius: 3, transition: 'width 0.6s ease' }} />
+                                        </div>
+                                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{sub}</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Tendencia mensual + Etapa constructiva */}
+                            <div className="charts-row-2 mb-4">
+                                <div className="card">
+                                    <div className="card-header">
+                                        <h3 className="font-semibold flex items-center gap-2">
+                                            <FiBarChart2 /> Tendencia mensual
+                                        </h3>
+                                    </div>
+                                    <div style={{ padding: 'var(--space-3) var(--space-4) var(--space-2)' }}>
+                                        <svg viewBox="0 0 400 155" width="100%" style={{ display: 'block' }}>
+                                            {trendMonths.map((m, i) => {
+                                                const x = gap + i * (barW + gap);
+                                                const hH = (m.hallazgos / maxTrend) * chartH;
+                                                const iH = (m.incidentes / maxTrend) * chartH;
+                                                const aH = (m.accidentes / maxTrend) * chartH;
                                                 return (
                                                     <g key={i}>
-                                                        <circle cx={x} cy={y} r="3" fill="var(--primary-500)" stroke="white" strokeWidth="1" />
-                                                        <text x={x} y="145" fontSize="8" textAnchor="middle" fill="var(--text-muted)">{d.mes.slice(5)}</text>
+                                                        {m.hallazgos > 0 && <rect x={x} y={chartBottom - hH} width={barW} height={hH} rx={2} fill="rgba(0,110,220,0.22)" />}
+                                                        {m.incidentes > 0 && <rect x={x} y={chartBottom - hH - iH} width={barW} height={iH} rx={2} fill="#006edc" />}
+                                                        {m.accidentes > 0 && <rect x={x} y={chartBottom - hH - iH - aH} width={barW} height={aH} rx={2} fill="#002952" />}
+                                                        <text x={x + barW / 2} y={144} fontSize="9" textAnchor="middle" fill="var(--text-muted)">{m.label}</text>
                                                     </g>
                                                 );
                                             })}
                                         </svg>
-                                    ) : <div className="chart-empty">Cargando tendencia...</div>}
-                                </div>
-                            </div>
-
-                            {/* Bar Chart - Clasificación */}
-                            <div className="card">
-                                <div className="card-header">
-                                    <h3 className="font-semibold flex items-center gap-2">
-                                        <FiBarChart2 /> Clasificación
-                                    </h3>
-                                </div>
-                                <div className="chart-container bar-chart-container">
-                                    {analytics ? (
-                                        <div className="horizontal-bars">
+                                        <div style={{ display: 'flex', gap: 'var(--space-5)', justifyContent: 'center', paddingBottom: 'var(--space-2)' }}>
                                             {[
-                                                { label: 'Accidentes', val: analytics.distribucionPorTipo.accidentes, color: 'var(--danger-500)' },
-                                                { label: 'Incidentes', val: analytics.distribucionPorTipo.incidentes, color: 'var(--warning-500)' },
-                                                { label: 'Condiciones', val: analytics.distribucionPorTipo.condicionesSubestandar, color: 'var(--primary-500)' }
-                                            ].map((row, i) => (
-                                                <div key={i} className="h-bar-group">
-                                                    <div className="h-bar-label">{row.label}</div>
-                                                    <div className="h-bar-track">
-                                                        <div className="h-bar-fill" style={{ width: `${(row.val / (Math.max(analytics.distribucionPorTipo.accidentes + analytics.distribucionPorTipo.incidentes + analytics.distribucionPorTipo.condicionesSubestandar, 1))) * 100}%`, background: row.color }} />
-                                                    </div>
-                                                    <span className="h-bar-value">{row.val}</span>
+                                                { color: 'rgba(0,110,220,0.22)', border: '1px solid #006edc', label: 'Hallazgos' },
+                                                { color: '#006edc', border: 'none', label: 'Incidentes' },
+                                                { color: '#002952', border: 'none', label: 'Accidentes' },
+                                            ].map(l => (
+                                                <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                    <div style={{ width: 10, height: 10, background: l.color, border: l.border, borderRadius: 2, flexShrink: 0 }} />
+                                                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{l.label}</span>
                                                 </div>
                                             ))}
                                         </div>
-                                    ) : <div className="chart-empty">Sin datos</div>}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* ROW 2: 2 charts */}
-                        <div className="charts-row-2 mb-6">
-                            {/* Bar Chart - Gravedad */}
-                            <div className="card">
-                                <div className="card-header">
-                                    <h3 className="font-semibold flex items-center gap-2">
-                                        <FiAlertTriangle /> Gravedad
-                                    </h3>
-                                </div>
-                                <div className="chart-container bar-chart-container">
-                                    {analytics ? (
-                                        <div className="horizontal-bars">
-                                            {[
-                                                { label: 'Leve', val: analytics.distribucionPorGravedad.leve, color: 'var(--success-500)' },
-                                                { label: 'Grave', val: analytics.distribucionPorGravedad.grave, color: 'var(--warning-500)' },
-                                                { label: 'Fatal', val: analytics.distribucionPorGravedad.fatal, color: 'var(--danger-600)' }
-                                            ].map((row, i) => (
-                                                <div key={i} className="h-bar-group">
-                                                    <div className="h-bar-label">{row.label}</div>
-                                                    <div className="h-bar-track">
-                                                        <div className="h-bar-fill" style={{ width: `${(row.val / (Math.max(analytics.distribucionPorGravedad.leve + analytics.distribucionPorGravedad.grave + analytics.distribucionPorGravedad.fatal, 1))) * 100}%`, background: row.color }} />
-                                                    </div>
-                                                    <span className="h-bar-value">{row.val}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : <div className="chart-empty">Sin datos</div>}
-                                </div>
-                            </div>
-
-                            {/* Calendar Heatmap */}
-                            <div className="card">
-                                <div className="card-header chart-header-controls">
-                                    <h3 className="font-semibold flex items-center gap-2">
-                                        <FiCalendar /> Calendario
-                                    </h3>
-                                    <div className="calendar-nav">
-                                        <button className="nav-btn" onClick={() => navigateMonth(-1)}>&lt;</button>
-                                        <span className="month-label" style={{ fontSize: '10px' }}>{formatMonthName(calendarMonth)}</span>
-                                        <button className="nav-btn" onClick={() => navigateMonth(1)}>&gt;</button>
                                     </div>
                                 </div>
-                                <div className="calendar-month-container" style={{ padding: '8px' }}>
-                                    <div className="calendar-weekdays" style={{ gap: '4px', marginBottom: '4px' }}>
-                                        {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map(d => (
-                                            <div key={d} className="weekday-cell" style={{
-                                                width: '42px',
-                                                height: '32px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                fontSize: '10px',
-                                                fontWeight: '600',
-                                                color: 'var(--text-muted)'
-                                            }}>
-                                                {d}
+
+                                <div className="card">
+                                    <div className="card-header">
+                                        <h3 className="font-semibold flex items-center gap-2">
+                                            <FiActivity /> Por etapa constructiva
+                                        </h3>
+                                    </div>
+                                    <div className="chart-container bar-chart-container">
+                                        {etapaData.length > 0 ? (
+                                            <div className="horizontal-bars">
+                                                {etapaData.map((row, idx) => (
+                                                    <div key={idx} className="h-bar-group">
+                                                        <div className="h-bar-label">{row.label}</div>
+                                                        <div className="h-bar-track">
+                                                            <div className="h-bar-fill" style={{ width: `${(row.count / maxEtapa) * 100}%`, background: 'var(--primary-500)' }} />
+                                                        </div>
+                                                        <span className="h-bar-value">{row.count}</span>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
+                                        ) : (
+                                            <div className="chart-empty">Sin datos por etapa</div>
+                                        )}
                                     </div>
-                                    <div className="calendar-grid-month" style={{ gap: '4px' }}>
-                                        {generateCalendarData().map((day: any, i: number) => (
-                                            day.empty ? (
-                                                <div key={i} className="calendar-cell-empty" style={{
-                                                    width: '42px',
-                                                    height: '32px'
-                                                }} />
-                                            ) : (
-                                                <div
-                                                    key={i}
-                                                    className={`calendar-cell-day ${day.hasIncident ? 'has-incident' : ''} ${day.severity || ''}`}
-                                                    style={{
-                                                        width: '42px',
-                                                        height: '32px',
-                                                        minHeight: '32px',
-                                                        minWidth: '42px'
-                                                    }}
-                                                >
-                                                    <span className="day-num" style={{ fontSize: '9px' }}>{day.dayNum}</span>
-                                                    <div className="calendar-tooltip">
-                                                        <div className="tooltip-header">{day.date}</div>
-                                                        {day.hasIncident ? (
-                                                            <div className="tooltip-body">
-                                                                <div className="tooltip-stat">
-                                                                    <span className="label">Eventos:</span>
-                                                                    <span className="value">{day.count}</span>
-                                                                </div>
-                                                                <div className="tooltip-stat">
-                                                                    <span className="label">Gravedad:</span>
-                                                                    <span className={`severity-badge ${day.severity}`}>
-                                                                        {day.severity?.toUpperCase()}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="tooltip-body no-events">Sin incidentes</div>
-                                                        )}
+                                </div>
+                            </div>
+
+                            {/* Gravedad + Calendario */}
+                            <div className="charts-row-2 mb-6">
+                                <div className="card">
+                                    <div className="card-header">
+                                        <h3 className="font-semibold flex items-center gap-2">
+                                            <FiAlertTriangle /> Gravedad
+                                        </h3>
+                                    </div>
+                                    <div className="chart-container bar-chart-container">
+                                        <div className="horizontal-bars">
+                                            {[
+                                                { label: 'Leve', count: incidents.filter(i => i.gravedad === 'leve').length },
+                                                { label: 'Grave', count: incidents.filter(i => i.gravedad === 'grave').length },
+                                                { label: 'Fatal', count: incidents.filter(i => i.gravedad === 'fatal').length },
+                                            ].map((row, i) => (
+                                                <div key={i} className="h-bar-group">
+                                                    <div className="h-bar-label">{row.label}</div>
+                                                    <div className="h-bar-track">
+                                                        <div className="h-bar-fill" style={{ width: `${(row.count / gravedadTotal) * 100}%`, background: 'var(--primary-500)' }} />
                                                     </div>
+                                                    <span className="h-bar-value">{row.count}</span>
                                                 </div>
-                                            )
-                                        ))}
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="card">
+                                    <div className="card-header chart-header-controls">
+                                        <h3 className="font-semibold flex items-center gap-2">
+                                            <FiCalendar /> Calendario
+                                        </h3>
+                                        <div className="calendar-nav">
+                                            <button className="nav-btn" onClick={() => navigateMonth(-1)}>&lt;</button>
+                                            <span className="month-label" style={{ fontSize: '10px' }}>{formatMonthName(calendarMonth)}</span>
+                                            <button className="nav-btn" onClick={() => navigateMonth(1)}>&gt;</button>
+                                        </div>
+                                    </div>
+                                    <div className="calendar-month-container" style={{ padding: '8px' }}>
+                                        <div className="calendar-weekdays" style={{ gap: '4px', marginBottom: '4px' }}>
+                                            {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map(d => (
+                                                <div key={d} className="weekday-cell" style={{ width: '42px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '600', color: 'var(--text-muted)' }}>
+                                                    {d}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="calendar-grid-month" style={{ gap: '4px' }}>
+                                            {generateCalendarData().map((day: any, i: number) => (
+                                                day.empty ? (
+                                                    <div key={i} className="calendar-cell-empty" style={{ width: '42px', height: '32px' }} />
+                                                ) : (
+                                                    <div key={i} className={`calendar-cell-day ${day.hasIncident ? 'has-incident' : ''} ${day.severity || ''}`} style={{ width: '42px', height: '32px', minHeight: '32px', minWidth: '42px' }}>
+                                                        <span className="day-num" style={{ fontSize: '9px' }}>{day.dayNum}</span>
+                                                        <div className="calendar-tooltip">
+                                                            <div className="tooltip-header">{day.date}</div>
+                                                            {day.hasIncident ? (
+                                                                <div className="tooltip-body">
+                                                                    <div className="tooltip-stat">
+                                                                        <span className="label">Eventos:</span>
+                                                                        <span className="value">{day.count}</span>
+                                                                    </div>
+                                                                    <div className="tooltip-stat">
+                                                                        <span className="label">Gravedad:</span>
+                                                                        <span className={`severity-badge ${day.severity}`}>{day.severity?.toUpperCase()}</span>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="tooltip-body no-events">Sin incidentes</div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
 
                 {/* Listado Tab Content */}
                 {activeTab === 'listado' && canVerHistorial && (
                     <>
-                        {/* Stats Cards for Listado View */}
-                        {stats && (
-                            <div className="stats-grid mb-6">
-                                <div className="stat-card">
-                                    <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--primary-500), var(--primary-600))' }}>
-                                        <FiFileText size={24} />
-                                    </div>
-                                    <div className="stat-card-content">
-                                        <div className="stat-card-label">Total Incidentes</div>
-                                        <div className="stat-card-value">{stats.totalIncidentes}</div>
-                                    </div>
-                                </div>
-
-                                <div className="stat-card">
-                                    <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--warning-500), var(--warning-600))' }}>
-                                        <FiTrendingUp size={24} />
-                                    </div>
-                                    <div className="stat-card-content">
-                                        <div className="stat-card-label">Tasa Accidentabilidad</div>
-                                        <div className="stat-card-value">{stats.tasaAccidentabilidad.toFixed(2)}%</div>
-                                    </div>
-                                </div>
-
-                                <div className="stat-card">
-                                    <div className="stat-card-icon" style={{ background: 'linear-gradient(135deg, var(--danger-500), var(--danger-600))' }}>
-                                        <FiCalendar size={24} />
-                                    </div>
-                                    <div className="stat-card-content">
-                                        <div className="stat-card-label">Días Perdidos</div>
-                                        <div className="stat-card-value">{stats.diasPerdidos}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Filters Card */}
-                        <div className="card mb-6">
-                            <div
-                                className="card-header"
-                                onClick={() => setShowFilters(!showFilters)}
-                                style={{ cursor: 'pointer', transition: 'background 0.2s' }}
-                                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-hover)'}
-                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <FiFilter className={showFilters ? 'text-primary-500' : ''} />
-                                    <h3 className="font-semibold" style={{ color: showFilters ? 'var(--primary-600)' : 'inherit' }}>
-                                        Filtros de Búsqueda
-                                    </h3>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    {(filters.tipo || filters.estado || filters.fechaInicio || filters.fechaFin) && (
-                                        <button
-                                            className="btn btn-sm btn-secondary"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                clearFilters();
-                                            }}
-                                        >
-                                            Limpiar Filtros
-                                        </button>
-                                    )}
-                                    <div className="incidents-filter-toggle" style={{ color: 'var(--text-muted)' }}>
-                                        {showFilters ? <FiChevronUp size={20} /> : <FiChevronDown size={20} />}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className={`p-4 incidents-filters ${showFilters ? 'show' : ''}`}>
-                                <div className="flex gap-4 flex-wrap">
-                                    <div className="form-group flex-1 min-w-[180px]">
-                                        <label className="form-label">Tipo</label>
-                                        <Select
-                                            ariaLabel="Filtrar por tipo"
-                                            value={filters.tipo}
-                                            onChange={(v) => setFilters({ ...filters, tipo: v })}
-                                            options={[
-                                                { value: '', label: 'Todos los tipos' },
-                                                { value: 'accidente', label: 'Accidente' },
-                                                { value: 'incidente', label: 'Incidente' },
-                                                { value: 'condicion_subestandar', label: 'Condición Subestándar' },
-                                            ]}
-                                        />
-                                    </div>
-                                    <div className="form-group flex-1 min-w-[180px]">
-                                        <label className="form-label">Estado</label>
-                                        <Select
-                                            ariaLabel="Filtrar por estado"
-                                            value={filters.estado}
-                                            onChange={(v) => setFilters({ ...filters, estado: v })}
-                                            options={[
-                                                { value: '', label: 'Todos los estados' },
-                                                { value: 'reportado', label: 'Reportado' },
-                                                { value: 'en_investigacion', label: 'En Investigación' },
-                                                { value: 'cerrado', label: 'Cerrado' },
-                                            ]}
-                                        />
-                                    </div>
-                                    <div className="form-group flex-1 min-w-[180px]">
-                                        <label className="form-label">Fecha Inicio</label>
-                                        <input
-                                            type="date"
-                                            className="form-input"
-                                            value={filters.fechaInicio}
-                                            onChange={(e) => setFilters({ ...filters, fechaInicio: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="form-group flex-1 min-w-[180px]">
-                                        <label className="form-label">Fecha Fin</label>
-                                        <input
-                                            type="date"
-                                            className="form-input"
-                                            value={filters.fechaFin}
-                                            onChange={(e) => setFilters({ ...filters, fechaFin: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
                         {/* Incidents Table */}
                         <div className="card">
                             {/* Separacion hallazgos / incidentes (reunion 2026-06-10) */}
@@ -1392,130 +1309,59 @@ export default function Incidents() {
                                     className={`btn btn-sm ${listTab === 'incidentes' ? 'btn-primary' : 'btn-secondary'}`}
                                     onClick={() => setListTab('incidentes')}
                                 >
-                                    Incidentes y Accidentes ({incidents.filter((i) => !esHallazgo(i)).length})
+                                    Incidentes ({incidents.filter((i) => !esHallazgo(i)).length})
                                 </button>
                             </div>
 
-                            <div className="scroll-hint">
-                                <FiArrowRight />
-                                <span>Desliza para ver más</span>
-                            </div>
-
-                            <div className="table-container">
-                                <table className="table">
-                                    <thead>
-                                        <tr>
-                                            <th>Tipo</th>
-                                            <th>Fecha</th>
-                                            <th>Centro de Trabajo</th>
-                                            <th>Trabajador</th>
-                                            <th>Gravedad</th>
-                                            <th>Estado</th>
-                                            <th style={{ textAlign: 'right' }}>Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {loading ? (
-                                            <tr>
-                                                <td colSpan={7} className="text-center">
-                                                    <div className="spinner" style={{ margin: 'var(--space-4) auto' }} />
-                                                </td>
-                                            </tr>
-                                        ) : incidents.filter((i) => listTab === 'hallazgos' ? esHallazgo(i) : !esHallazgo(i)).length === 0 ? (
-                                            <tr>
-                                                <td colSpan={7} className="text-center text-muted" style={{ padding: 'var(--space-8)' }}>
-                                                    <FiAlertTriangle size={48} style={{ margin: '0 auto var(--space-4)', opacity: 0.3 }} />
-                                                    <p>{listTab === 'hallazgos' ? 'No hay hallazgos registrados' : 'No hay incidentes registrados'}</p>
-                                                    <p className="text-sm">{listTab === 'hallazgos' ? 'Cualquier trabajador puede reportar un hallazgo' : 'Los incidentes reportados aparecerán aquí'}</p>
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            incidents.filter((i) => listTab === 'hallazgos' ? esHallazgo(i) : !esHallazgo(i)).map((incident) => (
-                                                <tr key={incident.incidentId}>
-                                                    <td>
-                                                        <div className="flex items-center gap-2">
-                                                            {getTipoIcon(incident.tipo)}
-                                                            <span>{getTipoLabel(incident.tipo)}</span>
-                                                            {isNewIncident(incident) && (
-                                                                <span
-                                                                    className="badge badge-info"
-                                                                    style={{
-                                                                        fontSize: '10px',
-                                                                        padding: '2px 6px',
-                                                                        animation: 'pulse 2s infinite'
-                                                                    }}
-                                                                >
-                                                                    Nuevo
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <div className="flex items-center gap-2 text-sm">
-                                                            <FiCalendar className="text-muted" size={14} />
-                                                            {new Date(incident.fecha).toLocaleDateString('es-CL')}
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <div className="flex items-center gap-2">
-                                                            <FiMapPin className="text-muted" size={14} />
-                                                            {incident.centroTrabajo}
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="avatar avatar-sm" style={{ background: 'rgba(244, 67, 54, 0.15)', color: 'var(--danger-500)' }}>
-                                                                {incident.trabajador.nombre.charAt(0)}
-                                                            </div>
-                                                            <div>
-                                                                <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>
-                                                                    {incident.trabajador.nombre}
-                                                                </div>
-                                                                <div className="text-muted" style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)' }}>
-                                                                    {incident.trabajador.rut}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <span className={`badge ${getGravedadBadge(incident.gravedad)}`}>
-                                                            {incident.gravedad}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        {esHallazgo(incident) && (incident as any).gobernanza ? (
-                                                            <span className={`badge ${(incident as any).gobernanza.estadoCierre === 'cerrado' ? 'badge-success' : (incident as any).gobernanza.estadoCierre === 'en_proceso' ? 'badge-info' : 'badge-warning'}`}>
-                                                                {String((incident as any).gobernanza.estadoCierre || 'abierto').replace('_', ' ')}
-                                                            </span>
-                                                        ) : (
-                                                            <span className={`badge ${getEstadoBadge(incident.estado)}`}>
-                                                                {incident.estado.replace('_', ' ')}
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td style={{ textAlign: 'right' }}>
-                                                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                                            {esHallazgo(incident) && canCreateIncidente && (
-                                                                <button
-                                                                    className="btn btn-sm btn-secondary"
-                                                                    onClick={() => openGobernanza(incident)}
-                                                                >
-                                                                    Gestionar
-                                                                </button>
-                                                            )}
-                                                            <button
-                                                                className="btn btn-sm btn-secondary"
-                                                                onClick={() => openIncidentDetail(incident)}
-                                                            >
-                                                                Ver Detalle
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
+                            <div className="incident-list">
+                                {loading ? (
+                                    <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
+                                        <div className="spinner" />
+                                    </div>
+                                ) : incidents.filter((i) => listTab === 'hallazgos' ? esHallazgo(i) : !esHallazgo(i)).length === 0 ? (
+                                    <div style={{ padding: 'var(--space-10)', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                        <FiAlertTriangle size={36} style={{ margin: '0 auto var(--space-3)', opacity: 0.25, display: 'block' }} />
+                                        <p style={{ fontWeight: 500, marginBottom: 'var(--space-1)' }}>{listTab === 'hallazgos' ? 'Sin hallazgos registrados' : 'Sin incidentes registrados'}</p>
+                                        <p style={{ fontSize: 'var(--text-sm)' }}>{listTab === 'hallazgos' ? 'Cualquier trabajador puede reportar un hallazgo' : 'Los incidentes reportados aparecerán aquí'}</p>
+                                    </div>
+                                ) : (
+                                    incidents.filter((i) => listTab === 'hallazgos' ? esHallazgo(i) : !esHallazgo(i)).map((incident) => (
+                                        <div
+                                            key={incident.incidentId}
+                                            className="incident-row"
+                                            onClick={() => openIncidentDetail(incident)}
+                                            role="button"
+                                            tabIndex={0}
+                                            onKeyDown={(e) => e.key === 'Enter' && openIncidentDetail(incident)}
+                                        >
+                                            <div className="incident-row-meta">
+                                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                                                    {new Date(incident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                </span>
+                                                {isNewIncident(incident) && (
+                                                    <span className="badge badge-success" style={{ fontSize: '10px', marginTop: '4px', display: 'block', width: 'fit-content' }}>Nuevo</span>
+                                                )}
+                                            </div>
+                                            <div className="incident-row-desc">
+                                                <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: incident.descripcion ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: incident.descripcion ? 'normal' : 'italic', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.55 }}>
+                                                    {incident.descripcion || 'Sin descripción registrada'}
+                                                </p>
+                                            </div>
+                                            <div className="incident-row-status">
+                                                {esHallazgo(incident) && (incident as any).gobernanza ? (
+                                                    <span className={`badge ${(incident as any).gobernanza.estadoCierre === 'cerrado' ? 'badge-success' : (incident as any).gobernanza.estadoCierre === 'en_proceso' ? 'badge-info' : 'badge-warning'}`} style={{ fontSize: '10px' }}>
+                                                        {String((incident as any).gobernanza.estadoCierre || 'abierto').replace('_', ' ')}
+                                                    </span>
+                                                ) : (
+                                                    <span className={`badge ${getEstadoBadge(incident.estado)}`} style={{ fontSize: '10px' }}>
+                                                        {incident.estado.replace('_', ' ')}
+                                                    </span>
+                                                )}
+                                                <FiArrowRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: '4px' }} />
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
                     </>
@@ -1525,12 +1371,12 @@ export default function Incidents() {
                 <Modal
                     isOpen={showModal}
                     onClose={handleCloseModal}
-                    title={showSuccess ? '¡Reporte Enviado!' : step === 0 ? 'Reporte Rápido de Incidente' : 'Detalles del Reporte'}
+                    title={showSuccess ? '¡Reporte Enviado!' : formData.clasificacion === 'hallazgo' ? 'Reportar Hallazgo' : 'Reportar Incidente'}
                     subtitle={showSuccess
                         ? 'El incidente ha sido registrado y notificado correctamente'
-                        : step === 0
-                            ? 'Capture una foto y dicte el incidente para agilizar el registro'
-                            : 'Verifique y complete la información extraída por la IA'
+                        : formData.clasificacion === 'hallazgo'
+                            ? 'Complete la información del hallazgo observado'
+                            : 'Complete la información del incidente ocurrido'
                     }
                     icon={<FiAlertTriangle size={24} />}
                     size="xl"
@@ -1557,185 +1403,14 @@ export default function Incidents() {
                                             Entendido
                                         </button>
                                     </div>
-                                ) : step === 0 ? (
-                                    <div className="quick-report-container p-6">
-                                        {formError && (
-                                            <div className="bg-danger-500/10 border border-danger-500/20 text-danger-500 p-4 rounded-lg mb-6 flex items-center gap-3 animate-shake">
-                                                <FiAlertCircle size={20} />
-                                                <span className="text-sm font-medium">{formError}</span>
-                                            </div>
-                                        )}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                            {/* Camera Section */}
-                                            <div className="camera-section">
-                                                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                                                    <FiCamera /> 1. Evidencia Visual
-                                                </h3>
-                                                {cameraActive && (
-                                                    <div className="camera-live-label">Live View</div>
-                                                )}
-                                                <div className={`camera-view ${cameraActive ? 'is-active' : 'is-idle'} bg-black rounded-xl overflow-hidden relative group`}>
-                                                    {cameraActive ? (
-                                                        <>
-                                                            <video
-                                                                ref={videoRef}
-                                                                autoPlay
-                                                                playsInline
-                                                                className="w-full h-full object-cover"
-                                                            />
-                                                            <div className="absolute inset-0 pointer-events-none border-[10px] border-black/10"></div>
-                                                            <div className="absolute inset-x-0 bottom-8 pointer-events-none flex justify-center" style={{ marginTop: '20px' }}> {/* Añade margen superior y separa el botón de la vista */}
-                                                                <div className="flex items-center gap-40 pointer-events-auto"> {/* Aumenta el gap */}
-                                                                    <button
-                                                                        className="btn-shutter group/shutter"
-                                                                        onClick={capturePhoto}
-                                                                        title="Tomar Foto"
-                                                                    >
-                                                                        <div className="btn-shutter-outer">
-                                                                            <div className="btn-shutter-inner" />
-                                                                        </div>
-                                                                    </button>
-                                                                    <button
-                                                                        className="btn btn-secondary btn-sm rounded-full w-12 h-12 flex items-center justify-center shadow-lg border-white/10 bg-black/40 backdrop-blur-md text-white hover:bg-black/60 transition-all"
-                                                                        onClick={stopCamera}
-                                                                        title="Cerrar Cámara"
-                                                                        style={{ marginRight: '-20px' }} /* Mueve más a la derecha */
-                                                                    >
-                                                                        <FiX size={20} />
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        </>
-                                                    ) : (
-                                                        <div className="camera-placeholder w-full flex flex-col items-center text-white/50 p-4 text-center gap-3">
-                                                            {uploadedFiles.length > 0 ? (
-                                                                <div className="relative">
-                                                                    <img
-                                                                        src={URL.createObjectURL(uploadedFiles[uploadedFiles.length - 1])}
-                                                                        className="max-h-40 rounded-lg shadow-xl"
-                                                                    />
-                                                                    <div className="mt-2 text-primary-400 font-medium flex items-center justify-center gap-1">
-                                                                        <FiCheck size={14} /> Foto capturada
-                                                                    </div>
-                                                                    <button
-                                                                        className="mt-4 btn btn-sm btn-outline-white"
-                                                                        onClick={startCamera}
-                                                                    >
-                                                                        <FiRefreshCw className="mr-2" /> Tomar otra
-                                                                    </button>
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                                    <FiCamera size={48} className="mb-4 opacity-20" />
-                                                                    <button
-                                                                        className="btn btn-primary"
-                                                                        onClick={startCamera}
-                                                                    >
-                                                                        <FiCamera className="mr-2" /> Activar Cámara
-                                                                    </button>
-                                                                    <p className="text-xs">O sube archivos después en el formulario</p>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Audio Section */}
-                                            <div className="audio-section">
-                                                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                                                    <FiMic /> 2. ¿Qué ocurrió?
-                                                </h3>
-                                                <div className={`audio-recorder p-6 rounded-xl border-2 border-dashed transition-all ${isRecording ? 'border-danger-500 bg-danger-50/5' : 'border-surface-border bg-surface-hover/30'}`}>
-                                                    <div className="quick-report-audio-body">
-                                                        <div className="quick-report-audio-controls">
-                                                            <div className={`quick-report-mic-indicator w-20 h-20 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-danger-500 scale-110 shadow-lg shadow-danger-200' : 'bg-primary-500'}`}>
-                                                                {isRecording ? (
-                                                                    <div className="flex gap-1">
-                                                                        <div className="w-1.5 h-6 bg-white animate-bounce" style={{ animationDelay: '0s' }} />
-                                                                        <div className="w-1.5 h-10 bg-white animate-bounce" style={{ animationDelay: '0.1s' }} />
-                                                                        <div className="w-1.5 h-8 bg-white animate-bounce" style={{ animationDelay: '0.2s' }} />
-                                                                        <div className="w-1.5 h-6 bg-white animate-bounce" style={{ animationDelay: '0.3s' }} />
-                                                                    </div>
-                                                                ) : (
-                                                                    <FiMic size={32} className="text-white" />
-                                                                )}
-                                                            </div>
-
-                                                            <button
-                                                                className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'} quick-report-dictate-btn`}
-                                                                onClick={isRecording ? stopRecording : startRecording}
-                                                                disabled={isTranscribing}
-                                                            >
-                                                                {isTranscribing ? (
-                                                                    <><FiRefreshCw className="mr-2 animate-spin" /> Procesando Audio...</>
-                                                                ) : isRecording ? (
-                                                                    <><FiStopCircle className="mr-2" /> Detener Grabación</>
-                                                                ) : (
-                                                                    <><FiPlay className="mr-2" /> Dictar Reporte</>
-                                                                )}
-                                                            </button>
-                                                        </div>
-
-                                                        <textarea
-                                                            className="voice-transcript-area"
-                                                            value={transcript}
-                                                            onChange={(e) => setTranscript(e.target.value)}
-                                                            placeholder={isRecording ? 'Grabando audio...' : isTranscribing ? 'Transcribiendo...' : 'Presione dictar y describa el incidente (ej: "Hay una tabla suelta en el andamio del sector B, riesgo de caída")'}
-                                                            disabled={isTranscribing}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-10 flex flex-col items-center justify-center border-t border-surface-border pt-8 quick-report-actions">
-                                            {isProcessingAI ? (
-                                                <div className="flex flex-col items-center">
-                                                    <div className="loader-dots mb-4">
-                                                        <div /> <div /> <div /> <div />
-                                                    </div>
-                                                    <p className="text-sm font-medium animate-pulse">La IA está procesando su voz para llenar el reporte...</p>
-                                                </div>
-                                            ) : (
-                                                <div className="flex gap-4" style={{ marginTop: '15px' }}> {/* Añade margen superior */}
-                                                    <button
-                                                        className="btn btn-secondary btn-lg"
-                                                        onClick={() => setStep(1)}
-                                                    >
-                                                        Ir a Manual <FiArrowRight className="ml-2" />
-                                                    </button>
-                                                    <button
-                                                        className="btn btn-primary btn-lg px-10"
-                                                        onClick={processWithAI}
-                                                        disabled={!transcript}
-                                                    >
-                                                        <FiZap size={18} className="mr-2" /> Procesar con IA
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
                                 ) : (
                                     <form onSubmit={handleSubmit} className="p-6">
                                         {/* Sección: Clasificación del Reporte */}
                                         <div className="form-section">
-                                            <h3 className="form-section-title">Clasificación del Reporte</h3>
+                                            <h3 className="form-section-title">
+                                                {formData.clasificacion === 'hallazgo' ? 'Tipo de Hallazgo' : 'Detalles del Incidente'}
+                                            </h3>
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div className="form-group">
-                                                    <label className="form-label">Clasificación *</label>
-                                                    <Select
-                                                        ariaLabel="Clasificación"
-                                                        value={formData.clasificacion}
-                                                        onChange={(v) => setFormData({ ...formData, clasificacion: v as any })}
-                                                        options={[
-                                                            { value: 'hallazgo', label: 'Hallazgo' },
-                                                            { value: 'incidente', label: 'Incidente' },
-                                                        ]}
-                                                    />
-                                                    <span className="form-hint">Hallazgo: observación preventiva. Incidente: evento ocurrido.</span>
-                                                </div>
-
                                                 {formData.clasificacion === 'hallazgo' && (
                                                     <div className="form-group">
                                                         <label className="form-label">Tipo de Hallazgo *</label>
@@ -1766,21 +1441,6 @@ export default function Incidents() {
 
                                                 {formData.clasificacion === 'incidente' && (
                                                     <div className="form-group">
-                                                        <label className="form-label">Tipo de Evento *</label>
-                                                        <Select
-                                                            ariaLabel="Tipo de evento"
-                                                            value={formData.tipo === 'accidente' ? 'accidente' : 'incidente'}
-                                                            onChange={(v) => setFormData({ ...formData, tipo: v as any })}
-                                                            options={[
-                                                                { value: 'incidente', label: 'Incidente' },
-                                                                { value: 'accidente', label: 'Accidente' },
-                                                            ]}
-                                                        />
-                                                    </div>
-                                                )}
-
-                                                {formData.clasificacion === 'incidente' && (
-                                                    <div className="form-group">
                                                         <label className="form-label">Gravedad *</label>
                                                         <Select
                                                             ariaLabel="Gravedad"
@@ -1795,87 +1455,14 @@ export default function Incidents() {
                                                     </div>
                                                 )}
                                             </div>
-
-                                            {/* Subcategoria: Reporte Flash vs Completo (solo incidentes) */}
-                                            {formData.clasificacion === 'incidente' && (
-                                                <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-                                                    <button type="button" className={`btn btn-sm ${flashMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFlashMode(true)}>
-                                                        Reporte Flash
-                                                    </button>
-                                                    <button type="button" className={`btn btn-sm ${!flashMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setFlashMode(false)}>
-                                                        Reporte Completo
-                                                    </button>
-                                                </div>
-                                            )}
                                         </div>
 
-                                        {/* Reporte flash: datos minimos, se completa en la investigacion */}
-                                        {formData.clasificacion === 'incidente' && flashMode && (
-                                            <div className="form-section">
-                                                <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', fontSize: '0.82rem', color: '#92400e', marginBottom: 'var(--space-3)' }}>
-                                                    Reporte inicial - Informacion segun disponibilidad al momento del registro.
-                                                    Los datos seran completados durante la investigacion.
-                                                </div>
-
-                                                <h3 className="form-section-title">Afectados</h3>
-                                                {flashAfectados.map((afectado, idx) => (
-                                                    <div key={idx} className="grid grid-cols-3 gap-4" style={{ marginBottom: 'var(--space-2)' }}>
-                                                        <div className="form-group" style={{ margin: 0 }}>
-                                                            <input type="text" className="form-input" placeholder="Nombre *" value={afectado.nombre}
-                                                                onChange={(e) => setFlashAfectados(flashAfectados.map((a, i) => i === idx ? { ...a, nombre: e.target.value } : a))} />
-                                                        </div>
-                                                        <div className="form-group" style={{ margin: 0 }}>
-                                                            <input type="text" className="form-input" placeholder="RUT (opcional)" value={afectado.rut}
-                                                                onChange={(e) => setFlashAfectados(flashAfectados.map((a, i) => i === idx ? { ...a, rut: e.target.value } : a))} />
-                                                        </div>
-                                                        <div className="form-group" style={{ margin: 0, display: 'flex', gap: '6px' }}>
-                                                            <input type="text" className="form-input" placeholder="Cargo (opcional)" value={afectado.cargo}
-                                                                onChange={(e) => setFlashAfectados(flashAfectados.map((a, i) => i === idx ? { ...a, cargo: e.target.value } : a))} />
-                                                            {flashAfectados.length > 1 && (
-                                                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFlashAfectados(flashAfectados.filter((_, i) => i !== idx))}>X</button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFlashAfectados([...flashAfectados, { nombre: '', rut: '', cargo: '' }])}>
-                                                    Agregar afectado
-                                                </button>
-
-                                                <div className="form-group" style={{ marginTop: 'var(--space-3)' }}>
-                                                    <label className="form-label">Descripción breve * <span className="text-muted">({flashDescripcion.length}/500)</span></label>
-                                                    <textarea className="form-input" rows={3} maxLength={500} value={flashDescripcion}
-                                                        onChange={(e) => setFlashDescripcion(e.target.value)} required style={{ resize: 'vertical' }} />
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="form-group">
-                                                        <label className="form-label">Severidad *</label>
-                                                        <Select
-                                                            ariaLabel="Severidad"
-                                                            value={formData.gravedad}
-                                                            onChange={(v) => setFormData({ ...formData, gravedad: v as any })}
-                                                            options={[
-                                                                { value: 'leve', label: 'Leve' },
-                                                                { value: 'grave', label: 'Grave' },
-                                                                { value: 'fatal', label: 'Fatal' },
-                                                            ]}
-                                                        />
-                                                    </div>
-                                                    <div className="form-group">
-                                                        <label className="form-label">Ubicación de referencia</label>
-                                                        <input type="text" className="form-input" placeholder="Ej: Piso 3, sector norte" value={flashUbicacion}
-                                                            onChange={(e) => setFlashUbicacion(e.target.value)} />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {!(formData.clasificacion === 'incidente' && flashMode) && (<>
-
-                                        {/* Sección: Trabajador Afectado — autocomplete para ambos tipos */}
+                                        {/* Sección: Trabajador Afectado (solo incidente) */}
+                                        {formData.clasificacion === 'incidente' && (
                                         <div className="form-section">
                                             <h3 className="form-section-title">Trabajador Afectado</h3>
                                             <div className="form-group">
-                                                <label className="form-label">Buscar trabajador *</label>
+                                                <label className="form-label">Buscar trabajador</label>
                                                 <div style={{ position: 'relative' }}>
                                                     <input
                                                         type="text"
@@ -1954,6 +1541,142 @@ export default function Incidents() {
                                                 )}
                                             </div>
                                         </div>
+                                        )}
+
+                                        {/* Sección: Afectados (solo hallazgo tipo acción subestándar, opcional, múltiple) */}
+                                        {formData.clasificacion === 'hallazgo' && formData.tipoHallazgo === 'accion' && (
+                                        <div className="form-section">
+                                            <h3 className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                                Trabajador(es) Afectado(s)
+                                                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 400, color: 'var(--text-muted)' }}>(opcional)</span>
+                                            </h3>
+                                            {afectados.map((afectado, idx) => (
+                                                <div key={idx} style={{ marginBottom: 'var(--space-3)' }}>
+                                                    <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start' }}>
+                                                        <div style={{ position: 'relative', flex: 1 }}>
+                                                            <input
+                                                                type="text"
+                                                                className="form-input"
+                                                                placeholder="Buscar por nombre o RUT…"
+                                                                value={afectadoSearch[idx] ?? ''}
+                                                                autoComplete="off"
+                                                                onChange={(e) => {
+                                                                    const next = [...afectadoSearch];
+                                                                    next[idx] = e.target.value;
+                                                                    setAfectadoSearch(next);
+                                                                    const nextDrop = [...showAfectadoDropdown];
+                                                                    nextDrop[idx] = true;
+                                                                    setShowAfectadoDropdown(nextDrop);
+                                                                    if (!e.target.value) {
+                                                                        setAfectados(afectados.map((a, i) => i === idx ? { nombre: '', rut: '', cargo: '' } : a));
+                                                                    }
+                                                                }}
+                                                                onFocus={() => {
+                                                                    const nextDrop = [...showAfectadoDropdown];
+                                                                    nextDrop[idx] = true;
+                                                                    setShowAfectadoDropdown(nextDrop);
+                                                                }}
+                                                                onBlur={() => setTimeout(() => {
+                                                                    const nextDrop = [...showAfectadoDropdown];
+                                                                    nextDrop[idx] = false;
+                                                                    setShowAfectadoDropdown(nextDrop);
+                                                                }, 150)}
+                                                            />
+                                                            {showAfectadoDropdown[idx] && (afectadoSearch[idx] ?? '').length > 0 && (() => {
+                                                                const q = (afectadoSearch[idx] ?? '').toLowerCase();
+                                                                const filtered = personasTenant.filter(p => {
+                                                                    const fullName = `${p.nombre || ''} ${p.apellido || ''}`.toLowerCase();
+                                                                    return fullName.includes(q) || (p.rut && p.rut.toLowerCase().includes(q));
+                                                                });
+                                                                return (
+                                                                    <div style={{
+                                                                        position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+                                                                        zIndex: 60, background: 'var(--surface-card)',
+                                                                        border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)',
+                                                                        boxShadow: 'var(--shadow-xl)', maxHeight: '200px', overflowY: 'auto'
+                                                                    }}>
+                                                                        {filtered.length === 0 ? (
+                                                                            <div style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                                                                                No se encontraron trabajadores
+                                                                            </div>
+                                                                        ) : filtered.map((p: any) => (
+                                                                            <button
+                                                                                key={p.personaId || p.workerId}
+                                                                                type="button"
+                                                                                style={{
+                                                                                    width: '100%', display: 'flex', flexDirection: 'column',
+                                                                                    padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--surface-border)',
+                                                                                    background: 'transparent', cursor: 'pointer', textAlign: 'left'
+                                                                                }}
+                                                                                onMouseDown={() => {
+                                                                                    const nombre = `${p.nombre || ''} ${p.apellido || ''}`.trim();
+                                                                                    const next = [...afectadoSearch];
+                                                                                    next[idx] = nombre;
+                                                                                    setAfectadoSearch(next);
+                                                                                    const nextDrop = [...showAfectadoDropdown];
+                                                                                    nextDrop[idx] = false;
+                                                                                    setShowAfectadoDropdown(nextDrop);
+                                                                                    setAfectados(afectados.map((a, i) => i === idx ? {
+                                                                                        nombre,
+                                                                                        rut: p.rut || '',
+                                                                                        cargo: p.cargo || p.puesto || ''
+                                                                                    } : a));
+                                                                                }}
+                                                                                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-hover)')}
+                                                                                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                                                            >
+                                                                                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                                                                                    {p.nombre} {p.apellido || ''}
+                                                                                </span>
+                                                                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                                                                                    {p.rut}{p.cargo ? ` · ${p.cargo}` : p.puesto ? ` · ${p.puesto}` : ''}
+                                                                                </span>
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                        {afectados.length > 1 && (
+                                                            <button
+                                                                type="button"
+                                                                style={{
+                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                    width: '36px', height: '36px', flexShrink: 0,
+                                                                    border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)',
+                                                                    background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer'
+                                                                }}
+                                                                onClick={() => {
+                                                                    setAfectados(afectados.filter((_, i) => i !== idx));
+                                                                    setAfectadoSearch(afectadoSearch.filter((_, i) => i !== idx));
+                                                                    setShowAfectadoDropdown(showAfectadoDropdown.filter((_, i) => i !== idx));
+                                                                }}
+                                                            >
+                                                                <FiX size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {afectado.nombre && (
+                                                        <p style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-sm)', color: 'var(--primary-400)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <FiCheck size={13} />
+                                                            {afectado.nombre}{afectado.rut ? ` — ${afectado.rut}` : ''}{afectado.cargo ? ` · ${afectado.cargo}` : ''}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => {
+                                                    setAfectados([...afectados, { nombre: '', rut: '', cargo: '' }]);
+                                                    setAfectadoSearch([...afectadoSearch, '']);
+                                                    setShowAfectadoDropdown([...showAfectadoDropdown, false]);
+                                                }}
+                                            >
+                                                <FiPlus size={14} style={{ marginRight: '4px' }} /> Agregar afectado
+                                            </button>
+                                        </div>
+                                        )}
 
                                         {/* Sección: Descripción */}
                                         <div className="form-section">
@@ -1961,7 +1684,49 @@ export default function Incidents() {
                                                 {formData.clasificacion === 'hallazgo' ? 'Descripción del Hallazgo' : 'Descripción del Incidente'}
                                             </h3>
                                             <div className="form-group">
-                                                <label className="form-label">Detalle *</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                                                    <label className="form-label" style={{ margin: 0 }}>Detalle *</label>
+                                                    <button
+                                                        type="button"
+                                                        title={isDictating ? 'Detener grabación' : isTranscribingDesc ? 'Transcribiendo…' : 'Dictar descripción con voz'}
+                                                        onClick={isDictating ? stopDictation : startDictation}
+                                                        disabled={isTranscribingDesc}
+                                                        style={{
+                                                            display: 'inline-flex', alignItems: 'center', gap: '7px',
+                                                            padding: '6px 14px', minHeight: '36px',
+                                                            borderRadius: 'var(--radius-full)',
+                                                            border: `1.5px solid ${isDictating ? 'var(--danger-500)' : isTranscribingDesc ? 'var(--primary-500)' : 'var(--surface-border)'}`,
+                                                            background: isDictating ? 'rgba(244,67,54,0.10)' : isTranscribingDesc ? 'rgba(0,110,220,0.10)' : 'var(--surface-hover)',
+                                                            color: isDictating ? 'var(--danger-400)' : isTranscribingDesc ? 'var(--primary-400)' : 'var(--text-secondary)',
+                                                            cursor: isTranscribingDesc ? 'not-allowed' : 'pointer',
+                                                            fontSize: 'var(--text-sm)', fontWeight: 500,
+                                                            transition: 'all var(--transition-fast)',
+                                                            flexShrink: 0,
+                                                        }}
+                                                    >
+                                                        {isTranscribingDesc ? (
+                                                            <>
+                                                                <FiRefreshCw size={14} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+                                                                Transcribiendo…
+                                                            </>
+                                                        ) : isDictating ? (
+                                                            <>
+                                                                <span style={{
+                                                                    width: 9, height: 9, borderRadius: '50%',
+                                                                    background: 'var(--danger-500)',
+                                                                    display: 'inline-block', flexShrink: 0,
+                                                                    animation: 'pulse-badge 1s ease-in-out infinite'
+                                                                }} />
+                                                                Grabando · Detener
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <FiMic size={14} />
+                                                                Dictar
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </div>
                                                 <textarea
                                                     className="form-input"
                                                     rows={5}
@@ -1984,25 +1749,86 @@ export default function Incidents() {
                                         <div className="form-section">
                                             <h3 className="form-section-title">Evidencias Fotográficas</h3>
                                             <div className="form-group">
-                                                <div className="upload-zone">
-                                                    <input
-                                                        type="file"
-                                                        id="file-upload"
-                                                        className="hidden"
-                                                        multiple
-                                                        accept="image/*"
-                                                        onChange={handleFileSelect}
-                                                    />
-                                                    <label htmlFor="file-upload" className="upload-label">
-                                                        <FiUpload size={32} className="text-muted mb-2" />
-                                                        <p className="font-semibold">Click para seleccionar fotos</p>
-                                                        <p className="text-sm text-muted">o arrastra y suelta aquí</p>
-                                                        <p className="text-xs text-muted mt-2">PNG, JPG hasta 10MB cada una</p>
-                                                    </label>
+                                                <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch', marginBottom: (uploadedFiles.length > 0 || cameraActive) ? 'var(--space-3)' : 0 }}>
+                                                    <div className="upload-zone" style={{ flex: 1 }}>
+                                                        <input
+                                                            type="file"
+                                                            id="file-upload"
+                                                            className="hidden"
+                                                            multiple
+                                                            accept="image/*"
+                                                            onChange={handleFileSelect}
+                                                        />
+                                                        <label htmlFor="file-upload" className="upload-label">
+                                                            <FiUpload size={24} className="text-muted mb-1" />
+                                                            <p className="font-semibold" style={{ fontSize: 'var(--text-sm)' }}>Seleccionar fotos</p>
+                                                            <p className="text-xs text-muted">PNG, JPG hasta 10MB</p>
+                                                        </label>
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flexShrink: 0 }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={cameraActive ? capturePhoto : startCamera}
+                                                            title={cameraActive ? 'Tomar foto' : 'Abrir cámara'}
+                                                            style={{
+                                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                                                gap: '5px', padding: 'var(--space-3)', minWidth: '76px', flex: 1,
+                                                                border: `1.5px solid ${cameraActive ? 'var(--primary-500)' : 'var(--surface-border)'}`,
+                                                                borderRadius: 'var(--radius-md)',
+                                                                background: cameraActive ? 'rgba(0,110,220,0.10)' : 'var(--surface-hover)',
+                                                                color: cameraActive ? 'var(--primary-400)' : 'var(--text-secondary)',
+                                                                cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: 600,
+                                                                transition: 'all var(--transition-fast)',
+                                                            }}
+                                                        >
+                                                            <FiCamera size={22} />
+                                                            {cameraActive ? 'Capturar' : 'Cámara'}
+                                                        </button>
+                                                        {cameraActive && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={stopCamera}
+                                                                title="Cerrar cámara"
+                                                                style={{
+                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+                                                                    padding: 'var(--space-2)', minHeight: '34px',
+                                                                    border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)',
+                                                                    background: 'transparent', color: 'var(--text-muted)',
+                                                                    cursor: 'pointer', fontSize: 'var(--text-xs)',
+                                                                    transition: 'all var(--transition-fast)',
+                                                                }}
+                                                            >
+                                                                <FiX size={13} /> Cerrar
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
 
+                                                {cameraActive && (
+                                                    <div style={{ marginBottom: 'var(--space-3)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1.5px solid var(--primary-500)', background: '#000' }}>
+                                                        <div style={{
+                                                            padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px',
+                                                            background: 'rgba(0,110,220,0.12)', borderBottom: '1px solid rgba(0,110,220,0.25)',
+                                                            fontSize: 'var(--text-xs)', color: 'var(--primary-400)', fontWeight: 600,
+                                                        }}>
+                                                            <span style={{
+                                                                width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                                                background: 'var(--danger-500)',
+                                                                animation: 'pulse-badge 1s ease-in-out infinite'
+                                                            }} />
+                                                            Cámara activa — presiona Capturar para tomar la foto
+                                                        </div>
+                                                        <video
+                                                            ref={videoRef}
+                                                            autoPlay
+                                                            playsInline
+                                                            style={{ width: '100%', maxHeight: '240px', objectFit: 'cover', display: 'block' }}
+                                                        />
+                                                    </div>
+                                                )}
+
                                                 {uploadedFiles.length > 0 && (
-                                                    <div className="mt-4">
+                                                    <div>
                                                         <p className="text-sm font-semibold mb-2">{uploadedFiles.length} archivo(s) seleccionado(s)</p>
                                                         <div className="grid grid-cols-4 gap-3">
                                                             {uploadedFiles.map((file, index) => (
@@ -2030,8 +1856,6 @@ export default function Incidents() {
                                             </div>
                                         </div>
 
-                                        </>)}
-
                                         {/* Sección: Confirmación de Envío */}
                                         <div className="form-section">
                                             <h3 className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
@@ -2054,7 +1878,7 @@ export default function Incidents() {
                                                         <FiUser size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                                                         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Reportado por</span>
                                                         <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                            {user?.nombre} {(user as any)?.apellido || ''}
+                                                            {[user?.nombre, user?.apellidoPaterno, user?.apellidoMaterno].filter(Boolean).join(' ')}
                                                         </span>
                                                     </div>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
@@ -2138,7 +1962,7 @@ export default function Incidents() {
                         setSelectedIncident(null);
                         setDetailError('');
                         setDetailLoading(false);
-                        setImagePreview(null);
+                        setLightboxIndex(null);
                     }}
                     title={`Detalle del ${selectedIncident ? getTipoLabel(selectedIncident.tipo) : ''}`}
                     subtitle={`Reportado el ${selectedIncident ? new Date(selectedIncident.fecha).toLocaleDateString('es-CL') : ''}`}
@@ -2151,7 +1975,7 @@ export default function Incidents() {
                                 setSelectedIncident(null);
                                 setDetailError('');
                                 setDetailLoading(false);
-                                setImagePreview(null);
+                                setLightboxIndex(null);
                             }}
                         >
                             <FiX className="mr-2" />
@@ -2160,239 +1984,167 @@ export default function Incidents() {
                     }
                 >
                     {selectedIncident && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
 
-                            {/* Banner reporte flash */}
+                            {/* Flash banner */}
                             {(selectedIncident as any).reporteFlash?.esFlash && (
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
-                                    <FiAlertCircle size={15} style={{ color: '#b45309', flexShrink: 0, marginTop: '2px' }} />
-                                    <p style={{ fontSize: 'var(--text-xs)', color: '#92400e', margin: 0, lineHeight: 1.5 }}>
-                                        Reporte inicial — información según disponibilidad al momento del registro. Los datos serán completados durante la investigación.
-                                        {(selectedIncident as any).reporteFlash?.editadoEn && (
-                                            <> Última actualización: {new Date((selectedIncident as any).reporteFlash.editadoEn).toLocaleString('es-CL')}.</>
-                                        )}
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                                    <FiAlertCircle size={14} style={{ color: 'var(--warning-500)', flexShrink: 0, marginTop: '2px' }} />
+                                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                                        Reporte inicial — datos serán completados durante la investigación.
                                     </p>
                                 </div>
                             )}
 
-                            {/* Loading / Error inline */}
+                            {/* Loading / Error */}
                             {detailLoading && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-                                    <FiActivity size={16} style={{ animation: 'spin 1s linear infinite', color: 'var(--primary-500)' }} />
-                                    Cargando detalle completo…
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                                    <FiActivity size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                                    Cargando detalle…
                                 </div>
                             )}
                             {detailError && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', color: 'var(--danger-500)' }}>
-                                    <FiAlertCircle size={15} />
-                                    {detailError}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', color: 'var(--danger-400)' }}>
+                                    <FiAlertCircle size={14} />{detailError}
                                 </div>
                             )}
 
-                            {/* Fila de métricas rápidas */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 'var(--space-3)' }}>
-                                {[
-                                    {
-                                        label: 'Tipo',
-                                        value: getTipoLabel(selectedIncident.tipo),
-                                        icon: <FiAlertTriangle size={13} />,
-                                        accent: 'var(--warning-500)',
-                                    },
-                                    {
-                                        label: 'Estado',
-                                        value: <span className={`badge ${getEstadoBadge(selectedIncident.estado)}`} style={{ fontSize: '11px' }}>{selectedIncident.estado.replace('_', ' ')}</span>,
-                                        icon: <FiActivity size={13} />,
-                                        accent: 'var(--info-500)',
-                                    },
-                                    {
-                                        label: 'Gravedad',
-                                        value: <span className={`badge ${getGravedadBadge(selectedIncident.gravedad)}`} style={{ fontSize: '11px' }}>{selectedIncident.gravedad}</span>,
-                                        icon: <FiAlertCircle size={13} />,
-                                        accent: 'var(--danger-500)',
-                                    },
-                                    {
-                                        label: 'Fecha',
-                                        value: new Date(selectedIncident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' }),
-                                        icon: <FiCalendar size={13} />,
-                                        accent: 'var(--primary-500)',
-                                    },
-                                    ...(selectedIncident.hora ? [{
-                                        label: 'Hora',
-                                        value: selectedIncident.hora,
-                                        icon: <FiActivity size={13} />,
-                                        accent: 'var(--primary-400)',
-                                    }] : []),
-                                    ...(selectedIncident.diasPerdidos && selectedIncident.diasPerdidos > 0 ? [{
-                                        label: 'Días Perdidos',
-                                        value: `${selectedIncident.diasPerdidos} días`,
-                                        icon: <FiCalendar size={13} />,
-                                        accent: 'var(--danger-500)',
-                                    }] : []),
-                                ].map((item, i) => (
-                                    <div key={i} style={{
-                                        background: 'var(--surface-elevated)',
-                                        border: '1px solid var(--surface-border)',
-                                        borderRadius: 'var(--radius-md)',
-                                        padding: 'var(--space-3) var(--space-4)',
-                                    }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', color: item.accent, marginBottom: 'var(--space-2)' }}>
-                                            {item.icon}
-                                            <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
-                                                {item.label}
-                                            </span>
-                                        </div>
-                                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                            {item.value}
-                                        </div>
+                            {/* Metadatos — tira compacta */}
+                            <div style={{ display: 'flex', gap: 'var(--space-6)', flexWrap: 'wrap', paddingBottom: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)' }}>
+                                <div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Tipo</div>
+                                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>{getTipoLabel(selectedIncident.tipo)}</div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Estado</div>
+                                    <span className={`badge ${getEstadoBadge(selectedIncident.estado)}`} style={{ fontSize: '11px' }}>{selectedIncident.estado.replace('_', ' ')}</span>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Gravedad</div>
+                                    <span className={`badge ${getGravedadBadge(selectedIncident.gravedad)}`} style={{ fontSize: '11px' }}>{selectedIncident.gravedad}</span>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Fecha</div>
+                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                                        {new Date(selectedIncident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        {selectedIncident.hora && <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>{selectedIncident.hora}</span>}
                                     </div>
-                                ))}
+                                </div>
+                                {(selectedIncident.diasPerdidos ?? 0) > 0 && (
+                                    <div>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Días perdidos</div>
+                                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--danger-400)' }}>{selectedIncident.diasPerdidos}</div>
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Trabajador afectado */}
-                            <div style={{
-                                background: 'var(--surface-elevated)',
-                                border: '1px solid var(--surface-border)',
-                                borderRadius: 'var(--radius-lg)',
-                                overflow: 'hidden',
-                            }}>
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-                                    padding: 'var(--space-3) var(--space-4)',
-                                    borderBottom: '1px solid var(--surface-border)',
-                                    background: 'var(--surface-card)',
-                                }}>
-                                    <FiUser size={13} style={{ color: 'var(--accent)' }} />
-                                    <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
-                                        Trabajador Afectado
-                                    </span>
+                            {/* Descripción — bloque principal */}
+                            <div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>
+                                    {esHallazgo(selectedIncident) ? 'Descripción del hallazgo' : 'Descripción del incidente'}
                                 </div>
-                                <div style={{ padding: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
-                                    <div className="avatar" style={{ background: 'rgba(239,68,68,0.12)', color: 'var(--danger-500)', width: '48px', height: '48px', fontSize: '1.2rem', fontWeight: 700, flexShrink: 0 }}>
-                                        {selectedIncident.trabajador.nombre.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div style={{ flex: 1, minWidth: '140px' }}>
-                                        <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)', marginBottom: '2px' }}>
-                                            {selectedIncident.trabajador.nombre}
-                                        </div>
-                                        {selectedIncident.trabajador.rut && (
-                                            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                                                {selectedIncident.trabajador.rut}
-                                            </div>
-                                        )}
-                                    </div>
-                                    {(selectedIncident.trabajador.cargo || selectedIncident.trabajador.genero) && (
-                                        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                                            {selectedIncident.trabajador.cargo && (
-                                                <div style={{ background: 'var(--surface-card)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', padding: '6px 12px' }}>
-                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Cargo</span>
-                                                    <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>{selectedIncident.trabajador.cargo}</span>
-                                                </div>
-                                            )}
-                                            {selectedIncident.trabajador.genero && (
-                                                <div style={{ background: 'var(--surface-card)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', padding: '6px 12px' }}>
-                                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Género</span>
-                                                    <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>{selectedIncident.trabajador.genero}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Descripción */}
-                            <div style={{
-                                background: 'var(--surface-elevated)',
-                                border: '1px solid var(--surface-border)',
-                                borderRadius: 'var(--radius-lg)',
-                                overflow: 'hidden',
-                            }}>
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-                                    padding: 'var(--space-3) var(--space-4)',
-                                    borderBottom: '1px solid var(--surface-border)',
-                                    background: 'var(--surface-card)',
-                                }}>
-                                    <FiFileText size={13} style={{ color: 'var(--accent)' }} />
-                                    <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
-                                        {esHallazgo(selectedIncident) ? 'Descripción del Hallazgo' : 'Descripción del Incidente'}
-                                    </span>
-                                </div>
-                                <p style={{ margin: 0, padding: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.7 }}>
-                                    {selectedIncident.descripcion || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin descripción registrada.</span>}
+                                <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: selectedIncident.descripcion ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: selectedIncident.descripcion ? 'normal' : 'italic', lineHeight: 1.75 }}>
+                                    {selectedIncident.descripcion || 'Sin descripción registrada.'}
                                 </p>
                             </div>
 
-                            {/* Trazabilidad */}
-                            {(selectedIncident.reportadoPor || selectedIncident.incidentId) && (
-                                <div style={{
-                                    background: 'var(--surface-elevated)',
-                                    border: '1px solid var(--surface-border)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    overflow: 'hidden',
-                                }}>
-                                    <div style={{
-                                        display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-                                        padding: 'var(--space-3) var(--space-4)',
-                                        borderBottom: '1px solid var(--surface-border)',
-                                        background: 'var(--surface-card)',
-                                    }}>
-                                        <FiFileText size={13} style={{ color: 'var(--accent)' }} />
-                                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
-                                            Trazabilidad
-                                        </span>
-                                    </div>
-                                    <div style={{ padding: 'var(--space-4)', display: 'flex', gap: 'var(--space-6)', flexWrap: 'wrap' }}>
-                                        {selectedIncident.reportadoPor && (
-                                            <div>
-                                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Reportado por</span>
-                                                <p style={{ margin: '4px 0 0', fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>
-                                                    {selectedIncident.reportadoPor}
-                                                </p>
-                                            </div>
-                                        )}
+                            {/* Trabajador afectado */}
+                            {selectedIncident.trabajador.nombre && (
+                                <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>Trabajador afectado</div>
+                                    <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
                                         <div>
-                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>ID del reporte</span>
-                                            <p style={{ margin: '4px 0 0', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                                                {selectedIncident.incidentId}
-                                            </p>
+                                            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{selectedIncident.trabajador.nombre}</div>
+                                            {selectedIncident.trabajador.rut && (
+                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{selectedIncident.trabajador.rut}</div>
+                                            )}
                                         </div>
+                                        {selectedIncident.trabajador.cargo && (
+                                            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', padding: '3px 8px', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-sm)' }}>
+                                                {selectedIncident.trabajador.cargo}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             )}
 
-                            {/* Evidencias fotográficas */}
-                            {incidentEvidenceItems.length > 0 && (
-                                <div style={{
-                                    background: 'var(--surface-elevated)',
-                                    border: '1px solid var(--surface-border)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    overflow: 'hidden',
-                                }}>
-                                    <div style={{
-                                        display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-                                        padding: 'var(--space-3) var(--space-4)',
-                                        borderBottom: '1px solid var(--surface-border)',
-                                        background: 'var(--surface-card)',
-                                    }}>
-                                        <FiImage size={13} style={{ color: 'var(--accent)' }} />
-                                        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>
-                                            Evidencias Fotográficas
-                                        </span>
-                                        <span style={{ marginLeft: 'auto', background: 'var(--accent-tint)', color: 'var(--accent)', fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
-                                            {incidentEvidenceItems.length}
-                                        </span>
+                            {/* Gestionar — acciones con permisos */}
+                            {(canCreateIncidente || canCalificarAccidente) && (
+                                <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 'var(--space-3)' }}>Gestionar</div>
+                                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
+                                        {esHallazgo(selectedIncident) && canCreateIncidente && (
+                                            <button
+                                                className="btn btn-sm btn-secondary"
+                                                onClick={() => openGobernanza(selectedIncident)}
+                                            >
+                                                <FiActivity size={13} style={{ marginRight: '4px' }} />
+                                                Gobernanza del hallazgo
+                                            </button>
+                                        )}
+                                        {canCalificarAccidente && selectedIncident.tipo !== 'accidente' && (
+                                            confirmingAccidenteId === selectedIncident.incidentId ? (
+                                                <>
+                                                    <button
+                                                        className="btn btn-sm"
+                                                        disabled={markingAccidente}
+                                                        onClick={() => handleMarcarAccidente(selectedIncident.incidentId)}
+                                                        style={{ background: 'var(--danger-600)', color: '#fff', border: 'none', opacity: markingAccidente ? 0.7 : 1 }}
+                                                    >
+                                                        {markingAccidente ? 'Guardando…' : '¿Confirmar accidente?'}
+                                                    </button>
+                                                    <button className="btn btn-sm btn-secondary" disabled={markingAccidente} onClick={() => setConfirmingAccidenteId(null)}>
+                                                        Cancelar
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button
+                                                    className="btn btn-sm btn-secondary"
+                                                    onClick={() => setConfirmingAccidenteId(selectedIncident.incidentId)}
+                                                    style={{ color: 'var(--danger-400)', borderColor: 'rgba(239,68,68,0.4)' }}
+                                                >
+                                                    <FiAlertCircle size={13} style={{ marginRight: '4px' }} />
+                                                    Marcar como accidente
+                                                </button>
+                                            )
+                                        )}
                                     </div>
-                                    <div style={{ padding: 'var(--space-4)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 'var(--space-3)' }}>
+                                </div>
+                            )}
+
+                            {/* Trazabilidad */}
+                            {selectedIncident.reportadoPor && (
+                                <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '2px' }}>Reportado por</div>
+                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                                        {(selectedIncident as any).realizadoPor?.nombre || selectedIncident.reportadoPor}
+                                    </div>
+                                    {(selectedIncident as any).realizadoPor?.rut && (
+                                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                                            {(selectedIncident as any).realizadoPor.rut}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Evidencias */}
+                            {incidentEvidenceItems.length > 0 && (
+                                <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Evidencias fotográficas</span>
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{incidentEvidenceItems.length} archivo{incidentEvidenceItems.length !== 1 ? 's' : ''}</span>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--space-2)' }}>
                                         {incidentEvidenceItems.map(item => (
                                             <div
                                                 key={item.id}
                                                 className="incident-evidence-card"
-                                                onClick={() => item.url && setImagePreview({ url: item.url, title: item.title })}
+                                                onClick={() => item.url && openLightbox(item)}
                                                 title={item.url ? 'Ver imagen' : 'Imagen no disponible'}
                                                 role="button"
                                                 tabIndex={0}
                                                 onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-                                                    if (event.key === 'Enter' && item.url) setImagePreview({ url: item.url, title: item.title });
+                                                    if (event.key === 'Enter' && item.url) openLightbox(item);
                                                 }}
                                             >
                                                 {item.url ? (
@@ -2417,25 +2169,103 @@ export default function Incidents() {
                 </Modal>
 
 
-                {imagePreview && (
-                    <div className="incident-evidence-lightbox" onClick={() => setImagePreview(null)}>
+                {lightboxItem && (
+                    <div className="incident-evidence-lightbox" onClick={() => setLightboxIndex(null)}>
                         <div className="incident-evidence-lightbox-content" onClick={(e) => e.stopPropagation()}>
                             <button
                                 type="button"
                                 className="incident-evidence-lightbox-close"
-                                onClick={() => setImagePreview(null)}
+                                onClick={() => setLightboxIndex(null)}
                                 aria-label="Cerrar imagen"
                             >
                                 <FiX size={20} />
                             </button>
-                            <img src={imagePreview.url} alt={imagePreview.title} />
-                            <p>{imagePreview.title}</p>
+                            {viewableEvidence.length > 1 && (
+                                <button
+                                    type="button"
+                                    className="incident-evidence-lightbox-nav prev"
+                                    onClick={showPrevEvidence}
+                                    aria-label="Imagen anterior"
+                                >
+                                    <FiChevronLeft size={26} />
+                                </button>
+                            )}
+                            <img src={lightboxItem.url} alt={lightboxItem.title} />
+                            {viewableEvidence.length > 1 && (
+                                <button
+                                    type="button"
+                                    className="incident-evidence-lightbox-nav next"
+                                    onClick={showNextEvidence}
+                                    aria-label="Imagen siguiente"
+                                >
+                                    <FiChevronRight size={26} />
+                                </button>
+                            )}
+                            <p>
+                                {lightboxItem.title}
+                                {viewableEvidence.length > 1 && (
+                                    <span className="incident-evidence-lightbox-counter">
+                                        {(lightboxIndex ?? 0) + 1} / {viewableEvidence.length}
+                                    </span>
+                                )}
+                            </p>
                         </div>
                     </div>
                 )}
 
 
                 <style>{`
+                /* ── Lista de incidentes/hallazgos ── */
+                .incident-list {
+                    border-top: 1px solid var(--surface-border);
+                }
+
+                .incident-row {
+                    display: grid;
+                    grid-template-columns: 7rem 1fr auto;
+                    gap: var(--space-4);
+                    align-items: start;
+                    padding: var(--space-4) var(--space-5);
+                    border-bottom: 1px solid var(--surface-border);
+                    cursor: pointer;
+                    transition: background var(--transition-fast);
+                    outline: none;
+                }
+
+                .incident-row:hover,
+                .incident-row:focus-visible {
+                    background: var(--surface-elevated);
+                }
+
+                .incident-row-meta {
+                    padding-top: 2px;
+                }
+
+                .incident-row-desc {
+                    padding-top: 2px;
+                }
+
+                .incident-row-status {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: flex-end;
+                    gap: var(--space-1);
+                    padding-top: 2px;
+                    flex-shrink: 0;
+                }
+
+                @media (max-width: 600px) {
+                    .incident-row {
+                        grid-template-columns: 6rem 1fr auto;
+                        gap: var(--space-3);
+                        padding: var(--space-3) var(--space-4);
+                    }
+                }
+
+                @media (prefers-reduced-motion: reduce) {
+                    .incident-row { transition: none; }
+                }
+
                 /* Tabs Navigation */
                 .incidents-tabs {
                     display: flex;
@@ -2831,6 +2661,51 @@ export default function Incidents() {
                     cursor: pointer;
                 }
 
+                .incident-evidence-lightbox-content p {
+                    margin-top: var(--space-3);
+                    text-align: center;
+                    color: white;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: var(--space-3);
+                }
+
+                .incident-evidence-lightbox-counter {
+                    font-variant-numeric: tabular-nums;
+                    color: rgba(255, 255, 255, 0.7);
+                    font-size: var(--text-sm);
+                }
+
+                .incident-evidence-lightbox-nav {
+                    position: absolute;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 999px;
+                    background: rgba(0, 0, 0, 0.45);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    color: white;
+                    cursor: pointer;
+                    transition: background 0.15s ease;
+                }
+
+                .incident-evidence-lightbox-nav:hover {
+                    background: rgba(0, 0, 0, 0.75);
+                }
+
+                .incident-evidence-lightbox-nav.prev { left: -56px; }
+                .incident-evidence-lightbox-nav.next { right: -56px; }
+
+                @media (max-width: 640px) {
+                    .incident-evidence-lightbox-nav.prev { left: 8px; }
+                    .incident-evidence-lightbox-nav.next { right: 8px; }
+                }
+
                 /* AI Quick Report Styles */
                 .quick-report-container {
                     background: var(--surface-card);
@@ -3111,7 +2986,8 @@ export default function Incidents() {
                     50% { transform: scaleY(0.4); }
                 }
             `}</style>
-            </div >
+            </>}
+            </div>
 
             {/* Modal: gobernanza de hallazgos (responsable, plazo, verificacion de cierre) */}
             <Modal

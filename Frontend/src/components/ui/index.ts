@@ -29,3 +29,24 @@ export type { AlertBannerProps, AlertVariant } from './AlertBanner';
 
 export { default as CredentialCard } from './CredentialCard';
 export type { CredentialCardProps } from './CredentialCard';
+
+export { default as PageHeader } from './PageHeader';
+export type { PageHeaderProps } from './PageHeader';
+
+export { default as Stepper } from './Stepper';
+export type { StepperProps, StepperStep } from './Stepper';
+
+export { default as OnboardingShell } from './OnboardingShell';
+export type { OnboardingShellProps } from './OnboardingShell';
+
+export { default as Drawer } from './Drawer';
+export type { DrawerProps } from './Drawer';
+
+export { default as DataTable } from './DataTable';
+export type { DataTableProps, DataTableColumn } from './DataTable';
+
+export { default as CollectionView } from './CollectionView';
+export type { CollectionViewProps, CollectionMode } from './CollectionView';
+
+export { default as FormPage, FieldSection } from './FormPage';
+export type { FormPageProps, FieldSectionProps } from './FormPage';
