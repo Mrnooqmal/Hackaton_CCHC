@@ -4,7 +4,7 @@ const { success, error } = require('../../lib/utils/response');
 const sesClient = new SESClient({ region: 'us-east-1' });
 
 // Email verificado en SES (DEBES VERIFICAR ESTE EMAIL EN AWS SES CONSOLE)
-const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'noreply@prevencionapp.cl';
+const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'thecodecookers@gmail.com';
 
 /**
  * Envía un email de bienvenida con credenciales temporales

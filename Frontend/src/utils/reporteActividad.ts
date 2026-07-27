@@ -132,7 +132,7 @@ ${filasChecklist}
 </tbody></table>`;
     }).join('')}
 
-<div class="pie">Generado por PrevencionApp · ${new Date().toLocaleString('es-CL')}</div>
+<div class="pie">Generado por Build & Serve · ${new Date().toLocaleString('es-CL')}</div>
 <script>window.onload = () => window.print();</script>
 </body></html>`;
 
