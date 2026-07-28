@@ -23,6 +23,7 @@ import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import type { Worker, Activity, SignatureRequest } from '../api/client';
 import { DS44_ONBOARDING_ITEMS, DS44_PLAN_DOCS } from '../utils/ds44';
+import { incidenteAbierto } from '../utils/incidentes';
 import { PageHeader } from '../components/ui';
 
 interface PendingTask {
@@ -497,7 +498,7 @@ export default function Dashboard() {
         if (incidentsResult.status === 'fulfilled') {
             const incidentsRes = incidentsResult.value;
             if (incidentsRes.success && incidentsRes.data) {
-                nextStats.pendingIncidents = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
+                nextStats.pendingIncidents = incidentsRes.data.filter(incidenteAbierto).length;
             }
         } else {
             console.error('Error loading incidents:', incidentsResult.reason);
@@ -558,7 +559,7 @@ export default function Dashboard() {
         if (incidentsResult.status === 'fulfilled') {
             const incidentsRes = incidentsResult.value;
             if (incidentsRes.success && incidentsRes.data) {
-                nextStats.pendingIncidents = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
+                nextStats.pendingIncidents = incidentsRes.data.filter(incidenteAbierto).length;
             }
         } else {
             console.error('Error loading incidents:', incidentsResult.reason);
@@ -630,7 +631,7 @@ export default function Dashboard() {
         if (incidentsResult.status === 'fulfilled') {
             const incidentsRes = incidentsResult.value;
             if (incidentsRes.success && incidentsRes.data) {
-                nextStats.pendingIncidents = incidentsRes.data.filter(i => i.estado === 'reportado' || i.estado === 'en_investigacion').length;
+                nextStats.pendingIncidents = incidentsRes.data.filter(incidenteAbierto).length;
             }
         } else {
             console.error('Error loading incidents:', incidentsResult.reason);

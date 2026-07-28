@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
 import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido } from '../utils/documentoFirmado';
+import { incidenteAbierto, incidenteCerrado } from '../utils/incidentes';
 import { LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl, PageHeader } from '../components/ui';
@@ -478,7 +479,7 @@ export default function ObraDetalle() {
       : ds44Docs.filter((doc) => !doc.archivoSubido).length;
     const mesActual = new Date().toISOString().slice(0, 7);
     const actividadesMes = actividades.filter((act) => act.fecha?.startsWith(mesActual)).length;
-    const incidentesAbiertos = incidentes.filter((inc) => ['reportado', 'en_investigacion'].includes(inc.estado)).length;
+    const incidentesAbiertos = incidentes.filter(incidenteAbierto).length;
     const ds44Label = faseDeming === 'hacer' ? 'Onboarding DS44 pendiente' : 'Documentos DS44 pendientes';
 
     return [
@@ -1005,15 +1006,15 @@ export default function ObraDetalle() {
 
   const generateRegistroATHTML = () => {
     const fecha = new Date().toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
-    const abiertos = incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado));
-    const cerrados = incidentes.filter(i => !['reportado', 'en_investigacion'].includes((i as any).estado));
+    const abiertos = incidentes.filter(incidenteAbierto);
+    const cerrados = incidentes.filter(incidenteCerrado);
     const rows = incidentes.map((inc: any) => `
       <tr>
         <td>${inc.fecha ? new Date(inc.fecha).toLocaleDateString('es-CL') : '-'}</td>
         <td>${inc.tipo || '-'}</td>
         <td>${inc.descripcion || inc.titulo || '-'}</td>
         <td>${inc.trabajadorAfectado || inc.personaAfectada || '-'}</td>
-        <td><span class="badge-${inc.estado === 'cerrado' ? 'ok' : 'warn'}">${inc.estado || '-'}</span></td>
+        <td><span class="badge-${incidenteCerrado(inc) ? 'ok' : 'warn'}">${incidenteCerrado(inc) ? 'cerrado' : (inc.estado || '-')}</span></td>
         <td>${inc.responsable || inc.creadoPor || '-'}</td>
       </tr>`).join('');
 
@@ -2081,9 +2082,9 @@ export default function ObraDetalle() {
                           <span style={{ fontWeight: 600 }}>{incidentes.length}</span>
                           <span className="text-muted"> incidente{incidentes.length !== 1 ? 's' : ''}</span>
                         </span>
-                        {incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado)).length > 0 && (
+                        {incidentes.filter(incidenteAbierto).length > 0 && (
                           <span style={{ fontSize: '0.82rem', color: '#f59e0b', fontWeight: 500 }}>
-                            {incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado)).length} abierto{incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado)).length !== 1 ? 's' : ''}
+                            {incidentes.filter(incidenteAbierto).length} abierto{incidentes.filter(incidenteAbierto).length !== 1 ? 's' : ''}
                           </span>
                         )}
                       </div>
@@ -3172,13 +3173,13 @@ export default function ObraDetalle() {
                 <div style={{ flex: 1, minWidth: '120px' }}>
                   <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: '2px' }}>Abiertos</div>
                   <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#f59e0b' }}>
-                    {incidentes.filter(i => ['reportado', 'en_investigacion'].includes((i as any).estado)).length}
+                    {incidentes.filter(incidenteAbierto).length}
                   </div>
                 </div>
                 <div style={{ flex: 1, minWidth: '120px' }}>
                   <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: '2px' }}>Cerrados</div>
                   <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#10b981' }}>
-                    {incidentes.filter(i => !['reportado', 'en_investigacion'].includes((i as any).estado)).length}
+                    {incidentes.filter(incidenteCerrado).length}
                   </div>
                 </div>
               </div>
