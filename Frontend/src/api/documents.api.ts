@@ -38,8 +38,37 @@ export interface Document {
     asignaciones: DocumentAssignment[];
     estado: string;
     version: number;
+    // Historial de versiones de un procedimiento (snapshot inmutable por versión).
+    versiones?: DocumentVersion[];
+    ultimoMotivoVersion?: string | null;
+    notasCambio?: string | null;
+    ultimaPublicacionPor?: string | null;
+    ultimaPublicacionNombre?: string | null;
     createdAt: string;
     updatedAt: string;
+}
+
+export interface DocumentVersion {
+    version: number;
+    s3Key?: string | null;
+    archivoNombre?: string | null;
+    publicadaPor?: string | null;
+    publicadaPorNombre?: string | null;
+    publicadaEn?: string | null;
+    motivo?: string | null;
+    firmasArchivadas?: DocumentSignature[];
+    asignacionesArchivadas?: DocumentAssignment[];
+}
+
+export interface NuevaVersionData {
+    s3Key: string;
+    archivoNombre?: string;
+    motivo: string;
+    notasCambio?: string;
+    publicadaPor?: string;
+    publicadaPorNombre?: string;
+    // Versión que el cliente cree vigente (control de concurrencia optimista).
+    versionEsperada?: number;
 }
 
 export interface CreateDocumentData {
@@ -129,6 +158,14 @@ export const documentsApi = {
     update: (id: string, data: Partial<Document>) =>
         apiRequest<Document>(`/documents/${id}`, {
             method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+
+    // Publica una nueva versión de un procedimiento: archiva la anterior, resetea
+    // las firmas (re-firma obligatoria) y notifica a la línea de mando.
+    nuevaVersion: (id: string, data: NuevaVersionData) =>
+        apiRequest<Document>(`/documents/${id}/nueva-version`, {
+            method: 'POST',
             body: JSON.stringify(data),
         }),
 

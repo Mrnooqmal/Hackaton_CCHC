@@ -1,8 +1,14 @@
 const { InboxRepository } = require('../../handlers/inbox-module/inbox.repository');
 const { ObraService } = require('../services/ObraService');
+const { PersonaService } = require('../services/PersonaService');
+const { normalizeRol } = require('../utils/validation');
 
 // Nombre del remitente de las notificaciones automáticas del sistema.
 const SYSTEM_SENDER_NAME = 'Build & Serve';
+
+// Roles que componen la línea de mando (destinatarios de avisos de gestión, p.ej.
+// actualización de versión de un procedimiento).
+const ROLES_LINEA_MANDO = new Set(['admin', 'jefe_obra', 'supervisor', 'prevencionista']);
 
 /**
  * Simple Event Bus for dispatching system events
@@ -13,6 +19,25 @@ class EventBus {
         this.listeners = new Map();
         this.inboxRepo = new InboxRepository();
         this.obraService = new ObraService();
+        this.personaService = new PersonaService();
+    }
+
+    /**
+     * Resuelve los personaId de la línea de mando de un tenant (admin, jefe_obra,
+     * supervisor, prevencionista), excluyendo desvinculados. Devuelve [] si falla.
+     */
+    async resolverLineaMando(tenantId) {
+        if (!tenantId) return [];
+        try {
+            const personas = await this.personaService.listByTenant(tenantId);
+            return personas
+                .filter(p => ROLES_LINEA_MANDO.has(normalizeRol(p.rol)))
+                .map(p => p.personaId)
+                .filter(Boolean);
+        } catch (err) {
+            console.error('Error resolviendo línea de mando para notificación:', err);
+            return [];
+        }
     }
 
     /**
@@ -233,6 +258,63 @@ class EventBus {
     }
 
     /**
+     * Notifica la publicación de una nueva versión de un procedimiento:
+     *  - Línea de mando: aviso prioritario (difusión del cambio).
+     *  - Firmantes previos: tarea de re-firma de la versión vigente.
+     * El que publicó se excluye para no auto-notificarse; un firmante que además
+     * es mando recibe solo el aviso de mando (no se duplica).
+     */
+    async onDocumentVersionUpdated(data) {
+        const {
+            documentId, tenantId, obraId, documentName, version,
+            motivo, publicadaPor, publicadaPorNombre, firmanteIds,
+        } = data;
+
+        try {
+            const obraNombre = await this.getObraName(obraId);
+            const obraText = obraNombre ? ` Obra: ${obraNombre}.` : '';
+            const senderName = publicadaPorNombre || SYSTEM_SENDER_NAME;
+
+            // 1) Línea de mando — aviso de gestión (prioridad alta).
+            const mando = await this.resolverLineaMando(tenantId);
+            const mandoRecipients = mando.filter(pid => pid && pid !== publicadaPor);
+            if (mandoRecipients.length > 0) {
+                await this.inboxRepo.sendMessage({
+                    senderId: publicadaPor || 'system',
+                    senderName,
+                    senderRol: 'system',
+                    recipientIds: mandoRecipients,
+                    type: 'alert',
+                    priority: 'high',
+                    subject: `Procedimiento actualizado a v${version}: ${documentName}`,
+                    content: `Se publicó la versión ${version} del procedimiento "${documentName}".${obraText} Motivo: ${motivo}. Difúndelo en tu línea de mando y verifica la re-firma del personal.`,
+                    linkedEntity: { type: 'document', id: documentId },
+                });
+            }
+
+            // 2) Firmantes previos — tarea de re-firma (excluye a los ya avisados como mando).
+            const firmantes = (firmanteIds || []).filter(pid => pid && pid !== publicadaPor && !mandoRecipients.includes(pid));
+            if (firmantes.length > 0) {
+                await this.inboxRepo.sendMessage({
+                    senderId: publicadaPor || 'system',
+                    senderName,
+                    senderRol: 'system',
+                    recipientIds: firmantes,
+                    type: 'task',
+                    priority: 'normal',
+                    subject: `Nueva versión por firmar: ${documentName}`,
+                    content: `El procedimiento "${documentName}" se actualizó a la versión ${version}.${obraText} Debes leer y firmar nuevamente la versión vigente.`,
+                    linkedEntity: { type: 'document', id: documentId },
+                });
+            }
+
+            console.log(`✅ Notificación de versión ${version} de ${documentId} (mando: ${mandoRecipients.length}, re-firma: ${firmantes.length})`);
+        } catch (error) {
+            console.error('Error sending document version notification:', error);
+        }
+    }
+
+    /**
      * Send urgent notification to prevencionistas for incident report
      */
     async onIncidentReported(data) {
@@ -277,5 +359,6 @@ eventBus.on('survey.assigned', (data) => eventBus.onSurveyAssigned(data));
 eventBus.on('signature.requested', (data) => eventBus.onSignatureRequested(data));
 eventBus.on('incident.reported', (data) => eventBus.onIncidentReported(data));
 eventBus.on('epp.validado', (data) => eventBus.onEppValidado(data));
+eventBus.on('document.version.updated', (data) => eventBus.onDocumentVersionUpdated(data));
 
 module.exports = { eventBus };

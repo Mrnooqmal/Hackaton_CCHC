@@ -442,6 +442,13 @@ functions:
           path: /documents/{id}
           method: PUT
 
+  documentNuevaVersion:
+    handler: handlers/documents/handler.nuevaVersion
+    events:
+      - httpApi:
+          path: /documents/{id}/nueva-version
+          method: POST
+
   assignDocument:
     handler: handlers/documents/handler.assign
     events:

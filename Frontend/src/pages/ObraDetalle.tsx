@@ -58,6 +58,15 @@ const extractEmpresaDocs = (cargos: any[]): Record<string, { fileKey: string; no
   return out;
 };
 
+// Tipos de documento que son procedimientos de obra (DS 44): actualizar su
+// archivo publica una NUEVA VERSIÓN (notifica a la línea de mando + re-firma).
+// Espejo de TIPOS_PROCEDIMIENTO en Backend/handlers/documents/handler.js.
+const TIPOS_PROCEDIMIENTO = new Set<string>([
+  ...DS44_DO_PROCEDIMIENTOS.map((el) => el.tipo),
+  'PROCEDIMIENTO_TRABAJO',
+]);
+const esProcedimiento = (tipo?: string): boolean => !!tipo && TIPOS_PROCEDIMIENTO.has(tipo);
+
 // Construye la lista de documentos base de la obra reconciliando:
 //  1) documentos propios de la obra (clasificacion 'obra'), y
 //  2) documentos corporativos heredados (Política SST, Reglamento Interno).
@@ -136,8 +145,8 @@ export default function ObraDetalle() {
   const [relatorSaving, setRelatorSaving] = useState(false);
   const [relatorError, setRelatorError] = useState<string | null>(null);
   // Modal inline de creacion DO (procedimiento/evento => documento; capacitacion => actividad)
-  const [doCreateModal, setDoCreateModal] = useState<{ mode: 'documento' | 'actividad'; el: any } | null>(null);
-  const [doCreateForm, setDoCreateForm] = useState<{ titulo: string; descripcion: string; fecha: string; relatorId: string; file: File | null }>({ titulo: '', descripcion: '', fecha: '', relatorId: '', file: null });
+  const [doCreateModal, setDoCreateModal] = useState<{ mode: 'documento' | 'actividad'; el: any; existingDoc?: any } | null>(null);
+  const [doCreateForm, setDoCreateForm] = useState<{ titulo: string; descripcion: string; fecha: string; relatorId: string; file: File | null; motivo: string }>({ titulo: '', descripcion: '', fecha: '', relatorId: '', file: null, motivo: '' });
   const [doCreateSaving, setDoCreateSaving] = useState(false);
   const [doCreateError, setDoCreateError] = useState<string | null>(null);
   const [savingObraFlag, setSavingObraFlag] = useState<string | null>(null);
@@ -190,6 +199,7 @@ export default function ObraDetalle() {
   const [doWorkerIds, setDoWorkerIds] = useState<string[]>([]);
   const [doPreviewing, setDoPreviewing] = useState(false);
   const doFileInputRef = useRef<HTMLInputElement | null>(null);
+  const doCreateFileRef = useRef<HTMLInputElement | null>(null);
   const autoAdvanceRef = useRef<string | null>(null); // fase desde la que ya se auto-avanzó
   // Panel DO: workers expandidos
   const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set());
@@ -717,16 +727,33 @@ export default function ObraDetalle() {
   };
 
   // Abre el modal inline pre-rellenado con los datos del elemento DO.
-  const openDoCreate = (mode: 'documento' | 'actividad', el: any) => {
+  const openDoCreate = (mode: 'documento' | 'actividad', el: any, existingDoc?: any) => {
     setDoCreateForm({
       titulo: el.titulo || '',
       descripcion: '',
       fecha: new Date().toISOString().slice(0, 10),
       relatorId: '',
       file: null,
+      motivo: '',
     });
     setDoCreateError(null);
-    setDoCreateModal({ mode, el });
+    setDoCreateModal({ mode, el, existingDoc: existingDoc || null });
+  };
+
+  // Descarga el archivo de una versión concreta (historial) vía URL prefirmada.
+  const descargarVersionArchivo = async (fileKey?: string | null) => {
+    if (!fileKey) { alert('Esta versión no tiene archivo asociado.'); return; }
+    try {
+      const res = await uploadsApi.getDownloadUrl(fileKey);
+      if (res.success && res.data?.downloadUrl) {
+        window.open(res.data.downloadUrl, '_blank', 'noopener');
+      } else {
+        alert('No se pudo obtener el archivo de esa versión.');
+      }
+    } catch (err) {
+      console.error('Error descargando versión:', err);
+      alert('No se pudo obtener el archivo de esa versión.');
+    }
   };
 
   // Crea inline el documento (procedimiento/evento) o la actividad (capacitacion).
@@ -751,6 +778,18 @@ export default function ObraDetalle() {
         await reloadActividades();
         setObraToast(el.activityTipo === 'SIMULACRO' ? 'Simulacro programado.' : 'Capacitación programada. Queda pendiente de firmas de asistencia.');
       } else {
+        const existingDoc = doCreateModal.existingDoc;
+        // Publicar nueva versión: procedimiento que YA tenía archivo + archivo nuevo.
+        // (La primera subida sobre un doc sin archivo es una actualización normal, no v2.)
+        // Exige motivo (auditoría) y dispara la notificación a la línea de mando.
+        const yaTieneArchivo = Boolean(existingDoc?.s3Key || existingDoc?.archivoUrl);
+        const esNuevaVersion = Boolean(existingDoc?.documentId) && yaTieneArchivo && Boolean(doCreateForm.file) && esProcedimiento(el.tipo);
+        if (esNuevaVersion && !doCreateForm.motivo.trim()) {
+          setDoCreateError('Indica el motivo del cambio para publicar la nueva versión.');
+          setDoCreateSaving(false);
+          return;
+        }
+
         let s3Key: string | undefined;
         let archivoNombre: string | undefined;
         if (doCreateForm.file) {
@@ -765,15 +804,71 @@ export default function ObraDetalle() {
             archivoNombre = doCreateForm.file.name;
           }
         }
-        const r = await documentsApi.create({
-          obraId, tenantId: obra.tenantId, tipo: el.tipo, titulo: doCreateForm.titulo,
-          descripcion: doCreateForm.descripcion, clasificacion: 'obra', fase: 'hacer',
-          s3Key, archivoUrl: s3Key, archivoNombre,
-          createdBy: user?.personaId, creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined,
-        } as any);
-        if (!r.success) { setDoCreateError(r.error || 'No se pudo crear el documento.'); return; }
-        await reloadDocs();
-        setObraToast('Documento creado.');
+
+        const autorNombre = user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined;
+        if (esNuevaVersion && s3Key) {
+          const nuevaVer = (existingDoc.version || 1) + 1;
+          const r = await documentsApi.nuevaVersion(existingDoc.documentId, {
+            s3Key, archivoNombre,
+            motivo: doCreateForm.motivo.trim(),
+            notasCambio: doCreateForm.descripcion || undefined,
+            publicadaPor: user?.personaId,
+            publicadaPorNombre: autorNombre,
+            versionEsperada: existingDoc.version,
+          });
+          if (!r.success) { setDoCreateError(r.error || 'No se pudo publicar la nueva versión.'); return; }
+
+          // Solicitud de firma de la nueva versión: sin esto la re-firma no aparece
+          // en "Mis Firmas" (que lee de SignatureRequests + docs 'diario'), solo en
+          // el inbox. Se emite a los mismos firmantes de la versión anterior.
+          try {
+            const firmanteIds = (existingDoc.asignaciones || [])
+              .map((a: any) => a.personaId || a.workerId)
+              .filter(Boolean);
+            if (firmanteIds.length > 0) {
+              const docTitle = el.titulo || doCreateForm.titulo || 'Procedimiento';
+              const docAttachments = [{ nombre: archivoNombre || docTitle, url: s3Key, tipo: 'application/pdf', tamaño: doCreateForm.file?.size || 0 }];
+              await signatureRequestsApi.create({
+                tipo: 'DOCUMENTO',
+                titulo: `${docTitle} (v${nuevaVer})`,
+                descripcion: `Nueva versión (v${nuevaVer}) del procedimiento "${docTitle}". Debes leer y firmar la versión vigente.`,
+                documentos: docAttachments,
+                trabajadoresIds: firmanteIds,
+                solicitanteId: user?.personaId || '',
+                fechaLimite: existingDoc.fechaCaducidad || undefined,
+                tenantId: obra.tenantId,
+                obraId,
+                referenciaId: existingDoc.documentId,
+                referenciaTipo: 'document',
+                documentId: existingDoc.documentId,
+              } as any);
+            }
+          } catch (sigReqError) {
+            console.warn('No se pudo crear la solicitud de re-firma (aparecerá en el inbox pero no en Mis Firmas):', sigReqError);
+          }
+
+          await reloadDocs();
+          setObraToast('Nueva versión publicada. Se notificó a la línea de mando y el personal debe re-firmar.');
+        } else if (existingDoc?.documentId) {
+          // Actualización de metadatos/archivo sin versionar (doc no procedimiento).
+          const r = await documentsApi.update(existingDoc.documentId, {
+            titulo: doCreateForm.titulo, descripcion: doCreateForm.descripcion,
+            ...(s3Key ? { s3Key, archivoUrl: s3Key, archivoNombre } : {}),
+          } as any);
+          if (!r.success) { setDoCreateError(r.error || 'No se pudo actualizar el documento.'); return; }
+          await reloadDocs();
+          setObraToast('Documento actualizado.');
+        } else {
+          const r = await documentsApi.create({
+            obraId, tenantId: obra.tenantId, tipo: el.tipo, titulo: doCreateForm.titulo,
+            descripcion: doCreateForm.descripcion, clasificacion: 'obra', fase: 'hacer',
+            s3Key, archivoUrl: s3Key, archivoNombre,
+            createdBy: user?.personaId, creatorName: autorNombre,
+          } as any);
+          if (!r.success) { setDoCreateError(r.error || 'No se pudo crear el documento.'); return; }
+          await reloadDocs();
+          setObraToast('Documento creado.');
+        }
       }
       setDoCreateModal(null);
     } catch (err) {
@@ -2114,15 +2209,19 @@ export default function ObraDetalle() {
                 {/* ── Sección: Procedimientos operativos (documento de obra) ── */}
                 <div className="ds44-section-label">Procedimientos operativos</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-                  {doProcedimientos.filter((p) => p.aplicabilidad !== 'no_aplica').map(({ el, aplicabilidad, estado, firmadas, totalFirmas }) => {
+                  {doProcedimientos.filter((p) => p.aplicabilidad !== 'no_aplica').map(({ el, aplicabilidad, estado, firmadas, totalFirmas, document }) => {
                     const verificar = aplicabilidad === 'verificar';
                     const cf = verificar ? condicionFlag(el.condicion) : null;
                     const badgeClass = estado === 'completo' ? 'badge-success' : estado === 'pendiente_firma' ? 'badge-warning' : 'badge-danger';
                     const badgeLabel = estado === 'completo' ? 'Completo' : estado === 'pendiente_firma' ? 'Pendiente de firma' : 'Faltante';
+                    const version = document?.version || 0;
                     return (
                       <div key={el.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
-                          <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
+                          <div className="font-medium" style={{ fontSize: '0.9rem' }}>
+                            {el.titulo}
+                            {version > 1 && <span className="badge badge-neutral" style={{ marginLeft: '6px', fontSize: '0.68rem' }}>v{version}</span>}
+                          </div>
                           <div className="text-muted" style={{ fontSize: '0.78rem' }}>
                             {el.articulo}
                             {totalFirmas > 0 && ` · Firmas: ${firmadas}/${totalFirmas}`}
@@ -2138,8 +2237,8 @@ export default function ObraDetalle() {
                           ) : (
                             <>
                               <span className={`badge ${badgeClass}`}>{badgeLabel}</span>
-                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => openDoCreate('documento', el)}>
-                                {estado === 'faltante' ? 'Crear / subir' : 'Actualizar'}
+                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => openDoCreate('documento', el, document)}>
+                                {estado === 'faltante' ? 'Crear / subir' : (document?.s3Key || document?.archivoUrl) ? 'Nueva versión' : 'Actualizar'}
                               </button>
                             </>
                           )}
@@ -3021,18 +3120,89 @@ export default function ObraDetalle() {
                 La actividad queda "Programada" hasta que los asistentes firmen su asistencia. Recién ahí cuenta como ejecutada.
               </div>
             </>
-          ) : (
+          ) : (() => {
+            const versionActual = doCreateModal?.existingDoc?.version || 0;
+            const yaTieneArchivo = Boolean(doCreateModal?.existingDoc?.s3Key || doCreateModal?.existingDoc?.archivoUrl);
+            const puedeVersionar = Boolean(doCreateModal?.existingDoc?.documentId) && yaTieneArchivo && esProcedimiento(doCreateModal?.el?.tipo);
+            const publicandoVersion = puedeVersionar && Boolean(doCreateForm.file);
+            return (
             <>
+              {puedeVersionar && (
+                <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', fontSize: '0.8rem', lineHeight: 1.55 }}>
+                  <div style={{ fontWeight: 600, marginBottom: '2px' }}>Versión vigente: v{versionActual}</div>
+                  <div className="text-muted">
+                    Subir un archivo publica la <strong>v{versionActual + 1}</strong>, notifica a la línea de mando y exige re-firma. La versión anterior queda en el historial.
+                  </div>
+                </div>
+              )}
               <div className="form-group">
-                <label className="form-label">Descripción</label>
+                <label className="form-label">{publicandoVersion ? 'Notas de la versión (opcional)' : 'Descripción'}</label>
                 <textarea className="form-input" rows={3} value={doCreateForm.descripcion} onChange={(e) => setDoCreateForm((p) => ({ ...p, descripcion: e.target.value }))} placeholder="Contenido o resumen del procedimiento…" style={{ resize: 'vertical' }} />
               </div>
               <div className="form-group">
-                <label className="form-label">Archivo (opcional)</label>
-                <input type="file" className="form-input" accept="application/pdf,image/*" onChange={(e) => setDoCreateForm((p) => ({ ...p, file: e.target.files?.[0] || null }))} />
+                <label className="form-label">{puedeVersionar ? 'Archivo de la nueva versión' : 'Archivo (opcional)'}</label>
+                <input
+                  ref={doCreateFileRef}
+                  type="file"
+                  accept="application/pdf,image/*"
+                  style={{ display: 'none' }}
+                  onChange={(e) => setDoCreateForm((p) => ({ ...p, file: e.target.files?.[0] || null }))}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => doCreateFileRef.current?.click()}>
+                    <FiUploadCloud size={15} style={{ marginRight: '6px' }} />
+                    {doCreateForm.file ? 'Cambiar archivo' : puedeVersionar ? 'Seleccionar nuevo archivo' : 'Seleccionar archivo'}
+                  </button>
+                  <span className="text-muted" style={{ fontSize: '0.8rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {doCreateForm.file?.name || 'Ningún archivo seleccionado'}
+                  </span>
+                </div>
               </div>
+              {publicandoVersion && (
+                <div className="form-group">
+                  <label className="form-label">Motivo del cambio *</label>
+                  <input className="form-input" value={doCreateForm.motivo} onChange={(e) => setDoCreateForm((p) => ({ ...p, motivo: e.target.value }))} placeholder="Ej: actualización por cambio de procedimiento en altura" />
+                </div>
+              )}
+
+              {(() => {
+                const doc = doCreateModal?.existingDoc;
+                const historial = Array.isArray(doc?.versiones) ? doc.versiones : [];
+                if (!doc?.documentId || (historial.length === 0 && (doc.version || 0) <= 1)) return null;
+                // Vigente primero, luego las archivadas de más nueva a más antigua.
+                const filas = [
+                  { version: doc.version || 1, archivoNombre: doc.archivoNombre, s3Key: doc.s3Key || doc.archivoUrl, motivo: doc.ultimoMotivoVersion, publicadaPorNombre: doc.ultimaPublicacionNombre, publicadaEn: doc.updatedAt, vigente: true },
+                  ...[...historial].reverse().map((v: any) => ({ ...v, vigente: false })),
+                ];
+                return (
+                  <div className="form-group">
+                    <label className="form-label">Historial de versiones</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                      {filas.map((v: any) => (
+                        <div key={`v-${v.version}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) var(--space-3)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', background: v.vigente ? 'var(--surface-elevated)' : 'transparent' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                              v{v.version}
+                              {v.vigente && <span className="badge badge-success" style={{ marginLeft: '6px', fontSize: '0.66rem' }}>Vigente</span>}
+                            </div>
+                            <div className="text-muted" style={{ fontSize: '0.74rem' }}>
+                              {v.publicadaEn ? formatDate(v.publicadaEn) : '—'}
+                              {v.publicadaPorNombre ? ` · ${v.publicadaPorNombre}` : ''}
+                              {v.motivo ? ` · ${v.motivo}` : ''}
+                            </div>
+                          </div>
+                          <button className="btn btn-secondary btn-sm" type="button" disabled={!v.s3Key} onClick={() => descargarVersionArchivo(v.s3Key)}>
+                            Descargar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </>
-          )}
+            );
+          })()}
         </div>
       </Modal>
 

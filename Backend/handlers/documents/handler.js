@@ -86,6 +86,16 @@ const DOCUMENT_TYPES = {
     OTRO_DIARIO: 'Otro registro de obra',
 };
 
+// Procedimientos de obra (DS 44): documentos cuya actualización de versión debe
+// notificarse a la línea de mando y re-firmarse. Espejo de DS44_DO_PROCEDIMIENTOS
+// en Frontend/src/utils/ds44.ts (más el procedimiento de trabajo genérico).
+const TIPOS_PROCEDIMIENTO = new Set([
+    'PROCEDIMIENTO_TRABAJO', 'PROCEDIMIENTO_EPP', 'OPERACION_MAQUINAS', 'PROCEDIMIENTO_AGENTES',
+    'PLAN_EMERGENCIAS', 'PROCEDIMIENTO_RIESGO_GRAVE', 'PROCEDIMIENTO_EVACUACION',
+    'PROCEDIMIENTO_INVESTIGACION', 'GESTION_CAMBIOS', 'COORDINACION_ENTIDADES', 'CONSULTA_REPRESENTANTES',
+]);
+const esProcedimiento = (tipo) => TIPOS_PROCEDIMIENTO.has(tipo);
+
 /**
  * POST /documents - Crear nuevo documento
  */
@@ -321,6 +331,130 @@ module.exports.update = async (event) => {
         return success(result.Attributes);
     } catch (err) {
         console.error('Error updating document:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * POST /documents/{id}/nueva-version — Publica una nueva versión de un
+ * PROCEDIMIENTO. Archiva la versión anterior (con sus firmas) en `versiones[]`,
+ * sube `version`, reemplaza el archivo, resetea las asignaciones a 'pendiente'
+ * (re-firma obligatoria) e invalida el PDF estampado cacheado. Emite
+ * `document.version.updated` → notifica a la línea de mando y a los firmantes.
+ *
+ * Body: { s3Key, archivoNombre?, motivo, notasCambio?, publicadaPor?,
+ *         publicadaPorNombre?, versionEsperada? }
+ */
+module.exports.nuevaVersion = async (event) => {
+    try {
+        const { id } = event.pathParameters || {};
+        if (!id) return error('ID de documento requerido');
+
+        const body = JSON.parse(event.body || '{}');
+        const { s3Key, motivo, notasCambio, publicadaPor, versionEsperada } = body;
+
+        if (!s3Key) return error('s3Key (archivo de la nueva versión) es requerido');
+        if (!motivo || !String(motivo).trim()) return error('El motivo del cambio es requerido');
+
+        const cur = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
+        const doc = cur.Item;
+        if (!doc) return error('Documento no encontrado', 404);
+        if (!esProcedimiento(doc.tipo)) {
+            return error('El versionado con notificación solo aplica a procedimientos', 400);
+        }
+
+        const tenantId = doc.tenantId;
+
+        // Enforcement por permiso + aislamiento de tenant cuando se identifica al actor.
+        if (publicadaPor) {
+            const personaService = new PersonaService();
+            const actor = await personaService.getById(publicadaPor).catch(() => null);
+            if (!actor || actor.tenantId !== tenantId) {
+                return error('No autorizado para este documento', 403);
+            }
+            const tenant = await new TenantService().getById(tenantId).catch(() => null);
+            const tenantSafe = tenant ? tenant.toSafeFormat() : null;
+            const puede = PERMISOS_SUBIR_DOC.some(p => personaPuede(actor, tenantSafe, p));
+            if (!puede) return error('No tienes permiso para publicar una nueva versión', 403);
+        }
+
+        // Control de concurrencia optimista (evita pisar una versión publicada en paralelo).
+        const versionActual = doc.version || 1;
+        if (versionEsperada !== undefined && Number(versionEsperada) !== versionActual) {
+            return error('El documento cambió mientras editabas. Recarga e inténtalo de nuevo.', 409);
+        }
+
+        const now = new Date().toISOString();
+        const nuevaVer = versionActual + 1;
+
+        // Snapshot inmutable de la versión anterior (auditoría). Las firmas reales
+        // permanecen además en SignaturesTable (no se toca — restricción legal PIN).
+        const snapshot = {
+            version: versionActual,
+            s3Key: doc.s3Key || null,
+            archivoNombre: doc.archivoNombre || null,
+            publicadaPor: doc.ultimaPublicacionPor || doc.createdBy || null,
+            publicadaPorNombre: doc.ultimaPublicacionNombre || doc.creatorName || null,
+            publicadaEn: doc.updatedAt || doc.createdAt || null,
+            motivo: doc.ultimoMotivoVersion || null,
+            firmasArchivadas: doc.firmas || [],
+            asignacionesArchivadas: doc.asignaciones || [],
+        };
+        const versiones = Array.isArray(doc.versiones) ? [...doc.versiones, snapshot] : [snapshot];
+
+        // Re-firma: se conservan las mismas personas asignadas, en estado 'pendiente'.
+        const asignacionesReset = (doc.asignaciones || []).map(a => ({
+            ...a, estado: 'pendiente', fechaFirma: null, notificado: true,
+        }));
+        const firmantesPrevios = [...new Set((doc.asignaciones || []).map(a => a.personaId).filter(Boolean))];
+
+        await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id },
+            UpdateExpression: 'SET version = :v, versiones = :vs, s3Key = :s3, archivoUrl = :s3, archivoNombre = :an, '
+                + 'firmas = :empty, asignaciones = :asig, documentoFirmadoS3Key = :nulo, documentoFirmadoFirmaCount = :cero, '
+                + '#um = :motivo, notasCambio = :notas, ultimaPublicacionPor = :pby, ultimaPublicacionNombre = :pbn, updatedAt = :now',
+            ExpressionAttributeNames: { '#um': 'ultimoMotivoVersion' },
+            ExpressionAttributeValues: {
+                ':v': nuevaVer,
+                ':vs': versiones,
+                ':s3': s3Key,
+                ':an': body.archivoNombre || doc.archivoNombre || null,
+                ':empty': [],
+                ':asig': asignacionesReset,
+                ':nulo': null,
+                ':cero': 0,
+                ':motivo': motivo,
+                ':notas': notasCambio || null,
+                ':pby': publicadaPor || null,
+                ':pbn': body.publicadaPorNombre || null,
+                ':now': now,
+            },
+        }));
+
+        // Notificación desacoplada (best-effort: no rompe la publicación).
+        try {
+            await eventBus.emit('document.version.updated', {
+                documentId: id,
+                tenantId,
+                obraId: doc.obraId || null,
+                documentName: doc.titulo,
+                tipo: doc.tipo,
+                version: nuevaVer,
+                motivo,
+                notasCambio: notasCambio || null,
+                publicadaPor: publicadaPor || 'system',
+                publicadaPorNombre: body.publicadaPorNombre || 'Gestor SST',
+                firmanteIds: firmantesPrevios,
+            });
+        } catch (eventErr) {
+            console.error('Error emitting document.version.updated event:', eventErr);
+        }
+
+        const updated = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
+        return success(updated.Item);
+    } catch (err) {
+        console.error('Error creating document version:', err);
         return error(err.message, 500);
     }
 };

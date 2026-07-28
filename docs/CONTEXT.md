@@ -202,6 +202,40 @@ Dos dimensiones distintas:
   `estado`, `fechaFirma`). El botón "Asignar" en el frontend requiere el permiso
   de subir documentos.
 
+### 4.6.1 Versionado de procedimientos + notificación (`POST /documents/{id}/nueva-version`)
+Los **procedimientos** de obra (tipos en `TIPOS_PROCEDIMIENTO`: `PROCEDIMIENTO_TRABAJO`,
+`OPERACION_MAQUINAS`, `PROCEDIMIENTO_EPP`, `PLAN_EMERGENCIAS`, `GESTION_CAMBIOS`,
+`COORDINACION_ENTIDADES`, etc. — espejo `esProcedimiento` back/front) soportan
+**versionado con re-firma y notificación automática a la línea de mando**:
+- Reemplazar el archivo de un procedimiento **que ya tenía uno** publica una
+  **nueva versión** (`handler.nuevaVersion`): archiva la versión anterior en
+  `doc.versiones[]` (snapshot con `s3Key`, `motivo`, quién/cuándo y sus firmas),
+  sube `doc.version`, resetea las `asignaciones` a `pendiente` (**re-firma
+  obligatoria**), limpia `firmas` e invalida el PDF estampado cacheado
+  (`documentoFirmadoS3Key`). Exige `motivo`; control de concurrencia por
+  `versionEsperada`. La primera subida a un doc sin archivo es actualización
+  normal (sigue v1), no genera versión.
+- Emite el evento **`document.version.updated`** → `EventBus.onDocumentVersionUpdated`:
+  avisa por **inbox** con prioridad `high` a la **línea de mando** del tenant
+  (`resolverLineaMando`: roles `admin`, `jefe_obra`, `supervisor`, `prevencionista`)
+  y una **tarea de re-firma** (`normal`) a los firmantes previos (sin duplicar a
+  quien ya es mando; excluye al que publicó). El SMS **no se usa** por ahora: se
+  deja la prioridad `high` para que se enganche solo cuando se reactive el canal.
+- **Frontend** (`ObraDetalle.tsx`, sección procedimientos DO): botón "Nueva
+  versión", badge `v{n}`, aviso + `motivo` obligatorio en el modal (selector de
+  archivo con estilo de la app), y **panel de historial de versiones** con
+  descarga por versión (`uploadsApi.getDownloadUrl`).
+  `FirmaService`/`SignaturesTable` **no se tocan** (firmas reales quedan intactas
+  en su tabla inmutable; en `versiones[]` va solo un snapshot para auditoría).
+- **Re-firma visible en "Mis Firmas":** además de resetear `asignaciones` a
+  `pendiente`, al publicar la nueva versión el frontend crea una **`SignatureRequest`**
+  (`referenciaId = documentId`, versión en el título) para los firmantes previos.
+  Sin esto la re-firma solo aparecería en el inbox: "Mis Firmas" lee de
+  `signatureRequestsApi.getPendingByWorker` + docs `clasificacion:'diario'`, y los
+  procedimientos son `clasificacion:'obra'`. El módulo **Documentos** (`Documents.tsx`)
+  categoriza por `tipo` (normativos/diarios/repositorio) y **no** lista los
+  procedimientos de obra: éstos se firman desde "Mis Firmas" y el detalle de obra.
+
 ### 4.7 Firmas digitales (`lib/services/FirmaService.js`) — Strategy Pattern
 4 estrategias de validación:
 - **PIN**: verifica PIN contra `pinHash` (hasheado con `personaId`). Método principal.
@@ -277,7 +311,7 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
 | `obras-module/` | itty-router | CRUD obras, fases, asignación de equipo, plantillas onboarding |
 | `personas-module/` | itty-router | CRUD personas, carga masiva, enrolamiento, transferencia entre obras, currículum/historial |
 | `auth/` | por-endpoint | login, change/forgot/reset-password, logout, me, validate-token |
-| `documents/` | por-endpoint | CRUD, assign, sign, sign-bulk, sign-assisted, download-firmado, stamp |
+| `documents/` | por-endpoint | CRUD, **nueva-version** (versionado de procedimientos + notificación a la línea de mando, §4.6.1), assign, sign, sign-bulk, sign-assisted, download-firmado, stamp |
 | `signatures/` | por-endpoint | crear firma, enrolamiento, verify por token, disputas/resolución |
 | `signature-requests/` | por-endpoint | solicitudes de firma, pendientes/historial por worker, offline-batch, stats |
 | `activities/` | por-endpoint | charlas, capacitaciones; planificación mensual (`plan`), edición/cierre (`patch`), registro de asistencia, stats (ver §4.9) |
@@ -353,7 +387,7 @@ Todas `PAY_PER_REQUEST`. Nombre real: `${service}-{tabla}-${stage}`.
 | **Tenants** | `PK=TENANT#{id}` / `SK=METADATA#{id}` | slug-index, status-index | Empresas cliente |
 | **Obras** | `PK=TENANT#{id}` / `SK=OBRA#{obraId}` | obraId-index | Query por tenant sin Scan |
 | **Personas** | `PK=TENANT#{id}` / `SK=PERSONA#{id}` | personaId-index, email-index, tenantRut-index | Identidad unificada |
-| **Documents** | `PK=documentId` | tenantId-index | clasificación obra/diario |
+| **Documents** | `PK=documentId` | tenantId-index | clasificación obra/diario; `version` + `versiones[]` (historial de procedimientos, §4.6.1) |
 | **Activities** | `PK=activityId` | tenantId-index | charlas/capacitaciones; `alertas.*` para el scheduler (§4.9) |
 | **Ausencias** | `PK=tenantId` / `SK={obraId}#{fecha}#{personaId}` | — | permisos/ausencias del día (§4.9, §6). Query por `begins_with(sk, "{obraId}#")` |
 | **Incidents** | `PK=incidentId` | tenantId-fecha-index | reportes |
@@ -437,7 +471,9 @@ implementados** (catálogos, bloque `planificacion`, `permisosTrabajo`, `plan`,
 El checklist operativo (planificación/charlas/firmas/alertas) se trabajó por
 secciones. **§3 (firmas: cierre, rezagados, atraso) y §6 (semáforo, vencidas,
 pendientes, ausencias, alertas programadas) están implementados** — ver §4.9.
-Pendientes conocidos fuera de §3/§6: versionado de documentos (§4), fix responsivo
+El **versionado de documentos (§4)** ya está implementado para procedimientos:
+nueva versión con re-firma obligatoria y notificación automática a la línea de
+mando (ver §4.6.1). Pendientes conocidos fuera de §3/§6: fix responsivo
 de firma en vertical (§7), módulo "comando" y vínculo cargo↔actividad (§8),
 exportar reportes del dashboard (§9), FAQ/tutoriales (§10), PITR y salida de SES
 del sandbox (infra).
