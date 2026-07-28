@@ -28,9 +28,6 @@ export interface BulkPreviewRow extends BulkRowInput {
     errores: string[];
     advertencias: string[];
     esDuplicado: boolean;
-    // RUT desvinculado de otra empresa: al confirmar, esta fila transfiere a la
-    // persona en vez de crearla desde cero (preserva currículum del origen).
-    esTransferencia?: boolean;
     obraIds: string[];
     supervisorRutKey: string | null;
 }
@@ -83,12 +80,8 @@ export const personasApi = {
         nivelEscolar?: string;
         contactoEmergencia?: { nombre?: string; telefono?: string; relacion?: string };
         cursos?: Array<{ nombre: string }>;
-        // Confirma la transferencia de una persona desvinculada de OTRA empresa
-        // hacia esta (ver GET /personas/validate → transferible:true).
-        confirmarTransferencia?: boolean;
     }) =>
-        apiRequest<{ message: string; persona: PersonaResponse; passwordTemporal?: string; emailNotificado: boolean }
-            | { requiereConfirmacionTransferencia: true; personaPrevia: { nombre: string; apellido: string; rut: string; cargo: string | null; fechaDesvinculacion: string | null } }>(
+        apiRequest<{ message: string; persona: PersonaResponse; passwordTemporal?: string; emailNotificado: boolean }>(
             `/personas?tenantId=${tenantId}`, {
             method: 'POST',
             body: JSON.stringify(data),
@@ -114,11 +107,11 @@ export const personasApi = {
         }),
 
     // tenantId es opcional: sin él (ej. paso "admin" del onboarding de un tenant
-    // que todavía no existe) el backend hace solo el chequeo global informativo.
-    // Con tenantId distingue duplicado en esta empresa (bloquea), activo en otra
-    // empresa (bloquea) o desvinculado en otra empresa (transferible: no bloquea).
+    // que todavía no existe) el backend hace el chequeo global informativo. Con
+    // tenantId valida solo dentro de esa empresa (una persona puede pertenecer a
+    // varias empresas a la vez, así que no hay chequeo cross-tenant).
     validateRut: (rut: string, tenantId?: string) =>
-        apiRequest<{ existe: boolean; valido: boolean; bloqueaCreacion: boolean; transferible?: boolean; mensaje: string | null }>(
+        apiRequest<{ existe: boolean; valido: boolean; mensaje: string | null }>(
             `/personas/validate?rut=${encodeURIComponent(rut)}${tenantId ? `&tenantId=${tenantId}` : ''}`
         ),
 

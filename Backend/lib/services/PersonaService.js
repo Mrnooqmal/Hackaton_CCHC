@@ -7,7 +7,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, QueryCommand, UpdateCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const { Persona, ROLES } = require('../models/Persona');
 const {
@@ -154,55 +154,44 @@ class PersonaService {
     }
 
     /**
-     * Busca si un RUT ya existe en OTRO tenant (excluye coincidencias del propio
-     * tenantId, que ya maneja crear()/getByRut como duplicado intra-tenant).
-     * Devuelve la Persona encontrada (cualquier estado) o null.
+     * Busca TODAS las fichas (en cualquier tenant, cualquier estado) que
+     * coinciden con un RUT. Base para el login multi-tenant: una persona puede
+     * pertenecer a varias empresas a la vez.
      */
-    async buscarPersonaCrossTenant(tenantId, rut) {
-        const encontrada = await this.getByRutGlobal(rut);
-        if (!encontrada || encontrada.tenantId === tenantId) return null;
-        return encontrada;
+    async getAllByRutGlobal(rut) {
+        const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+        const rutValidation = validateRut(rut);
+        const rutFormatted = rutValidation.valid ? rutValidation.formatted : rut;
+        const result = await this.dynamo.send(new ScanCommand({
+            TableName: this.table,
+            FilterExpression: 'rut = :rut AND begins_with(SK, :prefix)',
+            ExpressionAttributeValues: { ':rut': rutFormatted, ':prefix': 'PERSONA#' }
+        }));
+        return (result.Items || []).map((item) => Persona.fromDynamoItem(item));
     }
 
     /**
-     * Variante en lote de buscarPersonaCrossTenant, para carga masiva: dado un
-     * array de RUTs, devuelve un Map<rutFormateado, Persona> con las coincidencias
-     * de OTROS tenants (excluye tenantId). Un solo Scan con filtro `rut IN (...)`
-     * en chunks para no exceder límites de expresión de DynamoDB.
+     * Propaga una contraseña recién cambiada a las demás fichas (otros tenants)
+     * de la misma persona, para que la contraseña siga siendo "una sola" para
+     * toda la identidad. Recibe la ficha ya actualizada (origen) + la
+     * contraseña en texto plano (necesaria para recalcular el hash con la sal
+     * propia de cada ficha hermana).
      */
-    async buscarPersonasCrossTenantBatch(tenantId, ruts) {
-        const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
-        const formateados = [...new Set(
-            (ruts || [])
-                .map((r) => {
-                    const v = validateRut(r);
-                    return v.valid ? v.formatted : null;
-                })
-                .filter(Boolean)
-        )];
-        const resultado = new Map();
-        if (!formateados.length) return resultado;
+    async propagarPassword(personaOrigen, passwordPlano, { passwordTemporal = false } = {}) {
+        const todas = await this.getAllByRutGlobal(personaOrigen.rut);
+        const hermanas = todas.filter((p) => p.personaId !== personaOrigen.personaId && p.tieneAccesoWeb);
+        const now = new Date().toISOString();
 
-        const CHUNK = 90;
-        for (let i = 0; i < formateados.length; i += CHUNK) {
-            const chunk = formateados.slice(i, i + CHUNK);
-            const expressionValues = { ':prefix': 'PERSONA#' };
-            const placeholders = chunk.map((rut, idx) => {
-                const key = `:rut${idx}`;
-                expressionValues[key] = rut;
-                return key;
-            });
-            const result = await this.dynamo.send(new ScanCommand({
-                TableName: this.table,
-                FilterExpression: `begins_with(SK, :prefix) AND rut IN (${placeholders.join(', ')})`,
-                ExpressionAttributeValues: expressionValues
-            }));
-            (result.Items || []).forEach((item) => {
-                if (item.tenantId === tenantId) return;
-                resultado.set(item.rut, Persona.fromDynamoItem(item));
-            });
-        }
-        return resultado;
+        await Promise.all(hermanas.map((h) => this.dynamo.send(new UpdateCommand({
+            TableName: this.table,
+            Key: { PK: `TENANT#${h.tenantId}`, SK: `PERSONA#${h.personaId}` },
+            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':passwordHash': hashPassword(passwordPlano, h.personaId),
+                ':passwordTemporal': passwordTemporal,
+                ':updatedAt': now
+            }
+        }))));
     }
 
     /**
@@ -515,7 +504,8 @@ class PersonaService {
         };
     }
     /**
-     * Resetear contraseña — genera nueva password temporal
+     * Resetear contraseña — genera nueva password temporal y la propaga a las
+     * demás fichas (otras empresas) de la misma persona.
      */
     async resetPassword(tenantId, personaId) {
         const persona = await this.getById(personaId);
@@ -538,6 +528,7 @@ class PersonaService {
                 ':updatedAt': now
             }
         }));
+        await this.propagarPassword(persona, passwordTemporal, { passwordTemporal: true });
 
         return {
             message: 'Contraseña reseteada exitosamente',
@@ -571,68 +562,6 @@ class PersonaService {
             }
         }));
         return { message: 'Persona desvinculada de la empresa', personaId };
-    }
-
-    /**
-     * Transfiere una persona DESVINCULADA de otro tenant al tenant destino.
-     * Preserva identidad/currículum (rut, nombre, apellidos, fechaNacimiento,
-     * nivelEscolar, cursos, evidencias, fotoPerfil, vigilanciaSalud,
-     * restriccionLaboral) y el personaId (es la sal de pinHash/passwordHash y lo
-     * referencian por atributo otras tablas). Resetea todo lo laboral (rol,
-     * cargo, obraIds, asignaciones, historialAsignaciones, onboardingDS44,
-     * estado, habilitado, enrolamiento, PIN/password) como una alta nueva.
-     * Delete(origen) + Put(destino) son atómicos vía TransactWriteCommand.
-     */
-    async transferirEntreTenants(rut, tenantDestino, data) {
-        const origen = await this.getByRutGlobal(rut);
-        if (!origen) throw new Error('La persona a transferir ya no existe');
-        if (origen.tenantId === tenantDestino) throw new Error('La persona ya pertenece a este tenant');
-        if (origen.estado !== 'desvinculado') {
-            throw new Error('La persona ya no está disponible para transferencia (no está desvinculada de su empresa anterior)');
-        }
-
-        const { personaData, passwordTemporal } = this._datosBaseAlta(tenantDestino, data, { personaId: origen.personaId });
-
-        // Campos de identidad/currículum: se preservan del origen, no del formulario.
-        Object.assign(personaData, {
-            rut: origen.rut,
-            nombre: origen.nombre,
-            apellidoPaterno: origen.apellidoPaterno,
-            apellidoMaterno: origen.apellidoMaterno,
-            apellido: origen.apellido,
-            fechaNacimiento: origen.fechaNacimiento,
-            nivelEscolar: origen.nivelEscolar,
-            cursos: origen.cursos,
-            evidencias: origen.evidencias,
-            fotoPerfil: origen.fotoPerfil,
-            vigilanciaSalud: origen.vigilanciaSalud,
-            restriccionLaboral: origen.restriccionLaboral,
-        });
-
-        const persona = new Persona(personaData);
-
-        await this.dynamo.send(new TransactWriteCommand({
-            TransactItems: [
-                {
-                    Delete: {
-                        TableName: this.table,
-                        Key: { PK: `TENANT#${origen.tenantId}`, SK: `PERSONA#${origen.personaId}` },
-                        ConditionExpression: '#estado = :desvinculado',
-                        ExpressionAttributeNames: { '#estado': 'estado' },
-                        ExpressionAttributeValues: { ':desvinculado': 'desvinculado' }
-                    }
-                },
-                {
-                    Put: {
-                        TableName: this.table,
-                        Item: persona.toDynamoItem(),
-                        ConditionExpression: 'attribute_not_exists(PK)'
-                    }
-                }
-            ]
-        }));
-
-        return { persona, passwordTemporal, tenantOrigen: origen.tenantId };
     }
 }
 

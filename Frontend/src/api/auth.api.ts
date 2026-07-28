@@ -1,7 +1,7 @@
 import { apiRequest } from './client';
 import type { User } from './client';
 
-export interface LoginResponse {
+export interface LoginSuccess {
     token: string;
     sessionId: string;
     expiresAt: string;
@@ -9,6 +9,16 @@ export interface LoginResponse {
     requiereCambioPassword: boolean;
     requiereEnrolamiento: boolean;
 }
+
+// Cuando el RUT pertenece a más de una empresa: no crea sesión todavía, hay
+// que elegir empresa vía authApi.selectTenant.
+export interface LoginRequiereSeleccion {
+    requiereSeleccionTenant: true;
+    selectionToken: string;
+    opciones: { tenantId: string; tenantNombre: string; rol: string }[];
+}
+
+export type LoginResponse = LoginSuccess | LoginRequiereSeleccion;
 
 export interface ChangePasswordData {
     personaId: string;
@@ -35,6 +45,13 @@ export const authApi = {
         apiRequest<LoginResponse>('/auth/login', {
             method: 'POST',
             body: JSON.stringify({ rut, password }),
+        }),
+
+    // Segundo paso del login cuando el RUT pertenece a varias empresas.
+    selectTenant: (selectionToken: string, tenantId: string) =>
+        apiRequest<LoginSuccess>('/auth/select-tenant', {
+            method: 'POST',
+            body: JSON.stringify({ selectionToken, tenantId }),
         }),
 
     changePassword: (data: ChangePasswordData) =>

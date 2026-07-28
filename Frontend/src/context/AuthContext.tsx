@@ -1,5 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { authApi, type User, type SessionInfo } from '../api/client';
+import { authApi, type User, type SessionInfo, type LoginSuccess } from '../api/client';
+
+export interface TenantOpcion { tenantId: string; tenantNombre: string; rol: string }
+
+type LoginResult = {
+    success: boolean;
+    error?: string;
+    requiresChangePassword?: boolean;
+    requiresEnrollment?: boolean;
+    // Presente cuando el RUT pertenece a varias empresas: hay que llamar a
+    // completarLoginConTenant con el tenantId elegido antes de tener sesión.
+    requiresTenantSelection?: boolean;
+    selectionToken?: string;
+    opciones?: TenantOpcion[];
+};
 
 interface AuthContextType {
     user: User | null;
@@ -8,7 +22,8 @@ interface AuthContextType {
     error: string | null;
     sessionExpired: boolean;
     clearSessionExpired: () => void;
-    login: (rut: string, password: string) => Promise<{ success: boolean; error?: string; requiresChangePassword?: boolean; requiresEnrollment?: boolean }>;
+    login: (rut: string, password: string) => Promise<LoginResult>;
+    completarLoginConTenant: (selectionToken: string, tenantId: string) => Promise<LoginResult>;
     logout: () => Promise<void>;
     updateUser: (userData: Partial<User>) => void;
     hasPermission: (permission: string) => boolean;
@@ -81,36 +96,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         checkAuth();
     }, [checkAuth]);
 
-    const login = async (rut: string, password: string) => {
+    // Aplica una sesión ya creada por el backend (login directo o tras elegir
+    // empresa): guarda localStorage + estado de React. Compartido por login()
+    // (caso de una sola empresa) y completarLoginConTenant().
+    const aplicarSesion = (data: LoginSuccess) => {
+        const { token, sessionId, user: userData, expiresAt } = data;
+
+        localStorage.setItem('auth_token', token);
+        localStorage.setItem('session_id', sessionId);
+        if ((data as any).tenantId) {
+            localStorage.setItem('tenant_id', (data as any).tenantId);
+        } else if ((userData as any).empresaId) {
+            localStorage.setItem('tenant_id', (userData as any).empresaId);
+        } else if ((userData as any).tenantId) {
+            localStorage.setItem('tenant_id', (userData as any).tenantId);
+        }
+
+        const enrichedUser = {
+            ...userData,
+            personaId: (userData as any).personaId,
+            tenantId: (userData as any).tenantId,
+        };
+
+        setUser(enrichedUser);
+        setSession({
+            sessionId,
+            expiresAt,
+            lastActivity: new Date().toISOString()
+        });
+        scheduleAutoLogout(expiresAt);
+    };
+
+    const login = async (rut: string, password: string): Promise<LoginResult> => {
         setError(null);
         try {
             const response = await authApi.login(rut, password);
             if (response.success && response.data) {
-                const { token, sessionId, user: userData, expiresAt, requiereCambioPassword, requiereEnrolamiento } = response.data;
-
-                localStorage.setItem('auth_token', token);
-                localStorage.setItem('session_id', sessionId);
-                if ((response.data as any).tenantId) {
-                    localStorage.setItem('tenant_id', (response.data as any).tenantId);
-                } else if ((userData as any).empresaId) {
-                    localStorage.setItem('tenant_id', (userData as any).empresaId);
-                } else if ((userData as any).tenantId) {
-                    localStorage.setItem('tenant_id', (userData as any).tenantId);
+                if ('requiereSeleccionTenant' in response.data) {
+                    const { selectionToken, opciones } = response.data;
+                    return { success: true, requiresTenantSelection: true, selectionToken, opciones };
                 }
 
-                const enrichedUser = {
-                    ...userData,
-                    personaId: (userData as any).personaId,
-                    tenantId: (userData as any).tenantId,
-                };
-
-                setUser(enrichedUser);
-                setSession({
-                    sessionId,
-                    expiresAt,
-                    lastActivity: new Date().toISOString()
-                });
-                scheduleAutoLogout(expiresAt);
+                const { requiereCambioPassword, requiereEnrolamiento } = response.data;
+                aplicarSesion(response.data);
 
                 return {
                     success: true,
@@ -122,6 +150,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setError(msg);
                 return { success: false, error: msg };
             }
+        } catch (err) {
+            const msg = 'Error de conexión';
+            setError(msg);
+            return { success: false, error: msg };
+        }
+    };
+
+    const completarLoginConTenant = async (selectionToken: string, tenantId: string): Promise<LoginResult> => {
+        setError(null);
+        try {
+            const response = await authApi.selectTenant(selectionToken, tenantId);
+            if (response.success && response.data) {
+                const { requiereCambioPassword, requiereEnrolamiento } = response.data;
+                aplicarSesion(response.data);
+                return {
+                    success: true,
+                    requiresChangePassword: requiereCambioPassword,
+                    requiresEnrollment: requiereEnrolamiento
+                };
+            }
+            const msg = response.error || 'Error al iniciar sesión';
+            setError(msg);
+            return { success: false, error: msg };
         } catch (err) {
             const msg = 'Error de conexión';
             setError(msg);
@@ -159,7 +210,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, session, loading, error, sessionExpired, clearSessionExpired, login, logout, updateUser, hasPermission }}>
+        <AuthContext.Provider value={{ user, session, loading, error, sessionExpired, clearSessionExpired, login, completarLoginConTenant, logout, updateUser, hasPermission }}>
             {children}
         </AuthContext.Provider>
     );

@@ -8,7 +8,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { docClient } = require('../../lib/clients/dynamodb');
@@ -22,6 +22,7 @@ const crypto = require('crypto');
 
 const SESSIONS_TABLE = process.env.SESSIONS_TABLE || 'Sessions';
 const SESSION_DURATION_HOURS = 6;
+const SELECTION_TOKEN_MINUTES = 5;
 const BUCKET_NAME = process.env.DOCUMENTS_BUCKET;
 
 const personaService = new PersonaService();
@@ -69,10 +70,78 @@ const generateSessionToken = () => {
 };
 
 /**
+ * Crea la sesión real para una ficha ya resuelta (persona × tenant) y arma la
+ * respuesta de login exitoso. Compartido por login() (caso de una sola
+ * empresa) y selectTenant() (tras elegir empresa cuando hay varias).
+ * Re-valida acceso web y estado por si cambiaron entre el login y la
+ * selección (o si la ficha llega directo desde login()).
+ */
+const crearSesionParaPersona = async (persona, event) => {
+    if (!persona.tieneAccesoWeb) {
+        return error('Este usuario no tiene acceso web. Use la app móvil.', 403);
+    }
+    if (['suspendido', 'inactivo', 'desvinculado'].includes(persona.estado)) {
+        return error('Usuario suspendido o desvinculado. Contacte al administrador.', 403);
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000);
+    const sessionId = uuidv4();
+    const token = generateSessionToken();
+
+    const session = {
+        sessionId,
+        personaId: persona.personaId,
+        tenantId: persona.tenantId,
+        token,
+        ipAddress: event.requestContext?.http?.sourceIp
+            || event.requestContext?.identity?.sourceIp || 'unknown',
+        userAgent: event.headers?.['user-agent'] || 'unknown',
+        createdAt: now.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        lastActivity: now.toISOString(),
+        activa: true,
+        // TTL para auto-cleanup de DynamoDB
+        ttl: Math.floor(expiresAt.getTime() / 1000)
+    };
+
+    await docClient.send(new PutCommand({
+        TableName: SESSIONS_TABLE,
+        Item: session
+    }));
+
+    // Actualizar último acceso
+    await docClient.send(new UpdateCommand({
+        TableName: process.env.PERSONAS_TABLE || 'Personas',
+        Key: {
+            PK: `TENANT#${persona.tenantId}`,
+            SK: `PERSONA#${persona.personaId}`
+        },
+        UpdateExpression: 'SET ultimoAcceso = :ultimoAcceso',
+        ExpressionAttributeValues: { ':ultimoAcceso': now.toISOString() }
+    }));
+
+    return success({
+        message: 'Inicio de sesión exitoso',
+        token,
+        sessionId,
+        expiresAt: expiresAt.toISOString(),
+        user: await buildUserPayload(persona),
+        tenantId: persona.tenantId,
+        requiereCambioPassword: persona.passwordTemporal,
+        requiereEnrolamiento: !persona.habilitado
+    });
+};
+
+/**
  * POST /auth/login - Iniciar sesión
- * 
- * Body: { rut, password, tenantId? }
- * tenantId es opcional: si no viene, se busca por email cross-tenant
+ *
+ * Body: { rut, password }
+ * Una persona puede pertenecer a varias empresas (mismo RUT, contraseña
+ * compartida — ver PersonaService.propagarPassword). La credencial se valida
+ * UNA vez contra cualquier ficha con acceso web que coincida; si la identidad
+ * pertenece a una sola empresa con acceso activo, entra directo. Si pertenece
+ * a varias, se devuelve un token corto para elegir empresa (ver selectTenant).
  */
 module.exports.login = async (event) => {
     try {
@@ -83,108 +152,109 @@ module.exports.login = async (event) => {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
-        const { rut, password, tenantId } = body;
+        const { rut, password } = body;
 
         const rutValidation = validateRut(rut);
         if (!rutValidation.valid) {
             return error('RUT inválido');
         }
 
-        // Buscar persona por RUT dentro del tenant
-        let persona = null;
-        if (tenantId) {
-            persona = await personaService.getByRut(tenantId, rutValidation.formatted);
-        }
+        const todas = await personaService.getAllByRutGlobal(rutValidation.formatted);
 
-        // Si no se encontró y no se dio tenantId, intentar buscar cross-tenant por email
-        // (fallback para compatibilidad)
-        if (!persona) {
-            // Fallback: buscar en PersonasTable por RUT (GSI tenantRut no funciona sin tenantId)
-            // En producción con Cognito esto se resuelve con el JWT
-            const { QueryCommand: QC } = require('@aws-sdk/lib-dynamodb');
-            // Por ahora, usar un approach legacy temporal
-            const { ScanCommand: SC } = require('@aws-sdk/lib-dynamodb');
-            const scanResult = await docClient.send(new SC({
-                TableName: process.env.PERSONAS_TABLE || 'Personas',
-                IndexName: 'tenantRut-index',
-                FilterExpression: 'rut = :rut',
-                ExpressionAttributeValues: { ':rut': rutValidation.formatted }
-            }));
-            if (scanResult.Items && scanResult.Items.length > 0) {
-                const { Persona } = require('../../lib/models/Persona');
-                persona = Persona.fromDynamoItem(scanResult.Items[0]);
-            }
-        }
-
-        if (!persona) {
+        // Identidad: la contraseña debe coincidir con AL MENOS una ficha con
+        // acceso web (cualquier estado — incluso desvinculada, para poder
+        // distinguir "contraseña incorrecta" de "sin empresas activas").
+        const candidatas = todas.filter((p) => p.tieneAccesoWeb && p._passwordHash);
+        const autenticado = candidatas.some((p) => verifyPassword(password, p._passwordHash, p.personaId));
+        if (!autenticado) {
             return error('Credenciales inválidas', 401);
         }
 
-        if (!persona.tieneAccesoWeb) {
-            return error('Este usuario no tiene acceso web. Use la app móvil.', 403);
+        const seleccionables = todas.filter((p) =>
+            p.tieneAccesoWeb && !['desvinculado', 'suspendido', 'inactivo'].includes(p.estado));
+        if (seleccionables.length === 0) {
+            return error('No tienes acceso web activo en ninguna empresa. Contacta a tu administrador.', 403);
         }
 
-        if (persona.estado === 'suspendido' || persona.estado === 'inactivo') {
-            return error('Usuario suspendido. Contacte al administrador.', 403);
+        if (seleccionables.length === 1) {
+            return await crearSesionParaPersona(seleccionables[0], event);
         }
 
-        // Verificar contraseña (hasheada con personaId)
-        const passValido = verifyPassword(password, persona._passwordHash, persona.personaId);
-        if (!passValido) {
-            return error('Credenciales inválidas', 401);
-        }
-
+        // Pertenece a varias empresas: se pide elegir antes de crear sesión.
         const now = new Date();
-        const expiresAt = new Date(now.getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000);
-
-        // Crear sesión con tenantId y personaId
-        const sessionId = uuidv4();
-        const token = generateSessionToken();
-
-        const session = {
-            sessionId,
-            personaId: persona.personaId,
-            tenantId: persona.tenantId,
-            token,
-            ipAddress: event.requestContext?.http?.sourceIp
-                || event.requestContext?.identity?.sourceIp || 'unknown',
-            userAgent: event.headers?.['user-agent'] || 'unknown',
-            createdAt: now.toISOString(),
-            expiresAt: expiresAt.toISOString(),
-            lastActivity: now.toISOString(),
-            activa: true,
-            // TTL para auto-cleanup de DynamoDB
-            ttl: Math.floor(expiresAt.getTime() / 1000)
-        };
+        const expiresAt = new Date(now.getTime() + SELECTION_TOKEN_MINUTES * 60 * 1000);
+        const selectionToken = crypto.randomBytes(32).toString('hex');
 
         await docClient.send(new PutCommand({
             TableName: SESSIONS_TABLE,
-            Item: session
+            Item: {
+                sessionId: selectionToken,
+                activa: false,
+                pendienteSeleccion: true,
+                rut: rutValidation.formatted,
+                opciones: seleccionables.map((p) => ({ personaId: p.personaId, tenantId: p.tenantId })),
+                createdAt: now.toISOString(),
+                expiresAt: expiresAt.toISOString(),
+                ttl: Math.floor(expiresAt.getTime() / 1000)
+            }
         }));
 
-        // Actualizar último acceso
-        await docClient.send(new UpdateCommand({
-            TableName: process.env.PERSONAS_TABLE || 'Personas',
-            Key: {
-                PK: `TENANT#${persona.tenantId}`,
-                SK: `PERSONA#${persona.personaId}`
-            },
-            UpdateExpression: 'SET ultimoAcceso = :ultimoAcceso',
-            ExpressionAttributeValues: { ':ultimoAcceso': now.toISOString() }
+        const opciones = await Promise.all(seleccionables.map(async (p) => {
+            const tenant = await tenantService.getById(p.tenantId).catch(() => null);
+            return { tenantId: p.tenantId, tenantNombre: tenant?.nombre || p.tenantId, rol: p.rol };
         }));
 
-        return success({
-            message: 'Inicio de sesión exitoso',
-            token,
-            sessionId,
-            expiresAt: expiresAt.toISOString(),
-            user: await buildUserPayload(persona),
-            tenantId: persona.tenantId,
-            requiereCambioPassword: persona.passwordTemporal,
-            requiereEnrolamiento: !persona.habilitado
-        });
+        return success({ requiereSeleccionTenant: true, selectionToken, opciones });
     } catch (err) {
         console.error('Error in login:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * POST /auth/select-tenant - Segundo paso del login cuando la persona
+ * pertenece a varias empresas.
+ * Body: { selectionToken, tenantId }
+ */
+module.exports.selectTenant = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+        const validation = validateRequired(body, ['selectionToken', 'tenantId']);
+        if (!validation.valid) {
+            return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
+        }
+
+        const { selectionToken, tenantId } = body;
+        const invalidMsg = 'La selección expiró o es inválida. Inicia sesión nuevamente.';
+
+        const pendingResult = await docClient.send(new GetCommand({
+            TableName: SESSIONS_TABLE,
+            Key: { sessionId: selectionToken }
+        }));
+        const pending = pendingResult.Item;
+        if (!pending || !pending.pendienteSeleccion) {
+            return error(invalidMsg, 401);
+        }
+        if (new Date(pending.expiresAt) < new Date()) {
+            return error(invalidMsg, 401);
+        }
+        const opcionValida = (pending.opciones || []).some((o) => o.tenantId === tenantId);
+        if (!opcionValida) {
+            return error('Empresa no válida para esta selección.', 401);
+        }
+
+        const persona = await personaService.getByRut(tenantId, pending.rut);
+        if (!persona) return error('Persona no encontrada', 404);
+
+        // Un solo uso.
+        await docClient.send(new DeleteCommand({
+            TableName: SESSIONS_TABLE,
+            Key: { sessionId: selectionToken }
+        })).catch(() => {});
+
+        return await crearSesionParaPersona(persona, event);
+    } catch (err) {
+        console.error('Error in selectTenant:', err);
         return error(err.message, 500);
     }
 };
@@ -239,6 +309,9 @@ module.exports.changePassword = async (event) => {
                 ':updatedAt': now
             }
         }));
+        // Mantiene la contraseña "única" para toda la identidad (mismo RUT en
+        // otras empresas).
+        await personaService.propagarPassword(persona, passwordNuevo, { passwordTemporal: false });
 
         return success({ message: 'Contraseña actualizada exitosamente', passwordTemporal: false });
     } catch (err) {
@@ -389,6 +462,9 @@ module.exports.resetPassword = async (event) => {
                 ':u': now
             }
         }));
+        // Mantiene la contraseña "única" para toda la identidad (mismo RUT en
+        // otras empresas).
+        await personaService.propagarPassword(personaItem, passwordNuevo, { passwordTemporal: false });
 
         return success({ message: 'Contraseña restablecida exitosamente. Ya puedes iniciar sesión.' });
     } catch (err) {

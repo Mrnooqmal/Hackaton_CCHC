@@ -4,8 +4,8 @@ import { personasApi } from '../api/personas.api';
 import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
-import { FormPage, FieldSection, Select, CredentialCard, Modal } from '../components/ui';
-import { FiCheckCircle, FiInfo, FiArrowLeft, FiAlertTriangle } from 'react-icons/fi';
+import { FormPage, FieldSection, Select, CredentialCard } from '../components/ui';
+import { FiCheckCircle, FiInfo, FiArrowLeft } from 'react-icons/fi';
 import { getCargoLabel } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import type { PersonaResponse } from '../api/types';
@@ -143,15 +143,9 @@ export default function PersonaNueva() {
     // Supervisor (cuadrilla) elegido por obra cuando el rol es "persona trabajadora".
     const [obraSupervisores, setObraSupervisores] = useState<Record<string, string>>({});
     const [rutError, setRutError] = useState('');
-    const [rutInfo, setRutInfo] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
     const [success, setSuccess] = useState<{ rut: string; nombre: string; password?: string } | null>(null);
-    // Cuando el RUT pertenece a una persona desvinculada de otra empresa, el
-    // backend pide confirmación explícita antes de transferirla a esta.
-    const [confirmarTransferencia, setConfirmarTransferencia] = useState<{
-        nombre: string; apellido: string; rut: string; cargo: string | null; fechaDesvinculacion: string | null;
-    } | null>(null);
 
     useEffect(() => {
         if (!tenantId) return;
@@ -185,14 +179,13 @@ export default function PersonaNueva() {
     };
 
     const handleRutBlur = async () => {
-        setRutInfo('');
         if (!form.rut) { setRutError(''); return; }
         try {
             const res = await personasApi.validateRut(form.rut, tenantId);
             if (!res.success || !res.data) return;
-            if (res.data.bloqueaCreacion) { setRutError(res.data.mensaje || 'Este RUT no puede registrarse en esta empresa.'); return; }
+            if (!res.data.valido) { setRutError('RUT inválido.'); return; }
+            if (res.data.existe) { setRutError('Este RUT ya está registrado en la empresa.'); return; }
             setRutError('');
-            if (res.data.transferible) setRutInfo(res.data.mensaje || 'Esta persona se transferirá desde otra empresa.');
         } catch { setRutError(''); }
     };
 
@@ -200,57 +193,6 @@ export default function PersonaNueva() {
         setSelectedObraIds(prev =>
             prev.includes(obraId) ? prev.filter(id => id !== obraId) : [...prev, obraId]
         );
-    };
-
-    const doCreate = async (confirmarTransferencia?: boolean) => {
-        const res = await personasApi.create(tenantId, {
-            rut: form.rut,
-            nombre: form.nombre,
-            apellidoPaterno: form.apellidoPaterno || undefined,
-            apellidoMaterno: form.apellidoMaterno || undefined,
-            fechaNacimiento: form.fechaNacimiento || undefined,
-            email: form.email || undefined,
-            telefono: telToFull(form.telefono),
-            rol: form.rol,
-            cargo: form.cargo || undefined,
-            tieneAccesoWeb: form.tieneAccesoWeb,
-            obraIds: selectedObraIds.length > 0 ? selectedObraIds : undefined,
-            solicitanteId,
-            nivelEscolar: form.nivelEscolar || undefined,
-            contactoEmergencia: (form.contactoNombre || form.contactoTelefono) ? {
-                nombre: form.contactoNombre || undefined,
-                telefono: telToFull(form.contactoTelefono),
-                relacion: form.contactoRelacion || undefined,
-            } : undefined,
-            confirmarTransferencia,
-        });
-        if (!res.success || !res.data) {
-            setFormError(res.error || 'Error al crear la persona.');
-            return;
-        }
-        if ('requiereConfirmacionTransferencia' in res.data) {
-            setConfirmarTransferencia(res.data.personaPrevia);
-            return;
-        }
-
-        // Si es persona trabajadora, fija el supervisor (cuadrilla) elegido por obra.
-        if (esTrabajador) {
-            const nuevoId = res.data.persona.personaId;
-            const cargos = form.cargo ? [form.cargo] : [];
-            for (const obraId of selectedObraIds) {
-                const supId = obraSupervisores[obraId];
-                if (!supId) continue;
-                try {
-                    await personasApi.setAsignacion(tenantId, nuevoId, obraId, cargos, solicitanteId, supId);
-                } catch { /* la asignación a la obra ya quedó; el supervisor se puede fijar luego */ }
-            }
-        }
-
-        setSuccess({
-            rut: res.data.persona.rut,
-            nombre: `${form.nombre} ${form.apellidoPaterno}`.trim(),
-            password: res.data.passwordTemporal,
-        });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -261,22 +203,52 @@ export default function PersonaNueva() {
         if (rutError) { setFormError('Corrige el RUT antes de continuar.'); return; }
         setFormError(''); setIsSubmitting(true);
         try {
-            await doCreate();
-        } catch {
-            setFormError('Error de conexión. Intenta nuevamente.');
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+            const res = await personasApi.create(tenantId, {
+                rut: form.rut,
+                nombre: form.nombre,
+                apellidoPaterno: form.apellidoPaterno || undefined,
+                apellidoMaterno: form.apellidoMaterno || undefined,
+                fechaNacimiento: form.fechaNacimiento || undefined,
+                email: form.email || undefined,
+                telefono: telToFull(form.telefono),
+                rol: form.rol,
+                cargo: form.cargo || undefined,
+                tieneAccesoWeb: form.tieneAccesoWeb,
+                obraIds: selectedObraIds.length > 0 ? selectedObraIds : undefined,
+                solicitanteId,
+                nivelEscolar: form.nivelEscolar || undefined,
+                contactoEmergencia: (form.contactoNombre || form.contactoTelefono) ? {
+                    nombre: form.contactoNombre || undefined,
+                    telefono: telToFull(form.contactoTelefono),
+                    relacion: form.contactoRelacion || undefined,
+                } : undefined,
+            });
+            if (!res.success || !res.data) {
+                setFormError(res.error || 'Error al crear la persona.');
+                return;
+            }
 
-    const handleConfirmarTransferencia = async () => {
-        setIsSubmitting(true);
-        try {
-            await doCreate(true);
+            // Si es persona trabajadora, fija el supervisor (cuadrilla) elegido por obra.
+            if (esTrabajador) {
+                const nuevoId = res.data.persona.personaId;
+                const cargos = form.cargo ? [form.cargo] : [];
+                for (const obraId of selectedObraIds) {
+                    const supId = obraSupervisores[obraId];
+                    if (!supId) continue;
+                    try {
+                        await personasApi.setAsignacion(tenantId, nuevoId, obraId, cargos, solicitanteId, supId);
+                    } catch { /* la asignación a la obra ya quedó; el supervisor se puede fijar luego */ }
+                }
+            }
+
+            setSuccess({
+                rut: res.data.persona.rut,
+                nombre: `${form.nombre} ${form.apellidoPaterno}`.trim(),
+                password: res.data.passwordTemporal,
+            });
         } catch {
             setFormError('Error de conexión. Intenta nuevamente.');
         } finally {
-            setConfirmarTransferencia(null);
             setIsSubmitting(false);
         }
     };
@@ -415,7 +387,6 @@ export default function PersonaNueva() {
                             style={{ fontFamily: 'var(--font-mono)' }}
                         />
                         {rutError && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--danger-600)', marginTop: 2 }}>{rutError}</span>}
-                        {!rutError && rutInfo && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--warning-600, #b45309)', marginTop: 2 }}>{rutInfo}</span>}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                         <label className="form-label">Nombre <span style={{ color: 'var(--danger-500)' }}>*</span></label>
@@ -568,39 +539,6 @@ export default function PersonaNueva() {
                 </FieldSection>
             </FormPage>
 
-            <Modal
-                isOpen={!!confirmarTransferencia}
-                onClose={() => setConfirmarTransferencia(null)}
-                title="Transferir persona desde otra empresa"
-                icon={<FiAlertTriangle />}
-                size="sm"
-                preventClose={isSubmitting}
-                footer={
-                    <>
-                        <button type="button" className="btn btn-secondary" onClick={() => setConfirmarTransferencia(null)} disabled={isSubmitting}>
-                            Cancelar
-                        </button>
-                        <button type="button" className="btn btn-primary" onClick={handleConfirmarTransferencia} disabled={isSubmitting}>
-                            {isSubmitting ? 'Transfiriendo…' : 'Confirmar transferencia'}
-                        </button>
-                    </>
-                }
-            >
-                {confirmarTransferencia && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                        <p style={{ margin: 0 }}>
-                            <strong>{confirmarTransferencia.nombre} {confirmarTransferencia.apellido}</strong> (RUT {confirmarTransferencia.rut}) figura
-                            desvinculado/a de otra empresa{confirmarTransferencia.fechaDesvinculacion
-                                ? ` desde el ${new Date(confirmarTransferencia.fechaDesvinculacion).toLocaleDateString('es-CL')}`
-                                : ''}.
-                        </p>
-                        <p style={{ margin: 0 }}>
-                            Al confirmar, se transferirá a esta empresa: se conservan su currículum (evidencias, cursos, datos personales)
-                            y se registra como una alta nueva con el rol, cargo y obras indicados en este formulario.
-                        </p>
-                    </div>
-                )}
-            </Modal>
         </>
     );
 }

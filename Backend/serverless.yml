@@ -231,6 +231,13 @@ functions:
           path: /auth/login
           method: POST
 
+  authSelectTenant:
+    handler: handlers/auth/handler.selectTenant
+    events:
+      - httpApi:
+          path: /auth/select-tenant
+          method: POST
+
   authChangePassword:
     handler: handlers/auth/handler.changePassword
     events:

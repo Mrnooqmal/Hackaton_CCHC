@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { FiArrowRight, FiUser, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
+import { useAuth, type TenantOpcion } from '../context/AuthContext';
+import { FiArrowRight, FiUser, FiLock, FiEye, FiEyeOff, FiBriefcase, FiChevronRight } from 'react-icons/fi';
 
 export default function Login() {
-    const { login, error: authError } = useAuth();
+    const { login, completarLoginConTenant, error: authError } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -22,7 +22,21 @@ export default function Login() {
     const [error, setError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
 
+    // Cuando el RUT pertenece a varias empresas: se pide elegir cuál antes de
+    // completar el login (sin volver a pedir la contraseña).
+    const [seleccion, setSeleccion] = useState<{ selectionToken: string; opciones: TenantOpcion[] } | null>(null);
+
     const from = (location.state as any)?.from?.pathname || '/';
+
+    const continuarPostLogin = (result: { requiresChangePassword?: boolean; requiresEnrollment?: boolean }) => {
+        if (result.requiresChangePassword) {
+            navigate('/change-password');
+        } else if (result.requiresEnrollment) {
+            navigate('/enroll-me');
+        } else {
+            navigate(from, { replace: true });
+        }
+    };
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -34,15 +48,28 @@ export default function Login() {
         const result = await login(rut, password);
 
         if (result.success) {
-            if (result.requiresChangePassword) {
-                navigate('/change-password');
-            } else if (result.requiresEnrollment) {
-                navigate('/enroll-me');
-            } else {
-                navigate(from, { replace: true });
+            if (result.requiresTenantSelection && result.selectionToken && result.opciones) {
+                setSeleccion({ selectionToken: result.selectionToken, opciones: result.opciones });
+                setLoading(false);
+                return;
             }
+            continuarPostLogin(result);
         } else {
             setError(authError || 'Credenciales inválidas');
+            setLoading(false);
+        }
+    };
+
+    const handleSeleccionarTenant = async (tenantId: string) => {
+        if (!seleccion) return;
+        setLoading(true);
+        setError('');
+        const result = await completarLoginConTenant(seleccion.selectionToken, tenantId);
+        if (result.success) {
+            continuarPostLogin(result);
+        } else {
+            setError(authError || 'No se pudo completar el ingreso. Intenta nuevamente.');
+            setSeleccion(null);
             setLoading(false);
         }
     };
@@ -63,69 +90,100 @@ export default function Login() {
 
                 <div className="lp-divider" aria-hidden="true" />
 
-                <h1 className="lp-title">Iniciar sesión</h1>
-
-                <form className="lp-form" onSubmit={handleLogin} noValidate>
-                    <div className="lp-field">
-                        <label className="lp-label" htmlFor="lp-rut">RUT</label>
-                        <div className="lp-input-wrap">
-                            <span className="lp-input-icon"><FiUser size={14} /></span>
-                            <input
-                                id="lp-rut"
-                                type="text"
-                                className="lp-input"
-                                placeholder="12.345.678-9"
-                                value={rut}
-                                onChange={(e) => setRut(rutFormat(e.target.value))}
-                                autoComplete="username"
-                                autoFocus
-                            />
+                {seleccion ? (
+                    <>
+                        <h1 className="lp-title">Elige tu empresa</h1>
+                        <p className="lp-select-hint">Tu cuenta pertenece a más de una empresa. Selecciona con cuál quieres ingresar.</p>
+                        <div className="lp-tenant-list">
+                            {seleccion.opciones.map((op) => (
+                                <button
+                                    key={op.tenantId}
+                                    type="button"
+                                    className="lp-tenant-option"
+                                    disabled={loading}
+                                    onClick={() => handleSeleccionarTenant(op.tenantId)}
+                                >
+                                    <span className="lp-tenant-icon"><FiBriefcase size={16} /></span>
+                                    <span className="lp-tenant-info">
+                                        <span className="lp-tenant-nombre">{op.tenantNombre}</span>
+                                        <span className="lp-tenant-rol">{op.rol}</span>
+                                    </span>
+                                    <FiChevronRight size={16} />
+                                </button>
+                            ))}
                         </div>
-                    </div>
+                        {error && <p className="lp-error" role="alert">{error}</p>}
+                        <button type="button" className="lp-back-link" disabled={loading} onClick={() => { setSeleccion(null); setError(''); }}>
+                            Volver
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <h1 className="lp-title">Iniciar sesión</h1>
 
-                    <div className="lp-field">
-                        <label className="lp-label" htmlFor="lp-password">Contraseña</label>
-                        <div className="lp-input-wrap">
-                            <span className="lp-input-icon"><FiLock size={14} /></span>
-                            <input
-                                id="lp-password"
-                                type={showPassword ? 'text' : 'password'}
-                                className="lp-input lp-input--password"
-                                placeholder="••••••••"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                autoComplete="current-password"
-                            />
-                            <button
-                                type="button"
-                                className="lp-eye-btn"
-                                onClick={() => setShowPassword(v => !v)}
-                                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                            >
-                                {showPassword ? <FiEyeOff size={14} /> : <FiEye size={14} />}
+                        <form className="lp-form" onSubmit={handleLogin} noValidate>
+                            <div className="lp-field">
+                                <label className="lp-label" htmlFor="lp-rut">RUT</label>
+                                <div className="lp-input-wrap">
+                                    <span className="lp-input-icon"><FiUser size={14} /></span>
+                                    <input
+                                        id="lp-rut"
+                                        type="text"
+                                        className="lp-input"
+                                        placeholder="12.345.678-9"
+                                        value={rut}
+                                        onChange={(e) => setRut(rutFormat(e.target.value))}
+                                        autoComplete="username"
+                                        autoFocus
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="lp-field">
+                                <label className="lp-label" htmlFor="lp-password">Contraseña</label>
+                                <div className="lp-input-wrap">
+                                    <span className="lp-input-icon"><FiLock size={14} /></span>
+                                    <input
+                                        id="lp-password"
+                                        type={showPassword ? 'text' : 'password'}
+                                        className="lp-input lp-input--password"
+                                        placeholder="••••••••"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        autoComplete="current-password"
+                                    />
+                                    <button
+                                        type="button"
+                                        className="lp-eye-btn"
+                                        onClick={() => setShowPassword(v => !v)}
+                                        aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                                    >
+                                        {showPassword ? <FiEyeOff size={14} /> : <FiEye size={14} />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {error && <p className="lp-error" role="alert">{error}</p>}
+
+                            <p className="lp-register-hint">
+                                <Link to="/recuperar-clave" className="lp-register-link">
+                                    ¿Olvidaste tu contraseña?
+                                </Link>
+                            </p>
+
+                            <button type="submit" className="lp-submit" disabled={loading}>
+                                {loading ? (
+                                    <div className="lp-spinner" />
+                                ) : (
+                                    <>
+                                        <span>Ingresar</span>
+                                        <FiArrowRight size={15} />
+                                    </>
+                                )}
                             </button>
-                        </div>
-                    </div>
-
-                    {error && <p className="lp-error" role="alert">{error}</p>}
-
-                    <p className="lp-register-hint">
-                        <Link to="/recuperar-clave" className="lp-register-link">
-                            ¿Olvidaste tu contraseña?
-                        </Link>
-                    </p>
-
-                    <button type="submit" className="lp-submit" disabled={loading}>
-                        {loading ? (
-                            <div className="lp-spinner" />
-                        ) : (
-                            <>
-                                <span>Ingresar</span>
-                                <FiArrowRight size={15} />
-                            </>
-                        )}
-                    </button>
-                </form>
+                        </form>
+                    </>
+                )}
             </div>
 
             <style>{`
@@ -296,6 +354,94 @@ export default function Login() {
                     border-radius: 6px;
                     border-left: 2px solid #df3601;
                 }
+
+                /* ── Selección de empresa ── */
+                .lp-select-hint {
+                    font-size: 12.5px;
+                    color: #64748b;
+                    margin: 0 0 18px;
+                    line-height: 1.5;
+                }
+
+                .lp-tenant-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                }
+
+                .lp-tenant-option {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    width: 100%;
+                    padding: 12px 14px;
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    text-align: left;
+                    font-family: inherit;
+                    color: #0f172a;
+                    transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+                }
+
+                .lp-tenant-option:not(:disabled):hover {
+                    border-color: #006edc;
+                    background: #fff;
+                    transform: translateY(-1px);
+                }
+
+                .lp-tenant-option:disabled { opacity: 0.6; cursor: not-allowed; }
+
+                .lp-tenant-icon {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 32px;
+                    height: 32px;
+                    flex-shrink: 0;
+                    border-radius: 8px;
+                    background: rgba(0, 110, 220, 0.1);
+                    color: #006edc;
+                }
+
+                .lp-tenant-info {
+                    flex: 1;
+                    min-width: 0;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                }
+
+                .lp-tenant-nombre {
+                    font-size: 13.5px;
+                    font-weight: 600;
+                    color: #0f172a;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
+                .lp-tenant-rol {
+                    font-size: 11.5px;
+                    color: #94a3b8;
+                    text-transform: capitalize;
+                }
+
+                .lp-back-link {
+                    margin-top: 16px;
+                    background: none;
+                    border: none;
+                    padding: 0;
+                    font-size: 12.5px;
+                    font-weight: 500;
+                    color: #006edc;
+                    cursor: pointer;
+                    font-family: inherit;
+                }
+
+                .lp-back-link:hover { text-decoration: underline; }
+                .lp-back-link:disabled { opacity: 0.6; cursor: not-allowed; }
 
                 /* ── Registro ── */
                 .lp-register-hint {
