@@ -1082,7 +1082,7 @@ const parseBulkWorkbook = (buffer) => {
 };
 
 // Contexto del tenant (obras, roles, RUTs existentes, supervisores) — se arma 1 vez.
-const buildBulkContext = async (tenantId) => {
+const buildBulkContext = async (tenantId, filas = []) => {
     const tenant = await tenantService.getById(tenantId).catch(() => null);
     const obrasTenant = await obraService.listByTenant(tenantId).catch(() => []);
     const personasTenant = await personaService.listByTenant(tenantId).catch(() => []);
@@ -1101,8 +1101,17 @@ const buildBulkContext = async (tenantId) => {
         if (tipoDeRol(p, tenant) === 'supervisor') supervisoresPorRut.set(bulkRutKey(p.rut), p.personaId);
     });
 
+    // RUTs que ya existen en OTRO tenant: activos bloquean la fila, desvinculados
+    // habilitan una transferencia (ver validarFilaBulk). Se re-indexa con
+    // bulkRutKey (sin puntos/guión) para que calce con seenRut/existentesPorRut.
+    const crossTenantRaw = await personaService
+        .buscarPersonasCrossTenantBatch(tenantId, (filas || []).map((f) => f.rut))
+        .catch(() => new Map());
+    const crossTenantPorRut = new Map();
+    crossTenantRaw.forEach((p) => crossTenantPorRut.set(bulkRutKey(p.rut), p));
+
     const rolesValidos = Array.isArray(tenant?.roles) ? tenant.roles.map((r) => r.nombre).filter(Boolean) : [];
-    return { tenant, obrasTenant, obraPorCodigo, obraPorUUID, obraPorLabel, existentesPorRut, supervisoresPorRut, rolesValidos };
+    return { tenant, obrasTenant, obraPorCodigo, obraPorUUID, obraPorLabel, existentesPorRut, supervisoresPorRut, crossTenantPorRut, rolesValidos };
 };
 
 // Resuelve la celda "obra" (código/UUID/label, coma-separadas) a obraIds.
@@ -1143,6 +1152,19 @@ const validarFilaBulk = (fila, ctx, supRutsLote, seenRut) => {
     if (rk && seenRut.has(rk)) { errores.push('RUT duplicado en el archivo'); esDuplicado = true; }
     if (rk && ctx.existentesPorRut.has(rk)) { errores.push('Ya existe una persona con este RUT'); esDuplicado = true; }
 
+    // Cross-tenant: el RUT pertenece a una persona de OTRA empresa. Si está
+    // activa allí, bloquea la fila; si está desvinculada, se transferirá.
+    let esTransferencia = false;
+    const cruzada = rk ? ctx.crossTenantPorRut?.get(rk) : null;
+    if (cruzada) {
+        if (cruzada.estado !== 'desvinculado') {
+            errores.push('Este RUT pertenece a otra empresa activa en el sistema');
+        } else {
+            esTransferencia = true;
+            advertencias.push('RUT desvinculado de otra empresa: se transferirá a esta empresa al confirmar');
+        }
+    }
+
     const { obraIds, noResueltas } = resolverObrasBulk(fila.obra, ctx);
     if (noResueltas.length) advertencias.push(`Obra no encontrada: ${noResueltas.join(', ')}`);
 
@@ -1154,7 +1176,7 @@ const validarFilaBulk = (fila, ctx, supRutsLote, seenRut) => {
     }
 
     const estado = errores.length ? 'error' : (advertencias.length ? 'advertencia' : 'ok');
-    return { errores, advertencias, estado, esDuplicado, obraIds, supervisorRutKey };
+    return { errores, advertencias, estado, esDuplicado, esTransferencia, obraIds, supervisorRutKey };
 };
 
 // Broadcast retroactivo de plantillas (lo invoca el guardado de cargos del tenant).
@@ -1304,7 +1326,7 @@ module.exports.personasHandler = async (event) => {
             catch (e) { return error('No se pudo leer el Excel. Verifica que sea un .xlsx válido: ' + e.message); }
             if (parsed.headerError) return error(parsed.headerError);
 
-            const ctx = await buildBulkContext(tenantId);
+            const ctx = await buildBulkContext(tenantId, parsed.filas);
             const supRutsLote = new Set();
             parsed.filas.forEach((f) => { if (filaEsSupervisor(f, ctx)) supRutsLote.add(bulkRutKey(f.rut)); });
 
@@ -1345,7 +1367,7 @@ module.exports.personasHandler = async (event) => {
             const sendEmails = Boolean(body.sendWelcomeEmail);
             if (!filasInput.length) return error('No hay filas para cargar');
 
-            const ctx = await buildBulkContext(tenantId);
+            const ctx = await buildBulkContext(tenantId, filasInput);
             const supRutsLote = new Set();
             filasInput.forEach((f) => { if (filaEsSupervisor(f, ctx)) supRutsLote.add(bulkRutKey(f.rut)); });
 
@@ -1370,7 +1392,7 @@ module.exports.personasHandler = async (event) => {
             // PASADA 1 — crear personas en lotes concurrentes
             await runInBatches(aCrear, async ({ f, v }) => {
                 try {
-                    const { persona, passwordTemporal } = await personaService.crear(tenantId, {
+                    const datosFila = {
                         rut: f.rut, nombre: f.nombre, apellidoPaterno: f.apellidoPaterno, apellidoMaterno: f.apellidoMaterno,
                         fechaNacimiento: f.fechaNacimiento, email: f.email, telefono: f.telefono,
                         rol: f.rol, cargo: f.cargo ? normalizeCargoCodigo(f.cargo) : '',
@@ -1378,7 +1400,12 @@ module.exports.personasHandler = async (event) => {
                         contactoEmergencia: { nombre: f.contactoEmergenciaNombre, telefono: f.contactoEmergenciaTelefono, relacion: f.contactoEmergenciaRelacion },
                         cursos: String(f.cursos || '').split(';').map((c) => c.trim()).filter(Boolean).map((nombre) => ({ nombre })),
                         tieneAccesoWeb: true,
-                    });
+                    };
+                    // Fila cuyo RUT está desvinculado en otra empresa: se transfiere en
+                    // vez de crearse (identidad/currículum del origen se preserva).
+                    const { persona, passwordTemporal } = v.esTransferencia
+                        ? await personaService.transferirEntreTenants(f.rut, tenantId, datosFila)
+                        : await personaService.crear(tenantId, datosFila);
                     rutKeyToPersonaId.set(bulkRutKey(f.rut), persona.personaId);
 
                     if (sendEmails && persona.email && passwordTemporal) {
@@ -1652,10 +1679,32 @@ module.exports.personasHandler = async (event) => {
                 }
             }
 
-            const { persona, passwordTemporal } = await personaService.crear(tenantId, {
-                ...body,
-                creadoPor: creadorId,
-            });
+            // Chequeo cross-tenant: una persona pertenece a un solo tenant a la vez.
+            // Si el RUT está activo/pendiente en otro tenant, se bloquea. Si está
+            // desvinculado allí, se ofrece transferirla (requiere confirmación
+            // explícita del cliente vía confirmarTransferencia:true).
+            if (!body.confirmarTransferencia) {
+                const cruzada = await personaService.buscarPersonaCrossTenant(tenantId, body.rut);
+                if (cruzada) {
+                    if (cruzada.estado !== 'desvinculado') {
+                        return error('Esta persona ya pertenece a otra empresa activa en el sistema y no puede registrarse aquí.', 409);
+                    }
+                    return success({
+                        requiereConfirmacionTransferencia: true,
+                        personaPrevia: {
+                            nombre: cruzada.nombre,
+                            apellido: cruzada.apellido,
+                            rut: cruzada.rut,
+                            cargo: cruzada.cargo,
+                            fechaDesvinculacion: cruzada.desvinculacion?.fechaDesvinculacion || null,
+                        },
+                    });
+                }
+            }
+
+            const { persona, passwordTemporal } = body.confirmarTransferencia
+                ? await personaService.transferirEntreTenants(body.rut, tenantId, { ...body, creadoPor: creadorId })
+                : await personaService.crear(tenantId, { ...body, creadoPor: creadorId });
 
             // Cada persona registrada aumenta automáticamente el conteo del tenant.
             await tenantService.ajustarCantidadTrabajadores(tenantId, 1).catch((countErr) => {
@@ -1725,13 +1774,40 @@ module.exports.personasHandler = async (event) => {
             });
         }
 
-        // GET /personas/validate?rut=... — Verificar si un RUT ya está registrado
+        // GET /personas/validate?rut=...&tenantId=... — Verificar si un RUT ya
+        // está registrado. Con tenantId (alta de persona en un tenant existente)
+        // distingue: duplicado en ESTE tenant (bloquea), activo en OTRO tenant
+        // (bloquea), o desvinculado en OTRO tenant (no bloquea: se podrá
+        // transferir al confirmar el alta). Sin tenantId (ej. paso "admin" del
+        // onboarding de un tenant nuevo, que todavía no existe) se mantiene el
+        // chequeo global informativo de siempre.
         if (method === 'GET' && personaId === 'validate') {
             const rut = event.queryStringParameters?.rut;
             if (!rut) return error('El parámetro rut es requerido', 400);
-            const existente = await personaService.getByRutGlobal(rut);
-            return success({ existe: !!existente, valido: !existente,
-                mensaje: existente ? `El RUT ${rut} ya está registrado en el sistema` : null });
+
+            if (!tenantId) {
+                const existenteGlobal = await personaService.getByRutGlobal(rut);
+                return success({ existe: !!existenteGlobal, valido: !existenteGlobal, bloqueaCreacion: !!existenteGlobal,
+                    mensaje: existenteGlobal ? `El RUT ${rut} ya está registrado en el sistema` : null });
+            }
+
+            const enTenant = await personaService.getByRut(tenantId, rut);
+            if (enTenant) {
+                return success({ existe: true, valido: false, bloqueaCreacion: true,
+                    mensaje: `El RUT ${rut} ya está registrado en esta empresa.` });
+            }
+
+            const cruzada = await personaService.buscarPersonaCrossTenant(tenantId, rut);
+            if (cruzada && cruzada.estado !== 'desvinculado') {
+                return success({ existe: true, valido: false, bloqueaCreacion: true,
+                    mensaje: `El RUT ${rut} ya pertenece a otra empresa activa en el sistema.` });
+            }
+            if (cruzada) {
+                return success({ existe: true, valido: true, bloqueaCreacion: false, transferible: true,
+                    mensaje: 'Esta persona figura desvinculada de otra empresa. Se transferirá a esta empresa al completar el registro.' });
+            }
+
+            return success({ existe: false, valido: true, bloqueaCreacion: false, mensaje: null });
         }
 
         // GET /personas/by-rut/{rut} — Buscar por RUT

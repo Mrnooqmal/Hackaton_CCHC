@@ -7,7 +7,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const { Persona, ROLES } = require('../models/Persona');
 const {
@@ -24,14 +24,12 @@ class PersonaService {
     }
 
     /**
-     * Crear una nueva persona dentro de un tenant
+     * Arma los datos de una "alta nueva" (personaId + campos base) a partir del
+     * body recibido. Compartido por crear() (persona 100% nueva) y
+     * transferirEntreTenants() (persona existente que cambia de tenant, donde se
+     * reutiliza el personaId de origen en vez de generar uno nuevo).
      */
-    async crear(tenantId, data) {
-        const validation = validateRequired(data, ['rut', 'nombre', 'rol']);
-        if (!validation.valid) {
-            throw new Error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
-        }
-
+    _datosBaseAlta(tenantId, data, { personaId } = {}) {
         const rutValidation = validateRut(data.rut);
         if (!rutValidation.valid) throw new Error('RUT invalido');
 
@@ -39,11 +37,7 @@ class PersonaService {
             throw new Error('El campo rol es requerido');
         }
 
-        // Verificar unicidad por RUT dentro del tenant (via GSI)
-        const existente = await this.getByRut(tenantId, rutValidation.formatted);
-        if (existente) throw new Error('Ya existe una persona con este RUT en este tenant');
-
-        const personaId = uuidv4();
+        const resolvedPersonaId = personaId || uuidv4();
         const now = new Date().toISOString();
         // Los roles del sistema tienen permisos predefinidos; los roles personalizados del tenant no.
         // Se normaliza para admitir nombres con mayúsculas o espacios ("Jefe de Obra", "Prevencionista").
@@ -56,7 +50,7 @@ class PersonaService {
         const apellido = data.apellido || [apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ');
 
         const personaData = {
-            personaId,
+            personaId: resolvedPersonaId,
             tenantId,
             rut: rutValidation.formatted,
             nombre: data.nombre,
@@ -95,10 +89,30 @@ class PersonaService {
             const rutDigits = rutValidation.formatted.replace(/[^0-9]/g, '').slice(0, -1); // quita DV
             const first4 = rutDigits.slice(0, 4);
             passwordTemporal = first4.length === 4 ? first4 : generateTempPassword(10);
-            personaData.passwordHash = hashPassword(passwordTemporal, personaId);
+            personaData.passwordHash = hashPassword(passwordTemporal, resolvedPersonaId);
             personaData.passwordTemporal = true;
         }
 
+        return { personaData, passwordTemporal };
+    }
+
+    /**
+     * Crear una nueva persona dentro de un tenant
+     */
+    async crear(tenantId, data) {
+        const validation = validateRequired(data, ['rut', 'nombre', 'rol']);
+        if (!validation.valid) {
+            throw new Error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
+        }
+
+        const rutValidation = validateRut(data.rut);
+        if (!rutValidation.valid) throw new Error('RUT invalido');
+
+        // Verificar unicidad por RUT dentro del tenant (via GSI)
+        const existente = await this.getByRut(tenantId, rutValidation.formatted);
+        if (existente) throw new Error('Ya existe una persona con este RUT en este tenant');
+
+        const { personaData, passwordTemporal } = this._datosBaseAlta(tenantId, data);
         const persona = new Persona(personaData);
 
         await this.dynamo.send(new PutCommand({
@@ -137,6 +151,58 @@ class PersonaService {
         }));
         if (!result.Items || result.Items.length === 0) return null;
         return Persona.fromDynamoItem(result.Items[0]);
+    }
+
+    /**
+     * Busca si un RUT ya existe en OTRO tenant (excluye coincidencias del propio
+     * tenantId, que ya maneja crear()/getByRut como duplicado intra-tenant).
+     * Devuelve la Persona encontrada (cualquier estado) o null.
+     */
+    async buscarPersonaCrossTenant(tenantId, rut) {
+        const encontrada = await this.getByRutGlobal(rut);
+        if (!encontrada || encontrada.tenantId === tenantId) return null;
+        return encontrada;
+    }
+
+    /**
+     * Variante en lote de buscarPersonaCrossTenant, para carga masiva: dado un
+     * array de RUTs, devuelve un Map<rutFormateado, Persona> con las coincidencias
+     * de OTROS tenants (excluye tenantId). Un solo Scan con filtro `rut IN (...)`
+     * en chunks para no exceder límites de expresión de DynamoDB.
+     */
+    async buscarPersonasCrossTenantBatch(tenantId, ruts) {
+        const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+        const formateados = [...new Set(
+            (ruts || [])
+                .map((r) => {
+                    const v = validateRut(r);
+                    return v.valid ? v.formatted : null;
+                })
+                .filter(Boolean)
+        )];
+        const resultado = new Map();
+        if (!formateados.length) return resultado;
+
+        const CHUNK = 90;
+        for (let i = 0; i < formateados.length; i += CHUNK) {
+            const chunk = formateados.slice(i, i + CHUNK);
+            const expressionValues = { ':prefix': 'PERSONA#' };
+            const placeholders = chunk.map((rut, idx) => {
+                const key = `:rut${idx}`;
+                expressionValues[key] = rut;
+                return key;
+            });
+            const result = await this.dynamo.send(new ScanCommand({
+                TableName: this.table,
+                FilterExpression: `begins_with(SK, :prefix) AND rut IN (${placeholders.join(', ')})`,
+                ExpressionAttributeValues: expressionValues
+            }));
+            (result.Items || []).forEach((item) => {
+                if (item.tenantId === tenantId) return;
+                resultado.set(item.rut, Persona.fromDynamoItem(item));
+            });
+        }
+        return resultado;
     }
 
     /**
@@ -505,6 +571,68 @@ class PersonaService {
             }
         }));
         return { message: 'Persona desvinculada de la empresa', personaId };
+    }
+
+    /**
+     * Transfiere una persona DESVINCULADA de otro tenant al tenant destino.
+     * Preserva identidad/currículum (rut, nombre, apellidos, fechaNacimiento,
+     * nivelEscolar, cursos, evidencias, fotoPerfil, vigilanciaSalud,
+     * restriccionLaboral) y el personaId (es la sal de pinHash/passwordHash y lo
+     * referencian por atributo otras tablas). Resetea todo lo laboral (rol,
+     * cargo, obraIds, asignaciones, historialAsignaciones, onboardingDS44,
+     * estado, habilitado, enrolamiento, PIN/password) como una alta nueva.
+     * Delete(origen) + Put(destino) son atómicos vía TransactWriteCommand.
+     */
+    async transferirEntreTenants(rut, tenantDestino, data) {
+        const origen = await this.getByRutGlobal(rut);
+        if (!origen) throw new Error('La persona a transferir ya no existe');
+        if (origen.tenantId === tenantDestino) throw new Error('La persona ya pertenece a este tenant');
+        if (origen.estado !== 'desvinculado') {
+            throw new Error('La persona ya no está disponible para transferencia (no está desvinculada de su empresa anterior)');
+        }
+
+        const { personaData, passwordTemporal } = this._datosBaseAlta(tenantDestino, data, { personaId: origen.personaId });
+
+        // Campos de identidad/currículum: se preservan del origen, no del formulario.
+        Object.assign(personaData, {
+            rut: origen.rut,
+            nombre: origen.nombre,
+            apellidoPaterno: origen.apellidoPaterno,
+            apellidoMaterno: origen.apellidoMaterno,
+            apellido: origen.apellido,
+            fechaNacimiento: origen.fechaNacimiento,
+            nivelEscolar: origen.nivelEscolar,
+            cursos: origen.cursos,
+            evidencias: origen.evidencias,
+            fotoPerfil: origen.fotoPerfil,
+            vigilanciaSalud: origen.vigilanciaSalud,
+            restriccionLaboral: origen.restriccionLaboral,
+        });
+
+        const persona = new Persona(personaData);
+
+        await this.dynamo.send(new TransactWriteCommand({
+            TransactItems: [
+                {
+                    Delete: {
+                        TableName: this.table,
+                        Key: { PK: `TENANT#${origen.tenantId}`, SK: `PERSONA#${origen.personaId}` },
+                        ConditionExpression: '#estado = :desvinculado',
+                        ExpressionAttributeNames: { '#estado': 'estado' },
+                        ExpressionAttributeValues: { ':desvinculado': 'desvinculado' }
+                    }
+                },
+                {
+                    Put: {
+                        TableName: this.table,
+                        Item: persona.toDynamoItem(),
+                        ConditionExpression: 'attribute_not_exists(PK)'
+                    }
+                }
+            ]
+        }));
+
+        return { persona, passwordTemporal, tenantOrigen: origen.tenantId };
     }
 }
 

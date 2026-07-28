@@ -64,6 +64,22 @@
   background: var(--surface-bg);
 }
 
+/* Banner de encabezado "full-bleed": cancela el padding lateral de
+   .main-content (para que el recuadro llegue hasta el sidebar y el borde
+   derecho) y el espacio extra que .main-content agrega ARRIBA del header fijo
+   (para que quede pegado al header, sin des-reservar el alto del header mismo
+   — eso lo taparía). Usar en el div que envuelve el banner de color de
+   páginas tipo "Nueva persona/obra". */
+.page-banner-bleed {
+  margin: calc(-1 * var(--space-6)) calc(-1 * var(--space-6)) 0;
+}
+
+@media (max-width: 1024px) {
+  .page-banner-bleed {
+    margin: calc(-1 * var(--space-12)) calc(-1 * var(--space-4)) 0;
+  }
+}
+
 /* Contenedor interno para cada vista, evita duplicar el offset del sidebar */
 .page-content {
   width: 100%;
