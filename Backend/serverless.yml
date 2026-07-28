@@ -42,6 +42,7 @@ provider:
     ACTIVITIES_TABLE: ${self:service}-activities-${self:provider.stage}
     INBOX_TABLE: ${self:service}-inbox-${self:provider.stage}
     SUGGESTIONS_TABLE: ${self:service}-sugerencias-${self:provider.stage}
+    AUSENCIAS_TABLE: ${self:service}-ausencias-${self:provider.stage}
     # --- Storage ---
     DOCUMENTS_BUCKET: ${self:custom.bucketName}
     INCIDENT_EVIDENCE_BUCKET: ${self:service}-evidence-${self:provider.stage}-${aws:accountId}
@@ -115,6 +116,8 @@ provider:
             - !Sub ${DocumentsTable.Arn}/index/*
             - !GetAtt SuggestionsTable.Arn
             - !Sub ${SuggestionsTable.Arn}/index/*
+            - !GetAtt AusenciasTable.Arn
+            - !Sub ${AusenciasTable.Arn}/index/*
 
         - Effect: Allow
           Action:
@@ -379,6 +382,36 @@ functions:
       - httpApi:
           path: /activities/stats
           method: GET
+
+  # Ausencias / permisos del día (control de asistencia §6)
+  createAusencia:
+    handler: handlers/ausencias/handler.create
+    events:
+      - httpApi:
+          path: /ausencias
+          method: POST
+
+  listAusencias:
+    handler: handlers/ausencias/handler.list
+    events:
+      - httpApi:
+          path: /ausencias
+          method: GET
+
+  removeAusencia:
+    handler: handlers/ausencias/handler.remove
+    events:
+      - httpApi:
+          path: /ausencias
+          method: DELETE
+
+  # Scheduler de alertas de asistencia (§6): avisa al inbox de los responsables
+  # cuando una charla superó su hora de término sin cerrarse, y a mediodía si
+  # aún hay convocados sin firmar. Solo inbox (sin SMS). Idempotente por día.
+  checkActivityAlerts:
+    handler: handlers/scheduler/handler.checkActivityAlerts
+    events:
+      - schedule: rate(30 minutes)
 
   # Documents (Documentos)
   listDocuments:
@@ -950,6 +983,26 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+
+    # Ausencias / permisos del día. PK = tenantId, SK = "{obraId}#{fecha}#{personaId}"
+    # (una ausencia por persona/día/obra; registrar de nuevo la sobrescribe).
+    AusenciasTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.AUSENCIAS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenantId
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
 
     # Incidents Table - rename empresaId to tenantId
     IncidentsTable:

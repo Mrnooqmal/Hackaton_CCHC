@@ -15,12 +15,16 @@ import {
     FiList,
     FiEdit3,
     FiTrash2,
-    FiGrid
+    FiGrid,
+    FiChevronDown,
+    FiUserX
 } from 'react-icons/fi';
 import {
     activitiesApi,
     workersApi,
     tenantsApi,
+    ausenciasApi,
+    type Ausencia,
     type Activity,
     type Worker,
     type CatalogosActividad,
@@ -30,6 +34,8 @@ import {
     type PlanItem,
 } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
+import { estadoSeguimiento } from '../utils/seguimientoActividad';
+import { construirFilasAsistencia } from '../utils/reporteActividad';
 import PlanificacionDiariaForm from '../components/actividades/PlanificacionDiariaForm';
 import PermisosTrabajoForm from '../components/actividades/PermisosTrabajoForm';
 import ReporteActividad from '../components/actividades/ReporteActividad';
@@ -41,6 +47,9 @@ import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import { useLocation } from 'react-router-dom';
+
+// Semáforo de seguimiento → clase de badge existente.
+const NIVEL_BADGE: Record<string, string> = { verde: 'success', amarillo: 'warning', rojo: 'danger', neutral: 'neutral' };
 
 const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
     CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: <FiMessageSquare /> },
@@ -122,6 +131,10 @@ export default function Activities() {
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [detailActivity, setDetailActivity] = useState<Activity | null>(null);
     const [cerrando, setCerrando] = useState(false);
+    // Ausencias/permisos del día (control de asistencia §6).
+    const [ausencias, setAusencias] = useState<Ausencia[]>([]);
+    const [ausenciaMenu, setAusenciaMenu] = useState<string | null>(null);
+    const [ausenciaSaving, setAusenciaSaving] = useState(false);
     const [selectedWorkers, setSelectedWorkers] = useState<string[]>([]);
     // Filtrado de asistentes por relator: por defecto la charla muestra solo el
     // grupo del relator (su cuadrilla / las cuadrillas de sus supervisores). El
@@ -246,9 +259,12 @@ export default function Activities() {
         }
         setLoading(true);
         try {
-            const [activitiesRes, workersRes] = await Promise.all([
+            const [activitiesRes, workersRes, ausenciasRes] = await Promise.all([
                 activitiesApi.list({ obraId: selectedObraId }),
-                workersApi.list({ obraId: selectedObraId })
+                workersApi.list({ obraId: selectedObraId }),
+                user?.tenantId
+                    ? ausenciasApi.list({ tenantId: user.tenantId, obraId: selectedObraId, fecha: today })
+                    : Promise.resolve(null),
             ]);
 
             if (activitiesRes.success && activitiesRes.data) {
@@ -258,6 +274,9 @@ export default function Activities() {
             }
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
+            }
+            if (ausenciasRes && ausenciasRes.success && ausenciasRes.data) {
+                setAusencias(ausenciasRes.data.ausencias);
             }
         } catch (error) {
             console.error('Error loading data:', error);
@@ -627,6 +646,54 @@ export default function Activities() {
         }
     };
 
+    // Motivos de ausencia disponibles en el selector rápido (espejo del backend).
+    const MOTIVOS_AUSENCIA: { code: string; label: string }[] = [
+        { code: 'permiso', label: 'Permiso' },
+        { code: 'licencia', label: 'Licencia médica' },
+        { code: 'falta', label: 'Falta' },
+        { code: 'vacaciones', label: 'Vacaciones' },
+        { code: 'otro', label: 'Otro' },
+    ];
+
+    const marcarAusente = async (personaId: string, motivo: string) => {
+        if (!user?.tenantId || !selectedObraId || ausenciaSaving) return;
+        setAusenciaSaving(true);
+        try {
+            const res = await ausenciasApi.create({
+                tenantId: user.tenantId, obraId: selectedObraId, fecha: today,
+                personaId, motivo, solicitanteId: user.personaId,
+            });
+            if (res.success && res.data) {
+                setAusencias((prev) => [
+                    ...prev.filter((a) => !(a.personaId === personaId && a.fecha === today && a.obraId === selectedObraId)),
+                    res.data!,
+                ]);
+                setAusenciaMenu(null);
+                toast.success('Marcado como ausente');
+            } else {
+                toast.error(res.error || 'No se pudo registrar la ausencia');
+            }
+        } finally {
+            setAusenciaSaving(false);
+        }
+    };
+
+    const quitarAusente = async (personaId: string) => {
+        if (!user?.tenantId || !selectedObraId || ausenciaSaving) return;
+        setAusenciaSaving(true);
+        try {
+            const res = await ausenciasApi.remove({ tenantId: user.tenantId, obraId: selectedObraId, fecha: today, personaId });
+            if (res.success) {
+                setAusencias((prev) => prev.filter((a) => !(a.personaId === personaId && a.fecha === today && a.obraId === selectedObraId)));
+                toast.success('Ausencia quitada');
+            } else {
+                toast.error(res.error || 'No se pudo quitar la ausencia');
+            }
+        } finally {
+            setAusenciaSaving(false);
+        }
+    };
+
     const toggleRequiredAttendee = (personaId: string) => {
         setNewActivity(prev => ({
             ...prev,
@@ -768,6 +835,28 @@ export default function Activities() {
     // y el tramo previo a la hora de inicio.
     const esFirmable = (a: Activity): boolean =>
         a.fecha === today && a.estado !== 'cancelada' && a.estado !== 'borrador' && haComenzado(a);
+
+    // Ausentes/permisos de hoy, indexados por personaId (para excluirlos del rojo).
+    const ausentesHoyMap = new Map(ausencias.filter((a) => a.fecha === today).map((a) => [a.personaId, a]));
+
+    // Pendientes de firmar hoy (§6, ítems 3, 4 y 5): por cada charla de hoy, los
+    // convocados que aún no firmaron. Los marcados ausentes NO cuentan como
+    // pendientes; se listan aparte. Cruce convocados × firmados del reporte.
+    const pendientesHoy = canManage
+        ? todayActivities
+            .map((a) => {
+                const convocadosSinFirmar = construirFilasAsistencia(a, workers).filas.filter((f) => f.convocado && !f.asistio);
+                return {
+                    activity: a,
+                    pendientes: convocadosSinFirmar.filter((f) => !ausentesHoyMap.has(f.personaId)),
+                    ausentes: convocadosSinFirmar
+                        .filter((f) => ausentesHoyMap.has(f.personaId))
+                        .map((f) => ({ fila: f, ausencia: ausentesHoyMap.get(f.personaId)! })),
+                };
+            })
+            .filter((x) => x.pendientes.length > 0 || x.ausentes.length > 0)
+        : [];
+    const totalPendientesHoy = pendientesHoy.reduce((s, x) => s + x.pendientes.length, 0);
 
     return (
         <>
@@ -976,6 +1065,121 @@ export default function Activities() {
 
                 {/* Vista LISTA */}
                 {viewMode === 'lista' && <>
+
+                {/* Pendientes de firmar hoy — cruce convocados × firmados + ausencias (§6) */}
+                {canManage && pendientesHoy.length > 0 && (
+                    <div className="card mb-6" style={{ borderLeft: '3px solid var(--warning-500)' }}>
+                        <div className="card-header">
+                            <div className="flex items-center gap-2">
+                                <FiAlertTriangle style={{ color: 'var(--warning-500)' }} />
+                                <div>
+                                    <h2 className="card-title">Pendientes de firmar hoy</h2>
+                                    <p className="card-subtitle">
+                                        {totalPendientesHoy} convocado(s) sin firmar en {pendientesHoy.length} charla(s). Marca ausentes o registra su asistencia antes del cierre.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-3" style={{ padding: 'var(--space-2)' }}>
+                            {pendientesHoy.map(({ activity, pendientes, ausentes }) => (
+                                <div
+                                    key={activity.activityId}
+                                    style={{
+                                        padding: 'var(--space-3)',
+                                        background: 'var(--surface-elevated)',
+                                        border: '1px solid var(--surface-border)',
+                                        borderRadius: 'var(--radius-md)',
+                                    }}
+                                >
+                                    <div className="flex items-center justify-between gap-2 mb-2" style={{ flexWrap: 'wrap' }}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-bold">{activity.titulo}</span>
+                                            <span className="text-xs text-muted">
+                                                {(activity.horaInicio || '').slice(0, 5)} · {pendientes.length} sin firmar
+                                            </span>
+                                        </div>
+                                        {esFirmable(activity) && pendientes.length > 0 && (
+                                            <button className="btn btn-primary btn-sm" onClick={() => openAttendanceModal(activity)}>
+                                                <FiCheck /> Registrar asistencia
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Pendientes: cada uno es un botón (estilo de la página) que
+                                        abre el selector de motivo de ausencia. */}
+                                    {pendientes.length > 0 && (
+                                        <div className="flex gap-2 items-center" style={{ flexWrap: 'wrap' }}>
+                                            <span className="text-xs text-muted">Sin firmar:</span>
+                                            {pendientes.map((f) => {
+                                                const key = `${activity.activityId}#${f.personaId}`;
+                                                const abierto = ausenciaMenu === key;
+                                                return (
+                                                    <button
+                                                        key={f.personaId}
+                                                        type="button"
+                                                        className={`btn btn-sm ${abierto ? 'btn-primary' : 'btn-secondary'}`}
+                                                        title={`${f.cargo || ''} · Marcar como ausente/permiso`}
+                                                        aria-expanded={abierto}
+                                                        onClick={() => setAusenciaMenu(abierto ? null : key)}
+                                                    >
+                                                        <FiUserX size={13} />
+                                                        {f.nombre}
+                                                        <FiChevronDown size={13} style={{ opacity: 0.7 }} />
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {/* Selector de motivo para el pendiente elegido en esta charla. */}
+                                    {pendientes.map((f) => {
+                                        const key = `${activity.activityId}#${f.personaId}`;
+                                        if (ausenciaMenu !== key) return null;
+                                        return (
+                                            <div
+                                                key={key}
+                                                className="flex items-center gap-2 mt-2"
+                                                style={{ flexWrap: 'wrap', padding: 'var(--space-2)', background: 'var(--surface-card)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}
+                                            >
+                                                <span className="text-xs text-muted">Marcar a <b>{f.nombre}</b> como ausente:</span>
+                                                {MOTIVOS_AUSENCIA.map((m) => (
+                                                    <button key={m.code} type="button" className="btn btn-secondary btn-sm" disabled={ausenciaSaving} onClick={() => marcarAusente(f.personaId, m.code)}>
+                                                        {m.label}
+                                                    </button>
+                                                ))}
+                                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAusenciaMenu(null)}>Cancelar</button>
+                                            </div>
+                                        );
+                                    })}
+
+                                    {/* Ausentes/permisos registrados de esta charla. */}
+                                    {ausentes.length > 0 && (
+                                        <div className="mt-2">
+                                            <div className="text-xs text-muted mb-1">Ausentes / permisos ({ausentes.length})</div>
+                                            <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                                                {ausentes.map(({ fila, ausencia }) => (
+                                                    <span key={fila.personaId} className="badge badge-neutral badge-sm" title={`${fila.cargo || ''} · ${ausencia.motivoLabel}`}>
+                                                        {fila.nombre} · {ausencia.motivoLabel}
+                                                        <button
+                                                            type="button"
+                                                            style={{ marginLeft: 6, cursor: 'pointer', background: 'none', border: 'none', color: 'inherit', fontWeight: 700 }}
+                                                            title="Quitar ausencia"
+                                                            disabled={ausenciaSaving}
+                                                            onClick={() => quitarAusente(fila.personaId)}
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* Today's Activities */}
                 <div className="card mb-6">
                     <div className="card-header">
@@ -1075,12 +1279,10 @@ export default function Activities() {
                                                 <span>{activity.asistentes.length} asistentes</span>
                                             </div>
 
-                                            <span className={`badge badge-${activity.estado === 'completada' ? 'success' :
-                                                activity.estado === 'cancelada' ? 'danger' : 'neutral'
-                                                }`}>
-                                                {activity.estado === 'completada' ? 'Completada' :
-                                                    activity.estado === 'cancelada' ? 'Cancelada' : 'Programada'}
-                                            </span>
+                                            {(() => {
+                                                const seg = estadoSeguimiento(activity);
+                                                return <span className={`badge badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>;
+                                            })()}
 
                                             {esFirmable(activity) ? (
                                                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -1139,18 +1341,21 @@ export default function Activities() {
                                     <th>Fecha</th>
                                     <th>Hora</th>
                                     <th>Actividad</th>
+                                    <th>Estado</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredActivities.length === 0 ? (
                                     <tr>
-                                        <td colSpan={3}>
+                                        <td colSpan={4}>
                                             <div className="text-sm text-muted" style={{ padding: 'var(--space-4)', textAlign: 'center' }}>
                                                 No hay actividades registradas para esta obra.
                                             </div>
                                         </td>
                                     </tr>
-                                ) : filteredActivities.slice(0, 10).map((activity) => (
+                                ) : filteredActivities.slice(0, 10).map((activity) => {
+                                    const seg = estadoSeguimiento(activity);
+                                    return (
                                     <tr
                                         key={activity.activityId}
                                         style={{ cursor: 'pointer' }}
@@ -1164,8 +1369,12 @@ export default function Activities() {
                                         <td>
                                             <div className="font-bold">{activity.titulo}</div>
                                         </td>
+                                        <td>
+                                            <span className={`badge badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>
+                                        </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

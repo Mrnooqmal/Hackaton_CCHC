@@ -233,6 +233,40 @@ por el trabajador. Flujo obligatorio:
 Historial dinámico de EPP por trabajador (insumo de investigaciones de accidentes).
 Motivos de reposición: desgaste, pérdida, accidente, cambio_talla, otro.
 
+### 4.9 Actividades: asistencia, cierre, atraso y alertas (§3 y §6 del checklist)
+Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/src/pages/Activities.tsx`):
+
+- **Estados:** `borrador → programada → completada | cancelada`. **No se usa `en_curso`.**
+  `borrador` lo crea `POST /activities/plan` (esqueleto mensual); `completada` es un
+  **cierre explícito**, no un efecto de firmar.
+- **Firmar todo el día, sin corte por hora:** `registerAttendance` **no** cierra la
+  actividad ni sobrescribe `horaFin`. Se puede firmar durante todo el día de la
+  actividad, incluso **después de cerrada** (rezagados); solo se bloquea `cancelada`/
+  `borrador` y el tramo previo a `horaInicio` (frontend `esFirmable`).
+- **Cierre explícito** vía `PATCH /activities/{id}` con `estado:'completada'` y guardas:
+  exige **≥1 firma** y un **registro con contenido** (`registroTieneContenido`); fija
+  `horaFin` = hora de cierre. Editar `planificacion`/`permisosTrabajo` sigue permitido
+  aun cerrada (registro post-charla).
+- **Atraso:** cada asistente guarda `atraso`/`minutosAtraso` = firma posterior a
+  `horaInicio`. ⚠️ **Zona horaria:** `FirmaService` (no se toca) guarda `firma.horario`
+  en **UTC**; el atraso y la "hora de firma" del reporte se calculan/muestran
+  convirtiendo `firma.timestamp` a **America/Santiago** (`utils/reporteActividad.ts`),
+  y el backend calcula el atraso con hora local de Chile.
+- **Semáforo/vencidas (§6, ítems 1 y 6):** `Frontend/src/utils/seguimientoActividad.ts`
+  → `estadoSeguimiento(actividad)` = verde/amarillo/rojo (rojo = **vencida**: no
+  completada/cancelada con `fecha < hoy`). Derivado en cliente (no cambia estado en DB);
+  aplicado en calendario (anillo rojo), tarjeta de hoy e historial.
+- **Pendientes de firmar + ausencias (§6, ítems 3, 4, 5):** panel en Activities que
+  cruza convocados × firmados de las charlas de hoy (`construirFilasAsistencia`) y lista
+  quién falta. Los **ausentes** (`AusenciasTable`, ver §8) se excluyen del rojo. UI para
+  marcar/quitar ausente con motivo (permiso/licencia/falta/vacaciones/otro).
+- **Alertas programadas (§6, ítems 2 y 4-push):** `handlers/scheduler/handler.js`
+  (`checkActivityAlerts`, EventBridge `rate(30 minutes)`) avisa **al inbox** de los
+  responsables (sin SMS: `senderRol='system'` + prioridad `normal`) cuando una charla
+  superó su `horaFin` sin cerrarse, y a mediodía (12:00–12:30 Chile) si aún hay
+  convocados sin firmar (excluye ausentes). **Idempotente** por día (flags en
+  `activity.alertas.{horaLimiteAvisada,mediodiaAvisada}`).
+
 ---
 
 ## 5. Módulos backend (`Backend/handlers/`)
@@ -246,7 +280,9 @@ Motivos de reposición: desgaste, pérdida, accidente, cambio_talla, otro.
 | `documents/` | por-endpoint | CRUD, assign, sign, sign-bulk, sign-assisted, download-firmado, stamp |
 | `signatures/` | por-endpoint | crear firma, enrolamiento, verify por token, disputas/resolución |
 | `signature-requests/` | por-endpoint | solicitudes de firma, pendientes/historial por worker, offline-batch, stats |
-| `activities/` | por-endpoint | charlas, capacitaciones; registro de asistencia; stats |
+| `activities/` | por-endpoint | charlas, capacitaciones; planificación mensual (`plan`), edición/cierre (`patch`), registro de asistencia, stats (ver §4.9) |
+| `ausencias/` | por-endpoint | permisos/ausencias del día por obra/fecha (control de asistencia §6): `POST/GET/DELETE /ausencias` |
+| `scheduler/` | schedule (EventBridge) | Lambda programada (cada 30 min) de alertas de asistencia al inbox: charla vencida sin cerrar y pendientes de firmar a mediodía (ver §4.9) |
 | `incidents-module/` | itty-router | reportes de incidentes/accidentes, estadísticas KPI |
 | `surveys/` | por-endpoint | encuestas, respuestas |
 | `inbox-module/` | itty-router | mensajería interna + notificaciones |
@@ -318,7 +354,8 @@ Todas `PAY_PER_REQUEST`. Nombre real: `${service}-{tabla}-${stage}`.
 | **Obras** | `PK=TENANT#{id}` / `SK=OBRA#{obraId}` | obraId-index | Query por tenant sin Scan |
 | **Personas** | `PK=TENANT#{id}` / `SK=PERSONA#{id}` | personaId-index, email-index, tenantRut-index | Identidad unificada |
 | **Documents** | `PK=documentId` | tenantId-index | clasificación obra/diario |
-| **Activities** | `PK=activityId` | tenantId-index | charlas/capacitaciones |
+| **Activities** | `PK=activityId` | tenantId-index | charlas/capacitaciones; `alertas.*` para el scheduler (§4.9) |
+| **Ausencias** | `PK=tenantId` / `SK={obraId}#{fecha}#{personaId}` | — | permisos/ausencias del día (§4.9, §6). Query por `begins_with(sk, "{obraId}#")` |
 | **Incidents** | `PK=incidentId` | tenantId-fecha-index | reportes |
 | **Signatures** | `PK=signatureId` | requestId-index, tenantId-index, personaId-index | **inmutable** |
 | **SignatureRequests** | `PK=requestId` | tenantId-index | solicitudes de firma |
@@ -361,14 +398,17 @@ reflejadas aquí). Estructura S3: un bucket con aislamiento por prefijo
   de personas entre obras con historial/currículum; carga masiva con supervisor;
   parametrización de service dev/prod; notificaciones SMS; multi-cargo.
 
-## 11. Trabajo diseñado pero NO implementado aún (specs)
+## 11. Specs de diseño y estado de implementación
 
-En `docs/superpowers/specs/` hay diseños **aprobados** que aún no están en código.
-Antes de implementar en esas áreas, leer el spec correspondiente.
+En `docs/superpowers/specs/` hay diseños **aprobados**. Los dos de actividades
+(planificación diaria de charlas y planificación mensual/calendario) **ya están
+implementados** (catálogos, bloque `planificacion`, `permisosTrabajo`, `plan`,
+`patch`, calendario, reporte). Ver §4.9 para el comportamiento operativo vigente
+(cierre, atraso, semáforo, ausencias, alertas) que evolucionó sobre esos specs.
 
-- **`2026-07-23-planificacion-diaria-charlas-design.md`** (aprobado, pendiente de
-  implementar): amplía el módulo de **Actividades** para cubrir la planificación
-  diaria de charlas y el reporte post-charla. Introduce (planeado):
+- **`2026-07-23-planificacion-diaria-charlas-design.md`** — **IMPLEMENTADO**.
+  Amplía el módulo de **Actividades** para la planificación diaria de charlas y el
+  reporte post-charla:
   - Nuevo `Backend/lib/catalogos-actividad.js` con catálogos de fábrica
     (temas, recursos, riesgos, medidas) **configurables por tenant** en
     `tenant.reglas.catalogosActividad` (mismo patrón que cargos:
@@ -385,10 +425,22 @@ Antes de implementar en esas áreas, leer el spec correspondiente.
     en backend.
   - Nueva página `Frontend/src/pages/CatalogosActividad.tsx` (`/catalogos-actividad`,
     permiso `CARGOS_GESTIONAR`).
-  - Fix pendiente: `REUNION_COMITE` y `SIMULACRO` existen en `ACTIVITY_TYPES` del
-    backend pero faltan en el selector del frontend.
+  - `REUNION_COMITE` y `SIMULACRO` ya están en el selector del frontend.
+- **`2026-07-23-planificacion-mensual-calendario-actividades-design.md`** —
+  **IMPLEMENTADO**: `POST /activities/plan` (esqueleto mensual → borradores por
+  fecha×responsable, sin fines de semana), multi-responsable (`responsables[]`),
+  `tipoTrabajo` = etapa constructiva, y `ActivityCalendar.tsx` (vista mensual).
 - **`2026-06-18-rediseno-interfaces-operativas-design.md`** y su plan en
-  `docs/superpowers/plans/`: rediseño de interfaces operativas.
+  `docs/superpowers/plans/`: rediseño de interfaces operativas (parcialmente aplicado).
+
+### Estado del checklist de la reunión (§3 y §6)
+El checklist operativo (planificación/charlas/firmas/alertas) se trabajó por
+secciones. **§3 (firmas: cierre, rezagados, atraso) y §6 (semáforo, vencidas,
+pendientes, ausencias, alertas programadas) están implementados** — ver §4.9.
+Pendientes conocidos fuera de §3/§6: versionado de documentos (§4), fix responsivo
+de firma en vertical (§7), módulo "comando" y vínculo cargo↔actividad (§8),
+exportar reportes del dashboard (§9), FAQ/tutoriales (§10), PITR y salida de SES
+del sandbox (infra).
 
 ---
 

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import type { Activity } from '../api/client';
+import { estadoSeguimiento } from '../utils/seguimientoActividad';
 
 /**
  * Calendario mensual de actividades.
@@ -95,6 +96,8 @@ export default function ActivityCalendar({
                 .acal-chip--borrador { opacity: 0.75; border-style: dashed; border-color: rgba(255,255,255,0.7); }
                 .acal-chip--completada { text-decoration: none; }
                 .acal-chip--cancelada { opacity: 0.45; text-decoration: line-through; }
+                /* Vencida (no realizada dentro del plazo): anillo rojo para que resalte. */
+                .acal-chip--vencida { box-shadow: 0 0 0 2px var(--danger-500); }
                 .acal-mas { font-size: 0.68rem; color: var(--text-muted); padding-left: 4px; }
             `}</style>
 
@@ -146,6 +149,7 @@ export default function ActivityCalendar({
                             <span className="acal-dia">{fecha.getDate()}</span>
                             {visibles.map(a => {
                                 const info = typeColors[a.tipo];
+                                const seg = estadoSeguimiento(a, hoy);
                                 return (
                                     <div
                                         key={a.activityId}
@@ -154,9 +158,10 @@ export default function ActivityCalendar({
                                             a.estado === 'borrador' ? 'acal-chip--borrador' : '',
                                             a.estado === 'completada' ? 'acal-chip--completada' : '',
                                             a.estado === 'cancelada' ? 'acal-chip--cancelada' : '',
+                                            seg.vencida ? 'acal-chip--vencida' : '',
                                         ].filter(Boolean).join(' ')}
                                         style={{ background: info?.color || 'var(--gray-500)' }}
-                                        title={`${a.titulo} · ${info?.label || a.tipoDescripcion || a.tipo}${a.estado === 'borrador' ? ' · Borrador por completar' : ''}`}
+                                        title={`${a.titulo} · ${info?.label || a.tipoDescripcion || a.tipo}${a.estado === 'borrador' ? ' · Borrador por completar' : ''}${seg.vencida ? ' · VENCIDA (no realizada)' : ''}`}
                                         onClick={(e) => { e.stopPropagation(); onActivityClick(a); }}
                                     >
                                         {a.estado === 'borrador' ? '◌ ' : ''}{a.horaInicio ? `${a.horaInicio.slice(0, 5)} ` : ''}{a.titulo}
@@ -197,6 +202,13 @@ export default function ActivityCalendar({
                 >
                     <span style={{ width: 12, height: 12, borderRadius: 3, border: '1px dashed var(--text-muted)', display: 'inline-block', flexShrink: 0 }} />
                     Borrador por completar
+                </span>
+                <span
+                    className="text-xs text-muted"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
+                >
+                    <span style={{ width: 12, height: 12, borderRadius: 3, boxShadow: '0 0 0 2px var(--danger-500)', display: 'inline-block', flexShrink: 0 }} />
+                    Vencida (no realizada)
                 </span>
             </div>
         </div>

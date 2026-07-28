@@ -140,6 +140,8 @@ La vista **Calendario** muestra el mes completo:
 - Cada actividad aparece como una **etiqueta de color según su tipo** (la leyenda está al
   pie del calendario).
 - Los **borradores por completar** se distinguen con borde punteado y el símbolo ◌.
+- Las **actividades vencidas** (que pasaron su día sin realizarse) se marcan con un **anillo
+  rojo** (ver la leyenda al pie).
 - Los **fines de semana** aparecen atenuados (no se planifican actividades).
 - Navega entre meses con las flechas o vuelve al mes actual con **Hoy**.
 
@@ -162,12 +164,72 @@ trabajadores. Hay dos formas:
 > ✅ La firma de asistencia es la evidencia legal de la capacitación. Sin asistencia firmada,
 > la actividad queda como pendiente y **no cuenta** para el cumplimiento de la obra.
 
+En la lista de trabajadores, **los convocados aparecen primero, resaltados con la etiqueta
+"Convocado"**, para que sea fácil identificar a quién corresponde firmar. Igual puedes
+registrar a alguien no convocado (quedará marcado como *"no convocado"* en el reporte).
+
+### Se firma durante todo el día
+
+La asistencia **se puede firmar durante todo el día** de la actividad: no hay una hora de
+cierre automática. Esto permite registrar a los **trabajadores que llegan más tarde**
+(rezagados), incluso después de haber cerrado la actividad. Las firmas que se registran
+**después de la hora de inicio** de la charla quedan marcadas con la etiqueta **"Atraso"**
+(con los minutos) en el reporte, sin bloquear el registro.
+
+## Cerrar la actividad
+
+Registrar asistencia y **cerrar** la actividad son dos acciones distintas. Firmar ya no la
+cierra sola: cuando terminas, el relator o gestor la cierra a propósito con el botón
+**Cerrar actividad** (en el detalle de la actividad). Al cerrarla pasa a **Realizada**.
+
+Para poder cerrar, la actividad debe cumplir dos condiciones (si no, el botón aparece
+deshabilitado e indica el motivo):
+
+- Tener **al menos una firma** registrada.
+- Tener el **registro con contenido** (descripción, tema, convocados o permisos): no se
+  puede cerrar una actividad completamente vacía.
+
+> 💡 Cerrar la actividad **no impide** seguir sumando firmas ese mismo día: si llega un
+> rezagado después del cierre, igual puedes registrar su asistencia (quedará con la etiqueta
+> de atraso).
+
+## Seguimiento del día: pendientes, ausencias y alertas
+
+Para que ninguna charla quede sin firmar, el módulo ayuda al supervisor a hacer seguimiento:
+
+**Semáforo de estado.** En el historial, el calendario y las actividades de hoy, cada
+actividad muestra su estado con color:
+
+- 🟢 **Verde (Realizada)** — cerrada con su asistencia.
+- 🟡 **Amarillo (Pendiente)** — programada, aún dentro del plazo (hoy o a futuro).
+- 🔴 **Rojo (Vencida)** — pasó su día sin realizarse. En el calendario se marca con un
+  **anillo rojo**.
+
+**Pendientes de firmar hoy.** Arriba de las actividades de hoy aparece un panel que cruza,
+por cada charla, **quiénes fueron convocados y todavía no firman**. Desde ahí puedes
+**Registrar asistencia** de inmediato o **marcar ausencias**.
+
+**Marcar ausentes / permisos.** Si un convocado no va a asistir (permiso, licencia médica,
+falta, vacaciones, etc.), haz clic en su nombre dentro del panel y elige el **motivo**.
+Quedará registrado como ausente **y dejará de contar como pendiente** (ya no aparece en
+rojo). Puedes **quitar** la ausencia si te equivocaste.
+
+**Avisos automáticos.** El sistema envía avisos a la **bandeja de entrada** de los
+responsables cuando:
+
+- Una charla superó su **hora de término** y aún no ha sido cerrada.
+- Llega el **mediodía** y todavía hay convocados sin firmar (los ausentes no cuentan).
+
+> Estos avisos llegan a la bandeja interna (no por SMS) y sirven de recordatorio para cerrar
+> el día con todo firmado.
+
 ## Reporte post-charla
 
 En el **detalle** de una actividad realizada encontrarás el **reporte de asistencia**:
 
 - Número de convocados, número de asistentes y **porcentaje de asistencia**.
-- Tabla por persona con **Asistió (Sí/No)** y hora de firma.
+- Tabla por persona con **Asistió (Sí/No)**, hora de firma y la etiqueta **"Atraso"** cuando
+  la firma se hizo después de la hora de inicio.
 - El **acta completa** de la jornada: planificación diaria (tema, recursos, riesgos,
   medidas, protector solar, observaciones) y los permisos de trabajo con su checklist.
 
@@ -223,8 +285,27 @@ Es intencional: los fines de semana se consideran días no trabajados y se exclu
 automáticamente del rango de planificación.
 
 **Un trabajador faltó a la capacitación. ¿Qué hago?**
-Simplemente no lo marques como asistente. Quedará registrado que no asistió (aparecerá con
-**"No"** en el reporte), y podrás reprogramarle la capacitación más adelante.
+Si tiene un motivo (permiso, licencia, falta, vacaciones), **márcalo como ausente** en el
+panel *Pendientes de firmar hoy*: dejará de aparecer como pendiente y quedará registrado el
+motivo. Si simplemente no asistió, no lo marques como asistente: quedará con **"No"** en el
+reporte y podrás reprogramarle la capacitación.
+
+**Firmé a la hora correcta pero el reporte dice "Atraso". ¿Está bien?**
+La etiqueta de atraso compara la hora de la firma con la **hora de inicio** de la charla en
+horario de Chile. Si firmaste antes o justo a esa hora, no debería marcar atraso. Si ves un
+desfase raro, avísale al administrador.
+
+**¿Por qué no puedo cerrar la actividad?**
+El botón **Cerrar actividad** exige **al menos una firma** y un **registro con contenido**.
+Si está deshabilitado, te indicará cuál de las dos condiciones falta.
+
+**Llegó un trabajador tarde y ya cerré la charla. ¿Puedo firmarlo?**
+Sí. Se puede firmar **durante todo el día**, incluso después de cerrada. La firma quedará
+con la etiqueta de **atraso**.
+
+**¿Qué significa que una actividad esté en rojo?**
+Está **vencida**: pasó su día sin realizarse (sin cerrarse con asistencia). Es una señal
+para regularizarla o reprogramarla.
 
 **¿La asistencia se puede firmar en terreno sin señal?**
 La firma de asistencia usa el mismo sistema de PIN de las firmas. Si no hay conexión, revisa
