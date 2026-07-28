@@ -50,7 +50,7 @@ Datos de un contacto para el expediente del trabajador (nombre, relación, telé
 
 ![Formulario de nueva persona con las secciones de datos, rol y obras](/img/personas/nueva-persona.png)
 
-> 💡 **Rol ≠ Cargo.** El **rol** es el nivel de acceso en el sistema (qué pantallas y
+> **Rol ≠ Cargo.** El **rol** es el nivel de acceso en el sistema (qué pantallas y
 > acciones puede usar). El **cargo** es su oficio en la obra (qué documentos de seguridad le
 > corresponden). Una misma persona tiene un rol y uno o más cargos.
 

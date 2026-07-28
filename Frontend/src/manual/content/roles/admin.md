@@ -12,22 +12,6 @@ acceso cross-tenant).
 - Supervisar el cumplimiento documental de todas las obras.
 - Acceder a toda la reportería y KPIs del tenant.
 
-## Permisos
-
-| Módulo | Acceso |
-| --- | --- |
-| Dashboard | ✓ Completo (KPIs agregados de todas las obras) |
-| Obras | ✓ Crear, editar, avanzar fase |
-| Documentos | ✓ Completo |
-| Firmas | ✓ Completo |
-| Incidentes | ✓ Completo |
-| Actividades | ✓ Completo |
-| Encuestas | ✓ Completo |
-| Asistente IA | ✓ Completo |
-| Personas | ✓ Crear, editar, asignar roles |
-| Bandeja de Entrada | ✓ Completo |
-| Tenants | ✓ Configuración de la empresa |
-
 ## Configuración exclusiva
 
 El admin es el único rol que accede a la sección [Mi Empresa](/modulos/tenants), donde puede:

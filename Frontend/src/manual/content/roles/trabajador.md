@@ -10,22 +10,6 @@ en firmar lo que se le asigna y registrar su asistencia a actividades.
 - Reportar condiciones inseguras (hallazgos).
 - Responder encuestas y declaraciones de salud.
 
-## Permisos
-
-| Módulo | Acceso |
-| --- | --- |
-| Dashboard | 👁 Sus pendientes y actividades |
-| Obras | ✗ Sin acceso |
-| Documentos | 👁 Los asignados a él |
-| Firmas | ✓ Firma de lo que le corresponde |
-| Incidentes | 👁 Reportar hallazgos |
-| Actividades | 👁 Asistir y firmar |
-| Encuestas | 👁 Responder las asignadas |
-| Asistente IA | ✗ Sin acceso |
-| Personas | ✗ Sin acceso |
-| Bandeja de Entrada | ✓ Recibir notificaciones |
-| Tenants | ✗ Sin acceso |
-
 ## Acceso web opcional
 
 No todos los trabajadores tienen acceso web. Según `tieneAccesoWeb`:

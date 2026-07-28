@@ -12,22 +12,6 @@ vela porque la obra avance cumpliendo los requisitos de seguridad.
 - Velar por el cumplimiento de los documentos obligatorios antes de avanzar de fase.
 - Revisar incidentes y el estado general de seguridad de la obra.
 
-## Permisos
-
-| Módulo | Acceso |
-| --- | --- |
-| Dashboard | ✓ Visión completa de la obra |
-| Obras | ✓ Crear, editar, avanzar fase, asignar trabajadores |
-| Documentos | ✓ Ver y subir documentos de obra |
-| Firmas | ✓ Firmar lo que le corresponde y firma asistida |
-| Incidentes | ✓ Reportar, calificar y dar seguimiento |
-| Actividades | ✓ Crear, planificar el mes, registrar |
-| Encuestas | ✓ Crear |
-| Asistente IA | ✓ Consultas |
-| Personas | ✓ Añadir, gestionar onboarding, EPP y vigilancia de salud |
-| Bandeja de Entrada | ✓ Completo |
-| Tenants | ✗ Sin acceso |
-
 ## Tareas clave
 
 - **Avance de fase**: es responsable de avanzar la `etapaActual` de la obra. La

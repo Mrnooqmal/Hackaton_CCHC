@@ -21,7 +21,7 @@ Estos son los documentos obligatorios que la plataforma gestiona:
 | **Mapa de Riesgos de la obra** | Identifica los riesgos por zona de la obra | Durante la ejecución | Prevencionista |
 | **Matriz de Riesgos (MIPER / MIPPER)** | Identifica peligros y evalúa riesgos por cargo | Todas (por cargo) | Prevencionista |
 
-> 💡 No tienes que recordar esta lista de memoria: al crear la obra, estos documentos
+> No tienes que recordar esta lista de memoria: al crear la obra, estos documentos
 > aparecen solos en la pestaña **DS44 — Cumplimiento** de la obra, esperando que los completes.
 
 ## Dos tipos de documentos

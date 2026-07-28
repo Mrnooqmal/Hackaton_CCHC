@@ -38,7 +38,7 @@ pendiente. También tienes un **buscador** para encontrar un mensaje por su cont
 
 ![Ventana de Nuevo Mensaje con la selección de obra y destinatarios](/img/bandeja-entrada/nuevo-mensaje.png)
 
-> 💡 La **Obra** es obligatoria porque la mensajería está organizada por proyecto. Esto
+> La **Obra** es obligatoria porque la mensajería está organizada por proyecto. Esto
 > mantiene cada comunicación asociada a su contexto y a las personas correctas.
 
 ## Leer, archivar y eliminar

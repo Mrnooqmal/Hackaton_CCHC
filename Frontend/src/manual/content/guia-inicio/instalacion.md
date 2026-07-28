@@ -14,7 +14,7 @@ dirección web que te entregue tu empresa e iniciar sesión.
 
 ![Pantalla de inicio de sesión con los campos RUT y Contraseña](/img/guia-inicio/login.png)
 
-> 👁️ Puedes usar el ícono del ojo en el campo de contraseña para **mostrar u ocultar** lo
+> Puedes usar el ícono del ojo en el campo de contraseña para **mostrar u ocultar** lo
 > que escribes y asegurarte de no equivocarte.
 
 ## Primer ingreso

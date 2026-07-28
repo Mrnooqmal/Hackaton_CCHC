@@ -2,10 +2,10 @@ import { Link } from 'react-router-dom';
 import Callout from './Callout';
 
 const FEATURES = [
-    { icon: '🚀', title: 'Guía de Inicio', details: 'Instalación, configuración y onboarding de un nuevo tenant en la plataforma.', link: '/manual/guia-inicio/' },
-    { icon: '📋', title: 'DS44 & Normativa', details: 'Cumplimiento del Supremo Decreto 44. Documentos obligatorios, fases de obra y firmas.', link: '/manual/ds44/' },
-    { icon: '🧩', title: 'Módulos', details: 'Documentación completa de los módulos de la plataforma.', link: '/manual/modulos/' },
-    { icon: '👥', title: 'Roles de Usuario', details: 'Qué puede hacer cada rol. Tabla comparativa de permisos por módulo.', link: '/manual/roles/' },
+    { title: 'Guía de Inicio', details: 'Instalación, configuración y onboarding de un nuevo tenant en la plataforma.', link: '/manual/guia-inicio/' },
+    { title: 'DS44 & Normativa', details: 'Cumplimiento del Supremo Decreto 44. Documentos obligatorios, fases de obra y firmas.', link: '/manual/ds44/' },
+    { title: 'Módulos', details: 'Documentación completa de los módulos de la plataforma.', link: '/manual/modulos/' },
+    { title: 'Roles de Usuario', details: 'Qué puede hacer cada rol y sus responsabilidades dentro de la empresa.', link: '/manual/roles/' },
 ];
 
 const MAPA = [
@@ -20,7 +20,6 @@ export default function ManualHome() {
     return (
         <div className="manual-home">
             <section className="manual-hero">
-                <img src="/logo-bs.svg" alt="Build & Serve" className="manual-hero__logo" />
                 <div className="manual-hero__text">
                     <h1 className="manual-hero__name">Build &amp; Serve</h1>
                     <p className="manual-hero__title">Manual de Uso Oficial</p>
@@ -39,9 +38,9 @@ export default function ManualHome() {
             <section className="manual-features">
                 {FEATURES.map((f) => (
                     <Link key={f.link} to={f.link} className="manual-feature-card">
-                        <span className="manual-feature-card__icon">{f.icon}</span>
                         <h3 className="manual-feature-card__title">{f.title}</h3>
                         <p className="manual-feature-card__details">{f.details}</p>
+                        <span className="manual-feature-card__cta">Abrir →</span>
                     </Link>
                 ))}
             </section>

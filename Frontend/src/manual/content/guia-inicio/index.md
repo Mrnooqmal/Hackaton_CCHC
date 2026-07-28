@@ -11,6 +11,12 @@ firmado digitalmente y siempre disponible** — incluso desde el teléfono y sin
 Desarrollada por **The Code Cookers** para el Hackathon CChC 2025 — *Seguridad sin Papeleo*,
 en colaboración con la Cámara Chilena de la Construcción.
 
+::: tip ¿Recién llegas o te sientes perdido? Empieza por aquí
+Ve directo al **[Resumen de Módulos](/modulos/)**: ahí está, en un solo lugar, la guía de uso
+de cada parte de la plataforma (Obras, Documentos, Firmas, Personas y más). Es el mejor punto
+de partida si solo quieres saber **cómo hacer algo**.
+:::
+
 ## ¿Para quién es?
 
 | Si eres… | La plataforma te ayuda a… |
@@ -39,6 +45,6 @@ en colaboración con la Cámara Chilena de la Construcción.
 
 | Sección | ¿Qué encontrarás? |
 | --- | --- |
+| **[Módulos](/modulos/)** | **Guía de uso de cada parte de la plataforma. Empieza aquí.** |
 | [DS44 & Normativa](/ds44/) | Qué exige el DS 44 y cómo cumplirlo desde la plataforma. |
-| [Módulos](/modulos/) | Guía de uso de cada parte de la plataforma. |
 | [Roles](/roles/) | Qué puede hacer cada tipo de usuario. |

@@ -61,7 +61,7 @@ Iniciar sesión → Revisar empresa → Registrar personas → Crear obra
    → Cargar y firmar documentos → Programar actividades → Hacer seguimiento
 ```
 
-> 💡 **Avance del cumplimiento:** cuando completes lo que pide cada fase de la obra
+> **Avance del cumplimiento:** cuando completes lo que pide cada fase de la obra
 > (Planificar → Hacer → Verificar → Actuar), podrás avanzar a la siguiente. La plataforma
 > verifica que no queden pendientes obligatorios antes de dejarte avanzar. Ver
 > [Obras](/modulos/obras).

@@ -9,7 +9,7 @@ Piensa en la obra como la "carpeta madre" de un proyecto. Mientras no tengas al 
 una obra creada, no podrás cargar documentos, asignar trabajadores ni registrar
 capacitaciones. Por eso, **lo primero que harás al empezar es crear tu obra**.
 
-> 💡 **¿Quién puede crear obras?** Solo los roles **Administrador** y **Prevencionista**.
+> **¿Quién puede crear obras?** Solo los roles **Administrador** y **Prevencionista**.
 > Si tu rol es Jefe de Obra, Supervisor o Trabajador, podrás ver y trabajar dentro de las
 > obras a las que te asignen, pero no crear nuevas. Revisa [Roles de Usuario](/roles/)
 > para ver el detalle de permisos.
@@ -44,7 +44,7 @@ Cuando tengas muchas obras, usa las herramientas de la parte superior del listad
 - **Vista:** puedes alternar entre **vista de tarjetas** (con foto) y **vista de tabla**
   (más compacta, ideal para revisar muchas obras de un vistazo).
 
-> 📌 Si recién creaste tu empresa y todavía no hay obras, verás el mensaje
+> Si recién creaste tu empresa y todavía no hay obras, verás el mensaje
 > *"Sin obras registradas"* con un botón directo para crear la primera.
 
 ## Crear una obra nueva
@@ -84,7 +84,7 @@ no necesita:
 - ☐ **Hay máquinas / herramientas motrices** (Art. 10).
 - ☐ **Existen agentes físicos, químicos o biológicos** (Art. 2).
 
-> ✅ Tómate un momento para responder bien estas casillas: de ellas depende qué
+> Tómate un momento para responder bien estas casillas: de ellas depende qué
 > procedimientos y documentos te pedirá el sistema más adelante. Si tu situación cambia,
 > podrás ajustarlas después desde la obra.
 
@@ -104,7 +104,7 @@ podrás agregar o quitar personas en cualquier momento desde la ficha de la obra
 Cuando completes los campos obligatorios, haz clic en **Crear obra** (mientras se procesa
 verás *"Creando…"*). Si prefieres descartar, usa **Cancelar**.
 
-> ⚙️ **Qué pasa al guardar:** la plataforma **prepara automáticamente los documentos
+> **Qué pasa al guardar:** la plataforma **prepara automáticamente los documentos
 > obligatorios** que el DS 44 exige según las características que marcaste. No tienes que
 > crearlos uno por uno: ya quedan listos, esperando que subas los archivos correspondientes.
 
@@ -122,7 +122,7 @@ encontrarás tres pestañas en la parte superior:
 - **Equipo (N)** — las personas asignadas a la obra. El número entre paréntesis indica
   cuántas hay activas. Desde aquí asignas o quitas trabajadores y revisas su onboarding.
 
-> 📋 Junto al nombre de la obra hay un pequeño botón para **copiar su identificador**.
+> Junto al nombre de la obra hay un pequeño botón para **copiar su identificador**.
 > Solo lo necesitarás si algún día el soporte te lo pide; en el uso diario puedes ignorarlo.
 
 ## La pestaña "DS44 — Cumplimiento" (el ciclo de mejora)
@@ -145,7 +145,7 @@ Para pasar de una fase a la siguiente, completa lo que la fase pide y usa el bot
 **avanzar fase** que aparece en pantalla. El sistema **no te dejará avanzar dejando
 pendientes obligatorios**, para que no queden vacíos de cumplimiento.
 
-> ⚠️ Avanzar de fase es un paso importante del proceso. Asegúrate de haber completado
+> Avanzar de fase es un paso importante del proceso. Asegúrate de haber completado
 > realmente lo que corresponde antes de confirmar.
 
 ## Asignar personas a la obra

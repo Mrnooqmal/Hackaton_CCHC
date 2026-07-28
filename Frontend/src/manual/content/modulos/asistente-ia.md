@@ -40,7 +40,7 @@ El asistente ofrece **acciones rápidas** para las tareas más comunes:
 
 ![Vista previa de una Matriz MIPER generada por el asistente](/img/asistente-ia/matriz-miper.png)
 
-> ⚠️ **Revisa siempre antes de aprobar.** El asistente genera un borrador de muy buena
+> **Revisa siempre antes de aprobar.** El asistente genera un borrador de muy buena
 > calidad, pero la responsabilidad técnica es tuya. Lee el contenido, ajústalo a la realidad
 > de tu obra y recién entonces apruébalo. La IA es una ayuda, no un reemplazo del criterio
 > del prevencionista.

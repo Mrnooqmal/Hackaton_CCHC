@@ -32,10 +32,10 @@ hallazgos"**, que combina dos cosas:
    - **Detalle** *(obligatorio)* — describe qué pasó con la mayor claridad posible.
 4. Guarda. Verás una confirmación de **"Registro Exitoso"**.
 
-> 📍 Si tu dispositivo lo permite, la plataforma puede registrar la **ubicación** del
+> Si tu dispositivo lo permite, la plataforma puede registrar la **ubicación** del
 > evento automáticamente, para dejar constancia de dónde ocurrió.
 
-> 💡 **Registra los hallazgos aunque parezcan menores.** Un hallazgo a tiempo (una
+> **Registra los hallazgos aunque parezcan menores.** Un hallazgo a tiempo (una
 > herramienta en mal estado, una protección faltante) evita el accidente de mañana, y queda
 > como evidencia de tu gestión preventiva.
 

@@ -27,7 +27,7 @@ Aquí defines la imagen y los datos básicos de tu empresa:
 
 Cuando termines, haz clic en **Guardar identidad**.
 
-> 🎨 Personalizar el color y el logo hace que la plataforma se sienta "tuya" y ayuda a que
+> Personalizar el color y el logo hace que la plataforma se sienta "tuya" y ayuda a que
 > los trabajadores reconozcan que es el sistema oficial de su empresa.
 
 ## Pestaña "Roles"
@@ -40,7 +40,7 @@ roles base, pero desde aquí puedes **crear roles personalizados** y ajustar sus
 - **Eliminar rol** — quita un rol que ya no uses (las personas que lo tenían deberán
   reasignarse a otro).
 
-> 🔒 El rol **Administrador** tiene **acceso total** y sus permisos no se pueden editar.
+> El rol **Administrador** tiene **acceso total** y sus permisos no se pueden editar.
 > Aparece marcado como *"Acceso total (no editable)"*. Esto evita que alguien se quede sin
 > administrador por error. Revisa [Roles de Usuario](/roles/) para entender los roles base.
 

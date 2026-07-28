@@ -14,22 +14,6 @@ Es quien opera el día a día del cumplimiento del DS 44 en la obra.
 - Investigar incidentes y accidentes.
 - Hacer seguimiento del cumplimiento documental por fase.
 
-## Permisos
-
-| Módulo | Acceso |
-| --- | --- |
-| Dashboard | ✓ Cumplimiento, incidentes, actividades |
-| Obras | 👁 Solo lectura |
-| Documentos | ✓ Crear, asignar, gestionar |
-| Firmas | ✓ Completo |
-| Incidentes | ✓ Crear, investigar, cerrar |
-| Actividades | ✓ Programar, planificar el mes, registrar |
-| Encuestas | ✓ Crear, distribuir, analizar |
-| Asistente IA | ✓ Generar matrices de riesgo |
-| Personas | 👁 Solo lectura |
-| Bandeja de Entrada | ✓ Completo |
-| Tenants | ✗ Sin acceso |
-
 ## Tareas clave en la plataforma
 
 - **Planificación mensual de actividades**: con [Planificar mes](/modulos/actividades#planificar-el-mes-completo)

@@ -11,7 +11,7 @@ capacitación efectivamente se realizó (una exigencia clave del DS 44, Art. 16)
 En el menú lateral, haz clic en **Actividades**. Se abrirá la pantalla **"Actividades y
 capacitación"**.
 
-> 📌 Las actividades se gestionan **por obra**. Si ves el mensaje *"Seleccione una obra para
+> Las actividades se gestionan **por obra**. Si ves el mensaje *"Seleccione una obra para
 > ver sus actividades"*, elige primero la obra con la que quieres trabajar (en el selector de
 > obra, normalmente arriba). Una vez seleccionada, verás sus actividades.
 
@@ -57,7 +57,7 @@ La pantalla ofrece **dos vistas**, que alternas con los botones **Lista** y **Ca
 
 ![Formulario de Nueva Actividad con los campos de tipo, relator y fecha](/img/actividades/nueva-actividad.png)
 
-> 💡 Por defecto el selector de asistentes muestra **el grupo del relator** (su cuadrilla o
+> Por defecto el selector de asistentes muestra **el grupo del relator** (su cuadrilla o
 > las cuadrillas de sus supervisores vinculados). Si necesitas convocar a más personas,
 > activa la opción de **ver toda la obra**.
 
@@ -115,7 +115,7 @@ mes** con el botón **Planificar mes**:
 El sistema crea una actividad en estado **borrador** por cada día hábil y responsable.
 Los **sábados y domingos se excluyen automáticamente** (días no trabajados).
 
-> 💡 Cada borrador es **independiente**: el detalle de un día no se copia a los demás. Así,
+> Cada borrador es **independiente**: el detalle de un día no se copia a los demás. Así,
 > la charla del lunes puede tratar un tema distinto a la del martes. Si vuelves a generar el
 > plan sobre el mismo rango, los días ya planificados no se duplican.
 
@@ -161,7 +161,7 @@ trabajadores. Hay dos formas:
 - **Registrar mi asistencia** (el propio trabajador) — cada persona puede confirmar su
   asistencia y firmar desde su cuenta.
 
-> ✅ La firma de asistencia es la evidencia legal de la capacitación. Sin asistencia firmada,
+> La firma de asistencia es la evidencia legal de la capacitación. Sin asistencia firmada,
 > la actividad queda como pendiente y **no cuenta** para el cumplimiento de la obra.
 
 En la lista de trabajadores, **los convocados aparecen primero, resaltados con la etiqueta
@@ -189,7 +189,7 @@ deshabilitado e indica el motivo):
 - Tener el **registro con contenido** (descripción, tema, convocados o permisos): no se
   puede cerrar una actividad completamente vacía.
 
-> 💡 Cerrar la actividad **no impide** seguir sumando firmas ese mismo día: si llega un
+> Cerrar la actividad **no impide** seguir sumando firmas ese mismo día: si llega un
 > rezagado después del cierre, igual puedes registrar su asistencia (quedará con la etiqueta
 > de atraso).
 
@@ -200,9 +200,9 @@ Para que ninguna charla quede sin firmar, el módulo ayuda al supervisor a hacer
 **Semáforo de estado.** En el historial, el calendario y las actividades de hoy, cada
 actividad muestra su estado con color:
 
-- 🟢 **Verde (Realizada)** — cerrada con su asistencia.
-- 🟡 **Amarillo (Pendiente)** — programada, aún dentro del plazo (hoy o a futuro).
-- 🔴 **Rojo (Vencida)** — pasó su día sin realizarse. En el calendario se marca con un
+- **Verde (Realizada)** — cerrada con su asistencia.
+- **Amarillo (Pendiente)** — programada, aún dentro del plazo (hoy o a futuro).
+- **Rojo (Vencida)** — pasó su día sin realizarse. En el calendario se marca con un
   **anillo rojo**.
 
 **Pendientes de firmar hoy.** Arriba de las actividades de hoy aparece un panel que cruza,
@@ -242,7 +242,7 @@ Las observaciones y los permisos suelen terminarse de anotar después de la char
 **Completar registro** (visible para el relator o quien pueda crear actividades) permite
 editar la **planificación diaria y los permisos de trabajo** de una actividad ya realizada.
 
-> 🔒 Las **asistencias y firmas nunca se modifican** por esta vía: son registro de
+> Las **asistencias y firmas nunca se modifican** por esta vía: son registro de
 > auditoría. Una vez que hay firmas, el resto del contenido de la actividad queda congelado
 > (solo puede completarse la descripción y el acta).
 

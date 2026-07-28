@@ -34,7 +34,7 @@ tu rol, podrás ver indicadores como:
 - **Incidentes** — incidentes abiertos que requieren seguimiento.
 - **Documentos** — total de documentos cargados.
 
-> 💡 Varias de estas tarjetas son **clickeables**: al hacer clic te llevan directo a la
+> Varias de estas tarjetas son **clickeables**: al hacer clic te llevan directo a la
 > sección correspondiente (por ejemplo, la de incidentes te abre el módulo de Incidentes).
 
 ### Mis pendientes
@@ -48,7 +48,7 @@ las lista de forma directa y accionable. Pueden ser cosas como:
 
 Cada pendiente incluye un acceso directo para resolverlo sin tener que buscarlo por tu cuenta.
 
-> ✅ Cuando no tengas nada pendiente, verás un mensaje de **"¡Todo al día!"**. Esa es la
+> Cuando no tengas nada pendiente, verás un mensaje de **"¡Todo al día!"**. Esa es la
 > señal de que estás al corriente con tus obligaciones.
 
 ### Estado de cumplimiento DS44 de tu obra

@@ -11,28 +11,17 @@ determina qué módulos y acciones están disponibles para cada persona dentro d
 | [Supervisor](/roles/supervisor) | Supervisión de equipo y firma como relator |
 | [Trabajador](/roles/trabajador) | Firma de documentos y registro de asistencia |
 
-## Tabla comparativa de permisos
+## Los permisos son configurables
 
-Leyenda: ✓ acceso completo · 👁 solo lectura · ✗ sin acceso
+Cada empresa **define y ajusta los permisos de sus roles** desde
+[Mi Empresa → Roles](/modulos/tenants). Por eso este manual no incluye una tabla fija de
+permisos: lo que cada rol puede hacer depende de la configuración de tu tenant.
 
-| Módulo | Admin | Prevencionista | Jefe de Obra | Supervisor | Trabajador |
-| --- | :---: | :---: | :---: | :---: | :---: |
-| Dashboard | ✓ | ✓ | ✓ | ✓ | 👁 |
-| Obras | ✓ | 👁 | ✓ | 👁 | ✗ |
-| Documentos | ✓ | ✓ | ✓ | 👁 | 👁 |
-| Firmas | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Incidentes | ✓ | ✓ | ✓ | ✓ | 👁 |
-| Actividades | ✓ | ✓ | ✓ | ✓ | 👁 |
-| Encuestas | ✓ | ✓ | ✓ | 👁 | 👁 |
-| Asistente IA | ✓ | ✓ | ✓ | ✗ | ✗ |
-| Personas | ✓ | 👁 | ✓ | 👁 | ✗ |
-| Bandeja de Entrada | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Mi Empresa | ✓ | ✗ | ✗ | ✗ | ✗ |
+Las páginas de cada rol describen su **propósito y responsabilidades habituales**, que
+sirven como punto de partida recomendado, pero el alcance real siempre lo determina la
+configuración de tu empresa.
 
-> Esta tabla refleja el comportamiento de referencia. Algunos accesos pueden ajustarse según
-> la configuración de roles de tu empresa (ver [Mi Empresa](/modulos/tenants)).
-
-## Notas sobre los permisos
+## Notas sobre los roles
 
 - **Firmas** es transversal: todo rol puede firmar lo que le corresponde (un trabajador
   firma su recepción de EPP, un supervisor firma como relator, etc.).

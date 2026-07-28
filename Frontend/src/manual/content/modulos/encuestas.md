@@ -20,7 +20,7 @@ Hay dos miradas del módulo, según tu rol:
 
 ![Sección Mis encuestas con el seguimiento personal del trabajador](/img/encuestas/mis-encuestas.png)
 
-> 💡 Las encuestas que te asignan también aparecen como pendiente en tu
+> Las encuestas que te asignan también aparecen como pendiente en tu
 > [Dashboard](/modulos/dashboard) y tu [Bandeja de Entrada](/modulos/bandeja-entrada).
 
 ## Crear una encuesta (gestor)

@@ -32,7 +32,7 @@ firma se conserva, entre otros datos:
 - **Desde dónde** se firmó.
 - Un **código de verificación** que permite comprobar la autenticidad.
 
-> 🔒 Esta combinación de **PIN + fecha/hora + verificación** es la evidencia que la
+> Esta combinación de **PIN + fecha/hora + verificación** es la evidencia que la
 > plataforma conserva por cada firma, y es lo que da respaldo al cumplimiento.
 
 ## Firma sin conexión en terreno

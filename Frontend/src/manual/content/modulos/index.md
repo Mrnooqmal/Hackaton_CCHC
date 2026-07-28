@@ -9,17 +9,17 @@ detallada.
 
 | Módulo | ¿Para qué lo uso? |
 | --- | --- |
-| 📊 [Dashboard](/modulos/dashboard) | Tu pantalla de inicio: resume tus pendientes y el estado de tus obras. |
-| 🏗️ [Obras](/modulos/obras) | Crear y gestionar tus proyectos de construcción. Es el punto de partida de todo. |
-| 📄 [Documentos](/modulos/documentos) | Cargar, asignar y consultar los documentos de seguridad. |
-| ✍️ [Firmas Digitales](/modulos/firmas) | Firmar con tu PIN y solicitar firmas a otros (incluso sin internet). |
-| ⚠️ [Incidentes](/modulos/incidentes) | Reportar hallazgos, incidentes y accidentes, y ver estadísticas. |
-| 🎓 [Actividades](/modulos/actividades) | Planificar el mes en calendario, programar capacitaciones y charlas, y registrar la asistencia. |
-| 📋 [Encuestas](/modulos/encuestas) | Crear y responder encuestas de seguridad. |
-| 🤖 [Asistente IA](/modulos/asistente-ia) | Generar matrices de riesgo y documentos con ayuda de la IA. |
-| 👤 [Personas](/modulos/personas) | Registrar a los trabajadores y definir su rol y cargo. |
-| 📨 [Bandeja de Entrada](/modulos/bandeja-entrada) | Enviar y recibir mensajes internos de la obra. |
-| 🏢 [Mi Empresa](/modulos/tenants) | Configurar los datos, el logo, los roles y los cargos de tu empresa. |
+| [Dashboard](/modulos/dashboard) | Tu pantalla de inicio: resume tus pendientes y el estado de tus obras. |
+| [Obras](/modulos/obras) | Crear y gestionar tus proyectos de construcción. Es el punto de partida de todo. |
+| [Documentos](/modulos/documentos) | Cargar, asignar y consultar los documentos de seguridad. |
+| [Firmas Digitales](/modulos/firmas) | Firmar con tu PIN y solicitar firmas a otros (incluso sin internet). |
+| [Incidentes](/modulos/incidentes) | Reportar hallazgos, incidentes y accidentes, y ver estadísticas. |
+| [Actividades](/modulos/actividades) | Planificar el mes en calendario, programar capacitaciones y charlas, y registrar la asistencia. |
+| [Encuestas](/modulos/encuestas) | Crear y responder encuestas de seguridad. |
+| [Asistente IA](/modulos/asistente-ia) | Generar matrices de riesgo y documentos con ayuda de la IA. |
+| [Personas](/modulos/personas) | Registrar a los trabajadores y definir su rol y cargo. |
+| [Bandeja de Entrada](/modulos/bandeja-entrada) | Enviar y recibir mensajes internos de la obra. |
+| [Mi Empresa](/modulos/tenants) | Configurar los datos, el logo, los roles y los cargos de tu empresa. |
 
 ## ¿Por dónde empiezo?
 
@@ -43,6 +43,6 @@ Todo gira en torno a la **obra**:
 - Las **Personas** se asignan a las obras y firman lo que les corresponde.
 - Los avisos y coordinaciones se manejan por la **Bandeja de Entrada**.
 
-> 💡 Es posible que no veas todos los módulos. Cada empresa puede tener habilitados solo
+> Es posible que no veas todos los módulos. Cada empresa puede tener habilitados solo
 > algunos, según su plan. Si te falta un módulo que necesitas, consúltalo con el
 > administrador de tu empresa.

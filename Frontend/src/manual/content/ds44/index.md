@@ -43,9 +43,8 @@ registrado, fechado y disponible para auditoría.
 ## El ciclo de mejora continua
 
 El DS 44 se apoya en el **ciclo de Deming (PDCA)**: Planificar → Hacer → Verificar →
-Actuar. Build & Serve modela cada obra según este ciclo normativo, independiente de su
-etapa física de construcción. Revisa [Fases de obra](/ds44/fases-obra) para entender
-cómo se relacionan ambas dimensiones.
+Actuar. Build & Serve modela cada obra según este ciclo normativo. Revisa
+[Fases de obra](/ds44/fases-obra) para entender qué haces en cada fase.
 
 ::: tip Siguiente paso
 Revisa el catálogo completo de [Documentos obligatorios](/ds44/documentos-obligatorios)

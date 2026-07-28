@@ -13,7 +13,7 @@ Hay tres pantallas relacionadas con firmas, según lo que necesites hacer:
 - **Firmas Offline** — para **recolectar firmas sin conexión** a internet, por ejemplo en
   terreno donde no hay señal.
 
-> 🔐 **Tu PIN es tu firma.** Es un código personal de **4 dígitos** que solo tú conoces. Al
+> **Tu PIN es tu firma.** Es un código personal de **4 dígitos** que solo tú conoces. Al
 > ingresarlo confirmas que leíste y comprendiste el documento. No lo compartas con nadie:
 > equivale a tu firma de puño y letra.
 
@@ -57,7 +57,7 @@ En la lista de solicitudes verás el **estado** de cada una, **quién la asignó
 de creación** y la **fecha límite**. Podrás ver cuántas personas ya firmaron y cuántas
 están **pendientes**. Si una solicitud ya no corresponde, puedes **cancelarla**.
 
-> 💡 Tú también puedes firmar desde aquí cuando seas uno de los firmantes: se abre la
+> Tú también puedes firmar desde aquí cuando seas uno de los firmantes: se abre la
 > ventana **Confirmar Firma Digital** y se te pedirá tu **PIN de 4 dígitos**.
 
 ## Firmas Offline — recolectar firmas sin internet
@@ -74,7 +74,7 @@ los trabajadores **sin conexión** y luego **sincronizarlas** cuando vuelvas a t
 Cada solicitud offline muestra su **estado de sincronización**, para que sepas cuáles ya se
 subieron y cuáles están pendientes de sincronizar.
 
-> 📶 Las firmas offline se guardan **en tu dispositivo** hasta que sincronizan. No cierres
+> Las firmas offline se guardan **en tu dispositivo** hasta que sincronizan. No cierres
 > sesión ni borres los datos del navegador antes de sincronizar, o podrías perderlas.
 
 ## Validez legal de la firma con PIN

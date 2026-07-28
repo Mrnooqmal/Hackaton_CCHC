@@ -67,7 +67,7 @@ export const MANUAL_SECTIONS: NavSection[] = [
         text: 'Roles de Usuario',
         navText: 'Roles',
         items: [
-            { text: 'Tabla comparativa', link: 'roles/' },
+            { text: 'Todos los roles', link: 'roles/' },
             { text: 'Admin', link: 'roles/admin' },
             { text: 'Prevencionista', link: 'roles/prevencionista' },
             { text: 'Jefe de Obra', link: 'roles/jefe-obra' },

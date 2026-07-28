@@ -55,8 +55,8 @@ export default function Footer() {
                         </Link>
                     </div>
 
-                    {/* Columna 3 – Equipo */}
-                    <div className="ft-col">
+                    {/* Columna 3 – Equipo + The Code Cookers */}
+                    <div className="ft-col ft-col--cookers">
                         <h3 className="ft-col-title">Conoce al equipo</h3>
                         <p className="ft-col-desc">
                             Estudiantes de la Universidad del Desarrollo que combinan tecnología
@@ -65,11 +65,8 @@ export default function Footer() {
                         <a href="/equipo" target="_blank" rel="noopener noreferrer" className="ft-col-link ft-col-link--cta">
                             Ver equipo →
                         </a>
-                    </div>
 
-                    {/* Columna 4 – The Code Cookers */}
-                    <div className="ft-col ft-col--cookers">
-                        <h3 className="ft-col-title">Desarrollado por</h3>
+                        <p className="ft-col-eyebrow">Desarrollado por</p>
                         <div className="ft-cookers-badge" aria-label="The Code Cookers">
                             <span className="ft-cookers-icon" aria-hidden="true">{'</>'}</span>
                             <span className="ft-cookers-name">The Code Cookers</span>
@@ -77,6 +74,45 @@ export default function Footer() {
                         <p className="ft-col-desc ft-col-desc--sm">
                             Hackathon CChC 2025 — Seguridad sin Papeleo.
                         </p>
+                    </div>
+
+                    {/* Columna 4 – Preguntas frecuentes (desplegables) */}
+                    <div className="ft-col ft-col--faq">
+                        <h3 className="ft-col-title">Preguntas frecuentes</h3>
+                        <div className="ft-faq-list">
+                            <details className="ft-faq-item">
+                                <summary className="ft-faq-q">¿Quién registra a mi empresa?</summary>
+                                <p className="ft-faq-a">
+                                    El registro inicial lo realiza el equipo de la plataforma o el proceso
+                                    de alta de tu proveedor. Una vez creada, tú como administrador gestionas
+                                    todo desde dentro.
+                                </p>
+                            </details>
+
+                            <details className="ft-faq-item">
+                                <summary className="ft-faq-q">No recibí el correo con mis credenciales</summary>
+                                <p className="ft-faq-a">
+                                    Revisa la carpeta de spam. Si aún no aparece, contacta al soporte de la
+                                    plataforma para que reenvíen tu acceso.
+                                </p>
+                            </details>
+
+                            <details className="ft-faq-item">
+                                <summary className="ft-faq-q">¿Puedo tener más de un administrador?</summary>
+                                <p className="ft-faq-a">
+                                    Sí. Una vez dentro, el administrador puede registrar a otras personas y
+                                    asignarles el rol de administrador desde el módulo de Personas.
+                                </p>
+                            </details>
+
+                            <details className="ft-faq-item">
+                                <summary className="ft-faq-q">¿Los datos de mi empresa los puede ver otra empresa?</summary>
+                                <p className="ft-faq-a">
+                                    No. Cada empresa opera en su propio espacio aislado: tus obras, personas
+                                    y documentos solo los ve tu empresa.
+                                </p>
+                            </details>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -235,6 +271,16 @@ export default function Footer() {
 
                 .ft-col-desc--sm { font-size: 11.5px; }
 
+                /* Etiqueta pequeña para separar sub-secciones dentro de una columna */
+                .ft-col-eyebrow {
+                    font-size: 11px;
+                    font-weight: 600;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    color: #64748b;
+                    margin: 14px 0 2px;
+                }
+
                 .ft-col-list {
                     list-style: none;
                     padding: 0;
@@ -297,6 +343,71 @@ export default function Footer() {
                     color: #e2e8f0;
                     letter-spacing: 0.01em;
                     white-space: nowrap;
+                }
+
+                /* ── Preguntas frecuentes (columna) ── */
+                .ft-faq-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    margin-top: 2px;
+                }
+
+                .ft-faq-item {
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    border-radius: 8px;
+                    background: rgba(255, 255, 255, 0.02);
+                    overflow: hidden;
+                    transition: border-color 0.2s ease, background 0.2s ease;
+                }
+
+                .ft-faq-item[open] {
+                    border-color: rgba(0, 110, 220, 0.35);
+                    background: rgba(0, 110, 220, 0.06);
+                }
+
+                .ft-faq-q {
+                    list-style: none;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    padding: 12px 14px;
+                    font-size: 12.5px;
+                    font-weight: 600;
+                    color: #cdd9e8;
+                    line-height: 1.4;
+                    transition: color 0.15s ease;
+                }
+
+                .ft-faq-q::-webkit-details-marker { display: none; }
+                .ft-faq-q:hover { color: #4d9fff; }
+
+                .ft-faq-q::after {
+                    content: '';
+                    width: 7px;
+                    height: 7px;
+                    border-right: 2px solid currentColor;
+                    border-bottom: 2px solid currentColor;
+                    transform: rotate(45deg);
+                    transition: transform 0.2s ease;
+                    flex-shrink: 0;
+                    margin: 0 3px 3px 0;
+                    opacity: 0.75;
+                }
+
+                .ft-faq-item[open] .ft-faq-q::after {
+                    transform: rotate(-135deg);
+                    margin-bottom: 0;
+                }
+
+                .ft-faq-a {
+                    margin: 0;
+                    padding: 0 14px 14px;
+                    font-size: 12.5px;
+                    color: #7c9ab8;
+                    line-height: 1.65;
                 }
 
                 /* ── Barra inferior ── */

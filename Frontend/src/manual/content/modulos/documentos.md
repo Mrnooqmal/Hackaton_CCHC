@@ -8,7 +8,7 @@ ordenado y siempre disponible.
 Aquí harás tres cosas principales: **cargar** documentos, **asignarlos** a las personas que
 deben conocerlos o firmarlos, y **consultarlos o descargarlos** cuando los necesites.
 
-> 💡 Muchos documentos obligatorios del DS 44 ya se crean solos cuando creas una obra. En
+> Muchos documentos obligatorios del DS 44 ya se crean solos cuando creas una obra. En
 > este módulo terminas de completarlos subiendo el archivo y asignándolos a las personas.
 
 ## Las dos vistas de documentos
@@ -43,7 +43,7 @@ de documentos con las columnas **Documento**, **Asignaciones**, **Fecha** y **Ac
 3. Haz clic en **Crear Documento**. Mientras se procesa verás *"Subiendo…"* y luego
    *"Creando…"*.
 
-> 📎 Sube los archivos preferentemente en **PDF**. Así se ven igual en cualquier dispositivo
+> Sube los archivos preferentemente en **PDF**. Así se ven igual en cualquier dispositivo
 > y se conservan correctamente para una eventual fiscalización.
 
 ### Buscar un documento
@@ -63,7 +63,7 @@ Al hacer clic en un documento se abre su **ficha**, donde puedes:
 En la columna **Asignaciones** de la lista verás cuántas personas ya firmaron y cuántas
 están pendientes (por ejemplo, *"3/5 firmados · 2 pendientes"*).
 
-> ✅ La etiqueta **Empresa** junto a un documento indica que es un documento corporativo
+> La etiqueta **Empresa** junto a un documento indica que es un documento corporativo
 > (válido para toda la empresa), no de una obra puntual.
 
 ## Repositorio de documentos

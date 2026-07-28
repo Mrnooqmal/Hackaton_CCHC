@@ -14,22 +14,6 @@ clave en la captura de firmas y el registro de actividades.
 - Verificar y firmar la entrega de EPP.
 - Reportar incidentes y condiciones subestándar.
 
-## Permisos
-
-| Módulo | Acceso |
-| --- | --- |
-| Dashboard | ✓ Estado de su equipo y firmas pendientes |
-| Obras | 👁 Solo lectura |
-| Documentos | 👁 Solo lectura |
-| Firmas | ✓ Firma propia y como relator |
-| Incidentes | ✓ Reportar y dar seguimiento |
-| Actividades | ✓ Crear, completar borradores planificados y firmar como relator |
-| Encuestas | 👁 Solo lectura |
-| Asistente IA | ✗ Sin acceso |
-| Personas | 👁 Solo lectura (su equipo) |
-| Bandeja de Entrada | ✓ Completo |
-| Tenants | ✗ Sin acceso |
-
 ## Actividades planificadas
 
 Cuando el prevencionista arma la [planificación mensual](/modulos/actividades#planificar-el-mes-completo),
