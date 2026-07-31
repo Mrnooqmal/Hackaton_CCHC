@@ -34,7 +34,7 @@ import {
     type PlanItem,
 } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
-import { estadoSeguimiento } from '../utils/seguimientoActividad';
+import { estadoSeguimiento, hoyISO } from '../utils/seguimientoActividad';
 import { construirFilasAsistencia } from '../utils/reporteActividad';
 import PlanificacionDiariaForm from '../components/actividades/PlanificacionDiariaForm';
 import PermisosTrabajoForm from '../components/actividades/PermisosTrabajoForm';
@@ -170,7 +170,7 @@ export default function Activities() {
     // Completar borrador (rellenar el detalle del día → programada).
     const [showCompleteModal, setShowCompleteModal] = useState(false);
     const [completeActivity, setCompleteActivity] = useState<Activity | null>(null);
-    const [completeForm, setCompleteForm] = useState({ titulo: '', descripcion: '', horaInicio: '', horaFin: '', ubicacion: '', asistentesRequeridos: [] as string[] });
+    const [completeForm, setCompleteForm] = useState({ titulo: '', descripcion: '', relatorId: '', horaInicio: '', horaFin: '', ubicacion: '', asistentesRequeridos: [] as string[] });
     const [completeSubmitting, setCompleteSubmitting] = useState(false);
     const [completeAttendeeSearch, setCompleteAttendeeSearch] = useState('');
 
@@ -185,7 +185,7 @@ export default function Activities() {
         titulo: '',
         descripcion: '',
         relatorId: '',
-        fecha: new Date().toISOString().split('T')[0],
+        fecha: hoyISO(),
         horaInicio: new Date().toTimeString().slice(0, 5),
         horaFin: '',
         ubicacion: '',
@@ -200,6 +200,12 @@ export default function Activities() {
     };
     const [newActivity, setNewActivity] = useState(emptyActivity);
     const location = useLocation();
+
+    // Día de hoy en fecha LOCAL (no UTC: con toISOString, desde las ~20:00 en Chile
+    // el día ya salta al siguiente y las charlas del día dejan de ser firmables).
+    // Se declara acá arriba a propósito: loadData() lo usa y el efecto de montaje la
+    // invoca desde un render que corta antes en `if (loading) return <spinner/>`.
+    const today = hoyISO();
 
     useEffect(() => {
         loadData();
@@ -439,6 +445,7 @@ export default function Activities() {
         setCompleteForm({
             titulo: a.titulo || '',
             descripcion: a.descripcion || '',
+            relatorId: a.relatorId || '',
             horaInicio: (a.horaInicio || '09:00').slice(0, 5),
             horaFin: a.horaFin || '',
             ubicacion: a.ubicacion || '',
@@ -459,12 +466,17 @@ export default function Activities() {
     const handleCompleteBorrador = async (e: React.FormEvent) => {
         e.preventDefault();
         if (completeSubmitting || !completeActivity || !user?.personaId) return;
+        if (!completeForm.relatorId) {
+            toast.error('Selecciona quién dictará la actividad (relator)');
+            return;
+        }
         setCompleteSubmitting(true);
         try {
             const response = await activitiesApi.patch(completeActivity.activityId, {
                 solicitanteId: user.personaId,
                 titulo: completeForm.titulo,
                 descripcion: completeForm.descripcion,
+                relatorId: completeForm.relatorId,
                 horaInicio: completeForm.horaInicio,
                 horaFin: completeForm.horaFin || undefined,
                 ubicacion: completeForm.ubicacion,
@@ -794,8 +806,6 @@ export default function Activities() {
             </div>
         );
     }
-
-    const today = new Date().toISOString().split('T')[0];
 
     const matchesFilters = (a: Activity) => {
         const matchesSearch = searchTerm.trim() === '' ||
@@ -2382,6 +2392,32 @@ export default function Activities() {
                                 placeholder="Detalle específico de esta jornada (cada día puede tratar un tema distinto)…"
                                 style={{ resize: 'vertical' }}
                             />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Relator *</label>
+                            <Select
+                                ariaLabel="Relator"
+                                placeholder="Seleccione un relator"
+                                searchable
+                                value={completeForm.relatorId}
+                                onChange={(v) => setCompleteForm({ ...completeForm, relatorId: v })}
+                                options={workers.map((worker) => ({
+                                    value: worker.personaId,
+                                    label: `${worker.nombre} ${worker.apellido}`,
+                                    description: worker.cargo,
+                                }))}
+                            />
+                            {/* Reemplazo: se deja constancia de a quién lo asignaba el plan. */}
+                            {completeActivity && completeForm.relatorId !== completeActivity.relatorId && (() => {
+                                const planificado = workers.find(w => w.personaId === completeActivity.relatorId);
+                                return (
+                                    <div className="text-xs text-muted" style={{ marginTop: 4 }}>
+                                        El plan lo asignaba a {planificado ? `${planificado.nombre} ${planificado.apellido}` : 'otra persona'}.
+                                        Queda registrado como reemplazo.
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>

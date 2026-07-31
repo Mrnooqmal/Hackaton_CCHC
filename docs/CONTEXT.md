@@ -281,11 +281,24 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
   exige **≥1 firma** y un **registro con contenido** (`registroTieneContenido`); fija
   `horaFin` = hora de cierre. Editar `planificacion`/`permisosTrabajo` sigue permitido
   aun cerrada (registro post-charla).
+- **Reasignación de relator (reemplazos):** el `PATCH` acepta `relatorId` mientras la
+  actividad **no tenga firmas** (con firmas → 409: el relator ya es parte del acta).
+  Valida que la persona sea del tenant, mantiene el invariante `responsables[0] ===
+  relatorId` (el saliente deja de ser responsable) y, si el borrador venía del plan,
+  guarda **`relatorPlanificadoId`** = a quién lo asignaba originalmente. Ese campo es
+  el que sostiene la trazabilidad del reemplazo y además **lo usa la idempotencia de
+  `/activities/plan`** (`yaPlanificadas` indexa por `relatorPlanificadoId || relatorId`),
+  para que re-generar el mes no recree el borrador del responsable original.
+  El selector de relator vive en el modal "Nueva actividad" **y** en "Completar
+  actividad planificada"; ambos se llenan con las personas de la obra, sin filtro por rol.
 - **Atraso:** cada asistente guarda `atraso`/`minutosAtraso` = firma posterior a
   `horaInicio`. ⚠️ **Zona horaria:** `FirmaService` (no se toca) guarda `firma.horario`
   en **UTC**; el atraso y la "hora de firma" del reporte se calculan/muestran
   convirtiendo `firma.timestamp` a **America/Santiago** (`utils/reporteActividad.ts`),
   y el backend calcula el atraso con hora local de Chile.
+  ⚠️ Por lo mismo, en el frontend **el "día de hoy" se calcula con `hoyISO()`**
+  (`utils/seguimientoActividad.ts`), nunca con `new Date().toISOString().split('T')[0]`:
+  en UTC el día salta ~20:00 hora de Chile y las charlas del día dejan de ser firmables.
 - **Semáforo/vencidas (§6, ítems 1 y 6):** `Frontend/src/utils/seguimientoActividad.ts`
   → `estadoSeguimiento(actividad)` = verde/amarillo/rojo (rojo = **vencida**: no
   completada/cancelada con `fecha < hoy`). Derivado en cliente (no cambia estado en DB);
@@ -314,7 +327,7 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
 | `documents/` | por-endpoint | CRUD, **nueva-version** (versionado de procedimientos + notificación a la línea de mando, §4.6.1), assign, sign, sign-bulk, sign-assisted, download-firmado, stamp |
 | `signatures/` | por-endpoint | crear firma, enrolamiento, verify por token, disputas/resolución |
 | `signature-requests/` | por-endpoint | solicitudes de firma, pendientes/historial por worker, offline-batch, stats |
-| `activities/` | por-endpoint | charlas, capacitaciones; planificación mensual (`plan`), edición/cierre (`patch`), registro de asistencia, stats (ver §4.9) |
+| `activities/` | por-endpoint | charlas, capacitaciones; planificación mensual (`plan`), edición/cierre/**reasignación de relator** (`patch`), registro de asistencia, stats (ver §4.9) |
 | `ausencias/` | por-endpoint | permisos/ausencias del día por obra/fecha (control de asistencia §6): `POST/GET/DELETE /ausencias` |
 | `scheduler/` | schedule (EventBridge) | Lambda programada (cada 30 min) de alertas de asistencia al inbox: charla vencida sin cerrar y pendientes de firmar a mediodía (ver §4.9) |
 | `incidents-module/` | itty-router | reportes de incidentes/accidentes, estadísticas KPI |
@@ -416,16 +429,19 @@ reflejadas aquí). Estructura S3: un bucket con aislamiento por prefijo
   antigua (p.ej. tablas "Users"/"Workers" separadas, módulos sin cargos DS44).
   El código real usa Persona unificada, kits DS44 por cargo, ciclo Deming, y
   permisos granulares por tenant. **Confía en el código.**
-- **Manual de usuario:** VitePress en `Frontend/manual-src/` (fuente), build a
-  `Frontend/public/manual/`, servido en `/manual/` dentro de la app (link en el
-  footer). `DOCS_AGENT_PROMPT.md` es el prompt que lo generó. **28 páginas** en 5
+- **Manual de usuario:** ya **no** es VitePress. Vive dentro del frontend como un
+  módulo React (`Frontend/src/manual/`: react-markdown + minisearch), con el contenido
+  en `Frontend/src/manual/content/**/*.md` y la navegación en
+  `Frontend/src/manual/manualNav.ts`. Se sirve en la ruta `/manual/*` (lazy chunk
+  aparte, ver `App.tsx`), a pantalla completa fuera del shell de la app.
+  ⚠️ `Frontend/manual-src/` quedó como resto vacío de la versión VitePress: **no editar
+  ahí**. `DOCS_AGENT_PROMPT.md` es el prompt que generó el contenido. **28 páginas** en 5
   secciones: `guia-inicio/`, `ds44/` (documentos obligatorios, fases, EPP,
   capacitaciones, firmas), `modulos/` (los 11 módulos), `roles/` (los 5 roles con
   tabla de permisos por módulo), + home. Es **documentación de usuario final**
   (lenguaje no técnico), no técnica — para lo técnico está este `CONTEXT.md`.
   Está **alineado con el código real** (5 roles, firmas PIN/Offline/Presencial,
-  advertencia legal del PIN, EPP trabajador+supervisor). Config y nav en
-  `Frontend/manual-src/.vitepress/config.ts`.
+  advertencia legal del PIN, EPP trabajador+supervisor).
 - **Historia reciente relevante** (git): planificación diaria de charlas (spec, ver
   §11); onboarding por cambio de cargo (`reconcileCargoDocs`); permisos de
   asignación de docs; resumen de firmas que cuenta también firmados; transferencia

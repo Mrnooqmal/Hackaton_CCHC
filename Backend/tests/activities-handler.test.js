@@ -121,6 +121,66 @@ test('PATCH 400 si la planificación trae un código de catálogo desconocido', 
     assert.equal(store.updates.length, 0);
 });
 
+// ── PATCH: reasignación de relator (reemplazo del responsable planificado) ──
+
+test('PATCH reasigna el relator y conserva a quién lo asignaba el plan', async () => {
+    store.activity = {
+        activityId: 'a-1', tenantId: 't-1', tipo: 'CHARLA_5MIN', estado: 'borrador',
+        origen: 'planificacion', relatorId: 'p-sup', responsables: ['p-sup'], asistentes: [],
+    };
+    store.personas['p-adm'] = persona({ personaId: 'p-adm', tenantId: 't-1', rol: 'admin' });
+    store.personas['p-nuevo'] = persona({ personaId: 'p-nuevo', tenantId: 't-1', rol: 'supervisor' });
+
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-adm', relatorId: 'p-nuevo',
+    }) }));
+
+    assert.equal(res.statusCode, 200);
+    const escrito = {};
+    const u = store.updates[0];
+    Object.entries(u.ExpressionAttributeNames).forEach(([alias, campo]) => {
+        escrito[campo] = u.ExpressionAttributeValues[alias.replace('#f', ':v')];
+    });
+    assert.equal(escrito.relatorId, 'p-nuevo');
+    // responsables[0] sigue siendo el relator; el saliente deja de ser responsable.
+    assert.deepEqual(escrito.responsables, ['p-nuevo']);
+    // Trazabilidad: queda constancia del responsable original del plan.
+    assert.equal(escrito.relatorPlanificadoId, 'p-sup');
+});
+
+test('PATCH 409 al reasignar el relator si la actividad ya tiene firmas', async () => {
+    store.activity = {
+        activityId: 'a-1', tenantId: 't-1', tipo: 'CHARLA_5MIN', estado: 'programada',
+        origen: 'planificacion', relatorId: 'p-sup', responsables: ['p-sup'],
+        asistentes: [{ personaId: 'p-x' }],
+    };
+    store.personas['p-adm'] = persona({ personaId: 'p-adm', tenantId: 't-1', rol: 'admin' });
+    store.personas['p-nuevo'] = persona({ personaId: 'p-nuevo', tenantId: 't-1', rol: 'supervisor' });
+
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-adm', relatorId: 'p-nuevo',
+    }) }));
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(store.updates.length, 0);
+});
+
+test('PATCH rechaza un relator de otra empresa', async () => {
+    store.activity = {
+        activityId: 'a-1', tenantId: 't-1', tipo: 'CHARLA_5MIN', estado: 'borrador',
+        origen: 'planificacion', relatorId: 'p-sup', responsables: ['p-sup'], asistentes: [],
+    };
+    store.personas['p-adm'] = persona({ personaId: 'p-adm', tenantId: 't-1', rol: 'admin' });
+    store.personas['p-ajeno'] = persona({ personaId: 'p-ajeno', tenantId: 't-OTRO', rol: 'supervisor' });
+
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-adm', relatorId: 'p-ajeno',
+    }) }));
+
+    assert.equal(res.statusCode, 400);
+    assert.equal(store.updates.length, 0);
+});
+
 // ── CREATE: validación del bloque de planificación ──
 
 test('CREATE 400 si una CHARLA_5MIN no trae tema tratado', async () => {

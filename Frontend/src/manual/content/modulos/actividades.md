@@ -125,9 +125,20 @@ Los responsables ven sus borradores pendientes en la sección **"Planificadas po
 completar"** y en el calendario (con borde punteado y el símbolo ◌). Para completar uno:
 
 1. Ábrelo desde la lista, el calendario o el panel del día.
-2. Rellena el detalle de la jornada: título, tema del día, horario, ubicación y asistentes.
+2. Rellena el detalle de la jornada: título, tema del día, **relator**, horario, ubicación y
+   asistentes.
 3. Guarda. El borrador pasa a **programada** y los asistentes convocados reciben el aviso
    en su bandeja de entrada.
+
+El campo **Relator** viene precargado con la persona que la planificación mensual asignó a
+ese día, pero **puedes cambiarlo** si quien dicta la charla es otro (licencia, vacaciones,
+reemplazo). Al elegir a alguien distinto, bajo el campo aparece un aviso indicando a quién
+lo asignaba el plan: ese dato **queda guardado** como constancia del reemplazo, y la
+planificación del mes no vuelve a generar el borrador del responsable original.
+
+> El relator solo se puede cambiar **mientras la actividad no tenga firmas**. Una vez que
+> alguien firmó, el relator forma parte del acta y queda congelado junto con el resto del
+> contenido.
 
 > Un supervisor también puede **crear sus propias actividades** cuando trabaja solo o tiene
 > tareas adicionales no contempladas en la planificación (botón **Nueva actividad** o click
@@ -279,6 +290,12 @@ Comité Paritario) desde **Mi Empresa → Roles**. Consulta [Roles de Usuario](/
 El **borrador** lo genera la planificación mensual: tiene fecha, tipo y responsable, pero
 le falta el detalle del día. Cuando el responsable lo **completa**, pasa a **programada** y
 recién entonces se convoca a los asistentes.
+
+**El supervisor que tenía asignada la charla está con licencia. ¿Puede dictarla otro?**
+Sí. Al **completar el borrador**, cambia el campo **Relator** por quien la va a dictar.
+Queda registrado que era un reemplazo y a quién la asignaba el plan originalmente. Si la
+actividad ya tiene firmas, el relator no se puede cambiar: en ese caso corresponde dejar
+constancia en la descripción o en el acta.
 
 **¿Por qué el plan no generó actividades en sábado o domingo?**
 Es intencional: los fines de semana se consideran días no trabajados y se excluyen

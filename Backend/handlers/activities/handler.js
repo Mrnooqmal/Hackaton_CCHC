@@ -388,8 +388,11 @@ module.exports.plan = async (event) => {
                 ':origen': 'planificacion',
             },
         }));
+        // Se indexa por el relator PLANIFICADO (no el actual): si la charla del martes
+        // se reasignó a un reemplazante, re-generar el plan no debe volver a crear el
+        // borrador del responsable original.
         const yaPlanificadas = new Set(
-            (existentesRes.Items || []).map((a) => `${a.fecha}|${a.tipo}|${a.relatorId}`)
+            (existentesRes.Items || []).map((a) => `${a.fecha}|${a.tipo}|${a.relatorPlanificadoId || a.relatorId}`)
         );
 
         const now = new Date().toISOString();
@@ -893,6 +896,36 @@ module.exports.patch = async (event) => {
             if (activity.tipo !== 'CAPACITACION') delete updates.subtipo;
             else if (!CAPACITACION_SUBTIPOS[updates.subtipo]) return error('Subtipo de capacitación inválido');
             else updates.subtipoDescripcion = CAPACITACION_SUBTIPOS[updates.subtipo];
+        }
+
+        // Relator: reasignable mientras NO haya firmas (quien dicta la charla cambia
+        // por licencia/vacaciones/reemplazo). Con firmas ya es parte del acta y se
+        // congela igual que el resto del contenido.
+        // Al reasignar un borrador del plan se conserva `relatorPlanificadoId` (a quién
+        // se le había asignado originalmente): es el dato que sostiene la trazabilidad
+        // frente a una fiscalización, y además mantiene idempotente a /activities/plan.
+        if (body.relatorId !== undefined && body.relatorId !== activity.relatorId) {
+            if (tieneFirmas) {
+                return error('No se puede cambiar el relator: la actividad ya tiene firmas registradas', 409);
+            }
+            if (!body.relatorId) return error('El relator no puede quedar vacío');
+            const nuevoRelator = await personaService.getById(body.relatorId).catch(() => null);
+            if (!nuevoRelator || nuevoRelator.tenantId !== activity.tenantId) {
+                return error('El relator indicado no pertenece a la empresa');
+            }
+            updates.relatorId = body.relatorId;
+            // responsables[0] = relator (invariante que asume create/firmas). El
+            // relator saliente deja de ser responsable; los demás se conservan.
+            const previos = Array.isArray(activity.responsables) && activity.responsables.length
+                ? activity.responsables
+                : (activity.relatorId ? [activity.relatorId] : []);
+            updates.responsables = [...new Set([
+                body.relatorId,
+                ...previos.filter((r) => r && r !== activity.relatorId),
+            ])];
+            if (activity.origen === 'planificacion' && !activity.relatorPlanificadoId && activity.relatorId) {
+                updates.relatorPlanificadoId = activity.relatorId;
+            }
         }
 
         // Cambio de estado. `completada` = CIERRE EXPLÍCITO de la actividad, con

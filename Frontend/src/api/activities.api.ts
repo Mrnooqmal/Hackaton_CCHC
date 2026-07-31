@@ -15,6 +15,8 @@ export interface Activity {
     relatorId: string;
     /** Responsables de la actividad (multi-asignación); relatorId = responsables[0]. */
     responsables?: string[];
+    /** Solo en borradores del plan que se reasignaron: a quién se le había asignado. */
+    relatorPlanificadoId?: string | null;
     empresaId: string;
     obraId?: string | null;
     ubicacion?: string;
@@ -179,6 +181,8 @@ export interface PatchActivityData {
     asistentesRequeridos?: string[];
     subtipo?: string;
     tipoTrabajo?: string;
+    /** Reasignar quién dicta la actividad. Rechazado si ya hay firmas. */
+    relatorId?: string;
     /** 'completada' = cierre explícito de la actividad (requiere firma + contenido). */
     estado?: 'borrador' | 'programada' | 'completada' | 'cancelada';
     planificacion?: PlanificacionActividad;
