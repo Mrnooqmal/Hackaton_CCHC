@@ -45,8 +45,8 @@ export default function SuggestionsWidget() {
                 onClick={() => setOpen(true)}
                 aria-label="Déjanos tu sugerencia"
             >
-                <FiMessageCircle size={17} />
-                <span>Déjanos tu sugerencia</span>
+                <FiMessageCircle size={17} className="sw-fab-icon" />
+                <span className="sw-fab-label">Déjanos tu sugerencia</span>
             </button>
 
             {/* ── Modal ── */}
@@ -133,25 +133,49 @@ export default function SuggestionsWidget() {
                     z-index: 1100;
                     display: inline-flex;
                     align-items: center;
-                    gap: 8px;
-                    padding: 0 18px 0 14px;
+                    gap: 0;
+                    width: 44px;
                     height: 44px;
+                    padding: 0;
+                    justify-content: center;
                     background: #df3601;
                     color: #fff;
                     border: none;
-                    border-radius: 22px;
+                    border-radius: 50%;
                     font-size: 13px;
                     font-weight: 600;
                     font-family: inherit;
                     cursor: pointer;
                     letter-spacing: 0.01em;
                     box-shadow: 0 4px 14px rgba(0, 40, 85, 0.35);
-                    transition: background 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
+                    transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1), padding 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                        border-radius 0.28s ease, background 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
                 }
-                .sw-fab:hover {
+                .sw-fab-icon {
+                    flex-shrink: 0;
+                }
+                .sw-fab-label {
+                    max-width: 0;
+                    opacity: 0;
+                    overflow: hidden;
+                    white-space: nowrap;
+                    transition: max-width 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease, margin 0.28s ease;
+                }
+                .sw-fab:hover,
+                .sw-fab:focus-visible {
+                    width: 210px;
+                    padding: 0 18px 0 14px;
+                    justify-content: flex-start;
+                    border-radius: 22px;
                     background: #f13800;
                     transform: translateY(-2px);
-                    box-shadow: 0 6px 20px #df3601;
+                    box-shadow: 0 6px 18px rgba(223, 54, 1, 0.35);
+                }
+                .sw-fab:hover .sw-fab-label,
+                .sw-fab:focus-visible .sw-fab-label {
+                    max-width: 200px;
+                    opacity: 1;
+                    margin-left: 8px;
                 }
                 .sw-fab:active {
                     transform: translateY(0);
@@ -372,11 +396,6 @@ export default function SuggestionsWidget() {
                 }
                 @keyframes sw-spin { to { transform: rotate(360deg); } }
 
-                /* ── Responsive ── */
-                @media (max-width: 500px) {
-                    .sw-fab span { display: none; }
-                    .sw-fab { padding: 0; width: 48px; height: 48px; border-radius: 50%; justify-content: center; }
-                }
             `}</style>
         </>
     );
