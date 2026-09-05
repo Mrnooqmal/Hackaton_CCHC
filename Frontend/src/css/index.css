@@ -97,7 +97,7 @@
 
   /* Colores de superficie — una sola rampa de elevación en hue 213°.
      El navy de marca (--cchc-navy) es el extremo saturado de esta misma familia. */
-  --surface-bg: #0e1722;
+  --surface-bg: #131d2a;
   --surface-card: #131d2a;
   --surface-elevated: #1a2533;
   --surface-hover: #212e3d;
@@ -188,7 +188,7 @@
   /* Elevación invertida respecto al modo oscuro: el lienzo es el tono teñido y
      las tarjetas son blanco puro. Antes bg (#ffffff) y card (#fefefe) eran
      indistinguibles, así que nada se despegaba del fondo. Mismo hue 213°. */
-  --surface-bg: #eef2f7;
+  --surface-bg: #ffffff;
   --surface-card: #ffffff;
   --surface-elevated: #f7f9fc;
   --surface-hover: #e4ebf4;

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
     FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
     FiUpload, FiX, FiInfo, FiUsers, FiArrowRight, FiAlertTriangle,
+    FiCheck, FiImage,
 } from 'react-icons/fi';
 import { AlertBanner, Modal, Select, PageHeader, CollectionView } from '../components/ui';
 import type { CollectionMode } from '../components/ui';
@@ -45,6 +46,17 @@ function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): nu
         return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
     });
     return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+
+// La franja institucional del header (--cchc-navy) es el color de marca oscurecido.
+// El factor debe coincidir con `darken(0.22)` de BrandContext.applyPrimaryColor.
+const NAVY_DARKEN = 0.22;
+
+function darkenHex(hex: string, t: number): string | null {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return null;
+    const ch = (n: number) => Math.max(0, Math.min(255, Math.round(n * t))).toString(16).padStart(2, '0');
+    return `#${ch(rgb.r)}${ch(rgb.g)}${ch(rgb.b)}`;
 }
 
 function contrastVsWhite(hex: string): number | null {
@@ -201,6 +213,7 @@ function IdentidadTab({ tenant, onSaved, brand, auth, toast }: {
     const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
+    const [dragging, setDragging] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
     const rgb = hexToRgb(color);
@@ -253,102 +266,170 @@ function IdentidadTab({ tenant, onSaved, brand, auth, toast }: {
         finally { setSaving(false); }
     };
 
+    const ratio = colorValido ? contrastVsWhite(color) : null;
+    const contrasteOk = ratio != null && ratio >= 4.5;
+    const tint = rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.12)` : 'var(--surface-hover)';
+    const navy = (colorValido && darkenHex(color, NAVY_DARKEN)) || 'var(--cchc-navy)';
+
     return (
-        <div className="me-grid-2">
-            <div className="card me-card">
-                <h3 className="me-card-title">Datos de la empresa</h3>
-                <div className="form-group">
-                    <label className="form-label">Razón social</label>
-                    <input className="form-input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Constructora Demo SpA" />
-                </div>
-                <div className="form-group">
-                    <label className="form-label">RUT empresa</label>
-                    <input className="form-input" value={tenant.rutEmpresa} disabled readOnly />
-                    <span className="text-xs text-muted">El RUT no se puede modificar.</span>
-                </div>
-
-                <h3 className="me-card-title" style={{ marginTop: 20 }}>Color principal</h3>
-                <div className="me-color-row">
-                    <button type="button" className="me-swatch" style={{ background: colorValido ? color : '#888' }}
-                        onClick={() => document.getElementById('me-color-input')?.click()} title="Abrir selector de color" />
-                    <input id="me-color-input" type="color" className="me-color-native"
-                        value={colorValido ? color : DEFAULT_PRIMARY_COLOR} onChange={(e) => setColor(e.target.value)} />
-                    <input className="form-input" style={{ maxWidth: 130 }} value={color} maxLength={7} spellCheck={false}
-                        onChange={(e) => setColor(e.target.value)} />
-                    {rgb && <span className="text-xs text-muted">R {rgb.r} · G {rgb.g} · B {rgb.b}</span>}
-                </div>
-
-                <div style={{ marginTop: 12 }}>
-                    <span className="text-xs text-muted" style={{ display: 'block', marginBottom: 6 }}>Colores sugeridos</span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        {SUGGESTED_COLORS.map((s) => {
-                            const active = color.toLowerCase() === s.hex.toLowerCase();
-                            return (
-                                <button key={s.hex} type="button" title={`${s.label} · ${s.hex}`}
-                                    onClick={() => setColor(s.hex)}
-                                    style={{
-                                        width: 28, height: 28, borderRadius: 8, background: s.hex, cursor: 'pointer',
-                                        border: active ? '2px solid var(--text-primary)' : '2px solid var(--surface-border)',
-                                        boxShadow: active ? '0 0 0 2px var(--surface-bg)' : 'none',
-                                        outline: 'none', padding: 0,
-                                    }} />
-                            );
-                        })}
+        <div className="me-identity">
+            <div className="me-identity-form">
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Datos de la empresa</h3>
+                        <p className="me-section-hint">El nombre con el que tu empresa aparece en la plataforma y en los documentos.</p>
                     </div>
-                </div>
-
-                {colorValido && (() => {
-                    const ratio = contrastVsWhite(color);
-                    if (ratio == null) return null;
-                    const ok = ratio >= 4.5;
-                    return (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-                            <span style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', fontWeight: 600,
-                                color: '#fff', background: color, padding: '3px 10px', borderRadius: 6,
-                            }}>Texto blanco</span>
-                            <span className="text-xs" style={{ color: ok ? 'var(--success-600, #047857)' : 'var(--warning-600, #b45309)', fontWeight: 600 }}>
-                                {ok ? '✓ Buen contraste' : '⚠ Contraste bajo'} · {ratio.toFixed(1)}:1
-                            </span>
+                    <div className="me-section-body">
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="me-nombre">Razón social</label>
+                            <input id="me-nombre" className="form-input" value={nombre}
+                                onChange={(e) => setNombre(e.target.value)} placeholder="Constructora Demo SpA" />
                         </div>
-                    );
-                })()}
-
-                <p className="text-xs text-muted" style={{ marginTop: 6 }}>
-                    Reemplaza el color de acento en toda la plataforma al guardar. Recomendamos un contraste mínimo de 4.5:1 con el texto blanco de los botones.
-                </p>
-            </div>
-
-            <div className="card me-card">
-                <h3 className="me-card-title">Logo</h3>
-                <div className="me-logo-area">
-                    <div className="me-logo-preview">
-                        {logoPreview
-                            ? <img src={logoPreview} alt="Logo de la empresa" />
-                            : <span className="text-sm text-muted">Sin logo</span>}
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="me-rut">RUT empresa</label>
+                            <div className="me-field-locked">
+                                <input id="me-rut" className="form-input" value={tenant.rutEmpresa} disabled readOnly />
+                                <FiLock size={13} aria-hidden="true" />
+                            </div>
+                            <span className="me-field-hint">El RUT no se puede modificar.</span>
+                        </div>
                     </div>
-                    <div className="me-logo-actions">
+                </section>
+
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Logo</h3>
+                        <p className="me-section-hint">Reemplaza el nombre Build &amp; Serve en la barra superior.</p>
+                    </div>
+                    <div className="me-section-body">
                         <input ref={fileRef} type="file" accept="image/*" hidden
                             onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
-                        <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>
-                            <FiUpload size={13} /> {logoPreview ? 'Cambiar logo' : 'Subir logo'}
+                        <button type="button"
+                            className={`me-dropzone ${dragging ? 'dragging' : ''} ${logoPreview ? 'has-logo' : ''}`}
+                            onClick={() => fileRef.current?.click()}
+                            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                            onDragLeave={() => setDragging(false)}
+                            onDrop={(e) => {
+                                e.preventDefault(); setDragging(false);
+                                const f = e.dataTransfer.files?.[0]; if (f) onFile(f);
+                            }}>
+                            {logoPreview ? (
+                                <img src={logoPreview} alt="Logo de la empresa" />
+                            ) : (
+                                <span className="me-dropzone-empty">
+                                    <FiImage size={20} aria-hidden="true" />
+                                    <span className="me-dropzone-title">Arrastra tu logo o haz clic para subirlo</span>
+                                    <span className="me-dropzone-sub">PNG, JPG, SVG o WebP · Máx. 2 MB</span>
+                                </span>
+                            )}
                         </button>
                         {logoPreview && (
-                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
-                                onClick={() => { setLogoPreview(null); setLogoBase64(''); }}>
-                                <FiX size={13} /> Quitar
-                            </button>
+                            <div className="me-logo-actions">
+                                <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>
+                                    <FiUpload size={13} /> Cambiar logo
+                                </button>
+                                <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
+                                    onClick={() => { setLogoPreview(null); setLogoBase64(''); }}>
+                                    <FiX size={13} /> Quitar
+                                </button>
+                            </div>
                         )}
-                        <span className="text-xs text-muted">PNG, JPG, SVG o WebP · Máx. 2 MB</span>
+                    </div>
+                </section>
+
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Color principal</h3>
+                        <p className="me-section-hint">Se aplica a los botones, enlaces y elementos activos de toda la plataforma.</p>
+                    </div>
+                    <div className="me-section-body">
+                        <div className="me-color-row">
+                            <button type="button" className="me-swatch" style={{ background: colorValido ? color : 'var(--surface-hover)' }}
+                                onClick={() => document.getElementById('me-color-input')?.click()}
+                                aria-label="Abrir el selector de color" />
+                            <input id="me-color-input" type="color" className="me-color-native" tabIndex={-1}
+                                value={colorValido ? color : DEFAULT_PRIMARY_COLOR} onChange={(e) => setColor(e.target.value)} />
+                            <input className="form-input me-hex" value={color} maxLength={7} spellCheck={false}
+                                aria-label="Código del color" onChange={(e) => setColor(e.target.value)} />
+                        </div>
+
+                        <div className="me-suggested">
+                            <span className="me-field-hint">Colores sugeridos</span>
+                            <div className="me-suggested-row">
+                                {SUGGESTED_COLORS.map((s) => {
+                                    const active = color.toLowerCase() === s.hex.toLowerCase();
+                                    return (
+                                        <button key={s.hex} type="button" title={s.label} aria-label={s.label}
+                                            aria-pressed={active}
+                                            className={`me-suggested-dot ${active ? 'active' : ''}`}
+                                            style={{ background: s.hex }}
+                                            onClick={() => setColor(s.hex)}>
+                                            {active && <FiCheck size={13} aria-hidden="true" />}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <aside className="me-preview">
+                <span className="me-preview-eyebrow">Vista previa</span>
+
+                <div className="me-mock" aria-hidden="true">
+                    <div className="me-mock-topbar" style={{ background: navy }}>
+                        Cámara Chilena de la Construcción
+                    </div>
+                    <div className="me-mock-top">
+                        {logoPreview
+                            ? <img src={logoPreview} alt="" className="me-mock-logo" />
+                            : <span className="me-mock-wordmark">Build<i>&amp;</i>Serve</span>}
+                        <span className="me-mock-divider" />
+                        <span className="me-mock-crumb">{nombre.trim() || 'Tu empresa'}</span>
+                    </div>
+                    <div className="me-mock-body">
+                        <div className="me-mock-nav">
+                            <span className="me-mock-nav-item active"
+                                style={{ background: tint, borderColor: colorValido ? color : 'var(--surface-border)' }}>Obras</span>
+                            <span className="me-mock-nav-item">Personas</span>
+                            <span className="me-mock-nav-item">Documentos</span>
+                        </div>
+                        <div className="me-mock-lines">
+                            <span /><span /><span />
+                        </div>
+                        <div className="me-mock-actions">
+                            <span className="me-mock-btn" style={{ background: colorValido ? color : 'var(--surface-hover)' }}>
+                                Guardar
+                            </span>
+                            <span className="me-mock-link" style={{ color: colorValido ? color : 'var(--text-muted)' }}>
+                                Ver detalle
+                            </span>
+                        </div>
                     </div>
                 </div>
-            </div>
+
+                {ratio != null && (
+                    <div className={`me-contrast ${contrasteOk ? 'ok' : 'warn'}`}>
+                        <span className="me-contrast-dot" />
+                        <div>
+                            <strong>{contrasteOk ? 'Buen contraste' : 'Contraste bajo'}</strong>
+                            <p>{contrasteOk
+                                ? 'El texto blanco de los botones se lee sin esfuerzo sobre este color.'
+                                : 'El texto blanco de los botones cuesta de leer. Prueba un tono más oscuro.'}</p>
+                        </div>
+                    </div>
+                )}
+            </aside>
 
             <div className="me-save-bar">
                 {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
-                <button className="btn btn-primary" disabled={!dirty || saving} onClick={save}>
-                    {saving ? <div className="spinner" /> : <><FiSave /> Guardar identidad</>}
-                </button>
+                <div className="me-save-actions">
+                    {dirty && !saving && <span className="me-field-hint">Tienes cambios sin guardar.</span>}
+                    <button className="btn btn-primary" disabled={!dirty || saving} onClick={save}>
+                        {saving ? <div className="spinner" /> : <><FiSave /> Guardar identidad</>}
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -735,20 +816,108 @@ const styles = `
 .mi-empresa-page .me-tab { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; border-bottom: 2px solid transparent; }
 .mi-empresa-page .form-label { display:block; margin-bottom: 6px; }
 
-.me-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
-.me-card { padding: 20px; }
-.me-card-title { font-size: var(--text-base); font-weight: 600; margin: 0 0 14px; }
-.me-color-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.me-swatch { width: 44px; height: 44px; border-radius: var(--radius-md); border: 1px solid var(--surface-border); cursor: pointer; }
+/* ── Identidad ─────────────────────────────────────────────────────────────── */
+.me-identity { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-4); align-items: start; }
+
+.me-identity-form {
+    background: var(--surface-card); border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg); overflow: hidden;
+}
+.me-section { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: var(--space-6); padding: var(--space-5) var(--space-6); border-bottom: 1px solid var(--surface-border); }
+.me-section:last-child { border-bottom: none; }
+.me-section-title { font-size: var(--text-sm); font-weight: 600; margin: 0 0 4px; color: var(--text-primary); }
+.me-section-hint { font-size: var(--text-xs); line-height: 1.5; color: var(--text-muted); margin: 0; }
+.me-section-body > .form-group:last-child { margin-bottom: 0; }
+
+.me-field-locked { position: relative; }
+.me-field-locked .form-input { padding-right: 34px; }
+.me-field-locked svg { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+.me-field-hint { display: block; font-size: var(--text-xs); color: var(--text-muted); margin-top: 6px; }
+
+/* Logo */
+.me-dropzone {
+    width: 100%; min-height: 116px; padding: var(--space-4);
+    display: flex; align-items: center; justify-content: center;
+    border: 1px dashed var(--surface-border); border-radius: var(--radius-md);
+    background: var(--surface-elevated); cursor: pointer;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.me-dropzone:hover, .me-dropzone.dragging { border-color: var(--primary-500); background: var(--cchc-blue-tint, var(--surface-hover)); }
+.me-dropzone.has-logo { border-style: solid; background: var(--surface-card); }
+.me-dropzone img { max-width: 100%; max-height: 84px; object-fit: contain; }
+.me-dropzone-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text-muted); text-align: center; }
+.me-dropzone-title { font-size: var(--text-sm); font-weight: 500; color: var(--text-secondary); }
+.me-dropzone-sub { font-size: var(--text-xs); }
+.me-logo-actions { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+
+/* Color */
+.me-color-row { display: flex; align-items: center; gap: var(--space-3); }
+.me-swatch { width: 42px; height: 42px; flex-shrink: 0; border-radius: var(--radius-md); border: 1px solid var(--surface-border); cursor: pointer; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.06); }
 .me-color-native { width: 0; height: 0; opacity: 0; position: absolute; pointer-events: none; }
+.me-hex { max-width: 130px; font-family: var(--font-mono); text-transform: lowercase; }
 
-.me-logo-area { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-.me-logo-preview { width: 140px; height: 100px; border: 1px dashed var(--surface-border); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; background: var(--surface-hover); overflow: hidden; }
-.me-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.me-logo-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.me-suggested { margin-top: var(--space-4); }
+.me-suggested-row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 6px; }
+.me-suggested-dot {
+    width: 28px; height: 28px; padding: 0; border-radius: 50%; cursor: pointer;
+    border: 1px solid rgb(0 0 0 / 0.12); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.me-suggested-dot:hover { transform: scale(1.12); }
+.me-suggested-dot.active { box-shadow: 0 0 0 2px var(--surface-card), 0 0 0 4px var(--text-primary); }
 
-.me-save-bar { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; align-items: flex-end; }
+/* Vista previa de la identidad */
+.me-preview {
+    background: var(--surface-card); border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg); padding: var(--space-4);
+    display: flex; flex-direction: column; gap: var(--space-3);
+}
+.me-preview-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+.me-mock { border: 1px solid var(--surface-border); border-radius: var(--radius-md); overflow: hidden; }
+.me-mock-topbar {
+    height: 20px; display: flex; align-items: center; padding: 0 10px;
+    font-size: 7.5px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.92); white-space: nowrap; overflow: hidden;
+}
+.me-mock-top { display: flex; align-items: center; gap: var(--space-2); padding: 10px 12px; background: var(--surface-card); border-bottom: 1px solid var(--surface-border); }
+.me-mock-logo { max-height: 18px; max-width: 90px; object-fit: contain; }
+.me-mock-wordmark { font-size: 12px; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
+.me-mock-wordmark i { font-style: normal; color: var(--text-muted); margin: 0 1px; }
+.me-mock-divider { width: 1px; height: 14px; background: var(--surface-border); }
+.me-mock-crumb { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-mock-body { padding: 12px; background: var(--surface-bg); display: flex; flex-direction: column; gap: 12px; }
+.me-mock-nav { display: flex; gap: 6px; }
+.me-mock-nav-item { font-size: 10.5px; color: var(--text-muted); padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid transparent; }
+.me-mock-nav-item.active { color: var(--text-primary); font-weight: 600; border-left-width: 2px; border-left-style: solid; }
+.me-mock-lines { display: flex; flex-direction: column; gap: 6px; }
+.me-mock-lines span { height: 6px; border-radius: 3px; background: var(--surface-hover); }
+.me-mock-lines span:nth-child(2) { width: 78%; }
+.me-mock-lines span:nth-child(3) { width: 52%; }
+.me-mock-actions { display: flex; align-items: center; gap: 10px; }
+.me-mock-btn { font-size: 11px; font-weight: 600; color: #fff; padding: 6px 12px; border-radius: var(--radius-sm); }
+.me-mock-link { font-size: 11px; font-weight: 500; }
+
+.me-contrast { display: flex; align-items: flex-start; gap: var(--space-2); padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-elevated); }
+.me-contrast strong { display: block; font-size: var(--text-xs); font-weight: 600; }
+.me-contrast p { margin: 2px 0 0; font-size: var(--text-xs); line-height: 1.45; color: var(--text-muted); }
+.me-contrast-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+.me-contrast.ok strong { color: var(--success-600); }
+.me-contrast.ok .me-contrast-dot { background: var(--success-500); }
+.me-contrast.warn strong { color: var(--warning-600); }
+.me-contrast.warn .me-contrast-dot { background: var(--warning-500); }
+
+.me-save-bar { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-end; }
 .me-save-bar .alert-banner { width: 100%; }
+.me-save-actions { display: flex; align-items: center; gap: var(--space-3); }
+.me-save-actions .me-field-hint { margin-top: 0; }
+
+@media (max-width: 1080px) {
+  .me-identity { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .me-section { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); padding: var(--space-4); }
+}
 
 .me-banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 16px; }
 
