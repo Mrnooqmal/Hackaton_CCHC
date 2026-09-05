@@ -7,7 +7,6 @@ import PersonaNueva from './pages/PersonaNueva';
 import PersonasCargaMasiva from './pages/PersonasCargaMasiva';
 import WorkerDetail from './pages/WorkerDetail';
 import WorkerEnroll from './pages/WorkerEnroll';
-import Documents from './pages/Documents';
 import DocumentsRepository from './pages/DocumentsRepository';
 import Activities from './pages/Activities';
 import AIAssistant from './pages/AIAssistant';
@@ -152,7 +151,6 @@ function AppContent() {
       <Route path="/cargos-onboarding" element={<ProtectedRoute requiredPermission={PERMISSIONS.CARGOS_GESTIONAR}><CargosOnboarding /></ProtectedRoute>} />
       <Route path="/catalogos-actividad" element={<ProtectedRoute requiredPermission={PERMISSIONS.CARGOS_GESTIONAR}><CatalogosActividad /></ProtectedRoute>} />
       <Route path="/workers/enroll" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><WorkerEnroll /></ProtectedRoute>} />
-      <Route path="/documents" element={<ProtectedRoute requiredPermission={PERMISSIONS.DOCUMENTOS_VER}><Documents /></ProtectedRoute>} />
       <Route path="/documents-repository" element={<ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}><DocumentsRepository /></ProtectedRoute>} />
       <Route path="/surveys" element={<ProtectedRoute><Surveys /></ProtectedRoute>} />
       <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />

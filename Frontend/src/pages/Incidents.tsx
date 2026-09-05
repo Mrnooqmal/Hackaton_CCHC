@@ -50,8 +50,7 @@ const ETAPAS_CONSTRUCTIVAS = [
 
 export default function Incidents() {
     const { user, hasPermission } = useAuth();
-    const { selectedObraId, obras } = useObraContext();
-    const selectedObra = obras.find(o => o.obraId === selectedObraId) ?? null;
+    const { selectedObraId } = useObraContext();
     const [incidents, setIncidents] = useState<Incident[]>([]);
     const [stats, setStats] = useState<IncidentStats | null>(null);
     const [_analytics, setAnalytics] = useState<AnalyticsData | null>(null);
@@ -976,7 +975,6 @@ export default function Incidents() {
             <div className="page-content">
                 <PageHeader
                     banner
-                    scope={{ label: selectedObra?.nombre ? `Obra · ${selectedObra.nombre}` : 'Seguridad' }}
                     title="Incidentes y hallazgos"
                     description="Reporte, seguimiento y análisis estadístico de incidentes, accidentes y hallazgos de seguridad."
                     actions={
@@ -990,7 +988,7 @@ export default function Incidents() {
                             </button>
                             {canCreateIncidente && (
                                 <button
-                                    className="btn btn-save"
+                                    className="btn btn-primary"
                                     disabled={!selectedObraId}
                                     onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'incidente' })); setStep(1); setShowModal(true); }}
                                 >
@@ -2995,7 +2993,7 @@ export default function Incidents() {
                 onClose={() => setGobIncident(null)}
                 title="Gobernanza del hallazgo"
                 subtitle={gobIncident?.descripcion ? gobIncident.descripcion.slice(0, 80) : ''}
-                size="md"
+                size="lg"
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
                         <button className="btn btn-secondary" onClick={() => setGobIncident(null)}>Cancelar</button>

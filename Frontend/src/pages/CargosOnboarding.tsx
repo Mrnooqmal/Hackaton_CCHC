@@ -262,11 +262,10 @@ export default function CargosOnboarding() {
         <div className="page-content">
             <PageHeader
                 banner
-                scope={{ label: 'Empresa · Onboarding' }}
                 title="Onboarding y documentos de empresa"
                 description="Administra los documentos base de la empresa (Reglamento Interno, Política SST) y define el kit de onboarding de cada cargo. Estos documentos aplican a todas las obras: súbelos o renuévalos aquí una sola vez."
                 actions={
-                    <button className="btn btn-save" disabled={!dirty || saving} onClick={handleSave}>
+                    <button className="btn btn-primary" disabled={!dirty || saving} onClick={handleSave}>
                         {saving ? 'Guardando…' : <><FiSave /> Guardar cambios</>}
                     </button>
                 }

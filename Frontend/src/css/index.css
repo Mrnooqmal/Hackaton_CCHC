@@ -79,32 +79,36 @@
   --warning-500: #eab308;
   --warning-600: #ca8a04;
 
-  /* Neutrales - Dark mode optimizado */
-  --gray-50: #fafafa;
-  --gray-100: #f4f4f5;
-  --gray-200: #e4e4e7;
-  --gray-300: #d4d4d8;
-  --gray-400: #a1a1aa;
-  --gray-500: #71717a;
-  --gray-600: #52525b;
-  --gray-700: #3f3f46;
-  --gray-800: #27272a;
-  --gray-900: #18181b;
-  --gray-950: #09090b;
+  /* Neutrales — teñidos con el hue institucional (~215°) en vez de gris zinc.
+     Un neutro acromático (#1a1a1a) junto al navy CChC se lee como otro material;
+     compartiendo hue, ambos pertenecen a la misma familia y el navy deja de ser
+     un cuerpo extraño. La saturación baja a medida que sube la luminosidad. */
+  --gray-50: #f6f8fa;
+  --gray-100: #eef1f5;
+  --gray-200: #dfe4ec;
+  --gray-300: #c5cddb;
+  --gray-400: #94a1b5;
+  --gray-500: #6b7a90;
+  --gray-600: #4e5c70;
+  --gray-700: #3a4657;
+  --gray-800: #28323f;
+  --gray-900: #19212b;
+  --gray-950: #0d131b;
 
-  /* Colores de superficie */
-  --surface-bg: #0f0f0f;
-  --surface-card: #1a1a1a;
-  --surface-elevated: #242424;
-  --surface-hover: #2a2a2a;
-  --surface-border: #333333;
-  --header-bg: rgba(15, 15, 15, 0.8);
-  --header-border: #333333;
+  /* Colores de superficie — una sola rampa de elevación en hue 213°.
+     El navy de marca (--cchc-navy) es el extremo saturado de esta misma familia. */
+  --surface-bg: #0e1722;
+  --surface-card: #131d2a;
+  --surface-elevated: #1a2533;
+  --surface-hover: #212e3d;
+  --surface-border: #2a384a;
+  --header-bg: rgba(14, 23, 34, 0.8);
+  --header-border: #2a384a;
 
   /* Texto */
   --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --text-secondary: #9aa8bd;
+  --text-muted: #6b7a90;
 
   /* Gradientes */
   --gradient-primary: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-800) 100%);
@@ -181,13 +185,16 @@
 }
 
 :root.theme-light {
-  --surface-bg: #ffffff;
-  --surface-card: #fefefe;
-  --surface-elevated: #f7fafc;
-  --surface-hover: #e9eff7;
-  --surface-border: #d4dee9;
+  /* Elevación invertida respecto al modo oscuro: el lienzo es el tono teñido y
+     las tarjetas son blanco puro. Antes bg (#ffffff) y card (#fefefe) eran
+     indistinguibles, así que nada se despegaba del fondo. Mismo hue 213°. */
+  --surface-bg: #eef2f7;
+  --surface-card: #ffffff;
+  --surface-elevated: #f7f9fc;
+  --surface-hover: #e4ebf4;
+  --surface-border: #d3dde9;
   --header-bg: rgba(255, 255, 255, 0.9);
-  --header-border: #e2e8f0;
+  --header-border: #d3dde9;
 
   /* Acentos para MODO CLARO: azules más profundos, legibles sobre blanco */
   --accent: #006edc;

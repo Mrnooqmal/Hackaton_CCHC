@@ -3074,7 +3074,7 @@ export default function ObraDetalle() {
         onClose={() => setDoCreateModal(null)}
         title={doCreateModal?.mode === 'actividad' ? (doCreateModal?.el?.activityTipo === 'SIMULACRO' ? 'Programar simulacro' : 'Programar capacitación') : 'Crear / subir documento'}
         subtitle={doCreateModal ? `${doCreateModal.el.titulo} · ${doCreateModal.el.articulo}` : ''}
-        size="md"
+        size="lg"
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
             <button className="btn btn-secondary" onClick={() => setDoCreateModal(null)}>Cancelar</button>
@@ -3212,7 +3212,7 @@ export default function ObraDetalle() {
         onClose={() => { setRelatorSign(null); setRelatorPin(''); setRelatorError(null); }}
         title="Firma de relator"
         subtitle={relatorSign ? `${relatorSign.titulo} — Art. 16 DS44, firma cruzada` : ''}
-        size="md"
+        size="sm"
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
             <button className="btn btn-secondary" onClick={() => { setRelatorSign(null); setRelatorPin(''); setRelatorError(null); }}>Cancelar</button>
@@ -3264,7 +3264,7 @@ export default function ObraDetalle() {
         onClose={() => { setCerrarInvModal(null); setCerrarInvPin(''); setCerrarInvError(null); setCerrarInvResult(null); }}
         title="Cerrar investigación (Art. 71)"
         subtitle={cerrarInvModal?.descripcion}
-        size="md"
+        size="sm"
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
             <button className="btn btn-secondary" onClick={() => { setCerrarInvModal(null); setCerrarInvPin(''); setCerrarInvError(null); setCerrarInvResult(null); }}>
@@ -3319,7 +3319,7 @@ export default function ObraDetalle() {
         onClose={() => { setRegistroSignModal(false); setRegistroPin(''); setRegistroError(null); setRegistroResult(null); }}
         title="Exportar Registro AT/EP"
         subtitle="Arts. 72-73 DS44 — Registro de Accidentes del Trabajo, Enfermedades Profesionales e Incidentes Peligrosos"
-        size="md"
+        size="sm"
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
             <button className="btn btn-secondary" onClick={() => setRegistroSignModal(false)}>
@@ -3643,7 +3643,7 @@ export default function ObraDetalle() {
         onClose={() => setIsSignatureModalOpen(false)}
         title={signatureModalDoc?.titulo ? `Firmas - ${signatureModalDoc.titulo}` : 'Firmas'}
         subtitle="Detalle de firmas solicitadas"
-        size="md"
+        size="lg"
         footer={
           <button className="btn btn-secondary" onClick={() => setIsSignatureModalOpen(false)}>
             Cerrar
@@ -3943,7 +3943,6 @@ export default function ObraDetalle() {
           font-size: 1rem;
           font-weight: 700;
           color: var(--text-primary);
-          font-family: var(--font-display);
         }
 
         /* ── DS44 content items ── */

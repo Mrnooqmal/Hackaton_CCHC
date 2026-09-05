@@ -4,8 +4,8 @@ import { personasApi } from '../api/personas.api';
 import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
-import { FormPage, FieldSection, Select, CredentialCard } from '../components/ui';
-import { FiCheckCircle, FiInfo, FiArrowLeft } from 'react-icons/fi';
+import { FormPage, FieldSection, Select, CredentialCard, PageHeader } from '../components/ui';
+import { FiCheckCircle, FiInfo } from 'react-icons/fi';
 import { getCargoLabel } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import type { PersonaResponse } from '../api/types';
@@ -322,34 +322,14 @@ export default function PersonaNueva() {
 
     return (
         <>
-            {/* Banner de encabezado — mismo estilo que PageHeader (banner): color de
-                marca del tenant (--cchc-navy) y tipografía estándar de la app. */}
-            <div className="page-banner-bleed" style={{
-                background: 'var(--cchc-navy)',
-                padding: 'var(--space-5) var(--space-8) 0',
-                position: 'relative',
-            }}>
-                <div style={{ maxWidth: 960, margin: '0 auto' }}>
-                    <button
-                        type="button"
-                        onClick={() => navigate('/personas')}
-                        style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6,
-                            background: 'none', border: 'none', cursor: 'pointer',
-                            color: 'rgba(255,255,255,0.7)', fontSize: 'var(--text-sm)', padding: 0,
-                            marginBottom: 'var(--space-2)',
-                        }}
-                    >
-                        <FiArrowLeft size={14} /> Personas
-                    </button>
-                    <h1 style={{ margin: 0, fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'white' }}>
-                        Nueva persona
-                    </h1>
-                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-sm)', color: 'rgba(255,255,255,0.75)' }}>
-                        Registra una persona trabajadora o miembro del equipo en la empresa.
-                    </p>
-                </div>
-                <div style={{ height: 3, background: 'linear-gradient(90deg, #006edc 0%, #df3601 100%)', marginTop: 'var(--space-6)' }} />
+            <div className="page-content">
+                <PageHeader
+                    banner
+                    backTo="/personas"
+                    backLabel="Personas"
+                    title="Nueva persona"
+                    description="Registra una persona trabajadora o miembro del equipo en la empresa."
+                />
             </div>
 
             <FormPage
@@ -538,7 +518,6 @@ export default function PersonaNueva() {
                     </div>
                 </FieldSection>
             </FormPage>
-
         </>
     );
 }

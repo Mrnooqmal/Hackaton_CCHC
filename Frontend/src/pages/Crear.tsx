@@ -11,7 +11,7 @@ const CATEGORIES = [
         titulo: 'Documento',
         subtitulo: 'Solicitud de firma',
         desc: 'Crea y envía un documento para que uno o varios trabajadores firmen. Queda registrado en el historial de cumplimiento.',
-        href: '/documents',
+        href: '/signature-requests',
         cta: 'Crear documento',
     },
     {

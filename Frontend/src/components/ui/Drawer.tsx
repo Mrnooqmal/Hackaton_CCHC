@@ -107,7 +107,6 @@ export default function Drawer({ isOpen, onClose, title, subtitle, width = 480, 
         }
         .ui-drawer-header-text { flex: 1; min-width: 0; }
         .ui-drawer-title {
-          font-family: var(--font-display);
           font-size: var(--text-lg);
           font-weight: 700;
           color: var(--text-primary);

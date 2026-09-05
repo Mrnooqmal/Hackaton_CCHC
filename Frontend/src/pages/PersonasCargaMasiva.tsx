@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { apiBaseUrl, personasApi } from '../api/client';
 import type { BulkPreviewRow, BulkCatalogos, BulkRowInput, BulkResultados } from '../api/personas.api';
 import { useAuth } from '../context/AuthContext';
-import { FiDownload, FiUpload, FiCheckCircle, FiAlertTriangle, FiInfo, FiX, FiArrowLeft } from 'react-icons/fi';
+import { PageHeader } from '../components/ui';
+import { FiDownload, FiUpload, FiCheckCircle, FiAlertTriangle, FiInfo, FiX } from 'react-icons/fi';
 
 // Validación local del RUT (mod 11) — para re-validar al vuelo mientras se edita.
 const rutValido = (rut: string): boolean => {
@@ -189,23 +190,19 @@ export default function PersonasCargaMasiva() {
 
     return (
         <>
-            {/* Banner compacto */}
-            <div style={{ background: '#002952', padding: 'var(--space-4) var(--space-6) 0' }}>
-                <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-                    <button type="button" onClick={() => navigate('/personas')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.7)', fontSize: 'var(--text-sm)', padding: 0, marginBottom: 4 }}>
-                        <FiArrowLeft size={14} /> Personas
-                    </button>
-                    <h1 style={{ margin: 0, fontSize: 'var(--text-xl)', fontWeight: 700, color: 'white', fontFamily: 'var(--font-display)' }}>Carga masiva de personas</h1>
-                    <p style={{ margin: '2px 0 0', fontSize: 'var(--text-sm)', color: 'rgba(255,255,255,0.75)' }}>
-                        {step === 'form' && 'Descarga la plantilla, complétala y súbela para revisar antes de cargar.'}
-                        {step === 'review' && 'Revisa y corrige los datos. Solo se crearán las filas marcadas y sin error.'}
-                        {step === 'result' && 'Resultado de la carga.'}
-                    </p>
-                </div>
-                <div style={{ height: 3, background: 'linear-gradient(90deg, #006edc 0%, #df3601 100%)', marginTop: 'var(--space-3)' }} />
-            </div>
-
             <div className="page-content">
+                <PageHeader
+                    banner
+                    backTo="/personas"
+                    backLabel="Personas"
+                    title="Carga masiva de personas"
+                    description={
+                        (step === 'form' && 'Descarga la plantilla, complétala y súbela para revisar antes de cargar.') ||
+                        (step === 'review' && 'Revisa y corrige los datos. Solo se crearán las filas marcadas y sin error.') ||
+                        (step === 'result' && 'Resultado de la carga.') ||
+                        undefined
+                    }
+                />
                 <div style={{ maxWidth: step === 'review' ? 1300 : 900, margin: '0 auto' }}>
 
                     {error && (

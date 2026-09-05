@@ -1042,7 +1042,6 @@ export default function ObraEquipoPage() {
         <div className="page-content">
             <PageHeader
                 banner
-                scope={{ label: obraName }}
                 title="Gestionar equipo"
                 description={`Organiza cuadrillas, roles y cargos del equipo de ${obraName}.`}
 
@@ -1232,7 +1231,7 @@ export default function ObraEquipoPage() {
                 onClose={() => setTransferWorker(null)}
                 title="Transferir a otra obra"
                 subtitle={transferWorker ? `${transferWorker.nombre} ${transferWorker.apellido || ''}`.trim() : ''}
-                size="sm"
+                size="md"
                 footer={
                     <>
                         <button className="btn btn-secondary" onClick={() => setTransferWorker(null)} disabled={transferring}>Cancelar</button>
@@ -1393,7 +1392,7 @@ export default function ObraEquipoPage() {
                 onClose={() => setAddToObraModal(null)}
                 title="¿A qué equipo asignar?"
                 subtitle={addToObraModal ? `${addToObraModal.worker.nombre} ${addToObraModal.worker.apellido || ''}`.trim() : ''}
-                size="sm"
+                size="md"
             >
                 {addToObraModal && (
                     <div className="eq-team-list">
@@ -1470,7 +1469,7 @@ export default function ObraEquipoPage() {
                         onClose={() => { setEditModal(null); setAssignCargos((p) => { const n = { ...p }; delete n[w.personaId]; return n; }); }}
                         title="Editar persona"
                         subtitle={`${w.nombre} ${w.apellido || ''}`.trim()}
-                        size="sm"
+                        size="md"
                         footer={
                             <div style={{ display: 'flex', gap: 'var(--space-2)', width: '100%' }}>
                                 <button
@@ -1877,7 +1876,7 @@ export default function ObraEquipoPage() {
                 .eq-modal {
                     background: var(--surface-card); border: 1px solid var(--surface-border);
                     border-radius: var(--radius-xl); box-shadow: 0 24px 64px rgba(0,0,0,0.25);
-                    padding: var(--space-6); max-width: 440px; width: 100%;
+                    padding: var(--space-6); max-width: 520px; width: 100%;
                     display: flex; flex-direction: column; gap: var(--space-3);
                 }
                 .eq-modal-icon {

@@ -4,8 +4,7 @@ import { obrasApi, tenantsApi, uploadsApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import AddressAutocomplete from '../components/AddressAutocomplete';
-import { FormPage, FieldSection, Select, SegmentedControl } from '../components/ui';
-import { FiArrowLeft } from 'react-icons/fi';
+import { FormPage, FieldSection, Select, SegmentedControl, PageHeader } from '../components/ui';
 
 interface ObraForm {
   nombre: string;
@@ -179,28 +178,14 @@ export default function ObraNueva() {
 
   return (
     <>
-      <div style={{ background: '#002952', padding: 'var(--space-5) var(--space-8) 0', position: 'relative' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto' }}>
-          <button
-            type="button"
-            onClick={() => navigate('/obras')}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'rgba(255,255,255,0.7)', fontSize: 'var(--text-sm)', padding: 0,
-              marginBottom: 'var(--space-2)',
-            }}
-          >
-            <FiArrowLeft size={14} /> Obras
-          </button>
-          <h1 style={{ margin: 0, fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'white', fontFamily: 'var(--font-display)' }}>
-            Nueva obra
-          </h1>
-          <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-sm)', color: 'rgba(255,255,255,0.75)' }}>
-            Define los datos del proyecto para comenzar el flujo DS44.
-          </p>
-        </div>
-        <div style={{ height: 3, background: 'linear-gradient(90deg, #006edc 0%, #df3601 100%)', marginTop: 'var(--space-6)' }} />
+      <div className="page-content">
+        <PageHeader
+          banner
+          backTo="/obras"
+          backLabel="Obras"
+          title="Nueva obra"
+          description="Define los datos del proyecto para comenzar el flujo DS44."
+        />
       </div>
       <FormPage
         maxWidth={960}

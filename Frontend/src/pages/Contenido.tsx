@@ -6,41 +6,35 @@ import { PERMISSIONS } from '../permissions';
 
 interface ContentCard {
     icon: React.ReactNode;
-    accent: string;
-    tint: string;
     titulo: string;
     desc: string;
     href: string;
     permission?: string;
 }
 
+// Las tres casillas comparten el color primario del tenant (uniformidad de
+// marca); el ícono es la única señal que las distingue entre sí.
 export default function Contenido() {
     const navigate = useNavigate();
     const { hasPermission } = useAuth();
 
     const CARDS: ContentCard[] = [
         {
-            icon: <FiFileText size={26} style={{ color: '#006edc' }} />,
-            accent: '#006edc',
-            tint: 'rgba(0,110,220,0.08)',
+            icon: <FiFileText size={24} />,
             titulo: 'Documentos',
-            desc: 'Gestiona y solicita firma de documentos: difusiones, procedimientos y registros DS44 de la obra.',
-            href: '/documents',
-            permission: PERMISSIONS.DOCUMENTOS_VER,
+            desc: 'Repositorio de documentos base, cumplimiento DS44 y registros asignados a cada persona de la obra.',
+            href: '/documents-repository',
+            permission: PERMISSIONS.REPOSITORIO_VER,
         },
         {
-            icon: <FiCalendar size={26} style={{ color: '#10b981' }} />,
-            accent: '#10b981',
-            tint: 'rgba(16,185,129,0.08)',
+            icon: <FiCalendar size={24} />,
             titulo: 'Actividades',
             desc: 'Capacitaciones, charlas de 5 minutos y eventos formativos, con asistencia y firma de los participantes.',
             href: '/activities',
             permission: PERMISSIONS.ACTIVIDADES_VER,
         },
         {
-            icon: <FiClipboard size={26} style={{ color: '#f59e0b' }} />,
-            accent: '#f59e0b',
-            tint: 'rgba(245,158,11,0.08)',
+            icon: <FiClipboard size={24} />,
             titulo: 'Encuestas',
             desc: 'Diagnósticos, evaluaciones de riesgo y encuestas de cumplimiento normativo para tu equipo.',
             href: '/surveys',
@@ -53,11 +47,10 @@ export default function Contenido() {
         <div className="page-content">
             <PageHeader
                 banner
-                scope={{ label: 'Gestión' }}
                 title="Contenido"
                 description="Documentos, actividades y encuestas de la obra en un solo lugar. Elige qué quieres revisar o gestionar."
                 actions={
-                    <button className="btn btn-save" onClick={() => navigate('/crear')}>
+                    <button className="btn btn-primary" onClick={() => navigate('/crear')}>
                         <FiPlus /> Crear
                     </button>
                 }
@@ -68,7 +61,6 @@ export default function Contenido() {
                     <button
                         key={card.titulo}
                         className="contenido-card"
-                        style={{ '--card-accent': card.accent, '--card-tint': card.tint } as React.CSSProperties}
                         onClick={() => navigate(card.href)}
                     >
                         <div className="contenido-card-icon">{card.icon}</div>
@@ -85,51 +77,67 @@ export default function Contenido() {
             </div>
 
             <style>{`
+                /* auto-fit (no auto-fill): las columnas vacías colapsan a 0 y las
+                   3 casillas reparten el ancho disponible entre ellas. Con
+                   auto-fill quedaban fijas en su mínimo y quedaba espacio muerto
+                   cada vez que el viewport (p. ej. al hacer zoom out) alcanzaba
+                   para una columna extra. */
                 .contenido-grid {
                     display: grid;
-                    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-                    gap: var(--space-4);
+                    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                    gap: var(--space-5);
                 }
                 .contenido-card {
                     display: flex;
                     flex-direction: column;
-                    gap: var(--space-3);
-                    padding: var(--space-5) var(--space-5) var(--space-4);
-                    border: 1.5px solid var(--surface-border);
+                    gap: var(--space-4);
+                    padding: var(--space-6) var(--space-5) var(--space-4);
+                    border: 1px solid var(--surface-border);
                     border-radius: var(--radius-xl);
-                    background: var(--surface);
+                    background: var(--surface-card);
                     cursor: pointer;
                     text-align: left;
-                    transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+                    transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
                     position: relative;
                     overflow: hidden;
                 }
+                /* Filete institucional azul→rojo: reservado como remate de marca
+                   (mismo recurso que el borde inferior del header y el footer),
+                   se revela sólo al interactuar para no saturar la grilla. */
                 .contenido-card::before {
                     content: '';
                     position: absolute;
                     top: 0; left: 0; right: 0;
                     height: 3px;
-                    background: var(--card-accent);
-                    opacity: 0;
-                    transition: opacity 0.15s;
+                    background: var(--cchc-accent-line);
+                    transform: scaleX(0);
+                    transform-origin: left;
+                    transition: transform 0.25s ease;
                 }
-                .contenido-card:hover {
-                    border-color: var(--card-accent);
-                    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-                    transform: translateY(-1px);
+                .contenido-card:hover,
+                .contenido-card:focus-visible {
+                    border-color: var(--primary-500);
+                    box-shadow: var(--shadow-glow-primary);
+                    transform: translateY(-2px);
                 }
-                .contenido-card:hover::before { opacity: 1; }
+                .contenido-card:hover::before,
+                .contenido-card:focus-visible::before { transform: scaleX(1); }
                 .contenido-card-icon {
-                    width: 52px; height: 52px;
-                    border-radius: var(--radius-lg);
-                    background: var(--card-tint);
+                    width: 56px; height: 56px;
+                    border-radius: 50%;
+                    background: var(--gradient-primary);
+                    color: #fff;
                     display: flex; align-items: center; justify-content: center;
                     flex-shrink: 0;
+                    box-shadow: 0 6px 16px -4px var(--cchc-blue-tint-strong);
+                    transition: transform 0.2s ease;
                 }
+                .contenido-card:hover .contenido-card-icon { transform: scale(1.06); }
                 .contenido-card-body { flex: 1; }
                 .contenido-card-title {
                     font-size: var(--text-lg);
-                    font-weight: 800;
+                    font-weight: 700;
+                    letter-spacing: -0.01em;
                     color: var(--text-primary);
                     line-height: 1.2;
                     margin-bottom: var(--space-2);
@@ -144,20 +152,21 @@ export default function Contenido() {
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
-                    padding-top: var(--space-2);
+                    padding-top: var(--space-3);
                     border-top: 1px solid var(--surface-border);
                     margin-top: auto;
                 }
                 .contenido-card-cta {
                     font-size: var(--text-sm);
                     font-weight: 600;
-                    color: var(--card-accent);
+                    color: var(--primary-500);
                 }
                 .contenido-card-arrow {
-                    color: var(--card-accent);
-                    transition: transform 0.15s;
+                    color: var(--primary-500);
+                    transition: transform 0.2s ease;
                 }
-                .contenido-card:hover .contenido-card-arrow { transform: translateX(3px); }
+                .contenido-card:hover .contenido-card-arrow,
+                .contenido-card:focus-visible .contenido-card-arrow { transform: translateX(3px); }
 
                 @media (max-width: 480px) {
                     .contenido-grid { grid-template-columns: 1fr; }

@@ -84,11 +84,10 @@ export default function CatalogosActividad() {
         <div className="page-content">
             <PageHeader
                 banner
-                scope={{ label: 'Empresa' }}
                 title="Catálogos de actividades"
                 description="Listados desplegables de la planificación diaria: temas tratados, recursos, riesgos y medidas de prevención. Aplican a todas las obras de la empresa."
                 actions={
-                    <button className="btn btn-save" disabled={saving || !catalogos} onClick={guardar}>
+                    <button className="btn btn-primary" disabled={saving || !catalogos} onClick={guardar}>
                         <FiSave /> {saving ? 'Guardando…' : 'Guardar cambios'}
                     </button>
                 }

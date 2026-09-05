@@ -1327,15 +1327,6 @@
   box-shadow: 0 4px 14px rgba(223, 54, 1, 0.38);
 }
 
-/* Sobre el banner navy del PageHeader mantiene su color de marca */
-.ui-page-header--banner .btn-save {
-  background: #f13800;
-  color: #fff;
-}
-.ui-page-header--banner .btn-save:hover:not(:disabled) {
-  background: #ff4a12;
-}
-
 /* ── Toolbar + búsqueda reutilizable (listados) ────────────────────────── */
 .tbar {
   display: flex;

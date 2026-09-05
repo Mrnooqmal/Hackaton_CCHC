@@ -85,7 +85,7 @@ type RepoDocument = Document & {
 
 export default function DocumentsRepository() {
     const { user, hasPermission } = useAuth();
-    const { selectedObraId, selectedObra } = useObraContext();
+    const { selectedObraId } = useObraContext();
     const { toast } = useToast();
 
     const [documents, setDocuments] = useState<RepoDocument[]>([]);
@@ -371,12 +371,11 @@ export default function DocumentsRepository() {
             <div className="page-content">
                 <PageHeader
                     banner
-                    scope={{ label: selectedObra?.nombre ? `Obra · ${selectedObra.nombre}` : 'Repositorio' }}
                     title="Repositorio de documentos"
                     description="Archivos de la obra organizados por carpetas: documentos base, cumplimiento DS44, registros y los documentos asignados a cada persona."
                     actions={
                         canUpload && selectedObraId ? (
-                            <button className="btn btn-save" onClick={() => setShowUploadForm((prev) => !prev)}>
+                            <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)}>
                                 <FiUpload /> Subir documento
                             </button>
                         ) : undefined

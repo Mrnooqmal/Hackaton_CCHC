@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ConfirmModal from './ConfirmModal';
 import {
@@ -82,7 +82,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     const { user, hasPermission, logout } = useAuth();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
-    const sidebarRef = useRef<HTMLElement>(null);
     const [workerId, setWorkerId] = useState<string | null>(null);
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
     const pendingBadgeLabel = pendingSurveyCount > 99 ? '99+' : String(pendingSurveyCount);
@@ -181,28 +180,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     }, [workerId, canRespondSurveys]);
 
 
-    // Recorta el sidebar para que no tape el footer en desktop
-    useEffect(() => {
-        const update = () => {
-            if (!sidebarRef.current || window.innerWidth <= 1024) {
-                if (sidebarRef.current) sidebarRef.current.style.bottom = '';
-                return;
-            }
-            const footer = document.querySelector('.ft-root') as HTMLElement | null;
-            if (!footer) return;
-            const overflow = window.innerHeight - footer.getBoundingClientRect().top;
-            sidebarRef.current.style.bottom = overflow > 0 ? `${overflow}px` : '0';
-        };
-
-        window.addEventListener('scroll', update, { passive: true });
-        window.addEventListener('resize', update, { passive: true });
-        update();
-        return () => {
-            window.removeEventListener('scroll', update);
-            window.removeEventListener('resize', update);
-        };
-    }, []);
-
     const handleLinkClick = () => {
         if (onClose) {
             onClose();
@@ -230,7 +207,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 onCancel={() => setShowLogoutConfirm(false)}
             />
 
-            <aside ref={sidebarRef} className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
+            <aside className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
                 {/* Mobile close button */}
                 {onClose && (
                     <button

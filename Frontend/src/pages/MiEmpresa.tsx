@@ -136,7 +136,6 @@ export default function MiEmpresa() {
         <div className="mi-empresa-page" style={{ padding: '0 24px 40px' }}>
             <PageHeader
                 banner
-                scope={{ label: 'Empresa' }}
                 title="Mi Empresa"
                 description={`Administra la identidad, los roles y permisos, y los cargos de ${tenant?.nombre || 'tu empresa'}.`}
             />
@@ -698,7 +697,7 @@ function ReassignModal({ open, title, noun, affected, options, busy, onCancel, o
     const sinDestino = options.length === 0;
 
     return (
-        <Modal isOpen={open} onClose={onCancel} title={title} size="md"
+        <Modal isOpen={open} onClose={onCancel} title={title} size="lg"
             subtitle={`${affected.length} persona(s) tienen este ${noun}. Reasígnalas para poder eliminarlo.`}
             footer={<>
                 <button className="btn btn-secondary" onClick={onCancel}>Cancelar</button>

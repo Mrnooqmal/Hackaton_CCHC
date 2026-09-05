@@ -50,14 +50,22 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           margin-bottom: var(--space-6);
         }
 
-        /* ── Banner variant ── */
+        /* ── Banner variant ──
+           El banner comparte superficie con la barra principal del header, de
+           modo que header + título forman un solo bloque de chrome continuo.
+           La regla azul→rojo del borde inferior es la única costura entre ese
+           bloque y el lienzo de contenido. El navy institucional queda
+           reservado para el marco de la app (franja superior y footer). */
         .ui-page-header--banner {
-          /* Pull up by main-content's top gap (space-6) and bleed into both
-             main-content (space-6) + page-content (space-6) horizontal paddings */
-          margin: calc(-1 * var(--space-6)) calc(-2 * var(--space-6)) var(--space-6);
-          /* Restore inner padding so text stays aligned with the page body below */
-          padding: var(--space-5) var(--space-12) calc(var(--space-6) + 3px);
-          background: var(--cchc-navy);
+          /* Sangrado lateral = padding de .main-content + el de .page-content.
+             La MISMA medida se reutiliza como padding interno, de modo que el
+             fondo llega a los bordes y el título queda alineado con el
+             contenido de la página que va debajo. Ambos paddings cambian por
+             breakpoint, así que sólo se redefine la variable (ver abajo). */
+          --banner-bleed: calc(var(--space-6) + var(--space-6));
+          margin: calc(-1 * var(--space-6)) calc(-1 * var(--banner-bleed)) var(--space-6);
+          padding: var(--space-8) var(--banner-bleed) calc(var(--space-6) + 3px);
+          background: var(--surface-card);
           position: relative;
           border-top: none;
           border-bottom: none;
@@ -69,31 +77,7 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           left: 0;
           right: 0;
           height: 3px;
-          background: linear-gradient(90deg, #006edc 0%, #df3601 100%);
-        }
-        .ui-page-header--banner .ui-page-header-title {
-          color: #fff;
-        }
-        .ui-page-header--banner .ui-page-header-description {
-          color: rgba(255, 255, 255, 0.78);
-        }
-        .ui-page-header--banner .ui-page-header-back {
-          color: rgba(255, 255, 255, 0.68);
-        }
-        .ui-page-header--banner .ui-page-header-back:hover {
-          color: #fff;
-        }
-        .ui-page-header--banner .ui-page-header-scope {
-          background: rgba(255, 255, 255, 0.15);
-          color: rgba(255, 255, 255, 0.9);
-        }
-        .ui-page-header--banner .btn-secondary {
-          background: rgba(255,255,255,0.12);
-          border-color: rgba(255,255,255,0.25);
-          color: white;
-        }
-        .ui-page-header--banner .btn-secondary:hover {
-          background: rgba(255,255,255,0.2);
+          background: var(--cchc-accent-line);
         }
 
         .ui-page-header-breadcrumb {
@@ -125,11 +109,6 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           color: var(--text-secondary);
           font-weight: 500;
         }
-        .ui-page-header--banner .ui-page-header-breadcrumb-item a { color: rgba(255,255,255,0.6); }
-        .ui-page-header--banner .ui-page-header-breadcrumb-item a:hover { color: #fff; }
-        .ui-page-header--banner .ui-page-header-breadcrumb-sep { color: rgba(255,255,255,0.4); }
-        .ui-page-header--banner .ui-page-header-breadcrumb-current { color: rgba(255,255,255,0.85); }
-
         .ui-page-header-back {
           display: inline-flex;
           align-items: center;
@@ -180,13 +159,26 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           gap: var(--space-2);
           flex-shrink: 0;
         }
+        /* Sangrado por breakpoint (main-content + page-content):
+           24+24 → 16+24 (≤1024) → 16+16 (≤768) → 12+8 (≤480). */
+        @media (max-width: 1024px) {
+          .ui-page-header--banner { --banner-bleed: calc(var(--space-4) + var(--space-6)); }
+        }
+        @media (max-width: 768px) {
+          .ui-page-header--banner { --banner-bleed: calc(var(--space-4) + var(--space-4)); }
+        }
         @media (max-width: 640px) {
+          /* Sólo espaciado vertical: el horizontal lo controla --banner-bleed */
           .ui-page-header--banner {
-            /* Mobile: main-content h-padding=space-4, page-content h-padding=space-2 → cancel both */
-            margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-6)) var(--space-4);
-            padding: var(--space-4) var(--space-6) var(--space-5);
+            margin-top: calc(-1 * var(--space-4));
+            margin-bottom: var(--space-4);
+            padding-top: var(--space-6);
+            padding-bottom: var(--space-5);
           }
           .ui-page-header-actions { width: 100%; justify-content: flex-start; }
+        }
+        @media (max-width: 480px) {
+          .ui-page-header--banner { --banner-bleed: calc(var(--space-3) + var(--space-2)); }
         }
       `}</style>
     </div>

@@ -205,7 +205,7 @@ export default function EnrollMe() {
                             </div>
 
                             <div style={{ textAlign: 'center' }}>
-                                <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-2)', fontFamily: 'var(--font-display)' }}>
+                                <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
                                     Firma Digital
                                 </h2>
                                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
@@ -340,7 +340,7 @@ export default function EnrollMe() {
                                 }}>
                                     <FiUser size={26} />
                                 </div>
-                                <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-1)', fontFamily: 'var(--font-display)' }}>
+                                <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-1)' }}>
                                     Termina de completar tu perfil
                                 </h2>
                                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
@@ -538,7 +538,7 @@ export default function EnrollMe() {
                             </div>
 
                             <div style={{ textAlign: 'center' }}>
-                                <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-ui)', marginBottom: 'var(--space-2)' }}>
+                                <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
                                     {isChangePin ? '¡PIN actualizado!' : '¡Enrolamiento completado!'}
                                 </h2>
                                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>

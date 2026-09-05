@@ -1756,7 +1756,7 @@ Generado por PrevencionApp
                 onClose={closeDesvincular}
                 title="Eliminar persona de la empresa"
                 subtitle="Esta acción desvincula a la persona de la empresa y no se puede deshacer."
-                size="sm"
+                size="md"
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
                         <button className="btn btn-secondary" onClick={closeDesvincular} disabled={desvinculando}>Cancelar</button>
@@ -1808,6 +1808,7 @@ Generado por PrevencionApp
                 onClose={() => !editSaving && setShowEditModal(false)}
                 title="Editar datos de la persona"
                 subtitle="Actualiza la información de contacto, cargo y datos personales."
+                size="lg"
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
                         <button className="btn btn-secondary" onClick={() => setShowEditModal(false)} disabled={editSaving}>Cancelar</button>

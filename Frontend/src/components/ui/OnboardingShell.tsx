@@ -113,7 +113,7 @@ export default function OnboardingShell({
         .cp-stepper-mobile { display: none; }
         .cp-form-header { display: flex; flex-direction: column; gap: var(--space-1); }
         .cp-title {
-          font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 700;
+          font-size: var(--text-2xl); font-weight: 700;
           color: var(--text-primary); margin: 0;
         }
         .cp-subtitle { font-size: var(--text-sm); color: var(--text-secondary); margin: 0; line-height: 1.5; }
@@ -156,7 +156,7 @@ export default function OnboardingShell({
           width: 56px; height: 56px; border-radius: 50%; background: rgba(34,197,94,0.12);
           color: var(--success-500); display: flex; align-items: center; justify-content: center;
         }
-        .cp-success-title { font-family: var(--font-display); font-size: var(--text-xl); font-weight: 700; color: var(--text-primary); margin: 0; }
+        .cp-success-title { font-size: var(--text-xl); font-weight: 700; color: var(--text-primary); margin: 0; }
         .cp-success-sub { font-size: var(--text-sm); color: var(--text-secondary); margin: 0; }
         .cp-side::after {
           content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;

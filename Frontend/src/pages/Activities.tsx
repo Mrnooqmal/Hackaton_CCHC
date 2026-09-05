@@ -119,8 +119,7 @@ export default function Activities() {
     const canPlanificar = hasPermission(PERMISSIONS.ACTIVIDADES_PLANIFICAR);
     const { isOnline, pendingCount, signActivity, syncPendingSignatures } = useOfflineSignature();
     const { toast } = useToast();
-    const { selectedObraId, obras } = useObraContext();
-    const selectedObra = obras.find(o => o.obraId === selectedObraId) ?? null;
+    const { selectedObraId } = useObraContext();
     const [activities, setActivities] = useState<Activity[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
@@ -876,7 +875,6 @@ export default function Activities() {
             <div className="page-content">
                 <PageHeader
                     banner
-                    scope={{ label: selectedObra?.nombre ? `Obra · ${selectedObra.nombre}` : 'Actividades' }}
                     title="Actividades y capacitación"
                     description="Charlas de 5 minutos, inducciones, ART y capacitación técnica, con asistencia y firma de los participantes."
                     actions={
@@ -894,7 +892,7 @@ export default function Activities() {
                                 )}
                                 {canCrearActividad && (
                                     <button
-                                        className="btn btn-save"
+                                        className="btn btn-primary"
                                         disabled={!selectedObraId}
                                         title={!selectedObraId ? 'Selecciona una obra en la barra superior para crear una actividad' : undefined}
                                         onClick={() => { setVerTodaLaObra(false); setShowModal(true); }}
@@ -1399,6 +1397,7 @@ export default function Activities() {
                     onClose={() => !submitting && setShowModal(false)}
                     preventClose={submitting}
                     title="Nueva Actividad"
+                    size="lg"
                     footer={
                         <>
                             <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => setShowModal(false)}>Cancelar</button>
@@ -2005,6 +2004,7 @@ export default function Activities() {
                     onClose={() => !editSaving && setShowEditModal(false)}
                     title="Completar registro"
                     subtitle={editActivity?.titulo}
+                    size="lg"
                     footer={
                         <>
                             <button className="btn btn-secondary" disabled={editSaving} onClick={() => setShowEditModal(false)}>Cancelar</button>
@@ -2352,6 +2352,7 @@ export default function Activities() {
                     preventClose={completeSubmitting}
                     title="Completar actividad planificada"
                     subtitle={completeActivity ? `${ACTIVITY_TYPES[completeActivity.tipo]?.label || completeActivity.tipo} · ${new Date(`${completeActivity.fecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}` : undefined}
+                    size="lg"
                     footer={
                         <>
                             <button type="button" className="btn btn-secondary" disabled={completeSubmitting} onClick={() => setShowCompleteModal(false)}>Cancelar</button>

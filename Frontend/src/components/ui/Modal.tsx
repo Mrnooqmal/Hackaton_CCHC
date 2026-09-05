@@ -6,11 +6,13 @@ import { FiX } from 'react-icons/fi';
 /* ------------------------------------------------------------------ */
 /*  Tamanhos predefinidos                                              */
 /* ------------------------------------------------------------------ */
+// `sm` queda reservado para la entrada de PIN de firma (el único modal que
+// debe permanecer angosto); todo lo demás usa más del ancho disponible.
 const SIZE_MAP = {
     sm: '400px',
-    md: '500px',
-    lg: '800px',
-    xl: '1200px',
+    md: '520px',
+    lg: '960px',
+    xl: '1400px',
 } as const;
 
 export type ModalSize = keyof typeof SIZE_MAP;

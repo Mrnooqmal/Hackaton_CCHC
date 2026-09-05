@@ -226,7 +226,6 @@ export default function MySignatures() {
             <div className="page-content">
                 <PageHeader
                     banner
-                    scope={{ label: 'Firmas Digitales' }}
                     title="Mis Firmas"
                     description="Documentos pendientes de firma y registro de tu historial."
                     actions={

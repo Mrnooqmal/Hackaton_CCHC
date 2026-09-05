@@ -339,7 +339,7 @@ export const Obras: React.FC = () => {
         actions={
           <>
             {canCrearObra && (
-              <button onClick={() => navigate('/obras/nueva')} className="btn btn-save">
+              <button onClick={() => navigate('/obras/nueva')} className="btn btn-primary">
                 <LuPlus /> Nueva obra
               </button>
             )}
@@ -353,7 +353,7 @@ export const Obras: React.FC = () => {
             <h3 className="empty-state-title">Sin obras registradas</h3>
             <p className="empty-state-description">Crea una obra para comenzar a asignar documentos y personal.</p>
             {canCrearObra && (
-              <button onClick={() => navigate('/obras/nueva')} className="btn btn-save mt-4">
+              <button onClick={() => navigate('/obras/nueva')} className="btn btn-primary mt-4">
                 <LuPlus /> Nueva obra
               </button>
             )}

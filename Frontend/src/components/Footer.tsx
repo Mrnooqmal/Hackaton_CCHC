@@ -130,24 +130,22 @@ export default function Footer() {
             </div>
 
             <style>{`
-                /* ── Raíz: rompe el padding de .main-content y se extiende bajo el sidebar ── */
+                /* ── Raíz: rompe solo el padding de .main-content (deja el espacio del
+                   sidebar cuando está expandido; .main-content ya se encarga de ocupar
+                   todo el ancho cuando el sidebar está colapsado) ── */
                 .ft-root {
-                    /* Extiende hacia la izquierda hasta el borde del viewport (bajo el sidebar fijo) */
                     margin-top: 40px;
-                    margin-left: calc(-1 * var(--sidebar-width) - 24px);
+                    margin-left: -24px;
                     margin-right: -24px;
                     margin-bottom: -24px;
-                    width: calc(100% + var(--sidebar-width) + 48px);
-                    background: #001428;
+                    width: calc(100% + 48px);
+                    /* Mismo navy que la franja institucional del header: ambos
+                       cierran la app por arriba y por abajo como un solo marco.
+                       Al usar el token hereda el color de marca del tenant. */
+                    background: var(--cchc-navy);
                     color: #e2e8f0;
                     font-family: var(--font-ui, 'Roboto', sans-serif);
                     box-sizing: border-box;
-                }
-
-                /* Sidebar colapsado en desktop: el main-content ya no tiene margin-left */
-                .sidebar-collapsed .ft-root {
-                    margin-left: -24px;
-                    width: calc(100% + 48px);
                 }
 
                 /* Tablet/móvil ≤1024px: sidebar fuera de flujo, padding lateral = 16px */
@@ -219,7 +217,7 @@ export default function Footer() {
                     font-weight: 500;
                     letter-spacing: 0.08em;
                     text-transform: uppercase;
-                    color: #64748b;
+                    color: #8aa2bd;
                     white-space: nowrap;
                 }
 
@@ -277,7 +275,7 @@ export default function Footer() {
                     font-weight: 600;
                     letter-spacing: 0.08em;
                     text-transform: uppercase;
-                    color: #64748b;
+                    color: #8aa2bd;
                     margin: 14px 0 2px;
                 }
 
@@ -430,7 +428,7 @@ export default function Footer() {
                 .ft-copyright,
                 .ft-rights {
                     font-size: 11px;
-                    color: #475569;
+                    color: #8aa2bd;
                     margin: 0;
                     line-height: 1;
                 }

@@ -763,7 +763,6 @@ export default function Surveys() {
             <div className="page-content">
                 <PageHeader
                     banner
-                    scope={{ label: 'Encuestas' }}
                     title={canManageSurveys ? 'Encuestas y diagnósticos' : 'Mis encuestas asignadas'}
                     description={canManageSurveys
                         ? 'Diseña y distribuye diagnósticos de seguridad, evaluaciones de riesgo y encuestas de cumplimiento.'
@@ -771,7 +770,7 @@ export default function Surveys() {
                     actions={
                         canManageSurveys ? (
                             <button
-                                className="btn btn-save"
+                                className="btn btn-primary"
                                 onClick={() => {
                                     setForm({
                                         titulo: '',

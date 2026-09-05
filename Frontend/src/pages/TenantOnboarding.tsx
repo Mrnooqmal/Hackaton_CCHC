@@ -1667,7 +1667,7 @@ const onbStyles = `
   }
 
   .onb-worker-rut {
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
     color: #94a3b8;
     letter-spacing: 0.04em;
@@ -1994,7 +1994,7 @@ const onbStyles = `
   }
 
   .onb-confirm-mono {
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     font-weight: 500;
     color: #334155;
@@ -2077,7 +2077,7 @@ const onbStyles = `
   .onb-confirm-worker-rut {
     font-size: 10.5px;
     color: #94a3b8;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     letter-spacing: 0.02em;
   }
 
@@ -2258,7 +2258,7 @@ const onbStyles = `
   }
 
   .onb-pw-code {
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 14px;
     font-weight: 700;
     color: #006edc;
@@ -2416,7 +2416,7 @@ const onbStyles = `
 
   .onb-color-hex-input {
     width: 96px !important;
-    font-family: 'Courier New', monospace !important;
+    font-family: var(--font-mono) !important;
     font-size: 13px !important;
     letter-spacing: 0.04em;
     text-transform: uppercase;

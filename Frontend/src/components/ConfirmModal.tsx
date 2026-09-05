@@ -91,7 +91,7 @@ export default function ConfirmModal({
                         background: var(--surface-card);
                         border: 1px solid var(--surface-border);
                         border-radius: var(--radius-xl);
-                        max-width: 400px;
+                        max-width: 480px;
                         width: 100%;
                         padding: var(--space-8) var(--space-6) var(--space-6);
                         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);

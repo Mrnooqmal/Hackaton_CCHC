@@ -1465,6 +1465,7 @@ export default function SignatureRequests() {
                     onClose={() => { setShowSignModal(false); setPin(''); setSignError(''); }}
                     title="Confirmar Firma Digital"
                     subtitle="Revisa los detalles antes de firmar"
+                    size="sm"
                     preventClose={signing}
                     footer={
                         <>
