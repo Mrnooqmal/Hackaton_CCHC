@@ -3,14 +3,17 @@ import { Link } from 'react-router-dom';
 import {
     FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
     FiUpload, FiX, FiInfo, FiUsers, FiArrowRight, FiAlertTriangle,
-    FiCheck, FiImage,
+    FiCheck, FiImage, FiFile, FiEye, FiEdit3,
 } from 'react-icons/fi';
+import { LuHardHat } from 'react-icons/lu';
 import { AlertBanner, Modal, Select, PageHeader, CollectionView } from '../components/ui';
 import type { CollectionMode } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBrand, DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
 import { useToast } from '../context/ToastContext';
 import { tenantsApi, type Tenant, type TenantRole, type TenantCargo } from '../api/tenants.api';
+import { eppApi, CERTIFICADO_TIPO_LABEL, type EppElemento, type EppAdjunto, type CertificadoTipo } from '../api/epp.api';
+import { uploadsApi } from '../api/uploads.api';
 import { personasApi } from '../api/personas.api';
 import type { PersonaResponse } from '../api/types';
 import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS, PERMISSIONS } from '../permissions';
@@ -97,7 +100,7 @@ function compressLogo(dataUrl: string): Promise<string> {
 
 interface RoleDraft { _id: string; id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; tipo?: string | null; protegido?: boolean; }
 
-type TabKey = 'identidad' | 'roles' | 'cargos';
+type TabKey = 'identidad' | 'roles' | 'cargos' | 'epp';
 
 export default function MiEmpresa() {
     const { user, hasPermission, updateUser } = useAuth();
@@ -109,11 +112,13 @@ export default function MiEmpresa() {
         identidad: hasPermission(PERMISSIONS.EMPRESA_IDENTIDAD),
         roles: hasPermission(PERMISSIONS.EMPRESA_ROLES),
         cargos: hasPermission(PERMISSIONS.EMPRESA_CARGOS),
+        epp: hasPermission(PERMISSIONS.EMPRESA_EPP),
     };
     const tabs: { key: TabKey; label: string; icon: any }[] = [
         ...(can.identidad ? [{ key: 'identidad' as const, label: 'Identidad', icon: FiBriefcase }] : []),
         ...(can.roles ? [{ key: 'roles' as const, label: 'Roles y permisos', icon: FiShield }] : []),
         ...(can.cargos ? [{ key: 'cargos' as const, label: 'Cargos', icon: FiTag }] : []),
+        ...(can.epp ? [{ key: 'epp' as const, label: 'EPP', icon: LuHardHat }] : []),
     ];
     const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'identidad');
 
@@ -149,7 +154,7 @@ export default function MiEmpresa() {
             <PageHeader
                 banner
                 title="Mi Empresa"
-                description={`Administra la identidad, los roles y permisos, y los cargos de ${tenant?.nombre || 'tu empresa'}.`}
+                description={`Administra la identidad, los roles y permisos, los cargos y el catálogo de EPP de ${tenant?.nombre || 'tu empresa'}.`}
             />
 
             {loadError && <AlertBanner variant="error" message={loadError} onDismiss={() => setLoadError('')} />}
@@ -191,6 +196,9 @@ export default function MiEmpresa() {
                     personas={personas}
                     canEditKits={hasPermission(PERMISSIONS.CARGOS_GESTIONAR)}
                 />
+            )}
+            {tab === 'epp' && can.epp && (
+                <EppTab tenantId={tenantId} toast={toast} />
             )}
 
             <style>{styles}</style>
@@ -761,6 +769,417 @@ function CargosTab({ tenantId, personas }: {
     );
 }
 
+// ── Catálogo de EPP (DS44 Art. 13) ────────────────────────────────────────────
+// Cada elemento exige dos respaldos obligatorios: el certificado (de calidad o
+// registro ISP) y el instructivo de uso/mantención/reposición. Un elemento
+// incompleto se puede entregar igual, pero queda marcado en todas las pantallas.
+interface EppDraft {
+    nombre: string;
+    descripcion: string;
+    certificado: EppAdjunto | null;
+    certificadoTipo: CertificadoTipo;
+    instructivo: EppAdjunto | null;
+}
+
+const emptyEppDraft: EppDraft = {
+    nombre: '',
+    descripcion: '',
+    certificado: null,
+    certificadoTipo: 'certificado_calidad',
+    instructivo: null,
+};
+
+function EppTab({ tenantId, toast }: {
+    tenantId: string;
+    toast: ReturnType<typeof useToast>['toast'];
+}) {
+    const [items, setItems] = useState<EppElemento[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [err, setErr] = useState('');
+    const [search, setSearch] = useState('');
+    const [modalOpen, setModalOpen] = useState(false);
+    const [editing, setEditing] = useState<EppElemento | null>(null);
+    const [draft, setDraft] = useState<EppDraft>(emptyEppDraft);
+    const [saving, setSaving] = useState(false);
+    const [borrar, setBorrar] = useState<EppElemento | null>(null);
+
+    useEffect(() => {
+        let alive = true;
+        eppApi.list(tenantId)
+            .then((res) => {
+                if (!alive) return;
+                if (res.success && res.data) setItems(res.data.epp);
+                else setErr(res.error || 'No se pudo cargar el catálogo de EPP.');
+            })
+            .catch(() => alive && setErr('Error de conexión al cargar el catálogo de EPP.'))
+            .finally(() => alive && setLoading(false));
+        return () => { alive = false; };
+    }, [tenantId]);
+
+    const incompletos = items.filter((e) => !e.completo).length;
+
+    const filtrados = items.filter((e) => {
+        if (!search.trim()) return true;
+        const q = search.toLowerCase();
+        return e.nombre.toLowerCase().includes(q) || (e.descripcion || '').toLowerCase().includes(q);
+    });
+
+    const abrirNuevo = () => {
+        setEditing(null);
+        setDraft(emptyEppDraft);
+        setErr('');
+        setModalOpen(true);
+    };
+
+    const abrirEdicion = (e: EppElemento) => {
+        setEditing(e);
+        setDraft({
+            nombre: e.nombre,
+            descripcion: e.descripcion || '',
+            certificado: e.certificado,
+            certificadoTipo: e.certificadoTipo || 'certificado_calidad',
+            instructivo: e.instructivo,
+        });
+        setErr('');
+        setModalOpen(true);
+    };
+
+    const guardar = async () => {
+        if (!draft.nombre.trim()) { setErr('El nombre del elemento es obligatorio.'); return; }
+        setSaving(true); setErr('');
+        try {
+            const payload = {
+                nombre: draft.nombre.trim(),
+                descripcion: draft.descripcion.trim() || null,
+                certificado: draft.certificado,
+                certificadoTipo: draft.certificado ? draft.certificadoTipo : null,
+                instructivo: draft.instructivo,
+            };
+            const res = editing
+                ? await eppApi.update(tenantId, editing.eppId, payload)
+                : await eppApi.create(tenantId, payload);
+            if (!res.success || !res.data) { setErr(res.error || 'No se pudo guardar el elemento.'); return; }
+            const guardado = res.data.epp;
+            setItems((prev) => editing
+                ? prev.map((e) => e.eppId === guardado.eppId ? guardado : e)
+                : [...prev, guardado].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+            setModalOpen(false);
+            toast.success(editing ? 'Elemento actualizado.' : 'Elemento agregado al catálogo.');
+        } catch {
+            setErr('Error de conexión al guardar.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const eliminar = async () => {
+        if (!borrar) return;
+        setSaving(true);
+        try {
+            const res = await eppApi.remove(tenantId, borrar.eppId);
+            if (!res.success) { toast.error(res.error || 'No se pudo eliminar el elemento.'); return; }
+            setItems((prev) => prev.filter((e) => e.eppId !== borrar.eppId));
+            toast.success(`"${borrar.nombre}" eliminado del catálogo.`);
+            setBorrar(null);
+        } catch {
+            toast.error('Error de conexión al eliminar.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (loading) {
+        return <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
+    }
+
+    return (
+        <div className="epp-tab">
+            {err && !modalOpen && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
+
+            {incompletos > 0 && (
+                <div className="epp-alerta">
+                    <FiAlertTriangle size={16} aria-hidden="true" />
+                    <div>
+                        <strong>{incompletos} elemento{incompletos === 1 ? '' : 's'} sin respaldo completo</strong>
+                        <p>
+                            El DS44 exige el certificado de calidad o registro ISP y el instructivo de uso y
+                            mantención de cada EPP. Se pueden entregar igual, pero la falta queda registrada.
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            <div className="epp-toolbar">
+                <div className="epp-search">
+                    <FiTag size={15} aria-hidden="true" />
+                    <input
+                        type="search"
+                        placeholder="Buscar elemento…"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                    />
+                </div>
+                <span className="epp-count">{items.length} elemento{items.length === 1 ? '' : 's'}</span>
+                <button className="btn btn-primary btn-sm" onClick={abrirNuevo}>
+                    <FiPlus size={14} /> Nuevo elemento
+                </button>
+            </div>
+
+            {items.length === 0 ? (
+                <div className="epp-empty">
+                    <span className="epp-empty-icon"><LuHardHat size={22} /></span>
+                    <h3>Todavía no hay elementos de EPP</h3>
+                    <p>
+                        Agrega los cascos, guantes, arneses y demás elementos que entrega tu empresa.
+                        Al registrarlos acá, quien haga una entrega los elige de la lista en vez de escribirlos.
+                    </p>
+                    <button className="btn btn-primary" onClick={abrirNuevo}>
+                        <FiPlus /> Agregar el primero
+                    </button>
+                </div>
+            ) : filtrados.length === 0 ? (
+                <p className="epp-sin-resultados">Ningún elemento coincide con «{search}».</p>
+            ) : (
+                <ul className="epp-lista">
+                    {filtrados.map((e) => (
+                        <li key={e.eppId} className={`epp-item${e.completo ? '' : ' incompleto'}`}>
+                            <div className="epp-item-id">
+                                <h4>{e.nombre}</h4>
+                                {e.descripcion && <p>{e.descripcion}</p>}
+                            </div>
+
+                            <div className="epp-docs">
+                                <EppDocBadge
+                                    label={e.certificado && e.certificadoTipo
+                                        ? CERTIFICADO_TIPO_LABEL[e.certificadoTipo]
+                                        : 'Certificado / registro ISP'}
+                                    adjunto={e.certificado}
+                                />
+                                <EppDocBadge label="Instructivo de uso" adjunto={e.instructivo} />
+                            </div>
+
+                            <div className="epp-item-actions">
+                                <button className="btn btn-ghost btn-sm" onClick={() => abrirEdicion(e)}>
+                                    <FiEdit3 size={13} /> Editar
+                                </button>
+                                <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
+                                    aria-label={`Eliminar ${e.nombre}`} onClick={() => setBorrar(e)}>
+                                    <FiTrash2 size={13} />
+                                </button>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            )}
+
+            {/* Alta / edición */}
+            <Modal
+                isOpen={modalOpen}
+                onClose={() => !saving && setModalOpen(false)}
+                preventClose={saving}
+                title={editing ? 'Editar elemento de EPP' : 'Nuevo elemento de EPP'}
+                subtitle={editing ? editing.nombre : 'Quedará disponible para todas las entregas de la empresa.'}
+                icon={<LuHardHat size={20} />}
+                size="lg"
+                footer={
+                    <>
+                        <button className="btn btn-secondary" disabled={saving} onClick={() => setModalOpen(false)}>
+                            Cancelar
+                        </button>
+                        <button className="btn btn-primary" disabled={saving} onClick={guardar}>
+                            {saving ? 'Guardando…' : <><FiSave size={14} /> Guardar elemento</>}
+                        </button>
+                    </>
+                }
+            >
+                <div className="epp-form">
+                    {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="epp-nombre">Nombre del elemento *</label>
+                        <input id="epp-nombre" className="form-input" value={draft.nombre} maxLength={120}
+                            placeholder="Ej: Casco de seguridad clase B"
+                            onChange={(e) => setDraft({ ...draft, nombre: e.target.value })} />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="epp-desc">Descripción</label>
+                        <input id="epp-desc" className="form-input" value={draft.descripcion}
+                            placeholder="Marca, modelo o norma que cumple (opcional)"
+                            onChange={(e) => setDraft({ ...draft, descripcion: e.target.value })} />
+                    </div>
+
+                    <div className="epp-form-docs">
+                        <h4 className="epp-form-title">Respaldos obligatorios (DS44)</h4>
+                        <p className="epp-form-hint">
+                            Puedes guardar el elemento sin ellos, pero quedará marcado como incompleto
+                            en el catálogo y en cada entrega que lo incluya.
+                        </p>
+
+                        <EppUploader
+                            titulo="Certificado de calidad o registro ISP"
+                            tenantId={tenantId}
+                            adjunto={draft.certificado}
+                            onChange={(certificado) => setDraft({ ...draft, certificado })}
+                            onError={setErr}
+                            extra={draft.certificado ? (
+                                <div className="epp-tipo">
+                                    <label className="form-label" htmlFor="epp-tipo-cert">Este documento es</label>
+                                    <Select
+                                        ariaLabel="Tipo de documento de certificación"
+                                        value={draft.certificadoTipo}
+                                        onChange={(v) => setDraft({ ...draft, certificadoTipo: v as CertificadoTipo })}
+                                        options={[
+                                            { value: 'certificado_calidad', label: CERTIFICADO_TIPO_LABEL.certificado_calidad },
+                                            { value: 'registro_isp', label: CERTIFICADO_TIPO_LABEL.registro_isp },
+                                        ]}
+                                    />
+                                </div>
+                            ) : undefined}
+                        />
+
+                        <EppUploader
+                            titulo="Instructivo de uso y mantención"
+                            ayuda="Uso, mantenimiento, reposición o recambio del elemento."
+                            tenantId={tenantId}
+                            adjunto={draft.instructivo}
+                            onChange={(instructivo) => setDraft({ ...draft, instructivo })}
+                            onError={setErr}
+                        />
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Confirmación de borrado */}
+            <Modal
+                isOpen={!!borrar}
+                onClose={() => !saving && setBorrar(null)}
+                title="Eliminar elemento del catálogo"
+                subtitle={borrar?.nombre}
+                icon={<FiAlertTriangle size={20} />}
+                footer={
+                    <>
+                        <button className="btn btn-secondary" disabled={saving} onClick={() => setBorrar(null)}>Cancelar</button>
+                        <button className="btn btn-danger" disabled={saving} onClick={eliminar}>
+                            {saving ? 'Eliminando…' : <><FiTrash2 size={14} /> Eliminar</>}
+                        </button>
+                    </>
+                }
+            >
+                <p className="epp-borrar-texto">
+                    Dejará de estar disponible para nuevas entregas. Las entregas ya registradas
+                    conservan el elemento tal como se entregó.
+                </p>
+            </Modal>
+        </div>
+    );
+}
+
+/** Estado de un respaldo: presente (con enlace) o faltante. */
+function EppDocBadge({ label, adjunto }: { label: string; adjunto: EppAdjunto | null }) {
+    const ver = async () => {
+        if (!adjunto) return;
+        const res = await uploadsApi.getDownloadUrl(adjunto.fileKey);
+        if (res.success && res.data) window.open(res.data.downloadUrl, '_blank', 'noopener');
+    };
+
+    if (!adjunto) {
+        return (
+            <span className="epp-doc falta">
+                <FiAlertTriangle size={12} aria-hidden="true" /> {label}: falta
+            </span>
+        );
+    }
+    return (
+        <button type="button" className="epp-doc ok" onClick={ver} title={`Ver ${adjunto.nombre}`}>
+            <FiCheck size={12} aria-hidden="true" /> {label}
+            <FiEye size={12} aria-hidden="true" />
+        </button>
+    );
+}
+
+/** Slot de subida de un respaldo, con vista previa y reemplazo. */
+function EppUploader({ titulo, ayuda, tenantId, adjunto, onChange, onError, extra }: {
+    titulo: string;
+    ayuda?: string;
+    tenantId: string;
+    adjunto: EppAdjunto | null;
+    onChange: (a: EppAdjunto | null) => void;
+    onError: (msg: string) => void;
+    extra?: React.ReactNode;
+}) {
+    const inputRef = useRef<HTMLInputElement>(null);
+    const [subiendo, setSubiendo] = useState(false);
+
+    const subir = async (file: File) => {
+        setSubiendo(true);
+        try {
+            const res = await uploadsApi.uploadFile(file, 'epp', tenantId, tenantId);
+            if (!res.success || !res.data) { onError(res.error || 'No se pudo subir el archivo.'); return; }
+            // `url` de DocumentoAdjunto es la key de S3, no una URL navegable.
+            const d = res.data;
+            onChange({
+                fileKey: d.url,
+                nombre: d.nombre || file.name,
+                tipo: d.tipo || file.type,
+                subidoEn: d.subidoEn || new Date().toISOString(),
+            });
+        } catch {
+            onError('Error de conexión al subir el archivo.');
+        } finally {
+            setSubiendo(false);
+        }
+    };
+
+    const ver = async () => {
+        if (!adjunto) return;
+        const res = await uploadsApi.getDownloadUrl(adjunto.fileKey);
+        if (res.success && res.data) window.open(res.data.downloadUrl, '_blank', 'noopener');
+    };
+
+    return (
+        <div className={`epp-slot${adjunto ? ' cargado' : ''}`}>
+            <div className="epp-slot-head">
+                <span className="epp-slot-title">
+                    {adjunto
+                        ? <FiCheck size={14} className="epp-slot-ok" aria-hidden="true" />
+                        : <FiAlertTriangle size={14} className="epp-slot-falta" aria-hidden="true" />}
+                    {titulo}
+                </span>
+                {!adjunto && <span className="epp-slot-flag">Falta</span>}
+            </div>
+            {ayuda && <p className="epp-slot-ayuda">{ayuda}</p>}
+
+            <input ref={inputRef} type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) subir(f); e.target.value = ''; }} />
+
+            {adjunto ? (
+                <div className="epp-slot-file">
+                    <span className="epp-slot-name"><FiFile size={13} aria-hidden="true" /> {adjunto.nombre}</span>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={ver}>
+                        <FiEye size={13} /> Ver
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" disabled={subiendo}
+                        onClick={() => inputRef.current?.click()}>
+                        {subiendo ? 'Subiendo…' : <><FiUpload size={13} /> Reemplazar</>}
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
+                        aria-label={`Quitar ${titulo}`} onClick={() => onChange(null)}>
+                        <FiX size={13} />
+                    </button>
+                </div>
+            ) : (
+                <button type="button" className="btn btn-secondary btn-sm" disabled={subiendo}
+                    onClick={() => inputRef.current?.click()}>
+                    {subiendo ? 'Subiendo…' : <><FiUpload size={13} /> Subir documento</>}
+                </button>
+            )}
+
+            {extra}
+        </div>
+    );
+}
+
 // ── Modal de reasignación (compartido por roles y cargos) ─────────────────────
 function ReassignModal({ open, title, noun, affected, options, busy, onCancel, onConfirm }: {
     open: boolean;
@@ -967,6 +1386,96 @@ const styles = `
 .me-cargo-card-code { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
 .me-cargo-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
 .me-tag { font-size: var(--text-xs); color: var(--text-muted); background: var(--surface-hover); padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+
+/* ── Catálogo de EPP ─────────────────────────────────────────────────────── */
+.epp-tab { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* Aviso de incumplimiento DS44: ámbar, no rojo — se puede operar igual */
+.epp-alerta {
+    display: flex; align-items: flex-start; gap: var(--space-3);
+    padding: 12px 14px; border-radius: var(--radius-md);
+    background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.28);
+    color: var(--warning-600, var(--warning-500));
+}
+.epp-alerta strong { display: block; font-size: var(--text-sm); }
+.epp-alerta p { margin: 3px 0 0; font-size: var(--text-xs); line-height: 1.55; color: var(--text-secondary); }
+
+.epp-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.epp-search { position: relative; display: flex; align-items: center; flex: 1 1 220px; max-width: 340px; }
+.epp-search > svg { position: absolute; left: 12px; color: var(--text-muted); pointer-events: none; }
+.epp-search input {
+    width: 100%; padding: 9px 12px 9px 36px;
+    border: 1px solid var(--surface-border); border-radius: var(--radius-md);
+    background: var(--surface-card); color: var(--text-primary); font-size: 0.88rem;
+}
+.epp-search input:focus { outline: none; border-color: var(--primary-400); box-shadow: 0 0 0 3px var(--accent-tint); }
+.epp-count { font-size: var(--text-xs); color: var(--text-muted); margin-right: auto; }
+
+.epp-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.epp-item {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-card); border: 1px solid var(--surface-border);
+    border-radius: var(--radius-md); border-left: 3px solid var(--success-500);
+}
+.epp-item.incompleto { border-left-color: var(--warning-500); }
+.epp-item-id { min-width: 0; }
+.epp-item-id h4 { margin: 0; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.epp-item-id p { margin: 2px 0 0; font-size: var(--text-xs); color: var(--text-muted); }
+.epp-docs { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.epp-doc {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-family: inherit; padding: 3px 9px; border-radius: var(--radius-full);
+    border: 1px solid transparent;
+}
+.epp-doc.ok { color: var(--success-600, var(--success-500)); background: rgba(34, 197, 94, 0.1); cursor: pointer; }
+.epp-doc.ok:hover { border-color: var(--success-500); }
+.epp-doc.falta { color: var(--warning-600, var(--warning-500)); background: rgba(234, 179, 8, 0.1); }
+.epp-item-actions { display: flex; align-items: center; gap: 2px; }
+
+.epp-empty { text-align: center; padding: var(--space-10) var(--space-6); }
+.epp-empty-icon {
+    width: 44px; height: 44px; border-radius: var(--radius-lg);
+    background: var(--surface-hover); color: var(--text-muted);
+    display: inline-flex; align-items: center; justify-content: center; margin-bottom: var(--space-3);
+}
+.epp-empty h3 { font-size: var(--text-base); font-weight: 600; margin: 0 0 4px; }
+.epp-empty p { font-size: var(--text-sm); color: var(--text-muted); margin: 0 auto var(--space-5); max-width: 420px; line-height: 1.55; }
+.epp-sin-resultados { font-size: var(--text-sm); color: var(--text-muted); padding: var(--space-4) 0; margin: 0; }
+
+/* Formulario */
+.epp-form { display: flex; flex-direction: column; }
+.epp-form-docs { display: flex; flex-direction: column; gap: var(--space-3); }
+.epp-form-title { font-size: var(--text-sm); font-weight: 600; margin: 0; }
+.epp-form-hint { font-size: var(--text-xs); color: var(--text-muted); margin: -6px 0 0; line-height: 1.55; }
+.epp-slot {
+    display: flex; flex-direction: column; gap: var(--space-2);
+    padding: var(--space-4); border-radius: var(--radius-md);
+    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    border-left: 3px solid var(--warning-500);
+}
+.epp-slot.cargado { border-left-color: var(--success-500); }
+.epp-slot-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.epp-slot-title { display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); font-weight: 500; }
+.epp-slot-ok { color: var(--success-500); }
+.epp-slot-falta { color: var(--warning-500); }
+.epp-slot-flag { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--warning-600, var(--warning-500)); }
+.epp-slot-ayuda { font-size: var(--text-xs); color: var(--text-muted); margin: -4px 0 0; }
+.epp-slot-file { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.epp-slot-name {
+    display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 1;
+    font-size: var(--text-xs); color: var(--text-secondary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.epp-tipo { display: flex; flex-direction: column; gap: 4px; padding-top: var(--space-2); border-top: 1px solid var(--surface-border); }
+.epp-tipo .form-label { margin-bottom: 0; }
+.epp-borrar-texto { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; margin: 0; }
+
+@media (max-width: 720px) {
+    .epp-item { grid-template-columns: minmax(0, 1fr); }
+    .epp-item-actions { justify-content: flex-end; }
+}
 
 .me-reassign-warn { display: flex; align-items: center; gap: 10px; background: var(--surface-hover); padding: 10px 12px; border-radius: var(--radius-md); }
 .me-affected { margin-top: 14px; max-height: 220px; overflow-y: auto; border: 1px solid var(--surface-border); border-radius: var(--radius-md); }

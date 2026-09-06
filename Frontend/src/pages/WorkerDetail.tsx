@@ -41,6 +41,7 @@ import { useObraContext } from '../context/ObraContext';
 import { Modal, Select } from '../components/ui';
 import WorkerEvidencias from '../components/WorkerEvidencias';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
+import { eppApi, faltantesLabel, type EppElemento } from '../api/epp.api';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
 
 interface WorkerStats {
@@ -56,22 +57,12 @@ interface WorkerWithRole extends ApiWorker {
     obraIds?: string[];
 }
 
-// EPP de uso frecuente — sugerencias para el selector de items (Art. 13 DS44)
-const EPP_COMUNES = [
-    'Casco de seguridad',
-    'Guantes de seguridad',
-    'Zapatos de seguridad',
-    'Lentes de seguridad',
-    'Protección auditiva',
-    'Mascarilla / Respirador',
-    'Arnés de seguridad',
-    'Chaleco reflectante',
-    'Protector facial',
-    'Ropa de trabajo',
-];
-
-// Item de EPP dentro del formulario de entrega
+// Item de EPP dentro del formulario de entrega. El elemento se elige del
+// catálogo de la empresa (Mi Empresa › EPP): `eppId` es la referencia y
+// `descripcion` se copia al registro para que la entrega siga siendo legible
+// aunque después se renombre o se elimine el elemento del catálogo.
 interface EppItemDraft {
+    eppId: string;
     descripcion: string;
     cantidad: number;
     talla: string;
@@ -148,7 +139,9 @@ export default function WorkerDetail() {
     const [capacitaciones, setCapacitaciones] = useState<Capacitacion[]>([]);
     const [eppModalOpen, setEppModalOpen] = useState(false);
     const [eppForm, setEppForm] = useState({ esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
-    const [eppItems, setEppItems] = useState<EppItemDraft[]>([{ descripcion: '', cantidad: 1, talla: '' }]);
+    const [eppItems, setEppItems] = useState<EppItemDraft[]>([{ eppId: '', descripcion: '', cantidad: 1, talla: '' }]);
+    // Catálogo de EPP de la empresa: alimenta el selector de la entrega.
+    const [eppCatalogo, setEppCatalogo] = useState<EppElemento[]>([]);
     const [eppSaving, setEppSaving] = useState(false);
     const [eppError, setEppError] = useState('');
     const [eppValidating, setEppValidating] = useState<string | null>(null);
@@ -322,6 +315,17 @@ export default function WorkerDetail() {
         }
     };
 
+    // Catálogo de EPP de la empresa: se carga una vez y alimenta el selector de
+    // la entrega (antes el nombre se escribía a mano y no era comparable).
+    useEffect(() => {
+        if (!authTenantId) return;
+        let alive = true;
+        eppApi.list(authTenantId)
+            .then((res) => { if (alive && res.success && res.data) setEppCatalogo(res.data.epp); })
+            .catch(() => { /* el modal muestra el estado vacío con su explicación */ });
+        return () => { alive = false; };
+    }, [authTenantId]);
+
     useEffect(() => {
         if (worker?.personaId) { loadEppHistorial(worker.personaId); loadCapacitaciones(worker.personaId); }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -355,28 +359,44 @@ export default function WorkerDetail() {
 
     const resetEppForm = () => {
         setEppForm({ esReposicion: false, motivoReposicion: 'desgaste', capacitacionMinutos: '60', capacitacionCompletada: true });
-        setEppItems([{ descripcion: '', cantidad: 1, talla: '' }]);
+        setEppItems([{ eppId: '', descripcion: '', cantidad: 1, talla: '' }]);
         setEppError('');
     };
 
-    const addEppItem = () => setEppItems((prev) => [...prev, { descripcion: '', cantidad: 1, talla: '' }]);
+    const addEppItem = () => setEppItems((prev) => [...prev, { eppId: '', descripcion: '', cantidad: 1, talla: '' }]);
 
     const updateEppItem = (index: number, field: keyof EppItemDraft, value: string | number) =>
         setEppItems((prev) => prev.map((it, i) => (i === index ? { ...it, [field]: value } : it)));
 
+    // Al elegir del catálogo se guardan ambos: la referencia y el nombre con el
+    // que quedará impreso el registro de entrega.
+    const seleccionarEpp = (index: number, eppId: string) => {
+        const elemento = eppCatalogo.find((e) => e.eppId === eppId);
+        setEppItems((prev) => prev.map((it, i) => (
+            i === index ? { ...it, eppId, descripcion: elemento?.nombre || '' } : it
+        )));
+    };
+
     const removeEppItem = (index: number) =>
-        setEppItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : [{ descripcion: '', cantidad: 1, talla: '' }]));
+        setEppItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : [{ eppId: '', descripcion: '', cantidad: 1, talla: '' }]));
 
     const handleCrearEntregaEpp = async () => {
         if (!worker || !user?.personaId) return;
         const items = eppItems
-            .map((it) => ({
-                descripcion: it.descripcion.trim(),
-                cantidad: Math.max(1, Number(it.cantidad) || 1),
-                talla: it.talla.trim() || null,
-            }))
+            .map((it) => {
+                const elemento = eppCatalogo.find((e) => e.eppId === it.eppId);
+                return {
+                    eppId: it.eppId || null,
+                    descripcion: it.descripcion.trim(),
+                    cantidad: Math.max(1, Number(it.cantidad) || 1),
+                    talla: it.talla.trim() || null,
+                    // Se deja constancia de si el elemento tenía sus respaldos DS44
+                    // al momento de la entrega (el catálogo puede completarse después).
+                    respaldosFaltantes: elemento && !elemento.completo ? elemento.faltantes : null,
+                };
+            })
             .filter((it) => it.descripcion);
-        if (items.length === 0) { setEppError('Agrega al menos un ítem con su descripción.'); return; }
+        if (items.length === 0) { setEppError('Elige al menos un elemento del catálogo.'); return; }
         setEppSaving(true);
         setEppError('');
         try {
@@ -1490,9 +1510,14 @@ Generado por PrevencionApp
                             <span className="epp-count">{eppItems.filter(i => i.descripcion.trim()).length} ítem(s)</span>
                         </div>
 
-                        <datalist id="epp-comunes">
-                            {EPP_COMUNES.map((n) => <option key={n} value={n} />)}
-                        </datalist>
+                        {/* Sin catálogo no hay nada que elegir: se explica dónde crearlo */}
+                        {eppCatalogo.length === 0 && (
+                            <p className="epp-catalogo-vacio">
+                                <LuTriangleAlert size={13} aria-hidden="true" />
+                                El catálogo de EPP de la empresa está vacío. Agrega los elementos en
+                                <strong> Mi Empresa › EPP</strong> para poder registrar entregas.
+                            </p>
+                        )}
 
                         <div className="epp-items">
                             {eppItems.map((item, index) => (
@@ -1511,14 +1536,32 @@ Generado por PrevencionApp
                                     </div>
                                     <div className="epp-item-desc">
                                         <label className="epp-mini-label">Elemento de protección personal</label>
-                                        <input
-                                            className="form-input"
-                                            list="epp-comunes"
-                                            placeholder="Ej. Casco de seguridad"
-                                            value={item.descripcion}
-                                            onChange={(e) => updateEppItem(index, 'descripcion', e.target.value)}
-                                            autoFocus={index === 0 && !item.descripcion}
+                                        <Select
+                                            ariaLabel={`Elemento de protección personal del ítem ${index + 1}`}
+                                            placeholder="Elige un elemento del catálogo"
+                                            searchable
+                                            value={item.eppId}
+                                            onChange={(v) => seleccionarEpp(index, v)}
+                                            options={eppCatalogo.map((e) => ({
+                                                value: e.eppId,
+                                                label: e.nombre,
+                                                description: e.completo
+                                                    ? (e.descripcion || undefined)
+                                                    : faltantesLabel(e.faltantes),
+                                            }))}
                                         />
+                                        {(() => {
+                                            // Aviso DS44: se puede entregar igual, pero la falta queda visible.
+                                            const elemento = eppCatalogo.find((e) => e.eppId === item.eppId);
+                                            if (!elemento || elemento.completo) return null;
+                                            return (
+                                                <p className="epp-item-warn">
+                                                    <LuTriangleAlert size={12} aria-hidden="true" />
+                                                    {faltantesLabel(elemento.faltantes)} exigido por el DS44.
+                                                    Puedes entregarlo, pero quedará registrado.
+                                                </p>
+                                            );
+                                        })()}
                                     </div>
                                     <div className="epp-item-meta">
                                         <div className="epp-item-qty">
@@ -1671,6 +1714,21 @@ Generado por PrevencionApp
                         color: var(--text-muted);
                     }
                     .epp-item-desc { width: 100%; }
+                    /* Aviso de respaldo DS44 faltante: ámbar, la entrega sigue permitida */
+                    .epp-item-warn {
+                        display: flex; align-items: flex-start; gap: 5px;
+                        margin: 6px 0 0; font-size: 11px; line-height: 1.45;
+                        color: var(--warning-600, var(--warning-500));
+                    }
+                    .epp-item-warn svg { flex-shrink: 0; margin-top: 1px; }
+                    .epp-catalogo-vacio {
+                        display: flex; align-items: flex-start; gap: 6px;
+                        margin: 0 0 var(--space-3); padding: 9px 11px; border-radius: var(--radius-md);
+                        font-size: var(--text-xs); line-height: 1.5;
+                        color: var(--warning-600, var(--warning-500));
+                        background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.25);
+                    }
+                    .epp-catalogo-vacio svg { flex-shrink: 0; margin-top: 2px; }
                     /* ── Item meta row: qty + talla ── */
                     .epp-item-meta {
                         display: grid;

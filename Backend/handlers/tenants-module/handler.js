@@ -9,6 +9,7 @@ const { sendWelcomeEmail } = require('../notifications/handler');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const { buildDefaultCargoCatalog, sanitizeCargoCatalog } = require('../../lib/ds44');
 const { sanitizeCatalogosActividad, resolveCatalogos, PERMISOS_TRABAJO_DEF } = require('../../lib/catalogos-actividad');
+const { EppCatalogoService } = require('../../lib/services/EppCatalogoService');
 const { PutObjectCommand } = require('@aws-sdk/client-s3');
 const { s3Client } = require('../../lib/clients/s3');
 
@@ -30,6 +31,7 @@ const uploadTenantLogo = async (dataUrl, tenantId) => {
 };
 
 const tenantService = new TenantService();
+const eppCatalogoService = new EppCatalogoService();
 
 module.exports.tenantsHandler = async (event) => {
     const method = event.requestContext?.http?.method || event.httpMethod;
@@ -260,6 +262,47 @@ module.exports.tenantsHandler = async (event) => {
                 message: 'Tenant actualizado',
                 tenant: tenant.toSafeFormat()
             });
+        }
+
+        // ── Catálogo de EPP del tenant (DS44 Art. 13) ──────────────────────
+        // El eppId viaja como tercer segmento: /tenants/{id}/epp/{eppId}
+        if (tenantId && action === 'epp') {
+            const eppId = segments[2] || null;
+
+            if (method === 'GET') {
+                const epp = await eppCatalogoService.list(tenantId);
+                return success({ epp });
+            }
+
+            if (method === 'POST') {
+                const body = JSON.parse(event.body || '{}');
+                try {
+                    const item = await eppCatalogoService.create(tenantId, body);
+                    return created({ message: 'Elemento de EPP creado', epp: item });
+                } catch (validationErr) {
+                    return error(validationErr.message, 400);
+                }
+            }
+
+            if (method === 'PUT' && eppId) {
+                const body = JSON.parse(event.body || '{}');
+                try {
+                    const item = await eppCatalogoService.update(tenantId, eppId, body);
+                    return success({ message: 'Elemento de EPP actualizado', epp: item });
+                } catch (validationErr) {
+                    const noExiste = /no encontrado/i.test(validationErr.message);
+                    return error(validationErr.message, noExiste ? 404 : 400);
+                }
+            }
+
+            if (method === 'DELETE' && eppId) {
+                try {
+                    await eppCatalogoService.remove(tenantId, eppId);
+                    return success({ message: 'Elemento de EPP eliminado', eppId });
+                } catch (validationErr) {
+                    return error(validationErr.message, 404);
+                }
+            }
         }
 
         // GET /tenants/{id}/cargos — Catálogo de cargos del tenant (constructor).

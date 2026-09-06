@@ -43,6 +43,7 @@ provider:
     INBOX_TABLE: ${self:service}-inbox-${self:provider.stage}
     SUGGESTIONS_TABLE: ${self:service}-sugerencias-${self:provider.stage}
     AUSENCIAS_TABLE: ${self:service}-ausencias-${self:provider.stage}
+    EPP_TABLE: ${self:service}-epp-${self:provider.stage}
     # --- Storage ---
     DOCUMENTS_BUCKET: ${self:custom.bucketName}
     INCIDENT_EVIDENCE_BUCKET: ${self:service}-evidence-${self:provider.stage}-${aws:accountId}
@@ -118,6 +119,7 @@ provider:
             - !Sub ${SuggestionsTable.Arn}/index/*
             - !GetAtt AusenciasTable.Arn
             - !Sub ${AusenciasTable.Arn}/index/*
+            - !GetAtt EppTable.Arn
 
         - Effect: Allow
           Action:
@@ -1016,6 +1018,27 @@ resources:
           - AttributeName: tenantId
             KeyType: HASH
           - AttributeName: sk
+            KeyType: RANGE
+
+    # Catálogo de EPP del tenant (DS44 Art. 13). PK = tenantId, SK = eppId:
+    # cada empresa administra sus propios elementos y una Query por PK basta
+    # para listar el catálogo completo.
+    EppTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.EPP_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: eppId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenantId
+            KeyType: HASH
+          - AttributeName: eppId
             KeyType: RANGE
 
     # Incidents Table - rename empresaId to tenantId

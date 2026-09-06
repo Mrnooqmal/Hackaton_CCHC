@@ -56,6 +56,7 @@ export const PERMISSIONS = {
     EMPRESA_VER: 'empresa.ver',
     EMPRESA_ROLES: 'empresa.roles',
     EMPRESA_CARGOS: 'empresa.cargos',
+    EMPRESA_EPP: 'empresa.epp',
     EMPRESA_IDENTIDAD: 'empresa.identidad',
 } as const;
 
@@ -148,6 +149,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
             { key: PERMISSIONS.EMPRESA_VER, label: 'Ver módulo Mi Empresa' },
             { key: PERMISSIONS.EMPRESA_ROLES, label: 'Gestionar roles y permisos' },
             { key: PERMISSIONS.EMPRESA_CARGOS, label: 'Gestionar cargos predefinidos' },
+            { key: PERMISSIONS.EMPRESA_EPP, label: 'Gestionar el catálogo de EPP' },
             { key: PERMISSIONS.EMPRESA_IDENTIDAD, label: 'Configurar identidad (nombre, logo, color)' },
         ],
     },
@@ -176,7 +178,7 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.IA_VER,
         PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
-        PERMISSIONS.CARGOS_GESTIONAR,
+        PERMISSIONS.CARGOS_GESTIONAR, PERMISSIONS.EMPRESA_EPP,
     ],
     prevencionista: [
         PERMISSIONS.OBRAS_VER, PERMISSIONS.OBRAS_DETALLE,
@@ -191,6 +193,8 @@ export const DEFAULT_ROLE_PRESETS: Record<string, PermissionKey[]> = {
         PERMISSIONS.IA_VER,
         PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
         PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
+        // El prevencionista es quien responde por los respaldos DS44 del EPP.
+        PERMISSIONS.EMPRESA_EPP,
     ],
     supervisor: [
         PERMISSIONS.OBRAS_VER, PERMISSIONS.OBRAS_DETALLE,
