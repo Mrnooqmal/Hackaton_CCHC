@@ -11,13 +11,15 @@ import {
     FiCalendar,
     FiClock,
     FiFileText,
-    FiFilter,
     FiList,
     FiEdit3,
     FiTrash2,
     FiGrid,
     FiChevronDown,
-    FiUserX
+    FiUserX,
+    FiX,
+    FiEye,
+    FiDownload,
 } from 'react-icons/fi';
 import {
     activitiesApi,
@@ -35,12 +37,15 @@ import {
 } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
 import { estadoSeguimiento, hoyISO } from '../utils/seguimientoActividad';
-import { construirFilasAsistencia } from '../utils/reporteActividad';
+import { construirFilasAsistencia, labelDe, listaSeleccion, CLIMA_LABEL } from '../utils/reporteActividad';
+import { construirReporteActividadPdf, nombreArchivoReporte } from '../utils/reporteActividadPdf';
 import PlanificacionDiariaForm from '../components/actividades/PlanificacionDiariaForm';
 import PermisosTrabajoForm from '../components/actividades/PermisosTrabajoForm';
 import ReporteActividad from '../components/actividades/ReporteActividad';
+import WorkerPicker from '../components/actividades/WorkerPicker';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import ActivityCalendar from '../components/ActivityCalendar';
-import { Modal, Select, PageHeader } from '../components/ui';
+import { Modal, Select, PageHeader, SegmentedControl } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
@@ -164,8 +169,19 @@ export default function Activities() {
     const [planSubmitting, setPlanSubmitting] = useState(false);
     const [planRango, setPlanRango] = useState({ desde: '', hasta: '' });
     const [planItems, setPlanItems] = useState<PlanItemForm[]>([{ ...emptyPlanItem }]);
+    // Buscador del selector de responsables, por ítem del plan.
+    const [planSearch, setPlanSearch] = useState<Record<number, string>>({});
     // Detalle de un día del calendario (todas sus actividades + pendientes).
     const [dayModalFecha, setDayModalFecha] = useState<string | null>(null);
+    // Pendientes de firmar de UNA actividad de hoy (se abre desde su tarjeta).
+    const [pendientesActivityId, setPendientesActivityId] = useState<string | null>(null);
+    // Historial: filtros propios (el buscador de arriba solo alcanza a hoy y al calendario).
+    const [histSearch, setHistSearch] = useState('');
+    const [histDesde, setHistDesde] = useState('');
+    const [histHasta, setHistHasta] = useState('');
+    const [histVisibles, setHistVisibles] = useState(10);
+    // Vista previa del acta en PDF, dentro de la página (sin abrir pestañas).
+    const [reportePreview, setReportePreview] = useState<{ url: string; activity: Activity } | null>(null);
     // Completar borrador (rellenar el detalle del día → programada).
     const [showCompleteModal, setShowCompleteModal] = useState(false);
     const [completeActivity, setCompleteActivity] = useState<Activity | null>(null);
@@ -787,8 +803,24 @@ export default function Activities() {
         return s;
     };
 
+    // Los citados a una actividad, en el orden en que fueron convocados.
+    const citadosDe = (a: Activity): Worker[] =>
+        (a.asistentesRequeridos || [])
+            .map((id) => workers.find((w) => w.personaId === id))
+            .filter((w): w is Worker => !!w);
+
+    // Lista que se está mostrando en el modal de asistencia: los citados, salvo
+    // que no haya ninguno o se haya expandido a toda la obra.
+    const listaAsistenciaVisible = (a: Activity | null): Worker[] => {
+        if (!a) return [];
+        const citados = citadosDe(a);
+        if (citados.length > 0 && !verTodaLaObra) return citados;
+        return visibleWorkersFor(a.relatorId).list;
+    };
+
     const selectAllWorkers = () => {
-        const visible = visibleWorkersFor(selectedActivity?.relatorId || '').list;
+        // Debe operar sobre lo que se ve: si no, seleccionaría gente oculta.
+        const visible = listaAsistenciaVisible(selectedActivity);
         const visibleIds = visible.map(w => w.personaId);
         const allSelected = visibleIds.every(id => selectedWorkers.includes(id));
         if (allSelected) {
@@ -820,7 +852,35 @@ export default function Activities() {
     const todayActivities = activities.filter(a => a.fecha === today && noBorrador(a) && matchesFilters(a));
     // "Historial" = solo actividades que YA pasaron (fecha anterior a hoy). Las de hoy
     // van en su propia sección y las futuras son recordatorios (no historial).
-    const filteredActivities = activities.filter(a => a.fecha < today && noBorrador(a) && matchesFilters(a));
+    // Filtra con sus propios controles (texto + rango de fechas), no con los de arriba:
+    // buscar en el historial es una tarea distinta de mirar el día en curso.
+    const historialBase = activities.filter(a => a.fecha < today && noBorrador(a));
+    const filteredActivities = historialBase
+        .filter((a) => {
+            const q = histSearch.trim().toLowerCase();
+            const coincideTexto = !q
+                || a.titulo.toLowerCase().includes(q)
+                || (a.descripcion || '').toLowerCase().includes(q)
+                || (ACTIVITY_TYPES[a.tipo]?.label || a.tipo).toLowerCase().includes(q);
+            const desdeOk = !histDesde || a.fecha >= histDesde;
+            const hastaOk = !histHasta || a.fecha <= histHasta;
+            return coincideTexto && desdeOk && hastaOk;
+        })
+        .sort((x, y) => y.fecha.localeCompare(x.fecha) || (y.horaInicio || '').localeCompare(x.horaInicio || ''));
+    const histFiltrado = !!(histSearch.trim() || histDesde || histHasta);
+
+    // Atajos de rango: fija desde/hasta a los últimos N días terminando hoy.
+    const aplicarRangoDias = (dias: number) => {
+        const hasta = new Date();
+        const desde = new Date();
+        desde.setDate(desde.getDate() - dias);
+        setHistDesde(desde.toISOString().slice(0, 10));
+        setHistHasta(hasta.toISOString().slice(0, 10));
+        setHistVisibles(10);
+    };
+    const limpiarFiltrosHistorial = () => {
+        setHistSearch(''); setHistDesde(''); setHistHasta(''); setHistVisibles(10);
+    };
     const upcomingActivities = activities.filter(a => a.fecha > today && noBorrador(a) && matchesFilters(a));
     // Borradores pendientes de completar (propios primero, próximos primero).
     const borradores = activities
@@ -848,24 +908,55 @@ export default function Activities() {
     // Ausentes/permisos de hoy, indexados por personaId (para excluirlos del rojo).
     const ausentesHoyMap = new Map(ausencias.filter((a) => a.fecha === today).map((a) => [a.personaId, a]));
 
-    // Pendientes de firmar hoy (§6, ítems 3, 4 y 5): por cada charla de hoy, los
-    // convocados que aún no firmaron. Los marcados ausentes NO cuentan como
-    // pendientes; se listan aparte. Cruce convocados × firmados del reporte.
-    const pendientesHoy = canManage
-        ? todayActivities
-            .map((a) => {
-                const convocadosSinFirmar = construirFilasAsistencia(a, workers).filas.filter((f) => f.convocado && !f.asistio);
-                return {
-                    activity: a,
-                    pendientes: convocadosSinFirmar.filter((f) => !ausentesHoyMap.has(f.personaId)),
-                    ausentes: convocadosSinFirmar
-                        .filter((f) => ausentesHoyMap.has(f.personaId))
-                        .map((f) => ({ fila: f, ausencia: ausentesHoyMap.get(f.personaId)! })),
-                };
-            })
-            .filter((x) => x.pendientes.length > 0 || x.ausentes.length > 0)
-        : [];
-    const totalPendientesHoy = pendientesHoy.reduce((s, x) => s + x.pendientes.length, 0);
+    // Firmas de una actividad (§6, ítems 3, 4 y 5): cruce convocados × firmados.
+    // Los marcados ausentes NO cuentan como pendientes; se listan aparte y salen
+    // del denominador, porque ya están justificados.
+    const firmasDe = (a: Activity) => {
+        const filas = construirFilasAsistencia(a, workers).filas;
+        const convocados = filas.filter((f) => f.convocado);
+        const convocadosSinFirmar = convocados.filter((f) => !f.asistio);
+        const pendientes = convocadosSinFirmar.filter((f) => !ausentesHoyMap.has(f.personaId));
+        const ausentes = convocadosSinFirmar
+            .filter((f) => ausentesHoyMap.has(f.personaId))
+            .map((f) => ({ fila: f, ausencia: ausentesHoyMap.get(f.personaId)! }));
+        const firmados = convocados.filter((f) => f.asistio).length;
+        const esperados = convocados.length - ausentes.length;
+        return { pendientes, ausentes, firmados, esperados, totalFirmas: filas.filter((f) => f.asistio).length };
+    };
+
+    // Acta en PDF: se arma en el navegador con los datos ya cargados.
+    const generarReporte = (a: Activity) =>
+        construirReporteActividadPdf(a, construirFilasAsistencia(a, workers), catalogos, permisosDef);
+
+    const verReporte = (a: Activity) => {
+        try {
+            const url = generarReporte(a).output('bloburl') as unknown as string;
+            // Libera el blob de la vista previa anterior antes de reemplazarla.
+            if (reportePreview) URL.revokeObjectURL(reportePreview.url);
+            setReportePreview({ url, activity: a });
+        } catch (err) {
+            console.error('Error generando el reporte:', err);
+            toast.error('No se pudo generar el reporte de esta actividad.');
+        }
+    };
+
+    const descargarReporte = (a: Activity) => {
+        try {
+            generarReporte(a).save(nombreArchivoReporte(a));
+        } catch (err) {
+            console.error('Error generando el reporte:', err);
+            toast.error('No se pudo generar el reporte de esta actividad.');
+        }
+    };
+
+    const cerrarReporte = () => {
+        if (reportePreview) URL.revokeObjectURL(reportePreview.url);
+        setReportePreview(null);
+    };
+
+    const pendientesActivity = pendientesActivityId
+        ? todayActivities.find((a) => a.activityId === pendientesActivityId) || null
+        : null;
 
     return (
         <>
@@ -963,48 +1054,43 @@ export default function Activities() {
                     </div>
                 )}
 
-                {/* Toolbar: búsqueda + filtro */}
-                <div className="tbar">
-                    <div className="tbar-search">
-                        <FiSearch size={15} />
-                        <input
-                            type="text"
-                            placeholder="Buscar actividades…"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                {/* Toolbar: búsqueda + filtro. Alcanza al día en curso, lo próximo
+                    y el calendario; el historial trae sus propios controles. */}
+                <div className="tbar act-toolbar">
+                    {/* Buscador y filtro son un solo control: se consultan juntos */}
+                    <div className="act-filterbar">
+                        <div className="act-filterbar-search">
+                            <FiSearch size={15} aria-hidden="true" />
+                            <input
+                                type="search"
+                                placeholder="Buscar en hoy y en el calendario…"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <span className="act-filterbar-divider" aria-hidden="true" />
+                        <div className="act-filterbar-select">
+                            <Select
+                                ariaLabel="Filtrar por tipo de actividad"
+                                value={filterType}
+                                onChange={setFilterType}
+                                options={[
+                                    { value: '', label: 'Todos los tipos de actividad' },
+                                    ...Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => ({ value: key, label })),
+                                ]}
+                            />
+                        </div>
                     </div>
-                    <div style={{ minWidth: '210px' }}>
-                        <Select
-                            ariaLabel="Filtrar por tipo"
-                            leadingIcon={<FiFilter size={18} />}
-                            value={filterType}
-                            onChange={setFilterType}
-                            options={[
-                                { value: '', label: 'Todos los tipos' },
-                                ...Object.entries(ACTIVITY_TYPES).map(([key, { label }]) => ({ value: key, label })),
-                            ]}
-                        />
-                    </div>
-                    {/* Toggle Lista / Calendario */}
-                    <div className="flex items-center gap-1" role="tablist" aria-label="Modo de vista">
-                        <button
-                            className={`btn btn-sm ${viewMode === 'lista' ? 'btn-primary' : 'btn-secondary'}`}
-                            role="tab"
-                            aria-selected={viewMode === 'lista'}
-                            onClick={() => setViewMode('lista')}
-                        >
-                            <FiList size={14} /> Lista
-                        </button>
-                        <button
-                            className={`btn btn-sm ${viewMode === 'calendario' ? 'btn-primary' : 'btn-secondary'}`}
-                            role="tab"
-                            aria-selected={viewMode === 'calendario'}
-                            onClick={() => setViewMode('calendario')}
-                        >
-                            <FiGrid size={14} /> Calendario
-                        </button>
-                    </div>
+                    <SegmentedControl
+                        ariaLabel="Modo de vista"
+                        fullWidth={false}
+                        value={viewMode}
+                        onChange={(v) => setViewMode(v as 'lista' | 'calendario')}
+                        options={[
+                            { value: 'lista', label: 'Lista', icon: <FiList size={14} /> },
+                            { value: 'calendario', label: 'Calendario', icon: <FiGrid size={14} /> },
+                        ]}
+                    />
                 </div>
 
                 {/* Vista CALENDARIO: coordinación visual del mes */}
@@ -1023,380 +1109,475 @@ export default function Activities() {
 
                 {/* Borradores por completar (planificación pendiente del usuario) */}
                 {misBorradores.length > 0 && (
-                    <div className="card mb-6">
-                        <div className="card-header">
+                    <section className="card act-card act-card-todo mb-6">
+                        <header className="act-card-head">
                             <div>
-                                <h2 className="card-title">Planificadas por completar</h2>
-                                <p className="card-subtitle">
-                                    {misBorradores.length} actividad(es) del plan esperan que completes su detalle.
+                                <h2 className="act-card-title">Del plan, por completar</h2>
+                                <p className="act-card-sub">
+                                    Estas actividades están agendadas pero les falta el detalle del día.
                                 </p>
                             </div>
-                        </div>
-                        <div className="flex flex-col gap-2">
+                            <span className="act-card-count">{misBorradores.length}</span>
+                        </header>
+                        <ul className="act-todo-list">
                             {misBorradores.slice(0, 5).map((a) => {
                                 const typeInfo = ACTIVITY_TYPES[a.tipo] || { label: a.tipo, color: 'var(--gray-500)', icon: <FiFileText /> };
                                 return (
-                                    <div
-                                        key={a.activityId}
-                                        className="flex items-center justify-between"
-                                        style={{
-                                            padding: 'var(--space-3)',
-                                            background: 'var(--surface-elevated)',
-                                            borderRadius: 'var(--radius-md)',
-                                            border: '1px dashed var(--surface-border)',
-                                        }}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className="avatar avatar-sm" style={{ background: typeInfo.color }}>{typeInfo.icon}</div>
-                                            <div>
-                                                <div className="font-bold">{a.titulo}</div>
-                                                <div className="text-sm text-muted">
-                                                    {new Date(`${a.fecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
-                                                    {a.tipoTrabajo && TIPOS_TRABAJO[a.tipoTrabajo] && ` · ${TIPOS_TRABAJO[a.tipoTrabajo]}`}
-                                                </div>
-                                            </div>
+                                    <li key={a.activityId} className="act-todo-row">
+                                        <span className="act-row-type" style={{ background: typeInfo.color }} aria-hidden="true">
+                                            {typeInfo.icon}
+                                        </span>
+                                        <div className="act-row-main">
+                                            <h3 className="act-row-title">{a.titulo}</h3>
+                                            <p className="act-row-meta">
+                                                {new Date(`${a.fecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                {a.tipoTrabajo && TIPOS_TRABAJO[a.tipoTrabajo] && ` · ${TIPOS_TRABAJO[a.tipoTrabajo]}`}
+                                            </p>
                                         </div>
                                         <button className="btn btn-primary btn-sm" onClick={() => openCompleteModal(a)}>
                                             <FiEdit3 size={14} /> Completar
                                         </button>
-                                    </div>
+                                    </li>
                                 );
                             })}
                             {misBorradores.length > 5 && (
-                                <div className="text-sm text-muted" style={{ textAlign: 'center' }}>
-                                    +{misBorradores.length - 5} más en el calendario
-                                </div>
+                                <li className="act-todo-more">
+                                    {misBorradores.length - 5} más, en el calendario
+                                </li>
                             )}
-                        </div>
-                    </div>
+                        </ul>
+                    </section>
                 )}
 
                 {/* Vista LISTA */}
                 {viewMode === 'lista' && <>
 
-                {/* Pendientes de firmar hoy — cruce convocados × firmados + ausencias (§6) */}
-                {canManage && pendientesHoy.length > 0 && (
-                    <div className="card mb-6" style={{ borderLeft: '3px solid var(--warning-500)' }}>
-                        <div className="card-header">
-                            <div className="flex items-center gap-2">
-                                <FiAlertTriangle style={{ color: 'var(--warning-500)' }} />
-                                <div>
-                                    <h2 className="card-title">Pendientes de firmar hoy</h2>
-                                    <p className="card-subtitle">
-                                        {totalPendientesHoy} convocado(s) sin firmar en {pendientesHoy.length} charla(s). Marca ausentes o registra su asistencia antes del cierre.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex flex-col gap-3" style={{ padding: 'var(--space-2)' }}>
-                            {pendientesHoy.map(({ activity, pendientes, ausentes }) => (
-                                <div
-                                    key={activity.activityId}
-                                    style={{
-                                        padding: 'var(--space-3)',
-                                        background: 'var(--surface-elevated)',
-                                        border: '1px solid var(--surface-border)',
-                                        borderRadius: 'var(--radius-md)',
-                                    }}
-                                >
-                                    <div className="flex items-center justify-between gap-2 mb-2" style={{ flexWrap: 'wrap' }}>
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-bold">{activity.titulo}</span>
-                                            <span className="text-xs text-muted">
-                                                {(activity.horaInicio || '').slice(0, 5)} · {pendientes.length} sin firmar
-                                            </span>
-                                        </div>
-                                        {esFirmable(activity) && pendientes.length > 0 && (
-                                            <button className="btn btn-primary btn-sm" onClick={() => openAttendanceModal(activity)}>
-                                                <FiCheck /> Registrar asistencia
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    {/* Pendientes: cada uno es un botón (estilo de la página) que
-                                        abre el selector de motivo de ausencia. */}
-                                    {pendientes.length > 0 && (
-                                        <div className="flex gap-2 items-center" style={{ flexWrap: 'wrap' }}>
-                                            <span className="text-xs text-muted">Sin firmar:</span>
-                                            {pendientes.map((f) => {
-                                                const key = `${activity.activityId}#${f.personaId}`;
-                                                const abierto = ausenciaMenu === key;
-                                                return (
-                                                    <button
-                                                        key={f.personaId}
-                                                        type="button"
-                                                        className={`btn btn-sm ${abierto ? 'btn-primary' : 'btn-secondary'}`}
-                                                        title={`${f.cargo || ''} · Marcar como ausente/permiso`}
-                                                        aria-expanded={abierto}
-                                                        onClick={() => setAusenciaMenu(abierto ? null : key)}
-                                                    >
-                                                        <FiUserX size={13} />
-                                                        {f.nombre}
-                                                        <FiChevronDown size={13} style={{ opacity: 0.7 }} />
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-
-                                    {/* Selector de motivo para el pendiente elegido en esta charla. */}
-                                    {pendientes.map((f) => {
-                                        const key = `${activity.activityId}#${f.personaId}`;
-                                        if (ausenciaMenu !== key) return null;
-                                        return (
-                                            <div
-                                                key={key}
-                                                className="flex items-center gap-2 mt-2"
-                                                style={{ flexWrap: 'wrap', padding: 'var(--space-2)', background: 'var(--surface-card)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}
-                                            >
-                                                <span className="text-xs text-muted">Marcar a <b>{f.nombre}</b> como ausente:</span>
-                                                {MOTIVOS_AUSENCIA.map((m) => (
-                                                    <button key={m.code} type="button" className="btn btn-secondary btn-sm" disabled={ausenciaSaving} onClick={() => marcarAusente(f.personaId, m.code)}>
-                                                        {m.label}
-                                                    </button>
-                                                ))}
-                                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAusenciaMenu(null)}>Cancelar</button>
-                                            </div>
-                                        );
-                                    })}
-
-                                    {/* Ausentes/permisos registrados de esta charla. */}
-                                    {ausentes.length > 0 && (
-                                        <div className="mt-2">
-                                            <div className="text-xs text-muted mb-1">Ausentes / permisos ({ausentes.length})</div>
-                                            <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                                                {ausentes.map(({ fila, ausencia }) => (
-                                                    <span key={fila.personaId} className="badge badge-neutral badge-sm" title={`${fila.cargo || ''} · ${ausencia.motivoLabel}`}>
-                                                        {fila.nombre} · {ausencia.motivoLabel}
-                                                        <button
-                                                            type="button"
-                                                            style={{ marginLeft: 6, cursor: 'pointer', background: 'none', border: 'none', color: 'inherit', fontWeight: 700 }}
-                                                            title="Quitar ausencia"
-                                                            disabled={ausenciaSaving}
-                                                            onClick={() => quitarAusente(fila.personaId)}
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Today's Activities */}
-                <div className="card mb-6">
-                    <div className="card-header">
+                {/* Actividades de hoy — la superficie de trabajo del día */}
+                <section className="card act-card mb-6">
+                    <header className="act-card-head">
                         <div>
-                            <h2 className="card-title">Actividades de Hoy</h2>
-                            <p className="card-subtitle">
-                                {new Date().toLocaleDateString('es-CL', {
-                                    weekday: 'long',
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric'
-                                })}
-                                {upcomingActivities.length > 0 && (
-                                    <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
-                                        · {upcomingActivities.length} programada(s) próximamente
-                                    </span>
-                                )}
+                            <h2 className="act-card-title">Hoy</h2>
+                            <p className="act-card-sub">
+                                {new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                {upcomingActivities.length > 0 && ` · ${upcomingActivities.length} programada${upcomingActivities.length === 1 ? '' : 's'} más adelante`}
                             </p>
                         </div>
-                    </div>
+                    </header>
 
                     {todayActivities.length === 0 ? (
-                        <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
-                            <div className="empty-state-icon"><FiCalendar size={48} style={{ color: 'var(--text-muted)' }} /></div>
-                            <h3 className="empty-state-title">Sin actividades hoy</h3>
-                            <p className="empty-state-description">
-                                Registra la primera actividad del día, como la charla de 5 minutos.
+                        <div className="act-empty">
+                            <span className="act-empty-icon"><FiCalendar size={22} /></span>
+                            <h3 className="act-empty-title">
+                                {activities.length === 0 ? 'Aún no hay actividades en esta obra' : 'Nada agendado para hoy'}
+                            </h3>
+                            <p className="act-empty-text">
+                                {canCrearActividad
+                                    ? 'Parte por la charla de 5 minutos: queda registrada con la firma de cada asistente.'
+                                    : 'Cuando el prevencionista agende una actividad, la verás acá para firmar tu asistencia.'}
                             </p>
+                            {canCrearActividad && (
+                                <div className="act-empty-actions">
+                                    <button className="btn btn-primary" onClick={() => { setVerTodaLaObra(false); setShowModal(true); }}>
+                                        <FiPlus /> Crear actividad
+                                    </button>
+                                    {canPlanificar && (
+                                        <button className="btn btn-ghost" onClick={openPlanModal}>
+                                            <FiCalendar /> Planificar el mes
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ) : (
-                        <div className="flex flex-col gap-3">
-                            <style>{`
-                                .activity-today-card { transition: background 0.12s, border-color 0.12s; }
-                                .activity-today-card:hover { background: var(--surface-hover) !important; border-color: var(--accent) !important; }
-                                .activity-today-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-                                /* Móvil vertical: la tarjeta pasa a columna para que el botón de firma
-                                   ("Registrar Asistencia") no se salga de pantalla. Antes solo se veía en horizontal. */
-                                @media (max-width: 640px) {
-                                    .activity-today-card { flex-direction: column; align-items: stretch; gap: var(--space-3); }
-                                    .activity-today-card > div { width: 100%; min-width: 0; }
-                                    .activity-today-card > div:last-child { flex-wrap: wrap; justify-content: space-between; }
-                                    /* El botón de firma vive en un grupo anidado; que ocupe todo el ancho y sea legible */
-                                    .activity-today-card > div:last-child > div:last-child { flex: 1 1 100%; }
-                                    .activity-today-card > div:last-child .btn { flex: 1 1 auto; justify-content: center; }
-                                }
-                            `}</style>
+                        <ul className="act-today-list">
                             {todayActivities.map((activity) => {
                                 const typeInfo = ACTIVITY_TYPES[activity.tipo] || {
-                                    label: activity.tipo,
-                                    color: 'var(--gray-500)',
-                                    icon: <FiFileText />
+                                    label: activity.tipo, color: 'var(--gray-500)', icon: <FiFileText />,
                                 };
+                                const seg = estadoSeguimiento(activity);
+                                const firmas = firmasDe(activity);
+                                const tieneConvocados = firmas.esperados > 0;
+                                const completo = tieneConvocados && firmas.pendientes.length === 0;
+                                const pct = tieneConvocados ? Math.round((firmas.firmados / firmas.esperados) * 100) : 0;
+                                const yaFirme = activity.asistentes.some(
+                                    (a) => a.workerId === user?.personaId || (a as any).personaId === user?.personaId,
+                                );
 
                                 return (
-                                    <div
-                                        key={activity.activityId}
-                                        className="activity-today-card flex items-center justify-between"
-                                        role="button"
-                                        tabIndex={0}
-                                        title="Ver detalle y asistentes"
-                                        onClick={() => openDetailModal(activity)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === ' ') {
-                                                e.preventDefault();
-                                                openDetailModal(activity);
-                                            }
-                                        }}
-                                        style={{
-                                            padding: 'var(--space-4)',
-                                            background: 'var(--surface-elevated)',
-                                            borderRadius: 'var(--radius-md)',
-                                            border: '1px solid var(--surface-border)',
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        <div className="flex items-center gap-4">
-                                            <div
-                                                className="avatar"
-                                                style={{ background: typeInfo.color, fontSize: '1.2rem' }}
-                                            >
-                                                {typeInfo.icon}
-                                            </div>
-                                            <div>
-                                                <div className="font-bold">{activity.titulo}</div>
-                                                <div className="text-sm text-muted">
+                                    <li key={activity.activityId}>
+                                        <article
+                                            className="act-row"
+                                            role="button"
+                                            tabIndex={0}
+                                            aria-label={`Ver detalle de ${activity.titulo}`}
+                                            onClick={() => openDetailModal(activity)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetailModal(activity); }
+                                            }}
+                                        >
+                                            <span className="act-row-hora">
+                                                <b>{(activity.horaInicio || '').slice(0, 5)}</b>
+                                                {activity.horaFin && <i>{activity.horaFin.slice(0, 5)}</i>}
+                                            </span>
+
+                                            <div className="act-row-main">
+                                                <h3 className="act-row-title">{activity.titulo}</h3>
+                                                <p className="act-row-meta">
                                                     {typeInfo.label}
                                                     {activity.subtipo && ` · ${activity.subtipoDescripcion || CAPACITACION_SUBTIPOS[activity.subtipo] || activity.subtipo}`}
-                                                    {' • '}{activity.horaInicio}
-                                                    {activity.horaFin && ` - ${activity.horaFin}`}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center gap-4">
-                                            <div className="flex items-center gap-2">
-                                                <FiUsers />
-                                                <span>{activity.asistentes.length} asistentes</span>
+                                                    {activity.ubicacion && ` · ${activity.ubicacion}`}
+                                                </p>
                                             </div>
 
-                                            {(() => {
-                                                const seg = estadoSeguimiento(activity);
-                                                return <span className={`badge badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>;
-                                            })()}
-
-                                            {esFirmable(activity) ? (
-                                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                                    {/* Actividad cerrada que aún admite rezagados durante el día */}
-                                                    {activity.estado === 'completada' && (
-                                                        <span className="text-xs text-muted" title="La actividad está cerrada; aún puedes registrar firmas de rezagados durante el día">
-                                                            <FiClock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                                                            Cerrada · admite rezagados
+                                            {/* Medidor de firmas: el estado real de la actividad de un vistazo */}
+                                            <div className={`act-firmas${completo ? ' done' : ''}`}>
+                                                {tieneConvocados ? (
+                                                    <>
+                                                        <span className="act-firmas-num">
+                                                            <b>{firmas.firmados}</b>/{firmas.esperados}
                                                         </span>
-                                                    )}
-                                                    {/* Worker self-sign button */}
-                                                    {canSelfSign && !activity.asistentes.some(a => a.workerId === user?.personaId || (a as any).personaId === user?.personaId) && (
-                                                        <button
-                                                            className="btn btn-secondary btn-sm"
-                                                            onClick={() => openSelfSignModal(activity)}
-                                                        >
-                                                            <FiCheck />
-                                                            Registrar mi asistencia
-                                                        </button>
-                                                    )}
-                                                    {/* Manager mass attendance button */}
-                                                    {canManage && (
-                                                        <button
-                                                            className="btn btn-primary btn-sm"
-                                                            onClick={() => openAttendanceModal(activity)}
-                                                        >
-                                                            <FiCheck />
-                                                            {activity.estado === 'completada' ? 'Agregar firma' : 'Registrar Asistencia'}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            ) : activity.fecha === today && !haComenzado(activity) ? (
-                                                <span className="text-xs text-muted" title={`Disponible para firmar a las ${(activity.horaInicio || '').slice(0,5)}`}>
-                                                    <FiClock size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                                                    Aún no comienza · firma disponible desde {(activity.horaInicio || '').slice(0, 5)}
+                                                        <span className="act-firmas-bar" role="img"
+                                                            aria-label={`${firmas.firmados} de ${firmas.esperados} convocados han firmado`}>
+                                                            <i style={{ width: `${pct}%` }} />
+                                                        </span>
+                                                        <span className="act-firmas-label">
+                                                            {completo ? 'Todos firmaron' : `${firmas.pendientes.length} sin firmar`}
+                                                            {firmas.ausentes.length > 0 && ` · ${firmas.ausentes.length} ausente${firmas.ausentes.length === 1 ? '' : 's'}`}
+                                                        </span>
+                                                    </>
+                                                ) : (
+                                                    <span className="act-firmas-label">
+                                                        <FiUsers size={12} /> {firmas.totalFirmas} firma{firmas.totalFirmas === 1 ? '' : 's'} · sin convocados
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <span className={`badge badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>
+
+                                            <div className="act-row-actions" onClick={(e) => e.stopPropagation()}>
+                                                {canManage && (firmas.pendientes.length > 0 || firmas.ausentes.length > 0) && (
+                                                    <button
+                                                        className="btn btn-secondary btn-sm"
+                                                        onClick={() => setPendientesActivityId(activity.activityId)}
+                                                    >
+                                                        Ver pendientes
+                                                    </button>
+                                                )}
+
+                                                {esFirmable(activity) ? (
+                                                    <>
+                                                        {canSelfSign && !yaFirme && (
+                                                            <button className="btn btn-secondary btn-sm" onClick={() => openSelfSignModal(activity)}>
+                                                                <FiCheck /> Firmar mi asistencia
+                                                            </button>
+                                                        )}
+                                                        {canManage && (
+                                                            <button className="btn btn-primary btn-sm" onClick={() => openAttendanceModal(activity)}>
+                                                                <FiCheck />
+                                                                {activity.estado === 'completada' ? 'Agregar firma' : 'Registrar asistencia'}
+                                                            </button>
+                                                        )}
+                                                    </>
+                                                ) : activity.fecha === today && !haComenzado(activity) ? (
+                                                    <span className="act-row-hint" title={`Se puede firmar desde las ${(activity.horaInicio || '').slice(0, 5)}`}>
+                                                        <FiClock size={12} /> Firma desde las {(activity.horaInicio || '').slice(0, 5)}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+
+                                            {activity.estado === 'completada' && esFirmable(activity) && (
+                                                <span className="act-row-foot">
+                                                    <FiClock size={11} /> Cerrada, pero admite firmas de rezagados hasta el final del día
                                                 </span>
-                                            ) : null}
-                                        </div>
-                                    </div>
+                                            )}
+                                        </article>
+                                    </li>
                                 );
                             })}
-                        </div>
+                        </ul>
                     )}
-                </div>
+                </section>
 
-                {/* All Activities */}
-                <div className="card">
-                    <div className="card-header">
-                        <h2 className="card-title">Historial de Actividades</h2>
+                {/* Historial — herramienta de consulta: buscar un registro puntual */}
+                <section className="card act-card">
+                    <header className="act-card-head">
+                        <div>
+                            <h2 className="act-card-title">Historial</h2>
+                            <p className="act-card-sub">
+                                Actividades ya realizadas en esta obra
+                                {histFiltrado && ` · ${filteredActivities.length} de ${historialBase.length}`}
+                            </p>
+                        </div>
+                    </header>
+
+                    <div className="act-hist-filters">
+                        <div className="act-hist-search">
+                            <FiSearch size={15} aria-hidden="true" />
+                            <input
+                                type="search"
+                                placeholder="Buscar por título, tema o tipo…"
+                                value={histSearch}
+                                onChange={(e) => { setHistSearch(e.target.value); setHistVisibles(10); }}
+                            />
+                        </div>
+
+                        <div className="act-hist-range">
+                            <label>
+                                <span>Desde</span>
+                                <input type="date" value={histDesde} max={histHasta || today}
+                                    onChange={(e) => { setHistDesde(e.target.value); setHistVisibles(10); }} />
+                            </label>
+                            <label>
+                                <span>Hasta</span>
+                                <input type="date" value={histHasta} min={histDesde} max={today}
+                                    onChange={(e) => { setHistHasta(e.target.value); setHistVisibles(10); }} />
+                            </label>
+                        </div>
+
+                        <div className="act-hist-chips">
+                            <button type="button" className="act-chip" onClick={() => aplicarRangoDias(7)}>7 días</button>
+                            <button type="button" className="act-chip" onClick={() => aplicarRangoDias(30)}>30 días</button>
+                            {histFiltrado && (
+                                <button type="button" className="act-chip act-chip-clear" onClick={limpiarFiltrosHistorial}>
+                                    Limpiar
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="table-container">
-                        <table className="table">
-                            <thead>
-                                <tr>
-                                    <th>Fecha</th>
-                                    <th>Hora</th>
-                                    <th>Actividad</th>
-                                    <th>Estado</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredActivities.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={4}>
-                                            <div className="text-sm text-muted" style={{ padding: 'var(--space-4)', textAlign: 'center' }}>
-                                                No hay actividades registradas para esta obra.
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : filteredActivities.slice(0, 10).map((activity) => {
-                                    const seg = estadoSeguimiento(activity);
-                                    return (
-                                    <tr
-                                        key={activity.activityId}
-                                        style={{ cursor: 'pointer' }}
-                                        onClick={() => openDetailModal(activity)}
-                                    >
-                                        <td>{new Date(activity.fecha).toLocaleDateString('es-CL')}</td>
-                                        <td>
-                                            {activity.horaInicio}
-                                            {activity.horaFin && ` - ${activity.horaFin}`}
-                                        </td>
-                                        <td>
-                                            <div className="font-bold">{activity.titulo}</div>
-                                        </td>
-                                        <td>
-                                            <span className={`badge badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>
-                                        </td>
-                                    </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                    {filteredActivities.length === 0 ? (
+                        <div className="act-empty act-empty-sm">
+                            <span className="act-empty-icon"><FiClock size={20} /></span>
+                            <h3 className="act-empty-title">
+                                {histFiltrado ? 'Ningún registro coincide' : 'Todavía no hay historial'}
+                            </h3>
+                            <p className="act-empty-text">
+                                {histFiltrado
+                                    ? 'Prueba con otras palabras o amplía el rango de fechas.'
+                                    : 'Las actividades aparecen acá al día siguiente de realizarse.'}
+                            </p>
+                            {histFiltrado && (
+                                <div className="act-empty-actions">
+                                    <button className="btn btn-secondary btn-sm" onClick={limpiarFiltrosHistorial}>
+                                        Quitar filtros
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <>
+                            <div className="table-container">
+                                {/* Sin fila de encabezados: cada celda se explica sola.
+                                    El nombre accesible lo aporta aria-label. */}
+                                <table className="table act-hist-table" aria-label="Historial de actividades realizadas">
+                                    <tbody>
+                                        {filteredActivities.slice(0, histVisibles).map((activity) => {
+                                            const seg = estadoSeguimiento(activity);
+                                            const typeInfo = ACTIVITY_TYPES[activity.tipo] || {
+                                                label: activity.tipoDescripcion || activity.tipo, color: 'var(--gray-500)', icon: <FiFileText />,
+                                            };
+                                            const fecha = new Date(`${activity.fecha}T00:00:00`);
+                                            return (
+                                                <tr key={activity.activityId} onClick={() => openDetailModal(activity)} style={{ cursor: 'pointer' }}>
+                                                    <td>
+                                                        <span className="act-hist-date">
+                                                            {fecha.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
+                                                        </span>
+                                                        <span className="act-hist-time">
+                                                            {(activity.horaInicio || '').slice(0, 5)}
+                                                            {activity.horaFin && `–${activity.horaFin.slice(0, 5)}`}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span className="act-hist-title">{activity.titulo}</span>
+                                                        <span className="act-hist-type">
+                                                            <i style={{ background: typeInfo.color }} aria-hidden="true" />
+                                                            {typeInfo.label}
+                                                            <span className={`badge badge-sm badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span className="act-hist-firmas">
+                                                            <FiUsers size={12} aria-hidden="true" />
+                                                            {activity.asistentes.length} firma{activity.asistentes.length === 1 ? '' : 's'}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div className="act-hist-report" onClick={(e) => e.stopPropagation()}>
+                                                            <button
+                                                                className="btn btn-ghost btn-icon btn-sm"
+                                                                title="Ver el reporte"
+                                                                aria-label={`Ver el reporte de ${activity.titulo}`}
+                                                                onClick={() => verReporte(activity)}
+                                                            >
+                                                                <FiEye />
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-ghost btn-icon btn-sm"
+                                                                title="Descargar el reporte en PDF"
+                                                                aria-label={`Descargar el reporte de ${activity.titulo}`}
+                                                                onClick={() => descargarReporte(activity)}
+                                                            >
+                                                                <FiDownload />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {filteredActivities.length > histVisibles && (
+                                <div className="act-hist-more">
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setHistVisibles((n) => n + 20)}>
+                                        Mostrar 20 más
+                                    </button>
+                                    <span className="act-hist-more-count">
+                                        {histVisibles} de {filteredActivities.length}
+                                    </span>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </section>
                 </>}{/* fin vista lista */}
 
                 </>}
+
+                {/* Pendientes de firmar de una actividad de hoy (§6, ítems 3, 4 y 5) */}
+                <Modal
+                    isOpen={!!pendientesActivity}
+                    onClose={() => { setPendientesActivityId(null); setAusenciaMenu(null); }}
+                    title="Quién falta por firmar"
+                    subtitle={pendientesActivity?.titulo}
+                    icon={<FiUsers size={20} />}
+                    size="md"
+                    footer={
+                        <>
+                            <button className="btn btn-secondary" onClick={() => { setPendientesActivityId(null); setAusenciaMenu(null); }}>
+                                Cerrar
+                            </button>
+                            {pendientesActivity && esFirmable(pendientesActivity) && (
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={() => {
+                                        const a = pendientesActivity;
+                                        setPendientesActivityId(null);
+                                        setAusenciaMenu(null);
+                                        openAttendanceModal(a);
+                                    }}
+                                >
+                                    <FiCheck /> Registrar asistencia
+                                </button>
+                            )}
+                        </>
+                    }
+                >
+                    {pendientesActivity && (() => {
+                        const { pendientes, ausentes, firmados, esperados } = firmasDe(pendientesActivity);
+                        return (
+                            <div className="act-pend">
+                                <p className="act-pend-lead">
+                                    <b>{firmados}</b> de <b>{esperados}</b> convocados ya firmaron
+                                    {ausentes.length > 0 && <> · {ausentes.length} con ausencia justificada</>}.
+                                </p>
+
+                                {pendientes.length > 0 ? (
+                                    <div className="act-pend-group">
+                                        <h4 className="act-pend-title">Sin firmar ({pendientes.length})</h4>
+                                        <p className="act-pend-hint">
+                                            Toca a una persona para justificar su ausencia. Los justificados dejan de contar como pendientes.
+                                        </p>
+                                        <div className="act-pend-list">
+                                            {pendientes.map((f) => {
+                                                const key = `${pendientesActivity.activityId}#${f.personaId}`;
+                                                const abierto = ausenciaMenu === key;
+                                                return (
+                                                    <div key={f.personaId} className={`act-pend-item${abierto ? ' open' : ''}`}>
+                                                        <button
+                                                            type="button"
+                                                            className="act-pend-person"
+                                                            aria-expanded={abierto}
+                                                            onClick={() => setAusenciaMenu(abierto ? null : key)}
+                                                        >
+                                                            <span className="act-pend-avatar" aria-hidden="true">{f.nombre.charAt(0)}</span>
+                                                            <span className="act-pend-identity">
+                                                                <span className="act-pend-name">{f.nombre}</span>
+                                                                {f.cargo && <span className="act-pend-role">{f.cargo}</span>}
+                                                            </span>
+                                                            <span className="act-pend-cta">
+                                                                <FiUserX size={13} /> Justificar
+                                                                <FiChevronDown size={13} className={abierto ? 'rot' : ''} />
+                                                            </span>
+                                                        </button>
+
+                                                        {abierto && (
+                                                            <div className="act-pend-motivos">
+                                                                {MOTIVOS_AUSENCIA.map((m) => (
+                                                                    <button
+                                                                        key={m.code}
+                                                                        type="button"
+                                                                        className="act-chip"
+                                                                        disabled={ausenciaSaving}
+                                                                        onClick={() => marcarAusente(f.personaId, m.code)}
+                                                                    >
+                                                                        {m.label}
+                                                                    </button>
+                                                                ))}
+                                                                <button type="button" className="act-chip act-chip-clear"
+                                                                    onClick={() => setAusenciaMenu(null)}>
+                                                                    Cancelar
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="act-pend-ok">
+                                        <FiCheck size={16} /> Todos los convocados firmaron.
+                                    </div>
+                                )}
+
+                                {ausentes.length > 0 && (
+                                    <div className="act-pend-group">
+                                        <h4 className="act-pend-title">Ausencias justificadas ({ausentes.length})</h4>
+                                        <div className="act-pend-ausentes">
+                                            {ausentes.map(({ fila, ausencia }) => (
+                                                <span key={fila.personaId} className="act-pend-ausente">
+                                                    {fila.nombre}
+                                                    <i>{ausencia.motivoLabel}</i>
+                                                    <button
+                                                        type="button"
+                                                        aria-label={`Quitar la ausencia de ${fila.nombre}`}
+                                                        title="Quitar ausencia"
+                                                        disabled={ausenciaSaving}
+                                                        onClick={() => quitarAusente(fila.personaId)}
+                                                    >
+                                                        <FiX size={12} />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
+                </Modal>
 
                 {/* Create Activity Modal */}
                 <Modal
                     isOpen={showModal}
                     onClose={() => !submitting && setShowModal(false)}
                     preventClose={submitting}
-                    title="Nueva Actividad"
+                    title="Nueva actividad"
+                    subtitle="Queda agendada y, al iniciar, sus asistentes pueden firmar."
+                    icon={<FiPlus size={20} />}
                     size="lg"
                     footer={
                         <>
@@ -1575,73 +1756,31 @@ export default function Activities() {
                         )}
 
                         <div className="form-group">
-                            <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-1)' }}>
-                                <label className="form-label" style={{ margin: 0 }}>
-                                    Asistentes requeridos
-                                    {newActivity.asistentesRequeridos.length > 0 && ` (${newActivity.asistentesRequeridos.length})`}
-                                </label>
-                                {scopeWorkersFor(newActivity.relatorId).scoped && (
-                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setVerTodaLaObra(v => !v)}>
-                                        {verTodaLaObra ? 'Ver solo mi grupo' : 'Ver toda la obra'}
-                                    </button>
-                                )}
-                            </div>
                             {(() => {
-                                const visibles = visibleWorkersFor(newActivity.relatorId).list;
-                                const q = newAttendeeSearch.trim().toLowerCase();
-                                const visiblesFiltrados = !q
-                                    ? visibles
-                                    : visibles.filter((worker) => `${worker.nombre} ${worker.apellido} ${worker.cargo}`.toLowerCase().includes(q));
-                                return workers.length === 0 ? (
-                                <div className="text-sm text-muted">No hay trabajadores asignados a esta obra.</div>
-                            ) : visibles.length === 0 ? (
-                                <div className="text-sm text-muted">Este relator no tiene trabajadores en su grupo. Usa "Ver toda la obra" para elegir de todos modos.</div>
-                            ) : (
-                                <>
-                                    {visibles.length > 6 && (
-                                        <div className="tbar-search mb-2" style={{ maxWidth: 'none', width: '100%' }}>
-                                            <FiSearch size={15} />
-                                            <input
-                                                type="text"
-                                                placeholder="Buscar trabajador por nombre o cargo…"
-                                                value={newAttendeeSearch}
-                                                onChange={(e) => setNewAttendeeSearch(e.target.value)}
-                                            />
-                                        </div>
-                                    )}
-                                    <div className="flex flex-col gap-2" style={{ maxHeight: '220px', overflowY: 'auto' }}>
-                                    {visiblesFiltrados.length === 0 ? (
-                                        <div className="text-sm text-muted">Sin resultados para "{newAttendeeSearch}".</div>
-                                    ) : visiblesFiltrados.map((worker) => {
-                                        const isSelected = newActivity.asistentesRequeridos.includes(worker.personaId);
-                                        return (
-                                            <div
-                                                key={worker.personaId}
-                                                className="flex items-center justify-between cursor-pointer"
-                                                style={{
-                                                    padding: 'var(--space-2) var(--space-3)',
-                                                    background: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'var(--surface-elevated)',
-                                                    borderRadius: 'var(--radius-md)',
-                                                    border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
-                                                }}
-                                                onClick={() => toggleRequiredAttendee(worker.personaId)}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>
-                                                    <div>
-                                                        <div className="font-bold">{worker.nombre} {worker.apellido}</div>
-                                                        <div className="text-sm text-muted">{worker.cargo}</div>
-                                                    </div>
-                                                </div>
-                                                <div style={{ width: '22px', height: '22px', borderRadius: '4px', border: '2px solid var(--surface-border)', background: isSelected ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    {isSelected && <FiCheck style={{ color: 'white' }} />}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                    </div>
-                                </>
-                            );
+                                const { list: visibles, scoped } = visibleWorkersFor(newActivity.relatorId);
+                                return (
+                                    <WorkerPicker
+                                        label="Asistentes requeridos"
+                                        workers={visibles}
+                                        selected={newActivity.asistentesRequeridos}
+                                        onToggle={toggleRequiredAttendee}
+                                        search={newAttendeeSearch}
+                                        onSearchChange={setNewAttendeeSearch}
+                                        maxHeight={220}
+                                        emptyMessage={
+                                            workers.length === 0
+                                                ? 'No hay trabajadores asignados a esta obra.'
+                                                : 'Este relator no tiene trabajadores en su grupo. Usa «Ver toda la obra» para elegir de todos modos.'
+                                        }
+                                        headerActions={
+                                            scoped ? (
+                                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setVerTodaLaObra((v) => !v)}>
+                                                    {verTodaLaObra ? 'Ver solo su grupo' : 'Ver toda la obra'}
+                                                </button>
+                                            ) : undefined
+                                        }
+                                    />
+                                );
                             })()}
                         </div>
                     </form>
@@ -1651,8 +1790,9 @@ export default function Activities() {
                 <Modal
                     isOpen={showAttendanceModal && !!selectedActivity}
                     onClose={() => setShowAttendanceModal(false)}
-                    title="Registrar Asistencia"
+                    title="Registrar asistencia"
                     subtitle={selectedActivity?.titulo}
+                    icon={<FiCheck size={20} />}
                     size="lg"
                     footer={
                         <>
@@ -1669,114 +1809,55 @@ export default function Activities() {
                     }
                 >
                     {selectedActivity && (() => {
-                        const visiblesAsist = visibleWorkersFor(selectedActivity.relatorId).list;
-                        const hayScope = scopeWorkersFor(selectedActivity.relatorId).scoped;
-                        const visiblesIds = visiblesAsist.map(w => w.personaId);
-                        const todosVisiblesSel = visiblesIds.length > 0 && visiblesIds.every(id => selectedWorkers.includes(id));
-                        const qAsist = attendanceSearch.trim().toLowerCase();
-                        // Convocados (asistentesRequeridos): se resaltan y se ordenan
-                        // primero, sin excluir a los no convocados (que igual pueden firmar).
-                        const requeridosSet = new Set(selectedActivity.asistentesRequeridos || []);
-                        const visiblesAsistFiltrados = (!qAsist
-                            ? visiblesAsist
-                            : visiblesAsist.filter((worker) => `${worker.nombre} ${worker.apellido} ${worker.cargo}`.toLowerCase().includes(qAsist)))
-                            .slice()
-                            .sort((a, b) => Number(requeridosSet.has(b.personaId)) - Number(requeridosSet.has(a.personaId)));
+                        // Por defecto solo los citados a esta actividad. Quien no fue
+                        // convocado pero se presenta igual puede firmar con «Ver toda la obra»
+                        // (queda marcado como no convocado en el acta).
+                        const citados = citadosDe(selectedActivity);
+                        const hayCitados = citados.length > 0;
+                        const listaCompleta = visibleWorkersFor(selectedActivity.relatorId).list;
+                        const visiblesAsist = listaAsistenciaVisible(selectedActivity);
+                        // Ya firmaron: no se pueden volver a seleccionar.
+                        const yaFirmaron = visiblesAsist
+                            .filter((w) => selectedActivity.asistentes.some(
+                                (a) => (a as any).personaId === w.personaId || a.workerId === w.personaId))
+                            .map((w) => w.personaId);
+                        const extra = listaCompleta.length - citados.length;
                         return (
-                        <>
-                            <div className="flex justify-between items-center mb-4" style={{ gap: 'var(--space-2)' }}>
-                                <span className="font-bold">Seleccionar Trabajadores</span>
-                                <div className="flex items-center gap-2">
-                                    {hayScope && (
-                                        <button className="btn btn-ghost btn-sm" onClick={() => setVerTodaLaObra(v => !v)}>
-                                            {verTodaLaObra ? 'Ver solo su grupo' : 'Ver toda la obra'}
-                                        </button>
-                                    )}
-                                    <button className="btn btn-secondary btn-sm" onClick={selectAllWorkers}>
-                                        {todosVisiblesSel ? 'Deseleccionar todos' : 'Seleccionar todos'}
-                                    </button>
-                                </div>
-                            </div>
+                            <>
+                                <WorkerPicker
+                                    label={hayCitados && !verTodaLaObra ? 'Citados a esta actividad' : 'Todos los trabajadores'}
+                                    workers={visiblesAsist}
+                                    selected={selectedWorkers}
+                                    onToggle={toggleWorkerSelection}
+                                    search={attendanceSearch}
+                                    onSearchChange={setAttendanceSearch}
+                                    maxHeight={320}
+                                    lockedIds={yaFirmaron}
+                                    lockedLabel="Ya firmó"
+                                    highlightIds={verTodaLaObra ? (selectedActivity.asistentesRequeridos || []) : []}
+                                    highlightLabel="Citado"
+                                    onSelectAll={selectAllWorkers}
+                                    emptyMessage="Esta actividad no tiene a nadie citado. Usa «Ver toda la obra» para registrar firmas de todos modos."
+                                    headerActions={
+                                        hayCitados && extra > 0 ? (
+                                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setVerTodaLaObra((v) => !v)}>
+                                                {verTodaLaObra ? 'Ver solo los citados' : `Ver toda la obra (${extra} más)`}
+                                            </button>
+                                        ) : undefined
+                                    }
+                                />
 
-                            {visiblesAsist.length > 6 && (
-                                <div className="tbar-search mb-2" style={{ maxWidth: 'none', width: '100%' }}>
-                                    <FiSearch size={15} />
-                                    <input
-                                        type="text"
-                                        placeholder="Buscar trabajador por nombre o cargo…"
-                                        value={attendanceSearch}
-                                        onChange={(e) => setAttendanceSearch(e.target.value)}
-                                    />
-                                </div>
-                            )}
-
-                            <div className="flex flex-col gap-2" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                {visiblesAsist.length === 0 && (
-                                    <div className="text-sm text-muted">Este relator no tiene trabajadores en su grupo. Usa "Ver toda la obra" para registrar de todos modos.</div>
+                                {!hayCitados && (
+                                    <p className="act-sign-note">
+                                        Nadie fue citado a esta actividad, así que se muestran todos los trabajadores de la obra.
+                                    </p>
                                 )}
-                                {visiblesAsist.length > 0 && visiblesAsistFiltrados.length === 0 && (
-                                    <div className="text-sm text-muted">Sin resultados para "{attendanceSearch}".</div>
+                                {selectedWorkers.length > 0 && (
+                                    <p className="act-sign-note">
+                                        Cada trabajador firma con <b>su propio PIN</b>, uno por uno. Podrás saltar a quien no esté presente.
+                                    </p>
                                 )}
-                                {visiblesAsistFiltrados.map((worker) => {
-                                    const isSelected = selectedWorkers.includes(worker.personaId);
-                                    const alreadyAttended = selectedActivity.asistentes.some(a => (a as any).personaId === worker.personaId || a.workerId === worker.personaId);
-                                    const esConvocado = requeridosSet.has(worker.personaId);
-                                    return (
-                                        <div
-                                            key={worker.personaId}
-                                            className={`flex items-center justify-between ${alreadyAttended ? '' : 'cursor-pointer'}`}
-                                            style={{
-                                                padding: 'var(--space-3)',
-                                                background: isSelected
-                                                    ? 'var(--accent-tint)'
-                                                    : esConvocado
-                                                        ? 'color-mix(in srgb, var(--accent) 8%, var(--surface-elevated))'
-                                                        : 'var(--surface-elevated)',
-                                                borderRadius: 'var(--radius-md)',
-                                                border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
-                                                borderLeft: esConvocado ? '3px solid var(--accent)' : (isSelected ? '1px solid var(--primary-500)' : '3px solid transparent'),
-                                                opacity: alreadyAttended ? 0.5 : 1
-                                            }}
-                                            onClick={() => !alreadyAttended && toggleWorkerSelection(worker.personaId)}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>
-                                                <div>
-                                                    <div className="font-bold flex items-center gap-2">
-                                                        {worker.nombre} {worker.apellido}
-                                                        {esConvocado && (
-                                                            <span
-                                                                className="badge badge-sm"
-                                                                style={{ background: 'var(--accent-tint)', color: 'var(--accent-text)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)' }}
-                                                                title="Trabajador convocado a esta actividad"
-                                                            >
-                                                                Convocado
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-sm text-muted">{worker.cargo}</div>
-                                                </div>
-                                            </div>
-                                            {alreadyAttended ? (
-                                                <span className="badge badge-success">Ya registrado</span>
-                                            ) : (
-                                                <div style={{ width: '24px', height: '24px', borderRadius: '4px', border: '2px solid var(--surface-border)', background: isSelected ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    {isSelected && <FiCheck style={{ color: 'white' }} />}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-
-                            {selectedWorkers.length > 0 && (
-                                <div className="mt-6">
-                                    <div className="alert alert-info">
-                                        <strong>{selectedWorkers.length}</strong> trabajador(es) seleccionado(s). Cada uno firmará con <strong>su propio PIN</strong>, uno por uno.
-                                    </div>
-                                </div>
-                            )}
-                        </>
+                            </>
                         );
                     })()}
                 </Modal>
@@ -1818,185 +1899,218 @@ export default function Activities() {
                     error={signatureError}
                 />
 
-                {/* Activity Detail Modal */}
-                <Modal
-                    isOpen={showDetailModal && !!detailActivity}
-                    onClose={() => setShowDetailModal(false)}
-                    title="Detalle de la Actividad"
-                    subtitle={detailActivity?.titulo}
-                    size="lg"
-                >
-                    {detailActivity && (() => {
-                        const typeInfo = ACTIVITY_TYPES[detailActivity.tipo] || {
-                            label: detailActivity.tipoDescripcion || detailActivity.tipo,
-                            color: 'var(--gray-500)',
-                            icon: <FiFileText />,
-                        };
-                        const requeridos = (detailActivity.asistentesRequeridos || [])
-                            .map(id => workers.find(w => w.personaId === id))
-                            .filter(Boolean) as Worker[];
+                {/* Detalle de la actividad */}
+                {(() => {
+                    if (!detailActivity) return null;
+                    const a = detailActivity;
+                    const typeInfo = ACTIVITY_TYPES[a.tipo] || {
+                        label: a.tipoDescripcion || a.tipo, color: 'var(--gray-500)', icon: <FiFileText />,
+                    };
+                    const subtipo = a.subtipo
+                        ? (a.subtipoDescripcion || CAPACITACION_SUBTIPOS[a.subtipo] || a.subtipo)
+                        : '';
+                    const firmas = firmasDe(a);
+                    const seg = estadoSeguimiento(a);
+                    const estaCerrada = a.estado === 'completada';
+                    const relator = workers.find((w) => w.personaId === a.relatorId);
+                    // Una actividad de un día ya pasado vive en el historial: es consulta,
+                    // no se completa ni se cierra desde acá aunque haya quedado vencida.
+                    const esHistorial = a.fecha < today;
+                    const puedeGestionar = !esHistorial && (canManage || a.relatorId === user?.personaId);
 
-                        return (
-                            <div className="flex flex-col gap-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="avatar" style={{ background: typeInfo.color, fontSize: '1.2rem' }}>
-                                        {typeInfo.icon}
-                                    </div>
-                                    <div>
-                                        <div className="font-bold">{detailActivity.titulo}</div>
-                                        <div className="text-sm text-muted">
-                                            {typeInfo.label}
-                                            {detailActivity.subtipo && ` · ${detailActivity.subtipoDescripcion || CAPACITACION_SUBTIPOS[detailActivity.subtipo] || detailActivity.subtipo}`}
-                                        </div>
-                                    </div>
-                                </div>
+                    // Guarda de UI del cierre (el backend es la validación dura):
+                    // requiere al menos una firma y un registro con contenido.
+                    const plan = a.planificacion || {};
+                    const tema = plan.tema?.otro
+                        || (plan.tema?.codigo && catalogos ? labelDe(catalogos.temas, plan.tema.codigo) : '');
+                    const recursos = catalogos ? listaSeleccion(plan.recursos, catalogos.recursos) : [];
+                    const riesgos = catalogos ? listaSeleccion(plan.riesgos, catalogos.riesgos) : [];
+                    const medidas = catalogos ? listaSeleccion(plan.medidas, catalogos.medidas) : [];
+                    const permisos = a.permisosTrabajo || [];
+                    const registroVacio = !(
+                        (a.descripcion || '').trim() || (a.ubicacion || '').trim()
+                        || (a.asistentesRequeridos || []).length > 0
+                        || permisos.length > 0 || plan.tema?.codigo || (plan.tema?.otro || '').trim()
+                    );
+                    const motivoBloqueo = (a.asistentes || []).length === 0
+                        ? 'Necesitas al menos una firma para cerrar'
+                        : registroVacio ? 'Completa el registro antes de cerrar' : undefined;
 
-                                <div className="grid grid-cols-2" style={{ gap: 'var(--space-3)' }}>
-                                    <div>
-                                        <div className="text-xs text-muted">Fecha</div>
-                                        <div className="font-bold">{new Date(detailActivity.fecha).toLocaleDateString('es-CL')}</div>
+                    const hayRegistro = !!(a.descripcion || tema || recursos.length || riesgos.length
+                        || medidas.length || plan.tipoTrabajo || plan.observaciones);
+
+                    const abrirCompletarRegistro = () => {
+                        setEditActivity(a);
+                        setEditDraft({
+                            planificacion: a.planificacion || { observaciones: '' },
+                            permisosTrabajo: a.permisosTrabajo || [],
+                        });
+                        setShowDetailModal(false);
+                        setShowEditModal(true);
+                    };
+
+                    const chips = (label: string, valores: string[]) => valores.length > 0 && (
+                        <div className="ad-chips-group">
+                            <span className="ad-chips-label">{label}</span>
+                            <div className="ad-chips">
+                                {valores.map((v) => <span key={v} className="ad-chip">{v}</span>)}
+                            </div>
+                        </div>
+                    );
+
+                    return (
+                        <Modal
+                            isOpen={showDetailModal}
+                            onClose={() => setShowDetailModal(false)}
+                            title={a.titulo}
+                            subtitle={`${typeInfo.label}${subtipo ? ` · ${subtipo}` : ''}`}
+                            icon={typeInfo.icon}
+                            size="lg"
+                            footer={
+                                <div className="ad-footer">
+                                    {/* Mismas acciones de reporte que en el historial */}
+                                    <div className="ad-footer-report">
+                                        <button className="btn btn-ghost btn-sm" onClick={() => verReporte(a)}>
+                                            <FiEye size={14} /> Ver reporte
+                                        </button>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => descargarReporte(a)}>
+                                            <FiDownload size={14} /> Descargar reporte
+                                        </button>
                                     </div>
-                                    <div>
-                                        <div className="text-xs text-muted">Horario</div>
-                                        <div className="font-bold">
-                                            {detailActivity.horaInicio}
-                                            {detailActivity.horaFin && ` - ${detailActivity.horaFin}`}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="text-xs text-muted">Estado</div>
-                                        <span className={`badge badge-${detailActivity.estado === 'completada' ? 'success' :
-                                            detailActivity.estado === 'cancelada' ? 'danger' :
-                                                detailActivity.estado === 'programada' ? 'neutral' : 'warning'}`}>
-                                            {detailActivity.estado}
-                                        </span>
-                                    </div>
-                                    {detailActivity.ubicacion && (
-                                        <div>
-                                            <div className="text-xs text-muted">Ubicación</div>
-                                            <div className="font-bold">{detailActivity.ubicacion}</div>
+                                    {/* El historial es solo de consulta: sin acciones de edición ni cierre */}
+                                    {puedeGestionar && (
+                                        <div className="ad-footer-main">
+                                            <button className="btn btn-secondary" onClick={abrirCompletarRegistro}>
+                                                <FiEdit3 size={14} /> Completar registro
+                                            </button>
+                                            {!estaCerrada && (
+                                                <button
+                                                    className="btn btn-primary"
+                                                    disabled={cerrando || !!motivoBloqueo}
+                                                    title={motivoBloqueo}
+                                                    onClick={() => handleCerrarActividad(a)}
+                                                >
+                                                    <FiCheck size={16} />
+                                                    {cerrando ? 'Cerrando…' : 'Cerrar actividad'}
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
-
-                                {detailActivity.descripcion && (
-                                    <div>
-                                        <div className="text-xs text-muted">Descripción</div>
-                                        <div>{detailActivity.descripcion}</div>
-                                    </div>
-                                )}
-
-                                {requeridos.length > 0 && (
-                                    <div>
-                                        <div className="text-xs text-muted mb-2">Asistentes requeridos ({requeridos.length})</div>
-                                        <div className="flex flex-col gap-2">
-                                            {requeridos.map(w => (
-                                                <div key={w.personaId} className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm">{w.nombre.charAt(0)}</div>
-                                                    <div>
-                                                        <div className="font-bold">{w.nombre} {w.apellido}</div>
-                                                        <div className="text-sm text-muted">{w.cargo}</div>
-                                                    </div>
-                                                </div>
-                                            ))}
+                            }
+                        >
+                            <div className="ad">
+                                {/* Estado de firmas: lo primero que se necesita saber */}
+                                <section className={`ad-hero${firmas.esperados > 0 && firmas.pendientes.length === 0 ? ' done' : ''}`}>
+                                    <span className="ad-hero-rail" style={{ background: typeInfo.color }} aria-hidden="true" />
+                                    <div className="ad-hero-body">
+                                        <div className="ad-hero-top">
+                                            <span className="ad-hero-eyebrow">Firmas</span>
+                                            <span className={`badge badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>
                                         </div>
-                                    </div>
-                                )}
-
-                                <ReporteActividad
-                                    activity={detailActivity}
-                                    workers={workers}
-                                    catalogos={catalogos}
-                                    permisosDef={permisosDef}
-                                />
-
-                                {detailActivity.planificacion?.observaciones && (
-                                    <div>
-                                        <div className="text-xs text-muted">
-                                            {detailActivity.tipo === 'REUNION_COMITE' ? 'Participación y consulta' : 'Observaciones'}
-                                        </div>
-                                        <div style={{ whiteSpace: 'pre-wrap' }}>{detailActivity.planificacion.observaciones}</div>
-                                    </div>
-                                )}
-                                {(detailActivity.permisosTrabajo || []).length > 0 && (
-                                    <div>
-                                        <div className="text-xs text-muted mb-2">Permisos de trabajo</div>
-                                        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                                            {detailActivity.permisosTrabajo!.map((pt) => (
-                                                <span key={pt.tipo} className={`badge ${pt.completo ? 'badge-success' : 'badge-warning'}`}>
-                                                    {permisosDef[pt.tipo]?.label || pt.tipo} {pt.completo ? '· completo' : '· incompleto'}
+                                        {firmas.esperados > 0 ? (
+                                            <>
+                                                <p className="ad-hero-num">
+                                                    <b>{firmas.firmados}</b><span>/{firmas.esperados}</span>
+                                                </p>
+                                                <span className="ad-hero-bar" role="img"
+                                                    aria-label={`${firmas.firmados} de ${firmas.esperados} convocados han firmado`}>
+                                                    <i style={{ width: `${Math.round((firmas.firmados / firmas.esperados) * 100)}%` }} />
                                                 </span>
-                                            ))}
-                                        </div>
+                                                <p className="ad-hero-note">
+                                                    {firmas.pendientes.length === 0
+                                                        ? 'Todos los convocados firmaron.'
+                                                        : `Faltan ${firmas.pendientes.length} por firmar.`}
+                                                    {firmas.ausentes.length > 0 && ` ${firmas.ausentes.length} con ausencia justificada.`}
+                                                </p>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <p className="ad-hero-num"><b>{firmas.totalFirmas}</b></p>
+                                                <p className="ad-hero-note">
+                                                    {firmas.totalFirmas === 1 ? 'firma registrada' : 'firmas registradas'} · nadie fue convocado
+                                                </p>
+                                            </>
+                                        )}
                                     </div>
+                                    <dl className="ad-datos">
+                                        <div><dt>Fecha</dt><dd>{new Date(`${a.fecha}T00:00:00`).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })}</dd></div>
+                                        <div><dt>Horario</dt><dd>{(a.horaInicio || '—').slice(0, 5)}{a.horaFin && `–${a.horaFin.slice(0, 5)}`}</dd></div>
+                                        <div><dt>Relator</dt><dd>{relator ? `${relator.nombre} ${relator.apellido || ''}`.trim() : '—'}</dd></div>
+                                        <div><dt>Lugar</dt><dd>{a.ubicacion || '—'}</dd></div>
+                                    </dl>
+                                </section>
+
+                                {/* Registro del día */}
+                                <section className="ad-section">
+                                    <h3 className="ad-section-title">
+                                        Registro del día
+                                        {!hayRegistro && <span className="ad-section-flag">Sin completar</span>}
+                                    </h3>
+                                    {hayRegistro ? (
+                                        <div className="ad-registro">
+                                            {tema && (
+                                                <p className="ad-tema"><span>Tema</span> {tema}</p>
+                                            )}
+                                            {a.descripcion && <p className="ad-texto">{a.descripcion}</p>}
+                                            {chips('Recursos', recursos)}
+                                            {chips('Riesgos', riesgos)}
+                                            {chips('Medidas', medidas)}
+                                            {plan.tipoTrabajo && (
+                                                <p className="ad-meta-linea">
+                                                    Trabajo {plan.tipoTrabajo === 'exterior' ? 'en exterior' : 'en interior'}
+                                                    {plan.condicionClimatica && ` · ${CLIMA_LABEL[plan.condicionClimatica] || plan.condicionClimatica}`}
+                                                    {plan.tipoTrabajo === 'exterior' && plan.protectorSolar != null
+                                                        && ` · protector solar: ${plan.protectorSolar ? 'sí' : 'no'}`}
+                                                </p>
+                                            )}
+                                            {plan.observaciones && (
+                                                <div className="ad-obs">
+                                                    <span className="ad-chips-label">
+                                                        {a.tipo === 'REUNION_COMITE' ? 'Participación y consulta' : 'Observaciones'}
+                                                    </span>
+                                                    <p className="ad-texto">{plan.observaciones}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <p className="ad-empty">
+                                            Todavía no hay tema, riesgos ni medidas registrados.
+                                            {puedeGestionar && ' Complétalo antes de cerrar la actividad.'}
+                                        </p>
+                                    )}
+                                </section>
+
+                                {/* Asistencia */}
+                                <section className="ad-section">
+                                    <h3 className="ad-section-title">Asistencia</h3>
+                                    <ReporteActividad activity={a} workers={workers} />
+                                </section>
+
+                                {/* Permisos de trabajo */}
+                                {permisos.length > 0 && (
+                                    <section className="ad-section">
+                                        <h3 className="ad-section-title">Permisos de trabajo</h3>
+                                        <ul className="ad-permisos">
+                                            {permisos.map((pt) => (
+                                                <li key={pt.tipo} className={`ad-permiso${pt.completo ? ' completo' : ''}`}>
+                                                    <span className="ad-permiso-nombre">{permisosDef[pt.tipo]?.label || pt.tipo}</span>
+                                                    <span className="ad-permiso-estado">
+                                                        {pt.completo ? <><FiCheck size={12} /> Completo</> : <><FiAlertTriangle size={12} /> Incompleto</>}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </section>
                                 )}
 
-                                {(canManage || detailActivity.relatorId === user?.personaId) && (() => {
-                                    // Guarda de UI del cierre (el backend es la validación dura):
-                                    // requiere al menos una firma y un registro con contenido.
-                                    const sinFirmas = (detailActivity.asistentes || []).length === 0;
-                                    const plan = detailActivity.planificacion || {};
-                                    const tema = plan.tema || {};
-                                    const registroVacio = !(
-                                        (detailActivity.descripcion || '').trim() ||
-                                        (detailActivity.ubicacion || '').trim() ||
-                                        requeridos.length > 0 ||
-                                        (detailActivity.permisosTrabajo || []).length > 0 ||
-                                        tema.codigo || (tema.otro || '').trim()
-                                    );
-                                    const motivoBloqueo = sinFirmas
-                                        ? 'Requiere al menos una firma registrada'
-                                        : registroVacio
-                                            ? 'Completa el registro antes de cerrar'
-                                            : undefined;
-                                    const estaCerrada = detailActivity.estado === 'completada';
-                                    return (
-                                        <div
-                                            style={{
-                                                display: 'flex', flexDirection: 'column', gap: 'var(--space-2)',
-                                                borderTop: '1px solid var(--surface-border)',
-                                                paddingTop: 'var(--space-4)', marginTop: 'var(--space-2)',
-                                            }}
-                                        >
-                                            {!estaCerrada && (
-                                                <>
-                                                    <button
-                                                        className="btn btn-save btn-lg"
-                                                        style={{ width: '100%', justifyContent: 'center' }}
-                                                        disabled={cerrando || !!motivoBloqueo}
-                                                        title={motivoBloqueo}
-                                                        onClick={() => handleCerrarActividad(detailActivity)}
-                                                    >
-                                                        <FiCheck size={18} />
-                                                        {cerrando ? 'Cerrando…' : 'Cerrar actividad'}
-                                                    </button>
-                                                    {motivoBloqueo && (
-                                                        <div className="text-xs text-muted" style={{ textAlign: 'center' }}>
-                                                            {motivoBloqueo}
-                                                        </div>
-                                                    )}
-                                                </>
-                                            )}
-                                            <div className="flex justify-center">
-                                                <button className="btn btn-ghost btn-sm" onClick={() => {
-                                                    setEditActivity(detailActivity);
-                                                    setEditDraft({
-                                                        planificacion: detailActivity.planificacion || { observaciones: '' },
-                                                        permisosTrabajo: detailActivity.permisosTrabajo || [],
-                                                    });
-                                                    setShowDetailModal(false);
-                                                    setShowEditModal(true);
-                                                }}>
-                                                    Completar registro
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
+                                {motivoBloqueo && puedeGestionar && !estaCerrada && (
+                                    <p className="ad-bloqueo"><FiAlertTriangle size={13} /> {motivoBloqueo}</p>
+                                )}
                             </div>
-                        );
-                    })()}
-                </Modal>
+                        </Modal>
+                    );
+                })()}
 
                 {/* Completar registro Modal — edición acotada de planificación + permisos de trabajo (PATCH) */}
                 <Modal
@@ -2004,6 +2118,7 @@ export default function Activities() {
                     onClose={() => !editSaving && setShowEditModal(false)}
                     title="Completar registro"
                     subtitle={editActivity?.titulo}
+                    icon={<FiEdit3 size={20} />}
                     size="lg"
                     footer={
                         <>
@@ -2038,6 +2153,7 @@ export default function Activities() {
                 <Modal
                     isOpen={!!dayModalFecha}
                     onClose={() => setDayModalFecha(null)}
+                    icon={<FiCalendar size={20} />}
                     title="Actividades del día"
                     subtitle={dayModalFecha
                         ? new Date(`${dayModalFecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -2068,13 +2184,13 @@ export default function Activities() {
 
                         if (delDia.length === 0) {
                             return (
-                                <div className="empty-state" style={{ padding: 'var(--space-8)' }}>
-                                    <div className="empty-state-icon"><FiCalendar size={40} style={{ color: 'var(--text-muted)' }} /></div>
-                                    <h3 className="empty-state-title">Sin actividades este día</h3>
-                                    <p className="empty-state-description">
+                                <div className="act-empty act-empty-sm">
+                                    <span className="act-empty-icon"><FiCalendar size={20} /></span>
+                                    <h3 className="act-empty-title">Sin actividades este día</h3>
+                                    <p className="act-empty-text">
                                         {canCrearActividad
-                                            ? 'Puedes crear una actividad para esta fecha con el botón de abajo.'
-                                            : 'No hay actividades registradas ni planificadas para esta fecha.'}
+                                            ? 'Usa «Nueva actividad este día» para agendar la primera.'
+                                            : 'No hay nada registrado ni planificado para esta fecha.'}
                                     </p>
                                 </div>
                             );
@@ -2155,6 +2271,7 @@ export default function Activities() {
                     isOpen={showPlanModal}
                     onClose={() => !planSubmitting && setShowPlanModal(false)}
                     preventClose={planSubmitting}
+                    icon={<FiCalendar size={20} />}
                     title="Planificar actividades del mes"
                     subtitle="Arma el esqueleto: cada ítem genera actividades en borrador que los responsables completan día a día. Sábados y domingos se excluyen automáticamente."
                     size="lg"
@@ -2193,23 +2310,26 @@ export default function Activities() {
                         </div>
 
                         {planItems.map((item, index) => (
-                            <div
-                                key={index}
-                                style={{
-                                    padding: 'var(--space-4)',
-                                    background: 'var(--surface-elevated)',
-                                    borderRadius: 'var(--radius-md)',
-                                    border: '1px solid var(--surface-border)',
-                                    marginBottom: 'var(--space-4)',
-                                }}
-                            >
-                                <div className="flex items-center justify-between mb-3">
-                                    <span className="font-bold">Ítem {index + 1}</span>
+                            <div key={index} className="act-plan-item">
+                                <div className="act-plan-item-head">
+                                    <span className="act-plan-item-type" style={{ background: ACTIVITY_TYPES[item.tipo]?.color }} aria-hidden="true">
+                                        {ACTIVITY_TYPES[item.tipo]?.icon}
+                                    </span>
+                                    <div className="act-plan-item-copy">
+                                        <b>{item.tituloBase.trim() || ACTIVITY_TYPES[item.tipo]?.label || 'Actividad'}</b>
+                                        <span>
+                                            {item.periodicidad === 'diaria' ? 'Cada día hábil' : item.periodicidad === 'semanal' ? 'Una vez por semana' : 'Una vez al mes'}
+                                            {' · '}
+                                            {item.responsables.length > 0
+                                                ? `${item.responsables.length} responsable${item.responsables.length === 1 ? '' : 's'}`
+                                                : 'sin responsables'}
+                                        </span>
+                                    </div>
                                     {planItems.length > 1 && (
                                         <button
                                             type="button"
-                                            className="btn btn-secondary btn-sm"
-                                            aria-label={`Quitar ítem ${index + 1}`}
+                                            className="btn btn-ghost btn-sm"
+                                            aria-label={`Quitar ${ACTIVITY_TYPES[item.tipo]?.label || 'este ítem'} del plan`}
                                             onClick={() => setPlanItems(prev => prev.filter((_, i) => i !== index))}
                                         >
                                             <FiTrash2 size={14} />
@@ -2291,46 +2411,20 @@ export default function Activities() {
                                 </div>
 
                                 <div className="form-group" style={{ marginBottom: 0 }}>
-                                    <label className="form-label">
-                                        Responsables * {item.responsables.length > 0 && `(${item.responsables.length})`}
-                                    </label>
-                                    <p className="text-xs text-muted" style={{ marginTop: 0 }}>
-                                        Solo a quienes corresponde esta actividad (ej. inspección de andamios → quienes la realizan).
+                                    <p className="act-plan-hint">
+                                        Elige solo a quienes les corresponde esta actividad (ej. inspección de andamios → quienes la realizan).
                                         Se genera un borrador por día para cada responsable.
                                     </p>
-                                    {workers.length === 0 ? (
-                                        <div className="text-sm text-muted">No hay trabajadores asignados a esta obra.</div>
-                                    ) : (
-                                        <div className="flex flex-col gap-1" style={{ maxHeight: '160px', overflowY: 'auto' }}>
-                                            {workers.map((worker) => {
-                                                const isSelected = item.responsables.includes(worker.personaId);
-                                                return (
-                                                    <div
-                                                        key={worker.personaId}
-                                                        className="flex items-center justify-between cursor-pointer"
-                                                        style={{
-                                                            padding: 'var(--space-1) var(--space-2)',
-                                                            background: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'transparent',
-                                                            borderRadius: 'var(--radius-md)',
-                                                            border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
-                                                        }}
-                                                        onClick={() => togglePlanResponsable(index, worker.personaId)}
-                                                    >
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>
-                                                            <div>
-                                                                <div className="text-sm font-bold">{worker.nombre} {worker.apellido}</div>
-                                                                <div className="text-xs text-muted">{worker.cargo}</div>
-                                                            </div>
-                                                        </div>
-                                                        <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: '2px solid var(--surface-border)', background: isSelected ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                            {isSelected && <FiCheck size={12} style={{ color: 'white' }} />}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
+                                    <WorkerPicker
+                                        label="Responsables"
+                                        compact
+                                        workers={workers}
+                                        selected={item.responsables}
+                                        onToggle={(personaId) => togglePlanResponsable(index, personaId)}
+                                        search={planSearch[index] || ''}
+                                        onSearchChange={(v) => setPlanSearch((prev) => ({ ...prev, [index]: v }))}
+                                        maxHeight={180}
+                                    />
                                 </div>
                             </div>
                         ))}
@@ -2350,6 +2444,7 @@ export default function Activities() {
                     isOpen={showCompleteModal && !!completeActivity}
                     onClose={() => !completeSubmitting && setShowCompleteModal(false)}
                     preventClose={completeSubmitting}
+                    icon={<FiEdit3 size={20} />}
                     title="Completar actividad planificada"
                     subtitle={completeActivity ? `${ACTIVITY_TYPES[completeActivity.tipo]?.label || completeActivity.tipo} · ${new Date(`${completeActivity.fecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}` : undefined}
                     size="lg"
@@ -2455,69 +2550,461 @@ export default function Activities() {
                         </div>
 
                         <div className="form-group">
-                            <label className="form-label">
-                                Asistentes requeridos
-                                {completeForm.asistentesRequeridos.length > 0 && ` (${completeForm.asistentesRequeridos.length})`}
-                            </label>
-                            {workers.length === 0 ? (
-                                <div className="text-sm text-muted">No hay trabajadores asignados a esta obra.</div>
-                            ) : (
-                                <>
-                                    {workers.length > 6 && (
-                                        <div className="tbar-search mb-2" style={{ maxWidth: 'none', width: '100%' }}>
-                                            <FiSearch size={15} />
-                                            <input
-                                                type="text"
-                                                placeholder="Buscar trabajador por nombre o cargo…"
-                                                value={completeAttendeeSearch}
-                                                onChange={(e) => setCompleteAttendeeSearch(e.target.value)}
-                                            />
-                                        </div>
-                                    )}
-                                    <div className="flex flex-col gap-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                                    {(() => {
-                                        const q = completeAttendeeSearch.trim().toLowerCase();
-                                        const filteredWorkers = !q
-                                            ? workers
-                                            : workers.filter((worker) => `${worker.nombre} ${worker.apellido} ${worker.cargo}`.toLowerCase().includes(q));
-                                        if (filteredWorkers.length === 0) {
-                                            return <div className="text-sm text-muted">Sin resultados para "{completeAttendeeSearch}".</div>;
-                                        }
-                                        return filteredWorkers.map((worker) => {
-                                        const isSelected = completeForm.asistentesRequeridos.includes(worker.personaId);
-                                        return (
-                                            <div
-                                                key={worker.personaId}
-                                                className="flex items-center justify-between cursor-pointer"
-                                                style={{
-                                                    padding: 'var(--space-2) var(--space-3)',
-                                                    background: isSelected ? 'rgba(76, 175, 80, 0.1)' : 'var(--surface-elevated)',
-                                                    borderRadius: 'var(--radius-md)',
-                                                    border: isSelected ? '1px solid var(--primary-500)' : '1px solid transparent',
-                                                }}
-                                                onClick={() => toggleCompleteAttendee(worker.personaId)}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="avatar avatar-sm">{worker.nombre.charAt(0)}</div>
-                                                    <div>
-                                                        <div className="font-bold">{worker.nombre} {worker.apellido}</div>
-                                                        <div className="text-sm text-muted">{worker.cargo}</div>
-                                                    </div>
-                                                </div>
-                                                <div style={{ width: '22px', height: '22px', borderRadius: '4px', border: '2px solid var(--surface-border)', background: isSelected ? 'var(--primary-500)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    {isSelected && <FiCheck style={{ color: 'white' }} />}
-                                                </div>
-                                            </div>
-                                        );
-                                        });
-                                    })()}
-                                    </div>
-                                </>
-                            )}
+                            <WorkerPicker
+                                label="Asistentes requeridos"
+                                workers={workers}
+                                selected={completeForm.asistentesRequeridos}
+                                onToggle={toggleCompleteAttendee}
+                                search={completeAttendeeSearch}
+                                onSearchChange={setCompleteAttendeeSearch}
+                                maxHeight={200}
+                            />
                         </div>
                     </form>
                 </Modal>
+
+                {/* Acta en PDF, dentro de la página (mismo visor del repositorio) */}
+                <DocumentPreviewModal
+                    isOpen={!!reportePreview}
+                    onClose={cerrarReporte}
+                    url={reportePreview?.url ?? null}
+                    fileName={reportePreview ? nombreArchivoReporte(reportePreview.activity) : undefined}
+                    onDownload={reportePreview ? () => descargarReporte(reportePreview.activity) : undefined}
+                />
+
+                <style>{activitiesStyles}</style>
             </div>
         </>
     );
 }
+
+const activitiesStyles = `
+/* ── Barra de filtros ────────────────────────────────────────────────────── */
+/* Buscar y filtrar por tipo son la misma pregunta: van en un solo control, y los
+   tres elementos de la barra comparten altura para que la fila lea pareja. */
+.act-toolbar { --act-ctl-h: 44px; align-items: center; }
+
+.act-filterbar {
+    display: flex; align-items: stretch; height: var(--act-ctl-h);
+    flex: 1 1 460px; min-width: 260px; max-width: 620px;
+    background: var(--surface-card);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.act-filterbar:focus-within { border-color: var(--primary-400); box-shadow: 0 0 0 3px var(--accent-tint); }
+
+.act-filterbar-search { position: relative; display: flex; align-items: center; flex: 1 1 auto; min-width: 0; }
+.act-filterbar-search > svg { position: absolute; left: 13px; color: var(--text-muted); pointer-events: none; }
+.act-filterbar-search input {
+    width: 100%; height: 100%; padding: 0 var(--space-3) 0 37px;
+    border: 0; background: transparent; color: var(--text-primary);
+    font-size: 0.88rem; font-family: inherit;
+}
+.act-filterbar-search input:focus { outline: none; }
+.act-filterbar-search input::-webkit-search-cancel-button { filter: grayscale(1); opacity: .6; cursor: pointer; }
+
+.act-filterbar-divider { width: 1px; background: var(--surface-border); flex-shrink: 0; }
+
+/* El Select pierde su caja propia: la caja es la barra */
+.act-filterbar-select { flex: 0 0 250px; min-width: 0; }
+.act-filterbar-select .ui-select { height: 100%; }
+.act-filterbar-select .ui-select-trigger {
+    height: 100%; padding: 0 var(--space-3);
+    border: 0; border-radius: 0; background: transparent;
+    font-size: 0.88rem;
+}
+.act-filterbar-select .ui-select-trigger:hover:not(:disabled) { background: var(--surface-hover); border-color: transparent; }
+.act-filterbar-select .ui-select-trigger.open { background: var(--surface-hover); border-color: transparent; box-shadow: none; }
+.act-filterbar-select .ui-select-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.act-toolbar .ui-segmented { height: var(--act-ctl-h); flex-shrink: 0; }
+
+@media (max-width: 720px) {
+    .act-filterbar { flex-direction: column; height: auto; max-width: none; }
+    .act-filterbar-search { height: var(--act-ctl-h); }
+    .act-filterbar-divider { width: auto; height: 1px; }
+    .act-filterbar-select { flex: 0 0 var(--act-ctl-h); }
+    .act-toolbar .ui-segmented { width: 100%; }
+}
+
+/* ── Tarjetas de sección ─────────────────────────────────────────────────── */
+/* Contenedor de sección: no reacciona al hover como una card clicable */
+.act-card { padding: 0; }
+.act-card:hover { border-color: var(--surface-border); box-shadow: none; }
+/* La tabla es parte de la tarjeta: sin doble borde ni doble radio.
+   min-width:0 es obligatorio — como hijo flex de .card, sin él la tabla se niega a
+   encogerse bajo su ancho de contenido y estira la página entera en móvil. */
+.act-card .table-container { border: 0; border-radius: 0; border-top: 1px solid var(--surface-border); min-width: 0; }
+.act-card .table td { padding-top: var(--space-3); padding-bottom: var(--space-3); }
+.act-card .table th:first-child, .act-card .table td:first-child { padding-left: var(--space-5); }
+.act-card .table th:last-child, .act-card .table td:last-child { padding-right: var(--space-5); }
+.act-card-head {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+    padding: var(--space-5) var(--space-5) var(--space-4);
+}
+.act-card-title { font-size: var(--text-lg); font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.act-card-sub { font-size: var(--text-sm); color: var(--text-muted); margin: 2px 0 0; }
+.act-card-sub::first-letter { text-transform: uppercase; }
+.act-card-count {
+    font-size: var(--text-sm); font-weight: 700; color: var(--accent-text);
+    background: var(--accent-tint); min-width: 28px; height: 28px; padding: 0 9px;
+    border-radius: var(--radius-full); display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* ── Estado vacío (con salida a la acción) ───────────────────────────────── */
+.act-empty { text-align: center; padding: var(--space-10) var(--space-6) var(--space-8); }
+.act-empty-sm { padding: var(--space-8) var(--space-6); }
+.act-empty-icon {
+    width: 44px; height: 44px; border-radius: var(--radius-lg);
+    background: var(--surface-hover); color: var(--text-muted);
+    display: inline-flex; align-items: center; justify-content: center; margin-bottom: var(--space-3);
+}
+.act-empty-title { font-size: var(--text-base); font-weight: 600; margin: 0 0 4px; }
+.act-empty-text { font-size: var(--text-sm); color: var(--text-muted); margin: 0 auto; max-width: 380px; line-height: 1.55; }
+.act-empty-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-5); }
+
+/* ── Actividades de hoy ──────────────────────────────────────────────────── */
+.act-today-list { list-style: none; margin: 0; padding: 0 var(--space-3) var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.act-row {
+    display: grid;
+    /* Anchos fijos en las columnas de estado: cada fila es su propia grilla, así que
+       sin ellos las medidas y los badges no se alinean entre filas de la lista. */
+    grid-template-columns: 52px minmax(0, 1fr) 132px 96px auto;
+    align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    border-radius: var(--radius-md); cursor: pointer;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.act-row:hover { background: var(--surface-hover); border-color: var(--primary-400); }
+.act-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* La hora es el ancla de lectura del día: va primero y en tabulares */
+.act-row-hora { display: flex; flex-direction: column; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.act-row-hora b { font-size: var(--text-base); font-weight: 600; color: var(--text-primary); }
+.act-row-hora i { font-style: normal; font-size: var(--text-xs); color: var(--text-muted); }
+
+.act-row-type {
+    width: 36px; height: 36px; border-radius: var(--radius-md); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 1rem;
+}
+.act-row-main { min-width: 0; }
+.act-row-title { font-size: var(--text-sm); font-weight: 600; margin: 0; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-row-meta { font-size: var(--text-xs); color: var(--text-muted); margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Medidor de firmas: el dato que define el estado real de la actividad */
+.act-firmas { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.act-row > .badge { justify-self: start; }
+.act-row-actions { justify-self: end; }
+.act-firmas-num { font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.act-firmas-num b { font-size: var(--text-sm); font-weight: 700; color: var(--text-primary); }
+.act-firmas-bar { display: block; height: 4px; border-radius: var(--radius-full); background: var(--surface-border); overflow: hidden; }
+.act-firmas-bar i { display: block; height: 100%; border-radius: inherit; background: var(--warning-500); transition: width var(--transition-normal); }
+.act-firmas.done .act-firmas-bar i { background: var(--success-500); }
+.act-firmas-label { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
+.act-firmas.done .act-firmas-label { color: var(--success-600, var(--success-500)); font-weight: 500; }
+
+.act-row-actions { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.act-row-hint { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
+.act-row-foot {
+    grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--text-muted);
+    border-top: 1px dashed var(--surface-border); margin-top: 2px; padding-top: var(--space-2);
+}
+
+@media (max-width: 900px) {
+    /* La 1ª columna pasa a auto: la comparten la hora y el badge, y así el badge
+       cabe a la izquierda con las acciones a la derecha en la misma línea. */
+    .act-row { grid-template-columns: auto minmax(0, 1fr); row-gap: var(--space-3); }
+    .act-firmas { grid-column: 1 / -1; max-width: 360px; }
+    .act-row > .badge { grid-column: 1 / 2; }
+    /* stretch, no "end": con justify-self:end la celda toma su ancho máximo y desborda */
+    .act-row-actions { grid-column: 2 / -1; justify-self: stretch; justify-content: flex-end; flex-wrap: wrap; }
+}
+@media (max-width: 560px) {
+    .act-row-actions { grid-column: 1 / -1; }
+    .act-row-actions .btn { flex: 1 1 auto; justify-content: center; }
+    .act-row-hint { white-space: normal; }
+}
+
+/* ── Del plan, por completar ─────────────────────────────────────────────── */
+/* El borde punteado dice "esto todavía no está en firme" sin necesidad de copy */
+.act-card-todo { border-style: dashed; }
+.act-todo-list { list-style: none; margin: 0; padding: 0 var(--space-3) var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.act-todo-row {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-elevated); border: 1px dashed var(--surface-border);
+    border-radius: var(--radius-md);
+}
+.act-todo-row .act-row-main { flex: 1; }
+.act-todo-more { font-size: var(--text-xs); color: var(--text-muted); text-align: center; padding-top: var(--space-1); }
+
+/* ── Historial ───────────────────────────────────────────────────────────── */
+.act-hist-filters {
+    display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+    padding: 0 var(--space-5) var(--space-4);
+}
+.act-hist-search { position: relative; display: flex; align-items: center; flex: 1 1 220px; min-width: 190px; max-width: 340px; }
+.act-hist-search > svg { position: absolute; left: 12px; color: var(--text-muted); pointer-events: none; }
+.act-hist-search input {
+    width: 100%; padding: 9px 12px 9px 36px;
+    border: 1px solid var(--surface-border); border-radius: var(--radius-md);
+    background: var(--surface-bg); color: var(--text-primary); font-size: 0.88rem;
+}
+.act-hist-search input:focus { outline: none; border-color: var(--primary-400); box-shadow: 0 0 0 3px var(--accent-tint); }
+
+.act-hist-range { display: flex; align-items: center; gap: var(--space-2); }
+.act-hist-range label { display: flex; align-items: center; gap: 6px; }
+.act-hist-range span { font-size: var(--text-xs); color: var(--text-muted); }
+.act-hist-range input {
+    padding: 7px 10px; border: 1px solid var(--surface-border); border-radius: var(--radius-md);
+    background: var(--surface-bg); color: var(--text-primary); font-size: var(--text-xs);
+    font-family: inherit;
+    /* El calendario nativo sigue el tema de la app (clase), no el del sistema */
+    color-scheme: dark;
+}
+:root.theme-light .act-hist-range input { color-scheme: light; }
+.act-hist-range input:focus { outline: none; border-color: var(--primary-400); box-shadow: 0 0 0 3px var(--accent-tint); }
+
+.act-hist-chips { display: flex; align-items: center; gap: 6px; }
+.act-chip {
+    font-size: var(--text-xs); font-weight: 500; color: var(--text-secondary);
+    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    padding: 6px 11px; border-radius: var(--radius-full); cursor: pointer; font-family: inherit;
+    transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+.act-chip:hover:not(:disabled) { border-color: var(--primary-400); color: var(--text-primary); }
+.act-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.act-chip-clear { color: var(--text-muted); background: transparent; }
+
+.act-hist-table td { vertical-align: middle; }
+.act-hist-date { display: block; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.act-hist-time { display: block; font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.act-hist-title { display: block; font-size: var(--text-sm); font-weight: 500; color: var(--text-primary); }
+.act-hist-type { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+.act-hist-type i { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.act-hist-firmas { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.act-hist-type .badge { font-size: 10px; padding: 1px 6px; }
+.act-hist-report { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.act-hist-report .btn { color: var(--text-muted); }
+.act-hist-report .btn:hover { color: var(--accent-text); background: var(--accent-tint); }
+.act-hist-more {
+    display: flex; align-items: center; justify-content: center; gap: var(--space-3);
+    padding: var(--space-4); border-top: 1px solid var(--surface-border);
+}
+.act-hist-more-count { font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 640px) {
+    .act-hist-filters { padding: 0 var(--space-4) var(--space-4); }
+    .act-hist-range { width: 100%; }
+    .act-hist-range label { flex: 1; }
+    .act-hist-range input { width: 100%; }
+}
+
+/* ── Modal: quién falta por firmar ───────────────────────────────────────── */
+.act-pend { display: flex; flex-direction: column; gap: var(--space-5); }
+.act-pend-lead { font-size: var(--text-sm); color: var(--text-secondary); margin: 0; }
+.act-pend-lead b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.act-pend-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.act-pend-title { font-size: var(--text-xs); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin: 0; }
+.act-pend-hint { font-size: var(--text-xs); color: var(--text-muted); margin: 0; line-height: 1.5; }
+.act-pend-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.act-pend-item { border: 1px solid var(--surface-border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-elevated); }
+.act-pend-item.open { border-color: var(--primary-400); }
+.act-pend-person {
+    display: flex; align-items: center; gap: var(--space-3); width: 100%;
+    padding: 10px 12px; background: transparent; border: none; cursor: pointer;
+    color: inherit; font: inherit; text-align: left;
+}
+.act-pend-person:hover { background: var(--surface-hover); }
+.act-pend-person:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.act-pend-avatar {
+    width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%;
+    background: var(--surface-hover); color: var(--text-secondary);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+}
+.act-pend-identity { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.act-pend-name { font-size: var(--text-sm); font-weight: 500; color: var(--text-primary); }
+.act-pend-role { font-size: var(--text-xs); color: var(--text-muted); }
+.act-pend-cta { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-xs); color: var(--text-muted); flex-shrink: 0; }
+.act-pend-cta .rot { transform: rotate(180deg); }
+.act-pend-motivos {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 10px 12px; border-top: 1px solid var(--surface-border); background: var(--surface-card);
+}
+.act-pend-ok {
+    display: flex; align-items: center; gap: var(--space-2);
+    font-size: var(--text-sm); color: var(--success-600, var(--success-500));
+    background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.25);
+    padding: 10px 12px; border-radius: var(--radius-md);
+}
+.act-pend-ausentes { display: flex; flex-wrap: wrap; gap: 6px; }
+.act-pend-ausente {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: var(--text-xs); color: var(--text-secondary);
+    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    padding: 5px 6px 5px 10px; border-radius: var(--radius-full);
+}
+.act-pend-ausente i { font-style: normal; color: var(--text-muted); }
+.act-pend-ausente button {
+    display: flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; border: none;
+    background: var(--surface-hover); color: var(--text-muted); cursor: pointer;
+}
+.act-pend-ausente button:hover:not(:disabled) { background: var(--danger-500); color: #fff; }
+
+/* ── Detalle de la actividad ─────────────────────────────────────────────── */
+.ad { display: flex; flex-direction: column; gap: var(--space-6); }
+
+/* Hero: el estado de firmas manda, igual que en la lista de hoy */
+.ad-hero {
+    display: grid; grid-template-columns: 3px minmax(215px, 250px) minmax(0, 1fr);
+    gap: 0 var(--space-5); align-items: start;
+    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg); overflow: hidden;
+}
+.ad-hero-rail { align-self: stretch; }
+.ad-hero-body { padding: var(--space-4) 0 var(--space-4) var(--space-2); }
+.ad-hero-top { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2); }
+.ad-hero-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); }
+.ad-hero-num { margin: 0; line-height: 1; font-variant-numeric: tabular-nums; }
+.ad-hero-num b { font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; color: var(--text-primary); }
+.ad-hero-num span { font-size: 1.1rem; color: var(--text-muted); }
+.ad-hero-bar { display: block; height: 5px; border-radius: var(--radius-full); background: var(--surface-border); overflow: hidden; margin: var(--space-3) 0 var(--space-2); }
+.ad-hero-bar i { display: block; height: 100%; border-radius: inherit; background: var(--warning-500); transition: width var(--transition-normal); }
+.ad-hero.done .ad-hero-bar i { background: var(--success-500); }
+.ad-hero-note { margin: 0; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
+.ad-hero.done .ad-hero-note { color: var(--success-600, var(--success-500)); }
+
+/* Ficha de datos: pares etiqueta/valor, sin cajas */
+.ad-datos {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-4); margin: 0;
+    padding: var(--space-4) var(--space-4) var(--space-4) 0;
+}
+.ad-datos dt { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 2px; }
+.ad-datos dd { margin: 0; font-size: var(--text-sm); color: var(--text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* Secciones */
+.ad-section { display: flex; flex-direction: column; gap: var(--space-3); }
+.ad-section-title {
+    display: flex; align-items: center; gap: var(--space-2); margin: 0;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted);
+}
+.ad-section-title::after { content: ''; flex: 1; height: 1px; background: var(--surface-border); }
+.ad-section-flag {
+    order: 1; text-transform: none; letter-spacing: 0; font-size: 10.5px; font-weight: 600;
+    color: var(--warning-600, var(--warning-500));
+}
+.ad-empty { margin: 0; font-size: var(--text-sm); color: var(--text-muted); line-height: 1.55; }
+
+.ad-registro { display: flex; flex-direction: column; gap: var(--space-3); }
+.ad-tema { margin: 0; font-size: var(--text-sm); color: var(--text-primary); }
+.ad-tema span { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); margin-right: 6px; }
+.ad-texto { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; }
+.ad-meta-linea { margin: 0; font-size: var(--text-xs); color: var(--text-muted); }
+.ad-obs { display: flex; flex-direction: column; gap: 4px; }
+
+.ad-chips-group { display: flex; flex-direction: column; gap: 5px; }
+.ad-chips-label { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); }
+.ad-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ad-chip {
+    font-size: var(--text-xs); color: var(--text-secondary);
+    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    padding: 4px 10px; border-radius: var(--radius-full);
+}
+
+/* Asistencia */
+/* Sin scroll propio: el cuerpo del modal ya scrollea y dos barras anidadas
+   hacen imposible llegar al final de la lista. */
+.ad-lista {
+    list-style: none; margin: 0; padding: 4px;
+    display: flex; flex-direction: column; gap: 2px;
+    border: 1px solid var(--surface-border); border-radius: var(--radius-md); background: var(--surface-bg);
+}
+.ad-persona { display: flex; align-items: center; gap: var(--space-3); padding: 7px 9px; border-radius: var(--radius-sm); }
+.ad-persona:hover { background: var(--surface-hover); }
+.ad-persona-avatar {
+    width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%;
+    background: var(--surface-hover); color: var(--text-muted);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+}
+/* Quien firmó se marca en el avatar: la lista se lee de un vistazo */
+.ad-persona.firmo .ad-persona-avatar { background: var(--accent-tint); color: var(--accent-text); }
+.ad-persona-id { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ad-persona-nombre { font-size: var(--text-sm); color: var(--text-primary); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ad-persona-cargo { font-size: var(--text-xs); color: var(--text-muted); }
+.ad-persona-tag { font-size: 10px; color: var(--text-muted); background: var(--surface-hover); padding: 1px 6px; border-radius: var(--radius-full); }
+.ad-firma { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.ad-firma-hora { font-size: var(--text-xs); color: var(--success-600, var(--success-500)); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ad-firma-atraso { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--warning-600, var(--warning-500)); }
+.ad-sin-firma { font-size: var(--text-xs); color: var(--text-muted); flex-shrink: 0; }
+
+/* Permisos */
+.ad-permisos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ad-permiso {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+    padding: 9px 12px; border-radius: var(--radius-md);
+    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    border-left: 3px solid var(--warning-500);
+}
+.ad-permiso.completo { border-left-color: var(--success-500); }
+.ad-permiso-nombre { font-size: var(--text-sm); color: var(--text-primary); }
+.ad-permiso-estado { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-xs); font-weight: 600; color: var(--warning-600, var(--warning-500)); }
+.ad-permiso.completo .ad-permiso-estado { color: var(--success-600, var(--success-500)); }
+
+.ad-bloqueo {
+    display: flex; align-items: center; gap: var(--space-2); margin: 0;
+    font-size: var(--text-xs); color: var(--warning-600, var(--warning-500));
+    background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.25);
+    padding: 9px 12px; border-radius: var(--radius-md);
+}
+
+/* Pie: reporte a la izquierda, acciones de la actividad a la derecha */
+.ad-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%; flex-wrap: wrap; }
+/* flex-wrap: con texto junto a los íconos, en una pantalla muy angosta
+   "Descargar reporte" ya no cabe junto a "Ver reporte" — que baje de línea
+   en vez de desbordar la página. */
+.ad-footer-report { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.ad-footer-report .btn { color: var(--text-muted); }
+.ad-footer-report .btn:hover { color: var(--accent-text); background: var(--accent-tint); }
+.ad-footer-main { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+    .ad-hero { grid-template-columns: 3px minmax(0, 1fr); }
+    .ad-datos { grid-column: 2 / -1; padding: 0 var(--space-4) var(--space-4) var(--space-2); }
+    .ad-footer { justify-content: stretch; }
+    .ad-footer-main { flex: 1; }
+    .ad-footer-main .btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ── Modales de asistencia y planificación ───────────────────────────────── */
+.act-sign-note {
+    font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.55;
+    background: var(--accent-tint); border-radius: var(--radius-md);
+    padding: 10px 12px; margin: var(--space-4) 0 0;
+}
+.act-plan-item {
+    border: 1px solid var(--surface-border); border-radius: var(--radius-md);
+    background: var(--surface-elevated); padding: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+.act-plan-item-head {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding-bottom: var(--space-3); margin-bottom: var(--space-4);
+    border-bottom: 1px solid var(--surface-border);
+}
+.act-plan-item-type {
+    width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-md); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+}
+.act-plan-item-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.act-plan-item-copy b { font-size: var(--text-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-plan-item-copy span { font-size: var(--text-xs); color: var(--text-muted); }
+.act-plan-hint { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; margin: 0 0 var(--space-2); }
+`;
