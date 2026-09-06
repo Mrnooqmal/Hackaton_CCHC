@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
+const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { validateRequired } = require('../../lib/utils/validation');
 // NEW: Import EventBus for automatic notifications
 const { eventBus } = require('../../lib/events/EventBus');
@@ -665,8 +666,9 @@ module.exports.processOfflineBatch = async (event) => {
                 requestTitulo: body.titulo,
                 referenciaId: requestId,
                 referenciaTipo: 'signature-request',
-                fecha: timestampLocal ? timestampLocal.split('T')[0] : now.split('T')[0],
-                horario: timestampLocal ? new Date(timestampLocal).toTimeString().split(' ')[0] : new Date().toTimeString().split(' ')[0],
+                // Firma offline: vale el instante en que se firmó en terreno, no el
+                // de la sincronización, y se lee en hora de Chile.
+                ...fechaHoraChile(timestampLocal || now),
                 timestamp: timestampLocal || now,
                 timestampSync: now,
                 offlineSignature: true,

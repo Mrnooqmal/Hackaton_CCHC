@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
+const { fechaHoraChile, horaChileHHMM } = require('../../lib/utils/fechaChile');
 const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
@@ -704,8 +705,7 @@ module.exports.registerAttendance = async (event) => {
                     personaId: activity.relatorId,
                     nombre: relator.nombre,
                     rut: relator.rut,
-                    fecha: now.toISOString().split('T')[0],
-                    horario: now.toTimeString().split(' ')[0],
+                    ...fechaHoraChile(now),
                     timestamp: now.toISOString()
                 };
             }
@@ -947,8 +947,8 @@ module.exports.patch = async (event) => {
                     return error('No se puede cerrar la actividad con el registro vacío: completa el detalle antes de cerrar', 409);
                 }
                 updates.estado = 'completada';
-                // horaFin real = hora de cierre.
-                updates.horaFin = new Date().toTimeString().slice(0, 5);
+                // horaFin real = hora de cierre, en hora de Chile (igual que horaInicio).
+                updates.horaFin = horaChileHHMM();
             } else {
                 if (activity.estado === 'completada') {
                     return error('No se puede cambiar el estado de una actividad completada');

@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
-import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido } from '../utils/documentoFirmado';
+import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido, resolverDocumentoFirmable } from '../utils/documentoFirmado';
 import { incidenteAbierto, incidenteCerrado } from '../utils/incidentes';
-import { LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings } from 'react-icons/lu';
+import { LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings, LuEllipsisVertical, LuHistory } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl, PageHeader } from '../components/ui';
 import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, normalizeCargoCodigo, unionKits, getCargoLabel, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
@@ -19,7 +19,11 @@ const esRolGestion = (rol?: string): boolean => {
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { useObraContext } from '../context/ObraContext';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
-import type { SignatureRequest } from '../api/client';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import type { SignatureRequest, DocumentVersion, Document as DocumentoApi } from '../api/client';
+
+/** Una entrada del historial: las archivadas más la vigente, marcada como tal. */
+type VersionHistorial = DocumentVersion & { actual: boolean };
 import { PERMISSIONS } from '../permissions';
 
 interface Ds44Item {
@@ -30,6 +34,10 @@ interface Ds44Item {
   documentId?: string;
   archivoSubido: boolean;
   document?: any;
+  /** Todos los documentos que cubren el requisito. Uno solo, salvo en los
+   *  requisitos `multiple` (los planes de emergencia). */
+  documentos?: any[];
+  multiple?: boolean;
   /** Documento que se gestiona EXCLUSIVAMENTE a nivel empresa (Onboarding):
    *  no se sube por obra, la obra solo refleja el estado corporativo. */
   tenantLevel?: boolean;
@@ -81,10 +89,30 @@ const buildDs44PlanDocs = (
       const emp = required.tipos.map((t) => empresaDocs[t]).find(Boolean);
       return { ...required, tenantLevel: true, archivoSubido: Boolean(emp), fromEmpresa: Boolean(emp), empresaPlantilla: emp };
     }
-    const existing = docsObra.find((doc: any) => required.tipos.includes(doc.tipo));
-    const hasFile = Boolean(existing?.s3Key || existing?.archivoUrl);
-    return { ...required, documentId: existing?.documentId, archivoSubido: hasFile, document: existing };
+    // PLAN_EMERGENCIAS existe en las dos fases con el mismo `tipo`: sin filtrar
+    // por fase, el plan de la fase HACER daba por cumplido el de PLAN y viceversa.
+    // Los documentos antiguos sin `fase` se consideran de PLAN, que es donde vivían.
+    const coincidencias = docsObra.filter(
+      (doc: DocumentoApi) => required.tipos.includes(doc.tipo) && (!doc.fase || doc.fase === 'plan'),
+    );
+    const existing = coincidencias[0];
+    const hasFile = coincidencias.some((d: DocumentoApi) => d.s3Key || d.archivoUrl);
+    return {
+      ...required,
+      documentId: existing?.documentId,
+      archivoSubido: hasFile,
+      document: existing,
+      documentos: coincidencias,
+    };
   });
+
+// Tipos que son requisito de la fase PLAN. Sirven para desambiguar los
+// documentos antiguos que se guardaron sin `fase`: si su tipo es un requisito
+// de PLAN, pertenecen a PLAN; si no, son de la fase HACER.
+const TIPOS_FASE_PLAN = new Set(DS44_PLAN_DOCS.flatMap((d) => d.tipos));
+
+const esDocumentoDeFaseHacer = (doc: { fase?: string; tipo?: string }): boolean =>
+  doc.fase === 'hacer' || (!doc.fase && !TIPOS_FASE_PLAN.has(doc.tipo || ''));
 
 interface DoItem {
   key: string;
@@ -96,6 +124,128 @@ interface DoItem {
   documentId?: string;
   archivoSubido: boolean;
   document?: any;
+}
+
+/**
+ * Acciones secundarias de una fila. Cada documento tiene hasta cuatro acciones,
+ * pero solo una es la habitual (ver o subir); el resto vive acá para que la lista
+ * se lea como un checklist de cumplimiento y no como una botonera.
+ */
+function RowMenu({ label, items }: { label: string; items: { label: string; onClick: () => void }[] }) {
+  const [abierto, setAbierto] = useState(false);
+  if (items.length === 0) return null;
+  return (
+    <div className="ds44-menu">
+      <button
+        type="button"
+        className="ds44-menu-trigger"
+        aria-label={label}
+        aria-expanded={abierto}
+        onClick={() => setAbierto((v) => !v)}
+      >
+        <LuEllipsisVertical size={16} />
+      </button>
+      {abierto && (
+        <>
+          <div className="ds44-menu-scrim" onClick={() => setAbierto(false)} />
+          <div className="ds44-menu-panel" role="menu">
+            {items.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                onClick={() => { setAbierto(false); item.onClick(); }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Un documento dentro de un requisito que admite varios, ya formateado. */
+interface DocResumen {
+  documentId: string;
+  titulo: string;
+  meta: string;
+  badgeClass: string;
+  badgeLabel: string;
+  onVer: () => void;
+  acciones: { label: string; onClick: () => void }[];
+}
+
+/**
+ * Requisito que se cumple con uno o varios documentos (los planes de emergencia).
+ *
+ * Sigue siendo UNA línea del checklist: lo que cambia es que el recuento hace de
+ * disclosure y despliega los documentos dentro del requisito. Así la lista no se
+ * alarga con una fila por plan y se mantiene legible la pregunta que importa:
+ * ¿está cubierto este requisito?
+ */
+function Ds44MultiRow({ titulo, meta, badgeClass, badgeLabel, singular, plural, documentos, agregarLabel, onAgregar }: {
+  titulo: React.ReactNode;
+  meta: React.ReactNode;
+  badgeClass: string;
+  badgeLabel: string;
+  singular: string;
+  plural: string;
+  documentos: DocResumen[];
+  agregarLabel: string;
+  onAgregar: () => void;
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const n = documentos.length;
+
+  return (
+    <div className="ds44-multi">
+      <div className="ds44-multi-head">
+        <div style={{ minWidth: 0 }}>
+          <div className="font-medium" style={{ fontSize: '0.9rem' }}>{titulo}</div>
+          <div className="text-muted ds44-doc-meta">{meta}</div>
+        </div>
+        <div className="ds44-doc-actions">
+          <span className={`badge ${badgeClass}`}>{badgeLabel}</span>
+          {n > 0 && (
+            <button
+              type="button"
+              className="ds44-multi-toggle"
+              aria-expanded={abierto}
+              onClick={() => setAbierto((v) => !v)}
+            >
+              <LuChevronDown size={14} aria-hidden="true" />
+              {n} {n === 1 ? singular : plural}
+            </button>
+          )}
+          <button
+            type="button"
+            className={n > 0 ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
+            onClick={onAgregar}
+          >
+            {n > 0 ? agregarLabel : 'Subir'}
+          </button>
+        </div>
+      </div>
+
+      {abierto && n > 0 && (
+        <ul className="ds44-multi-lista">
+          {documentos.map((d) => (
+            <li key={d.documentId} className="ds44-multi-item">
+              <div className="ds44-multi-nombre">
+                <div className="ds44-multi-titulo">{d.titulo}</div>
+                <div className="ds44-multi-sub">{d.meta}</div>
+              </div>
+              <span className={`badge ${d.badgeClass}`}>{d.badgeLabel}</span>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={d.onVer}>Ver</button>
+              <RowMenu label={`Más acciones de ${d.titulo}`} items={d.acciones} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 export default function ObraDetalle() {
@@ -166,6 +316,11 @@ export default function ObraDetalle() {
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [isDs44ModalOpen, setIsDs44ModalOpen] = useState(false);
   const [selectedDs44Doc, setSelectedDs44Doc] = useState<Ds44Item | null>(null);
+  const [historialModal, setHistorialModal] = useState<{ titulo: string; versiones: VersionHistorial[] } | null>(null);
+  const [docAEliminar, setDocAEliminar] = useState<{ documentId: string; titulo: string } | null>(null);
+  const [ds44Titulo, setDs44Titulo] = useState('');
+  const [eliminandoDoc, setEliminandoDoc] = useState(false);
+  const [docPreview, setDocPreview] = useState<{ url: string | null; name: string } | null>(null);
   const [selectedDs44Detail, setSelectedDs44Detail] = useState<any | null>(null);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
   const [selectedExpiryDate, setSelectedExpiryDate] = useState('');
@@ -417,16 +572,21 @@ export default function ObraDetalle() {
     agentesFQB: obra?.agentesFQB,
   }), [tenantSize, trabajadores, obra]);
 
-  // Estado de un elemento-documento con gating por firma.
-  const estadoDocumento = (tipo: string): { document: any; estado: 'faltante' | 'pendiente_firma' | 'completo'; firmadas: number; totalFirmas: number } => {
-    const document = obraDocs.find((d: any) => d.tipo === tipo);
-    const archivoSubido = Boolean(document?.s3Key || document?.archivoUrl) || Boolean(document);
-    const { firmadas, total } = getSignatureStats(document);
+  // Estado de un elemento-documento con gating por firma. Los documentos de esta
+  // fase son los creados con `fase: 'hacer'`; ver la nota sobre PLAN_EMERGENCIAS
+  // en buildDs44PlanDocs. Un requisito `multiple` reúne todos sus documentos y
+  // queda pendiente mientras a alguno le falten firmas.
+  const estadoDocumento = (tipo: string): { document: any; documentos: any[]; estado: 'faltante' | 'pendiente_firma' | 'completo'; firmadas: number; totalFirmas: number } => {
+    const documentos = obraDocs.filter((d: DocumentoApi) => d.tipo === tipo && esDocumentoDeFaseHacer(d));
+    const document = documentos[0];
+    const stats = documentos.map((d: DocumentoApi) => getSignatureStats(d));
+    const firmadas = stats.reduce((n, s) => n + s.firmadas, 0);
+    const total = stats.reduce((n, s) => n + s.total, 0);
     let estado: 'faltante' | 'pendiente_firma' | 'completo';
-    if (!archivoSubido) estado = 'faltante';
+    if (documentos.length === 0) estado = 'faltante';
     else if (total > 0 && firmadas < total) estado = 'pendiente_firma';
     else estado = 'completo';
-    return { document, estado, firmadas, totalFirmas: total };
+    return { document, documentos, estado, firmadas, totalFirmas: total };
   };
 
   // Estado de un elemento-capacitacion leido de ActivitiesTable.
@@ -1315,6 +1475,7 @@ export default function ObraDetalle() {
   const openDs44Modal = async (doc: Ds44Item) => {
     setSelectedDs44Doc(doc);
     setSelectedDs44Detail(doc.document || null);
+    setDs44Titulo(doc.document?.titulo || '');
     setSelectedWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.personaId || a.workerId).filter(Boolean));
     const docExpiry = getDocExpiryDate(doc.document);
     setSelectedExpiryDate(toDateInputValue(docExpiry));
@@ -1367,6 +1528,13 @@ export default function ObraDetalle() {
       return;
     }
 
+    // En un requisito con varios documentos, el nombre los distingue en la lista.
+    if (selectedDs44Doc.multiple && !ds44Titulo.trim()) {
+      alert('Escribe un nombre para identificar este plan.');
+      return;
+    }
+    const tituloDocumento = selectedDs44Doc.multiple ? ds44Titulo.trim() : selectedDs44Doc.titulo;
+
     setUploadingKey(selectedDs44Doc.key);
     setDs44Saving(true);
 
@@ -1413,7 +1581,11 @@ export default function ObraDetalle() {
           s3Key: fileKey,
           archivoUrl: fileKey,
           archivoNombre: fileName,
-          fechaCaducidad: expiryValue
+          fechaCaducidad: expiryValue,
+          titulo: tituloDocumento,
+          // Queda registrado en el historial como autor de esta versión.
+          publicadaPor: user?.personaId,
+          publicadaPorNombre: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined,
         } as any);
       } else {
         const createRes = await documentsApi.create({
@@ -1422,7 +1594,7 @@ export default function ObraDetalle() {
           fase: 'plan',
           tipo: selectedDs44Doc.tipos[0],
           obligatorio: true,
-          titulo: selectedDs44Doc.titulo,
+          titulo: tituloDocumento,
           archivoUrl: fileKey,
           archivoNombre: fileName,
           fechaCaducidad: expiryValue,
@@ -1510,45 +1682,65 @@ export default function ObraDetalle() {
     );
   };
 
+  // Vista previa dentro de la misma página. Si el documento tiene firmas se
+  // muestra la versión con el anexo estampado, que puede tardar en generarse:
+  // el modal abre en carga y se completa cuando la URL está lista.
   const handlePreviewDocumentFromCard = async (doc: Ds44Item) => {
-    setDs44Previewing(true);
+    setDocPreview({ url: null, name: doc.document?.archivoNombre || doc.titulo });
     try {
-      await abrirDocumentoFirmable({
+      const resultado = await resolverDocumentoFirmable({
         documentId: doc.documentId || doc.document?.documentId,
         firmas: doc.document?.firmas,
         fileKey: doc.document?.s3Key || doc.document?.archivoUrl,
       });
+      if ('url' in resultado) {
+        setDocPreview((prev) => (prev ? { ...prev, url: resultado.url } : prev));
+      } else {
+        setDocPreview(null);
+      }
     } catch (error) {
       console.error('Error opening document:', error);
-    } finally {
-      setDs44Previewing(false);
+      setDocPreview(null);
     }
   };
 
-  // Abre la plantilla corporativa heredada (Política SST / Reglamento Interno).
-  const previewEmpresaDoc = async (fileKey: string) => {
+  // Plantilla corporativa heredada (Política SST / Reglamento Interno). Se ve
+  // en la misma página, igual que el resto de los documentos de la lista.
+  const previewEmpresaDoc = async (fileKey: string, nombre?: string) => {
     if (!fileKey) return;
-    setDs44Previewing(true);
+    setDocPreview({ url: null, name: nombre || 'documento' });
     try {
       const res = await uploadsApi.getDownloadUrl(fileKey);
-      if (res.success && res.data?.downloadUrl) window.open(res.data.downloadUrl, '_blank');
+      if (res.success && res.data?.downloadUrl) {
+        setDocPreview((prev) => (prev ? { ...prev, url: res.data!.downloadUrl } : prev));
+      } else {
+        setDocPreview(null);
+      }
     } catch (error) {
       console.error('Error opening company document:', error);
-    } finally {
-      setDs44Previewing(false);
+      setDocPreview(null);
     }
   };
 
+  // "Ver documento" dentro del modal de edición: la vista previa se abre encima
+  // y Escape solo cierra la de arriba, así que el formulario no se pierde.
   const handlePreviewDocument = async () => {
     setDs44Previewing(true);
+    setDocPreview({ url: null, name: selectedDs44Detail?.archivoNombre || selectedDs44Doc?.titulo || 'documento' });
     try {
-      await abrirDocumentoFirmable({
+      const resultado = await resolverDocumentoFirmable({
         documentId: selectedDs44Doc?.documentId || selectedDs44Detail?.documentId,
         firmas: selectedDs44Detail?.firmas,
         fileKey: selectedDs44Detail?.s3Key || selectedDs44Detail?.archivoUrl,
       });
+      if ('url' in resultado) {
+        setDocPreview((prev) => (prev ? { ...prev, url: resultado.url } : prev));
+      } else {
+        setDocPreview(null);
+      }
     } catch (error) {
       console.error('Error opening document:', error);
+      setDocPreview(null);
     } finally {
       setDs44Previewing(false);
     }
@@ -1558,6 +1750,129 @@ export default function ObraDetalle() {
     const stats = getSignatureStats(doc.document);
     setSignatureModalDoc({ titulo: doc.titulo, asignaciones: stats.asignaciones || [] });
     setIsSignatureModalOpen(true);
+  };
+
+  const eliminarDocumento = async () => {
+    if (!docAEliminar) return;
+    setEliminandoDoc(true);
+    try {
+      const res = await documentsApi.remove(docAEliminar.documentId, user?.personaId);
+      if (!res.success) {
+        alert(res.error || 'No se pudo eliminar el documento.');
+        return;
+      }
+      setObraDocs((prev) => prev.filter((d: DocumentoApi) => d.documentId !== docAEliminar.documentId));
+      setDs44Docs((prev) => prev.map((item) => item.documentos
+        ? { ...item, documentos: item.documentos.filter((d: DocumentoApi) => d.documentId !== docAEliminar.documentId) }
+        : item));
+      setDocAEliminar(null);
+    } catch (err) {
+      console.error('Error deleting document:', err);
+      alert('Error de conexión al eliminar el documento.');
+    } finally {
+      setEliminandoDoc(false);
+    }
+  };
+
+  // Cada documento de un requisito `multiple`, listo para la lista desplegable:
+  // conserva las mismas acciones que una fila normal más "Eliminar plan".
+  const resumenDocumento = (d: DocumentoApi, requisito: { titulo: string; key: string; tipos?: string[]; multiple?: boolean }): DocResumen => {
+    const { firmadas, total } = getSignatureStats(d);
+    const version = d.version || 1;
+    const tieneHistorial = (d.versiones?.length || 0) > 0;
+    const actualizadoEn = d.updatedAt || d.createdAt;
+    const firmado = total > 0 && firmadas === total;
+    const partes = [
+      tieneHistorial ? `v${version}` : null,
+      actualizadoEn ? `Actualizado ${formatDate(actualizadoEn)}` : null,
+      total > 0 ? `Firmas ${firmadas}/${total}` : null,
+    ].filter(Boolean);
+
+    // El requisito ya identifica el tipo; cada documento se distingue por su título.
+    const comoItem: Ds44Item = { ...requisito, tipos: requisito.tipos || [d.tipo], titulo: d.titulo || requisito.titulo, documentId: d.documentId, archivoSubido: true, document: d };
+
+    return {
+      documentId: d.documentId,
+      titulo: d.titulo || requisito.titulo,
+      meta: partes.join(' · '),
+      badgeClass: total > 0 && !firmado ? 'badge-warning' : 'badge-success',
+      badgeLabel: total > 0 && !firmado ? 'Pendiente de firma' : 'Completo',
+      onVer: () => handlePreviewDocumentFromCard(comoItem),
+      acciones: [
+        { label: 'Actualizar archivo', onClick: () => openDs44Modal(comoItem) },
+        ...(total > 0 ? [{ label: 'Ver firmas', onClick: () => openSignatureModal(comoItem) }] : []),
+        ...(tieneHistorial ? [{ label: 'Historial de versiones', onClick: () => openHistorialModal(comoItem) }] : []),
+        ...(total === 0 ? [{ label: 'Eliminar', onClick: () => setDocAEliminar({ documentId: d.documentId, titulo: d.titulo || requisito.titulo }) }] : []),
+      ],
+    };
+  };
+
+  // Equivalente para la fase HACER: los procedimientos se actualizan publicando
+  // una versión nueva (con motivo y re-firma), no reemplazando el archivo.
+  const resumenDocumentoDo = (d: DocumentoApi, el: Ds44DoElemento): DocResumen => {
+    const { firmadas, total } = getSignatureStats(d);
+    const version = d.version || 1;
+    const tieneHistorial = (d.versiones?.length || 0) > 0;
+    const firmado = total > 0 && firmadas === total;
+    const partes = [
+      version > 1 ? `v${version}` : null,
+      d.updatedAt ? `Actualizado ${formatDate(d.updatedAt)}` : null,
+      total > 0 ? `Firmas ${firmadas}/${total}` : null,
+    ].filter(Boolean);
+
+    const comoItem: Ds44Item = { key: el.key, tipos: [el.tipo], titulo: d.titulo || el.titulo, documentId: d.documentId, archivoSubido: true, document: d };
+
+    return {
+      documentId: d.documentId,
+      titulo: d.titulo || el.titulo,
+      meta: partes.join(' · '),
+      badgeClass: total > 0 && !firmado ? 'badge-warning' : 'badge-success',
+      badgeLabel: total > 0 && !firmado ? 'Pendiente de firma' : 'Completo',
+      onVer: () => handlePreviewDocumentFromCard(comoItem),
+      acciones: [
+        { label: 'Publicar nueva versión', onClick: () => openDoCreate('documento', el, d) },
+        ...(total > 0 ? [{ label: 'Ver firmas', onClick: () => openSignatureModal(comoItem) }] : []),
+        ...(tieneHistorial ? [{ label: 'Historial de versiones', onClick: () => openHistorialModal(comoItem) }] : []),
+        ...(total === 0 ? [{ label: 'Eliminar', onClick: () => setDocAEliminar({ documentId: d.documentId, titulo: d.titulo || el.titulo }) }] : []),
+      ],
+    };
+  };
+
+  // Historial de versiones: la versión vigente encabeza la lista y debajo van las
+  // archivadas, de la más reciente a la más antigua.
+  const openHistorialModal = (doc: Ds44Item) => {
+    const d = doc.document || {};
+    const archivadas: DocumentVersion[] = Array.isArray(d.versiones) ? d.versiones : [];
+    const vigente = {
+      version: d.version || archivadas.length + 1,
+      s3Key: d.s3Key || d.archivoUrl || null,
+      archivoNombre: d.archivoNombre || null,
+      publicadaEn: d.updatedAt || d.createdAt || null,
+      publicadaPorNombre: d.ultimaPublicacionNombre || d.creatorName || null,
+      motivo: d.ultimoMotivoVersion || null,
+      actual: true,
+    };
+    const previas = [...archivadas]
+      .sort((a, b) => (b.version || 0) - (a.version || 0))
+      .map((v) => ({ ...v, actual: false }));
+    setHistorialModal({ titulo: doc.titulo, versiones: [vigente, ...previas] });
+  };
+
+  // Abre una versión concreta dentro de la misma página (sin pestaña nueva).
+  const verVersion = async (s3Key: string | null, nombre: string | null) => {
+    if (!s3Key) return;
+    setDocPreview({ url: null, name: nombre || 'documento' });
+    try {
+      const res = await uploadsApi.getDownloadUrl(s3Key);
+      if (res.success && res.data?.downloadUrl) {
+        setDocPreview((prev) => (prev ? { ...prev, url: res.data!.downloadUrl } : prev));
+      } else {
+        setDocPreview(null);
+      }
+    } catch (error) {
+      console.error('Error opening version:', error);
+      setDocPreview(null);
+    }
   };
 
   // Gating por firma: un documento de fase cuenta como COMPLETO solo si esta
@@ -2081,7 +2396,7 @@ export default function ObraDetalle() {
                               <button
                                 className="btn btn-secondary btn-sm"
                                 type="button"
-                                onClick={() => previewEmpresaDoc(doc.empresaPlantilla!.fileKey)}
+                                onClick={() => previewEmpresaDoc(doc.empresaPlantilla!.fileKey, doc.empresaPlantilla?.nombre)}
                               >
                                 Ver
                               </button>
@@ -2098,44 +2413,75 @@ export default function ObraDetalle() {
                       );
                     }
 
+                    // Requisito que admite varios documentos (planes de emergencia):
+                    // el recuento despliega los planes dentro de la misma fila.
+                    if (doc.multiple) {
+                      const planes = doc.documentos || [];
+                      const stats = planes.map((p: DocumentoApi) => getSignatureStats(p));
+                      const pendientes = stats.filter((s) => s.total > 0 && s.firmadas < s.total).length;
+                      const badgeClassMulti = planes.length === 0 ? 'badge-danger' : pendientes > 0 ? 'badge-warning' : 'badge-success';
+                      const badgeLabelMulti = planes.length === 0 ? 'Sin documento' : pendientes > 0 ? 'Pendiente de firma' : 'Completo';
+                      return (
+                        <Ds44MultiRow
+                          key={doc.key}
+                          titulo={doc.titulo}
+                          meta={<>
+                            <span>{doc.estadoFirma}</span>
+                            {planes.length === 0
+                              ? <span>Pendiente de carga</span>
+                              : pendientes > 0 && <span>{pendientes} pendiente{pendientes === 1 ? '' : 's'} de firma</span>}
+                          </>}
+                          badgeClass={badgeClassMulti}
+                          badgeLabel={badgeLabelMulti}
+                          singular="plan"
+                          plural="planes"
+                          agregarLabel="Agregar plan"
+                          onAgregar={() => openDs44Modal({ ...doc, documentId: undefined, document: undefined })}
+                          documentos={planes.map((p: DocumentoApi) => resumenDocumento(p, doc))}
+                        />
+                      );
+                    }
+
                     const badgeClass = isExpired ? 'badge-danger' : firmasCompletas ? 'badge-success' : doc.archivoSubido ? 'badge-warning' : 'badge-danger';
                     const badgeLabel = isExpired ? 'Vencido' : firmasCompletas ? 'Completo' : doc.archivoSubido ? 'Pendiente de firma' : 'Sin documento';
+                    const versionActual = doc.document?.version || 1;
+                    const tieneHistorial = (doc.document?.versiones?.length || 0) > 0;
+                    const actualizadoEn = doc.document?.updatedAt || doc.document?.createdAt;
                     return (
                       <div key={doc.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
                           <div className="font-medium" style={{ fontSize: '0.9rem' }}>{doc.titulo}</div>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                            {doc.estadoFirma}
-                            {total > 0 && ` · Firmas: ${firmadas}/${total}`}
-                            {fechaCaducidad && ` · ${isExpired ? 'Vencido' : 'Caduca'}: ${formatDate(fechaCaducidad)}`}
+                          <div className="text-muted ds44-doc-meta">
+                            <span>{doc.estadoFirma}</span>
+                            {total > 0 && <span>Firmas {firmadas}/{total}</span>}
+                            {doc.archivoSubido && tieneHistorial && <span className="ds44-doc-ver">v{versionActual}</span>}
+                            {doc.archivoSubido && actualizadoEn && <span>Actualizado {formatDate(actualizadoEn)}</span>}
+                            {fechaCaducidad && <span>{isExpired ? 'Vencido' : 'Caduca'} {formatDate(fechaCaducidad)}</span>}
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
+                        <div className="ds44-doc-actions">
                           <span className={`badge ${badgeClass}`}>{badgeLabel}</span>
-                          <button
-                            className={doc.archivoSubido ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
-                            type="button"
-                            onClick={() => openDs44Modal(doc)}
-                          >
-                            {doc.archivoSubido ? 'Actualizar' : 'Subir'}
-                          </button>
-                          {doc.archivoSubido && (
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              type="button"
-                              disabled={ds44Previewing}
-                              onClick={() => handlePreviewDocumentFromCard(doc)}
-                            >
-                              Ver
-                            </button>
-                          )}
-                          {total > 0 && (
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              type="button"
-                              onClick={() => openSignatureModal(doc)}
-                            >
-                              Firmas
+                          {doc.archivoSubido ? (
+                            <>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                type="button"
+                                onClick={() => handlePreviewDocumentFromCard(doc)}
+                              >
+                                Ver
+                              </button>
+                              <RowMenu
+                                label={`Más acciones de ${doc.titulo}`}
+                                items={[
+                                  { label: 'Actualizar archivo', onClick: () => openDs44Modal(doc) },
+                                  ...(total > 0 ? [{ label: 'Ver firmas', onClick: () => openSignatureModal(doc) }] : []),
+                                  ...(tieneHistorial ? [{ label: 'Historial de versiones', onClick: () => openHistorialModal(doc) }] : []),
+                                ]}
+                              />
+                            </>
+                          ) : (
+                            <button className="btn btn-primary btn-sm" type="button" onClick={() => openDs44Modal(doc)}>
+                              Subir
                             </button>
                           )}
                         </div>
@@ -2209,12 +2555,40 @@ export default function ObraDetalle() {
                 {/* ── Sección: Procedimientos operativos (documento de obra) ── */}
                 <div className="ds44-section-label">Procedimientos operativos</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-                  {doProcedimientos.filter((p) => p.aplicabilidad !== 'no_aplica').map(({ el, aplicabilidad, estado, firmadas, totalFirmas, document }) => {
+                  {doProcedimientos.filter((p) => p.aplicabilidad !== 'no_aplica').map(({ el, aplicabilidad, estado, firmadas, totalFirmas, document, documentos }) => {
                     const verificar = aplicabilidad === 'verificar';
                     const cf = verificar ? condicionFlag(el.condicion) : null;
                     const badgeClass = estado === 'completo' ? 'badge-success' : estado === 'pendiente_firma' ? 'badge-warning' : 'badge-danger';
                     const badgeLabel = estado === 'completo' ? 'Completo' : estado === 'pendiente_firma' ? 'Pendiente de firma' : 'Faltante';
                     const version = document?.version || 0;
+
+                    // Requisito con varios documentos (plan de gestión y respuesta
+                    // ante emergencias): el recuento despliega los planes.
+                    if (el.multiple && !verificar) {
+                      const pendientes = documentos.filter((d: DocumentoApi) => {
+                        const s = getSignatureStats(d);
+                        return s.total > 0 && s.firmadas < s.total;
+                      }).length;
+                      return (
+                        <Ds44MultiRow
+                          key={el.key}
+                          titulo={el.titulo}
+                          meta={<>
+                            <span>{el.articulo}</span>
+                            {documentos.length === 0
+                              ? <span>Pendiente de carga</span>
+                              : pendientes > 0 && <span>{pendientes} pendiente{pendientes === 1 ? '' : 's'} de firma</span>}
+                          </>}
+                          badgeClass={badgeClass}
+                          badgeLabel={estado === 'faltante' ? 'Faltante' : badgeLabel}
+                          singular="plan"
+                          plural="planes"
+                          agregarLabel="Agregar plan"
+                          onAgregar={() => openDoCreate('documento', el, undefined)}
+                          documentos={documentos.map((d: DocumentoApi) => resumenDocumentoDo(d, el))}
+                        />
+                      );
+                    }
                     return (
                       <div key={el.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
@@ -2900,6 +3274,24 @@ export default function ObraDetalle() {
         }
       >
         <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+          {/* Cuando el requisito admite varios documentos, el nombre es lo único
+              que los distingue en la lista, así que se pide al subir. */}
+          {selectedDs44Doc?.multiple && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="ds44-titulo">Nombre del plan</label>
+              <input
+                id="ds44-titulo"
+                className="form-input"
+                value={ds44Titulo}
+                maxLength={120}
+                placeholder="Ej: Plan de evacuación — Torre A"
+                onChange={(e) => setDs44Titulo(e.target.value)}
+              />
+              <span className="text-muted" style={{ fontSize: 'var(--text-xs)' }}>
+                Distingue este plan de los demás de la obra.
+              </span>
+            </div>
+          )}
           <div className="ds44-expiry-section">
             <div className="ds44-expiry-toggle">
               <label className="ds44-toggle-label" htmlFor="expiry-toggle">
@@ -3639,6 +4031,78 @@ export default function ObraDetalle() {
       </Modal>
 
       <Modal
+        isOpen={!!docAEliminar}
+        onClose={() => !eliminandoDoc && setDocAEliminar(null)}
+        preventClose={eliminandoDoc}
+        title="Eliminar documento"
+        subtitle={docAEliminar?.titulo}
+        footer={
+          <>
+            <button className="btn btn-secondary" disabled={eliminandoDoc} onClick={() => setDocAEliminar(null)}>Cancelar</button>
+            <button className="btn btn-danger" disabled={eliminandoDoc} onClick={eliminarDocumento}>
+              {eliminandoDoc ? 'Eliminando…' : 'Eliminar'}
+            </button>
+          </>
+        }
+      >
+        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
+          Se quita de la obra junto con su historial de versiones. Los documentos ya
+          firmados no se pueden eliminar.
+        </p>
+      </Modal>
+
+      {/* Historial de versiones: la vigente arriba, las archivadas debajo */}
+      <Modal
+        isOpen={!!historialModal}
+        onClose={() => setHistorialModal(null)}
+        title="Historial de versiones"
+        subtitle={historialModal?.titulo}
+        icon={<LuHistory size={20} />}
+        size="lg"
+        footer={
+          <button className="btn btn-secondary" onClick={() => setHistorialModal(null)}>Cerrar</button>
+        }
+      >
+        <ol className="ver-lista">
+          {(historialModal?.versiones || []).map((v) => (
+            <li key={v.version} className={`ver-item${v.actual ? ' actual' : ''}`}>
+              <span className="ver-marca">v{v.version}</span>
+              <div className="ver-datos">
+                <div className="ver-linea">
+                  {v.actual && <span className="ver-chip">Versión vigente</span>}
+                  <span className="ver-fecha">{v.publicadaEn ? formatDate(v.publicadaEn) : 'Sin fecha'}</span>
+                </div>
+                <div className="ver-archivo">{v.archivoNombre || 'Archivo sin nombre'}</div>
+                {(v.publicadaPorNombre || v.motivo) && (
+                  <div className="ver-sub">
+                    {v.publicadaPorNombre}
+                    {v.publicadaPorNombre && v.motivo && ' · '}
+                    {v.motivo}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={!v.s3Key}
+                title={v.s3Key ? `Ver la versión ${v.version}` : 'Esta versión no tiene archivo'}
+                onClick={() => verVersion(v.s3Key, v.archivoNombre)}
+              >
+                <FiEye size={13} /> Ver
+              </button>
+            </li>
+          ))}
+        </ol>
+      </Modal>
+
+      <DocumentPreviewModal
+        isOpen={!!docPreview}
+        onClose={() => setDocPreview(null)}
+        url={docPreview?.url ?? null}
+        fileName={docPreview?.name}
+      />
+
+      <Modal
         isOpen={isSignatureModalOpen}
         onClose={() => setIsSignatureModalOpen(false)}
         title={signatureModalDoc?.titulo ? `Firmas - ${signatureModalDoc.titulo}` : 'Firmas'}
@@ -3956,6 +4420,106 @@ export default function ObraDetalle() {
           border-bottom: 1px solid var(--surface-border);
         }
         .ds44-doc-row:last-child { border-bottom: none; }
+
+        /* Meta separada por puntos: los datos del documento viven acá como texto,
+           no como controles, para que la fila conserve una sola acción visible. */
+        .ds44-doc-meta {
+          display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px;
+          font-size: 0.78rem; margin-top: 2px;
+        }
+        .ds44-doc-meta > span + span::before { content: '·'; margin-right: 6px; }
+        .ds44-doc-ver { font-family: var(--font-mono); font-size: 0.74rem; }
+        .ds44-doc-actions { display: flex; gap: var(--space-2); align-items: center; flex-shrink: 0; }
+
+        /* Requisito con varios documentos: sigue siendo una línea del checklist,
+           y el recuento despliega los documentos dentro. */
+        .ds44-multi { padding: var(--space-3) 0; border-bottom: 1px solid var(--surface-border); }
+        .ds44-multi:last-child { border-bottom: none; }
+        .ds44-multi-head {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: var(--space-3); flex-wrap: wrap;
+        }
+        .ds44-multi-toggle {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 3px 9px 3px 7px; border-radius: var(--radius-full);
+          border: 1px solid var(--surface-border); background: var(--surface-card);
+          font-family: inherit; font-size: 11px; font-weight: 600; color: var(--text-secondary);
+          cursor: pointer; transition: all var(--transition-fast);
+        }
+        .ds44-multi-toggle:hover { border-color: var(--primary-400); color: var(--accent-text); }
+        .ds44-multi-toggle:focus-visible { outline: 2px solid var(--primary-400); outline-offset: 2px; }
+        .ds44-multi-toggle svg { transition: transform var(--transition-fast); }
+        .ds44-multi-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+        .ds44-multi-lista {
+          list-style: none; margin: 10px 0 2px; padding: 0 0 0 var(--space-3);
+          border-left: 2px solid var(--surface-border);
+          display: flex; flex-direction: column;
+        }
+        .ds44-multi-item { display: flex; align-items: center; gap: var(--space-2); padding: 7px 0; }
+        .ds44-multi-item + .ds44-multi-item { border-top: 1px solid var(--surface-border); }
+        .ds44-multi-nombre { flex: 1; min-width: 0; }
+        .ds44-multi-titulo {
+          font-size: 0.84rem; font-weight: 500; color: var(--text-primary);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .ds44-multi-sub { font-size: 0.73rem; color: var(--text-muted); }
+        @media (max-width: 640px) {
+          .ds44-multi-item { flex-wrap: wrap; }
+          .ds44-multi-nombre { flex-basis: 100%; }
+        }
+
+        /* Menú de acciones secundarias */
+        .ds44-menu { position: relative; display: inline-flex; }
+        .ds44-menu-trigger {
+          display: flex; align-items: center; justify-content: center;
+          width: 30px; height: 30px; border-radius: var(--radius-md);
+          border: 1px solid var(--surface-border); background: var(--surface-card);
+          color: var(--text-muted); cursor: pointer; transition: all var(--transition-fast);
+        }
+        .ds44-menu-trigger:hover { color: var(--text-primary); border-color: var(--primary-400); }
+        .ds44-menu-trigger:focus-visible { outline: 2px solid var(--primary-400); outline-offset: 2px; }
+        .ds44-menu-scrim { position: fixed; inset: 0; z-index: 999; }
+        .ds44-menu-panel {
+          position: absolute; right: 0; top: calc(100% + 4px); z-index: 1000;
+          min-width: 208px; overflow: hidden;
+          background: var(--surface-card); border: 1px solid var(--surface-border);
+          border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+        }
+        .ds44-menu-panel button {
+          display: block; width: 100%; text-align: left; padding: 9px 14px;
+          border: none; background: none; cursor: pointer; font-family: inherit;
+          font-size: 0.84rem; color: var(--text-primary);
+        }
+        .ds44-menu-panel button:hover { background: var(--surface-hover); }
+        .ds44-menu-panel button:focus-visible { outline: 2px solid var(--primary-400); outline-offset: -2px; }
+
+        /* Historial: es una secuencia real, así que la versión numera y ordena. */
+        .ver-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+        .ver-item {
+          display: flex; align-items: center; gap: var(--space-3);
+          padding: 12px 0; border-bottom: 1px solid var(--surface-border);
+        }
+        .ver-item:last-child { border-bottom: none; }
+        .ver-marca {
+          flex-shrink: 0; width: 42px; text-align: center;
+          font-family: var(--font-mono); font-size: 0.8rem; font-weight: 600;
+          color: var(--text-muted);
+        }
+        .ver-item.actual .ver-marca { color: var(--accent-text); }
+        .ver-datos { flex: 1; min-width: 0; }
+        .ver-linea { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .ver-chip {
+          font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+          color: var(--accent-text); background: var(--accent-tint);
+          padding: 2px 7px; border-radius: var(--radius-full);
+        }
+        .ver-fecha { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); }
+        .ver-archivo {
+          font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .ver-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 1px; }
         .ds44-section-label {
           font-size: 0.75rem;
           font-weight: 700;

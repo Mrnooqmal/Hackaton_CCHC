@@ -80,7 +80,6 @@ VITE_INCIDENT_EVIDENCE_BASE_URL=https://tu-bucket.s3.amazonaws.com
 - **Sistema de Firmas Digitales**: Firma electrónica de documentos 
 - **Gestión Documental**: Almacenamiento y organización de documentos de seguridad
 - **Encuestas y Evaluaciones**: Sistema de encuestas personalizables para trabajadores
-- **Asistente IA**: Chatbot inteligente con AWS Bedrock para matrices de riesgo
 - **Sistema de Mensajería**: Bandeja de entrada interna para comunicaciones
 - **Gestión de Trabajadores**: Administración completa de personal y roles
 - **Dashboard Analítico**: Visualización de KPIs y métricas de seguridad
@@ -100,7 +99,7 @@ VITE_INCIDENT_EVIDENCE_BASE_URL=https://tu-bucket.s3.amazonaws.com
 - **Base de Datos**: AWS DynamoDB
 - **Almacenamiento**: AWS S3
 - **Notificaciones**: AWS SNS
-- **IA**: AWS Bedrock (Claude 3 Sonnet)
+- **IA**: Google Gemini (solo transcripción de audio)
 - **Autenticación**: JWT + Bcrypt
 
 
@@ -303,34 +302,7 @@ GET    /surveys/{id}/results // Obtener resultados
 
 ---
 
-### 6. Módulo de Asistente IA
-
-**Ubicación**: `Frontend/src/pages/AIAssistant.tsx` | `Backend/handlers/ai-assistant.js`
-
-Chatbot inteligente con AWS Bedrock para consultas de seguridad.
-
-#### Funcionalidades:
-
-**Conversación Inteligente**
-- Modelo: Claude 3 Sonnet (Anthropic)
-- Contexto de seguridad laboral chilena
-- Respuestas basadas en normativa vigente
-- Sugerencias contextuales
-
-**Capacidades**
-- Consultas sobre normativa de seguridad
-- Procedimientos de emergencia
-- Interpretación de regulaciones
-- Recomendaciones de EPP
-- Análisis de riesgos
-
-#### Endpoints API:
-```javascript
-POST   /ai-assistant/chat     // Enviar mensaje
-```
----
-
-### 7. Módulo de Bandeja de Entrada
+### 6. Módulo de Bandeja de Entrada
 
 **Ubicación**: `Frontend/src/pages/Inbox.tsx` | `Backend/handlers/inbox.js`
 
@@ -364,7 +336,7 @@ GET    /inbox/recipients  // Obtener destinatarios
 
 ---
 
-### 8. Módulo de Gestión de Trabajadores
+### 7. Módulo de Gestión de Trabajadores
 
 **Ubicación**: `Frontend/src/pages/Workers.tsx` | `Backend/handlers/workers.js`
 
@@ -398,7 +370,7 @@ DELETE /workers/{id}   // Eliminar trabajador
 
 ---
 
-### 9. Módulo de Gestión de Usuarios
+### 8. Módulo de Gestión de Usuarios
 
 **Ubicación**: `Frontend/src/pages/UserManagement.tsx` | `Backend/handlers/users.js`
 
@@ -429,7 +401,7 @@ POST   /users/change-password // Cambiar contraseña
 
 ---
 
-### 10. Módulo de Dashboard
+### 9. Módulo de Dashboard
 
 **Ubicación**: `Frontend/src/pages/Dashboard.tsx`
 
@@ -445,7 +417,7 @@ Panel principal con métricas y KPIs de seguridad.
 
 ---
 
-### 11. Módulo de Actividades
+### 10. Módulo de Actividades
 
 **Ubicación**: `Frontend/src/pages/Activities.tsx` | `Backend/handlers/activities.js`
 
@@ -494,7 +466,6 @@ Registro de actividades y charlas de seguridad.
   "@aws-sdk/client-dynamodb": "^3.x",
   "@aws-sdk/client-s3": "^3.x",
   "@aws-sdk/client-sns": "^3.x",
-  "@aws-sdk/client-bedrock-runtime": "^3.x",
   "bcryptjs": "^2.4.3",
   "jsonwebtoken": "^9.x",
   "uuid": "^9.x"
@@ -508,7 +479,6 @@ Registro de actividades y charlas de seguridad.
 - **CloudFront**: CDN para frontend
 - **API Gateway**: API REST
 - **SNS**: Notificaciones
-- **Bedrock**: IA generativa
 - **IAM**: Gestión de permisos
 
 ---

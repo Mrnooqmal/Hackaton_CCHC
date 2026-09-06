@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import type { ReactNode, MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { FiX } from 'react-icons/fi';
@@ -16,6 +16,9 @@ const SIZE_MAP = {
 } as const;
 
 export type ModalSize = keyof typeof SIZE_MAP;
+
+/** Modales abiertos, del más antiguo al de más arriba. Ver el efecto que la mantiene. */
+const pilaModales: symbol[] = [];
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                              */
@@ -58,24 +61,33 @@ export default function Modal({
     closeOnOverlay = true,
     preventClose = false,
 }: ModalProps) {
-    /* ----- Bloquear scroll del body ----- */
+    const id = useRef<symbol>(undefined as unknown as symbol);
+    if (!id.current) id.current = Symbol('modal');
+
+    /* ----- Pila de modales abiertos ----- */
+    // Un modal puede abrirse sobre otro (una vista previa sobre un formulario).
+    // Sin la pila, Escape cerraba TODOS los modales abiertos a la vez y se perdía
+    // lo que el usuario estuviera editando debajo; y cerrar el de arriba
+    // devolvía el scroll al body con el de abajo todavía abierto.
     useEffect(() => {
-        if (isOpen) {
-            document.body.style.overflow = 'hidden';
-        } else {
-            document.body.style.overflow = '';
-        }
+        if (!isOpen) return;
+        const propio = id.current;
+        pilaModales.push(propio);
+        document.body.style.overflow = 'hidden';
+
         return () => {
-            document.body.style.overflow = '';
+            const i = pilaModales.indexOf(propio);
+            if (i !== -1) pilaModales.splice(i, 1);
+            if (pilaModales.length === 0) document.body.style.overflow = '';
         };
     }, [isOpen]);
 
-    /* ----- Cerrar con Escape ----- */
+    /* ----- Cerrar con Escape (solo el modal de más arriba) ----- */
     const handleKeyDown = useCallback(
         (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && !preventClose) {
-                onClose();
-            }
+            if (e.key !== 'Escape' || preventClose) return;
+            if (pilaModales[pilaModales.length - 1] !== id.current) return;
+            onClose();
         },
         [onClose, preventClose],
     );

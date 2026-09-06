@@ -29,7 +29,6 @@ const SECTION: Record<string, { label: string; path?: string }> = {
     'offline-signatures': { label: 'Firmas offline', path: '/offline-signatures' },
     'signature-requests': { label: 'Firmas', path: '/my-signatures' },
     inbox: { label: 'Notificaciones', path: '/inbox' },
-    'ai-assistant': { label: 'Asistente IA', path: '/ai-assistant' },
     settings: { label: 'Configuración' },
     'change-password': { label: 'Cambiar contraseña' },
     'enroll-me': { label: 'Mi enrolamiento' },
@@ -52,7 +51,6 @@ const MANUAL_SECTION: Record<string, string> = {
     'offline-signatures': 'firmas',
     'signature-requests': 'firmas',
     inbox: 'bandeja-entrada',
-    'ai-assistant': 'asistente-ia',
     'mi-empresa': 'tenants',
     'cargos-onboarding': 'tenants',
 };

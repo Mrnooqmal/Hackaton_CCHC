@@ -33,7 +33,7 @@ registrado, fechado y disponible para auditoría.
 | Obligación DS 44 | Cómo lo resuelve la plataforma | Módulo |
 | --- | --- | --- |
 | Sistema de gestión documentado | Documentos obligatorios precreados por fase de obra | [Documentos](/modulos/documentos) |
-| MIPER / MIPPER por cargo | Generación asistida por IA + firma | [Asistente IA](/modulos/asistente-ia) |
+| MIPER / MIPPER por cargo | Matriz por cargo, revisada y firmada | [Documentos](/ds44/documentos-obligatorios) |
 | Entrega de EPP registrada | Acta de entrega con firma de trabajador y supervisor | [Documentos](/ds44/epp) |
 | Capacitaciones e inducciones | Registro de asistencia + firma del relator | [Actividades](/modulos/actividades) |
 | Investigación de incidentes | Reporte con clasificación y causa raíz | [Incidentes](/modulos/incidentes) |

@@ -9,6 +9,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
+const { fechaHoraChile } = require('../utils/fechaChile');
 const { Persona, ROLES } = require('../models/Persona');
 const {
     validateRut, validateRequired, hashPin, verifyPin,
@@ -470,8 +471,7 @@ class PersonaService {
 
         const firmaEnrolamiento = {
             token,
-            fecha: now.toISOString().split('T')[0],
-            horario: now.toTimeString().split(' ')[0],
+            ...fechaHoraChile(now),
             timestamp: now.toISOString(),
             metodoValidacion: 'PIN',
             ipAddress

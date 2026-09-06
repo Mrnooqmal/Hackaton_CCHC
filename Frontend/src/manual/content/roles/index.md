@@ -31,7 +31,5 @@ configuración de tu empresa.
   puede **delegarla a otros roles** (por ejemplo, representantes del Comité Paritario)
   desde Mi Empresa → Roles.
 - **Tenants** es exclusivo del admin (configuración de la empresa).
-- **Asistente IA** suele restringirse a roles técnicos (admin, prevencionista) y al
-  plan contratado del tenant.
 - El **trabajador** tiene principalmente acceso de lectura y firma sobre lo que se le
   asigna; no gestiona obras ni personas.

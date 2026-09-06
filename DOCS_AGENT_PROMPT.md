@@ -26,7 +26,7 @@ Plataforma SaaS multi-tenant **"Build & Serve — Sistema de Gestión SST"** par
 - Base de datos: AWS DynamoDB (11 tablas, PAY_PER_REQUEST)
 - Storage: AWS S3
 - Auth: JWT + Bcrypt + PIN-based digital signatures
-- IA: AWS Bedrock (Claude 3 Sonnet) + Google Gemini
+- IA: Google Gemini (solo transcripción de audio)
 
 **5 roles de usuario:** `admin`, `jefe_obra`, `supervisor`, `prevencionista`, `trabajador`
 
@@ -41,10 +41,9 @@ Plataforma SaaS multi-tenant **"Build & Serve — Sistema de Gestión SST"** par
 | 5 | Incidentes | Reporte, clasificación (hallazgo/incidente), estadísticas KPI |
 | 6 | Actividades | Charlas 5min, capacitaciones Art.16 (8hr), auditorías, MIPPER |
 | 7 | Encuestas | Formularios con lógica condicional, asignación a personas |
-| 8 | Asistente IA | Claude 3 Sonnet para matrices de riesgo y normativa |
-| 9 | Personas | Identidad unificada (reemplaza Users + Workers separados) |
-| 10 | Bandeja de Entrada | Mensajería interna + notificaciones automáticas |
-| 11 | Tenants | Multi-tenant, planes starter / professional / enterprise |
+| 8 | Personas | Identidad unificada (reemplaza Users + Workers separados) |
+| 9 | Bandeja de Entrada | Mensajería interna + notificaciones automáticas |
+| 10 | Tenants | Multi-tenant, planes starter / professional / enterprise |
 
 **DS44 compliance implementado:**
 - IRL (Informe de Riesgos Laborales)
@@ -138,7 +137,6 @@ export default defineConfig({
           { text: 'Incidentes', link: '/modulos/incidentes' },
           { text: 'Actividades', link: '/modulos/actividades' },
           { text: 'Encuestas', link: '/modulos/encuestas' },
-          { text: 'Asistente IA', link: '/modulos/asistente-ia' },
           { text: 'Personas', link: '/modulos/personas' },
           { text: 'Bandeja de Entrada', link: '/modulos/bandeja-entrada' },
           { text: 'Tenants', link: '/modulos/tenants' },
@@ -231,7 +229,6 @@ resources/
 │   ├── incidentes.md
 │   ├── actividades.md
 │   ├── encuestas.md
-│   ├── asistente-ia.md
 │   ├── personas.md
 │   ├── bandeja-entrada.md
 │   └── tenants.md

@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { SQSClient, SendMessageCommand } = require('@aws-sdk/client-sqs');
@@ -23,10 +23,9 @@ const sqsClient = new SQSClient({ region: process.env.AWS_REGION || 'us-east-1' 
 // FirmaService.buildFirmaUpdateParts (compartida con handlers/signatures).
 const buildFirmaUpdateParts = FirmaService.buildFirmaUpdateParts;
 
-// Permisos que habilitan subir/crear documentos (repositorio o documentos de obra).
+// Permisos que habilitan subir/crear documentos (repositorio o documentos de fase).
 const PERMISOS_SUBIR_DOC = [
     PERMISSIONS.REPOSITORIO_SUBIR,
-    PERMISSIONS.DOCUMENTOS_SUBIR,
     PERMISSIONS.OBRA_SUBIR_DOCUMENTOS,
 ];
 
@@ -48,12 +47,13 @@ const DOCUMENT_TYPES = {
     MAPA_RIESGOS: 'Mapa de Riesgos',
     REGISTRO_ACTIVIDAD: 'Registro de Actividad Preventiva (Art. 72)',
     INDUCCION_EMERGENCIA: 'Inducción Plan de Emergencia (Art. 19)',
-    VIGILANCIA_SALUD: 'Registro de Vigilancia de Salud (Art. 67)',
+    VIGILANCIA_SALUD: 'Programa de Vigilancia de la Salud (Art. 67)',
     EXAMEN_OCUPACIONAL: 'Registro de Examen Ocupacional (Art. 68)',
     INVESTIGACION_ACCIDENTE: 'Investigación de Accidente / EP',
     RESTRICCION_LABORAL: 'Restricción o Traslado por EP',
     // Fase HACER (ciclo Deming) — procedimientos operativos de obra (DS44 Excel)
     PROCEDIMIENTO_EPP: 'Procedimiento de Provisión y Uso de EPP (Art. 13)',
+    VIGILANCIA_AMBIENTAL: 'Programa de Vigilancia Ambiental (Art. 67)',
     OPERACION_MAQUINAS: 'Operación Segura de Máquinas y Herramientas (Art. 10)',
     PROCEDIMIENTO_AGENTES: 'Utilización de Agentes Físicos, Químicos y Biológicos (Art. 2 N°14 c)',
     PLAN_EMERGENCIAS: 'Plan de Gestión y Respuesta ante Emergencias (Art. 19)',
@@ -66,7 +66,6 @@ const DOCUMENT_TYPES = {
     // Tipos historicos (compatibilidad con datos previos)
     PLAN_CAPACITACION: 'Plan de Capacitación (Art. 16)',
     INFO_RIESGOS_LABORALES: 'Información de Riesgos Laborales (Art. 15)',
-    VIGILANCIA_AMBIENTAL: 'Vigilancia Ambiental y de Salud (Art. 67)',
     // Fase HACER — eventos sobrevinientes
     REGISTRO_RIESGO_GRAVE: 'Registro de Riesgo Grave e Inminente (Art. 18)',
     REGISTRO_AT_EP: 'Registro AT, EP e Incidentes Peligrosos (Arts. 71-72)',
@@ -93,6 +92,7 @@ const TIPOS_PROCEDIMIENTO = new Set([
     'PROCEDIMIENTO_TRABAJO', 'PROCEDIMIENTO_EPP', 'OPERACION_MAQUINAS', 'PROCEDIMIENTO_AGENTES',
     'PLAN_EMERGENCIAS', 'PROCEDIMIENTO_RIESGO_GRAVE', 'PROCEDIMIENTO_EVACUACION',
     'PROCEDIMIENTO_INVESTIGACION', 'GESTION_CAMBIOS', 'COORDINACION_ENTIDADES', 'CONSULTA_REPRESENTANTES',
+    'VIGILANCIA_AMBIENTAL', 'VIGILANCIA_SALUD',
 ]);
 const esProcedimiento = (tipo) => TIPOS_PROCEDIMIENTO.has(tipo);
 
@@ -290,7 +290,58 @@ module.exports.get = async (event) => {
 };
 
 /**
+ * DELETE /documents/{id} - Eliminar un documento.
+ *
+ * Pensado para los requisitos que admiten varios documentos a la vez (los planes
+ * de emergencia): sin esto, una colección solo puede crecer y un plan subido por
+ * error queda para siempre. Un documento YA FIRMADO no se elimina: la firma es
+ * un registro con validez legal (DS 44). Para reemplazar su contenido está
+ * `update`, que archiva la versión anterior.
+ */
+module.exports.remove = async (event) => {
+    try {
+        const { id } = event.pathParameters || {};
+        if (!id) return error('ID de documento requerido');
+
+        const cur = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
+        const doc = cur.Item;
+        if (!doc) return error('Documento no encontrado', 404);
+
+        if (Array.isArray(doc.firmas) && doc.firmas.length > 0) {
+            return error('Este documento ya tiene firmas y no se puede eliminar. Sube una versión nueva si necesitas corregirlo.', 409);
+        }
+
+        // Enforcement por permiso + aislamiento de tenant cuando se identifica al actor.
+        const actorId = event.queryStringParameters?.actorId;
+        if (actorId) {
+            const personaService = new PersonaService();
+            const actor = await personaService.getById(actorId).catch(() => null);
+            if (!actor || actor.tenantId !== doc.tenantId) {
+                return error('No autorizado para este documento', 403);
+            }
+            const tenant = await new TenantService().getById(doc.tenantId).catch(() => null);
+            const tenantSafe = tenant ? tenant.toSafeFormat() : null;
+            if (!PERMISOS_SUBIR_DOC.some((p) => personaPuede(actor, tenantSafe, p))) {
+                return error('No tienes permiso para eliminar documentos', 403);
+            }
+        }
+
+        await docClient.send(new DeleteCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
+        return success({ documentId: id });
+    } catch (err) {
+        console.error('Error deleting document:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
  * PUT /documents/{id} - Actualizar documento
+ *
+ * Si la actualización reemplaza el archivo, la versión anterior NO se pierde:
+ * se archiva en `versiones[]` y sube el contador `version`. Es un invariante del
+ * documento (reemplazar nunca destruye lo anterior), no una función de un
+ * endpoint, por eso vive acá y cubre todas las pantallas que reemplazan archivos.
+ * A diferencia de `nuevaVersion`, no toca firmas ni asignaciones.
  */
 module.exports.update = async (event) => {
     try {
@@ -313,6 +364,50 @@ module.exports.update = async (event) => {
 
         if (updateExpressions.length === 0) {
             return error('No hay campos para actualizar');
+        }
+
+        // Archivar la versión saliente cuando el archivo cambia de verdad.
+        const nuevoS3Key = body.s3Key !== undefined ? body.s3Key : body.archivoUrl;
+        if (nuevoS3Key) {
+            const cur = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
+            const doc = cur.Item;
+            if (!doc) return error('Documento no encontrado', 404);
+
+            const s3KeyActual = doc.s3Key || doc.archivoUrl || null;
+            if (s3KeyActual && s3KeyActual !== nuevoS3Key) {
+                const versionActual = doc.version || 1;
+                const snapshot = {
+                    version: versionActual,
+                    s3Key: s3KeyActual,
+                    archivoNombre: doc.archivoNombre || null,
+                    publicadaPor: doc.ultimaPublicacionPor || doc.createdBy || null,
+                    publicadaPorNombre: doc.ultimaPublicacionNombre || doc.creatorName || null,
+                    publicadaEn: doc.updatedAt || doc.createdAt || null,
+                    motivo: doc.ultimoMotivoVersion || null,
+                };
+                const versiones = Array.isArray(doc.versiones) ? [...doc.versiones, snapshot] : [snapshot];
+
+                updateExpressions.push('#version = :version', '#versiones = :versiones');
+                expressionNames['#version'] = 'version';
+                expressionNames['#versiones'] = 'versiones';
+                expressionValues[':version'] = versionActual + 1;
+                expressionValues[':versiones'] = versiones;
+
+                // El PDF con el anexo de firmas estampado corresponde al archivo viejo.
+                updateExpressions.push('#docFirmadoKey = :nulo', '#docFirmadoCount = :cero');
+                expressionNames['#docFirmadoKey'] = 'documentoFirmadoS3Key';
+                expressionNames['#docFirmadoCount'] = 'documentoFirmadoFirmaCount';
+                expressionValues[':nulo'] = null;
+                expressionValues[':cero'] = 0;
+
+                if (body.publicadaPor !== undefined) {
+                    updateExpressions.push('#pubPor = :pubPor', '#pubNombre = :pubNombre');
+                    expressionNames['#pubPor'] = 'ultimaPublicacionPor';
+                    expressionNames['#pubNombre'] = 'ultimaPublicacionNombre';
+                    expressionValues[':pubPor'] = body.publicadaPor || null;
+                    expressionValues[':pubNombre'] = body.publicadaPorNombre || null;
+                }
+            }
         }
 
         updateExpressions.push('#updatedAt = :updatedAt');

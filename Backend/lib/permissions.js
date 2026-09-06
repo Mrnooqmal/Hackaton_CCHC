@@ -39,23 +39,19 @@ const PERMISSIONS = {
     INCIDENTES_CALIFICAR_ACCIDENTE: 'incidentes.calificar_accidente',
     // Encuestas
     ENCUESTAS_CREAR: 'encuestas.crear',
-    // Asistente IA
-    IA_VER: 'ia.ver',
     // Actividades
     ACTIVIDADES_VER: 'actividades.ver',
     ACTIVIDADES_CREAR: 'actividades.crear',
     // Armar el esqueleto de planificación mensual (genera borradores por rango).
     // Delegable por tenant a otros roles (ej. Comité Paritario) desde Mi Empresa.
     ACTIVIDADES_PLANIFICAR: 'actividades.planificar',
-    // Documentos
-    DOCUMENTOS_VER: 'documentos.ver',
-    DOCUMENTOS_SUBIR: 'documentos.subir',
     // Cargos de onboarding (catálogo de cargos + kits DS44, nivel empresa)
     CARGOS_GESTIONAR: 'cargos.gestionar',
     // Mi Empresa (configuración de la empresa: roles, cargos e identidad)
     EMPRESA_VER: 'empresa.ver',
     EMPRESA_ROLES: 'empresa.roles',
     EMPRESA_CARGOS: 'empresa.cargos',
+    EMPRESA_EPP: 'empresa.epp',
     EMPRESA_IDENTIDAD: 'empresa.identidad',
 };
 
@@ -74,10 +70,8 @@ const DEFAULT_ROLE_PRESETS = {
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
         PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
-        PERMISSIONS.IA_VER,
         PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
-        PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
-        PERMISSIONS.CARGOS_GESTIONAR,
+        PERMISSIONS.CARGOS_GESTIONAR, PERMISSIONS.EMPRESA_EPP,
     ],
     prevencionista: [
         PERMISSIONS.OBRAS_VER, PERMISSIONS.OBRAS_DETALLE,
@@ -89,9 +83,9 @@ const DEFAULT_ROLE_PRESETS = {
         PERMISSIONS.INCIDENTES_ESTADISTICAS, PERMISSIONS.INCIDENTES_HISTORIAL, PERMISSIONS.INCIDENTES_REPORTAR,
         PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE,
         PERMISSIONS.ENCUESTAS_CREAR,
-        PERMISSIONS.IA_VER,
         PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR, PERMISSIONS.ACTIVIDADES_PLANIFICAR,
-        PERMISSIONS.DOCUMENTOS_VER, PERMISSIONS.DOCUMENTOS_SUBIR,
+        // El prevencionista es quien responde por los respaldos DS44 del EPP.
+        PERMISSIONS.EMPRESA_EPP,
     ],
     supervisor: [
         PERMISSIONS.OBRAS_VER, PERMISSIONS.OBRAS_DETALLE,
@@ -103,18 +97,15 @@ const DEFAULT_ROLE_PRESETS = {
         // El supervisor puede crear sus propias actividades (trabaja solo o tiene
         // tareas adicionales no asignadas por la planificación).
         PERMISSIONS.ACTIVIDADES_VER, PERMISSIONS.ACTIVIDADES_CREAR,
-        PERMISSIONS.DOCUMENTOS_VER,
     ],
-    // Colaborador/trabajador: acceso mínimo para VER y firmar lo que se les asigna
-    // (documentos y actividades). Las encuestas y "mis firmas" no requieren permiso.
+    // Colaborador/trabajador: acceso mínimo para VER y firmar lo que se les asigna.
+    // Documentos, encuestas y "mis firmas" no requieren permiso.
     // Las páginas filtran a solo sus ítems asignados; firmar lo asignado no requiere
     // un permiso aparte.
     colaborador: [
-        PERMISSIONS.DOCUMENTOS_VER,
         PERMISSIONS.ACTIVIDADES_VER,
     ],
     trabajador: [
-        PERMISSIONS.DOCUMENTOS_VER,
         PERMISSIONS.ACTIVIDADES_VER,
     ],
 };

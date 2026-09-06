@@ -16,7 +16,6 @@ detallada.
 | [Incidentes](/modulos/incidentes) | Reportar hallazgos, incidentes y accidentes, y ver estadísticas. |
 | [Actividades](/modulos/actividades) | Planificar el mes en calendario, programar capacitaciones y charlas, y registrar la asistencia. |
 | [Encuestas](/modulos/encuestas) | Crear y responder encuestas de seguridad. |
-| [Asistente IA](/modulos/asistente-ia) | Generar matrices de riesgo y documentos con ayuda de la IA. |
 | [Personas](/modulos/personas) | Registrar a los trabajadores y definir su rol y cargo. |
 | [Bandeja de Entrada](/modulos/bandeja-entrada) | Enviar y recibir mensajes internos de la obra. |
 | [Mi Empresa](/modulos/tenants) | Configurar los datos, el logo, los roles y los cargos de tu empresa. |

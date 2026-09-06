@@ -23,7 +23,6 @@ const ROUTE_LABELS = {
     '/signature-requests': 'Solicitudes de Firma',
     '/my-signatures': 'Mis Firmas',
     '/offline-signatures': 'Firmas Offline',
-    '/ai-assistant': 'Asistente IA',
     '/inbox': 'Bandeja de Entrada',
     '/settings': 'Configuración',
     '/enroll-me': 'Mi Enrolamiento',

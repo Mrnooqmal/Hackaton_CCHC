@@ -10,6 +10,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { GetCommand, PutCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
+const { fechaHoraChile } = require('../utils/fechaChile');
 const { generateSignatureToken, verifyPin } = require('../utils/validation');
 
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
@@ -158,8 +159,7 @@ class FirmaService {
             obraId: obraId || null,
 
             // Timestamps según DS 44
-            fecha: now.toISOString().split('T')[0],
-            horario: now.toTimeString().split(' ')[0],
+            ...fechaHoraChile(now),
             timestamp: now.toISOString(),
 
             // Metadata de auditoría

@@ -9,7 +9,6 @@ import WorkerDetail from './pages/WorkerDetail';
 import WorkerEnroll from './pages/WorkerEnroll';
 import DocumentsRepository from './pages/DocumentsRepository';
 import Activities from './pages/Activities';
-import AIAssistant from './pages/AIAssistant';
 import Surveys from './pages/Surveys';
 import Incidents from './pages/Incidents';
 import Inbox from './pages/Inbox';
@@ -31,7 +30,6 @@ import ObraNueva from './pages/ObraNueva';
 import ObraDetalle from './pages/ObraDetalle';
 import ObraEquipoPage from './pages/ObraEquipoPage';
 import Crear from './pages/Crear';
-import Contenido from './pages/Contenido';
 import CargosOnboarding from './pages/CargosOnboarding';
 import CatalogosActividad from './pages/CatalogosActividad';
 import MiEmpresa from './pages/MiEmpresa';
@@ -158,12 +156,10 @@ function AppContent() {
       <Route path="/signature-requests" element={<ProtectedRoute><SignatureRequests /></ProtectedRoute>} />
       <Route path="/my-signatures" element={<ProtectedRoute><MySignatures /></ProtectedRoute>} />
       <Route path="/offline-signatures" element={<ProtectedRoute requiredPermission={PERMISSIONS.FIRMAS_CREAR}><OfflineSignatures /></ProtectedRoute>} />
-      <Route path="/ai-assistant" element={<ProtectedRoute requiredPermission={PERMISSIONS.IA_VER}><AIAssistant /></ProtectedRoute>} />
       <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
       <Route path="/mi-empresa" element={<ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}><MiEmpresa /></ProtectedRoute>} />
       <Route path="/crear" element={<ProtectedRoute><Crear /></ProtectedRoute>} />
-      <Route path="/contenido" element={<ProtectedRoute><Contenido /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="/enroll-me" element={<ProtectedRoute><EnrollMe /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />

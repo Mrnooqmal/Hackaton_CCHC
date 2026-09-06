@@ -31,7 +31,7 @@ aws_access_key_id = TU_ACCESS_KEY
 aws_secret_access_key = TU_SECRET_KEY
 ```
 
-> **Nota**: Si no tienes una cuenta AWS, necesitarás una para obtener estas claves. El proyecto usa servicios como DynamoDB, S3, SES y Bedrock.
+> **Nota**: Si no tienes una cuenta AWS, necesitarás una para obtener estas claves. El proyecto usa servicios como DynamoDB, S3 y SES.
 
 ---
 

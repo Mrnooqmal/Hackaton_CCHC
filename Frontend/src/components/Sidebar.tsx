@@ -13,7 +13,8 @@ import {
     FiCheckSquare,
     FiX,
     FiLogOut,
-    FiList
+    FiList,
+    FiClipboard
 } from 'react-icons/fi';
 import { surveysApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -54,8 +55,9 @@ const GENERIC_NAV: NavSection[] = [
         items: [
             { path: '/obras', icon: FiHome, label: 'Obras', permission: PERMISSIONS.OBRAS_VER },
             { path: '/personas', icon: FiUsers, label: 'Personas', permission: PERMISSIONS.PERSONAS_VER },
-            { path: '/contenido', icon: FiCalendar, label: 'Contenido' },
             { path: '/documents-repository', icon: FiFileText, label: 'Repositorio', permission: PERMISSIONS.REPOSITORIO_VER },
+            { path: '/activities', icon: FiCalendar, label: 'Actividades', permission: PERMISSIONS.ACTIVIDADES_VER },
+            { path: '/surveys', icon: FiClipboard, label: 'Encuestas' },
         ]
     },
     {

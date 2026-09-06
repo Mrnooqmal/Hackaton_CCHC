@@ -56,8 +56,8 @@ documentos firmables con trazabilidad.
 - **DynamoDB** (todas las tablas `PAY_PER_REQUEST`)
 - **S3** para archivos (documentos, evidencias, firmas de enrolamiento)
 - **Auth:** JWT + Bcrypt; firma digital por **PIN** (hash con `personaId`)
-- **IA:** AWS Bedrock (Claude 3 Sonnet) **y** Google Gemini (`lib/ai/bedrock.js`,
-  `lib/ai/gemini.js`)
+- **IA:** Google Gemini (`lib/ai/gemini.js`), solo para transcribir audio al
+  reportar un incidente
 - **Notificaciones:** SMS (`lib/services/SmsService.js`), email, e inbox interno
 - **EventBus** interno (`lib/events/EventBus.js`) para notificaciones
   desacopladas (p.ej. `document.assigned` → mensaje en inbox)
@@ -86,7 +86,7 @@ Hackaton_CCHC/
 │   │   ├── clients/        # dynamodb.js, s3.js
 │   │   ├── models/         # Tenant.js, Obra.js, Persona.js
 │   │   ├── services/       # Lógica de negocio (ver §6)
-│   │   ├── ai/             # bedrock.js, gemini.js
+│   │   ├── ai/             # gemini.js (transcripción de audio)
 │   │   ├── events/         # EventBus.js
 │   │   ├── ds44.js         # ★ Catálogo de cargos + kits DS44 (núcleo del dominio)
 │   │   ├── permissions.js  # ★ Catálogo de permisos y presets por rol
@@ -137,7 +137,7 @@ no tenga acceso web), `habilitado` (completó enrolamiento), `estado`.
   resuelven dinámicamente por tenant vía `resolvePersonaPermisos(persona, tenant)`.
 - El tenant puede redefinir los permisos de cada rol (`tenant.roles[].permisos`);
   hay presets por defecto (`DEFAULT_ROLE_PRESETS`). `trabajador`/`colaborador`
-  siempre reciben el mínimo (`documentos.ver`, `actividades.ver`) unido a su rol.
+  siempre reciben el mínimo (`actividades.ver`) unido a su rol.
 - En el frontend, `ProtectedRoute` usa `requiredPermission` (ver rutas en §7).
 
 ### 4.4 DS 44: cargos, kits y alcances (`lib/ds44.js` — núcleo)
@@ -334,7 +334,7 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
 | `surveys/` | por-endpoint | encuestas, respuestas |
 | `inbox-module/` | itty-router | mensajería interna + notificaciones |
 | `uploads/` | por-endpoint | presigned URLs S3 (upload/download/batch), confirm, delete |
-| `ai-assistant/` | por-endpoint | chat, risk-matrix, prevention-plan, daily-talk, MIPER, analyze/extract-incident, transcribe |
+| `ai/` | por-endpoint | transcripción de audio (dictado del relato de un incidente) |
 | `suggestions/` | por-endpoint | buzón de sugerencias |
 | `notifications/` | por-endpoint | envío de emails (welcome, test) |
 
@@ -380,9 +380,9 @@ Rutas protegidas (con `ProtectedRoute` + `requiredPermission`):
 - `/documents`, `/documents-repository`
 - `/surveys`, `/incidents`, `/activities`
 - `/signature-requests`, `/my-signatures`, `/offline-signatures`
-- `/ai-assistant`, `/inbox`
+- `/inbox`
 - `/mi-empresa` (config empresa: roles, cargos, identidad/branding)
-- `/enroll-me` (auto-enrolamiento), `/crear`, `/contenido`, `/settings`, `/change-password`
+- `/enroll-me` (auto-enrolamiento), `/crear`, `/settings`, `/change-password`
 
 Componentes de dominio destacados: `SignaturePad`, `PinInput`, `SignatureModal`,
 `FirmaAsistidaModal`, `RiskMatrixVisual`, `MIPERVisual`, `ObraProgressCard`,

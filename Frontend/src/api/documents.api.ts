@@ -155,6 +155,13 @@ export const documentsApi = {
     get: (id: string) =>
         apiRequest<Document>(`/documents/${id}`),
 
+    /** Elimina un documento. El backend lo rechaza si ya tiene firmas. */
+    remove: (id: string, actorId?: string) =>
+        apiRequest<{ documentId: string }>(
+            `/documents/${id}${actorId ? `?actorId=${encodeURIComponent(actorId)}` : ''}`,
+            { method: 'DELETE' },
+        ),
+
     update: (id: string, data: Partial<Document>) =>
         apiRequest<Document>(`/documents/${id}`, {
             method: 'PUT',

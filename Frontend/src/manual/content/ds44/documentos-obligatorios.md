@@ -56,10 +56,9 @@ El cumplimiento de una etapa se calcula según cuántos documentos obligatorios 
 **completados**. Al intentar [avanzar de fase](/ds44/fases-obra), la plataforma verifica que
 la etapa anterior esté completa.
 
-::: tip Generación asistida
-La **matriz de riesgos** puede generarse con ayuda del [Asistente IA](/modulos/asistente-ia),
-que propone peligros, riesgos y medidas de control por cargo a partir de la normativa. El
-prevencionista revisa, ajusta y firma el resultado.
+::: tip Quién la elabora
+La **matriz de riesgos** la elabora el prevencionista: identifica peligros, riesgos y
+medidas de control por cargo, y firma el resultado.
 :::
 
 ## Preguntas frecuentes

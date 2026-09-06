@@ -56,7 +56,6 @@ export const MANUAL_SECTIONS: NavSection[] = [
             { text: 'Incidentes', link: 'modulos/incidentes' },
             { text: 'Actividades', link: 'modulos/actividades' },
             { text: 'Encuestas', link: 'modulos/encuestas' },
-            { text: 'Asistente IA', link: 'modulos/asistente-ia' },
             { text: 'Personas', link: 'modulos/personas' },
             { text: 'Bandeja de Entrada', link: 'modulos/bandeja-entrada' },
             { text: 'Mi Empresa', link: 'modulos/tenants' },

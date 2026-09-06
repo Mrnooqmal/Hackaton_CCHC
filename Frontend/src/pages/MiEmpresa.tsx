@@ -17,6 +17,7 @@ import { uploadsApi } from '../api/uploads.api';
 import { personasApi } from '../api/personas.api';
 import type { PersonaResponse } from '../api/types';
 import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS, PERMISSIONS } from '../permissions';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const normalize = (s: string) =>
@@ -503,6 +504,17 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
             return { ...r, permisos: has ? r.permisos.filter((k) => k !== key) : [...r.permisos, key] };
         }));
 
+    // Marca o quita de una vez todos los permisos de un módulo.
+    const setGroupPerms = (id: string, keys: string[], on: boolean) =>
+        setRoles((p) => p.map((r) => {
+            if (r._id !== id || r.locked) return r;
+            const resto = r.permisos.filter((k) => !keys.includes(k));
+            return { ...r, permisos: on ? [...resto, ...keys] : resto };
+        }));
+
+    // Solo cuentan las claves vigentes: un rol puede arrastrar permisos retirados.
+    const activos = (r: RoleDraft) => ALL_PERMISSION_KEYS.filter((k) => r.permisos.includes(k)).length;
+
     const addRole = () =>
         setRoles((p) => [...p, { _id: `new-${Date.now()}`, id: '', nombre: '', descripcion: '', permisos: [] }]);
 
@@ -591,9 +603,8 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
                 <FiInfo style={{ flexShrink: 0, color: 'var(--info-500)' }} />
                 <span className="text-sm text-muted" style={{ flex: 1 }}>
                     Los roles con <FiLock size={11} style={{ verticalAlign: -1 }} /> son los mínimos de la empresa:
-                    puedes renombrarlos y ajustar sus permisos, pero no eliminarlos ni cambiar su descripción.
-                    El <b>Administrador</b> tiene acceso total y sus permisos no se editan. Al eliminar un rol con
-                    personas asignadas, deberás reasignarlas a otro rol.
+                    puedes renombrarlos y ajustar sus permisos, pero no eliminarlos. Al eliminar un rol con
+                    personas asignadas, se te pedirá reasignarlas antes.
                 </span>
                 <button className="btn btn-save" disabled={!dirty || saving} onClick={save}>
                     {saving ? <div className="spinner" /> : <><FiSave /> Guardar cambios</>}
@@ -629,24 +640,56 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
                                 </div>
                             </div>
 
-                            <div className="me-perms-head">
-                                Permisos {r.locked && <span className="me-lock-tag"><FiLock size={10} /> Acceso total (no editable)</span>}
-                            </div>
-                            <div className="me-perms-groups">
-                                {PERMISSION_GROUPS.map((g) => (
-                                    <div key={g.grupo} className="me-perms-group">
-                                        <div className="me-perms-group-title">{g.grupo}</div>
-                                        {g.permisos.map((perm) => (
-                                            <label key={perm.key} className={`me-perm ${r.locked ? 'disabled' : ''}`}>
-                                                <input type="checkbox" disabled={r.locked}
-                                                    checked={r.locked || r.permisos.includes(perm.key)}
-                                                    onChange={() => togglePerm(r._id, perm.key)} />
-                                                <span>{perm.label}</span>
-                                            </label>
-                                        ))}
+                            {r.locked ? (
+                                <div className="me-perms-total">
+                                    <FiLock size={14} aria-hidden="true" />
+                                    <div>
+                                        <strong>Acceso total</strong>
+                                        <p>
+                                            El administrador entra a todos los módulos de la plataforma.
+                                            Sus permisos no se editan.
+                                        </p>
                                     </div>
-                                ))}
-                            </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="me-perms-head">
+                                        <span>Permisos</span>
+                                        <span className="me-perms-tally">
+                                            {activos(r)} de {ALL_PERMISSION_KEYS.length}
+                                        </span>
+                                    </div>
+                                    <div className="me-perms-groups">
+                                        {PERMISSION_GROUPS.map((g) => {
+                                            const keys = g.permisos.map((p) => p.key);
+                                            const marcados = keys.filter((k) => r.permisos.includes(k)).length;
+                                            const todos = marcados === keys.length;
+                                            return (
+                                                <div key={g.grupo} className={`me-mod${marcados ? '' : ' vacio'}`}>
+                                                    <div className="me-mod-head">
+                                                        <span className="me-mod-name">{g.grupo}</span>
+                                                        <button type="button" className="me-mod-all"
+                                                            onClick={() => setGroupPerms(r._id, keys, !todos)}>
+                                                            {todos ? 'Quitar todo' : 'Marcar todo'}
+                                                        </button>
+                                                        <span className="me-mod-tally">{marcados}/{keys.length}</span>
+                                                    </div>
+                                                    <div className="me-mod-chips">
+                                                        {g.permisos.map((perm) => (
+                                                            <label key={perm.key} className="me-chip" title={perm.nota}>
+                                                                <input type="checkbox"
+                                                                    checked={r.permisos.includes(perm.key)}
+                                                                    onChange={() => togglePerm(r._id, perm.key)} />
+                                                                <span>{perm.label}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     );
                 })}
@@ -802,6 +845,25 @@ function EppTab({ tenantId, toast }: {
     const [draft, setDraft] = useState<EppDraft>(emptyEppDraft);
     const [saving, setSaving] = useState(false);
     const [borrar, setBorrar] = useState<EppElemento | null>(null);
+    const [preview, setPreview] = useState<{ url: string | null; name: string } | null>(null);
+
+    // Vista previa dentro de la misma página: se abre el modal en estado de
+    // carga mientras se resuelve la URL presignada del respaldo.
+    const verDocumento = async (adjunto: EppAdjunto) => {
+        setPreview({ url: null, name: adjunto.nombre });
+        try {
+            const res = await uploadsApi.getDownloadUrl(adjunto.fileKey);
+            if (res.success && res.data) {
+                setPreview((prev) => prev ? { ...prev, url: res.data!.downloadUrl } : prev);
+            } else {
+                toast.error('No se pudo abrir la vista previa');
+                setPreview(null);
+            }
+        } catch {
+            toast.error('No se pudo abrir la vista previa');
+            setPreview(null);
+        }
+    };
 
     useEffect(() => {
         let alive = true;
@@ -940,32 +1002,43 @@ function EppTab({ tenantId, toast }: {
             ) : filtrados.length === 0 ? (
                 <p className="epp-sin-resultados">Ningún elemento coincide con «{search}».</p>
             ) : (
-                <ul className="epp-lista">
-                    {filtrados.map((e) => (
-                        <li key={e.eppId} className={`epp-item${e.completo ? '' : ' incompleto'}`}>
-                            <div className="epp-item-id">
-                                <h4>{e.nombre}</h4>
-                                {e.descripcion && <p>{e.descripcion}</p>}
+                <ul className="epp-grid">
+                    {filtrados.map((e, i) => (
+                        <li key={e.eppId} className="epp-tile" style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}>
+                            <div className="epp-tile-top">
+                                <span className="epp-tile-icon"><LuHardHat size={16} aria-hidden="true" /></span>
+                                <div className="epp-tile-menu">
+                                    <button type="button" aria-label={`Editar ${e.nombre}`} title="Editar"
+                                        onClick={() => abrirEdicion(e)}>
+                                        <FiEdit3 size={13} />
+                                    </button>
+                                    <button type="button" className="danger" aria-label={`Eliminar ${e.nombre}`} title="Eliminar"
+                                        onClick={() => setBorrar(e)}>
+                                        <FiTrash2 size={13} />
+                                    </button>
+                                </div>
                             </div>
 
-                            <div className="epp-docs">
-                                <EppDocBadge
-                                    label={e.certificado && e.certificadoTipo
-                                        ? CERTIFICADO_TIPO_LABEL[e.certificadoTipo]
-                                        : 'Certificado / registro ISP'}
+                            <div className="epp-tile-body">
+                                <h4 className="epp-tile-name" title={e.nombre}>{e.nombre}</h4>
+                                {e.descripcion && <p className="epp-tile-desc" title={e.descripcion}>{e.descripcion}</p>}
+                            </div>
+
+                            <div className="epp-tile-docs">
+                                <EppDocChip
+                                    label="Certificado de calidad o registro ISP"
+                                    title={e.certificado && e.certificadoTipo ? CERTIFICADO_TIPO_LABEL[e.certificadoTipo] : 'Certificado o registro ISP'}
                                     adjunto={e.certificado}
+                                    onView={verDocumento}
+                                    onMissingClick={() => abrirEdicion(e)}
                                 />
-                                <EppDocBadge label="Instructivo de uso" adjunto={e.instructivo} />
-                            </div>
-
-                            <div className="epp-item-actions">
-                                <button className="btn btn-ghost btn-sm" onClick={() => abrirEdicion(e)}>
-                                    <FiEdit3 size={13} /> Editar
-                                </button>
-                                <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
-                                    aria-label={`Eliminar ${e.nombre}`} onClick={() => setBorrar(e)}>
-                                    <FiTrash2 size={13} />
-                                </button>
+                                <EppDocChip
+                                    label="Instructivo de uso y mantención"
+                                    title="Instructivo de uso y mantención"
+                                    adjunto={e.instructivo}
+                                    onView={verDocumento}
+                                    onMissingClick={() => abrirEdicion(e)}
+                                />
                             </div>
                         </li>
                     ))}
@@ -1022,6 +1095,7 @@ function EppTab({ tenantId, toast }: {
                             adjunto={draft.certificado}
                             onChange={(certificado) => setDraft({ ...draft, certificado })}
                             onError={setErr}
+                            onView={verDocumento}
                             extra={draft.certificado ? (
                                 <div className="epp-tipo">
                                     <label className="form-label" htmlFor="epp-tipo-cert">Este documento es</label>
@@ -1045,6 +1119,7 @@ function EppTab({ tenantId, toast }: {
                             adjunto={draft.instructivo}
                             onChange={(instructivo) => setDraft({ ...draft, instructivo })}
                             onError={setErr}
+                            onView={verDocumento}
                         />
                     </div>
                 </div>
@@ -1071,41 +1146,58 @@ function EppTab({ tenantId, toast }: {
                     conservan el elemento tal como se entregó.
                 </p>
             </Modal>
+
+            {/* Vista previa de un respaldo, dentro de la misma página */}
+            <DocumentPreviewModal
+                isOpen={!!preview}
+                onClose={() => setPreview(null)}
+                url={preview?.url ?? null}
+                fileName={preview?.name}
+                onDownload={preview?.url ? () => window.open(preview.url as string, '_blank', 'noopener') : undefined}
+            />
         </div>
     );
 }
 
-/** Estado de un respaldo: presente (con enlace) o faltante. */
-function EppDocBadge({ label, adjunto }: { label: string; adjunto: EppAdjunto | null }) {
-    const ver = async () => {
-        if (!adjunto) return;
-        const res = await uploadsApi.getDownloadUrl(adjunto.fileKey);
-        if (res.success && res.data) window.open(res.data.downloadUrl, '_blank', 'noopener');
-    };
-
+/**
+ * Acceso compacto a un respaldo dentro de la tarjeta de cuadrícula: un chip
+ * ícono + etiqueta. Presente → abre la vista previa. Faltante → lleva a
+ * editar el elemento para cargarlo (sin bloques de color, solo trazo discontinuo).
+ */
+function EppDocChip({ label, title, adjunto, onView, onMissingClick }: {
+    label: string;
+    title: string;
+    adjunto: EppAdjunto | null;
+    onView: (a: EppAdjunto) => void;
+    onMissingClick: () => void;
+}) {
     if (!adjunto) {
         return (
-            <span className="epp-doc falta">
-                <FiAlertTriangle size={12} aria-hidden="true" /> {label}: falta
-            </span>
+            <button type="button" className="epp-tile-doc missing" onClick={onMissingClick}
+                title={`${title}: sin cargar — clic para agregarlo`}>
+                <FiPlus size={13} aria-hidden="true" />
+                <span>{label}</span>
+            </button>
         );
     }
     return (
-        <button type="button" className="epp-doc ok" onClick={ver} title={`Ver ${adjunto.nombre}`}>
-            <FiCheck size={12} aria-hidden="true" /> {label}
-            <FiEye size={12} aria-hidden="true" />
+        <button type="button" className="epp-tile-doc" onClick={() => onView(adjunto)}
+            title={`Ver ${title.toLowerCase()}: ${adjunto.nombre}`}>
+            <FiEye size={13} aria-hidden="true" />
+            <span>{label}</span>
         </button>
     );
 }
 
 /** Slot de subida de un respaldo, con vista previa y reemplazo. */
-function EppUploader({ titulo, ayuda, tenantId, adjunto, onChange, onError, extra }: {
+function EppUploader({ titulo, ayuda, tenantId, adjunto, onChange, onError, onView, extra }: {
     titulo: string;
     ayuda?: string;
     tenantId: string;
     adjunto: EppAdjunto | null;
     onChange: (a: EppAdjunto | null) => void;
     onError: (msg: string) => void;
+    onView: (a: EppAdjunto) => void;
     extra?: React.ReactNode;
 }) {
     const inputRef = useRef<HTMLInputElement>(null);
@@ -1131,12 +1223,6 @@ function EppUploader({ titulo, ayuda, tenantId, adjunto, onChange, onError, extr
         }
     };
 
-    const ver = async () => {
-        if (!adjunto) return;
-        const res = await uploadsApi.getDownloadUrl(adjunto.fileKey);
-        if (res.success && res.data) window.open(res.data.downloadUrl, '_blank', 'noopener');
-    };
-
     return (
         <div className={`epp-slot${adjunto ? ' cargado' : ''}`}>
             <div className="epp-slot-head">
@@ -1156,7 +1242,7 @@ function EppUploader({ titulo, ayuda, tenantId, adjunto, onChange, onError, extr
             {adjunto ? (
                 <div className="epp-slot-file">
                     <span className="epp-slot-name"><FiFile size={13} aria-hidden="true" /> {adjunto.nombre}</span>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={ver}>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => onView(adjunto)}>
                         <FiEye size={13} /> Ver
                     </button>
                     <button type="button" className="btn btn-ghost btn-sm" disabled={subiendo}
@@ -1350,13 +1436,64 @@ const styles = `
 .me-role-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .me-count { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-muted); background: var(--surface-hover); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
 
-.me-perms-head { font-size: var(--text-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-.me-lock-tag { display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-muted); }
-.me-perms-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-.me-perms-group-title { font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary, var(--text-primary)); margin-bottom: 6px; }
-.me-perm { display: flex; align-items: flex-start; gap: 8px; font-size: var(--text-sm); padding: 3px 0; cursor: pointer; }
-.me-perm.disabled { cursor: default; opacity: .7; }
-.me-perm input { margin-top: 3px; flex-shrink: 0; }
+/* ── Permisos: un módulo por celda, cada permiso es un chip conmutable ──────
+   El chip sustituye a la lista de casillas: ocupa ~3 veces menos alto, deja
+   todo el alcance del rol visible de un vistazo y el único color en juego es
+   el de la marca (activo) frente al trazo neutro (inactivo). */
+.me-perms-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    margin: 4px 0 10px; padding-top: 12px; border-top: 1px solid var(--surface-border);
+    font-size: var(--text-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted);
+}
+.me-perms-tally { font-weight: 600; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+
+/* Rol Administrador: no hay nada que decidir, así que no se dibujan controles. */
+.me-perms-total {
+    display: flex; align-items: flex-start; gap: 10px;
+    margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md);
+    background: var(--surface-elevated); border: 1px solid var(--surface-border); color: var(--text-muted);
+}
+.me-perms-total strong { display: block; font-size: var(--text-sm); color: var(--text-primary); }
+.me-perms-total p { margin: 2px 0 0; font-size: var(--text-xs); line-height: 1.55; }
+
+/* Columnas en vez de grilla: los módulos tienen 1 y 8 permisos, y una grilla
+   estira cada celda a la altura de la más alta — cajas medio vacías. El
+   empaquetado por columnas las deja del alto de su contenido. */
+.me-perms-groups { columns: 248px; column-gap: 10px; }
+.me-mod {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 10px 12px 12px; margin-bottom: 10px; border-radius: var(--radius-md);
+    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    break-inside: avoid;
+}
+/* Un módulo sin permisos marcados se lee, pero no compite por la atención. */
+.me-mod.vacio { background: transparent; }
+.me-mod.vacio .me-mod-name { font-weight: 500; color: var(--text-muted); }
+.me-mod-head { display: flex; align-items: baseline; gap: 8px; }
+.me-mod-name { flex: 1; min-width: 0; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.me-mod-tally { font-size: 11px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.me-mod-all {
+    border: none; background: none; padding: 0; cursor: pointer; font-family: inherit;
+    font-size: 11px; font-weight: 600; color: var(--accent-text);
+    opacity: 0; transition: opacity var(--transition-fast);
+}
+.me-mod:hover .me-mod-all, .me-mod:focus-within .me-mod-all { opacity: 1; }
+.me-mod-all:focus-visible { opacity: 1; outline: 2px solid var(--primary-400); outline-offset: 2px; border-radius: 3px; }
+
+.me-mod-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.me-chip { display: inline-flex; cursor: pointer; }
+.me-chip input { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
+.me-chip span {
+    display: inline-block; padding: 4px 9px; border-radius: var(--radius-full);
+    border: 1px solid var(--surface-border); background: var(--surface-card);
+    font-size: 11.5px; line-height: 1.35; color: var(--text-muted);
+    transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.me-chip:hover span { border-color: var(--primary-400); color: var(--text-primary); }
+.me-chip input:checked + span {
+    background: var(--accent-tint); border-color: transparent; color: var(--accent-text); font-weight: 600;
+}
+.me-chip input:focus-visible + span { outline: 2px solid var(--primary-400); outline-offset: 2px; }
 
 .me-cargos-list { display: flex; flex-direction: column; }
 .me-cargo-row {
@@ -1411,28 +1548,70 @@ const styles = `
 .epp-search input:focus { outline: none; border-color: var(--primary-400); box-shadow: 0 0 0 3px var(--accent-tint); }
 .epp-count { font-size: var(--text-xs); color: var(--text-muted); margin-right: auto; }
 
-.epp-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-.epp-item {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: center; gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    background: var(--surface-card); border: 1px solid var(--surface-border);
-    border-radius: var(--radius-md); border-left: 3px solid var(--success-500);
+/* Cuadrícula de elementos: cada EPP es una tarjeta compacta y autocontenida.
+   Sin franjas ni fondos de color — solo el ícono y los estados hover/foco
+   usan el color de marca; lo demás es tipografía y trazo neutro. */
+/* Misma cuadrícula, tamaño de tarjeta y hover que /personas (pdir-grid/pdir-card),
+   para que ambas pantallas se sientan parte de la misma interfaz. */
+.epp-grid {
+    list-style: none; margin: 0; padding: var(--space-2) 0 0;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
 }
-.epp-item.incompleto { border-left-color: var(--warning-500); }
-.epp-item-id { min-width: 0; }
-.epp-item-id h4 { margin: 0; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
-.epp-item-id p { margin: 2px 0 0; font-size: var(--text-xs); color: var(--text-muted); }
-.epp-docs { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-.epp-doc {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11px; font-family: inherit; padding: 3px 9px; border-radius: var(--radius-full);
-    border: 1px solid transparent;
+.epp-tile {
+    display: flex; flex-direction: column; gap: 12px;
+    padding: 16px; background: var(--surface-card); border: 1px solid var(--surface-border);
+    border-radius: 12px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s;
+    animation: eppTileIn 0.3s ease both;
 }
-.epp-doc.ok { color: var(--success-600, var(--success-500)); background: rgba(34, 197, 94, 0.1); cursor: pointer; }
-.epp-doc.ok:hover { border-color: var(--success-500); }
-.epp-doc.falta { color: var(--warning-600, var(--warning-500)); background: rgba(234, 179, 8, 0.1); }
-.epp-item-actions { display: flex; align-items: center; gap: 2px; }
+@keyframes eppTileIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.epp-tile:hover, .epp-tile:focus-within {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18);
+    border-color: var(--primary-400);
+}
+@media (max-width: 900px) { .epp-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 580px) { .epp-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.epp-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
+.epp-tile-icon {
+    width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-tint); color: var(--primary-600);
+}
+.epp-tile-menu { display: flex; gap: 1px; opacity: .5; transition: opacity var(--transition-fast); }
+.epp-tile:hover .epp-tile-menu, .epp-tile:focus-within .epp-tile-menu { opacity: 1; }
+.epp-tile-menu button {
+    width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+    border: none; background: none; color: var(--text-muted); border-radius: 6px; cursor: pointer;
+}
+.epp-tile-menu button:hover { background: var(--surface-hover); color: var(--text-primary); }
+.epp-tile-menu button.danger:hover { color: var(--danger-500); }
+
+.epp-tile-body { display: flex; flex-direction: column; gap: 3px; }
+.epp-tile-name {
+    margin: 0; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.epp-tile-desc {
+    margin: 0; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Accesos a los respaldos: fila ícono + etiqueta completa, sin nombre de archivo en pantalla */
+.epp-tile-docs { display: flex; flex-direction: column; gap: 6px; margin-top: auto; }
+.epp-tile-doc {
+    display: flex; align-items: center; gap: 8px; text-align: left;
+    padding: 8px 9px; border-radius: var(--radius-md);
+    border: 1px solid var(--surface-border); background: var(--surface-elevated);
+    color: var(--text-secondary); font-size: 11.5px; font-weight: 500; line-height: 1.3; font-family: inherit;
+    cursor: pointer; transition: all var(--transition-fast);
+}
+.epp-tile-doc svg { flex-shrink: 0; }
+.epp-tile-doc:hover { border-color: var(--primary-400); color: var(--primary-600); background: var(--accent-tint); }
+.epp-tile-doc:focus-visible { outline: 2px solid var(--primary-500, var(--primary-600)); outline-offset: 1px; }
+.epp-tile-doc.missing { color: var(--text-muted); border-style: dashed; }
+.epp-tile-doc.missing:hover { border-color: var(--text-muted); color: var(--text-secondary); background: var(--surface-elevated); }
 
 .epp-empty { text-align: center; padding: var(--space-10) var(--space-6); }
 .epp-empty-icon {
@@ -1471,11 +1650,6 @@ const styles = `
 .epp-tipo { display: flex; flex-direction: column; gap: 4px; padding-top: var(--space-2); border-top: 1px solid var(--surface-border); }
 .epp-tipo .form-label { margin-bottom: 0; }
 .epp-borrar-texto { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; margin: 0; }
-
-@media (max-width: 720px) {
-    .epp-item { grid-template-columns: minmax(0, 1fr); }
-    .epp-item-actions { justify-content: flex-end; }
-}
 
 .me-reassign-warn { display: flex; align-items: center; gap: 10px; background: var(--surface-hover); padding: 10px 12px; border-radius: var(--radius-md); }
 .me-affected { margin-top: 14px; max-height: 220px; overflow-y: auto; border: 1px solid var(--surface-border); border-radius: var(--radius-md); }

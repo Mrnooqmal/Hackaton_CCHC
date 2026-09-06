@@ -3,6 +3,13 @@ export type Ds44DocDefinition = {
     tipos: string[];
     titulo: string;
     estadoFirma?: string;
+    /**
+     * El requisito se cumple con UNO O VARIOS documentos a la vez (una obra
+     * puede tener varios planes de emergencia: por edificio, por frente de
+     * trabajo o por tipo de emergencia). El requisito queda cubierto con el
+     * primero, y los demás se suman a la lista.
+     */
+    multiple?: boolean;
 };
 
 export type Ds44OnboardingItem = {
@@ -61,7 +68,8 @@ export const DS44_PLAN_DOCS: Ds44DocDefinition[] = [
         key: 'PLAN_EMERGENCIAS',
         tipos: ['PLAN_EMERGENCIAS'],
         titulo: 'Plan de Emergencias de la Obra',
-        estadoFirma: 'Jefe de Obra'
+        estadoFirma: 'Jefe de Obra',
+        multiple: true
     }
 ];
 
@@ -181,6 +189,8 @@ export type Ds44DoElemento = {
     moduloPendiente?: boolean;
     // true => cuenta en el % de cumplimiento HACER de la obra.
     cuenta?: boolean;
+    // true => admite varios documentos a la vez (ver Ds44DocDefinition.multiple).
+    multiple?: boolean;
 };
 
 // Evalua si un elemento aplica a la obra. Si falta el dato para decidir,
@@ -208,8 +218,13 @@ export function evalAplicabilidad(cond: Ds44DoCondicion, ctx: Ds44DoContext): Ds
 export const DS44_DO_PROCEDIMIENTOS: Ds44DoElemento[] = [
     { key: 'OPERACION_MAQUINAS', tipo: 'OPERACION_MAQUINAS', titulo: 'Trabajo seguro en máquinas, equipos y herramientas motrices', articulo: 'Art. 10', fuente: 'documento', condicion: 'tiene_maquinaria', cuenta: true },
     { key: 'PROCEDIMIENTO_AGENTES', tipo: 'PROCEDIMIENTO_AGENTES', titulo: 'Utilización de agentes físicos, químicos y biológicos', articulo: 'Art. 2 N°14 c', fuente: 'documento', condicion: 'agentes_fqb', cuenta: true },
+    // FUF 54 y 55. Aplican siempre: en obra hay ruido, sílice, radiación UV y
+    // carga física de forma prácticamente permanente. El inciso 5 que cita el
+    // ítem 55 es la obligación de SOLICITAR la incorporación al programa.
+    { key: 'VIGILANCIA_AMBIENTAL', tipo: 'VIGILANCIA_AMBIENTAL', titulo: 'Programa de vigilancia ambiental', articulo: 'Art. 67 inc. 1 y 3', fuente: 'documento', condicion: 'siempre', cuenta: true },
+    { key: 'VIGILANCIA_SALUD', tipo: 'VIGILANCIA_SALUD', titulo: 'Programa de vigilancia de la salud', articulo: 'Art. 67 inc. 1, 3 y 5', fuente: 'documento', condicion: 'siempre', cuenta: true },
     { key: 'PROCEDIMIENTO_EPP', tipo: 'PROCEDIMIENTO_EPP', titulo: 'Utilización, mantenimiento y recambio de EPP', articulo: 'Art. 13', fuente: 'documento', condicion: 'siempre', cuenta: true },
-    { key: 'PLAN_EMERGENCIAS', tipo: 'PLAN_EMERGENCIAS', titulo: 'Plan de gestión y respuesta ante emergencias', articulo: 'Art. 19', fuente: 'documento', condicion: 'siempre', cuenta: true },
+    { key: 'PLAN_EMERGENCIAS', tipo: 'PLAN_EMERGENCIAS', titulo: 'Plan de gestión y respuesta ante emergencias', articulo: 'Art. 19', fuente: 'documento', condicion: 'siempre', cuenta: true, multiple: true },
     { key: 'PROCEDIMIENTO_RIESGO_GRAVE', tipo: 'PROCEDIMIENTO_RIESGO_GRAVE', titulo: 'Procedimiento ante riesgo grave o inminente', articulo: 'Art. 18', fuente: 'documento', condicion: 'siempre', cuenta: true },
     { key: 'PROCEDIMIENTO_EVACUACION', tipo: 'PROCEDIMIENTO_EVACUACION', titulo: 'Evacuación y traslado de personas afectadas', articulo: 'Art. 19', fuente: 'documento', condicion: 'siempre', cuenta: true },
     { key: 'PROCEDIMIENTO_INVESTIGACION', tipo: 'PROCEDIMIENTO_INVESTIGACION', titulo: 'Investigación de accidentes (árbol de causas)', articulo: 'Art. 71', fuente: 'documento', condicion: 'siempre', cuenta: true },
@@ -236,8 +251,10 @@ export const DS44_DO_REGISTROS_GESTION: Ds44DoElemento[] = [
     { key: 'REG_INCIDENTES', tipo: 'INCIDENTES', titulo: 'Incidentes / sucesos peligrosos', articulo: 'Art. 73', fuente: 'readmodel', condicion: 'siempre', modulo: '/incidents', accion: 'incidentes' },
     { key: 'REG_INVESTIGACIONES', tipo: 'INVESTIGACIONES', titulo: 'Investigaciones de accidentes y EP', articulo: 'Art. 71', fuente: 'readmodel', condicion: 'siempre', modulo: '/incidents', accion: 'investigaciones' },
     { key: 'REG_ENSAYO_EMERGENCIA', tipo: 'SIMULACRO', titulo: 'Prueba/ensayo anual del plan de emergencias', articulo: 'Art. 19', fuente: 'readmodel', condicion: 'siempre', modulo: '/activities', accion: 'simulacro' },
-    { key: 'REG_VIGILANCIA', tipo: 'VIGILANCIA', titulo: 'Personas en vigilancia de la salud', articulo: 'Art. 73', fuente: 'readmodel', condicion: 'siempre', modulo: '/personas', accion: 'consulta', moduloPendiente: true },
-    { key: 'REG_EXAMENES', tipo: 'EXAMENES', titulo: 'Mediciones ambientales / exámenes ocupacionales', articulo: 'Arts. 67-68', fuente: 'readmodel', condicion: 'siempre', modulo: '/personas', accion: 'consulta', moduloPendiente: true },
+    // El registro (Art. 73) es la lista de quién está en vigilancia; el programa
+    // en sí (Art. 67) es un documento aparte, en la sección de procedimientos.
+    // El dato sale de la ficha de cada persona, así que no está pendiente.
+    { key: 'REG_VIGILANCIA', tipo: 'VIGILANCIA', titulo: 'Personas en vigilancia de la salud', articulo: 'Art. 73', fuente: 'readmodel', condicion: 'siempre', modulo: '/personas', accion: 'consulta' },
     { key: 'REG_ACTAS_CPHS', tipo: 'ACTAS_CPHS', titulo: 'Actas CPHS, acuerdos y entrega de documentación', articulo: 'Arts. 36-46', fuente: 'readmodel', condicion: 'cphs', modulo: '/activities', accion: 'consulta', moduloPendiente: true }
 ];
 

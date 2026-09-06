@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
+const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { validateRequired, generateSignatureToken, verifyPin } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const signatureRequests = require('../signature-requests/handler');
@@ -118,8 +119,7 @@ module.exports.create = async (event) => {
             solicitanteNombre: request.solicitanteNombre,
 
             // Timestamps según DS 44
-            fecha: now.toISOString().split('T')[0],
-            horario: now.toTimeString().split(' ')[0],
+            ...fechaHoraChile(now),
             timestamp: now.toISOString(),
 
             // Metadata
@@ -276,8 +276,7 @@ module.exports.createEnrollment = async (event) => {
             solicitanteNombre: 'Sistema',
 
             // Timestamps
-            fecha: now.toISOString().split('T')[0],
-            horario: now.toTimeString().split(' ')[0],
+            ...fechaHoraChile(now),
             timestamp: now.toISOString(),
 
             // Metadata

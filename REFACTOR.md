@@ -21,7 +21,7 @@
 ## 2. Lo que falta por hacer en el Frontend (Pendiente)
 
 ### A. Actualizar Rutas de Importación en Pages y Components
-Muchas pantallas (como `Activities.tsx`, `Incidents.tsx`, `AIAssistant.tsx`, `Dashboard.tsx`, etc.) aún importan las llamadas desde el puente legacy:
+Muchas pantallas (como `Activities.tsx`, `Incidents.tsx`, `Dashboard.tsx`, etc.) aún importan las llamadas desde el puente legacy:
 `import { activitiesApi } from '../api/client';`
 Deben migrarse nativamente a:
 `import { activitiesApi } from '../api/activities.api';`

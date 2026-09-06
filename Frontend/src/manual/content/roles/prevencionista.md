@@ -20,8 +20,7 @@ Es quien opera el día a día del cumplimiento del DS 44 en la obra.
   genera el esqueleto del mes (charla diaria, inspecciones semanales, etc.) diferenciado
   por tipo de trabajo y asignado a los supervisores que corresponda. Los fines de semana
   se excluyen automáticamente.
-- **MIPPER asistida por IA**: usa el [Asistente IA](/modulos/asistente-ia) para generar
-  matrices por cargo, que revisa y firma.
+- **MIPPER por cargo**: elabora las matrices de cada cargo, las revisa y las firma.
 - **Asignación de documentos diarios**: asigna documentos a personas, generando
   notificaciones automáticas en su bandeja.
 - **Destino de alertas de incidentes**: recibe notificación automática cuando se reporta
