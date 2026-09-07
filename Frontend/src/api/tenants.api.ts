@@ -21,10 +21,22 @@ export interface TenantSettings {
     modulosActivos?: string[];
 }
 
+/**
+ * Representante legal de la empresa (DS 44 Art. 8 inc. 1): aprueba el Programa
+ * de Trabajo Preventivo y firma la Política SST. Es uno solo por empresa, por eso
+ * vive en el tenant y no en la obra.
+ */
+export interface RepresentanteLegal {
+    personaId: string;
+    nombre: string | null;
+    rut?: string | null;
+}
+
 export interface TenantReglas {
     fasesObligatorias?: string[];
     limiteObras?: number;
     requiereFirmaPin?: boolean;
+    representanteLegal?: RepresentanteLegal | null;
 }
 
 export interface TenantPreferencias {
@@ -162,6 +174,14 @@ export const tenantsApi = {
         apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
+        }),
+
+    // Designa al representante legal (Mi Empresa › Identidad). El backend mergea
+    // `reglas` con las existentes, así que enviar solo este campo no pisa el resto.
+    updateRepresentanteLegal: (id: string, representanteLegal: RepresentanteLegal | null) =>
+        apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ reglas: { representanteLegal } }),
         }),
 
     // Guarda la definición de roles del tenant (Mi Empresa › Roles y permisos).

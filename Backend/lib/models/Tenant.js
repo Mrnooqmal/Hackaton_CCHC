@@ -48,6 +48,11 @@ class Tenant {
             ],
             limiteObras: data.reglas?.limiteObras || PLANES.starter.limiteObras,
             requiereFirmaPin: data.reglas?.requiereFirmaPin !== false,
+            // Representante legal de la empresa (DS 44 Art. 8 inc. 1): es quien
+            // aprueba el Programa de Trabajo Preventivo y firma la Política SST.
+            // Vive a nivel empresa, no de obra: la representación es una sola.
+            // { personaId, nombre, rut } o null mientras no se designe.
+            representanteLegal: data.reglas?.representanteLegal || null,
             ...(data.reglas || {})
         };
 

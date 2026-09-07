@@ -63,6 +63,7 @@ const DOCUMENT_TYPES = {
     GESTION_CAMBIOS: 'Gestión de Cambios en Procesos/Tecnologías/Materiales (Art. 12)',
     COORDINACION_ENTIDADES: 'Coordinación con Otras Entidades en Faena (Art. 20)',
     CONSULTA_REPRESENTANTES: 'Consulta y Participación de Trabajadores (Arts. 17, 37, 71)',
+    PROGRAMA_TRABAJO_PREVENTIVO: 'Programa de Trabajo Preventivo (Art. 8)',
     // Tipos historicos (compatibilidad con datos previos)
     PLAN_CAPACITACION: 'Plan de Capacitación (Art. 16)',
     INFO_RIESGOS_LABORALES: 'Información de Riesgos Laborales (Art. 15)',

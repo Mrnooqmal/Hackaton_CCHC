@@ -20,9 +20,29 @@ Estos son los documentos obligatorios que la plataforma gestiona:
 | **Registro de Capacitación SST (Art. 16)** | Evidencia de capacitaciones realizadas | Todas las etapas | Relator + Asistentes |
 | **Mapa de Riesgos de la obra** | Identifica los riesgos por zona de la obra | Durante la ejecución | Prevencionista |
 | **Matriz de Riesgos (MIPER / MIPPER)** | Identifica peligros y evalúa riesgos por cargo | Todas (por cargo) | Prevencionista |
+| **Programa de Trabajo Preventivo** | Medidas preventivas y correctivas que salen de la MIPER, con plazos y responsables | Dentro de 30 días desde la MIPER | Representante Legal |
 
 > No tienes que recordar esta lista de memoria: al crear la obra, estos documentos
 > aparecen solos en la pestaña **DS44 — Cumplimiento** de la obra, esperando que los completes.
+
+## La MIPER y el Programa de Trabajo van juntos
+
+Estos dos documentos están enlazados por el DS 44, y la plataforma te avisa si se
+desalinean:
+
+- **Al reemplazar el archivo de la MIPER se publica una versión nueva.** Se te pide
+  el motivo del cambio, la versión anterior queda guardada en el historial, se avisa
+  a la línea de mando y **las firmas anteriores dejan de valer**: quien la había
+  firmado debe firmarla de nuevo.
+- **A partir de esa fecha corren 30 días** para actualizar el Programa de Trabajo
+  Preventivo. La fila del programa te muestra cuántos días quedan, y avisa en rojo
+  si el plazo se pasó.
+- **El Programa lo aprueba el representante legal.** Se designa una sola vez en
+  *Mi Empresa → Identidad*, y la aprobación se registra cuando esa persona firma
+  el documento. Sin designarlo, el programa no puede quedar aprobado.
+
+> Cualquiera de los documentos de la obra guarda quién subió cada versión y cuándo:
+> ábrelo desde el menú **⋮ → Historial de cambios**.
 
 ## Dos tipos de documentos
 

@@ -64,6 +64,8 @@ reglas              M   Reglas de negocio SST
   fasesObligatorias   L   Fases del DS 44 que aplican
   limiteObras         N
   requiereFirmaPin    BOOL
+  representanteLegal  M   { personaId, nombre, rut } | null
+  cargos              L   Catalogo de cargos + kits DS44 del tenant
 
 preferencias        M   Personalizacion UI
   timezone            S   America/Santiago
@@ -85,6 +87,13 @@ updatedAt           S   ISO 8601
 - `reglas.fasesObligatorias` define que fases de obra aplican para ese
   tenant; al crear una obra se preconfiguran los documentos obligatorios
   de esas fases.
+- `reglas.representanteLegal` designa a la persona que aprueba el Programa
+  de Trabajo Preventivo (DS 44 Art. 8 inc. 1) y firma la Politica SST. Es
+  uno solo por empresa, por eso vive en el tenant y no en la obra. La
+  aprobacion NO se declara como campo: se constata buscando su firma en
+  `firmas[]` del documento correspondiente.
+- `PUT /tenants/{id}` mergea `reglas` y `preferencias` con las existentes;
+  el resto de los campos se reemplazan enteros.
 - `slug` se usa en URLs y como identificador legible.  GSI `slug-index`
   garantiza unicidad.
 - tenant-0 es reservado para superadmin con acceso cross-tenant.

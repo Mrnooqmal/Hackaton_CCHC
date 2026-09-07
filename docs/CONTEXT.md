@@ -3,7 +3,7 @@
 > **Propósito de este documento:** dar a otro modelo (o desarrollador) todo el
 > contexto necesario para trabajar en este repositorio sin tener que re-explorar
 > todo el código. Refleja el **estado real del código** (rama `pruebas`,
-> julio 2026), que ha evolucionado más allá de lo descrito en `README.md` y
+> septiembre 2026), que ha evolucionado más allá de lo descrito en `README.md` y
 > `ARCHITECTURE.md`. **Ante discrepancias, este documento y el código mandan
 > sobre el README.**
 
@@ -89,6 +89,7 @@ Hackaton_CCHC/
 │   │   ├── ai/             # gemini.js (transcripción de audio)
 │   │   ├── events/         # EventBus.js
 │   │   ├── ds44.js         # ★ Catálogo de cargos + kits DS44 (núcleo del dominio)
+│   │   ├── ptp.js          # ★ Plazo del Art. 8 + aprobación (espejo de utils/ptp.ts)
 │   │   ├── permissions.js  # ★ Catálogo de permisos y presets por rol
 │   │   └── utils/          # response.js, validation.js
 │   └── scripts/
@@ -99,13 +100,21 @@ Hackaton_CCHC/
     │   ├── api/            # clientes axios por dominio
     │   ├── context/        # Auth, Brand, Layout, Obra, Toast
     │   ├── utils/ds44.ts   # ★ ESPEJO de Backend/lib/ds44.js (mantener sync)
+    │   ├── utils/ptp.ts    # ★ ESPEJO de Backend/lib/ptp.js
+    │   ├── utils/versionarDocumento.ts  # publicar versión = nuevaVersion + SignatureRequest
+    │   ├── utils/vigenciaDocumento.ts   # caducidad por defecto + "hace 3 meses"
     │   └── permissions.ts  # ★ ESPEJO de Backend/lib/permissions.js
     └── manual-src/         # Manual VitePress (build → public/manual/)
 ```
 
-> **⚠️ Archivos espejo críticos:** `Backend/lib/ds44.js` ↔ `Frontend/src/utils/ds44.ts`
-> y `Backend/lib/permissions.js` ↔ `Frontend/src/permissions.ts`. Si cambias uno,
-> cambia el otro. Están marcados como "ESPEJO — mantener sincronizados".
+> **⚠️ Archivos espejo críticos:** `Backend/lib/ds44.js` ↔ `Frontend/src/utils/ds44.ts`,
+> `Backend/lib/permissions.js` ↔ `Frontend/src/permissions.ts` y
+> `Backend/lib/ptp.js` ↔ `Frontend/src/utils/ptp.ts`. Si cambias uno, cambia el
+> otro. Están marcados como "ESPEJO — mantener sincronizados".
+>
+> El frontend no tiene runner de tests, así que la forma práctica de verificar un
+> espejo es ejecutar ambos módulos y comparar salidas:
+> `node --experimental-strip-types` sobre un script que importe los dos.
 
 ---
 
@@ -139,6 +148,13 @@ no tenga acceso web), `habilitado` (completó enrolamiento), `estado`.
   hay presets por defecto (`DEFAULT_ROLE_PRESETS`). `trabajador`/`colaborador`
   siempre reciben el mínimo (`actividades.ver`) unido a su rol.
 - En el frontend, `ProtectedRoute` usa `requiredPermission` (ver rutas en §7).
+
+### 4.3.1 Representante legal (`tenant.reglas.representanteLegal`)
+Persona designada en *Mi Empresa → Identidad* que aprueba el PTP (Art. 8 inc. 1) y
+firma la Política SST. Es **uno por empresa**, no por obra. `PUT /tenants/{id}`
+mergea `reglas` con las existentes (igual que `preferencias`), porque
+`updateConfig` reemplaza el objeto entero y guardar solo este campo borraría
+`fasesObligatorias` y `limiteObras`.
 
 ### 4.4 DS 44: cargos, kits y alcances (`lib/ds44.js` — núcleo)
 Este es el corazón del dominio. Conceptos:
@@ -235,6 +251,57 @@ Los **procedimientos** de obra (tipos en `TIPOS_PROCEDIMIENTO`: `PROCEDIMIENTO_T
   procedimientos son `clasificacion:'obra'`. El módulo **Documentos** (`Documents.tsx`)
   categoriza por `tipo` (normativos/diarios/repositorio) y **no** lista los
   procedimientos de obra: éstos se firman desde "Mis Firmas" y el detalle de obra.
+
+> **La MIPER también se versiona.** `MIPER` y su alias histórico `MATRIZ_MIPPER`
+> entraron a `TIPOS_PROCEDIMIENTO` aunque sean documentos de la fase PLAN, no
+> procedimientos del HACER: el Art. 7 inc. 9 les exige el mismo ciclo (re-informar
+> y re-firmar al revisarlas). ⚠️ El espejo del frontend (`ObraDetalle.tsx`) deriva
+> ese Set de `DS44_DO_PROCEDIMIENTOS`, así que los tipos de PLAN van listados a
+> mano: si agregas otro, hay que tocar los dos lados.
+>
+> El camino de guardado de la fase PLAN (`handleSaveDs44Changes`) ramifica a
+> `nuevaVersion` con la misma condición que el del HACER, y ambos usan
+> `utils/versionarDocumento.ts` — publicar una versión son SIEMPRE dos llamadas
+> (`nueva-version` + `SignatureRequest`), porque "Mis Firmas" no lee documentos de
+> obra y sin la segunda el trabajador no tiene dónde firmar la re-firma.
+
+### 4.6.2 Vigencia y trazabilidad de documentos (`utils/vigenciaDocumento.ts`)
+- **Caducidad por defecto a 12 meses** (`caducidadPorDefecto`): el campo llega
+  precargado y se aplica si nadie elige otra fecha. Antes guardar sin fecha se
+  bloqueaba, lo que empujaba a apagar la caducidad con tal de subir el archivo.
+- **`tiempoRelativo`** muestra "Revisado hace 3 meses" en vez de la fecha absoluta,
+  que es como el DS 44 razona la antigüedad. Los meses se cuentan por calendario,
+  no dividiendo días por 30.
+- El **historial de cambios** se ofrece desde la v1 (no desde la v2): es donde se
+  ve quién subió el archivo vigente y cuándo.
+
+### 4.6.3 Programa de Trabajo Preventivo (`lib/ptp.js` ↔ `utils/ptp.ts`)
+El PTP (Art. 8) es **un documento normativo más del repositorio**: lo redacta la
+empresa y se sube como el 6º ítem de `DS44_PLAN_DOCS`
+(`PROGRAMA_TRABAJO_PREVENTIVO`, `estadoFirma: 'Representante Legal'`). La
+plataforma **no lo genera**; solo deriva los dos hechos que puede verificar sin
+leer el PDF:
+
+- **`estadoPtp(ptpDoc, miperDoc)`** — el plazo de 30 días del Art. 8 inc. 1. Se
+  calcula comparando las FECHAS de ambos documentos (`sin_miper` | `faltante` |
+  `desactualizado` | `vigente`, más `vencido`). No hay campo "deriva de la MIPER
+  vX": el sistema no puede leer el PDF para verificarlo y un campo así se
+  desincroniza al publicar una MIPER desde otra pantalla.
+- **`aprobadoPorRepresentanteLegal(ptpDoc, tenant.reglas.representanteLegal)`** —
+  la aprobación es la **firma real** del representante legal sobre el documento
+  (`SignaturesTable`), no una declaración.
+
+⚠️ `Backend/lib/ptp.js` **no tiene consumidor en el backend** (el estado se deriva
+en el cliente). Existe como la única implementación con tests y como base de las
+alertas programadas de vencimiento cuando se construyan. Si esa idea se descarta,
+el archivo y su test deberían borrarse.
+
+> **Decisión de producto (2026-09-07): la plataforma no genera documentos
+> normativos.** MIPER, PTP, Política SST, Reglamento y procedimientos los redacta
+> la empresa; el sistema los custodia, asigna y hace firmar. Sí genera **registros
+> de lo ocurrido dentro de la plataforma** — el acta de una actividad
+> (`reporteActividadPdf.ts`), el Registro Art. 72 y el Informe Art. 71
+> (`RegistroService`) —, porque nadie más puede producirlos.
 
 ### 4.7 Firmas digitales (`lib/services/FirmaService.js`) — Strategy Pattern
 4 estrategias de validación:
@@ -338,11 +405,11 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
 | `suggestions/` | por-endpoint | buzón de sugerencias |
 | `notifications/` | por-endpoint | envío de emails (welcome, test) |
 
-### Endpoints de IA (destacan por ser específicos del dominio)
-`POST /ai/chat`, `/ai/risk-matrix`, `/ai/prevention-plan`, `/ai/daily-talk`
-(charla diaria de 5 min), `/ai/miper` (genera matriz MIPER), `/ai/analyze-incident`
-(análisis causa raíz), `/ai/extract-incident` (extrae datos estructurados de texto
-libre), `/ai/transcribe` (audio → texto para reportes de terreno).
+### Endpoint de IA
+`POST /ai/transcribe` (audio → texto) es el **único** que queda: se usa para dictar
+el relato al reportar un incidente. El asistente de IA —chat, MIPER, matriz de
+riesgo, plan de prevención, charla diaria y análisis de incidentes— se descartó
+como proyecto y se retiró en el commit `e9b0d89`.
 
 > **La fuente de verdad de los endpoints es `Backend/serverless.yml`.** Ahí están
 > todas las rutas con su método HTTP y handler.
@@ -388,6 +455,12 @@ Componentes de dominio destacados: `SignaturePad`, `PinInput`, `SignatureModal`,
 `FirmaAsistidaModal`, `RiskMatrixVisual`, `MIPERVisual`, `ObraProgressCard`,
 `ObraAplicabilidadKit`, `ObraPlantillasOnboarding`, `OfflineBanner`,
 `WorkerEvidencias`.
+
+> `ObraAplicabilidadKit` y `ObraPlantillasOnboarding` estuvieron **huérfanos** entre
+> los commits `370f20d` y `38894d3`: el backend seguía leyendo
+> `obra.aplicabilidadKit` y `obra.plantillasOnboarding` en `runOnboardingForObra`,
+> pero ninguna pantalla los escribía. Se remontaron al inicio de la fase HACER de
+> `ObraDetalle`. Las obras creadas en ese lapso los tienen vacíos.
 
 ---
 

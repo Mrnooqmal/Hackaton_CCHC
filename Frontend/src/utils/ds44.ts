@@ -70,6 +70,16 @@ export const DS44_PLAN_DOCS: Ds44DocDefinition[] = [
         titulo: 'Plan de Emergencias de la Obra',
         estadoFirma: 'Jefe de Obra',
         multiple: true
+    },
+    {
+        // Programa de Trabajo Preventivo (Art. 8): lo redacta la empresa a partir
+        // de la MIPER y se sube acá. Su aprobación es la firma del representante
+        // legal sobre este documento; el seguimiento de las medidas que compromete
+        // vive aparte, en obra.ptp (ver utils/ptp.ts).
+        key: 'PROGRAMA_TRABAJO_PREVENTIVO',
+        tipos: ['PROGRAMA_TRABAJO_PREVENTIVO'],
+        titulo: 'Programa de Trabajo Preventivo',
+        estadoFirma: 'Representante Legal'
     }
 ];
 
@@ -332,7 +342,10 @@ export const DS44_ACT_DOCS: Ds44FaseDoc[] = [
 // PLAN/DO que debe revisarse, cerrando el ciclo Deming hacia PLAN.
 export const DS44_ACT_ACTUALIZACIONES = [
     { key: 'MIPER', titulo: 'Actualizar MIPER', articulo: 'Art. 7 inc. final', tipoOrigen: 'MIPER' },
-    { key: 'PTP', titulo: 'Actualizar PTP (≤30 días desde cambio de MIPER)', articulo: 'Art. 8', tipoOrigen: 'PROCEDIMIENTO_TRABAJO' },
+    // El origen es el Programa de Trabajo Preventivo, no el procedimiento de
+    // trabajo seguro (Art. 10): son documentos distintos y apuntar a PROCEDIMIENTO_TRABAJO
+    // llevaba a revisar el equivocado al cerrar el ciclo.
+    { key: 'PTP', titulo: 'Actualizar PTP (≤30 días desde cambio de MIPER)', articulo: 'Art. 8', tipoOrigen: 'PROGRAMA_TRABAJO_PREVENTIVO' },
     { key: 'REGLAMENTO_INTERNO', titulo: 'Revisar Reglamento Interno (≥1 año)', articulo: 'Art. 57', tipoOrigen: 'REGLAMENTO_INTERNO' },
     { key: 'CAPACITACION', titulo: 'Reforzar capacitación', articulo: 'Arts. 15-16', tipoOrigen: 'PLAN_CAPACITACION' },
     { key: 'CONSULTA_CPHS', titulo: 'Consulta a CPHS', articulo: 'Art. 17', tipoOrigen: 'CONSULTA_REPRESENTANTES' }

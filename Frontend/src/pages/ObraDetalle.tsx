@@ -5,6 +5,9 @@ import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, worker
 import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido, resolverDocumentoFirmable } from '../utils/documentoFirmado';
 import { publicarNuevaVersion } from '../utils/versionarDocumento';
 import { caducidadPorDefecto, tiempoRelativo, MESES_VIGENCIA_DEFECTO } from '../utils/vigenciaDocumento';
+import ObraAplicabilidadKit from '../components/ObraAplicabilidadKit';
+import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
+import { estadoPtp, aprobadoPorRepresentanteLegal, etiquetaEstadoPtp } from '../utils/ptp';
 import { incidenteAbierto, incidenteCerrado } from '../utils/incidentes';
 import { LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings, LuEllipsisVertical, LuHistory } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
@@ -309,6 +312,7 @@ export default function ObraDetalle() {
   const [empresaDocsByTipo, setEmpresaDocsByTipo] = useState<Record<string, { fileKey: string; nombre?: string; subidoEn?: string }>>({});
   const [obraDocs, setObraDocs] = useState<any[]>([]); // documentos clasificacion 'obra' (incluye procedimientos DO)
   const [tenantSize, setTenantSize] = useState<number | null>(null); // cantidadTrabajadores de la entidad (condicionales DO)
+  const [representanteLegal, setRepresentanteLegal] = useState<{ personaId?: string; nombre?: string | null } | null>(null);
   const [firmaAsistidaOpen, setFirmaAsistidaOpen] = useState(false);
   const [firmaAsistidaWorkerId, setFirmaAsistidaWorkerId] = useState<string | undefined>(undefined);
   const [firmaAsistidaTipo, setFirmaAsistidaTipo] = useState<string | undefined>(undefined);
@@ -752,9 +756,13 @@ export default function ObraDetalle() {
         setEncuestas(surveysRes.success && surveysRes.data ? surveysRes.data.surveys || [] : []);
         if (sigRes.success && sigRes.data) setObraSignatureRequests(sigRes.data.requests || []);
 
-        // Fase 3 — fire-and-forget: tamaño tenant (solo condicionales DO)
+        // Fase 3 — fire-and-forget: tamaño tenant (condicionales DO) y
+        // representante legal (aprobación del programa de trabajo, Art. 8).
         tenantsApi.get(tenantId).then(res => {
-          if (res.success && res.data) setTenantSize((res.data as any).cantidadTrabajadores ?? null);
+          if (res.success && res.data) {
+            setTenantSize((res.data as any).cantidadTrabajadores ?? null);
+            setRepresentanteLegal(res.data.reglas?.representanteLegal || null);
+          }
         }).catch(() => {});
 
       } catch (error) {
@@ -775,6 +783,28 @@ export default function ObraDetalle() {
     const t = setTimeout(() => setObraToast(null), 3500);
     return () => clearTimeout(t);
   }, [obraToast]);
+
+  // ── Programa de Trabajo Preventivo (Art. 8) ────────────────────────────────
+  // El PTP es un documento más del repositorio: se sube y se firma como los otros
+  // cinco de la fase PLAN. Lo único que el sistema deriva son los dos hechos que
+  // sí puede verificar sin leer el PDF — el plazo y quién lo firmó.
+
+  // El documento MIPER vigente: de él sale la fecha con la que se mide el plazo.
+  const miperDoc = useMemo(
+    () => ds44Docs.find((d) => d.key === 'MIPER')?.document || null,
+    [ds44Docs],
+  );
+
+  const ptpDoc = useMemo(
+    () => ds44Docs.find((d) => d.key === 'PROGRAMA_TRABAJO_PREVENTIVO')?.document || null,
+    [ds44Docs],
+  );
+
+  const ptpEstado = useMemo(() => estadoPtp(ptpDoc, miperDoc), [ptpDoc, miperDoc]);
+  const ptpAprobado = useMemo(
+    () => aprobadoPorRepresentanteLegal(ptpDoc, representanteLegal),
+    [ptpDoc, representanteLegal],
+  );
 
   const reloadDocs = useCallback(async () => {
     if (!obraId) return;
@@ -2500,6 +2530,11 @@ export default function ObraDetalle() {
                     const tieneVersionesPrevias = (doc.document?.versiones?.length || 0) > 0;
                     const actualizadoEn = doc.document?.updatedAt || doc.document?.createdAt;
                     const revisadoHace = tiempoRelativo(actualizadoEn);
+                    // El PTP arrastra dos hechos que ningún otro documento tiene:
+                    // el plazo del Art. 8 desde la MIPER y si lo firmó el
+                    // representante legal. Se muestran en su propia fila.
+                    const esPtp = doc.key === 'PROGRAMA_TRABAJO_PREVENTIVO';
+                    const plazoPtp = esPtp ? etiquetaEstadoPtp(ptpEstado) : null;
                     return (
                       <div key={doc.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
@@ -2514,6 +2549,23 @@ export default function ObraDetalle() {
                               </span>
                             )}
                             {fechaCaducidad && <span>{isExpired ? 'Vencido' : 'Caduca'} {formatDate(fechaCaducidad)}</span>}
+                            {plazoPtp && (
+                              <span
+                                style={{ color: ptpEstado.vencido ? 'var(--danger-500, #dc2626)' : undefined, fontWeight: ptpEstado.vencido ? 500 : undefined }}
+                                title={ptpEstado.detalle}
+                              >
+                                {plazoPtp}
+                              </span>
+                            )}
+                            {esPtp && doc.archivoSubido && (
+                              <span title="La aprobación del Art. 8 es la firma del representante legal sobre este documento">
+                                {ptpAprobado
+                                  ? 'Aprobado por el representante legal'
+                                  : !representanteLegal
+                                    ? 'Sin representante legal designado'
+                                    : 'Falta la firma del representante legal'}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="ds44-doc-actions">
@@ -2557,6 +2609,26 @@ export default function ObraDetalle() {
 
             {isDoPhase && (
               <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
+                {/* Configuración del onboarding de ESTA obra. Ambos bloques alimentan
+                    `runOnboardingForObra` (personas-module): el backend los lee al
+                    vincular un trabajador, así que sin esta UI quedan inalcanzables
+                    y toda obra nueva arranca con la configuración vacía. */}
+                <ObraPlantillasOnboarding
+                  obraId={obraId || ''}
+                  tenantId={obra?.tenantId}
+                  cargos={cargoCatalog}
+                  initial={obra?.plantillasOnboarding}
+                  canEdit={canSubirDocumentos}
+                  onSaved={(map) => setObra((prev: any) => (prev ? { ...prev, plantillasOnboarding: map } : prev))}
+                />
+                <ObraAplicabilidadKit
+                  obraId={obraId || ''}
+                  cargos={cargoCatalog}
+                  initial={obra?.aplicabilidadKit}
+                  canEdit={canSubirDocumentos}
+                  onSaved={(map) => setObra((prev: any) => (prev ? { ...prev, aplicabilidadKit: map } : prev))}
+                />
+
                 {/* ── Sección A: Registro AT/EP/Incidentes Peligrosos (Arts. 72-73) ── */}
                 <div className="ds44-activity-block">
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>

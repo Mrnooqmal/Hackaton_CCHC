@@ -175,6 +175,7 @@ export default function MiEmpresa() {
             {tab === 'identidad' && can.identidad && tenant && (
                 <IdentidadTab
                     tenant={tenant}
+                    personas={personas}
                     onSaved={(t) => setTenant(t)}
                     brand={{ setLogo, setPrimaryColor }}
                     auth={{ user, updateUser }}
@@ -208,8 +209,9 @@ export default function MiEmpresa() {
 }
 
 // ── Identidad ─────────────────────────────────────────────────────────────────
-function IdentidadTab({ tenant, onSaved, brand, auth, toast }: {
+function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
     tenant: Tenant;
+    personas: PersonaResponse[];
     onSaved: (t: Tenant) => void;
     brand: { setLogo: (l: string | null) => void; setPrimaryColor: (c: string) => void };
     auth: { user: any; updateUser: (u: any) => void };
@@ -224,6 +226,42 @@ function IdentidadTab({ tenant, onSaved, brand, auth, toast }: {
     const [err, setErr] = useState('');
     const [dragging, setDragging] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
+
+    const [repLegalId, setRepLegalId] = useState(tenant.reglas?.representanteLegal?.personaId || '');
+    const [savingRepLegal, setSavingRepLegal] = useState(false);
+
+    // Se guarda al elegir, no al enviar el formulario: es un solo campo y el botón
+    // de abajo es el de la identidad visual (nombre, color, logo).
+    const guardarRepLegal = async (personaId: string) => {
+        const anterior = repLegalId;
+        setRepLegalId(personaId);
+        setSavingRepLegal(true);
+        try {
+            const persona = personas.find((p) => p.personaId === personaId);
+            const res = await tenantsApi.updateRepresentanteLegal(
+                tenant.tenantId,
+                personaId
+                    ? {
+                        personaId,
+                        nombre: persona ? `${persona.nombre} ${persona.apellido || ''}`.trim() : null,
+                        rut: persona?.rut || null,
+                    }
+                    : null,
+            );
+            if (res.success && res.data) {
+                onSaved(res.data.tenant);
+                toast.success(personaId ? 'Representante legal designado.' : 'Representante legal quitado.');
+            } else {
+                setRepLegalId(anterior);
+                toast.error(res.error || 'No se pudo guardar el representante legal.');
+            }
+        } catch {
+            setRepLegalId(anterior);
+            toast.error('Error de conexión al guardar el representante legal.');
+        } finally {
+            setSavingRepLegal(false);
+        }
+    };
 
     const rgb = hexToRgb(color);
     const colorValido = !!rgb;
@@ -301,6 +339,31 @@ function IdentidadTab({ tenant, onSaved, brand, auth, toast }: {
                                 <FiLock size={13} aria-hidden="true" />
                             </div>
                             <span className="me-field-hint">El RUT no se puede modificar.</span>
+                        </div>
+                        {/* Representante legal (DS 44 Art. 8 inc. 1): aprueba el Programa de
+                            Trabajo Preventivo y firma la Política SST. Se guarda solo, sin
+                            depender del botón de identidad, porque es un dato normativo y no
+                            de marca. */}
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="me-repleg">Representante legal</label>
+                            <select
+                                id="me-repleg"
+                                className="form-input"
+                                value={repLegalId}
+                                disabled={savingRepLegal}
+                                onChange={(e) => guardarRepLegal(e.target.value)}
+                            >
+                                <option value="">Sin designar</option>
+                                {personas.map((p) => (
+                                    <option key={p.personaId} value={p.personaId}>
+                                        {`${p.nombre} ${p.apellido || ''}`.trim()}{p.rut ? ` · ${p.rut}` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                            <span className="me-field-hint">
+                                Aprueba el Programa de Trabajo Preventivo (Art. 8) y firma la Política SST.
+                                Sin designarlo, el programa no se puede aprobar.
+                            </span>
                         </div>
                     </div>
                 </section>

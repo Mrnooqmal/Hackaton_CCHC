@@ -257,6 +257,15 @@ module.exports.tenantsHandler = async (event) => {
                 body.preferencias = merged;
             }
 
+            // `reglas` se mergea por el mismo motivo que `preferencias`: updateConfig
+            // reemplaza el objeto entero, así que guardar solo el representante legal
+            // borraría fasesObligatorias, limiteObras y requiereFirmaPin.
+            if (body.reglas && typeof body.reglas === 'object') {
+                const existing = await tenantService.getById(tenantId);
+                if (!existing) return error('Tenant no encontrado', 404);
+                body.reglas = { ...(existing.reglas || {}), ...body.reglas };
+            }
+
             const tenant = await tenantService.updateConfig(tenantId, body);
             return success({
                 message: 'Tenant actualizado',
