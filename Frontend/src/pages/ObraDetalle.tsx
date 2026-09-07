@@ -158,24 +158,73 @@ interface DoItem {
  * pero solo una es la habitual (ver o subir); el resto vive acá para que la lista
  * se lea como un checklist de cumplimiento y no como una botonera.
  */
+/** Ancho del panel y alto aproximado de cada opción, para decidir si abre hacia abajo. */
+const MENU_ANCHO = 208;
+const MENU_ALTO_ITEM = 36;
+const MENU_MARGEN = 8;
+
 function RowMenu({ label, items }: { label: string; items: { label: string; onClick: () => void }[] }) {
   const [abierto, setAbierto] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // El panel se posiciona en coordenadas de viewport (position: fixed) y no
+  // relativo a la fila: las filas viven dentro de un contenedor con
+  // `overflow: auto`, que recorta a cualquier descendiente absoluto por mucho
+  // z-index que tenga. Es la razón por la que el menú de las últimas filas
+  // quedaba cortado bajo el borde del scroll.
+  const abrir = () => {
+    const r = triggerRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const alto = items.length * MENU_ALTO_ITEM + MENU_MARGEN;
+    const cabeAbajo = r.bottom + alto + MENU_MARGEN <= window.innerHeight;
+    setPos({
+      // Si no cabe abajo se despliega hacia arriba, anclado al borde superior.
+      top: cabeAbajo ? r.bottom + 4 : Math.max(MENU_MARGEN, r.top - alto - 4),
+      // Alineado a la derecha del botón, sin salirse por ninguno de los lados.
+      left: Math.max(
+        MENU_MARGEN,
+        Math.min(r.right - MENU_ANCHO, window.innerWidth - MENU_ANCHO - MENU_MARGEN),
+      ),
+    });
+    setAbierto(true);
+  };
+
+  useEffect(() => {
+    if (!abierto) return;
+    const cerrar = () => setAbierto(false);
+    const porTecla = (e: KeyboardEvent) => { if (e.key === 'Escape') setAbierto(false); };
+    // Al hacer scroll el panel quedaría flotando lejos de su fila; se cierra en
+    // vez de reposicionarse, que es lo que se espera de un menú de fila.
+    // `capture` para enterarse también del scroll del contenedor interno.
+    window.addEventListener('scroll', cerrar, true);
+    window.addEventListener('resize', cerrar);
+    window.addEventListener('keydown', porTecla);
+    return () => {
+      window.removeEventListener('scroll', cerrar, true);
+      window.removeEventListener('resize', cerrar);
+      window.removeEventListener('keydown', porTecla);
+    };
+  }, [abierto]);
+
   if (items.length === 0) return null;
+
   return (
     <div className="ds44-menu">
       <button
+        ref={triggerRef}
         type="button"
         className="ds44-menu-trigger"
         aria-label={label}
         aria-expanded={abierto}
-        onClick={() => setAbierto((v) => !v)}
+        onClick={() => (abierto ? setAbierto(false) : abrir())}
       >
         <LuEllipsisVertical size={16} />
       </button>
-      {abierto && (
+      {abierto && pos && (
         <>
           <div className="ds44-menu-scrim" onClick={() => setAbierto(false)} />
-          <div className="ds44-menu-panel" role="menu">
+          <div className="ds44-menu-panel" role="menu" style={{ top: pos.top, left: pos.left }}>
             {items.map((item) => (
               <button
                 key={item.label}
@@ -4642,9 +4691,11 @@ export default function ObraDetalle() {
         .ds44-menu-trigger:hover { color: var(--text-primary); border-color: var(--primary-400); }
         .ds44-menu-trigger:focus-visible { outline: 2px solid var(--primary-400); outline-offset: 2px; }
         .ds44-menu-scrim { position: fixed; inset: 0; z-index: 999; }
+        /* Fijo al viewport, con top/left calculados en JS: dentro del contenedor
+           con overflow del listado, un panel absoluto quedaba recortado. */
         .ds44-menu-panel {
-          position: absolute; right: 0; top: calc(100% + 4px); z-index: 1000;
-          min-width: 208px; overflow: hidden;
+          position: fixed; z-index: 1000;
+          width: 208px; overflow: hidden;
           background: var(--surface-card); border: 1px solid var(--surface-border);
           border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
         }
