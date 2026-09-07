@@ -96,6 +96,38 @@ export function construirFilasAsistencia(activity: Activity, workers: Worker[]) 
     return { filas, requeridos, asistieron, porcentaje };
 }
 
+export interface EstadoEvaluacion {
+    notaMinima: number;
+    /** El respaldo está cargado. Es lo único que el sistema puede afirmar sin abrirlo. */
+    tieneRespaldo: boolean;
+    nombreArchivo: string | null;
+    fileKey: string | null;
+    subidoEn: string | null;
+}
+
+/**
+ * Estado de la evaluación de aprendizaje de una capacitación.
+ *
+ * La plataforma no lee el documento ni conoce las notas: solo sabe que la
+ * capacitación exige evaluación, con qué nota mínima, y si el respaldo con las
+ * evaluaciones corregidas está cargado o falta. Mismo criterio con que `ptp.ts`
+ * deriva el estado del Programa de Trabajo Preventivo sin abrir el PDF.
+ *
+ * Devuelve null si la actividad no exige evaluación.
+ */
+export function estadoEvaluacion(activity: Activity): EstadoEvaluacion | null {
+    const cfg = activity.evaluacion;
+    if (!cfg?.exigida || !cfg.notaMinima) return null;
+    const r = cfg.respaldo || null;
+    return {
+        notaMinima: cfg.notaMinima,
+        tieneRespaldo: Boolean(r?.fileKey),
+        nombreArchivo: r?.nombre || null,
+        fileKey: r?.fileKey || null,
+        subidoEn: r?.subidoEn || null,
+    };
+}
+
 /** Etiqueta legible de un código del catálogo (o el código, si no está). */
 export const labelDe = (items: { codigo: string; label: string }[], codigo: string) =>
     items.find((i) => i.codigo === codigo)?.label || codigo;

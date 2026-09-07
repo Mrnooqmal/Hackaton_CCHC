@@ -34,6 +34,7 @@ import {
     type PlanificacionActividad,
     type PermisoTrabajo,
     type PlanItem,
+    type EvaluacionRespaldo,
 } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
 import { estadoSeguimiento, hoyISO } from '../utils/seguimientoActividad';
@@ -42,6 +43,7 @@ import { construirReporteActividadPdf, nombreArchivoReporte } from '../utils/rep
 import PlanificacionDiariaForm from '../components/actividades/PlanificacionDiariaForm';
 import PermisosTrabajoForm from '../components/actividades/PermisosTrabajoForm';
 import ReporteActividad from '../components/actividades/ReporteActividad';
+import EvaluacionActividad from '../components/actividades/EvaluacionActividad';
 import WorkerPicker from '../components/actividades/WorkerPicker';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import ActivityCalendar from '../components/ActivityCalendar';
@@ -134,6 +136,7 @@ export default function Activities() {
     const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [detailActivity, setDetailActivity] = useState<Activity | null>(null);
+    const [guardandoEval, setGuardandoEval] = useState(false);
     const [cerrando, setCerrando] = useState(false);
     // Ausencias/permisos del día (control de asistencia §6).
     const [ausencias, setAusencias] = useState<Ausencia[]>([]);
@@ -210,6 +213,10 @@ export default function Activities() {
         repetirHasta: '',
         // Vínculo con un ítem de onboarding (si se agendó desde el Equipo).
         kitItemKey: '' as string,
+        // Evaluación de aprendizaje (solo CAPACITACION). El kit del cargo exige
+        // 70% general y 90% en altura/SPDC: son las dos únicas notas admitidas.
+        evaluacionExigida: false,
+        evaluacionNotaMinima: 70 as 70 | 90,
         planificacion: { observaciones: '' } as PlanificacionActividad,
         permisosTrabajo: [] as PermisoTrabajo[],
     };
@@ -323,6 +330,12 @@ export default function Activities() {
             const payload: any = { ...newActivity, obraId: selectedObraId };
             // El subtipo solo aplica a capacitaciones.
             if (payload.tipo !== 'CAPACITACION') delete payload.subtipo;
+            // La evaluación viaja como bloque; los flags del form no son del API.
+            delete payload.evaluacionExigida;
+            delete payload.evaluacionNotaMinima;
+            if (payload.tipo === 'CAPACITACION' && newActivity.evaluacionExigida) {
+                payload.evaluacion = { exigida: true, notaMinima: newActivity.evaluacionNotaMinima };
+            }
             // Campos opcionales vacíos no se envían.
             if (!payload.horaFin) delete payload.horaFin;
             if (!payload.ubicacion) delete payload.ubicacion;
@@ -653,6 +666,35 @@ export default function Activities() {
     // Cierre EXPLÍCITO de la actividad. El backend exige al menos una firma y un
     // registro con contenido; una actividad cerrada sigue admitiendo firmas de
     // rezagados durante el día (no se bloquea la firma, solo se "cierra" el acta).
+    /**
+     * Adjunta (o quita) el documento con las evaluaciones de una capacitación.
+     * Va por PATCH junto al bloque `evaluacion`: el backend conserva la exigencia
+     * y solo cambia el respaldo. No toca asistentes ni firmas.
+     */
+    const handleGuardarRespaldoEval = async (activity: Activity, respaldo: EvaluacionRespaldo | null) => {
+        if (!user?.personaId || guardandoEval) return;
+        setGuardandoEval(true);
+        try {
+            const res = await activitiesApi.patch(activity.activityId, {
+                solicitanteId: user.personaId,
+                evaluacion: {
+                    exigida: true,
+                    notaMinima: (activity.evaluacion?.notaMinima || 70) as 70 | 90,
+                    respaldo,
+                },
+            });
+            if (res.success && res.data) {
+                setActivities((prev) => prev.map((x) => x.activityId === res.data!.activityId ? res.data! : x));
+                setDetailActivity(res.data);
+                toast.success(respaldo ? 'Evaluaciones adjuntadas' : 'Respaldo quitado');
+            } else {
+                toast.error(res.error || 'No se pudo guardar el respaldo de la evaluación');
+            }
+        } finally {
+            setGuardandoEval(false);
+        }
+    };
+
     const handleCerrarActividad = async (activity: Activity) => {
         if (!user?.personaId || cerrando) return;
         setCerrando(true);
@@ -1620,6 +1662,35 @@ export default function Activities() {
                             </div>
                         )}
 
+                        {/* Evaluación de aprendizaje: el DS44 no se conforma con que la
+                            capacitación se dicte (Art. 13.4 exige registrar las evaluaciones).
+                            Se puede activar después desde el detalle, mientras nadie haya rendido. */}
+                        {newActivity.tipo === 'CAPACITACION' && (
+                            <div className="form-group">
+                                <label className="ev-check">
+                                    <input
+                                        type="checkbox"
+                                        checked={newActivity.evaluacionExigida}
+                                        onChange={(e) => setNewActivity({ ...newActivity, evaluacionExigida: e.target.checked })}
+                                    />
+                                    <span>Con evaluación de aprendizaje</span>
+                                </label>
+                                {newActivity.evaluacionExigida && (
+                                    <div className="ev-minima-pick">
+                                        <span className="form-label">Nota mínima de aprobación</span>
+                                        <SegmentedControl
+                                            value={String(newActivity.evaluacionNotaMinima)}
+                                            onChange={(v) => setNewActivity({ ...newActivity, evaluacionNotaMinima: Number(v) as 70 | 90 })}
+                                            options={[
+                                                { value: '70', label: '70% general' },
+                                                { value: '90', label: '90% altura / SPDC' },
+                                            ]}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <div className="form-group">
                             <label className="form-label">Título *</label>
                             <input
@@ -1917,6 +1988,9 @@ export default function Activities() {
                     // no se completa ni se cierra desde acá aunque haya quedado vencida.
                     const esHistorial = a.fecha < today;
                     const puedeGestionar = !esHistorial && (canManage || a.relatorId === user?.personaId);
+                    // El respaldo de la evaluación SÍ se adjunta sobre el historial: la
+                    // capacitación se corrige después y el documento llega días más tarde.
+                    const puedeAdjuntarEval = canManage || a.relatorId === user?.personaId;
 
                     // Guarda de UI del cierre (el backend es la validación dura):
                     // requiere al menos una firma y un registro con contenido.
@@ -2086,6 +2160,23 @@ export default function Activities() {
                                     <h3 className="ad-section-title">Asistencia</h3>
                                     <ReporteActividad activity={a} workers={workers} />
                                 </section>
+
+                                {/* Evaluación de aprendizaje: solo si la capacitación la exige.
+                                    Usa `puedeAdjuntarEval`, NO `puedeGestionar`: la capacitación se
+                                    corrige fuera del sistema y el documento llega días después, así
+                                    que excluir el historial dejaría el respaldo sin forma de entrar. */}
+                                {a.evaluacion?.exigida && (
+                                    <section className="ad-section">
+                                        <h3 className="ad-section-title">Evaluación de aprendizaje</h3>
+                                        <EvaluacionActividad
+                                            activity={a}
+                                            tenantId={user?.tenantId}
+                                            puedeGestionar={puedeAdjuntarEval}
+                                            guardando={guardandoEval}
+                                            onGuardar={(respaldo) => handleGuardarRespaldoEval(a, respaldo)}
+                                        />
+                                    </section>
+                                )}
 
                                 {/* Permisos de trabajo */}
                                 {permisos.length > 0 && (
@@ -2944,6 +3035,43 @@ const activitiesStyles = `
 .ad-firma-hora { font-size: var(--text-xs); color: var(--success-600, var(--success-500)); font-weight: 600; font-variant-numeric: tabular-nums; }
 .ad-firma-atraso { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--warning-600, var(--warning-500)); }
 .ad-sin-firma { font-size: var(--text-xs); color: var(--text-muted); flex-shrink: 0; }
+
+/* Evaluación de aprendizaje: espacio para el documento, no para notas */
+.ev { display: flex; flex-direction: column; gap: var(--space-3); }
+.ev-resumen {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--space-3);
+    margin: 0; font-size: var(--text-xs); color: var(--text-muted);
+}
+.ev-resumen-dato b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.ev-estado {
+    margin-left: auto; font-size: 10px; font-weight: 600; letter-spacing: .04em;
+    color: var(--warning-600, var(--warning-500)); background: rgba(234, 179, 8, 0.12);
+    padding: 2px 8px; border-radius: var(--radius-full);
+}
+.ev-estado.ok { color: var(--success-600, var(--success-500)); background: var(--accent-tint); }
+
+.ev-archivo {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: 10px 12px; border-radius: var(--radius-md);
+    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    border-left: 3px solid var(--success-500);
+}
+.ev-archivo-icono { flex-shrink: 0; color: var(--text-muted); }
+.ev-archivo-id { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ev-archivo-nombre { font-size: var(--text-sm); color: var(--text-primary); overflow-wrap: anywhere; }
+.ev-archivo-meta { font-size: var(--text-xs); color: var(--text-muted); }
+.ev-quitar { color: var(--danger-600, var(--danger-500)); }
+
+.ev-vacio {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--space-3); flex-wrap: wrap;
+    padding: 12px; border-radius: var(--radius-md);
+    background: var(--surface-bg); border: 1px dashed var(--surface-border);
+}
+.ev-vacio .ad-empty { flex: 1; min-width: 220px; }
+.ev-error { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-xs); color: var(--danger-600, var(--danger-500)); }
+.ev-check { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-primary); cursor: pointer; }
+.ev-minima-pick { display: flex; flex-direction: column; gap: 5px; margin-top: var(--space-3); }
 
 /* Permisos */
 .ad-permisos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }

@@ -38,6 +38,58 @@ const CAPACITACION_SUBTIPOS = {
     OTRA: 'Otra capacitación',
 };
 
+// Notas mínimas de aprobación admitidas, alineadas con el catálogo de cargos
+// (`sanitizeCargoCatalog` en lib/ds44.js solo acepta estas dos): 70% general
+// según PR-PDO-04 y 90% para altura/SPDC. Un valor libre acá dejaría kits y
+// actividades midiendo cosas distintas con el mismo nombre.
+const NOTAS_MINIMAS = [70, 90];
+
+/** Respaldo documental: el archivo con las evaluaciones ya corregidas. */
+const normalizarRespaldo = (raw, subidoPor) => {
+    if (!raw) return null;
+    const fileKey = String(raw.fileKey || '').trim();
+    if (!fileKey) throw new Error('El respaldo de la evaluación requiere fileKey');
+    return {
+        fileKey,
+        nombre: String(raw.nombre || '').trim() || 'Evaluaciones',
+        tipo: raw.tipo || null,
+        tamano: Number.isFinite(Number(raw.tamano)) ? Number(raw.tamano) : null,
+        subidoPor: raw.subidoPor || subidoPor || null,
+        subidoEn: raw.subidoEn || new Date().toISOString(),
+    };
+};
+
+/**
+ * Normaliza el bloque de evaluación de una CAPACITACION.
+ *
+ * La plataforma NO toma la evaluación ni guarda notas por persona: la rinde y la
+ * corrige el relator fuera del sistema, y acá se custodia **un solo documento**
+ * con las evaluaciones de esa capacitación. Es el mismo criterio del PTP y de la
+ * MIPER — el sistema no lee el archivo, solo afirma lo que puede verificar sin
+ * abrirlo: que la capacitación exige evaluación, con qué nota mínima, y si el
+ * respaldo está cargado o falta.
+ *
+ * Ausente o `exigida: false` => no se evalúa (comportamiento histórico).
+ */
+const normalizarEvaluacion = (raw, tipo, opts = {}) => {
+    if (tipo !== 'CAPACITACION') return null;
+    if (!raw || raw.exigida !== true) return { exigida: false, notaMinima: null, escala: 'porcentaje', respaldo: null };
+
+    const nota = Number(raw.notaMinima);
+    if (!NOTAS_MINIMAS.includes(nota)) {
+        throw new Error(`notaMinima inválida. Válidas: ${NOTAS_MINIMAS.join(', ')}`);
+    }
+
+    // El respaldo se conserva si el request no lo trae: editar la exigencia no
+    // debe borrar un archivo ya cargado.
+    let respaldo = opts.previa?.respaldo || null;
+    if (opts.permitirRespaldo && raw.respaldo !== undefined) {
+        respaldo = normalizarRespaldo(raw.respaldo, opts.subidoPor);
+    }
+
+    return { exigida: true, notaMinima: nota, escala: 'porcentaje', respaldo };
+};
+
 // Tope de ocurrencias por serie, para evitar crear cantidades desmedidas.
 const MAX_OCURRENCIAS = 180;
 
@@ -180,6 +232,18 @@ module.exports.create = async (event) => {
             }
         }
 
+        // Evaluación de aprendizaje (Art. 13.4 / 16): opcional y solo para
+        // CAPACITACION. Acá solo se declara la exigencia; el documento con las
+        // evaluaciones corregidas se adjunta después, por PATCH.
+        let evaluacion;
+        try {
+            // Al crear solo se declara la exigencia: el respaldo se sube después
+            // de dictada la capacitación, vía PATCH.
+            evaluacion = normalizarEvaluacion(body.evaluacion, body.tipo);
+        } catch (evalErr) {
+            return error(evalErr.message, 400);
+        }
+
         let bloques;
         try {
             bloques = await validarBloquesActividad({
@@ -222,6 +286,7 @@ module.exports.create = async (event) => {
             tipoDescripcion: ACTIVITY_TYPES[body.tipo],
             subtipo,
             subtipoDescripcion: subtipo ? CAPACITACION_SUBTIPOS[subtipo] : null,
+            evaluacion,
             titulo: body.titulo,
             descripcion: body.descripcion || '',
             horaInicio: body.horaInicio || now.split('T')[1].substring(0, 5),
@@ -810,6 +875,35 @@ module.exports.getStats = async (event) => {
 };
 
 /**
+ * Autorización común de las vías de gestión de una actividad (PATCH y registro
+ * de evaluaciones): el relator, cualquiera de `responsables[]`, o quien tenga el
+ * permiso de crear actividades. Devuelve `{ error }` con la respuesta lista, o
+ * `{ solicitanteId, solicitante, personaService }` si pasa.
+ */
+const autorizarGestionActividad = async (event, body, activity) => {
+    const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
+    if (!solicitanteId) return { error: error('solicitanteId es requerido', 400) };
+
+    const personaService = new PersonaService();
+    const solicitante = await personaService.getById(solicitanteId).catch(() => null);
+    if (!solicitante || solicitante.tenantId !== activity.tenantId) {
+        return { error: error('No autorizado para editar esta actividad', 403) };
+    }
+
+    // Responsable = relator o cualquiera de responsables[] (multi-asignación).
+    const esResponsable = solicitante.personaId === activity.relatorId
+        || (Array.isArray(activity.responsables) && activity.responsables.includes(solicitante.personaId));
+    if (!esResponsable) {
+        const tenant = await new TenantService().getById(activity.tenantId).catch(() => null);
+        if (!personaPuede(solicitante, tenant, PERMISSIONS.ACTIVIDADES_CREAR)) {
+            return { error: error('No autorizado para editar esta actividad', 403) };
+        }
+    }
+
+    return { solicitanteId, solicitante, personaService };
+};
+
+/**
  * PATCH /activities/{id} - Completar el registro post-charla y/o un borrador
  * planificado.
  *
@@ -837,22 +931,9 @@ module.exports.patch = async (event) => {
         if (!actResult.Item) return error('Actividad no encontrada', 404);
         const activity = actResult.Item;
 
-        const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
-        if (!solicitanteId) return error('solicitanteId es requerido', 400);
-        const personaService = new PersonaService();
-        const solicitante = await personaService.getById(solicitanteId).catch(() => null);
-        if (!solicitante || solicitante.tenantId !== activity.tenantId) {
-            return error('No autorizado para editar esta actividad', 403);
-        }
-        // Responsable = relator o cualquiera de responsables[] (multi-asignación).
-        const esResponsable = solicitante.personaId === activity.relatorId
-            || (Array.isArray(activity.responsables) && activity.responsables.includes(solicitante.personaId));
-        if (!esResponsable) {
-            const tenant = await new TenantService().getById(activity.tenantId).catch(() => null);
-            if (!personaPuede(solicitante, tenant, PERMISSIONS.ACTIVIDADES_CREAR)) {
-                return error('No autorizado para editar esta actividad', 403);
-            }
-        }
+        const auth = await autorizarGestionActividad(event, body, activity);
+        if (auth.error) return auth.error;
+        const { solicitanteId, personaService } = auth;
 
         const updates = {};
 
@@ -896,6 +977,32 @@ module.exports.patch = async (event) => {
             if (activity.tipo !== 'CAPACITACION') delete updates.subtipo;
             else if (!CAPACITACION_SUBTIPOS[updates.subtipo]) return error('Subtipo de capacitación inválido');
             else updates.subtipoDescripcion = CAPACITACION_SUBTIPOS[updates.subtipo];
+        }
+
+        // Evaluación de aprendizaje: NO se congela con las firmas como el resto del
+        // contenido. La capacitación se rinde y se corrige fuera del sistema, así
+        // que el respaldo se sube días después, con la asistencia ya firmada y la
+        // actividad muchas veces cerrada; congelarlo con las firmas dejaría el
+        // documento sin forma de entrar.
+        if (body.evaluacion !== undefined) {
+            if (activity.tipo !== 'CAPACITACION') {
+                return error('Solo una CAPACITACION admite evaluación de aprendizaje', 400);
+            }
+            const previa = activity.evaluacion || null;
+            // Apagar la exigencia con un respaldo ya cargado dejaría huérfano el
+            // documento que prueba la evaluación: se exige quitarlo primero.
+            if (body.evaluacion?.exigida !== true && previa?.respaldo) {
+                return error('No se puede desactivar la evaluación: hay un respaldo cargado', 409);
+            }
+            try {
+                updates.evaluacion = normalizarEvaluacion(body.evaluacion, activity.tipo, {
+                    previa,
+                    permitirRespaldo: true,
+                    subidoPor: solicitanteId,
+                });
+            } catch (evalErr) {
+                return error(evalErr.message, 400);
+            }
         }
 
         // Relator: reasignable mientras NO haya firmas (quien dicta la charla cambia

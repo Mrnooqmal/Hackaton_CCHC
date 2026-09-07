@@ -1,6 +1,32 @@
 import { apiRequest } from './client';
 import type { Signature } from './signatures.api';
 
+/** Archivo con las evaluaciones ya corregidas de una capacitación. */
+export interface EvaluacionRespaldo {
+    fileKey: string;
+    nombre: string;
+    tipo?: string | null;
+    tamano?: number | null;
+    subidoPor?: string | null;
+    subidoEn?: string | null;
+}
+
+/**
+ * Evaluación de aprendizaje de una CAPACITACION (Art. 13.4 / 16).
+ *
+ * La plataforma NO toma la evaluación ni guarda notas por persona: la rinde y la
+ * corrige el relator fuera del sistema, y acá se custodia UN SOLO documento con
+ * las evaluaciones de esa capacitación. Mismo criterio que el PTP y la MIPER: el
+ * sistema no lee el archivo, solo afirma la exigencia y si el respaldo está.
+ */
+export interface EvaluacionConfig {
+    exigida: boolean;
+    /** 70% general / 90% altura-SPDC, las dos que admite el catálogo de cargos. */
+    notaMinima: 70 | 90 | null;
+    escala: 'porcentaje';
+    respaldo: EvaluacionRespaldo | null;
+}
+
 export interface Activity {
     activityId: string;
     tipo: string;
@@ -27,6 +53,8 @@ export interface Activity {
     estado: 'borrador' | 'programada' | 'en_curso' | 'completada' | 'cancelada';
     planificacion?: PlanificacionActividad | null;
     permisosTrabajo?: PermisoTrabajo[];
+    /** Solo CAPACITACION; null en el resto de los tipos. */
+    evaluacion?: EvaluacionConfig | null;
     /** 'planificacion' = generada por el esqueleto; 'ad_hoc' = creada suelta. */
     origen?: 'planificacion' | 'ad_hoc' | null;
     /** Etapa constructiva del trabajo (obra_gruesa, terminaciones, etc). */
@@ -113,6 +141,16 @@ export interface CreateActivityData {
     repetirHasta?: string;
     planificacion?: PlanificacionActividad;
     permisosTrabajo?: PermisoTrabajo[];
+    /** Solo se acepta en CAPACITACION; el backend la ignora en otros tipos. */
+    evaluacion?: EvaluacionEntrada;
+}
+
+/** Configuración que envía el cliente (el backend la normaliza y la completa). */
+export interface EvaluacionEntrada {
+    exigida: boolean;
+    notaMinima?: 70 | 90;
+    /** Solo por PATCH. Omitir conserva el respaldo actual; null lo quita. */
+    respaldo?: EvaluacionRespaldo | null;
 }
 
 export interface ActivityListParams {
@@ -187,6 +225,12 @@ export interface PatchActivityData {
     estado?: 'borrador' | 'programada' | 'completada' | 'cancelada';
     planificacion?: PlanificacionActividad;
     permisosTrabajo?: PermisoTrabajo[];
+    /**
+     * Configurable aunque la actividad esté cerrada y firmada: la capacitación se
+     * corrige fuera del sistema y el respaldo llega días después. No se puede
+     * apagar la exigencia con un respaldo ya cargado (409).
+     */
+    evaluacion?: EvaluacionEntrada;
 }
 
 export interface ActivityListResponse {

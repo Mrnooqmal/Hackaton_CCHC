@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Activity, CatalogosActividad, PermisosTrabajoDef } from '../api/client';
-import { CLIMA_LABEL, labelDe, listaSeleccion } from './reporteActividad';
+import { CLIMA_LABEL, labelDe, listaSeleccion, estadoEvaluacion } from './reporteActividad';
 import type { construirFilasAsistencia } from './reporteActividad';
 
 type Filas = ReturnType<typeof construirFilasAsistencia>;
@@ -171,6 +171,24 @@ export function construirReporteActividadPdf(
             },
         });
         trasTabla();
+    }
+
+    // ── Evaluación de aprendizaje ──
+    // El acta no lleva notas: la evaluación se rinde y se corrige fuera del
+    // sistema y vive en un documento aparte. Acá se deja constancia de la
+    // exigencia y de si ese respaldo está cargado, que es lo único que la
+    // plataforma puede afirmar sin abrir el archivo.
+    const evaluacion = estadoEvaluacion(activity);
+    if (evaluacion) {
+        titulo('Evaluación de aprendizaje');
+        parrafo(`Nota mínima exigida: ${evaluacion.notaMinima}%`, { bold: true });
+        if (evaluacion.tieneRespaldo) {
+            parrafo(`Respaldo: ${evaluacion.nombreArchivo || 'documento adjunto'}.`);
+            parrafo('Las evaluaciones corregidas constan en ese documento, adjunto a esta actividad.', { muted: true });
+        } else {
+            parrafo('Sin respaldo cargado: falta adjuntar el documento con las evaluaciones.', { muted: true });
+        }
+        y += 4;
     }
 
     // ── Planificación diaria ──

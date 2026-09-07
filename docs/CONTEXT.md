@@ -366,6 +366,38 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
   ⚠️ Por lo mismo, en el frontend **el "día de hoy" se calcula con `hoyISO()`**
   (`utils/seguimientoActividad.ts`), nunca con `new Date().toISOString().split('T')[0]`:
   en UTC el día salta ~20:00 hora de Chile y las charlas del día dejan de ser firmables.
+- **Evaluación de aprendizaje (Art. 13.4 / 16):** una `CAPACITACION` puede llevar el
+  bloque `evaluacion = { exigida, notaMinima: 70|90, escala, respaldo }`. El Art. 13.4
+  no se conforma con que la capacitación se dicte: exige el registro de las
+  evaluaciones, y hasta acá el `notaMinima` del kit se escribía en el catálogo y en el
+  documento de onboarding (`personas-module/handler.js:288`) **sin que nadie lo leyera**.
+  - ⚠️ **La plataforma NO toma la evaluación ni guarda notas por persona.** La rinde y
+    la corrige el relator fuera del sistema; acá se custodia **un solo documento** con
+    las evaluaciones de esa capacitación (`evaluacion.respaldo`: `fileKey`, `nombre`,
+    `subidoPor`, `subidoEn`), subido con el presigned URL de S3 (`uploadsApi.uploadFile`,
+    categoría `evaluaciones`) igual que las evidencias de incidentes. Es la misma
+    decisión de producto del 2026-09-07 y el mismo criterio del PTP: el sistema no lee
+    el archivo, solo afirma lo verificable sin abrirlo — que la capacitación exige
+    evaluación, con qué nota mínima, y si el respaldo está cargado o falta.
+  - Los valores de `notaMinima` son los dos del catálogo (`sanitizeCargoCatalog`): 70%
+    general, 90% altura/SPDC. La actividad guarda el suyo en vez de ir a buscarlo al
+    kit, así el acta dice contra qué exigencia se midió aunque el catálogo cambie
+    después — y no hay que tocar los espejos `ds44.js`/`ds44.ts`.
+  - La exigencia se declara **al crear** la capacitación; el respaldo se adjunta después
+    por **`PATCH /activities/{id}`** con el bloque `evaluacion`. El PATCH escribe solo
+    `evaluacion` y `updatedAt`: no toca asistentes ni firmas.
+  - A diferencia del resto del contenido, la evaluación **no se congela con las firmas
+    ni con el cierre**: la capacitación se corrige fuera del sistema y el documento
+    llega días después. Omitir `respaldo` en el PATCH conserva el archivo actual;
+    mandarlo en `null` lo quita. **No** se puede apagar `exigida` con un respaldo
+    cargado (409): dejaría huérfano el documento que prueba la evaluación.
+  - **Frontend:** `estadoEvaluacion(activity)` (`utils/reporteActividad.ts`) deriva
+    exigencia + `tieneRespaldo`. El panel `components/actividades/EvaluacionActividad.tsx`
+    vive en el modal de detalle (solo si `evaluacion.exigida`) y el acta PDF deja
+    constancia de la exigencia y de si el respaldo está. ⚠️ El panel usa
+    `puedeAdjuntarEval` (`canManage || relator`), **no** `puedeGestionar`: éste excluye
+    el historial (`fecha < today`), lo que dejaría el respaldo sin forma de entrar al
+    día siguiente de la charla.
 - **Semáforo/vencidas (§6, ítems 1 y 6):** `Frontend/src/utils/seguimientoActividad.ts`
   → `estadoSeguimiento(actividad)` = verde/amarillo/rojo (rojo = **vencida**: no
   completada/cancelada con `fecha < hoy`). Derivado en cliente (no cambia estado en DB);
@@ -394,7 +426,7 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
 | `documents/` | por-endpoint | CRUD, **nueva-version** (versionado de procedimientos + notificación a la línea de mando, §4.6.1), assign, sign, sign-bulk, sign-assisted, download-firmado, stamp |
 | `signatures/` | por-endpoint | crear firma, enrolamiento, verify por token, disputas/resolución |
 | `signature-requests/` | por-endpoint | solicitudes de firma, pendientes/historial por worker, offline-batch, stats |
-| `activities/` | por-endpoint | charlas, capacitaciones; planificación mensual (`plan`), edición/cierre/**reasignación de relator** (`patch`), registro de asistencia, stats (ver §4.9) |
+| `activities/` | por-endpoint | charlas, capacitaciones; planificación mensual (`plan`), edición/cierre/**reasignación de relator** (`patch`), registro de asistencia, respaldo de **evaluaciones** (vía `patch`), stats (ver §4.9) |
 | `ausencias/` | por-endpoint | permisos/ausencias del día por obra/fecha (control de asistencia §6): `POST/GET/DELETE /ausencias` |
 | `scheduler/` | schedule (EventBridge) | Lambda programada (cada 30 min) de alertas de asistencia al inbox: charla vencida sin cerrar y pendientes de firmar a mediodía (ver §4.9) |
 | `incidents-module/` | itty-router | reportes de incidentes/accidentes, estadísticas KPI |
@@ -474,7 +506,7 @@ Todas `PAY_PER_REQUEST`. Nombre real: `${service}-{tabla}-${stage}`.
 | **Obras** | `PK=TENANT#{id}` / `SK=OBRA#{obraId}` | obraId-index | Query por tenant sin Scan |
 | **Personas** | `PK=TENANT#{id}` / `SK=PERSONA#{id}` | personaId-index, email-index, tenantRut-index | Identidad unificada |
 | **Documents** | `PK=documentId` | tenantId-index | clasificación obra/diario; `version` + `versiones[]` (historial de procedimientos, §4.6.1) |
-| **Activities** | `PK=activityId` | tenantId-index | charlas/capacitaciones; `alertas.*` para el scheduler (§4.9) |
+| **Activities** | `PK=activityId` | tenantId-index | charlas/capacitaciones; `alertas.*` para el scheduler y `evaluacion.respaldo` (§4.9) |
 | **Ausencias** | `PK=tenantId` / `SK={obraId}#{fecha}#{personaId}` | — | permisos/ausencias del día (§4.9, §6). Query por `begins_with(sk, "{obraId}#")` |
 | **Incidents** | `PK=incidentId` | tenantId-fecha-index | reportes |
 | **Signatures** | `PK=signatureId` | requestId-index, tenantId-index, personaId-index | **inmutable** |

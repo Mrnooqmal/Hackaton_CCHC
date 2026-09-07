@@ -202,3 +202,163 @@ test('CREATE guarda la planificación cuando es válida', async () => {
     assert.equal(store.puts[0].Item.planificacion.tema.codigo, 'FRAGUADO');
     assert.deepEqual(store.puts[0].Item.permisosTrabajo, []);
 });
+
+// ── CREATE: configuración de la evaluación de aprendizaje ──
+
+test('CREATE deja la evaluación no exigida si no se pide', async () => {
+    store.tenant = null;
+    const res = await handler.create(ev({ body: JSON.stringify({
+        tenantId: 't-1', tipo: 'CAPACITACION', subtipo: 'EPP', titulo: 'Uso de EPP', relatorId: 'p-1',
+    }) }));
+    assert.equal(res.statusCode, 201);
+    assert.deepEqual(store.puts[0].Item.evaluacion, { exigida: false, notaMinima: null, escala: 'porcentaje', respaldo: null });
+});
+
+test('CREATE acepta la nota mínima del kit (70/90) y nace sin respaldo', async () => {
+    store.tenant = null;
+    const res = await handler.create(ev({ body: JSON.stringify({
+        tenantId: 't-1', tipo: 'CAPACITACION', subtipo: 'PRL_8H', titulo: 'PRL 8h', relatorId: 'p-1',
+        evaluacion: { exigida: true, notaMinima: 90 },
+    }) }));
+    assert.equal(res.statusCode, 201);
+    assert.equal(store.puts[0].Item.evaluacion.notaMinima, 90);
+    // El respaldo se sube después de dictada la capacitación, no al crearla.
+    assert.equal(store.puts[0].Item.evaluacion.respaldo, null);
+});
+
+test('CREATE ignora un respaldo enviado al crear', async () => {
+    store.tenant = null;
+    await handler.create(ev({ body: JSON.stringify({
+        tenantId: 't-1', tipo: 'CAPACITACION', titulo: 'Cap', relatorId: 'p-1',
+        evaluacion: { exigida: true, notaMinima: 70, respaldo: { fileKey: 'x/y.pdf' } },
+    }) }));
+    assert.equal(store.puts[0].Item.evaluacion.respaldo, null);
+});
+
+test('CREATE 400 si la nota mínima no es una de las del catálogo de cargos', async () => {
+    store.tenant = null;
+    const res = await handler.create(ev({ body: JSON.stringify({
+        tenantId: 't-1', tipo: 'CAPACITACION', titulo: 'Cap', relatorId: 'p-1',
+        evaluacion: { exigida: true, notaMinima: 55 },
+    }) }));
+    assert.equal(res.statusCode, 400);
+    assert.equal(store.puts.length, 0);
+});
+
+test('CREATE ignora la evaluación en una actividad que no es CAPACITACION', async () => {
+    store.tenant = null;
+    const res = await handler.create(ev({ body: JSON.stringify({
+        tenantId: 't-1', tipo: 'CHARLA_5MIN', titulo: 'Charla', relatorId: 'p-1',
+        planificacion: { tema: { codigo: 'FRAGUADO' } },
+        evaluacion: { exigida: true, notaMinima: 70 },
+    }) }));
+    assert.equal(res.statusCode, 201);
+    assert.equal(store.puts[0].Item.evaluacion, null);
+});
+
+// ── PATCH: respaldo documental de la evaluación ──
+
+const capacitacion = (over = {}) => ({
+    activityId: 'a-1', tenantId: 't-1', tipo: 'CAPACITACION', subtipo: 'EPP',
+    estado: 'programada', relatorId: 'p-rel', responsables: ['p-rel'],
+    evaluacion: { exigida: true, notaMinima: 70, escala: 'porcentaje', respaldo: null },
+    asistentes: [{ personaId: 'p-t1', nombre: 'Ana' }],
+    ...over,
+});
+
+const respaldo = { fileKey: 'tenants/t-1/actividades/a-1/evaluaciones.pdf', nombre: 'Evaluaciones EPP.pdf', tipo: 'application/pdf', tamano: 12345 };
+
+const campoEscrito = (campo) => {
+    const u = store.updates[0];
+    const alias = Object.entries(u.ExpressionAttributeNames).find(([, c]) => c === campo)?.[0];
+    return alias ? u.ExpressionAttributeValues[alias.replace('#f', ':v')] : undefined;
+};
+
+test('PATCH adjunta el respaldo y deja constancia de quién lo subió', async () => {
+    store.activity = capacitacion();
+    store.personas['p-rel'] = persona({ personaId: 'p-rel', tenantId: 't-1' });
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-rel', evaluacion: { exigida: true, notaMinima: 70, respaldo },
+    }) }));
+    assert.equal(res.statusCode, 200);
+    const guardada = campoEscrito('evaluacion');
+    assert.equal(guardada.respaldo.fileKey, respaldo.fileKey);
+    assert.equal(guardada.respaldo.subidoPor, 'p-rel');
+    assert.ok(guardada.respaldo.subidoEn);
+});
+
+test('PATCH admite el respaldo aunque la actividad esté cerrada y con firmas', async () => {
+    // La capacitación se corrige fuera del sistema: el documento llega días después.
+    store.activity = capacitacion({ estado: 'completada', firmaRelator: { token: 'z' } });
+    store.personas['p-rel'] = persona({ personaId: 'p-rel', tenantId: 't-1' });
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-rel', evaluacion: { exigida: true, notaMinima: 70, respaldo },
+    }) }));
+    assert.equal(res.statusCode, 200);
+    assert.equal(campoEscrito('evaluacion').respaldo.fileKey, respaldo.fileKey);
+});
+
+test('PATCH conserva el respaldo si solo se edita la exigencia', async () => {
+    store.activity = capacitacion({ evaluacion: { exigida: true, notaMinima: 70, escala: 'porcentaje', respaldo: { ...respaldo, subidoPor: 'p-otro', subidoEn: '2026-01-01T00:00:00.000Z' } } });
+    store.personas['p-rel'] = persona({ personaId: 'p-rel', tenantId: 't-1' });
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-rel', evaluacion: { exigida: true, notaMinima: 90 },
+    }) }));
+    assert.equal(res.statusCode, 200);
+    const guardada = campoEscrito('evaluacion');
+    assert.equal(guardada.notaMinima, 90);
+    assert.equal(guardada.respaldo.fileKey, respaldo.fileKey);   // no se perdió
+    assert.equal(guardada.respaldo.subidoPor, 'p-otro');          // ni su autoría
+});
+
+test('PATCH 409 al desactivar la evaluación con un respaldo cargado', async () => {
+    store.activity = capacitacion({ evaluacion: { exigida: true, notaMinima: 70, escala: 'porcentaje', respaldo } });
+    store.personas['p-rel'] = persona({ personaId: 'p-rel', tenantId: 't-1' });
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-rel', evaluacion: { exigida: false },
+    }) }));
+    assert.equal(res.statusCode, 409);
+    assert.equal(store.updates.length, 0);
+});
+
+test('PATCH 400 si el respaldo viene sin fileKey', async () => {
+    store.activity = capacitacion();
+    store.personas['p-rel'] = persona({ personaId: 'p-rel', tenantId: 't-1' });
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-rel', evaluacion: { exigida: true, notaMinima: 70, respaldo: { nombre: 'sin key' } },
+    }) }));
+    assert.equal(res.statusCode, 400);
+    assert.equal(store.updates.length, 0);
+});
+
+test('PATCH 400 si se manda evaluación a una actividad que no es CAPACITACION', async () => {
+    store.activity = capacitacion({ tipo: 'CHARLA_5MIN', evaluacion: null });
+    store.personas['p-rel'] = persona({ personaId: 'p-rel', tenantId: 't-1' });
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-rel', evaluacion: { exigida: true, notaMinima: 70 },
+    }) }));
+    assert.equal(res.statusCode, 400);
+});
+
+test('PATCH quitar el respaldo lo deja en null sin tocar la exigencia', async () => {
+    store.activity = capacitacion({ evaluacion: { exigida: true, notaMinima: 70, escala: 'porcentaje', respaldo } });
+    store.personas['p-rel'] = persona({ personaId: 'p-rel', tenantId: 't-1' });
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-rel', evaluacion: { exigida: true, notaMinima: 70, respaldo: null },
+    }) }));
+    assert.equal(res.statusCode, 200);
+    const guardada = campoEscrito('evaluacion');
+    assert.equal(guardada.respaldo, null);
+    assert.equal(guardada.exigida, true);
+});
+
+test('PATCH no toca asistentes ni firmas al adjuntar el respaldo', async () => {
+    store.activity = capacitacion({ firmaRelator: { token: 'z' } });
+    store.personas['p-rel'] = persona({ personaId: 'p-rel', tenantId: 't-1' });
+    await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({
+        solicitanteId: 'p-rel', evaluacion: { exigida: true, notaMinima: 70, respaldo },
+        asistentes: [], firmaRelator: null,
+    }) }));
+    const campos = Object.values(store.updates[0].ExpressionAttributeNames || {});
+    assert.deepEqual([...campos].sort(), ['evaluacion', 'updatedAt']);
+});
