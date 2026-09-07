@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
 import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido, resolverDocumentoFirmable } from '../utils/documentoFirmado';
+import { publicarNuevaVersion } from '../utils/versionarDocumento';
+import { caducidadPorDefecto, tiempoRelativo, MESES_VIGENCIA_DEFECTO } from '../utils/vigenciaDocumento';
 import { incidenteAbierto, incidenteCerrado } from '../utils/incidentes';
 import { LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings, LuEllipsisVertical, LuHistory } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
@@ -69,11 +71,33 @@ const extractEmpresaDocs = (cargos: any[]): Record<string, { fileKey: string; no
 // Tipos de documento que son procedimientos de obra (DS 44): actualizar su
 // archivo publica una NUEVA VERSIÓN (notifica a la línea de mando + re-firma).
 // Espejo de TIPOS_PROCEDIMIENTO en Backend/handlers/documents/handler.js.
+// Los tipos que NO salen de DS44_DO_PROCEDIMIENTOS van listados a mano: la MIPER
+// es un documento de la fase PLAN, pero el Art. 7 inc. 9 le exige el mismo ciclo
+// de revisión (re-informar y re-firmar), así que se versiona igual que un
+// procedimiento. 'MATRIZ_MIPPER' es su alias histórico.
 const TIPOS_PROCEDIMIENTO = new Set<string>([
   ...DS44_DO_PROCEDIMIENTOS.map((el) => el.tipo),
   'PROCEDIMIENTO_TRABAJO',
+  'MIPER',
+  'MATRIZ_MIPPER',
 ]);
 const esProcedimiento = (tipo?: string): boolean => !!tipo && TIPOS_PROCEDIMIENTO.has(tipo);
+
+/**
+ * ¿Reemplazar el archivo de este documento de la fase PLAN publica una versión?
+ * Solo si el tipo es versionable y el documento YA existe con archivo: la primera
+ * subida es una actualización normal (sigue en v1), no una v2 sin predecesora.
+ * El tipo se lee del documento guardado, para que los alias históricos
+ * (MATRIZ_MIPPER) se comporten igual que el actual.
+ */
+const ds44EsVersionable = (
+  doc: { documentId?: string; tipos: string[] } | null,
+  detalle: { tipo?: string; s3Key?: string; archivoUrl?: string } | null,
+): boolean => {
+  if (!doc?.documentId) return false;
+  if (!detalle?.s3Key && !detalle?.archivoUrl) return false;
+  return esProcedimiento(detalle?.tipo || doc.tipos[0]);
+};
 
 // Construye la lista de documentos base de la obra reconciliando:
 //  1) documentos propios de la obra (clasificacion 'obra'), y
@@ -319,6 +343,9 @@ export default function ObraDetalle() {
   const [historialModal, setHistorialModal] = useState<{ titulo: string; versiones: VersionHistorial[] } | null>(null);
   const [docAEliminar, setDocAEliminar] = useState<{ documentId: string; titulo: string } | null>(null);
   const [ds44Titulo, setDs44Titulo] = useState('');
+  // Motivo del cambio: obligatorio al reemplazar el archivo de un documento
+  // versionable (hoy, la MIPER). Queda en el historial y en el aviso al mando.
+  const [ds44Motivo, setDs44Motivo] = useState('');
   const [eliminandoDoc, setEliminandoDoc] = useState(false);
   const [docPreview, setDocPreview] = useState<{ url: string | null; name: string } | null>(null);
   const [selectedDs44Detail, setSelectedDs44Detail] = useState<any | null>(null);
@@ -967,45 +994,22 @@ export default function ObraDetalle() {
 
         const autorNombre = user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined;
         if (esNuevaVersion && s3Key) {
-          const nuevaVer = (existingDoc.version || 1) + 1;
-          const r = await documentsApi.nuevaVersion(existingDoc.documentId, {
+          const r = await publicarNuevaVersion({
+            documentId: existingDoc.documentId,
+            versionActual: existingDoc.version || 1,
             s3Key, archivoNombre,
-            motivo: doCreateForm.motivo.trim(),
+            motivo: doCreateForm.motivo,
             notasCambio: doCreateForm.descripcion || undefined,
-            publicadaPor: user?.personaId,
-            publicadaPorNombre: autorNombre,
-            versionEsperada: existingDoc.version,
+            titulo: el.titulo || doCreateForm.titulo || 'Procedimiento',
+            asignaciones: existingDoc.asignaciones || [],
+            autorId: user?.personaId,
+            autorNombre,
+            tenantId: obra.tenantId,
+            obraId,
+            fechaLimite: existingDoc.fechaCaducidad,
+            tamanoArchivo: doCreateForm.file?.size,
           });
-          if (!r.success) { setDoCreateError(r.error || 'No se pudo publicar la nueva versión.'); return; }
-
-          // Solicitud de firma de la nueva versión: sin esto la re-firma no aparece
-          // en "Mis Firmas" (que lee de SignatureRequests + docs 'diario'), solo en
-          // el inbox. Se emite a los mismos firmantes de la versión anterior.
-          try {
-            const firmanteIds = (existingDoc.asignaciones || [])
-              .map((a: any) => a.personaId || a.workerId)
-              .filter(Boolean);
-            if (firmanteIds.length > 0) {
-              const docTitle = el.titulo || doCreateForm.titulo || 'Procedimiento';
-              const docAttachments = [{ nombre: archivoNombre || docTitle, url: s3Key, tipo: 'application/pdf', tamaño: doCreateForm.file?.size || 0 }];
-              await signatureRequestsApi.create({
-                tipo: 'DOCUMENTO',
-                titulo: `${docTitle} (v${nuevaVer})`,
-                descripcion: `Nueva versión (v${nuevaVer}) del procedimiento "${docTitle}". Debes leer y firmar la versión vigente.`,
-                documentos: docAttachments,
-                trabajadoresIds: firmanteIds,
-                solicitanteId: user?.personaId || '',
-                fechaLimite: existingDoc.fechaCaducidad || undefined,
-                tenantId: obra.tenantId,
-                obraId,
-                referenciaId: existingDoc.documentId,
-                referenciaTipo: 'document',
-                documentId: existingDoc.documentId,
-              } as any);
-            }
-          } catch (sigReqError) {
-            console.warn('No se pudo crear la solicitud de re-firma (aparecerá en el inbox pero no en Mis Firmas):', sigReqError);
-          }
+          if (!r.ok) { setDoCreateError(r.error || 'No se pudo publicar la nueva versión.'); return; }
 
           await reloadDocs();
           setObraToast('Nueva versión publicada. Se notificó a la línea de mando y el personal debe re-firmar.');
@@ -1478,9 +1482,12 @@ export default function ObraDetalle() {
     setDs44Titulo(doc.document?.titulo || '');
     setSelectedWorkerIds((doc.document?.asignaciones || []).map((a: any) => a.personaId || a.workerId).filter(Boolean));
     const docExpiry = getDocExpiryDate(doc.document);
-    setSelectedExpiryDate(toDateInputValue(docExpiry));
+    // Un documento nuevo llega con la caducidad a un año ya propuesta, visible y
+    // editable, en vez de un campo vacío que hay que recordar llenar.
+    setSelectedExpiryDate(toDateInputValue(docExpiry) || caducidadPorDefecto());
     setExpiryApplicable(Boolean(!doc.document || docExpiry));
     setPendingDs44File(null);
+    setDs44Motivo('');
     setIsDs44ModalOpen(true);
 
     if (doc.documentId) {
@@ -1491,7 +1498,9 @@ export default function ObraDetalle() {
           setSelectedDs44Detail(res.data);
           setSelectedWorkerIds((res.data.asignaciones || []).map((a: any) => a.personaId || a.workerId).filter(Boolean));
           const fetchedExpiry = getDocExpiryDate(res.data);
-          setSelectedExpiryDate(toDateInputValue(fetchedExpiry));
+          // Si el documento nunca tuvo caducidad, se propone la de un año al
+          // activar el toggle: el campo no queda vacío esperando una fecha.
+          setSelectedExpiryDate(toDateInputValue(fetchedExpiry) || caducidadPorDefecto());
           setExpiryApplicable(Boolean(fetchedExpiry));
         }
       } catch (error) {
@@ -1514,12 +1523,10 @@ export default function ObraDetalle() {
   const handleSaveDs44Changes = async () => {
     if (!selectedDs44Doc || !obraId) return;
 
-    if (expiryApplicable && !selectedExpiryDate) {
-      alert('Selecciona una fecha de caducidad para el documento.');
-      return;
-    }
-
-    const expiryValue = expiryApplicable ? selectedExpiryDate : null;
+    // Sin fecha elegida, el documento caduca en un año: es la vigencia que el
+    // DS 44 asume por defecto (Art. 7 inc. 9). Antes esto bloqueaba el guardado,
+    // lo que empujaba a apagar la caducidad con tal de poder subir el archivo.
+    const expiryValue = expiryApplicable ? (selectedExpiryDate || caducidadPorDefecto()) : null;
     const existingSignerIds = (selectedDs44Detail?.asignaciones || []).map((asignacion: any) => asignacion.personaId || asignacion.workerId);
     const targetSignerIds = selectedWorkerIds.length > 0 ? selectedWorkerIds : existingSignerIds;
 
@@ -1534,6 +1541,16 @@ export default function ObraDetalle() {
       return;
     }
     const tituloDocumento = selectedDs44Doc.multiple ? ds44Titulo.trim() : selectedDs44Doc.titulo;
+
+    // Reemplazar el archivo de un documento versionable publica una versión nueva
+    // en vez de sobrescribir: archiva la anterior, invalida las firmas y avisa a la
+    // línea de mando (Art. 7 inc. 9 para la MIPER). La primera subida sobre un
+    // documento sin archivo sigue siendo una actualización normal, no una v2.
+    const esNuevaVersionPlan = ds44EsVersionable(selectedDs44Doc, selectedDs44Detail) && Boolean(pendingDs44File);
+    if (esNuevaVersionPlan && !ds44Motivo.trim()) {
+      alert('Indica el motivo del cambio para publicar la nueva versión.');
+      return;
+    }
 
     setUploadingKey(selectedDs44Doc.key);
     setDs44Saving(true);
@@ -1576,7 +1593,35 @@ export default function ObraDetalle() {
       }
 
       let documentId = selectedDs44Doc.documentId;
-      if (documentId) {
+      const autorNombreDs44 = user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined;
+
+      if (documentId && esNuevaVersionPlan && fileKey) {
+        // Dos llamadas: la publicación de la versión no acepta metadatos, y el
+        // `update` posterior no vuelve a archivar porque no lleva `s3Key` nuevo.
+        const publicacion = await publicarNuevaVersion({
+          documentId,
+          versionActual: selectedDs44Detail?.version || 1,
+          s3Key: fileKey,
+          archivoNombre: fileName || undefined,
+          motivo: ds44Motivo,
+          titulo: tituloDocumento,
+          asignaciones: targetSignerIds.map((id: string) => ({ personaId: id })),
+          autorId: user?.personaId,
+          autorNombre: autorNombreDs44,
+          tenantId: obra?.tenantId,
+          obraId,
+          fechaLimite: expiryValue,
+          tamanoArchivo: pendingDs44File?.size,
+        });
+        if (!publicacion.ok) {
+          alert(publicacion.error || 'No se pudo publicar la nueva versión.');
+          return;
+        }
+        await documentsApi.update(documentId, {
+          fechaCaducidad: expiryValue,
+          titulo: tituloDocumento,
+        } as any);
+      } else if (documentId) {
         await documentsApi.update(documentId, {
           s3Key: fileKey,
           archivoUrl: fileKey,
@@ -1585,7 +1630,7 @@ export default function ObraDetalle() {
           titulo: tituloDocumento,
           // Queda registrado en el historial como autor de esta versión.
           publicadaPor: user?.personaId,
-          publicadaPorNombre: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined,
+          publicadaPorNombre: autorNombreDs44,
         } as any);
       } else {
         const createRes = await documentsApi.create({
@@ -1617,8 +1662,12 @@ export default function ObraDetalle() {
 
         // Also create a SignatureRequest so workers see it in "Mis Firmas".
         // Evita duplicados: solo crea si no existe ya una solicitud activa para este documento.
+        // Al publicar una versión nueva la solicitud de re-firma ya la emitió
+        // `publicarNuevaVersion` (con el número de versión en el título), así que
+        // esta rama se salta: `obraSignatureRequests` es estado previo a la
+        // publicación y no la vería, creando una segunda solicitud para lo mismo.
         try {
-          const yaExiste = obraSignatureRequests.some(
+          const yaExiste = esNuevaVersionPlan || obraSignatureRequests.some(
             (r: any) => (r.referenciaId === documentId || r.documentId === documentId)
               && ['pendiente', 'en_proceso'].includes(r.estado)
           );
@@ -1779,12 +1828,11 @@ export default function ObraDetalle() {
   const resumenDocumento = (d: DocumentoApi, requisito: { titulo: string; key: string; tipos?: string[]; multiple?: boolean }): DocResumen => {
     const { firmadas, total } = getSignatureStats(d);
     const version = d.version || 1;
-    const tieneHistorial = (d.versiones?.length || 0) > 0;
     const actualizadoEn = d.updatedAt || d.createdAt;
     const firmado = total > 0 && firmadas === total;
     const partes = [
-      tieneHistorial ? `v${version}` : null,
-      actualizadoEn ? `Actualizado ${formatDate(actualizadoEn)}` : null,
+      version > 1 ? `v${version}` : null,
+      tiempoRelativo(actualizadoEn) ? `Revisado ${tiempoRelativo(actualizadoEn)}` : null,
       total > 0 ? `Firmas ${firmadas}/${total}` : null,
     ].filter(Boolean);
 
@@ -1801,7 +1849,8 @@ export default function ObraDetalle() {
       acciones: [
         { label: 'Actualizar archivo', onClick: () => openDs44Modal(comoItem) },
         ...(total > 0 ? [{ label: 'Ver firmas', onClick: () => openSignatureModal(comoItem) }] : []),
-        ...(tieneHistorial ? [{ label: 'Historial de versiones', onClick: () => openHistorialModal(comoItem) }] : []),
+        // Disponible desde la v1: es donde se ve quién subió el archivo vigente.
+        { label: 'Historial de cambios', onClick: () => openHistorialModal(comoItem) },
         ...(total === 0 ? [{ label: 'Eliminar', onClick: () => setDocAEliminar({ documentId: d.documentId, titulo: d.titulo || requisito.titulo }) }] : []),
       ],
     };
@@ -1812,11 +1861,10 @@ export default function ObraDetalle() {
   const resumenDocumentoDo = (d: DocumentoApi, el: Ds44DoElemento): DocResumen => {
     const { firmadas, total } = getSignatureStats(d);
     const version = d.version || 1;
-    const tieneHistorial = (d.versiones?.length || 0) > 0;
     const firmado = total > 0 && firmadas === total;
     const partes = [
       version > 1 ? `v${version}` : null,
-      d.updatedAt ? `Actualizado ${formatDate(d.updatedAt)}` : null,
+      tiempoRelativo(d.updatedAt) ? `Revisado ${tiempoRelativo(d.updatedAt)}` : null,
       total > 0 ? `Firmas ${firmadas}/${total}` : null,
     ].filter(Boolean);
 
@@ -1832,7 +1880,8 @@ export default function ObraDetalle() {
       acciones: [
         { label: 'Publicar nueva versión', onClick: () => openDoCreate('documento', el, d) },
         ...(total > 0 ? [{ label: 'Ver firmas', onClick: () => openSignatureModal(comoItem) }] : []),
-        ...(tieneHistorial ? [{ label: 'Historial de versiones', onClick: () => openHistorialModal(comoItem) }] : []),
+        // Disponible desde la v1: es donde se ve quién subió el archivo vigente.
+        { label: 'Historial de cambios', onClick: () => openHistorialModal(comoItem) },
         ...(total === 0 ? [{ label: 'Eliminar', onClick: () => setDocAEliminar({ documentId: d.documentId, titulo: d.titulo || el.titulo }) }] : []),
       ],
     };
@@ -2445,8 +2494,12 @@ export default function ObraDetalle() {
                     const badgeClass = isExpired ? 'badge-danger' : firmasCompletas ? 'badge-success' : doc.archivoSubido ? 'badge-warning' : 'badge-danger';
                     const badgeLabel = isExpired ? 'Vencido' : firmasCompletas ? 'Completo' : doc.archivoSubido ? 'Pendiente de firma' : 'Sin documento';
                     const versionActual = doc.document?.version || 1;
-                    const tieneHistorial = (doc.document?.versiones?.length || 0) > 0;
+                    // El historial se ofrece desde la v1: aunque no haya versiones
+                    // archivadas, es donde se ve quién subió el archivo vigente y cuándo.
+                    const tieneHistorial = Boolean(doc.document?.documentId) && doc.archivoSubido;
+                    const tieneVersionesPrevias = (doc.document?.versiones?.length || 0) > 0;
                     const actualizadoEn = doc.document?.updatedAt || doc.document?.createdAt;
+                    const revisadoHace = tiempoRelativo(actualizadoEn);
                     return (
                       <div key={doc.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
@@ -2454,8 +2507,12 @@ export default function ObraDetalle() {
                           <div className="text-muted ds44-doc-meta">
                             <span>{doc.estadoFirma}</span>
                             {total > 0 && <span>Firmas {firmadas}/{total}</span>}
-                            {doc.archivoSubido && tieneHistorial && <span className="ds44-doc-ver">v{versionActual}</span>}
-                            {doc.archivoSubido && actualizadoEn && <span>Actualizado {formatDate(actualizadoEn)}</span>}
+                            {doc.archivoSubido && tieneVersionesPrevias && <span className="ds44-doc-ver">v{versionActual}</span>}
+                            {doc.archivoSubido && revisadoHace && (
+                              <span title={`Última actualización: ${formatDate(actualizadoEn)}`}>
+                                Revisado {revisadoHace}
+                              </span>
+                            )}
                             {fechaCaducidad && <span>{isExpired ? 'Vencido' : 'Caduca'} {formatDate(fechaCaducidad)}</span>}
                           </div>
                         </div>
@@ -2475,7 +2532,7 @@ export default function ObraDetalle() {
                                 items={[
                                   { label: 'Actualizar archivo', onClick: () => openDs44Modal(doc) },
                                   ...(total > 0 ? [{ label: 'Ver firmas', onClick: () => openSignatureModal(doc) }] : []),
-                                  ...(tieneHistorial ? [{ label: 'Historial de versiones', onClick: () => openHistorialModal(doc) }] : []),
+                                  ...(tieneHistorial ? [{ label: 'Historial de cambios', onClick: () => openHistorialModal(doc) }] : []),
                                 ]}
                               />
                             </>
@@ -3258,6 +3315,7 @@ export default function ObraDetalle() {
         onClose={() => {
           setIsDs44ModalOpen(false);
           setPendingDs44File(null);
+          setDs44Motivo('');
         }}
         title={selectedDs44Doc?.titulo ? `Documento DS44 - ${selectedDs44Doc.titulo}` : 'Documento DS44'}
         subtitle="Sube el archivo, selecciona firmantes y define caducidad"
@@ -3298,7 +3356,9 @@ export default function ObraDetalle() {
                 <div className="ds44-toggle-text">
                   <span className="ds44-toggle-title">Aplica caducidad</span>
                   <span className="ds44-toggle-hint">
-                    {expiryApplicable ? 'Este documento tiene fecha de vencimiento' : 'Sin fecha de vencimiento'}
+                    {expiryApplicable
+                      ? `Si no eliges una fecha, caduca en ${MESES_VIGENCIA_DEFECTO} meses`
+                      : 'Sin fecha de vencimiento'}
                   </span>
                 </div>
                 <div className="ds44-switch-wrapper">
@@ -3404,6 +3464,32 @@ export default function ObraDetalle() {
               </button>
             </div>
           </div>
+
+          {/* Reemplazar el archivo de un documento versionable (MIPER) no lo
+              sobrescribe: publica una versión y obliga a re-firmar. Se avisa antes
+              de guardar, porque invalida firmas ya recogidas. */}
+          {ds44EsVersionable(selectedDs44Doc, selectedDs44Detail) && pendingDs44File && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="ds44-motivo">
+                Motivo de la revisión
+              </label>
+              <textarea
+                id="ds44-motivo"
+                className="form-input"
+                rows={2}
+                maxLength={300}
+                value={ds44Motivo}
+                placeholder="Ej: se incorporó el riesgo de sílice tras el cambio de faena"
+                onChange={(e) => setDs44Motivo(e.target.value)}
+              />
+              <span className="text-muted" style={{ fontSize: 'var(--text-xs)' }}>
+                Se publica la <strong>v{(selectedDs44Detail?.version || 1) + 1}</strong>. La versión
+                anterior queda en el historial, se avisa a la línea de mando y las
+                {' '}{selectedWorkerIds.length > 0 ? `${selectedWorkerIds.length} firmas` : 'firmas'} recogidas
+                dejan de ser válidas: el personal debe firmar de nuevo.
+              </span>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
             <div className="font-medium">Firmantes requeridos</div>
@@ -4055,7 +4141,7 @@ export default function ObraDetalle() {
       <Modal
         isOpen={!!historialModal}
         onClose={() => setHistorialModal(null)}
-        title="Historial de versiones"
+        title="Historial de cambios"
         subtitle={historialModal?.titulo}
         icon={<LuHistory size={20} />}
         size="lg"
@@ -4070,16 +4156,20 @@ export default function ObraDetalle() {
               <div className="ver-datos">
                 <div className="ver-linea">
                   {v.actual && <span className="ver-chip">Versión vigente</span>}
-                  <span className="ver-fecha">{v.publicadaEn ? formatDate(v.publicadaEn) : 'Sin fecha'}</span>
+                  <span className="ver-fecha">
+                    {v.publicadaEn ? formatDate(v.publicadaEn) : 'Sin fecha'}
+                    {tiempoRelativo(v.publicadaEn) && ` · ${tiempoRelativo(v.publicadaEn)}`}
+                  </span>
                 </div>
                 <div className="ver-archivo">{v.archivoNombre || 'Archivo sin nombre'}</div>
-                {(v.publicadaPorNombre || v.motivo) && (
-                  <div className="ver-sub">
-                    {v.publicadaPorNombre}
-                    {v.publicadaPorNombre && v.motivo && ' · '}
-                    {v.motivo}
-                  </div>
-                )}
+                {/* Quién la subió y por qué. En la v1 no hay motivo: nadie la
+                    "cambió", es la carga inicial del documento. */}
+                <div className="ver-sub">
+                  {v.publicadaPorNombre
+                    ? `Subido por ${v.publicadaPorNombre}`
+                    : 'Autor no registrado'}
+                  {v.motivo && ` · ${v.motivo}`}
+                </div>
               </div>
               <button
                 type="button"

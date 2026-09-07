@@ -14,15 +14,20 @@ const ev = (id, body) => ({ pathParameters: { id }, body: JSON.stringify(body) }
 
 /**
  * Reconstruye los valores escritos por el UpdateCommand capturado, resolviendo
- * cada par `#nombre = :valor` de la UpdateExpression (los placeholders de nombre
+ * cada par `nombre = :valor` de la UpdateExpression (los placeholders de nombre
  * y de valor no siempre coinciden).
+ *
+ * El lado izquierdo puede venir como placeholder (`#nombre`, que hay que resolver
+ * contra ExpressionAttributeNames) o como nombre literal: `update` usa siempre lo
+ * primero y `nuevaVersion` mezcla ambas formas.
  */
 const escrito = (input) => {
     const out = {};
     const asignaciones = input.UpdateExpression.replace(/^SET\s+/, '').split(', ');
     for (const par of asignaciones) {
         const [ph, vh] = par.split(' = ');
-        out[input.ExpressionAttributeNames[ph]] = input.ExpressionAttributeValues[vh];
+        const campo = ph.startsWith('#') ? input.ExpressionAttributeNames[ph] : ph;
+        out[campo] = input.ExpressionAttributeValues[vh];
     }
     return out;
 };
@@ -124,6 +129,88 @@ test('reemplazar el archivo invalida el PDF firmado cacheado', async () => {
     const w = escrito(store.updates[0]);
     assert.equal(w.documentoFirmadoS3Key, null, 'el estampado correspondía al archivo viejo');
     assert.equal(w.documentoFirmadoFirmaCount, 0);
+});
+
+// ── MIPER versionada (FUF ítem 6, Art. 7 inc. 9). La MIPER es un documento de la
+//    fase PLAN, pero al revisarla hay que re-informarla y re-firmarla igual que un
+//    procedimiento, así que entra en TIPOS_PROCEDIMIENTO y acepta /nueva-version.
+
+const evVersion = (id, body) => ({ pathParameters: { id }, body: JSON.stringify(body) });
+
+test('la MIPER acepta publicar una nueva versión', async () => {
+    store.doc = {
+        documentId: 'd-miper', tenantId: 't1', tipo: 'MIPER', titulo: 'MIPER Obra Central',
+        s3Key: 'obras/miper-v1.pdf', version: 1,
+        asignaciones: [
+            { personaId: 'p-1', estado: 'firmado', fechaFirma: '2026-04-01T12:00:00.000Z' },
+            { personaId: 'p-2', estado: 'firmado', fechaFirma: '2026-04-02T12:00:00.000Z' },
+        ],
+        firmas: [{ personaId: 'p-1', token: 'tok-1' }],
+    };
+
+    const res = await handler.nuevaVersion(evVersion('d-miper', {
+        s3Key: 'obras/miper-v2.pdf',
+        motivo: 'Se incorporó el riesgo de sílice tras el cambio de faena',
+    }));
+
+    assert.equal(res.statusCode, 200);
+    const w = escrito(store.updates[0]);
+    assert.equal(w.version, 2);
+    assert.equal(w.s3Key, 'obras/miper-v2.pdf');
+    assert.equal(w.versiones.length, 1, 'la v1 queda archivada');
+    assert.equal(w.versiones[0].s3Key, 'obras/miper-v1.pdf');
+});
+
+test('publicar una versión de la MIPER obliga a re-firmar', async () => {
+    store.doc = {
+        documentId: 'd-miper', tenantId: 't1', tipo: 'MIPER', titulo: 'MIPER Obra Central',
+        s3Key: 'obras/miper-v1.pdf', version: 1,
+        asignaciones: [
+            { personaId: 'p-1', estado: 'firmado', fechaFirma: '2026-04-01T12:00:00.000Z' },
+            { personaId: 'p-2', estado: 'firmado', fechaFirma: '2026-04-02T12:00:00.000Z' },
+        ],
+        firmas: [{ personaId: 'p-1', token: 'tok-1' }],
+        documentoFirmadoS3Key: 'stamped/miper-v1.pdf',
+    };
+
+    await handler.nuevaVersion(evVersion('d-miper', { s3Key: 'obras/miper-v2.pdf', motivo: 'Revisión anual' }));
+
+    const w = escrito(store.updates[0]);
+    assert.deepEqual(w.asignaciones.map((a) => a.estado), ['pendiente', 'pendiente']);
+    assert.deepEqual(w.asignaciones.map((a) => a.fechaFirma), [null, null]);
+    assert.deepEqual(w.firmas, [], 'las firmas de la v1 no valen sobre el archivo nuevo');
+    assert.equal(w.documentoFirmadoS3Key, null, 'el estampado correspondía a la v1');
+    assert.deepEqual(
+        w.versiones[0].firmasArchivadas,
+        [{ personaId: 'p-1', token: 'tok-1' }],
+        'las firmas de la v1 quedan en el snapshot para auditoría',
+    );
+});
+
+test('MATRIZ_MIPPER (alias histórico) también se versiona', async () => {
+    store.doc = { documentId: 'd-old', tenantId: 't1', tipo: 'MATRIZ_MIPPER', s3Key: 'obras/matriz-v1.pdf', version: 1 };
+
+    const res = await handler.nuevaVersion(evVersion('d-old', { s3Key: 'obras/matriz-v2.pdf', motivo: 'Actualización' }));
+
+    assert.equal(res.statusCode, 200);
+});
+
+test('un documento no versionable sigue rechazando /nueva-version', async () => {
+    store.doc = { documentId: 'd-mapa', tenantId: 't1', tipo: 'MAPA_RIESGOS', s3Key: 'obras/mapa-v1.pdf', version: 1 };
+
+    const res = await handler.nuevaVersion(evVersion('d-mapa', { s3Key: 'obras/mapa-v2.pdf', motivo: 'Cambio' }));
+
+    assert.equal(res.statusCode, 400);
+    assert.equal(store.updates.length, 0);
+});
+
+test('publicar una versión exige motivo', async () => {
+    store.doc = { documentId: 'd-miper', tenantId: 't1', tipo: 'MIPER', s3Key: 'obras/miper-v1.pdf', version: 1 };
+
+    const res = await handler.nuevaVersion(evVersion('d-miper', { s3Key: 'obras/miper-v2.pdf' }));
+
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /motivo/i);
 });
 
 // ── Eliminar un documento (requisitos con varios documentos, ej. planes de

@@ -88,11 +88,17 @@ const DOCUMENT_TYPES = {
 // Procedimientos de obra (DS 44): documentos cuya actualización de versión debe
 // notificarse a la línea de mando y re-firmarse. Espejo de DS44_DO_PROCEDIMIENTOS
 // en Frontend/src/utils/ds44.ts (más el procedimiento de trabajo genérico).
+//
+// La MIPER no es un procedimiento del HACER, pero entra acá porque el Art. 7
+// inc. 9 le exige el mismo ciclo: al revisarla hay que volver a informarla a la
+// línea de mando y re-firmarla. `MATRIZ_MIPPER` es el alias histórico del mismo
+// documento (ver DS44_PLAN_DOCS.tipos) y va incluido para las obras antiguas.
 const TIPOS_PROCEDIMIENTO = new Set([
     'PROCEDIMIENTO_TRABAJO', 'PROCEDIMIENTO_EPP', 'OPERACION_MAQUINAS', 'PROCEDIMIENTO_AGENTES',
     'PLAN_EMERGENCIAS', 'PROCEDIMIENTO_RIESGO_GRAVE', 'PROCEDIMIENTO_EVACUACION',
     'PROCEDIMIENTO_INVESTIGACION', 'GESTION_CAMBIOS', 'COORDINACION_ENTIDADES', 'CONSULTA_REPRESENTANTES',
     'VIGILANCIA_AMBIENTAL', 'VIGILANCIA_SALUD',
+    'MIPER', 'MATRIZ_MIPPER',
 ]);
 const esProcedimiento = (tipo) => TIPOS_PROCEDIMIENTO.has(tipo);
 
