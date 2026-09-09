@@ -217,3 +217,89 @@ test('las definiciones vienen ordenadas por número de ítem', () => {
     const items = definicionesPara('empresa').map((d) => d.item);
     assert.deepEqual(items, [...items].sort((a, b) => a - b));
 });
+
+// ─── Export del FUF ──────────────────────────────────────────────────────────
+
+const { construirExport, renderHtml } = require('../lib/completitud-export');
+
+const completitudDemo = (over = {}) => {
+    const ctx = ctxBase(over.ctx || {});
+    const ev = C.evaluarCompletitud(definicionesPara('obra'), ctx);
+    return {
+        ambito: 'obra', obraId: 'o-1',
+        dotacion: { dotacion: ctx.dotacion, origen: 'calculada', calculada: ctx.dotacion, declarada: null },
+        limiteRegistroDT: '2026-06-22T12:00:00.000Z',
+        organos: over.organos || [],
+        ...ev,
+        bloques: C.agruparPorBloque(ev.requisitos),
+    };
+};
+
+test('el export lee lo mismo que el panel, no recalcula', () => {
+    const comp = completitudDemo();
+    const exp = construirExport(comp, { nombreObra: 'Obra Norte' });
+    assert.equal(exp.resumen.progreso, comp.resumen.progreso);
+    assert.equal(exp.resumen.exigibles, comp.resumen.exigibles);
+    assert.deepEqual(
+        exp.bloques.flatMap((b) => b.requisitos.map((r) => r.id)),
+        comp.requisitos.map((r) => r.id)
+    );
+});
+
+test('los NoAplica se DECLARAN con su justificación, no se omiten', () => {
+    // Dotación bajo el umbral: el comité no aplica y debe aparecer igual.
+    const comp = completitudDemo({ ctx: { dotacion: 8, obligaciones: EP.obligacionesDeAmbito({ dotacion: 8, ambito: EP.AMBITO.OBRA }) } });
+    const html = renderHtml(construirExport(comp, { nombreObra: 'Obra Chica' }));
+    assert.match(html, /No aplica/);
+    assert.match(html, /No exigible con la dotación/);
+});
+
+test('los ítems fuera de alcance se marcan, no se omiten (§12)', () => {
+    const html = renderHtml(construirExport(completitudDemo(), {}));
+    assert.match(html, /Fuera de alcance/);
+    assert.match(html, /Facilidades para el funcionamiento/);
+});
+
+test('un órgano voluntario se rotula como tal (§2)', () => {
+    const comp = completitudDemo({
+        organos: [{ tipo: 'ComiteParitario', origen: 'Voluntario', estado: 'Vigente' }],
+    });
+    const html = renderHtml(construirExport(comp, {}));
+    assert.match(html, /constituidos de forma voluntaria/i);
+    assert.match(html, /no constituyó incumplimiento/);
+});
+
+test('sin órganos voluntarios no aparece esa nota', () => {
+    const comp = completitudDemo({
+        organos: [{ tipo: 'ComiteParitario', origen: 'Obligatorio', estado: 'Vigente' }],
+    });
+    assert.ok(!/constituidos de forma voluntaria/i.test(renderHtml(construirExport(comp, {}))));
+});
+
+test('el export declara que es un reporte de estado, no evidencia acreditante', () => {
+    const html = renderHtml(construirExport(completitudDemo(), {}));
+    assert.match(html, /reporte de estado/);
+    assert.match(html, /no acredita por sí mismo/);
+});
+
+test('el plazo de la DT se rotula referencial', () => {
+    const html = renderHtml(construirExport(completitudDemo(), {}));
+    assert.match(html, /referencial/);
+    assert.match(html, /no los feriados legales/);
+});
+
+test('el export escapa el HTML de los datos', () => {
+    const comp = completitudDemo();
+    const html = renderHtml(construirExport(comp, { nombreObra: '<script>alert(1)</script>' }));
+    assert.ok(!html.includes('<script>alert(1)</script>'));
+    assert.match(html, /&lt;script&gt;/);
+});
+
+test('el export declara el denominador y lo excluido', () => {
+    const comp = completitudDemo({ ctx: { dotacion: 8, obligaciones: EP.obligacionesDeAmbito({ dotacion: 8, ambito: EP.AMBITO.OBRA }) } });
+    const exp = construirExport(comp, {});
+    const html = renderHtml(exp);
+    assert.ok(exp.resumen.excluidos > 0);
+    assert.match(html, /requisito\(s\) exigible\(s\)/);
+    assert.match(html, /no penalizan/);
+});

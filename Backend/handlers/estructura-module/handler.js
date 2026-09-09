@@ -22,6 +22,7 @@ const { ObraService } = require('../../lib/services/ObraService');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const EP = require('../../lib/estructura-preventiva');
+const { construirExport, renderHtml } = require('../../lib/completitud-export');
 
 const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
@@ -136,7 +137,7 @@ module.exports.estructuraHandler = async (event) => {
         // ── GET /estructura/completitud ──────────────────────────────────────
         // Estado de los requisitos del FUF del ámbito. Lee las mismas definiciones
         // que leerá el export: una sola fuente para panel y expediente.
-        if (method === 'GET' && recurso === 'completitud') {
+        if (method === 'GET' && recurso === 'completitud' && !organoId) {
             const ambito = q.ambito === EP.AMBITO.OBRA ? EP.AMBITO.OBRA : EP.AMBITO.EMPRESA;
             const obraId = q.obraId || null;
             if (ambito === EP.AMBITO.OBRA && !obraId) return error('obraId es requerido para el ámbito obra');
@@ -159,6 +160,50 @@ module.exports.estructuraHandler = async (event) => {
                 tenantId, ambito, obraId, personas, documentos, dotacionDeclarada: declarada,
             });
             return success(resultado);
+        }
+
+        // ── GET /estructura/completitud/export ───────────────────────────────
+        // Reporte imprimible del estado del FUF. Lee las MISMAS definiciones que
+        // el panel: si divergen, es que alguien reimplementó el cálculo.
+        if (method === 'GET' && recurso === 'completitud' && organoId === 'export') {
+            const ambito = q.ambito === EP.AMBITO.OBRA ? EP.AMBITO.OBRA : EP.AMBITO.EMPRESA;
+            const obraId = q.obraId || null;
+            if (ambito === EP.AMBITO.OBRA && !obraId) return error('obraId es requerido para el ámbito obra');
+
+            const [personas, documentos, tenant, obra] = await Promise.all([
+                personaService.listByTenant(tenantId).catch(() => []),
+                listarDocumentosTenant(tenantId),
+                tenantService.getById(tenantId).catch(() => null),
+                obraId ? obraService.getById(obraId).catch(() => null) : Promise.resolve(null),
+            ]);
+            const tenantSafe = tenant ? tenant.toSafeFormat() : null;
+
+            const completitud = await estructuraService.completitudAmbito({
+                tenantId, ambito, obraId, personas, documentos,
+                dotacionDeclarada: ambito === EP.AMBITO.OBRA
+                    ? (obra?.dotacionDeclarada ?? null)
+                    : (tenantSafe?.cantidadTrabajadores || null),
+            });
+
+            const exp = construirExport(completitud, {
+                nombreEmpresa: tenantSafe?.nombre || null,
+                nombreObra: obra?.nombre || null,
+            });
+
+            // `formato=html` devuelve el documento listo para imprimir; por defecto
+            // se devuelve la estructura, para que otros formatos la reutilicen.
+            if (q.formato === 'html') {
+                return {
+                    statusCode: 200,
+                    headers: {
+                        'Content-Type': 'text/html; charset=utf-8',
+                        'Access-Control-Allow-Origin': '*',
+                        'Content-Disposition': `inline; filename="cumplimiento-fuf-${ambito}${obraId ? '-' + obraId : ''}.html"`,
+                    },
+                    body: renderHtml(exp),
+                };
+            }
+            return success(exp);
         }
 
         // ── GET /estructura/organos ──────────────────────────────────────────

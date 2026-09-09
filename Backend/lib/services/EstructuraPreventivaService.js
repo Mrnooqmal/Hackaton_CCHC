@@ -531,6 +531,10 @@ class EstructuraPreventivaService {
             ambito, obraId,
             dotacion: resumen.dotacion,
             limiteRegistroDT,
+            // Los órganos viajan para que el export pueda rotular como VOLUNTARIO
+            // el que se constituyó sin estar obligado: su ausencia previa nunca
+            // fue un incumplimiento y el expediente tiene que decirlo.
+            organos: resumen.organos,
             ...evaluacion,
             bloques: C.agruparPorBloque(evaluacion.requisitos),
         };

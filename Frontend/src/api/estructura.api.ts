@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { apiRequest, apiBaseUrl } from './client';
 import type { CompletitudAmbito } from '../utils/completitud';
 import type {
     Ambito, TipoOrgano, Origen, EstadoOrgano, Estamento, Calidad, CargoOrgano,
@@ -115,6 +115,12 @@ export const estructuraApi = {
      *  que el export, para que panel y expediente no discrepen. */
     completitud: (tenantId: string, ambito: Ambito, obraId?: string | null) =>
         apiRequest<CompletitudAmbito>(`/estructura/completitud${qs({ tenantId, ambito, obraId })}`),
+
+    /** URL del reporte imprimible. Se abre en pestaña nueva en vez de descargarse
+     *  por fetch: el navegador ya sabe mostrar e imprimir HTML, y así el usuario
+     *  decide si guardarlo como PDF. */
+    urlExport: (tenantId: string, ambito: Ambito, obraId?: string | null) =>
+        `${apiBaseUrl}/estructura/completitud/export${qs({ tenantId, ambito, obraId, formato: 'html' })}`,
 
     listar: (tenantId: string, filtros: { ambito?: Ambito; obraId?: string | null } = {}) =>
         apiRequest<{ total: number; organos: OrganoPreventivo[] }>(

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FiAlertTriangle, FiChevronDown, FiChevronRight } from 'react-icons/fi';
+import { FiAlertTriangle, FiChevronDown, FiChevronRight, FiPrinter } from 'react-icons/fi';
 import { Badge } from './ui';
 import { estructuraApi } from '../api/estructura.api';
 import {
@@ -79,8 +79,22 @@ export default function CompletitudFufPanel({ tenantId, ambito, obraId = null }:
                     <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, color: 'var(--text-secondary)' }}>
                         Requisitos del FUF
                     </span>
-                    <span style={{ fontWeight: 700, fontSize: '1rem', color: colorProgreso(resumen.progreso) }}>
-                        {resumen.progreso}%
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                        <span style={{ fontWeight: 700, fontSize: '1rem', color: colorProgreso(resumen.progreso) }}>
+                            {resumen.progreso}%
+                        </span>
+                        {/* El export lee las MISMAS definiciones que este panel, así que
+                            no pueden discrepar. Es un reporte de estado, no evidencia
+                            firmada, y el documento lo dice. */}
+                        <a
+                            className="btn btn-secondary btn-sm"
+                            href={estructuraApi.urlExport(tenantId, ambito, obraId)}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Abre el reporte imprimible en una pestaña nueva"
+                        >
+                            <FiPrinter size={13} /> Exportar
+                        </a>
                     </span>
                 </div>
                 <div className="ds44-progress-track">

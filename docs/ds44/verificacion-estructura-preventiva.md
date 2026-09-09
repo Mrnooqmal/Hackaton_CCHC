@@ -3,7 +3,7 @@
 Fase 10 del encargo. Pasada contra las secciones 10 y 12, con el reporte de
 contradicciones, tablas creadas y supuestos tomados.
 
-Fecha: 2026-09-09 · 215 tests backend / 0 fallas · `npm run build` verde.
+Fecha: 2026-09-09 · 224 tests backend / 0 fallas · `npm run build` verde.
 
 ## Sección 10 — Anti duplicación y anti contradicción
 
@@ -77,8 +77,11 @@ Marcados, no resueltos por cuenta propia.
 2. **Offline**: el cálculo de obligaciones es local y determinista (`utils/
    estructuraPreventiva.ts`), pero **cargar actas y registrar reuniones NO
    funciona sin conexión**: el offline actual del sistema cubre solo firmas.
-3. **No hay export del FUF todavía**. El registro requisito → evidencia existe y
-   es el único; cuando se construya el export, debe leer de ahí y no reimplementar.
+3. **El export del FUF es un reporte de ESTADO, no evidencia acreditante.** Dice
+   qué hay y qué falta al momento de generarlo; la acreditación la dan los
+   documentos que referencia. Por eso no se firma ni se persiste: el expediente
+   consolidado con integridad verificable es otra cosa y no es parte de este
+   módulo.
 4. **Investiduras no verificadas**, por alcance: el sistema permite designar, no
    comprueba que la persona ostente el cargo. La UI lo dice en pantalla.
 
@@ -97,10 +100,32 @@ Marcados, no resueltos por cuenta propia.
    inferior, así que solo avisaba el día exacto del vencimiento. Encontrado por
    los tests, corregido con ventanas explícitas y test de regresión.
 
-## Pendiente declarado
+## Export del FUF (§10.4)
 
-- **Export del FUF** (§10.4): el registro existe, el export no.
-- **Distribución documental al CPHS con acuse** (ítems 4, 11, 25, 50, 51, 58):
-  este encargo solo garantiza que las figuras existan y sean consultables como
-  destinatarios, que es lo que pedía la sección 7.
-- **Offline para actas y reuniones**, si se decide extenderlo.
+`lib/completitud-export.js` + `GET /estructura/completitud/export?formato=html`,
+con botón en el panel. Lee la salida de `completitudAmbito`, que a su vez lee las
+definiciones de `completitud-estructura.js`: el panel y el documento no pueden
+discrepar porque no hay dos cálculos.
+
+Sostiene lo que el encargo pide del export:
+
+| Regla | Dónde |
+|---|---|
+| Los `NoAplica` se declaran con su justificación (§8) | Cada requisito se imprime, incluidos los excluidos |
+| Los ítems fuera de alcance se marcan, no se omiten (§12) | 33 y 42-45 aparecen como `Fuera de alcance` |
+| Un órgano voluntario se rotula como tal (§2) | Nota al pie: su ausencia previa no fue incumplimiento |
+| El denominador se declara | "N exigibles · M no penalizan" |
+| El plazo de la DT es referencial | Lo dice el propio documento |
+
+Nueve tests lo cubren, incluido el escape de HTML de los datos del usuario.
+
+## Pendiente declarado (fuera del alcance de este encargo)
+
+- **Distribución documental al CPHS con acuse** (ítems 4, 11, 25, 50, 51, 58).
+  La sección 7 es explícita: acá solo se garantiza que las figuras existan y sean
+  consultables como destinatarios. La distribución es de sus propios encargos.
+- **Offline para actas y reuniones.** La sección 9 lo condiciona a "si esa es la
+  capacidad actual": se verificó que el offline del sistema cubre solo firmas.
+  El cálculo de obligaciones sí es local y determinista.
+- **Expediente consolidado con integridad verificable.** Distinto del export de
+  estado: exigiría hash, sello de tiempo y cadena de firma sobre cada artefacto.
