@@ -241,7 +241,7 @@ export default function EstructuraConstituir() {
                                 <label className="form-label" htmlFor="ep-origen">{LABEL_FECHA_ORIGEN[tipo]} *</label>
                                 <input id="ep-origen" type="date" className="form-input" max={hoyISO()}
                                     value={fechaOrigen} onChange={(e) => setFechaOrigen(e.target.value)} />
-                                <span className="me-field-hint">No puede ser una fecha futura.</span>
+                                <span className="form-hint">No puede ser una fecha futura.</span>
                             </div>
 
                             <div className="form-group">
@@ -255,7 +255,7 @@ export default function EstructuraConstituir() {
                                     <label className="form-label" htmlFor="ep-mandato">Término del mandato</label>
                                     <input id="ep-mandato" type="date" className="form-input" max={topeMandato} min={fechaOrigen}
                                         value={terminoMandato} onChange={(e) => setTerminoMandato(e.target.value)} />
-                                    <span className="me-field-hint">
+                                    <span className="form-hint">
                                         Se calcula en 2 años desde la elección (Art. 23). Solo se puede acortar, nunca extender.
                                     </span>
                                 </div>

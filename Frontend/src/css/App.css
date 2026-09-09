@@ -936,6 +936,69 @@
   justify-content: center;
 }
 
+/* DS44 - Barra de filtros
+   El control segmentado reparte el ancho por igual, y con cuatro etiquetas que
+   además llevan el conteo eso aplasta el texto en pantalla angosta. Acá los
+   segmentos toman su ancho natural y la barra desplaza en horizontal: se lee
+   siempre, y el conteo (que es la información) no se pierde. */
+.ds44-filtros {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.ds44-filtros .ui-segmented {
+  width: max-content;
+  min-width: 100%;
+}
+
+.ds44-filtros .ui-segmented-item {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* DS44 - Fila de evidencia
+   Un requisito a la izquierda y su estado con su acción a la derecha. Envuelve
+   en vez de comprimirse: en pantalla angosta el grupo de acciones baja completo
+   bajo el texto, que es lo único que mantiene legible el nombre del requisito. */
+.ds44-doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+}
+
+.ds44-doc-row > *:first-child {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+/* DS44 - Barra de progreso
+   El relleno lo pinta el componente, porque el color depende del porcentaje y
+   ese corte ya vive en un solo lugar (`colorProgreso`). */
+.ds44-progress-track {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-hover);
+  overflow: hidden;
+}
+
+.ds44-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width var(--transition-normal);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds44-progress-fill {
+    transition: none;
+  }
+}
+
 /* DS44 - Card inline status indicators */
 .ds44-card-status {
   display: inline-flex;
@@ -1431,6 +1494,16 @@
   font-weight: 500;
   color: var(--text-secondary);
   margin-bottom: var(--space-2);
+}
+
+/* Texto de apoyo bajo un campo. Va en --text-secondary y no en --text-muted:
+   es texto de cuerpo, y --text-muted queda bajo el mínimo de contraste. */
+.form-hint {
+  display: block;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  margin-top: 6px;
 }
 
 .form-input {

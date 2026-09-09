@@ -20,6 +20,7 @@ import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS, PERMISSIONS } from '../permissi
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
 import CompletitudFufPanel from '../components/CompletitudFufPanel';
+import SgsstPanel from '../components/SgsstPanel';
 import { AMBITO } from '../utils/estructuraPreventiva';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -372,10 +373,37 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                     </div>
                 </section>
 
+                {/* Art. 22: el SGSST es de la entidad empleadora, no de cada obra,
+                    así que vive acá y no en la obra. Va antes que la estructura
+                    preventiva porque ésta es uno de sus cinco componentes. */}
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Sistema de Gestión de Seguridad y Salud en el Trabajo</h3>
+                        <p className="me-section-hint">
+                            Los cinco componentes que el Art. 22 exige como contenido mínimo.
+                            Tres se acreditan con un documento propio; los otros dos se
+                            acreditan en su módulo y acá solo se enlazan.
+                        </p>
+                    </div>
+                    {tenant?.tenantId ? (
+                        <SgsstPanel
+                            tenantId={tenant.tenantId}
+                            onIrA={(enlace) => {
+                                if (enlace === 'estructura-preventiva') {
+                                    document.getElementById('estructura-preventiva')
+                                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                } else {
+                                    navigate('/documents-repository');
+                                }
+                            }}
+                        />
+                    ) : null}
+                </section>
+
                 {/* Estructura preventiva (DS 44 Arts. 23, 50, 65, 66). No bloquea nada:
                     muestra qué corresponde según la dotación de la entidad y deja
                     constituir también lo que no es obligatorio, como voluntario. */}
-                <section className="me-section">
+                <section className="me-section" id="estructura-preventiva">
                     <div className="me-section-head">
                         <h3 className="me-section-title">Estructura preventiva</h3>
                         <p className="me-section-hint">

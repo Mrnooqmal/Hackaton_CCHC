@@ -14,7 +14,8 @@ import {
     FiX,
     FiLogOut,
     FiList,
-    FiClipboard
+    FiClipboard,
+    FiShield
 } from 'react-icons/fi';
 import { surveysApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -65,6 +66,7 @@ const GENERIC_NAV: NavSection[] = [
         items: [
             { path: '/my-signatures', icon: FiEdit3, label: 'Mis firmas' },
             { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
+            { path: '/prescripciones', icon: FiShield, label: 'Prescripciones', permission: PERMISSIONS.REPOSITORIO_VER },
         ]
     },
     {

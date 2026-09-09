@@ -84,6 +84,50 @@ export interface ResumenEstructura {
     fechaCreacionAmbito: string | null;
 }
 
+/** Origen de la medida (Art. 70). Son los cuatro que nombra el decreto. */
+export type OrigenPrescripcion =
+    | 'OrganismoFiscalizador' | 'OrganismoAdministrador'
+    | 'DepartamentoPrevencion' | 'ComiteParitario';
+
+export const ORIGEN_PRESCRIPCION_LABEL: Record<OrigenPrescripcion, string> = {
+    OrganismoFiscalizador: 'Organismo fiscalizador',
+    OrganismoAdministrador: 'Organismo Administrador (Ley 16.744)',
+    DepartamentoPrevencion: 'Departamento de Prevención',
+    ComiteParitario: 'Comité Paritario',
+};
+
+/** Derivado del plazo y de la evidencia; nunca se envía al servidor. */
+export type EstadoPrescripcion = 'Pendiente' | 'Implementada' | 'Vencida';
+
+export interface Prescripcion {
+    prescripcionId: string;
+    obraId: string | null;
+    origen: OrigenPrescripcion;
+    fechaPrescripcion: string;
+    descripcion: string;
+    plazoImplementacion: string | null;
+    documentoPrescripcionId: string | null;
+    reunionOrigenId: string | null;
+    fechaImplementacion: string | null;
+    evidenciaImplementacionDocumentoId: string | null;
+    registradoPor: string | null;
+    estado: EstadoPrescripcion;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface PrescripcionData {
+    obraId?: string | null;
+    origen: OrigenPrescripcion;
+    fechaPrescripcion: string;
+    descripcion: string;
+    plazoImplementacion?: string | null;
+    documentoPrescripcionId?: string | null;
+    fechaImplementacion?: string | null;
+    evidenciaImplementacionDocumentoId?: string | null;
+    solicitanteId?: string;
+}
+
 export interface ConstituirOrganoData {
     ambito: Ambito;
     obraId?: string | null;
@@ -121,6 +165,30 @@ export const estructuraApi = {
      *  decide si guardarlo como PDF. */
     urlExport: (tenantId: string, ambito: Ambito, obraId?: string | null) =>
         `${apiBaseUrl}/estructura/completitud/export${qs({ tenantId, ambito, obraId, formato: 'html' })}`,
+
+    /** Prescripciones del ámbito, con su estado ya derivado del plazo. */
+    listarPrescripciones: (tenantId: string, obraId?: string | null) =>
+        apiRequest<{ total: number; prescripciones: Prescripcion[] }>(
+            `/estructura/prescripciones${qs({ tenantId, obraId })}`
+        ),
+
+    crearPrescripcion: (tenantId: string, data: PrescripcionData) =>
+        apiRequest<{ message: string; prescripcion: Prescripcion }>(
+            `/estructura/prescripciones${qs({ tenantId })}`,
+            { method: 'POST', body: JSON.stringify(data) }
+        ),
+
+    actualizarPrescripcion: (tenantId: string, prescripcionId: string, cambios: Partial<PrescripcionData>) =>
+        apiRequest<{ message: string; prescripcion: Prescripcion }>(
+            `/estructura/prescripciones/${prescripcionId}${qs({ tenantId })}`,
+            { method: 'PUT', body: JSON.stringify(cambios) }
+        ),
+
+    eliminarPrescripcion: (tenantId: string, prescripcionId: string) =>
+        apiRequest<{ message: string }>(
+            `/estructura/prescripciones/${prescripcionId}${qs({ tenantId })}`,
+            { method: 'DELETE' }
+        ),
 
     listar: (tenantId: string, filtros: { ambito?: Ambito; obraId?: string | null } = {}) =>
         apiRequest<{ total: number; organos: OrganoPreventivo[] }>(

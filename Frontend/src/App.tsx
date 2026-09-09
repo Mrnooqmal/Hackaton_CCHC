@@ -30,6 +30,7 @@ import ObraNueva from './pages/ObraNueva';
 import ObraDetalle from './pages/ObraDetalle';
 import EstructuraConstituir from './pages/EstructuraConstituir';
 import EstructuraOrgano from './pages/EstructuraOrgano';
+import Prescripciones from './pages/Prescripciones';
 import ObraEquipoPage from './pages/ObraEquipoPage';
 import Crear from './pages/Crear';
 import CargosOnboarding from './pages/CargosOnboarding';
@@ -150,6 +151,7 @@ function AppContent() {
       {/* Estructura preventiva (DS 44): órganos de empresa y de obra. Requiere el
           mismo permiso que administrar obras: constituir un órgano es un acto de
           administración, no una investidura preventiva. */}
+      <Route path="/prescripciones" element={<ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}><Prescripciones /></ProtectedRoute>} />
       <Route path="/estructura/constituir" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><EstructuraConstituir /></ProtectedRoute>} />
       <Route path="/estructura/organos/:organoId" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><EstructuraOrgano /></ProtectedRoute>} />
 

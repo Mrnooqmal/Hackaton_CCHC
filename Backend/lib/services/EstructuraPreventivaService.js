@@ -34,7 +34,7 @@ const { docClient } = require('../clients/dynamodb');
 const EP = require('../estructura-preventiva');
 const C = require('../completitud');
 const { definicionesPara } = require('../completitud-estructura');
-const { definicionesDocumentalesPara } = require('../completitud-documental');
+const { definicionesDocumentalesPara, componentesSgsst } = require('../completitud-documental');
 const { sumarDiasHabiles } = require('../utils/fechaChile');
 const PRE = require('../prescripciones');
 
@@ -640,6 +640,11 @@ class EstructuraPreventivaService {
             ambito, obraId,
             dotacion: resumen.dotacion,
             limiteRegistroDT,
+            // Desglose del Art. 22 para la pantalla del SGSST. Sale del mismo
+            // contexto que evaluó el ítem 1, así que el panel y el porcentaje del
+            // formulario no pueden discrepar. Solo en empresa: el SGSST es de la
+            // entidad empleadora, no de cada obra.
+            sgsst: ambito === 'empresa' ? componentesSgsst(ctx) : null,
             // Los órganos viajan para que el export pueda rotular como VOLUNTARIO
             // el que se constituyó sin estar obligado: su ausencia previa nunca
             // fue un incumplimiento y el expediente tiene que decirlo.

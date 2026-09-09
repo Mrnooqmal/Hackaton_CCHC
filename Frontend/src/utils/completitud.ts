@@ -77,6 +77,24 @@ export interface BloqueCompletitud {
     resumen: ResumenCompletitud;
 }
 
+/**
+ * Un componente del Art. 22 dentro del SGSST (ítem 1).
+ *
+ * `propio` distingue los que se acreditan con un documento propio de los que
+ * se acreditan en otro módulo: los segundos no se suben acá, se enlazan. Guardar
+ * una copia de la MIPER dentro del SGSST sería tener dos verdades sobre el mismo
+ * documento.
+ */
+export interface ComponenteSgsst {
+    clave: string;
+    literal: string;
+    estado: EstadoRequisito;
+    detalle: string;
+    propio: boolean;
+    tipo?: string;
+    enlace: string | null;
+}
+
 export interface CompletitudAmbito {
     ambito: string;
     obraId: string | null;
@@ -85,6 +103,9 @@ export interface CompletitudAmbito {
     requisitos: RequisitoFuf[];
     resumen: ResumenCompletitud;
     bloques: BloqueCompletitud[];
+    /** Desglose del Art. 22. Solo viene en ámbito empresa: el SGSST es de la
+     *  entidad empleadora, no de cada obra. */
+    sgsst?: ComponenteSgsst[] | null;
 }
 
 /** Color del porcentaje, con los mismos cortes que ya usa el resto del panel DS44. */

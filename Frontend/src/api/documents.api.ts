@@ -105,6 +105,16 @@ export interface NuevaVersionData {
     versionEsperada?: number;
 }
 
+/** Constancia de envío declarada (Art. 57 inc. 2 y equivalentes). */
+export interface DifusionManualData {
+    destinatarioTipo: string;
+    medio: 'Correo' | 'Entrega' | 'Plataforma' | 'Otro';
+    fecha?: string;
+    evidenciaDocumentoId?: string | null;
+    observacion?: string | null;
+    registradoPor?: string;
+}
+
 export interface CreateDocumentData {
     tipo: string;
     titulo: string;
@@ -228,6 +238,13 @@ export const documentsApi = {
         apiRequest<Document>(`/documents/${id}/nueva-version`, {
             method: 'POST',
             body: JSON.stringify(data),
+        }),
+
+    /** Registra un envío declarado. Se suma al mismo array `difusiones[]` que
+     *  escribe el sistema al publicar una versión: una sola constancia. */
+    registrarDifusion: (id: string, data: DifusionManualData) =>
+        apiRequest<{ message: string; documento: Document }>(`/documents/${id}/difusion`, {
+            method: 'POST', body: JSON.stringify(data),
         }),
 
     create: (doc: CreateDocumentData) =>

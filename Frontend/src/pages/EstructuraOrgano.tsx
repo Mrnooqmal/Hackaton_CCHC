@@ -540,7 +540,7 @@ export default function EstructuraOrgano() {
                         onChange={(v) => setCausal(v as CausalExtraordinaria)}
                         options={Object.values(CAUSAL_EXTRAORDINARIA).map((c) => ({ value: c, label: CAUSAL_LABEL[c] }))}
                     />
-                    <span className="me-field-hint">Art. 39. La extraordinaria no cuenta para la periodicidad mensual.</span>
+                    <span className="form-hint">Art. 39. La extraordinaria no cuenta para la periodicidad mensual.</span>
                 </div>
             </Modal>
         </div>
