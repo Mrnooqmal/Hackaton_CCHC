@@ -38,19 +38,23 @@ const ESTADO_REQUISITO = {
 /** Estados que no entran al denominador del porcentaje. */
 const ESTADOS_NO_PENALIZAN = new Set([ESTADO_REQUISITO.NO_APLICA, ESTADO_REQUISITO.FUERA_DE_ALCANCE]);
 
-/** Bloques del FUF, para agrupar el panel y el export por la misma clave. */
-const BLOQUE_FUF = {
-    SGSST: 'Sistema de gestión',
-    RIESGOS: 'Identificación de riesgos',
-    PROGRAMA: 'Programa de trabajo preventivo',
-    EPP: 'Elementos de protección personal',
-    INFORMACION: 'Información y capacitación',
-    EMERGENCIAS: 'Emergencias y riesgo grave',
-    ORGANIZACION: 'Organización preventiva',
-    REGLAMENTO: 'Reglamento interno',
-    VIGILANCIA: 'Vigilancia de la salud',
-    REGISTROS: 'Registros y fiscalización',
-};
+/**
+ * Los bloques ya no se definen acá: son las QUINCE SECCIONES del formulario, y
+ * viven en lib/fuf.js. Antes esto agrupaba por tema en diez bloques inventados,
+ * de modo que el panel y el formulario no hablaban el mismo idioma.
+ *
+ * Se conserva el nombre `BLOQUE_FUF` para no romper a quien lo importe, pero su
+ * contenido se deriva del catálogo: si alguien agrega una sección allá, aparece
+ * acá sola.
+ */
+const { SECCIONES_FUF, seccionDeItem } = require('./fuf');
+
+const BLOQUE_FUF = Object.fromEntries(
+    SECCIONES_FUF.map((s) => [`S${s.numero}`, s.nombre])
+);
+
+/** Nombre de la sección del formulario a la que pertenece un ítem. */
+const bloqueDeItem = (numero) => seccionDeItem(numero)?.nombre || 'Sin sección';
 
 // ─── Evidencia documental ────────────────────────────────────────────────────
 
@@ -131,9 +135,16 @@ function evaluarCompletitud(definiciones, ctx = {}) {
         return {
             id: def.id,
             item: def.item ?? null,
-            bloque: def.bloque || null,
+            // La sección se DERIVA del número de ítem contra el catálogo del
+            // formulario. Una definición puede forzarla, pero no debería: si
+            // difiere del catálogo, el panel y el FUF dejan de coincidir.
+            bloque: def.bloque || (def.item != null ? bloqueDeItem(def.item) : null),
             titulo: def.titulo || def.id,
             ambito: def.ambito || 'ambos',
+            // Evidencia que sostiene el requisito, para que el repositorio la
+            // muestre sin recalcular a qué ítem corresponde cada documento.
+            tipos: def.tipos || [],
+            modulo: def.modulo || null,
             estado: resultado?.estado || ESTADO_REQUISITO.PENDIENTE,
             detalle: resultado?.detalle || null,
             // Justificación normativa del NoAplica: el indice del expediente la
@@ -190,7 +201,7 @@ function agruparPorBloque(requisitos) {
 }
 
 module.exports = {
-    ESTADO_REQUISITO, ESTADOS_NO_PENALIZAN, BLOQUE_FUF,
+    ESTADO_REQUISITO, ESTADOS_NO_PENALIZAN, BLOQUE_FUF, bloqueDeItem,
     tieneArchivo, firmasPendientes, estadoPorDocumento,
     evaluarCompletitud, resumirCompletitud, agruparPorBloque,
 };

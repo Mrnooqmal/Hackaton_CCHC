@@ -405,6 +405,9 @@ class EventBus {
     async registrarDifusion({ documentId, version, motivo, publicadaPor, mando = [], representantes = [], firmantes = [] }) {
         if (!documentId) return;
         const constancia = {
+            // `automatica`: la generó el sistema al publicar. Las declaradas por el
+            // usuario (Art. 57 inc. 2) llevan `manual` y su destinatario tipificado.
+            origen: 'automatica',
             fecha: new Date().toISOString(),
             version: version || null,
             motivo: motivo || null,

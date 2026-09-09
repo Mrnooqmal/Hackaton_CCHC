@@ -12,6 +12,10 @@ const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PdfStampingService } = require('../../lib/services/PdfStampingService');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { DESTINATARIO, MEDIO } = require('../../lib/distribucion');
+
+const DESTINATARIOS_VALIDOS = new Set(Object.values(DESTINATARIO));
+const MEDIOS_VALIDOS = new Set(Object.values(MEDIO));
 const { eventBus } = require('../../lib/events/EventBus');
 
 const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
@@ -100,6 +104,12 @@ const DOCUMENT_TYPES = {
     REGISTRO_SEREMI_EXPERTO: 'Registro en la Seremi de Salud del experto del Departamento de Prevencion (Art. 55)',
     DESIGNACION_ENCARGADO_RIESGO: 'Designacion del encargado en materia de gestion del riesgo (Art. 65)',
     PROGRAMA_TRABAJO_CPHS: 'Programa de trabajo del Comite Paritario (Art. 47)',
+    // --- Sistema de Gestion de SST (item 1, Art. 22) ---
+    // Los literales d) y e) del Art. 22 no tenian dueno: la evaluacion del
+    // desempeno y las acciones de mejora se cubren con estos tipos cuando el
+    // modulo correspondiente no aporta un documento propio.
+    AUDITORIA_SGSST: 'Evaluacion o auditoria del desempeno del SGSST (Art. 22 letra d)',
+    ACCIONES_MEJORA_SGSST: 'Acciones de mejora continua o correctivas del SGSST (Art. 22 letra e)',
     REGISTROS_INDICADORES_SST: 'Registros e indicadores de SST (Arts. 73 a 75)',
     OTRO: 'Documento General',
     // Tipos de libre creación desde /documents (no gestionados por onboarding/obra).
@@ -188,6 +198,10 @@ module.exports.create = async (event) => {
             archivoNombre: body.archivoNombre || null,
             fechaCaducidad: body.fechaCaducidad || null,
             periodo: body.periodo || null,
+            // Desde cuándo rige el documento. Es contra esta fecha, y no contra la
+            // de subida, que el Art. 57 inc. 2 mide los 30 días de anticipación del
+            // Reglamento Interno: subir el archivo no es haberlo informado.
+            fechaEntradaVigencia: body.fechaEntradaVigencia || null,
             // Fecha del hecho que el documento acredita. Distinta de createdAt:
             // un acta de un simulacro de marzo subida en septiembre acredita marzo,
             // y es contra esta fecha que se mide la vigencia anual (Art. 19).
@@ -1270,5 +1284,67 @@ module.exports.stamp = async (event) => {
             // el mensaje caiga al DLQ en vez de perderse silenciosamente).
             throw err;
         }
+    }
+};
+
+
+/**
+ * POST /documents/{id}/difusion — registra un envío DECLARADO del documento a un
+ * destinatario tipificado (Art. 57 inc. 2 y equivalentes).
+ *
+ * Se suma al mismo array `difusiones[]` que escribe EventBus al publicar una
+ * versión: una sola constancia de "a quién se informó y cuándo", con dos orígenes.
+ * No se crea una entidad paralela.
+ *
+ * El sistema NO verifica que el envío haya ocurrido ni que la evidencia lo
+ * demuestre: registra lo declarado, con su fecha, su medio y su respaldo.
+ */
+module.exports.registrarDifusion = async (event) => {
+    try {
+        const { id } = event.pathParameters || {};
+        if (!id) return error('ID de documento requerido');
+
+        const body = JSON.parse(event.body || '{}');
+        const { destinatarioTipo, medio, fecha, evidenciaDocumentoId, observacion, registradoPor } = body;
+
+        if (!DESTINATARIOS_VALIDOS.has(destinatarioTipo)) {
+            return error(`destinatarioTipo inválido. Válidos: ${[...DESTINATARIOS_VALIDOS].join(', ')}`);
+        }
+        if (!MEDIOS_VALIDOS.has(medio)) {
+            return error(`medio inválido. Válidos: ${[...MEDIOS_VALIDOS].join(', ')}`);
+        }
+
+        // Anti contradicción 5: ninguna fecha de envío puede ser futura.
+        const fechaEnvio = fecha ? new Date(fecha) : new Date();
+        if (Number.isNaN(fechaEnvio.getTime())) return error('La fecha de envío no es válida');
+        if (fechaEnvio.getTime() > Date.now()) return error('La fecha de envío no puede ser futura');
+
+        const doc = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
+        if (!doc.Item) return error('Documento no encontrado', 404);
+
+        const constancia = {
+            origen: 'manual',
+            fecha: fechaEnvio.toISOString(),
+            version: doc.Item.version || null,
+            destinatarioTipo,
+            medio,
+            evidenciaDocumentoId: evidenciaDocumentoId || null,
+            observacion: observacion || null,
+            registradoPor: registradoPor || null,
+            registradoEn: new Date().toISOString(),
+        };
+
+        const res = await docClient.send(new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { documentId: id },
+            UpdateExpression: 'SET difusiones = list_append(if_not_exists(difusiones, :vacio), :d), updatedAt = :now',
+            ExpressionAttributeValues: { ':d': [constancia], ':vacio': [], ':now': constancia.registradoEn },
+            ReturnValues: 'ALL_NEW',
+        }));
+
+        return success({ message: 'Constancia de envío registrada', documento: res.Attributes });
+    } catch (err) {
+        console.error('Error registrando difusión:', err);
+        return error(err.message, 500);
     }
 };

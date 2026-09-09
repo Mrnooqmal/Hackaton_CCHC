@@ -53,6 +53,16 @@ class Tenant {
             // Vive a nivel empresa, no de obra: la representación es una sola.
             // { personaId, nombre, rut } o null mientras no se designe.
             representanteLegal: data.reglas?.representanteLegal || null,
+            // Organizaciones sindicales de la empresa (Art. 57 inc. 2): destinatarias
+            // del Reglamento Interno. Registro MÍNIMO —nombre y contacto—, no un
+            // módulo sindical: el sistema solo necesita saber a quién informar.
+            // [{ id, nombre, contacto }]
+            organizacionesSindicales: data.reglas?.organizacionesSindicales || [],
+            // Declaración explícita de que no hay ninguna. Sin esto, el destinatario
+            // quedaría Pendiente para siempre en una empresa sin sindicatos, que es
+            // un incumplimiento imposible de cerrar.
+            // { declarado: bool, fecha, personaId }
+            sinOrganizacionesSindicales: data.reglas?.sinOrganizacionesSindicales || null,
             ...(data.reglas || {})
         };
 

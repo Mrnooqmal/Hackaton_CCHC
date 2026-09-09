@@ -156,8 +156,10 @@ module.exports.estructuraHandler = async (event) => {
                 declarada = tenant ? tenant.toSafeFormat()?.cantidadTrabajadores || null : null;
             }
 
+            const tenantCompl = await tenantService.getById(tenantId).catch(() => null);
             const resultado = await estructuraService.completitudAmbito({
                 tenantId, ambito, obraId, personas, documentos, dotacionDeclarada: declarada,
+                reglas: tenantCompl ? tenantCompl.toSafeFormat()?.reglas || {} : {},
             });
             return success(resultado);
         }
@@ -204,6 +206,35 @@ module.exports.estructuraHandler = async (event) => {
                 };
             }
             return success(exp);
+        }
+
+        // ── Prescripciones de medidas (Art. 70, ítem 58) ─────────────────────
+        if (recurso === 'prescripciones') {
+            const prescripcionId = organoId; // segundo segmento de la ruta
+
+            if (method === 'GET' && !prescripcionId) {
+                const lista = await estructuraService.listarPrescripciones(tenantId, { obraId: q.obraId || null });
+                return success({ total: lista.length, prescripciones: lista });
+            }
+            if (method === 'POST' && !prescripcionId) {
+                if (!(await puedeAdministrar(body.solicitanteId, tenantId))) {
+                    return error('No tienes permiso para registrar prescripciones', 403);
+                }
+                const creada = await estructuraService.crearPrescripcion({
+                    tenantId, ...body, registradoPor: body.solicitanteId || null,
+                });
+                return created({ message: 'Prescripción registrada', prescripcion: creada });
+            }
+            if (method === 'PUT' && prescripcionId) {
+                const actualizada = await estructuraService.actualizarPrescripcion({
+                    tenantId, prescripcionId, cambios: body,
+                });
+                return success({ message: 'Prescripción actualizada', prescripcion: actualizada });
+            }
+            if (method === 'DELETE' && prescripcionId) {
+                await estructuraService.eliminarPrescripcion(tenantId, prescripcionId);
+                return success({ message: 'Prescripción eliminada' });
+            }
         }
 
         // ── GET /estructura/organos ──────────────────────────────────────────

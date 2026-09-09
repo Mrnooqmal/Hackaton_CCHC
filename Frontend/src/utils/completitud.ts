@@ -55,6 +55,11 @@ export interface RequisitoFuf {
     detalle: string | null;
     /** Solo en `NoAplica`: por qué no es exigible. El índice del expediente la pide. */
     justificacion: string | null;
+    /** Tipos de documento que sostienen el requisito. Los declara su definición,
+     *  que es la que los mira para evaluar: el repositorio no adivina. */
+    tipos?: string[];
+    /** Módulo que resuelve el requisito cuando no se acredita con documentos. */
+    modulo?: string | null;
 }
 
 export interface ResumenCompletitud {

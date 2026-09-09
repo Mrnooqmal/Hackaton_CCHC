@@ -1,0 +1,266 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const C = require('../lib/completitud');
+const D = require('../lib/distribucion');
+const PRE = require('../lib/prescripciones');
+const F = require('../lib/fuf');
+const EP = require('../lib/estructura-preventiva');
+const { evaluarItem1, evaluarItem50, evaluarItem58, componentesSgsst } = require('../lib/completitud-documental');
+
+const E = C.ESTADO_REQUISITO;
+const AHORA = new Date('2026-09-09T12:00:00.000Z');
+
+// ─── Catálogo del FUF ────────────────────────────────────────────────────────
+
+test('el catálogo cubre los 60 ítems en 15 secciones, sin huecos', () => {
+    assert.equal(F.SECCIONES_FUF.length, 15);
+    assert.equal(F.ITEMS_FUF.length, 60);
+    const nums = F.ITEMS_FUF.map((i) => i.numero);
+    assert.deepEqual(nums, Array.from({ length: 60 }, (_, i) => i + 1));
+});
+
+test('cada ítem pertenece a exactamente una sección', () => {
+    for (let n = 1; n <= 60; n++) {
+        const secs = F.SECCIONES_FUF.filter((s) => n >= s.desde && n <= s.hasta);
+        assert.equal(secs.length, 1, `el ítem ${n} cae en ${secs.length} secciones`);
+    }
+});
+
+test('los ítems 39 y 40 van en la sección 8, como en el formulario', () => {
+    assert.equal(F.seccionDeItem(39).numero, 8);
+    assert.equal(F.seccionDeItem(40).numero, 8);
+});
+
+test('agruparPorSeccion no omite secciones sin requisitos evaluados', () => {
+    const grupos = F.agruparPorSeccion([{ item: 30 }, { item: 50 }]);
+    assert.equal(grupos.length, 15, 'un formulario al que le faltan secciones no se puede recorrer');
+    assert.equal(grupos.find((g) => g.seccion === 8).items.find((i) => i.numero === 30).requisitos.length, 1);
+    assert.equal(grupos.find((g) => g.seccion === 11).items[0].requisitos.length, 0);
+});
+
+// ─── Distribución (componente genérico) ──────────────────────────────────────
+
+const difManual = (tipo, fecha) => ({ origen: 'manual', destinatarioTipo: tipo, fecha, medio: 'Correo' });
+
+test('un destinatario sin constancia queda Pendiente', () => {
+    const r = D.estadoDestinatario({ tipo: D.DESTINATARIO.PERSONAS_TRABAJADORAS, difusiones: [] });
+    assert.equal(r.estado, D.ESTADO_DESTINATARIO.PENDIENTE);
+});
+
+test('un destinatario que no existe en el ámbito queda NoAplica con razón', () => {
+    const r = D.estadoDestinatario({
+        tipo: D.DESTINATARIO.ORGANIZACION_SINDICAL, difusiones: [],
+        existeEnAmbito: false, razonNoAplica: 'La entidad declaró que no hay sindicatos.',
+    });
+    assert.equal(r.estado, D.ESTADO_DESTINATARIO.NO_APLICA);
+    assert.match(r.detalle, /declaró que no hay/);
+});
+
+test('la anticipación se mide contra la entrada en vigencia, no contra la subida', () => {
+    const dif = [difManual(D.DESTINATARIO.PERSONAS_TRABAJADORAS, '2026-08-01T00:00:00.000Z')];
+    const r = D.estadoDestinatario({
+        tipo: D.DESTINATARIO.PERSONAS_TRABAJADORAS, difusiones: dif,
+        fechaVigencia: '2026-09-15T00:00:00.000Z', diasExigidos: 30,
+    });
+    assert.equal(r.estado, D.ESTADO_DESTINATARIO.ENVIADO);
+    assert.equal(r.dias, 45);
+});
+
+test('enviar con menos de 30 días es FueraDePlazo, no Enviado', () => {
+    const dif = [difManual(D.DESTINATARIO.PERSONAS_TRABAJADORAS, '2026-09-01T00:00:00.000Z')];
+    const r = D.estadoDestinatario({
+        tipo: D.DESTINATARIO.PERSONAS_TRABAJADORAS, difusiones: dif,
+        fechaVigencia: '2026-09-15T00:00:00.000Z', diasExigidos: 30,
+    });
+    assert.equal(r.estado, D.ESTADO_DESTINATARIO.FUERA_DE_PLAZO);
+    assert.equal(r.dias, 14);
+});
+
+test('enviar DESPUÉS de entrar en vigencia se declara como tal', () => {
+    const dif = [difManual(D.DESTINATARIO.PERSONAS_TRABAJADORAS, '2026-10-01T00:00:00.000Z')];
+    const r = D.estadoDestinatario({
+        tipo: D.DESTINATARIO.PERSONAS_TRABAJADORAS, difusiones: dif,
+        fechaVigencia: '2026-09-15T00:00:00.000Z', diasExigidos: 30,
+    });
+    assert.equal(r.estado, D.ESTADO_DESTINATARIO.FUERA_DE_PLAZO);
+    assert.match(r.detalle, /DESPUÉS de entrar en vigencia/);
+});
+
+test('la constancia automática cuenta para los representantes', () => {
+    // Es la que escribe EventBus al publicar una versión: informa a mando y
+    // representantes, y sirve a los ítems 4 y 11.
+    const auto = { origen: 'automatica', fecha: '2026-08-01T00:00:00.000Z', totales: { mando: 3, representantes: 2, firmantes: 0 } };
+    assert.equal(D.estadoDestinatario({ tipo: D.DESTINATARIO.COMITE_PARITARIO, difusiones: [auto] }).estado,
+        D.ESTADO_DESTINATARIO.ENVIADO);
+    assert.equal(D.estadoDestinatario({ tipo: D.DESTINATARIO.ORGANIZACION_SINDICAL, difusiones: [auto] }).estado,
+        D.ESTADO_DESTINATARIO.PENDIENTE, 'a los sindicatos no los informa la publicación');
+});
+
+test('los NoAplica salen del denominador de la distribución', () => {
+    const r = D.evaluarDistribucion({
+        difusiones: [difManual(D.DESTINATARIO.PERSONAS_TRABAJADORAS, '2026-08-01T00:00:00.000Z')],
+        destinatariosExigidos: D.DESTINATARIOS_REGLAMENTO,
+        existencia: { [D.DESTINATARIO.COMITE_PARITARIO]: false, [D.DESTINATARIO.ORGANIZACION_SINDICAL]: false },
+        fechaVigencia: '2026-09-15T00:00:00.000Z', diasExigidos: 30,
+    });
+    assert.equal(r.exigibles, 1);
+    assert.equal(r.excluidos, 2);
+    assert.equal(r.completa, true);
+});
+
+// ─── Ítem 50 ─────────────────────────────────────────────────────────────────
+
+const ctx50 = (over = {}) => ({
+    ahora: AHORA, organos: [], organizacionesSindicales: [], sinOrganizacionesSindicales: null,
+    documentos: [], ...over,
+});
+
+const riohs = (over = {}) => ({
+    documentId: 'r1', tipo: 'REGLAMENTO_INTERNO', s3Key: 'r.pdf', version: 2,
+    fechaEntradaVigencia: '2026-09-15T00:00:00.000Z', difusiones: [], ...over,
+});
+
+test('ítem 50: sin Reglamento cargado queda Pendiente', () => {
+    assert.equal(evaluarItem50(ctx50()).estado, E.PENDIENTE);
+});
+
+test('ítem 50: sin fecha de vigencia el plazo no es medible y queda Parcial', () => {
+    const r = evaluarItem50(ctx50({ documentos: [riohs({ fechaEntradaVigencia: null })] }));
+    assert.equal(r.estado, E.PARCIAL);
+    assert.match(r.detalle, /desde cuándo rige/);
+});
+
+test('ítem 50: remitido a tiempo a todos los exigibles queda Cumplido', () => {
+    const doc = riohs({ difusiones: [difManual(D.DESTINATARIO.PERSONAS_TRABAJADORAS, '2026-08-01T00:00:00.000Z')] });
+    const r = evaluarItem50(ctx50({ documentos: [doc] }));
+    assert.equal(r.estado, E.CUMPLIDO, 'sin comité ni sindicatos, el único exigible es el envío a trabajadores');
+});
+
+test('ítem 50: fuera de plazo NUNCA es Cumplido (anti contradicción 4)', () => {
+    const doc = riohs({ difusiones: [difManual(D.DESTINATARIO.PERSONAS_TRABAJADORAS, '2026-09-10T00:00:00.000Z')] });
+    const r = evaluarItem50(ctx50({ documentos: [doc] }));
+    assert.equal(r.estado, E.PARCIAL);
+    assert.match(r.detalle, /se exigen 30/);
+});
+
+test('ítem 50: el comité y el delegado son alternativos', () => {
+    const delegado = {
+        tipo: EP.TIPO_ORGANO.DELEGADO_SST, estado: EP.ESTADO_ORGANO.VIGENTE,
+        fechaTerminoMandato: '2028-01-01T00:00:00.000Z',
+    };
+    const doc = riohs({ difusiones: [difManual(D.DESTINATARIO.PERSONAS_TRABAJADORAS, '2026-08-01T00:00:00.000Z')] });
+    const r = evaluarItem50(ctx50({ documentos: [doc], organos: [delegado] }));
+    // Con delegado vigente el destinatario "comité o delegado" SÍ es exigible y falta.
+    assert.equal(r.estado, E.PARCIAL);
+    assert.match(r.detalle, /1 de 2/);
+});
+
+test('ítem 50: declarar que no hay sindicatos los saca del denominador con razón', () => {
+    const doc = riohs({ difusiones: [difManual(D.DESTINATARIO.PERSONAS_TRABAJADORAS, '2026-08-01T00:00:00.000Z')] });
+    const r = evaluarItem50(ctx50({
+        documentos: [doc],
+        sinOrganizacionesSindicales: { declarado: true, fecha: '2026-01-01', personaId: 'p1' },
+    }));
+    assert.equal(r.estado, E.CUMPLIDO, 'no se castiga por no informar a quien no existe');
+});
+
+// ─── Ítem 1 ──────────────────────────────────────────────────────────────────
+
+const doc = (tipo) => ({ documentId: tipo, tipo, s3Key: `${tipo}.pdf`, version: 1 });
+
+test('ítem 1: los cinco componentes del Art. 22 se evalúan por separado', () => {
+    const comps = componentesSgsst({ ahora: AHORA, documentos: [], obligaciones: {}, organos: [] });
+    assert.equal(comps.length, 5);
+    assert.deepEqual(comps.map((c) => c.clave), ['a', 'b', 'c', 'd', 'e']);
+});
+
+test('ítem 1: solo la Política es documento propio; el resto se referencia', () => {
+    const comps = componentesSgsst({ ahora: AHORA, documentos: [], obligaciones: {}, organos: [] });
+    assert.equal(comps.find((c) => c.clave === 'a').propio, true);
+    assert.equal(comps.find((c) => c.clave === 'b').propio, false, 'la estructura se lee de su módulo, no se copia');
+    assert.equal(comps.find((c) => c.clave === 'c').propio, false, 'MIPER y PTP se referencian');
+});
+
+test('ítem 1: no puede estar Cumplido si falta un componente (anti contradicción 7)', () => {
+    const ctx = {
+        ahora: AHORA, obligaciones: {}, organos: [],
+        documentos: [doc('POLITICA_SSO'), doc('MIPER'), doc('PROGRAMA_TRABAJO_PREVENTIVO'), doc('EVALUACION_DESEMPENO')],
+    };
+    const r = evaluarItem1(ctx);
+    assert.equal(r.estado, E.PARCIAL, 'falta el literal e)');
+    assert.match(r.detalle, /4 de 5/);
+});
+
+test('ítem 1: con los cinco componentes queda Cumplido', () => {
+    const ctx = {
+        ahora: AHORA, obligaciones: {}, organos: [],
+        documentos: ['POLITICA_SSO', 'MIPER', 'PROGRAMA_TRABAJO_PREVENTIVO', 'EVALUACION_DESEMPENO', 'PLAN_MEJORA'].map(doc),
+    };
+    assert.equal(evaluarItem1(ctx).estado, E.CUMPLIDO);
+});
+
+// ─── Ítem 58 ─────────────────────────────────────────────────────────────────
+
+const presc = (over = {}) => ({
+    origen: PRE.ORIGEN_PRESCRIPCION.ORGANISMO_FISCALIZADOR,
+    fechaPrescripcion: '2026-06-01T00:00:00.000Z',
+    descripcion: 'Instalar barandas en el nivel 3',
+    ...over,
+});
+
+test('el estado de una prescripción es derivado, no marcable', () => {
+    assert.equal(PRE.estadoPrescripcion(presc(), AHORA), PRE.ESTADO_PRESCRIPCION.PENDIENTE);
+    assert.equal(PRE.estadoPrescripcion(presc({ plazoImplementacion: '2026-07-01T00:00:00.000Z' }), AHORA),
+        PRE.ESTADO_PRESCRIPCION.VENCIDA, 'vencida sale del plazo, no de un campo');
+    assert.equal(PRE.estadoPrescripcion(presc({
+        fechaImplementacion: '2026-06-20T00:00:00.000Z', evidenciaImplementacionDocumentoId: 'd1',
+    }), AHORA), PRE.ESTADO_PRESCRIPCION.IMPLEMENTADA);
+});
+
+test('no se puede dar por implementada sin evidencia (anti contradicción 2)', () => {
+    const errores = PRE.validarPrescripcion(presc({ fechaImplementacion: '2026-06-20T00:00:00.000Z' }), AHORA);
+    assert.ok(errores.some((e) => /sin evidencia/.test(e)), errores.join(' | '));
+});
+
+test('ni sin fecha de implementación', () => {
+    const errores = PRE.validarPrescripcion(presc({ evidenciaImplementacionDocumentoId: 'd1' }), AHORA);
+    assert.ok(errores.some((e) => /sin fecha de implementación/.test(e)), errores.join(' | '));
+});
+
+test('ninguna fecha puede ser futura (anti contradicción 5)', () => {
+    assert.ok(PRE.validarPrescripcion(presc({ fechaPrescripcion: '2027-01-01T00:00:00.000Z' }), AHORA)
+        .some((e) => /no puede ser futura/.test(e)));
+});
+
+test('la implementación no puede ser anterior a la prescripción', () => {
+    const errores = PRE.validarPrescripcion(presc({
+        fechaImplementacion: '2026-01-01T00:00:00.000Z', evidenciaImplementacionDocumentoId: 'd1',
+    }), AHORA);
+    assert.ok(errores.some((e) => /anterior a la prescripción/.test(e)));
+});
+
+test('un origen fuera del Art. 70 se rechaza', () => {
+    assert.ok(PRE.validarPrescripcion(presc({ origen: 'ElJefe' }), AHORA).some((e) => /Origen inválido/.test(e)));
+});
+
+test('ítem 58: sin prescripciones registradas queda Cumplido con la razón (D6)', () => {
+    const r = evaluarItem58({ prescripciones: [] });
+    assert.equal(r.estado, E.CUMPLIDO);
+    assert.match(r.detalle, /Sin prescripciones registradas/);
+});
+
+test('ítem 58: una vencida sin implementar deja el ítem Vencido', () => {
+    const r = evaluarItem58({ prescripciones: [{ estado: 'Vencida' }, { estado: 'Implementada' }] });
+    assert.equal(r.estado, E.VENCIDO);
+});
+
+test('ítem 58: pendientes con algo implementado es Parcial', () => {
+    const r = evaluarItem58({ prescripciones: [{ estado: 'Pendiente' }, { estado: 'Implementada' }] });
+    assert.equal(r.estado, E.PARCIAL);
+    assert.match(r.detalle, /1 de 2/);
+});
+
+test('ítem 58: todas implementadas es Cumplido', () => {
+    assert.equal(evaluarItem58({ prescripciones: [{ estado: 'Implementada' }] }).estado, E.CUMPLIDO);
+});

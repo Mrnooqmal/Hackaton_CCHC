@@ -20,6 +20,8 @@ import { documentsApi, uploadsApi, tenantsApi, type Document } from '../api/clie
 import { abrirDocumentoFirmable } from '../utils/documentoFirmado';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
+import RepositorioFuf from '../components/RepositorioFuf';
+import { AMBITO as AMBITO_FUF } from '../utils/estructuraPreventiva';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { AlertBanner, Select, PageHeader } from '../components/ui';
@@ -552,6 +554,19 @@ export default function DocumentsRepository() {
                     </div>
                 )}
 
+                {/* ── Carpeta DS44: el formulario seccionado ──
+                    Es una VISTA sobre los documentos que ya viven en su módulo dueño,
+                    con el estado que calcula el panel de cumplimiento. No indexa una
+                    lista plana de archivos: el fiscalizador recorre el FUF por sección. */}
+                {!loading && openFolder === 'ds44' && selectedObraId && !isSearching && (
+                    <RepositorioFuf
+                        tenantId={user?.tenantId || localStorage.getItem('tenant_id') || ''}
+                        ambito={AMBITO_FUF.OBRA}
+                        obraId={selectedObraId}
+                        onVerDocumento={(doc) => handlePreview(doc as any)}
+                    />
+                )}
+
                 {/* ── Vista de carpetas (raíz) ── */}
                 {!loading && selectedObraId && showFolders && scopeDocuments.length > 0 && (
                     <div className="repo-folder-grid">
@@ -586,7 +601,11 @@ export default function DocumentsRepository() {
                 )}
 
                 {/* ── Lista de documentos (dentro de carpeta o búsqueda) ── */}
-                {!loading && selectedObraId && !showFolders && (
+                {/* La carpeta DS44 se muestra como formulario seccionado, no como lista
+                    plana: con las dos a la vez el mismo documento aparecía dos veces.
+                    Al buscar sí se aplana todo, incluido DS44, porque buscar es
+                    justamente pedir resultados sin importar dónde estén. */}
+                {!loading && selectedObraId && !showFolders && (openFolder !== 'ds44' || isSearching) && (
                     visibleDocuments.length === 0 ? (
                         <div className="repo-empty">
                             <div className="repo-empty-icon"><FiFileText size={34} /></div>

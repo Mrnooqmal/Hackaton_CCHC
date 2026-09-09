@@ -34,13 +34,19 @@ const { docClient } = require('../clients/dynamodb');
 const EP = require('../estructura-preventiva');
 const C = require('../completitud');
 const { definicionesPara } = require('../completitud-estructura');
+const { definicionesDocumentalesPara } = require('../completitud-documental');
 const { sumarDiasHabiles } = require('../utils/fechaChile');
+const PRE = require('../prescripciones');
 
 const TABLE = process.env.ESTRUCTURA_TABLE || 'EstructuraPreventiva';
 
 const skOrgano = (organoId) => `ORG#${organoId}`;
 const skMiembro = (organoId, miembroId) => `MIE#${organoId}#${miembroId}`;
 const skReunion = (organoId, reunionId) => `REU#${organoId}#${reunionId}`;
+// Las prescripciones del Art. 70 no cuelgan de un órgano: son del ámbito. Viven
+// en esta misma tabla con su propio prefijo para no crear una tabla más, que es
+// el estándar que dejó el encargo anterior.
+const skPrescripcion = (prescripcionId) => `PRE#${prescripcionId}`;
 
 /** Adjunto tal como lo devuelve /uploads. Mismo shape que EppCatalogoService. */
 const sanitizeAdjunto = (adj) => {
@@ -486,6 +492,96 @@ class EstructuraPreventivaService {
         };
     }
 
+    // ─── Prescripciones de medidas (Art. 70, ítem 58) ────────────────────────
+
+    /** Prescripciones del tenant, con su estado derivado del plazo. */
+    async listarPrescripciones(tenantId, { obraId = null, ahora = new Date() } = {}) {
+        if (!tenantId) throw new Error('tenantId es requerido');
+        const res = await docClient.send(new QueryCommand({
+            TableName: TABLE,
+            KeyConditionExpression: 'tenantId = :t AND begins_with(sk, :p)',
+            ExpressionAttributeValues: { ':t': tenantId, ':p': 'PRE#' },
+        }));
+        let lista = res.Items || [];
+        // El ámbito obra incluye las de la empresa: una medida prescrita a la
+        // entidad también obliga en la faena.
+        if (obraId) lista = lista.filter((x) => !x.obraId || x.obraId === obraId);
+        return PRE.resumirPrescripciones(lista, ahora).prescripciones
+            .sort((a, b) => String(b.fechaPrescripcion).localeCompare(String(a.fechaPrescripcion)));
+    }
+
+    async crearPrescripcion({ tenantId, ahora = new Date(), ...datos }) {
+        if (!tenantId) throw new Error('tenantId es requerido');
+        const errores = PRE.validarPrescripcion(datos, ahora);
+        if (errores.length > 0) throw new ErrorValidacion(errores);
+
+        const prescripcionId = uuidv4();
+        const nowISO = ahora.toISOString();
+        const item = {
+            tenantId, sk: skPrescripcion(prescripcionId), prescripcionId,
+            obraId: datos.obraId || null,
+            origen: datos.origen,
+            fechaPrescripcion: datos.fechaPrescripcion,
+            descripcion: String(datos.descripcion).trim(),
+            plazoImplementacion: datos.plazoImplementacion || null,
+            documentoPrescripcionId: datos.documentoPrescripcionId || null,
+            // Conexión OPT IN con una reunión del comité: nunca automática.
+            reunionOrigenId: datos.reunionOrigenId || null,
+            fechaImplementacion: datos.fechaImplementacion || null,
+            evidenciaImplementacionDocumentoId: datos.evidenciaImplementacionDocumentoId || null,
+            registradoPor: datos.registradoPor || null,
+            createdAt: nowISO, updatedAt: nowISO,
+        };
+        await docClient.send(new PutCommand({ TableName: TABLE, Item: item }));
+        return { ...item, estado: PRE.estadoPrescripcion(item, ahora) };
+    }
+
+    /**
+     * Actualiza una prescripción. El `estado` NO se recibe: se deriva. Marcar
+     * "implementada" a mano sin evidencia es justamente lo que la validación impide.
+     */
+    async actualizarPrescripcion({ tenantId, prescripcionId, cambios = {}, ahora = new Date() }) {
+        const actual = await docClient.send(new GetCommand({
+            TableName: TABLE, Key: { tenantId, sk: skPrescripcion(prescripcionId) },
+        }));
+        if (!actual.Item) throw new ErrorValidacion('Prescripción no encontrada.');
+
+        const CAMPOS = ['origen', 'fechaPrescripcion', 'descripcion', 'plazoImplementacion',
+            'documentoPrescripcionId', 'fechaImplementacion', 'evidenciaImplementacionDocumentoId'];
+        const propuesto = { ...actual.Item };
+        for (const c of CAMPOS) if (cambios[c] !== undefined) propuesto[c] = cambios[c];
+
+        const errores = PRE.validarPrescripcion(propuesto, ahora);
+        if (errores.length > 0) throw new ErrorValidacion(errores);
+
+        const sets = [];
+        const vals = { ':u': ahora.toISOString() };
+        const names = {};
+        for (const c of CAMPOS) {
+            if (cambios[c] === undefined) continue;
+            sets.push(`#${c} = :${c}`);
+            names[`#${c}`] = c;
+            vals[`:${c}`] = cambios[c];
+        }
+        if (sets.length === 0) return { ...actual.Item, estado: PRE.estadoPrescripcion(actual.Item, ahora) };
+
+        const res = await docClient.send(new UpdateCommand({
+            TableName: TABLE, Key: { tenantId, sk: skPrescripcion(prescripcionId) },
+            UpdateExpression: `SET ${sets.join(', ')}, updatedAt = :u`,
+            ExpressionAttributeNames: names,
+            ExpressionAttributeValues: vals,
+            ReturnValues: 'ALL_NEW',
+        }));
+        return { ...res.Attributes, estado: PRE.estadoPrescripcion(res.Attributes, ahora) };
+    }
+
+    async eliminarPrescripcion(tenantId, prescripcionId) {
+        await docClient.send(new DeleteCommand({
+            TableName: TABLE, Key: { tenantId, sk: skPrescripcion(prescripcionId) },
+        }));
+        return true;
+    }
+
     // ─── Completitud del FUF (sección 8) ─────────────────────────────────────
 
     /**
@@ -496,7 +592,7 @@ class EstructuraPreventivaService {
      * vincula con su evidencia, así que el panel y el expediente no pueden
      * discrepar.
      */
-    async completitudAmbito({ tenantId, ambito, obraId = null, personas = [], documentos = [], dotacionDeclarada = null, ahora = new Date() }) {
+    async completitudAmbito({ tenantId, ambito, obraId = null, personas = [], documentos = [], dotacionDeclarada = null, reglas = {}, ahora = new Date() }) {
         const resumen = await this.resumenAmbito({
             tenantId, ambito, obraId, personas, dotacionDeclarada, ahora,
         });
@@ -517,16 +613,29 @@ class EstructuraPreventivaService {
             ? sumarDiasHabiles(comite.fechaEleccionODesignacion, EP.DIAS_HABILES_REGISTRO_DT)
             : null;
 
+        // El ítem 58 necesita las prescripciones y el 50 los sindicatos: se cargan
+        // acá para que las definiciones sigan siendo funciones puras del contexto.
+        const prescripciones = await this.listarPrescripciones(tenantId, { obraId, ahora }).catch(() => []);
+
         const ctx = {
             ahora,
             dotacion: resumen.dotacion.dotacion,
             obligaciones: resumen.obligaciones,
             organos: completos.filter(Boolean),
             miembros, reuniones, documentos,
+            prescripciones,
+            organizacionesSindicales: reglas.organizacionesSindicales || [],
+            sinOrganizacionesSindicales: reglas.sinOrganizacionesSindicales || null,
             limiteRegistroDT,
         };
 
-        const evaluacion = C.evaluarCompletitud(definicionesPara(ambito), ctx);
+        // Dos fuentes de definiciones, un solo motor: estructura preventiva
+        // (ítems 30-48) y las documentales (1, 50, 58). Ninguna calcula por su
+        // cuenta; ambas describen cómo se acredita su ítem.
+        const evaluacion = C.evaluarCompletitud(
+            [...definicionesPara(ambito), ...definicionesDocumentalesPara(ambito)],
+            ctx
+        );
         return {
             ambito, obraId,
             dotacion: resumen.dotacion,

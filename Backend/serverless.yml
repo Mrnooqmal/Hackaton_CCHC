@@ -484,6 +484,15 @@ functions:
           path: /documents/corporativo/nueva-version
           method: POST
 
+  # Constancia de envio declarado (Art. 57 inc. 2 y equivalentes). Se suma al
+  # mismo array difusiones[] que escribe EventBus al publicar una version.
+  registrarDifusionDocumento:
+    handler: handlers/documents/handler.registrarDifusion
+    events:
+      - httpApi:
+          path: /documents/{id}/difusion
+          method: POST
+
   assignDocument:
     handler: handlers/documents/handler.assign
     events:
