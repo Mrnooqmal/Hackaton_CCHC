@@ -24,6 +24,8 @@ const esRolGestion = (rol?: string): boolean => {
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { useObraContext } from '../context/ObraContext';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
+import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
+import { AMBITO as AMBITO_ESTRUCTURA } from '../utils/estructuraPreventiva';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import type { SignatureRequest, DocumentVersion, Document as DocumentoApi } from '../api/client';
 
@@ -138,7 +140,7 @@ const buildDs44PlanDocs = (
 // de PLAN, pertenecen a PLAN; si no, son de la fase HACER.
 const TIPOS_FASE_PLAN = new Set(DS44_PLAN_DOCS.flatMap((d) => d.tipos));
 
-const esDocumentoDeFaseHacer = (doc: { fase?: string; tipo?: string }): boolean =>
+const esDocumentoDeFaseHacer = (doc: { fase?: string | null; tipo?: string }): boolean =>
   doc.fase === 'hacer' || (!doc.fase && !TIPOS_FASE_PLAN.has(doc.tipo || ''));
 
 interface DoItem {
@@ -1987,7 +1989,7 @@ export default function ObraDetalle() {
   };
 
   // Abre una versión concreta dentro de la misma página (sin pestaña nueva).
-  const verVersion = async (s3Key: string | null, nombre: string | null) => {
+  const verVersion = async (s3Key?: string | null, nombre?: string | null) => {
     if (!s3Key) return;
     setDocPreview({ url: null, name: nombre || 'documento' });
     try {
@@ -2493,6 +2495,22 @@ export default function ObraDetalle() {
                         <span>{documentosVencidos.length} documento{documentosVencidos.length === 1 ? '' : 's'} vencido{documentosVencidos.length === 1 ? '' : 's'}.</span>
                       </div>
                     )}
+                  </div>
+                )}
+                {/* Estructura preventiva de la FAENA (DS 44 Art. 23): el conteo de
+                    personas es por lugar de trabajo, así que un comité constituido en
+                    la empresa no exime a esta obra del suyo. Informativo por ahora: las
+                    acciones abren el asistente de constitución. */}
+                {obra?.tenantId && obraId && (
+                  <div style={{ marginBottom: 'var(--space-3)' }}>
+                    <div className="ds44-section-label">Estructura preventiva de la obra</div>
+                    <EstructuraPreventivaPanel
+                      tenantId={obra.tenantId}
+                      ambito={AMBITO_ESTRUCTURA.OBRA}
+                      obraId={obraId}
+                      onConstituir={(tipo) => navigate(`/estructura/constituir?ambito=obra&obraId=${obraId}&tipo=${tipo}`)}
+                      onVerOrgano={(id) => navigate(`/estructura/organos/${id}`)}
+                    />
                   </div>
                 )}
                 <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>

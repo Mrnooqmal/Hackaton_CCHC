@@ -77,6 +77,22 @@ const DOCUMENT_TYPES = {
     REGISTRO_DESVIACIONES: 'Registro de Desviaciones / Incumplimientos (CHECK)',
     // Fase ACTUAR (ACT)
     PLAN_MEJORA: 'Plan de Mejora / Medidas Correctivas (Art. 2.16, Art. 14)',
+    // --- Estructura preventiva (DS 44 Arts. 23, 32, 36, 39, 42, 50, 55, 65, 66) ---
+    // Todos cuelgan de un organo o de una reunion via su documentId. No se crean
+    // tablas por tipo de acta: un acta es un Documento con tipo.
+    ACTA_ELECCION_REPRESENTANTES: 'Acta de eleccion de representantes de las personas trabajadoras (Art. 23)',
+    DESIGNACION_REPRESENTANTES_EMPLEADOR: 'Designacion de representantes de la entidad empleadora (Art. 23)',
+    ACTA_CONSTITUCION_CPHS: 'Acta de constitucion del Comite Paritario (Art. 23)',
+    ACTA_REUNION_CPHS: 'Acta de reunion del Comite Paritario (Arts. 39 y 42)',
+    COMUNICACION_ACUERDOS_CPHS: 'Comunicacion de acuerdos a la entidad empleadora (Art. 42)',
+    ACTA_ASAMBLEA_DELEGADO: 'Acta de asamblea de eleccion del Delegado de SST (Art. 66)',
+    COMPROBANTE_REGISTRO_DT: 'Comprobante de registro en la Direccion del Trabajo (Art. 36)',
+    CERTIFICADO_CURSO_OPR: 'Certificado de curso de orientacion en prevencion de riesgos (Art. 32)',
+    CERTIFICADO_CAPACITACION_ENCARGADO: 'Certificado de capacitacion del encargado de gestion del riesgo (Art. 65)',
+    REGISTRO_SEREMI_EXPERTO: 'Registro en la Seremi de Salud del experto del Departamento de Prevencion (Art. 55)',
+    DESIGNACION_ENCARGADO_RIESGO: 'Designacion del encargado en materia de gestion del riesgo (Art. 65)',
+    PROGRAMA_TRABAJO_CPHS: 'Programa de trabajo del Comite Paritario (Art. 47)',
+    REGISTROS_INDICADORES_SST: 'Registros e indicadores de SST (Arts. 73 a 75)',
     OTRO: 'Documento General',
     // Tipos de libre creación desde /documents (no gestionados por onboarding/obra).
     COMUNICADO: 'Comunicado interno',
@@ -153,6 +169,7 @@ module.exports.create = async (event) => {
             archivoUrl: body.archivoUrl || null,
             archivoNombre: body.archivoNombre || null,
             fechaCaducidad: body.fechaCaducidad || null,
+            periodo: body.periodo || null,
             createdBy: body.createdBy || null,
             creatorName: body.creatorName || null,
             firmas: [],
@@ -356,7 +373,7 @@ module.exports.update = async (event) => {
         if (!id) return error('ID de documento requerido');
 
         const body = JSON.parse(event.body || '{}');
-        const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad'];
+        const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad', 'periodo'];
         const updateExpressions = [];
         const expressionNames = {};
         const expressionValues = {};

@@ -1,0 +1,1099 @@
+{
+  "meta": {
+    "repo": "Hackaton_CCHC (Build & Serve)",
+    "commit": "e3f4db2889f9c1f72478065d7486abda33451794",
+    "fecha": "2026-09-02",
+    "version": 2
+  },
+  "artefactos": [
+    {
+      "id": "D-01",
+      "nombre": "Politica de Seguridad y Salud en el Trabajo",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:38",
+        "Backend/lib/ds44.js:90",
+        "Frontend/src/pages/CargosOnboarding.tsx:206",
+        "Frontend/src/pages/ObraDetalle.tsx:2065"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-02",
+      "nombre": "Matriz Legal aplicable",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:37",
+        "Frontend/src/utils/ds44.ts:35",
+        "Frontend/src/pages/ObraDetalle.tsx:2117"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-03",
+      "nombre": "Definicion de la estructura organizacional preventiva",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:47",
+        "Backend/handlers/documents/handler.js:84"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-04",
+      "nombre": "MIPER, Matriz de Identificacion de Peligros y Evaluacion de Riesgos",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:42",
+        "Frontend/src/utils/ds44.ts:41",
+        "Frontend/src/pages/ObraDetalle.tsx:2117",
+        "Frontend/src/pages/ObraDetalle.tsx:2138"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-05",
+      "nombre": "Autoevaluacion del Organismo Administrador",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:47"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-06",
+      "nombre": "Programa de Trabajo Preventivo (PTP)",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:47",
+        "Frontend/src/utils/ds44.ts:318"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-07",
+      "nombre": "Reglamento Interno de Higiene y Seguridad (RIHS o RIOHS)",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:39",
+        "Backend/lib/ds44.js:89",
+        "Frontend/src/pages/CargosOnboarding.tsx:206",
+        "Backend/handlers/personas-module/handler.js:126"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-08",
+      "nombre": "Mapa de riesgos",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:48",
+        "Frontend/src/utils/ds44.ts:47",
+        "Frontend/src/pages/ObraDetalle.tsx:2117"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-09",
+      "nombre": "Evaluacion anual del cumplimiento del PTP",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:75",
+        "Frontend/src/utils/ds44.ts:273",
+        "Frontend/src/pages/ObraDetalle.tsx:2468"
+      ],
+      "fase": "CHECK"
+    },
+    {
+      "id": "D-10",
+      "nombre": "Informe anual de gestion preventiva",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:76",
+        "Frontend/src/utils/ds44.ts:282",
+        "Frontend/src/pages/ObraDetalle.tsx:2468"
+      ],
+      "fase": "CHECK"
+    },
+    {
+      "id": "D-11",
+      "nombre": "Programa de vigilancia ambiental",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:69",
+        "Frontend/src/pages/Documents.tsx:33"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-12",
+      "nombre": "Programa de vigilancia de la salud",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:51",
+        "Frontend/src/pages/WorkerDetail.tsx:232"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "D-13",
+      "nombre": "Plan de gestion, reduccion y respuesta ante emergencias, catastrofes o desastres",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:59",
+        "Frontend/src/utils/ds44.ts:61",
+        "Frontend/src/utils/ds44.ts:212",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "P-01",
+      "nombre": "Trabajo seguro en maquinas, equipos y herramientas motrices",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:57",
+        "Frontend/src/utils/ds44.ts:209",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-02",
+      "nombre": "Utilizacion de agentes fisicos, quimicos y biologicos",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:58",
+        "Frontend/src/utils/ds44.ts:210",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-03",
+      "nombre": "Utilizacion, mantenimiento, reposicion o recambio de EPP",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:56",
+        "Frontend/src/utils/ds44.ts:211",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-04",
+      "nombre": "Procedimientos derivados del plan de emergencias",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/utils/ds44.ts:212",
+        "Frontend/src/pages/Documents.tsx:38"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-05",
+      "nombre": "Actuacion ante riesgo grave o inminente",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:60",
+        "Frontend/src/utils/ds44.ts:213",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-06",
+      "nombre": "Evacuacion y traslado de personas afectadas",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:61",
+        "Frontend/src/utils/ds44.ts:214",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-07",
+      "nombre": "Investigacion de accidentes con metodologia de arbol de causas",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:62",
+        "Frontend/src/utils/ds44.ts:215",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-08",
+      "nombre": "Gestion de cambios en procesos, tecnologias, materiales o estructura",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:63",
+        "Frontend/src/utils/ds44.ts:216",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-09",
+      "nombre": "Coordinacion y cooperacion entre entidades empleadoras",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:64",
+        "Frontend/src/utils/ds44.ts:217",
+        "Backend/lib/models/Obra.js:72",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-10",
+      "nombre": "Consulta y participacion de las personas trabajadoras",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:65",
+        "Frontend/src/utils/ds44.ts:218",
+        "Frontend/src/pages/ObraDetalle.tsx:2240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "P-11",
+      "nombre": "Traslado de puesto de trabajo",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:73",
+        "Frontend/src/pages/Documents.tsx:38"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-01",
+      "nombre": "Acta de constitucion del CPHS y comprobante de registro en la Direccion del Trabajo",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:49",
+        "Backend/handlers/documents/handler.js:85"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-02",
+      "nombre": "Actas de reuniones del CPHS",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        5
+      ],
+      "codigo": [
+        "Backend/handlers/activities/handler.js:21",
+        "Frontend/src/pages/Activities.tsx:60",
+        "Frontend/src/pages/Activities.tsx:987",
+        "Backend/handlers/activities/handler.js:656"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-03",
+      "nombre": "Comunicacion escrita de los acuerdos del CPHS a la entidad empleadora",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:49",
+        "Backend/handlers/inbox-module/inbox.repository.js:54"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-04",
+      "nombre": "Entrega de documentacion preventiva al CPHS",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1,
+        5
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:465",
+        "Backend/handlers/inbox-module/inbox.repository.js:235"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-05",
+      "nombre": "Acta de eleccion del Delegado de Seguridad y Salud en el Trabajo",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:49"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-06",
+      "nombre": "Certificados de capacitacion de los integrantes del CPHS",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1,
+        5
+      ],
+      "codigo": [
+        "Backend/handlers/activities/handler.js:33",
+        "Backend/handlers/activities/handler.js:34",
+        "Frontend/src/utils/ds44.ts:227"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-07",
+      "nombre": "Designacion y certificado de capacitacion del Encargado de Gestion del Riesgo",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/activities/handler.js:36",
+        "Frontend/src/utils/ds44.ts:230"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-08",
+      "nombre": "Designacion del experto e inscripcion en la SEREMI de Salud",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:47"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-09",
+      "nombre": "Registro de asistencia del encargado del Departamento de Prevencion",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:49"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-10",
+      "nombre": "Registro de actividades y funciones del CPHS",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/incidents-module/incidents.repository.js:202",
+        "Backend/handlers/incidents-module/incidents.repository.js:646"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-11",
+      "nombre": "Difusion y firma de recepcion de la Politica de SST",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/lib/ds44.js:90",
+        "Backend/handlers/documents/handler.js:465",
+        "Backend/handlers/inbox-module/inbox.repository.js:54",
+        "Backend/handlers/documents/handler.js:561"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-12",
+      "nombre": "Registro de difusion de la MIPER",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:465",
+        "Backend/handlers/documents/handler.js:561",
+        "Frontend/src/pages/ObraDetalle.tsx:2138"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-13",
+      "nombre": "Registro de difusion del PTP y remision al CPHS",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:47",
+        "Backend/handlers/documents/handler.js:465"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-14",
+      "nombre": "Acta de Informacion de Riesgos Laborales (IRL, ex ODI)",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/personas-module/handler.js:108",
+        "Backend/lib/ds44.js:91",
+        "Backend/handlers/documents/handler.js:561",
+        "Backend/handlers/documents/handler.js:889"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-15",
+      "nombre": "Informacion de riesgos por uso de maquinas, equipos y elementos de trabajo",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/lib/catalogos-actividad.js:23",
+        "Frontend/src/pages/Documents.tsx:38"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-16",
+      "nombre": "Envio del Reglamento Interno para observaciones",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:465",
+        "Frontend/src/pages/Documents.tsx:49"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-17",
+      "nombre": "Acta de revision del Reglamento Interno",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:49",
+        "Frontend/src/utils/ds44.ts:319"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-18",
+      "nombre": "Registro de recepcion del Reglamento Interno",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/personas-module/handler.js:126",
+        "Backend/lib/ds44.js:153",
+        "Backend/handlers/documents/handler.js:561",
+        "Backend/handlers/documents/handler.js:889"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-19",
+      "nombre": "Registro de consulta y participacion",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:65",
+        "Frontend/src/pages/Documents.tsx:49"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-20",
+      "nombre": "Registro de capacitacion en prevencion de riesgos laborales",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/activities/handler.js:31",
+        "Backend/handlers/personas-module/handler.js:120",
+        "Backend/handlers/documents/handler.js:47",
+        "Backend/handlers/activities/handler.js:656"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-21",
+      "nombre": "Registro de capacitacion en uso y mantencion de EPP",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/activities/handler.js:32",
+        "Backend/lib/services/EppService.js:100",
+        "Frontend/src/pages/WorkerDetail.tsx:383",
+        "Backend/handlers/documents/handler.js:889"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-22",
+      "nombre": "Registro de entrega de EPP",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/lib/services/EppService.js:33",
+        "Frontend/src/pages/WorkerDetail.tsx:383",
+        "Backend/handlers/documents/handler.js:601",
+        "Backend/handlers/documents/handler.js:889"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-23",
+      "nombre": "Catalogo de EPP con certificacion de calidad",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/lib/ds44.js:35",
+        "Frontend/src/pages/Documents.tsx:47"
+      ],
+      "fase": "PLAN"
+    },
+    {
+      "id": "R-24",
+      "nombre": "Solicitud de incorporacion a programas de vigilancia",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:49",
+        "Backend/lib/models/Persona.js:116"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-25",
+      "nombre": "Nomina de personas expuestas y estado de vigilancia",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/lib/models/Persona.js:116",
+        "Frontend/src/pages/WorkerDetail.tsx:232",
+        "Backend/lib/services/RegistroService.js:270",
+        "Backend/handlers/obras-module/handler.js:120"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-26",
+      "nombre": "Mediciones ambientales y resultados de examenes ocupacionales",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/lib/models/Persona.js:119",
+        "Frontend/src/utils/ds44.ts:240"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-27",
+      "nombre": "Registro de citacion, autorizacion y asistencia a examenes de control",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Frontend/src/pages/Documents.tsx:49"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-28",
+      "nombre": "Registro de traslado de puesto por enfermedad profesional",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:73",
+        "Frontend/src/utils/ds44.ts:249",
+        "Frontend/src/pages/ObraDetalle.tsx:2349",
+        "Backend/lib/models/Persona.js:125"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-29",
+      "nombre": "Registro de incidentes o sucesos peligrosos",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/incidents-module/incidents.repository.js:165",
+        "Frontend/src/pages/Incidents.tsx:717",
+        "Frontend/src/pages/Incidents.tsx:795",
+        "Backend/handlers/obras-module/handler.js:120"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-30",
+      "nombre": "Registro de accidentes del trabajo, de trayecto y enfermedades profesionales",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/incidents-module/incidents.repository.js:165",
+        "Backend/lib/services/RegistroService.js:466",
+        "Frontend/src/pages/Incidents.tsx:795"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-31",
+      "nombre": "Informes de investigacion de accidentes y enfermedades profesionales",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/incidents-module/incidents.repository.js:638",
+        "Backend/lib/services/RegistroService.js:455",
+        "Backend/handlers/obras-module/handler.js:171",
+        "Frontend/src/pages/ObraDetalle.tsx:2440"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-32",
+      "nombre": "Indicadores de siniestralidad con Departamento de Prevencion",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/lib/services/RegistroService.js:162",
+        "Backend/handlers/obras-module/handler.js:120",
+        "Frontend/src/pages/ObraDetalle.tsx:2336"
+      ],
+      "fase": "CHECK"
+    },
+    {
+      "id": "R-33",
+      "nombre": "Indicadores de siniestralidad sin Departamento de Prevencion",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/lib/services/RegistroService.js:174",
+        "Backend/handlers/obras-module/handler.js:120",
+        "Frontend/src/pages/ObraDetalle.tsx:2336"
+      ],
+      "fase": "CHECK"
+    },
+    {
+      "id": "R-34",
+      "nombre": "Registro de personas trabajadoras en vigilancia de la salud",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/lib/services/RegistroService.js:270",
+        "Backend/lib/services/RegistroService.js:84",
+        "Backend/handlers/obras-module/handler.js:120"
+      ],
+      "fase": "CHECK"
+    },
+    {
+      "id": "R-35",
+      "nombre": "Acta de prueba de ensayo del plan de emergencias",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        5
+      ],
+      "codigo": [
+        "Backend/handlers/activities/handler.js:22",
+        "Frontend/src/pages/Activities.tsx:61",
+        "Frontend/src/pages/ObraDetalle.tsx:2322",
+        "Backend/handlers/activities/handler.js:656"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-36",
+      "nombre": "Registro de actuacion ante riesgo grave e inminente",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:71",
+        "Frontend/src/utils/ds44.ts:248",
+        "Frontend/src/pages/ObraDetalle.tsx:2349",
+        "Backend/handlers/documents/handler.js:889"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-37",
+      "nombre": "Registro de coordinacion e informacion mutua entre entidades empleadoras",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:64",
+        "Backend/lib/models/Obra.js:68",
+        "Frontend/src/pages/Documents.tsx:49"
+      ],
+      "fase": "DO"
+    },
+    {
+      "id": "R-38",
+      "nombre": "Registro de medidas prescritas y su implementacion",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/incidents-module/handler.js:137",
+        "Backend/handlers/incidents-module/incidents.repository.js:355",
+        "Frontend/src/pages/Incidents.tsx:795"
+      ],
+      "fase": "ACT"
+    },
+    {
+      "id": "R-39",
+      "nombre": "Expediente de evidencia preventiva exportable",
+      "estado": "NO SOPORTADO",
+      "criterios_faltantes": [
+        1,
+        3,
+        5
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:889",
+        "Backend/handlers/uploads/handler.js:599"
+      ],
+      "fase": "CHECK"
+    }
+  ],
+  "observaciones": [
+    {
+      "causa": "Almacenamiento sin inmutabilidad ni retencion: DocumentsBucket no declara VersioningConfiguration ni ObjectLockConfiguration (serverless.yml:743-754), ninguna tabla DynamoDB declara PointInTimeRecoverySpecification, la deletionPolicy de todos los recursos resuelve a 'Delete' (serverless.yml:21-23), Tenant.settings.dataRetentionDays existe y no se lee en ninguna parte (Tenant.js:37), y el CORS del bucket admite DELETE desde cualquier origen (serverless.yml:748-753).",
+      "artefactos": [
+        "D-01",
+        "D-02",
+        "D-03",
+        "D-04",
+        "D-05",
+        "D-06",
+        "D-07",
+        "D-08",
+        "D-09",
+        "D-10",
+        "D-11",
+        "D-12",
+        "D-13",
+        "P-01",
+        "P-02",
+        "P-03",
+        "P-04",
+        "P-05",
+        "P-06",
+        "P-07",
+        "P-08",
+        "P-09",
+        "P-10",
+        "P-11",
+        "R-01",
+        "R-02",
+        "R-03",
+        "R-04",
+        "R-05",
+        "R-06",
+        "R-07",
+        "R-08",
+        "R-09",
+        "R-10",
+        "R-11",
+        "R-12",
+        "R-13",
+        "R-14",
+        "R-15",
+        "R-16",
+        "R-17",
+        "R-18",
+        "R-19",
+        "R-20",
+        "R-21",
+        "R-22",
+        "R-23",
+        "R-24",
+        "R-25",
+        "R-26",
+        "R-27",
+        "R-28",
+        "R-29",
+        "R-30",
+        "R-31",
+        "R-32",
+        "R-33",
+        "R-34",
+        "R-35",
+        "R-36",
+        "R-37",
+        "R-38",
+        "R-39"
+      ],
+      "esfuerzo_dias": 2
+    },
+    {
+      "causa": "La firma no incorpora hash del contenido firmado: FirmaService.crear (FirmaService.js:141-174) registra token, persona, fecha, timestamp e IP, pero ningun digest del objeto. El unico sha256 del sistema es RegistroService.hashSnapshot (RegistroService.js:36-41), limitado al registro del Art. 72 y al informe de investigacion.",
+      "artefactos": [
+        "D-01",
+        "D-02",
+        "D-04",
+        "D-07",
+        "D-08",
+        "D-13",
+        "P-01",
+        "P-02",
+        "P-03",
+        "P-05",
+        "P-06",
+        "P-07",
+        "P-08",
+        "P-09",
+        "P-10",
+        "R-02",
+        "R-11",
+        "R-12",
+        "R-14",
+        "R-18",
+        "R-20",
+        "R-21",
+        "R-22",
+        "R-25",
+        "R-28",
+        "R-31",
+        "R-32",
+        "R-33",
+        "R-34",
+        "R-35",
+        "R-36"
+      ],
+      "esfuerzo_dias": 2
+    },
+    {
+      "causa": "Mutabilidad post firma: PUT /documents/{id} (documents/handler.js:295-336) reemplaza s3Key, archivoUrl, contenido, titulo y tipo sin verificar firmas.length. El guard equivalente ya existe en activities.patch (activities/handler.js:815-830) y solo hay que replicarlo. Afecta a los tipos fuera de TIPOS_PROCEDIMIENTO (handler.js:92-96).",
+      "artefactos": [
+        "D-01",
+        "D-02",
+        "D-04",
+        "D-07",
+        "D-08",
+        "R-14",
+        "R-18",
+        "R-22",
+        "R-28",
+        "R-36"
+      ],
+      "esfuerzo_dias": 1
+    },
+    {
+      "causa": "Sin versionado con historial ni re-firma para documentos rectores: nuevaVersion (documents/handler.js:348-460) archiva la version anterior, fuerza re-firma y notifica, pero solo se aplica a los once tipos de TIPOS_PROCEDIMIENTO. Los documentos rectores y los registros por trabajador quedan en version 1 permanente, y la asignacion no guarda la version entregada (handler.js:498-507).",
+      "artefactos": [
+        "D-01",
+        "D-02",
+        "D-04",
+        "D-07",
+        "D-08",
+        "R-14",
+        "R-18",
+        "R-28"
+      ],
+      "esfuerzo_dias": 1
+    },
+    {
+      "causa": "La interfaz declara estados que el dato no sostiene: el boton Aprobar del visor MIPER muestra 'El documento ha sido guardado' sin escribir nada (AIAssistant.tsx:746-750); WorkerDetail.tsx:1209 renderiza duracionRealMinutos || 60, mostrando '60 min' cuando el dato es null; hasSimulacro no filtra por fecha pero la etiqueta dice 'Sin ensayo en el periodo' (ObraDetalle.tsx:2296, 2306); y estadoDocumento marca un procedimiento como 'completo' con cero firmantes asignados (ObraDetalle.tsx:420-430).",
+      "artefactos": [
+        "D-04",
+        "R-21",
+        "R-35",
+        "P-01",
+        "P-02",
+        "P-03",
+        "P-05",
+        "P-06",
+        "P-07",
+        "P-08",
+        "P-09",
+        "P-10"
+      ],
+      "esfuerzo_dias": 2
+    },
+    {
+      "causa": "Tramos de dotacion incorrectos y sin dotacion por obra: TAMANOS (Tenant.js:16-21) usa cortes 1-9, 10-49, 50-199 y 200+, incorrectos en los cuatro contra los tramos del DS 44 (1-9, 10-25, 26-100, 101+). La unica logica correcta vive en el frontend (ds44.ts:188-204) sin contraparte en backend, y se calcula sobre Tenant.cantidadTrabajadores, un contador de empresa movido por delta (TenantService.js:165-190), no sobre la dotacion de la faena.",
+      "artefactos": [
+        "D-03",
+        "D-05",
+        "D-07",
+        "D-10",
+        "R-01",
+        "R-05",
+        "R-07",
+        "R-08",
+        "R-32",
+        "R-33"
+      ],
+      "esfuerzo_dias": 3
+    },
+    {
+      "causa": "Campo sexo ausente en el modelo Persona: no existe en Persona.js. El unico rastro es trabajador.genero en el snapshot desnormalizado del incidente (incidents.repository.js:189), opcional, de texto libre y con default cadena vacia. Ninguna agregacion lo usa.",
+      "artefactos": [
+        "R-29",
+        "R-30",
+        "R-31",
+        "R-32",
+        "R-33",
+        "R-34"
+      ],
+      "esfuerzo_dias": 2
+    },
+    {
+      "causa": "Aplicabilidad resuelta solo en frontend, con defaults que ocultan la exigencia: evalAplicabilidad (ds44.ts:188-204) no tiene contraparte en backend. obra.faenaCompartida tiene default false (Obra.js:72), de modo que la fila se filtra antes de renderizarse (ObraDetalle.tsx:2212) en una obra donde la faena compartida es la regla; y la condicion encargado_oa se evalua como n<=9 (ds44.ts:200) cuando el artefacto aplica hasta 100 personas trabajadoras.",
+      "artefactos": [
+        "P-09",
+        "R-07",
+        "R-37",
+        "P-01",
+        "P-02"
+      ],
+      "esfuerzo_dias": 2
+    },
+    {
+      "causa": "Plazos normativos no calculados en backend: los 30 dias corridos entre MIPER y PTP son una cadena de texto en un div (ObraDetalle.tsx:2559-2569); los 15 dias habiles de R-01 no tienen calculo ni calendario de feriados chilenos (la unica logica de dias laborales, generarFechasRecurrencia en activities/handler.js:129-131, declara que 'los feriados se ignoran a proposito'); la anterioridad del IRL no se comprueba pese a que ambas fechas las genera el sistema (fechaIngreso en PersonaService.js:354 y la fecha de firma en FirmaService.js:161-163); los 30 dias de anticipacion de R-16 no tienen fecha de entrada en vigencia contra la cual medirse; y no existe scheduler de vencimientos documentales (el unico, scheduler/handler.js:56, solo revisa actividades del dia).",
+      "artefactos": [
+        "D-04",
+        "D-06",
+        "D-07",
+        "D-09",
+        "R-01",
+        "R-05",
+        "R-06",
+        "R-14",
+        "R-16",
+        "R-17",
+        "R-20",
+        "R-35"
+      ],
+      "esfuerzo_dias": 5
+    },
+    {
+      "causa": "Duraciones minimas no validadas: las 8 horas del Art. 16 no tienen campo numerico (la actividad guarda horaInicio y horaFin como cadenas, activities/handler.js:226-227, y CAPACITACION_SST es un documento sin duracion). La hora del Art. 13 si tiene campo numerico, duracionRealMinutos (EppService.js:103), y un valor exigido declarado, duracionCapacitacionMinutos 60 (personas-module/handler.js:148), pero nunca se comparan: ni crearEntrega ni validarEntrega (EppService.js:133-180) verifican el minimo.",
+      "artefactos": [
+        "R-20",
+        "R-21"
+      ],
+      "esfuerzo_dias": 1
+    },
+    {
+      "causa": "Navegacion rota hacia la creacion de documentos de CHECK y ACT: los botones Gestionar navegan a /documents?obraId=..&tipo=.. (ObraDetalle.tsx:2468, 2547) pero Documents.tsx solo lee el parametro 'doc' (Documents.tsx:129) y los tipos no figuran en su mapa DOCUMENT_TYPES (33-51) ni en tiposCreables. Es la causa directa de que estos artefactos fallen el criterio 1.",
+      "artefactos": [
+        "D-09",
+        "D-10"
+      ],
+      "esfuerzo_dias": 1
+    },
+    {
+      "causa": "Encadenamiento entre modulos ausente: el cierre de una investigacion genera medidas correctivas con responsable y plazo (incidents.repository.js:219) que no alimentan ningun programa ni gatillan revision de la MIPER; la actualizacion de la MIPER no marca el mapa de riesgos ni el PTP como pendientes; el plan de emergencias no tiene relacion jerarquica con sus procedimientos derivados ni con la actividad SIMULACRO que lo ensaya; y GESTION_CAMBIOS no dispara nuevo IRL ni consulta.",
+      "artefactos": [
+        "D-04",
+        "D-06",
+        "D-08",
+        "D-09",
+        "D-13",
+        "P-04",
+        "P-08",
+        "R-31",
+        "R-35"
+      ],
+      "esfuerzo_dias": 6
+    },
+    {
+      "causa": "La nomina de vigilancia de la salud se exporta sin resguardo: el render del registro del Art. 72 vuelca nombre completo, protocolos y aptitud laboral en una tabla del documento firmado (RegistroService.js:60-62, 84-85), y ninguna lectura de datos de salud queda registrada pese a existir el permiso PERSONA_VIGILANCIA_SALUD (permissions.js:28).",
+      "artefactos": [
+        "R-25",
+        "R-26",
+        "R-34"
+      ],
+      "esfuerzo_dias": 2
+    },
+    {
+      "causa": "Las actividades no son descargables como documento: Activities.tsx no expone ninguna exportacion, a diferencia de Incidents.tsx que si ofrece downloadReport en CSV y PDF (Incidents.tsx:795-820). La actividad se consulta en pantalla y aparece como fila dentro del registro del Art. 72 (RegistroService.js:57-59), pero el acta individual no se puede emitir ni entregar. Es la causa directa de que estos artefactos fallen el criterio 5.",
+      "artefactos": [
+        "R-02",
+        "R-06",
+        "R-35"
+      ],
+      "esfuerzo_dias": 3
+    },
+    {
+      "causa": "Indicadores de siniestralidad con formulas y periodicidades no conformes: calcularIndicadores (RegistroService.js:162-190) produce un snapshot unico sobre el periodo recibido, sin tasa mensual de frecuencia ni semestral de gravedad; no filtra los lesionados con ausencia igual o superior a una jornada, tomando todos los incidentes de tipo accidente (linea 164); estima las horas trabajadas como masaLaboral*8*22 (linea 168) sin declarar el supuesto en el documento; y produce el mismo conjunto con o sin Departamento de Prevencion. El propio codigo lo advierte en la nota 'duda experto #5' (155-159).",
+      "artefactos": [
+        "R-32",
+        "R-33"
+      ],
+      "esfuerzo_dias": 4
+    },
+    {
+      "causa": "Sin exportacion consolidada del expediente: solo existen la descarga unitaria estampada (documents/handler.js:889-943) y getBatchDownloadUrls, que devuelve URLs sueltas. No hay indice con estado por artefacto, ni estructura de carpetas, ni manifiesto de integridad. Ademas el catalogo de 63 artefactos no esta representado como dato del sistema, por lo que no hay contra que construir el indice.",
+      "artefactos": [
+        "R-39"
+      ],
+      "esfuerzo_dias": 8
+    }
+  ]
+}

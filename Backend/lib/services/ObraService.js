@@ -55,6 +55,8 @@ class ObraService {
             // Flags que definen que elementos del DO aplican (DS44 Excel).
             faenaCompartida: data.faenaCompartida,
             tieneMaquinaria: data.tieneMaquinaria,
+            dotacionDeclarada: data.dotacionDeclarada,
+            dotacionObservacion: data.dotacionObservacion,
             agentesFQB: data.agentesFQB,
             fasesObligatorias: data.fasesObligatorias
         });
@@ -130,7 +132,7 @@ class ObraService {
 
         const allowedFields = ['nombre', 'codigo', 'direccion', 'comuna',
             'region', 'mandante', 'estado', 'etapaConstructivaActual', 'etapaActual',
-            'faenaCompartida', 'tieneMaquinaria', 'agentesFQB',
+            'faenaCompartida', 'tieneMaquinaria', 'agentesFQB', 'dotacionDeclarada', 'dotacionObservacion',
             'fasesConfig', 'faseDeming', 'cumplimientoDS44', 'imagenKey',
             'plantillasOnboarding', 'aplicabilidadKit'];
 

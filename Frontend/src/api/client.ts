@@ -16,6 +16,7 @@ export * from './tenants.api';
 export * from './obras.api';
 export * from './suggestions.api';
 export * from './ausencias.api';
+export * from './estructura.api';
 //export type { User, PersonaResponse } from './types';
 
 

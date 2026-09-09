@@ -73,6 +73,15 @@ class Obra {
         this.tieneMaquinaria = data.tieneMaquinaria !== undefined ? data.tieneMaquinaria : true; // Art. 10 (construccion: true por defecto)
         this.agentesFQB = data.agentesFQB; // Art. 2 N°14 c — sin default: undefined => "verificar aplicabilidad"
 
+        // Dotación declarada de la faena (DS 44 Art. 23: el conteo es por empresa,
+        // faena, sucursal o agencia, cada una por separado). Es un OVERRIDE: por
+        // defecto la dotación se deriva de las personas asignadas a la obra, y este
+        // campo solo manda cuando la entidad empleadora declara otra cifra, en cuyo
+        // caso se exige la observación que la justifique.
+        // No se guarda histórico: basta el valor vigente más `updatedAt`.
+        this.dotacionDeclarada = data.dotacionDeclarada ?? null;
+        this.dotacionObservacion = data.dotacionObservacion || null;
+
         // Tracking cumplimiento DS44 (PLAN/DO/CHECK)
         this.cumplimientoDS44 = data.cumplimientoDS44 || {
             plan: {
@@ -171,6 +180,8 @@ class Obra {
             imagenKey: this.imagenKey,
             faenaCompartida: this.faenaCompartida,
             tieneMaquinaria: this.tieneMaquinaria,
+            dotacionDeclarada: this.dotacionDeclarada,
+            dotacionObservacion: this.dotacionObservacion,
             agentesFQB: this.agentesFQB,
             fasesConfig: this.fasesConfig,
             faseDeming: this.faseDeming,
@@ -207,6 +218,8 @@ class Obra {
             imagenKey: this.imagenKey,
             faenaCompartida: this.faenaCompartida,
             tieneMaquinaria: this.tieneMaquinaria,
+            dotacionDeclarada: this.dotacionDeclarada,
+            dotacionObservacion: this.dotacionObservacion,
             agentesFQB: this.agentesFQB,
             fasesConfig: this.fasesConfig,
             // Eje normativo (cumplimiento DS44)

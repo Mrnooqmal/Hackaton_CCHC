@@ -1,0 +1,308 @@
+{
+  "meta": {
+    "repo": "Hackaton_CCHC (Build & Serve)",
+    "commit": "e3f4db2889f9c1f72478065d7486abda33451794",
+    "fecha": "2026-09-03",
+    "version": 3
+  },
+  "artefactos": [
+    {
+      "id": "DOC-01",
+      "nombre": "Politica de Seguridad y Salud en el Trabajo",
+      "fase": "PLAN",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/lib/ds44.js:90",
+        "Frontend/src/pages/CargosOnboarding.tsx:206",
+        "Backend/handlers/personas-module/handler.js:664",
+        "Backend/handlers/documents/handler.js:561",
+        "Backend/handlers/documents/handler.js:889"
+      ]
+    },
+    {
+      "id": "DOC-02",
+      "nombre": "Matriz Legal aplicable",
+      "fase": "PLAN",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:37",
+        "Frontend/src/utils/ds44.ts:35",
+        "Frontend/src/pages/ObraDetalle.tsx:2118",
+        "Frontend/src/pages/ObraDetalle.tsx:1000"
+      ]
+    },
+    {
+      "id": "DOC-03",
+      "nombre": "MIPER",
+      "fase": "PLAN",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        3
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:42",
+        "Frontend/src/utils/ds44.ts:41",
+        "Frontend/src/pages/ObraDetalle.tsx:2118",
+        "Backend/handlers/documents/handler.js:92",
+        "Frontend/src/pages/ObraDetalle.tsx:853"
+      ]
+    },
+    {
+      "id": "DOC-04",
+      "nombre": "Mapa de riesgos",
+      "fase": "PLAN",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:48",
+        "Frontend/src/utils/ds44.ts:47",
+        "Frontend/src/pages/ObraDetalle.tsx:2118",
+        "Frontend/src/pages/ObraDetalle.tsx:2138"
+      ]
+    },
+    {
+      "id": "DOC-05",
+      "nombre": "Reglamento Interno (RIHS o RIOHS)",
+      "fase": "PLAN",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        3
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:39",
+        "Backend/lib/ds44.js:89",
+        "Backend/handlers/personas-module/handler.js:431",
+        "Backend/handlers/documents/handler.js:92",
+        "Backend/handlers/documents/handler.js:132"
+      ]
+    },
+    {
+      "id": "DOC-06",
+      "nombre": "Registro de accidentes del trabajo, enfermedades profesionales e incidentes peligrosos",
+      "fase": "DO",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        3
+      ],
+      "codigo": [
+        "Backend/lib/services/RegistroService.js:252",
+        "Backend/lib/services/RegistroService.js:54",
+        "Backend/handlers/obras-module/handler.js:120",
+        "Frontend/src/pages/ObraDetalle.tsx:2336",
+        "Backend/lib/models/Persona.js:44"
+      ]
+    },
+    {
+      "id": "DOC-07",
+      "nombre": "Informe anual de gestion preventiva",
+      "fase": "CHECK",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        1
+      ],
+      "codigo": [
+        "Backend/handlers/documents/handler.js:76",
+        "Frontend/src/utils/ds44.ts:282",
+        "Frontend/src/pages/ObraDetalle.tsx:2468",
+        "Frontend/src/pages/Documents.tsx:129"
+      ]
+    },
+    {
+      "id": "EV-01",
+      "nombre": "Acta de Informacion de Riesgos Laborales (IRL, ex ODI)",
+      "fase": "DO",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/handlers/personas-module/handler.js:108",
+        "Backend/lib/ds44.js:91",
+        "Backend/lib/services/PersonaService.js:354",
+        "Backend/handlers/documents/handler.js:561",
+        "Backend/handlers/documents/handler.js:889"
+      ]
+    },
+    {
+      "id": "EV-02",
+      "nombre": "Registro de capacitacion en prevencion de riesgos",
+      "fase": "DO",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        3
+      ],
+      "codigo": [
+        "Backend/handlers/personas-module/handler.js:120",
+        "Backend/handlers/documents/handler.js:47",
+        "Backend/handlers/activities/handler.js:31",
+        "Backend/handlers/activities/handler.js:226"
+      ]
+    },
+    {
+      "id": "EV-03",
+      "nombre": "Registro de capacitacion en uso y mantencion de EPP",
+      "fase": "DO",
+      "estado": "SOPORTADO",
+      "criterios_faltantes": [],
+      "codigo": [
+        "Backend/lib/services/EppService.js:100",
+        "Backend/lib/services/EppService.js:103",
+        "Frontend/src/pages/WorkerDetail.tsx:391",
+        "Backend/handlers/documents/handler.js:889"
+      ]
+    },
+    {
+      "id": "EV-04",
+      "nombre": "Registro de entrega de EPP",
+      "fase": "DO",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        3
+      ],
+      "codigo": [
+        "Backend/lib/services/EppService.js:33",
+        "Backend/lib/services/EppService.js:91",
+        "Frontend/src/pages/WorkerDetail.tsx:383",
+        "Backend/handlers/documents/handler.js:601"
+      ]
+    },
+    {
+      "id": "EV-05",
+      "nombre": "Registro de charlas diarias o analisis de riesgo de la tarea",
+      "fase": "DO",
+      "estado": "PARCIAL",
+      "criterios_faltantes": [
+        5
+      ],
+      "codigo": [
+        "Backend/handlers/activities/handler.js:17",
+        "Backend/handlers/activities/handler.js:18",
+        "Frontend/src/pages/Activities.tsx:987",
+        "Backend/handlers/activities/handler.js:656"
+      ]
+    }
+  ],
+  "observaciones": [
+    {
+      "causa": "Mutabilidad post firma: PUT /documents/{id} (documents/handler.js:295-336) reemplaza s3Key, archivoUrl, contenido, titulo y tipo sin verificar firmas.length. Ninguno de estos artefactos esta en TIPOS_PROCEDIMIENTO (handler.js:92-96), el unico conjunto protegido por nuevaVersion. El guard equivalente ya existe en activities.patch (activities/handler.js:815-830) y solo hay que replicarlo.",
+      "artefactos": [
+        "DOC-01",
+        "DOC-02",
+        "DOC-03",
+        "DOC-04",
+        "DOC-05",
+        "DOC-07",
+        "EV-01",
+        "EV-02",
+        "EV-03",
+        "EV-04"
+      ],
+      "esfuerzo_dias": 1
+    },
+    {
+      "causa": "Almacenamiento sin inmutabilidad ni retencion: DocumentsBucket no declara VersioningConfiguration ni ObjectLockConfiguration (serverless.yml:743-754), ninguna tabla DynamoDB declara PointInTimeRecoverySpecification, la deletionPolicy de todos los recursos resuelve a 'Delete' (serverless.yml:21-23), Tenant.settings.dataRetentionDays existe y no se lee en ninguna parte (Tenant.js:37), y el CORS del bucket admite DELETE desde cualquier origen (serverless.yml:748-753).",
+      "artefactos": [
+        "DOC-01",
+        "DOC-02",
+        "DOC-03",
+        "DOC-04",
+        "DOC-05",
+        "DOC-06",
+        "DOC-07",
+        "EV-01",
+        "EV-02",
+        "EV-03",
+        "EV-04",
+        "EV-05"
+      ],
+      "esfuerzo_dias": 2
+    },
+    {
+      "causa": "La firma no incorpora hash del contenido firmado: FirmaService.crear (FirmaService.js:141-174) registra token, persona, fecha, horario, timestamp e IP, pero ningun digest del objeto. El unico sha256 del sistema es RegistroService.hashSnapshot (RegistroService.js:36-41), que solo cubre el registro del Art. 72 y el informe de investigacion. Sin hash no se acredita que la firma corresponda al archivo vigente.",
+      "artefactos": [
+        "DOC-01",
+        "DOC-03",
+        "DOC-05",
+        "DOC-06",
+        "DOC-07",
+        "EV-01",
+        "EV-02",
+        "EV-03",
+        "EV-04",
+        "EV-05"
+      ],
+      "esfuerzo_dias": 2
+    },
+    {
+      "causa": "Sin versionado con motivo de actualizacion para los documentos rectores: nuevaVersion (documents/handler.js:348-460) archiva la version anterior, exige motivo, fuerza re-firma y notifica, pero solo aplica a los once tipos de TIPOS_PROCEDIMIENTO. MIPER y REGLAMENTO_INTERNO no estan en ese conjunto, de modo que su actualizacion cae en la rama 'sin versionar' (ObraDetalle.tsx:853-860): se reemplaza el archivo, la version queda fija en 1 y no se registra motivo. Es la via por la que el catalogo pide acreditar la fase ACT.",
+      "artefactos": [
+        "DOC-03",
+        "DOC-05"
+      ],
+      "esfuerzo_dias": 1
+    },
+    {
+      "causa": "Duraciones minimas no validadas: el minimo de 1 hora del Art. 13 tiene campo numerico (duracionRealMinutos, EppService.js:103) y valor exigido declarado (duracionCapacitacionMinutos 60, personas-module/handler.js:148), pero nunca se comparan: ni crearEntrega ni validarEntrega (EppService.js:133-180) verifican el minimo. El de 8 horas del Art. 16 no tiene contra que compararse porque no hay campo de duracion. Ademas duracionRealMinutos es por entrega y el minimo es por elemento entregado.",
+      "artefactos": [
+        "EV-02",
+        "EV-03"
+      ],
+      "esfuerzo_dias": 1
+    },
+    {
+      "causa": "Navegacion rota hacia la creacion del documento de CHECK: el boton Gestionar navega a /documents?obraId=..&tipo=INFORME_ANUAL_GESTION (ObraDetalle.tsx:2468) pero Documents.tsx solo lee el parametro 'doc' (Documents.tsx:129) y el tipo no figura en su mapa DOCUMENT_TYPES (33-51) ni en tiposCreables (63). El tipo existe en el backend (documents/handler.js:76) pero no hay ninguna via de interfaz para instanciarlo. Es la causa directa de que falle el criterio 1.",
+      "artefactos": [
+        "DOC-07"
+      ],
+      "esfuerzo_dias": 1
+    },
+    {
+      "causa": "La interfaz declara estados que el dato no sostiene: el boton Aprobar del visor MIPER muestra 'El documento ha sido guardado' tras un console.log, sin realizar ninguna escritura (AIAssistant.tsx:746-750); y WorkerDetail.tsx:1209 renderiza duracionRealMinutos || 60, mostrando '60 min' cuando el dato es null, es decir afirmando el cumplimiento del minimo legal a partir de un literal de respaldo.",
+      "artefactos": [
+        "DOC-03",
+        "EV-03"
+      ],
+      "esfuerzo_dias": 2
+    },
+    {
+      "causa": "Metadata declarada por el catalogo sin campo en el modelo: DOC-05 no tiene comprobante de ingreso a la Direccion del Trabajo ni fecha de entrada en vigencia; EV-02 no tiene campo de duracion en el documento CAPACITACION_SST (personas-module/handler.js:118-125) ni magnitud numerica en la actividad, que guarda horaInicio y horaFin como cadenas (activities/handler.js:226-227); EV-04 no tiene constancia de entrega libre de costo ni certificacion de calidad o registro ISP, ya que itemsEntregados solo guarda descripcion, cantidad, talla y fechaVencimiento (EppService.js:91-97) y DS44_EPP_MATRIZ (ds44.js:35-75) es una lista de descripciones de texto sin identidad de modelo.",
+      "artefactos": [
+        "DOC-05",
+        "EV-02",
+        "EV-04"
+      ],
+      "esfuerzo_dias": 3
+    },
+    {
+      "causa": "Plazos y vigencias declarados pero no validados en backend: la anterioridad del IRL respecto del inicio de labores no se comprueba pese a que ambas fechas las genera el sistema (fechaIngreso en PersonaService.js:354 y la fecha de firma en FirmaService.js:161-163); no existe control de la revision anual de MIPER ni de Reglamento Interno; y no existe control del vencimiento a 2 anos de la capacitacion por trabajador. El unico proceso programado del sistema (scheduler/handler.js:56) solo revisa las actividades del dia.",
+      "artefactos": [
+        "DOC-03",
+        "DOC-05",
+        "EV-01",
+        "EV-02"
+      ],
+      "esfuerzo_dias": 4
+    },
+    {
+      "causa": "El registro generado omite tres de los cuatro campos exigidos: el snapshot de generarRegistroATEP (RegistroService.js:252-260) proyecta incidentId, tipo, gravedad, fecha, descripcion, diasPerdidos e investigacion. No lleva lugar (centroTrabajo y direccionAccidente existen en el incidente y no se copian), no lleva relato (relatoAccidente existe y no se copia; solo viaja descripcion) y no lleva sexo, que ademas no existe como campo en Persona (Persona.js:44-120): el unico rastro es trabajador.genero en el snapshot desnormalizado del incidente (incidents.repository.js:189), opcional, de texto libre y con default cadena vacia. El render HTML arrastra la misma omision (RegistroService.js:54-57).",
+      "artefactos": [
+        "DOC-06"
+      ],
+      "esfuerzo_dias": 3
+    },
+    {
+      "causa": "Las actividades no son descargables como documento: Activities.tsx no expone ninguna exportacion, a diferencia de Incidents.tsx que ofrece downloadReport en CSV y PDF (Incidents.tsx:795-820). La charla se registra con asistencia firmada por PIN y queda consultable en pantalla, y aparece como fila agregada dentro del registro del Art. 72 (RegistroService.js:261-268), pero el acta individual con sus asistentes no se puede emitir ni entregar en terreno. Es la causa directa de que falle el criterio 5.",
+      "artefactos": [
+        "EV-05"
+      ],
+      "esfuerzo_dias": 3
+    },
+    {
+      "causa": "Aplicabilidad por tramo incorrecta y resuelta solo en frontend: DOC-07 aplica sobre 100 personas trabajadoras, pero el gating usa activeWorkers.length > 100 (ObraDetalle.tsx:2452), que cuenta trabajadores de la obra, mientras el resto de la aplicabilidad usa tamanoEntidad a nivel empresa (ObraDetalle.tsx:414). Ademas TAMANOS (Tenant.js:16-21) corta en 1-9, 10-49, 50-199 y 200+, incorrecto en los cuatro tramos contra el DS 44, y no existe contraparte de evalAplicabilidad en backend.",
+      "artefactos": [
+        "DOC-07"
+      ],
+      "esfuerzo_dias": 3
+    }
+  ]
+}

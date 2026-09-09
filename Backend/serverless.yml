@@ -44,6 +44,7 @@ provider:
     SUGGESTIONS_TABLE: ${self:service}-sugerencias-${self:provider.stage}
     AUSENCIAS_TABLE: ${self:service}-ausencias-${self:provider.stage}
     EPP_TABLE: ${self:service}-epp-${self:provider.stage}
+    ESTRUCTURA_TABLE: ${self:service}-estructura-preventiva-${self:provider.stage}
     # --- Storage ---
     DOCUMENTS_BUCKET: ${self:custom.bucketName}
     INCIDENT_EVIDENCE_BUCKET: ${self:service}-evidence-${self:provider.stage}-${aws:accountId}
@@ -120,6 +121,7 @@ provider:
             - !GetAtt AusenciasTable.Arn
             - !Sub ${AusenciasTable.Arn}/index/*
             - !GetAtt EppTable.Arn
+            - !GetAtt EstructuraPreventivaTable.Arn
 
         - Effect: Allow
           Action:
@@ -189,6 +191,18 @@ functions:
   # ========================================
   # OBRAS (Proyectos de Construcción)
   # ========================================
+  # Estructura preventiva (DS 44): organos, integrantes y reuniones. Modulo propio
+  # porque los organos viven tanto a nivel empresa como de obra.
+  estructuraModule:
+    handler: handlers/estructura-module/handler.estructuraHandler
+    events:
+      - httpApi:
+          path: /estructura
+          method: any
+      - httpApi:
+          path: /estructura/{proxy+}
+          method: any
+
   obrasModule:
     handler: handlers/obras-module/handler.obrasHandler
     events:
@@ -977,6 +991,28 @@ resources:
           - AttributeName: tenantId
             KeyType: HASH
           - AttributeName: eppId
+            KeyType: RANGE
+
+    # Estructura preventiva (DS 44 Arts. 23, 50, 65, 66): órganos, integrantes y
+    # reuniones en una sola tabla, distinguidos por prefijo en la sort key:
+    #   ORG#{organoId}  ·  MIE#{organoId}#{miembroId}  ·  REU#{organoId}#{reunionId}
+    # Así listar órganos no arrastra las ~24 reuniones de cada mandato.
+    EstructuraPreventivaTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.ESTRUCTURA_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenantId
+            KeyType: HASH
+          - AttributeName: sk
             KeyType: RANGE
 
     # Incidents Table - rename empresaId to tenantId

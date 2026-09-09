@@ -28,6 +28,8 @@ import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
 import ObraNueva from './pages/ObraNueva';
 import ObraDetalle from './pages/ObraDetalle';
+import EstructuraConstituir from './pages/EstructuraConstituir';
+import EstructuraOrgano from './pages/EstructuraOrgano';
 import ObraEquipoPage from './pages/ObraEquipoPage';
 import Crear from './pages/Crear';
 import CargosOnboarding from './pages/CargosOnboarding';
@@ -144,6 +146,12 @@ function AppContent() {
       <Route path="/obras/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_CREAR}><ObraNueva /></ProtectedRoute>} />
       <Route path="/obras/:obraId" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><ObraDetalle /></ProtectedRoute>} />
       <Route path="/obras/:obraId/equipo" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES}><ObraEquipoPage /></ProtectedRoute>} />
+
+      {/* Estructura preventiva (DS 44): órganos de empresa y de obra. Requiere el
+          mismo permiso que administrar obras: constituir un órgano es un acto de
+          administración, no una investidura preventiva. */}
+      <Route path="/estructura/constituir" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><EstructuraConstituir /></ProtectedRoute>} />
+      <Route path="/estructura/organos/:organoId" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><EstructuraOrgano /></ProtectedRoute>} />
 
       {/* Constructor de cargos de onboarding (catálogo tenant). Admin + jefe de obra. */}
       <Route path="/cargos-onboarding" element={<ProtectedRoute requiredPermission={PERMISSIONS.CARGOS_GESTIONAR}><CargosOnboarding /></ProtectedRoute>} />

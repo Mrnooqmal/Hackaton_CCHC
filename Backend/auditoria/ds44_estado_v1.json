@@ -1,0 +1,1982 @@
+{
+  "meta": {
+    "repo": "Hackaton_CCHC (Build & Serve)",
+    "commit": "e3f4db2889f9c1f72478065d7486abda33451794",
+    "fecha": "2026-09-02"
+  },
+  "artefactos": [
+    {
+      "id": "D-01",
+      "nombre": "Politica de Seguridad y Salud en el Trabajo",
+      "clase": "A",
+      "estado": "INCOMPLETO",
+      "cobertura": 45,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:38",
+        "Backend/lib/models/Obra.js:24",
+        "Backend/lib/ds44.js:90",
+        "Backend/handlers/documents/handler.js:295",
+        "Backend/lib/models/Persona.js:10"
+      ],
+      "brechas": [
+        "No existe el rol Representante Legal: ROLES en Persona.js:10-42 solo define admin, jefe_obra, supervisor, prevencionista y trabajador. documents.sign (handler.js:561-597) solo valida el permiso firmar_relator, por lo que cualquier persona del tenant con PIN firma como tipoFirma 'documento'",
+        "Sin fecha de elaboracion, de aprobacion ni de vigencia: el documento solo tiene createdAt y updatedAt (handler.js:132-157) mas un fechaCaducidad opcional y digitado que ningun proceso lee",
+        "Sin versionado: POLITICA_SSO no esta en TIPOS_PROCEDIMIENTO (handler.js:92-96), asi que no accede a nuevaVersion ni archiva versiones anteriores. El campo version queda fijo en 1",
+        "Mutable despues de firmada: PUT /documents/{id} (handler.js:295-336) reemplaza s3Key, archivoUrl, contenido y titulo sin verificar firmas.length",
+        "La firma no incorpora hash del contenido: FirmaService.crear (FirmaService.js:141-174) no calcula digest del objeto firmado"
+      ],
+      "fuera_de_alcance": [
+        "Compromiso de proteccion de la vida y salud",
+        "Compromiso de cumplimiento normativo",
+        "Compromiso de participacion del CPHS y de las personas trabajadoras",
+        "Compromiso de mejora continua"
+      ],
+      "acciones": [
+        "Agregar rol representante_legal a ROLES y un campo rolFirmanteRequerido en el documento, validado en documents.sign antes de llamar a FirmaService.crear",
+        "Agregar fechaElaboracion, fechaAprobacion (generada por el sistema al registrarse la firma del rol normativo) y fechaVigenciaDesde",
+        "Incluir POLITICA_SSO en TIPOS_PROCEDIMIENTO para habilitar versionado con re-firma",
+        "Bloquear en documents.update los campos de contenido cuando (doc.firmas||[]).length > 0, replicando el guard de activities.patch (activities/handler.js:815-830)",
+        "Agregar hashContenido (sha256 del objeto S3 al momento de firmar) al item de FirmaService.crear y a toDocumentFirmaFormat"
+      ],
+      "fuf": [
+        1
+      ]
+    },
+    {
+      "id": "D-02",
+      "nombre": "Matriz Legal aplicable",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 35,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:37",
+        "Backend/lib/models/Obra.js:25",
+        "Frontend/src/pages/Documents.tsx:36",
+        "Frontend/src/utils/ds44.ts:35"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe catalogo de requisitos legales ni entidad Requisito con estado de cumplimiento. El artefacto sostiene el diagnostico legal del Art. 64.2 y el dashboard de cumplimiento, y sin estado por requisito no puede hacerlo",
+        "No hay evidencia vinculada por requisito: ningun campo relaciona un requisito legal con el documentoId que lo acredita",
+        "Sin fecha de elaboracion ni control de la revision anual recomendada",
+        "Sin versionado: DIAGNOSTICO_LEGAL no esta en TIPOS_PROCEDIMIENTO",
+        "Mutable despues de firmado via PUT /documents/{id}"
+      ],
+      "fuera_de_alcance": [
+        "Normativa aplicable al rubro y al centro de trabajo (contenido redactado por el usuario dentro del PDF)"
+      ],
+      "acciones": [
+        "Crear entidad RequisitoLegal (tenantId, rubro, norma, articulo, estadoCumplimiento, documentoEvidenciaId) y exponer D-02 como read-model exportable de esa tabla, con el PDF cargado como respaldo",
+        "Incluir DIAGNOSTICO_LEGAL en TIPOS_PROCEDIMIENTO y agregar fechaElaboracion"
+      ],
+      "fuf": [
+        1,
+        7
+      ]
+    },
+    {
+      "id": "D-03",
+      "nombre": "Definicion de la estructura organizacional preventiva",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/models/Tenant.js:16",
+        "Backend/lib/models/Tenant.js:79",
+        "Backend/lib/services/TenantService.js:165",
+        "Backend/lib/models/Persona.js:10",
+        "Frontend/src/utils/ds44.ts:188",
+        "Frontend/src/pages/ObraDetalle.tsx:414"
+      ],
+      "brechas": [
+        "HALLAZGO TRANSVERSAL DE TRAMOS: TAMANOS en Tenant.js:16-21 usa cortes micro 1-9, pequena 10-49, mediana 50-199, grande 200+. Los cuatro cortes son incorrectos contra los tramos del DS 44 (1-9, 10-25, 26-100, 101 o mas). Contamina la aplicabilidad de D-05, R-01, R-05, R-07, R-08, R-32 y R-33",
+        "METADATA ESTRUCTURADA AUSENTE: no existe dotacion por obra. El tramo se calcula sobre la dotacion de la empresa (tamanoEntidad = tenantSize, ObraDetalle.tsx:414, tomado de Tenant.cantidadTrabajadores), cuando el Art. 23 exige el conteo por empresa, faena, sucursal o agencia",
+        "El recalculo es un contador manual por delta (TenantService.ajustarCantidadTrabajadores, TenantService.js:165-190). El catalogo exige dotacion dinamica con recalculo automatico, no un campo estatico configurado una vez",
+        "La unica logica de tramo correcta vive en el frontend: evalAplicabilidad (ds44.ts:188-204) con cphs n>=26, delegado 10-25, encargado_oa 1-9, depto_prevencion n>100. No tiene contraparte en backend, por lo que no gobierna ninguna validacion ni exportacion",
+        "No existe tipo de documento ni entidad para el artefacto: no hay forma de emitirlo ni exportarlo",
+        "Los organos preventivos no existen en el modelo: no hay CPHS, Delegado de SST, Encargado de Gestion del Riesgo ni Departamento de Prevencion como entidades ni como roles en ROLES",
+        "Sin gatillante al cruzar los umbrales de 9, 25 o 100 personas trabajadoras"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Corregir TAMANOS en Tenant.js:16-21 a los tramos del DS 44 y mover el corte a una funcion unica tramoDS44(n) en lib/ds44.js, consumida por backend y espejada en el frontend",
+        "Agregar dotacion por obra calculada desde Persona.asignaciones activas, y usarla como fuente del tramo en lugar de Tenant.cantidadTrabajadores",
+        "Crear entidad OrganoPreventivo (tenantId, obraId, tipo, integrantes, fechaDesignacion, vigencia) y los roles normativos correspondientes en ROLES",
+        "Agregar tipo ESTRUCTURA_PREVENTIVA y generarlo como read-model firmable por representante_legal, con alerta al cruzar los umbrales"
+      ],
+      "fuf": [
+        1,
+        7,
+        30,
+        39,
+        41,
+        47,
+        48
+      ]
+    },
+    {
+      "id": "D-04",
+      "nombre": "MIPER, Matriz de Identificacion de Peligros y Evaluacion de Riesgos",
+      "clase": "A",
+      "estado": "INCOMPLETO",
+      "cobertura": 55,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:41",
+        "Backend/lib/models/Obra.js:26",
+        "Frontend/src/utils/ds44.ts:41",
+        "Backend/handlers/documents/handler.js:92",
+        "Frontend/src/pages/AIAssistant.tsx:746"
+      ],
+      "brechas": [
+        "Sin versionado con motivo de revision tipificado: MIPER no esta en TIPOS_PROCEDIMIENTO (handler.js:92-96), pese a que el gatillante del artefacto (cambio de condiciones, AT, EP, riesgo grave e inminente) exige distinguir por que se reviso. El campo version queda fijo en 1",
+        "Mutable despues de firmada via PUT /documents/{id} (handler.js:295-336): al ser el documento que origina el PTP, el mapa de riesgos y la nomina de vigilancia, su alterabilidad post firma compromete toda la cadena",
+        "Sin fecha de elaboracion, de aprobacion ni control de la revision al menos anual",
+        "INTEGRIDAD DE INTERFAZ: el boton Aprobar del visor MIPER ejecuta un console.log y un alert que afirma 'El documento ha sido guardado' (AIAssistant.tsx:746-750) sin realizar ninguna escritura. La interfaz declara un estado falso y puede hacer creer al usuario que tiene cargada una evidencia que no existe en el repositorio",
+        "El gatillante desde el modulo de incidentes no existe: incidents-module no emite ningun evento que marque la MIPER de la obra como pendiente de revision",
+        "La firma no incorpora hash del contenido (FirmaService.js:141-174)"
+      ],
+      "fuera_de_alcance": [
+        "Identificacion de peligros, evaluacion de riesgos, magnitud y medidas de control por puesto de trabajo",
+        "Cobertura del 100 por ciento de los puestos de trabajo",
+        "Alcance de categorias de factores de riesgo: agentes fisicos, quimicos y biologicos, ergonomicos, psicosociales, violencia y acoso, historico de AT y EP, traslado y trayecto, trabajadores especialmente sensibles",
+        "Enfoque de genero en el contenido de la matriz",
+        "Autoria del generador de contenido (asistente IA)"
+      ],
+      "acciones": [
+        "Incluir MIPER en TIPOS_PROCEDIMIENTO y agregar motivoRevision tipificado (cambio de condiciones, AT, EP, riesgo grave e inminente) al flujo de nuevaVersion",
+        "Reemplazar el alert de AIAssistant.tsx:746-750 por una llamada real de creacion de documento, o retirar el boton Aprobar hasta que exista destino de guardado",
+        "Emitir evento desde incidents-module que marque la MIPER de la obra en estado revision_pendiente",
+        "Agregar fechaElaboracion y fechaAprobacion, y control de la revision anual"
+      ],
+      "fuf": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        13,
+        15
+      ]
+    },
+    {
+      "id": "D-05",
+      "nombre": "Autoevaluacion del Organismo Administrador",
+      "clase": "A",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:34",
+        "Backend/lib/models/Tenant.js:16"
+      ],
+      "brechas": [
+        "No existe tipo de documento, entidad, endpoint ni vista: la busqueda de 'autoevaluacion' en Backend y Frontend no arroja resultados. No hay donde custodiar el resultado del instrumento del OAL",
+        "No hay condicionamiento por tramo: el artefacto solo aplica hasta 25 personas trabajadoras y debe declararse NO APLICA sobre ese tramo. El corte del backend (TAMANOS, Tenant.js:16-21) esta ademas mal definido",
+        "Sin control de la periodicidad al menos anual ni del gatillante por cambio de condiciones de trabajo"
+      ],
+      "fuera_de_alcance": [
+        "Identificacion y evaluacion de condiciones ambientales, psicosociales y ergonomicas",
+        "Evaluacion del cumplimiento normativo con el instrumento del OAL"
+      ],
+      "acciones": [
+        "Agregar tipo AUTOEVALUACION_OAL a DOCUMENT_TYPES con fecha de aplicacion y adjunto del resultado",
+        "Condicionar su exigibilidad a tramoDS44(dotacion) <= 25 y declararlo NO APLICA en el indice del expediente sobre ese tramo"
+      ],
+      "fuf": [
+        7
+      ]
+    },
+    {
+      "id": "D-06",
+      "nombre": "Programa de Trabajo Preventivo (PTP)",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:34",
+        "Frontend/src/utils/ds44.ts:318",
+        "Frontend/src/pages/ObraDetalle.tsx:2559",
+        "Backend/lib/services/RegistroService.js:629",
+        "Backend/handlers/activities/handler.js:16"
+      ],
+      "brechas": [
+        "No existe tipo de documento para el PTP en DOCUMENT_TYPES (handler.js:34-87). El unico rastro es DS44_ACT_ACTUALIZACIONES en ds44.ts:318, que enlaza 'Actualizar PTP' a tipoOrigen 'PROCEDIMIENTO_TRABAJO': conflacion incorrecta, el Programa de Trabajo Preventivo del Art. 8 no es el Procedimiento de Trabajo Seguro",
+        "METADATA ESTRUCTURADA AUSENTE: el plazo de 30 dias corridos no se calcula en ninguna parte. El texto 'Actualizar PTP (<=30 dias desde cambio de MIPER)' es una cadena literal en un div (ObraDetalle.tsx:2559-2569) junto a un boton de navegacion. No hay fecha origen, fecha limite, ni corridos ni habiles",
+        "No existe relacion con la version de MIPER que origina el PTP: al no versionarse la MIPER (ver D-04) no hay identificador de version al que anclar el plazo",
+        "El propio codigo declara la ausencia: RegistroService.js:629 deja cumplimientoPTP en null con la nota 'duda experto #7: definir origen de medidas planificadas'",
+        "No existen tipos de actividad para las letras d), e) y f) del Art. 8: ACTIVITY_TYPES (activities/handler.js:16-25) y CAPACITACION_SUBTIPOS (30-38) no contemplan promocion sobre alcohol y drogas, difusion de estilo de vida y alimentacion saludables, ni prevencion en conduccion de vehiculos motorizados. Son tipos del sistema, no contenido del PDF",
+        "Sin estado de aprobacion ni firma del representante legal, cuyo rol no existe",
+        "Sin campos para plazos de implementacion ni responsables, que son metadata de seguimiento y no redaccion"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion de las medidas preventivas y correctivas derivadas de la MIPER",
+        "Redaccion del contenido de las actividades de promocion de las letras d), e) y f)"
+      ],
+      "acciones": [
+        "Crear entidad Ptp (obraId, miperVersionId, fechaOrigenMiper, fechaLimite, estadoAprobacion, aprobadoPor, fechaAprobacion) con medidas hijas (medida, plazo, responsable, origenMiperFilaId)",
+        "Calcular fechaLimite = fechaOrigenMiper + 30 dias CORRIDOS en backend al versionar la MIPER, con alerta al inbox al acercarse y al vencer",
+        "Agregar a ACTIVITY_TYPES o CAPACITACION_SUBTIPOS los tipos PROMOCION_ALCOHOL_DROGAS, VIDA_SALUDABLE y CONDUCCION_SEGURA",
+        "Exigir firma del rol representante_legal para el estado aprobado"
+      ],
+      "fuf": [
+        8,
+        9,
+        10,
+        11
+      ]
+    },
+    {
+      "id": "D-07",
+      "nombre": "Reglamento Interno de Higiene y Seguridad (RIHS o RIOHS)",
+      "clase": "A",
+      "estado": "INCOMPLETO",
+      "cobertura": 40,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:39",
+        "Backend/lib/models/Obra.js:28",
+        "Backend/lib/ds44.js:89",
+        "Backend/lib/ds44.js:153",
+        "Frontend/src/utils/ds44.ts:319",
+        "Backend/handlers/scheduler/handler.js:56"
+      ],
+      "brechas": [
+        "No existe campo para el comprobante de ingreso al sitio web de la Direccion del Trabajo. Es un adjunto con fecha, no contenido del PDF, y el artefacto lo exige expresamente",
+        "Un solo tipo REGLAMENTO_INTERNO sin distinguir RIHS (1 a 9 trabajadores) de RIOHS (10 o mas): la tipificacion no resuelve la aplicabilidad por tramo que el artefacto declara",
+        "Sin fecha de entrada en vigencia como campo del documento",
+        "La revision con periodicidad no inferior a 1 ano no se controla: el item 'Revisar Reglamento Interno (>=1 ano)' de ds44.ts:319 es texto estatico con un boton de navegacion, y el unico scheduler del sistema (scheduler/handler.js:56) solo revisa actividades del dia",
+        "Sin versionado: REGLAMENTO_INTERNO no esta en TIPOS_PROCEDIMIENTO (handler.js:92-96). Sin el, R-18 no puede congelar la version entregada a cada trabajador",
+        "Mutable despues de firmado via PUT /documents/{id}",
+        "Firma del representante legal imposible por ausencia del rol"
+      ],
+      "fuera_de_alcance": [
+        "Preambulo y disposiciones generales",
+        "Obligaciones de las personas trabajadoras",
+        "Prohibiciones y sanciones",
+        "Materias de acoso sexual, laboral y violencia (Art. 58 letra j)"
+      ],
+      "acciones": [
+        "Agregar campos comprobanteIngresoDT (s3Key mas fecha) y fechaEntradaVigencia al documento cuando tipo es REGLAMENTO_INTERNO",
+        "Derivar el subtipo RIHS/RIOHS desde tramoDS44(dotacion) y exigir el que corresponda",
+        "Incluir REGLAMENTO_INTERNO en TIPOS_PROCEDIMIENTO para habilitar nuevaVersion con re-firma",
+        "Agregar scheduler de vigencias que alerte a los 12 meses de la ultima revision"
+      ],
+      "fuf": [
+        49,
+        52
+      ]
+    },
+    {
+      "id": "D-08",
+      "nombre": "Mapa de riesgos",
+      "clase": "A",
+      "estado": "INCOMPLETO",
+      "cobertura": 55,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:48",
+        "Backend/lib/models/Obra.js:27",
+        "Frontend/src/utils/ds44.ts:47",
+        "Backend/handlers/documents/handler.js:889"
+      ],
+      "brechas": [
+        "No existe campo miperVersionId ni ninguna relacion con la version de MIPER de la que deriva. Es metadata de trazabilidad, no contenido del dibujo, y el artefacto la exige para acreditar coherencia con la matriz",
+        "La actualizacion de la MIPER no gatilla revision del mapa: no hay evento ni estado de revision pendiente",
+        "Sin fecha de elaboracion; version fija en 1 porque MAPA_RIESGOS no esta en TIPOS_PROCEDIMIENTO",
+        "Mutable despues de firmado via PUT /documents/{id}, sin hash de integridad"
+      ],
+      "fuera_de_alcance": [
+        "Dibujo o esquema del lugar de trabajo con indicacion de los principales riesgos existentes"
+      ],
+      "acciones": [
+        "Agregar campo miperVersionId al documento MAPA_RIESGOS y marcarlo como desactualizado cuando la MIPER vigente sea posterior",
+        "Emitir evento miper.updated que ponga el mapa en estado revision_pendiente",
+        "Incluir MAPA_RIESGOS en TIPOS_PROCEDIMIENTO"
+      ],
+      "fuf": [
+        53
+      ]
+    },
+    {
+      "id": "D-09",
+      "nombre": "Evaluacion anual del cumplimiento del PTP",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 20,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:75",
+        "Frontend/src/utils/ds44.ts:273",
+        "Frontend/src/pages/ObraDetalle.tsx:2451",
+        "Frontend/src/pages/Documents.tsx:129",
+        "Backend/lib/services/RegistroService.js:629"
+      ],
+      "brechas": [
+        "NAVEGACION ROTA: el boton Gestionar (ObraDetalle.tsx:2468) navega a /documents?obraId=...&tipo=EVALUACION_DESEMPENO, pero Documents.tsx solo lee el parametro 'doc' (Documents.tsx:129) e ignora tipo y obraId, y el tipo no figura en su mapa DOCUMENT_TYPES (33-51) ni en tiposCreables. El flujo termina en una pantalla que no puede crear el documento",
+        "METADATA ESTRUCTURADA AUSENTE: no existe entidad que consuma las seis fuentes de evidencia de la fase CHECK (cumplimiento del PTP, indicadores de siniestralidad, resultados de vigilancia, investigaciones, actas del CPHS, prescripciones pendientes)",
+        "El porcentaje de medidas ejecutadas es irresoluble hoy: RegistroService.js:629 lo deja en null porque no existe el PTP (ver D-06)",
+        "Las desviaciones detectadas no generan medidas correctivas trazables: la bisagra CHECK-ACT que el artefacto exige no esta cerrada",
+        "La periodicidad al menos anual no se controla; el propio catalogo interno la declara pendiente ('duda experto #7: periodicidad', ds44.ts:279)",
+        "Firma del responsable de la gestion preventiva y del representante legal imposible por ausencia de ambos roles",
+        "Sin fecha de aprobacion, sin versionado y mutable post firma"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion de la evaluacion de eficacia de las acciones programadas",
+        "Redaccion de las causas de las desviaciones e incumplimientos"
+      ],
+      "acciones": [
+        "Hacer que Documents.tsx honre los parametros tipo y obraId, e incorporar EVALUACION_DESEMPENO, INFORME_ANUAL_GESTION, PLAN_EMERGENCIAS y VIGILANCIA_AMBIENTAL a su mapa DOCUMENT_TYPES",
+        "Crear entidad EvaluacionPtp con periodo, porcentajeEjecutado calculado desde las medidas del PTP, desviaciones[] y medidasMejora[] con responsable y plazo",
+        "Forzar que cada desviacion registrada genere una medida correctiva, para no romper la cadena CHECK-ACT"
+      ],
+      "fuf": [
+        20
+      ]
+    },
+    {
+      "id": "D-10",
+      "nombre": "Informe anual de gestion preventiva",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 20,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:76",
+        "Frontend/src/utils/ds44.ts:282",
+        "Frontend/src/pages/ObraDetalle.tsx:2452",
+        "Frontend/src/pages/ObraDetalle.tsx:414",
+        "Backend/lib/models/Persona.js:10"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA INCORRECTA: el gating por tramo usa activeWorkers.length > 100 (ObraDetalle.tsx:2452), que cuenta trabajadores DE LA OBRA, mientras el resto de la aplicabilidad usa tamanoEntidad a nivel empresa (ObraDetalle.tsx:414). Dos fuentes distintas para el mismo tramo, y ninguna validada en backend",
+        "El Departamento de Prevencion de Riesgos, que determina la aplicabilidad del artefacto, no existe como entidad en el modelo",
+        "No existe el rol Experto en Prevencion a cargo del Departamento, exigido como firmante",
+        "El acceso de lectura para CPHS, trabajadores y representantes no es representable (no existe rol CPHS) y no hay log de acceso a documentos en el sistema, que es lo que acredita la puesta a disposicion",
+        "Misma navegacion rota que D-09: el boton Gestionar lleva a Documents.tsx, que no conoce el tipo INFORME_ANUAL_GESTION",
+        "Sin fecha de aprobacion, sin versionado y mutable post firma"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion de la gestion preventiva del periodo",
+        "Estadisticas y cumplimiento del programa expuestos en el informe"
+      ],
+      "acciones": [
+        "Unificar el tramo en tramoDS44(dotacion) del backend y condicionar el artefacto a 101 o mas, declarandolo NO APLICA en el indice del expediente bajo ese tramo",
+        "Agregar los roles experto_prevencion y cphs a ROLES, y exigir experto_prevencion como firmante",
+        "Registrar accesos de lectura al documento en una tabla de auditoria"
+      ],
+      "fuf": [
+        43
+      ]
+    },
+    {
+      "id": "D-11",
+      "nombre": "Programa de vigilancia ambiental",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 10,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:69",
+        "Frontend/src/utils/ds44.ts:240",
+        "Frontend/src/pages/Documents.tsx:33"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe relacion entre factores de riesgo y protocolos MINSAL aplicables, ni catalogo de protocolos con estado de incorporacion. Es la metadata que resuelve la aplicabilidad del artefacto y no puede vivir dentro del PDF",
+        "El protocolo psicosocial (CEAL-SM/SUSESO, RE 1.448/2022), que el artefacto declara universal y siempre activo sin diagnostico previo, no existe en el sistema",
+        "Los protocolos condicionales (TMERT-EESS, PREXOR, PLANESI, MMC, radiacion UV, hipobaria, temperaturas extremas, plaguicidas) no existen: no hay forma de activarlos por presencia de factor",
+        "Las mediciones programadas y realizadas no tienen entidad: el item REG_EXAMENES esta declarado moduloPendiente true en ds44.ts:240",
+        "Sin constancia de solicitud al OAL, que el artefacto exige en lugar de firma",
+        "TIPIFICACION DEGRADADA: VIGILANCIA_AMBIENTAL figura solo como tipo historico (handler.js:66-69, comentado 'Tipos historicos (compatibilidad con datos previos)') y no aparece en el mapa DOCUMENT_TYPES del frontend (Documents.tsx:33-51), por lo que no es seleccionable ni etiquetable en la UI"
+      ],
+      "fuera_de_alcance": [
+        "Descripcion de los agentes o factores identificados dentro del documento"
+      ],
+      "acciones": [
+        "Crear catalogo ProtocoloMinsal con activacion universal para el psicosocial y condicional por factor de riesgo declarado en la obra",
+        "Crear entidad MedicionAmbiental (protocolo, fechaProgramada, fechaRealizada, resultado, s3Key) vinculada al programa",
+        "Crear entidad SolicitudVigilanciaOAL con fecha generada por el sistema",
+        "Promover VIGILANCIA_AMBIENTAL a tipo vigente e incorporarlo al mapa DOCUMENT_TYPES del frontend"
+      ],
+      "fuf": [
+        54
+      ]
+    },
+    {
+      "id": "D-12",
+      "nombre": "Programa de vigilancia de la salud",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 35,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:51",
+        "Backend/lib/models/Persona.js:115",
+        "Backend/lib/services/RegistroService.js:233",
+        "Backend/lib/services/RegistroService.js:270",
+        "Backend/lib/permissions.js:28",
+        "Frontend/src/utils/ds44.ts:239"
+      ],
+      "brechas": [
+        "La nomina de personas expuestas es digitada, no derivada: Persona.vigilanciaSalud (Persona.js:115-120) guarda enVigilancia, protocolos y aptitudLaboral como datos manuales. El artefacto exige que la nomina se derive de la MIPER por puesto",
+        "Los examenes programados y realizados no tienen entidad: el item REG_VIGILANCIA esta declarado moduloPendiente true en ds44.ts:239",
+        "Sin constancia de solicitud de incorporacion al OAL, que el artefacto exige en lugar de firma",
+        "Control de acceso reforzado incompleto: existe el permiso PERSONA_VIGILANCIA_SALUD (permissions.js:28) pero no hay log de acceso, que es lo que acredita el resguardo de datos de salud ante fiscalizacion",
+        "El estado de vigilancia se consolida solo dentro del registro del Art. 72 (RegistroService.js:270-284); no hay documento D-12 propio exportable con su metadata"
+      ],
+      "fuera_de_alcance": [
+        "Descripcion del protocolo aplicable dentro del documento del programa"
+      ],
+      "acciones": [
+        "Derivar la nomina de expuestos desde la MIPER por puesto cuando exista version estructurada, dejando vigilanciaSalud como estado y no como fuente",
+        "Crear entidad SolicitudVigilanciaOAL (protocolo, fechaSolicitud generada por el sistema, respuesta)",
+        "Agregar log de acceso sobre los datos de vigilancia de salud",
+        "Exponer D-12 como documento exportable con la nomina y su estado, no solo como seccion del registro Art. 72"
+      ],
+      "fuf": [
+        55
+      ]
+    },
+    {
+      "id": "D-13",
+      "nombre": "Plan de gestion, reduccion y respuesta ante emergencias, catastrofes o desastres",
+      "clase": "A",
+      "estado": "INCOMPLETO",
+      "cobertura": 65,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:59",
+        "Backend/handlers/documents/handler.js:94",
+        "Backend/handlers/documents/handler.js:348",
+        "Frontend/src/utils/ds44.ts:61",
+        "Frontend/src/utils/ds44.ts:238"
+      ],
+      "brechas": [
+        "Firma del representante legal imposible por ausencia del rol",
+        "Sin fecha de aprobacion ni de vigencia, y sin control de la revision periodica ni de la prueba de ensayo al menos anual",
+        "Sin relacion jerarquica con los procedimientos derivados (P-04): PROCEDIMIENTO_EVACUACION y PROCEDIMIENTO_RIESGO_GRAVE existen como tipos hermanos e independientes (ds44.ts:213-214), por lo que un plan sin procedimientos derivados no se detecta como incompleto",
+        "Sin vinculo con el registro de ensayo anual (R-35): REG_ENSAYO_EMERGENCIA es un read-model de actividades tipo SIMULACRO (ds44.ts:238) sin referencia al documentoId del plan ensayado, por lo que la evidencia del ensayo queda huerfana",
+        "La firma no incorpora hash del contenido (FirmaService.js:141-174)"
+      ],
+      "fuera_de_alcance": [
+        "Eventos internos y externos conocidos, probables y previsibles",
+        "Mecanismos de actuacion",
+        "Procedimiento de evacuacion y traslado de personas afectadas"
+      ],
+      "acciones": [
+        "Agregar campo planEmergenciaId a los procedimientos derivados y a la actividad SIMULACRO, y marcar el plan como incompleto si le faltan procedimientos derivados o el ensayo del periodo",
+        "Exigir firma del rol representante_legal",
+        "Agregar fechaAprobacion y control de vigencia anual con alerta de ensayo pendiente"
+      ],
+      "fuf": [
+        22,
+        24,
+        27
+      ]
+    },
+    {
+      "id": "P-01",
+      "nombre": "Trabajo seguro en maquinas, equipos y herramientas motrices",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 45,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:57",
+        "Backend/handlers/documents/handler.js:93",
+        "Backend/handlers/documents/handler.js:348",
+        "Frontend/src/utils/ds44.ts:209",
+        "Backend/lib/models/Obra.js:73",
+        "Backend/lib/catalogos-actividad.js:23"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe entidad Maquina o Equipo. Lo mas cercano es el catalogo 'recursos' de catalogos-actividad.js:23-33 (BETONERA, ANDAMIO, ESMERIL, TALADRO, SOLDADORA, GRUA, HERRAMIENTAS_MANO, PLATAFORMA_ELEVADORA, GENERADOR, COMPRESOR), que es una lista de seleccion para el registro de actividades, sin manual ni ficha tecnica adjuntos y sin identidad por unidad",
+        "Sin vinculo al registro R-15: no hay relacion trabajador a equipo que permita acreditar a quien se informo sobre que maquina",
+        "El programa preventivo de operacion y mantenimiento no tiene entidad ni fechas programadas",
+        "Sin fecha de aprobacion ni de vigencia del procedimiento (el flujo de nuevaVersion registra ultimaPublicacionPor y updatedAt, no aprobacion)",
+        "La difusion no esta garantizada: estadoDocumento (ObraDetalle.tsx:420-430) marca el procedimiento como 'completo' con solo tener archivo cuando no hay firmantes asignados (total === 0), de modo que un procedimiento sin ningun acuse cuenta como cumplido",
+        "La aplicabilidad se resuelve solo en frontend: evalAplicabilidad con condicion 'tiene_maquinaria' (ds44.ts:209) leyendo obra.tieneMaquinaria, sin contraparte en backend"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion del procedimiento de trabajo seguro",
+        "Contenido del programa preventivo de operacion y mantenimiento"
+      ],
+      "acciones": [
+        "Crear entidad Equipo (obraId, tipo, identificador, manualS3Key, fichaTecnicaS3Key, procedimientoDocumentId) y relacion Equipo-Persona como base de R-15",
+        "Agregar fechaAprobacion y fechaVigencia al flujo de nuevaVersion",
+        "En estadoDocumento, no considerar 'completo' un procedimiento con cero firmantes asignados cuando la norma exige difusion a quienes deben aplicarlo",
+        "Espejar evalAplicabilidad en backend para que la aplicabilidad sea verificable fuera de la UI"
+      ],
+      "fuf": [
+        12
+      ]
+    },
+    {
+      "id": "P-02",
+      "nombre": "Utilizacion de agentes fisicos, quimicos y biologicos",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 45,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:58",
+        "Backend/handlers/documents/handler.js:93",
+        "Frontend/src/utils/ds44.ts:210",
+        "Backend/lib/models/Obra.js:74",
+        "Frontend/src/utils/ds44.ts:197"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe catalogo de sustancias ni entidad para la hoja de datos de seguridad. La unica mencion a HDS en todo el repositorio es una cadena descriptiva dentro de un item de EPP ('Respirador medio rostro (filtro segun HDS)', ds44.js:53)",
+        "Sin vinculo al contenido del acta IRL: el artefacto debe alimentar la letra d) del R-14 y no hay relacion entre sustancias y la plantilla de IRL, que es un archivo estatico cargado por tenant u obra",
+        "Sin fecha de aprobacion ni de vigencia del procedimiento",
+        "Misma brecha de difusion que P-01: un procedimiento sin firmantes asignados cuenta como completo",
+        "La aplicabilidad se resuelve solo en frontend (ds44.ts:210). Nota positiva: obra.agentesFQB no tiene default (Obra.js:74) y evalAplicabilidad devuelve 'verificar' cuando falta el dato (ds44.ts:197), que es el comportamiento correcto para no ocultar la exigencia"
+      ],
+      "fuera_de_alcance": [
+        "Caracteristicas de los productos y sustancias",
+        "Condiciones de uso y manipulacion segura redactadas en el procedimiento"
+      ],
+      "acciones": [
+        "Crear entidad Sustancia (obraId, nombre, tipo, hdsS3Key, fechaVigenciaHds) vinculada al procedimiento y a la plantilla de IRL",
+        "Agregar fechaAprobacion y fechaVigencia al flujo de nuevaVersion",
+        "Espejar evalAplicabilidad en backend"
+      ],
+      "fuf": [
+        22
+      ]
+    },
+    {
+      "id": "P-03",
+      "nombre": "Utilizacion, mantenimiento, reposicion o recambio de EPP",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 50,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:56",
+        "Backend/handlers/documents/handler.js:93",
+        "Backend/lib/services/EppService.js:26",
+        "Backend/lib/services/EppService.js:33",
+        "Backend/lib/services/EppService.js:62",
+        "Frontend/src/utils/ds44.ts:211"
+      ],
+      "brechas": [
+        "El procedimiento no esta vinculado a la logica de reposicion: EppService implementa reposicion con motivo tipificado (MOTIVOS_REPOSICION = desgaste, perdida, accidente, cambio_talla, otro, EppService.js:26, validado en linea 40) y la entrega acepta esReposicion y motivoReposicion (EppService.js:33), pero ninguna entrega referencia el documentoId del PROCEDIMIENTO_EPP vigente ni sus criterios",
+        "Sin criterios de recambio por vida util: EppService.js:62 fija fechaCaducidad en null de forma incondicional al crear la entrega, por lo que no hay control de vencimiento ni gatillante de recambio",
+        "Sin fecha de aprobacion ni de vigencia del procedimiento",
+        "Misma brecha de difusion que P-01: un procedimiento sin firmantes asignados cuenta como completo",
+        "La aplicabilidad esta fijada como 'siempre' (ds44.ts:211) sin evaluar si hay EPP, lo que es conservador y correcto para construccion, pero no se deriva de dato alguno"
+      ],
+      "fuera_de_alcance": [
+        "Criterios de utilizacion, mantenimiento, reposicion y recambio redactados en el procedimiento"
+      ],
+      "acciones": [
+        "Agregar procedimientoDocumentId a la entrega de EPP para anclar cada reposicion al procedimiento vigente al momento de la entrega",
+        "Reemplazar el fechaCaducidad null de EppService.js:62 por la vida util del modelo de EPP, habilitando alerta de recambio",
+        "Agregar fechaAprobacion y fechaVigencia al flujo de nuevaVersion"
+      ],
+      "fuf": [
+        17
+      ]
+    },
+    {
+      "id": "P-04",
+      "nombre": "Procedimientos derivados del plan de emergencias",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:34",
+        "Backend/handlers/documents/handler.js:92",
+        "Frontend/src/utils/ds44.ts:212",
+        "Frontend/src/utils/ds44.ts:213"
+      ],
+      "brechas": [
+        "No existe el artefacto como tal: no hay tipo de documento para 'procedimiento derivado', ni campo que relacione un procedimiento con el plan de emergencias del que deriva",
+        "METADATA ESTRUCTURADA AUSENTE: la relacion jerarquica con D-13 no existe. PLAN_EMERGENCIAS, PROCEDIMIENTO_EVACUACION y PROCEDIMIENTO_RIESGO_GRAVE conviven como tipos hermanos y planos en DS44_DO_PROCEDIMIENTOS (ds44.ts:212-214), sin padre ni hijos",
+        "En consecuencia, un plan de emergencias sin procedimientos derivados no se detecta como incompleto, que es exactamente lo que el artefacto pide al sistema",
+        "No hay catalogo de tipos de emergencia identificada contra el cual verificar que exista un procedimiento por cada una"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion de los procedimientos especificos por tipo de emergencia"
+      ],
+      "acciones": [
+        "Agregar campo planEmergenciaId a los documentos de tipo procedimiento derivado y un catalogo de tiposEmergencia declarados en el plan",
+        "Calcular el estado del plan como incompleto mientras existan tipos de emergencia declarados sin procedimiento derivado asociado"
+      ],
+      "fuf": [
+        27
+      ]
+    },
+    {
+      "id": "P-05",
+      "nombre": "Actuacion ante riesgo grave o inminente",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 40,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:60",
+        "Backend/handlers/documents/handler.js:94",
+        "Frontend/src/utils/ds44.ts:213",
+        "Backend/handlers/incidents-module/incidents.repository.js:182",
+        "Frontend/src/pages/Incidents.tsx:717"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe el tipo de evento Riesgo Grave e Inminente en el modulo de incidentes. Los tipos son accidente, incidente, condicion_subestandar y accion_subestandar (Incidents.tsx:717-724, clasificados en incidents.repository.js:182), por lo que el procedimiento no tiene gatillante y no puede producir el registro R-36",
+        "Sin encadenamiento hacia R-36: no hay entidad ni flujo que capture deteccion, informacion a los afectados, medidas, suspension de faenas, evacuacion y aviso a la Inspeccion del Trabajo",
+        "Sin fecha de aprobacion ni de vigencia del procedimiento",
+        "Misma brecha de difusion que P-01: un procedimiento sin firmantes asignados cuenta como completo"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion de las medidas de eliminacion o atenuacion, suspension de faenas y evacuacion"
+      ],
+      "acciones": [
+        "Agregar el tipo riesgo_grave_inminente al catalogo de incidentes y enlazarlo al PROCEDIMIENTO_RIESGO_GRAVE vigente",
+        "Crear el flujo de R-36 con timestamps de deteccion y notificacion generados por el sistema",
+        "Agregar fechaAprobacion y fechaVigencia al flujo de nuevaVersion"
+      ],
+      "fuf": [
+        26
+      ]
+    },
+    {
+      "id": "P-06",
+      "nombre": "Evacuacion y traslado de personas afectadas",
+      "clase": "A",
+      "estado": "INCOMPLETO",
+      "cobertura": 55,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:61",
+        "Backend/handlers/documents/handler.js:94",
+        "Backend/handlers/documents/handler.js:348",
+        "Frontend/src/utils/ds44.ts:214",
+        "Frontend/src/pages/ObraDetalle.tsx:420"
+      ],
+      "brechas": [
+        "Sin fecha de aprobacion ni de vigencia: nuevaVersion registra ultimaPublicacionPor, ultimaPublicacionNombre y updatedAt (handler.js:411-433), pero ninguna fecha de aprobacion formal ni ventana de vigencia",
+        "La difusion a quienes deben aplicarlo no esta garantizada: estadoDocumento (ObraDetalle.tsx:420-430) marca el procedimiento como 'completo' con solo tener archivo cuando no hay firmantes asignados",
+        "El evento document.version.updated (handler.js:437-449) notifica solo a firmantesPrevios, es decir a quienes ya estaban asignados. Si nadie lo estaba, una nueva version no se difunde a nadie",
+        "La firma no incorpora hash del contenido (FirmaService.js:141-174)"
+      ],
+      "fuera_de_alcance": [
+        "Rutas de evacuacion",
+        "Responsables",
+        "Mecanismos de traslado",
+        "Reutilizacion del contenido por la plantilla del acta IRL"
+      ],
+      "acciones": [
+        "Agregar fechaAprobacion y fechaVigencia al flujo de nuevaVersion",
+        "En estadoDocumento, no considerar 'completo' un procedimiento con cero firmantes asignados",
+        "Agregar hashContenido a la firma"
+      ],
+      "fuf": [
+        22
+      ]
+    },
+    {
+      "id": "P-07",
+      "nombre": "Investigacion de accidentes con metodologia de arbol de causas",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 40,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:62",
+        "Backend/handlers/documents/handler.js:95",
+        "Backend/handlers/incidents-module/incidents.repository.js:638",
+        "Backend/lib/services/RegistroService.js:455",
+        "Backend/handlers/ai-assistant/handler.js:1"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe campo de metodologia declarada. addInvestigation (incidents.repository.js:638-680) valida un campo 'tipo' cuyos valores son prevencionista, jefe_directo y comite_paritario, que identifican al investigador y no a la metodologia indicada por el Organismo Administrador",
+        "La autoria humana de la conclusion no se registra: existen endpoints de apoyo IA (aiAnalyzeIncident, aiExtractIncident) pero ningun campo deja constancia de que se uso IA ni de quien valido la conclusion. El artefacto lo exige expresamente",
+        "El enfoque de genero y la participacion de trabajadores o sus representantes no tienen campo propio: entrevistados existe en el snapshot (RegistroService.js:478) pero sin distinguir representacion",
+        "Sin fecha de aprobacion ni de vigencia del procedimiento",
+        "Nota positiva: el informe de investigacion si se firma con hash reproducible (RegistroService.js:481 calcula hashSnapshot y lo adjunta en metadata de la firma), a diferencia del resto de los documentos del sistema"
+      ],
+      "fuera_de_alcance": [
+        "Descripcion de la metodologia de arbol de causas dentro del procedimiento"
+      ],
+      "acciones": [
+        "Agregar campo metodologia tipificado al procedimiento y a cada investigacion, con el valor indicado por el OAL",
+        "Agregar campos asistidoPorIA y conclusionValidadaPor (personaId) al registro de investigacion",
+        "Agregar rol de representacion a entrevistados para acreditar la participacion exigida"
+      ],
+      "fuf": [
+        38,
+        59
+      ]
+    },
+    {
+      "id": "P-08",
+      "nombre": "Gestion de cambios en procesos, tecnologias, materiales o estructura",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 40,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:63",
+        "Backend/handlers/documents/handler.js:95",
+        "Backend/handlers/documents/handler.js:348",
+        "Frontend/src/utils/ds44.ts:216"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe entidad Cambio. El procedimiento es un documento versionado, pero nada representa un cambio concreto de proceso, tecnologia, material o estructura",
+        "Sin encadenamiento: el artefacto exige que el cambio dispare nuevo IRL, revision de la MIPER y consulta a los representantes. No hay evento ni flujo que lo haga, por lo que el procedimiento no produce efecto en el sistema",
+        "Sin fecha de aprobacion ni de vigencia del procedimiento",
+        "Misma brecha de difusion que P-01: un procedimiento sin firmantes asignados cuenta como completo"
+      ],
+      "fuera_de_alcance": [
+        "Criterios de evaluacion del cambio redactados en el procedimiento"
+      ],
+      "acciones": [
+        "Crear entidad Cambio (obraId, tipo, descripcion, fechaDeteccion) que al registrarse emita eventos de nuevo IRL, revision de MIPER y consulta pendiente",
+        "Agregar fechaAprobacion y fechaVigencia al flujo de nuevaVersion"
+      ],
+      "fuf": [
+        21,
+        25
+      ]
+    },
+    {
+      "id": "P-09",
+      "nombre": "Coordinacion y cooperacion entre entidades empleadoras",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 30,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:64",
+        "Backend/handlers/documents/handler.js:95",
+        "Frontend/src/utils/ds44.ts:217",
+        "Backend/lib/models/Obra.js:68",
+        "Backend/lib/models/Obra.js:72",
+        "ARCHITECTURE.md:20"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe entidad de entidad empleadora participante. Obra.mandante es una cadena de texto libre (Obra.js:68) y no hay representacion de contratistas, subcontratistas ni trabajadores independientes sobre una misma obra",
+        "APLICABILIDAD OCULTADA POR DEFECTO: obra.faenaCompartida tiene default false (Obra.js:72) y evalAplicabilidad lo resuelve como 'no_aplica' (ds44.ts:193, 217). En construccion la faena compartida es la regla, por lo que el comportamiento por defecto retira del checklist un procedimiento casi siempre exigible. Contrasta con obra.agentesFQB, que no tiene default y devuelve 'verificar'",
+        "No existe mecanismo de evidencia compartida entre entidades: el aislamiento multi tenant es estricto por diseno (ARCHITECTURE.md:20-24, tenantId extraido del JWT y nunca del body) y no hay ninguna via de comparticion controlada entre tenants",
+        "Sin fecha de aprobacion ni de vigencia del procedimiento",
+        "Misma brecha de difusion que P-01: un procedimiento sin firmantes asignados cuenta como completo"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion de los mecanismos de informacion mutua y coordinacion de medidas"
+      ],
+      "acciones": [
+        "Cambiar el default de obra.faenaCompartida a undefined para que evalAplicabilidad devuelva 'verificar' en lugar de ocultar el procedimiento",
+        "Crear entidad EntidadParticipante (obraId, tenantIdInvitado, rol mandante/contratista/subcontratista/independiente) como base de P-09 y R-37",
+        "Disenar el modelo de comparticion de evidencia entre tenants sobre una obra comun antes de abordar R-37"
+      ],
+      "fuf": [
+        29
+      ]
+    },
+    {
+      "id": "P-10",
+      "nombre": "Consulta y participacion de las personas trabajadoras",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 40,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:65",
+        "Backend/handlers/documents/handler.js:95",
+        "Backend/handlers/documents/handler.js:348",
+        "Frontend/src/utils/ds44.ts:218"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe entidad Consulta. El procedimiento no produce el registro R-19 que el artefacto declara como su salida",
+        "Sin campos para materias sujetas a consulta, oportunidad, destinatarios ni forma de registro: son metadata de trazabilidad, no redaccion del procedimiento",
+        "No hay destinatarios por rol normativo: CPHS, Delegado de SST y dirigentes sindicales no existen en ROLES (Persona.js:10-42)",
+        "Sin fecha de aprobacion ni de vigencia del procedimiento",
+        "Misma brecha de difusion que P-01: un procedimiento sin firmantes asignados cuenta como completo"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion de las materias sujetas a consulta y su oportunidad dentro del procedimiento"
+      ],
+      "acciones": [
+        "Crear entidad Consulta (obraId, materia, artefactoConsultadoId, fecha, participantes, observacionesRecibidas) vinculable a MIPER, PTP, Reglamento Interno, cambios e investigaciones",
+        "Agregar los roles cphs, delegado_sst y dirigente_sindical a ROLES para poder nombrar destinatarios",
+        "Agregar fechaAprobacion y fechaVigencia al flujo de nuevaVersion"
+      ],
+      "fuf": [
+        25
+      ]
+    },
+    {
+      "id": "P-11",
+      "nombre": "Traslado de puesto de trabajo",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:73",
+        "Backend/handlers/documents/handler.js:92",
+        "Backend/lib/models/Persona.js:125",
+        "Backend/lib/services/PersonaService.js:285"
+      ],
+      "brechas": [
+        "El procedimiento no existe: TRASLADO_PUESTO (handler.js:73) esta declarado bajo 'Fase HACER - eventos sobrevinientes', es decir modela el registro R-28 y no el procedimiento P-11. No hay tipo de documento para el procedimiento de traslado",
+        "TRASLADO_PUESTO no esta en TIPOS_PROCEDIMIENTO (handler.js:92-96), por lo que ni siquiera accede al versionado con re-firma del que disfruta el resto de la familia P, y queda expuesto a la mutabilidad post firma de PUT /documents/{id}",
+        "METADATA ESTRUCTURADA AUSENTE: la validacion cruzada de que el puesto de destino no tenga en su MIPER el riesgo de origen es imposible, porque no existen ni puesto de trabajo como entidad ni MIPER estructurada por puesto",
+        "Persona.restriccionLaboral (Persona.js:125) es un campo libre sin estructura de puesto de origen, puesto de destino ni prescripcion del OAL",
+        "La aplicabilidad 'si hay enfermedad profesional diagnosticada' no se resuelve: no existe estado de diagnostico de EP en el modelo"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion de los criterios de traslado y de resguardo de remuneraciones"
+      ],
+      "acciones": [
+        "Agregar tipo PROCEDIMIENTO_TRASLADO_PUESTO a DOCUMENT_TYPES e incluirlo en TIPOS_PROCEDIMIENTO",
+        "Crear entidad PuestoTrabajo y anclar a ella la MIPER estructurada, requisito previo de la validacion cruzada",
+        "Agregar estado de diagnostico de EP en Persona para resolver la aplicabilidad"
+      ],
+      "fuf": [
+        57
+      ]
+    },
+    {
+      "id": "R-01",
+      "nombre": "Acta de constitucion del CPHS y comprobante de registro en la Direccion del Trabajo",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/models/Persona.js:10",
+        "Backend/handlers/activities/handler.js:21",
+        "Frontend/src/utils/ds44.ts:198",
+        "Backend/handlers/activities/handler.js:129"
+      ],
+      "brechas": [
+        "El CPHS no existe como entidad: no hay tabla, modelo ni rol. Lo unico que existe son un tipo de actividad REUNION_COMITE (activities/handler.js:21), dos subtipos de capacitacion CPHS_ORIENTACION y CPHS_20H (33-34), un slot de investigacion comiteParitario (incidents.repository.js:202) y una condicion de aplicabilidad en frontend (ds44.ts:198). Ninguno modela integrantes, representacion ni mandato",
+        "No hay campos de fecha de eleccion de los representantes ni de fecha de registro en la Direccion del Trabajo, ni adjunto del acta de constitucion ni del comprobante",
+        "PLAZO CRITICO NO CALCULADO: los 15 dias habiles entre eleccion y registro no se calculan en ninguna parte. No existe calendario de feriados chilenos en el repositorio; la unica logica de dias laborales es generarFechasRecurrencia (activities/handler.js:129-131), que excluye sabado y domingo y declara explicitamente que 'los feriados se ignoran a proposito'. Aun reutilizandola, el calculo seria incorrecto",
+        "No hay integrantes titulares ni suplentes por representacion (empleador / trabajadores)",
+        "Sin control de vigencia por mandato del comite",
+        "La aplicabilidad por tramo (mas de 25 personas trabajadoras) solo se resuelve en frontend (ds44.ts:198, n >= 26) y sobre la dotacion de la empresa, no por empresa, faena, sucursal o agencia"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion del acta de constitucion",
+        "Contenido del comprobante de registro emitido por la Direccion del Trabajo"
+      ],
+      "acciones": [
+        "Crear entidad Cphs (tenantId, obraId, fechaEleccion, integrantes[{personaId, representacion, calidad}], fechaRegistroDT, comprobanteS3Key, vigenciaHasta)",
+        "Incorporar calendario de feriados chilenos y una utilidad diasHabiles(desde, hasta) en lib/utils, usada para validar el plazo de 15 dias habiles con alerta",
+        "Espejar en backend la condicion de tramo y calcularla sobre la dotacion de la faena"
+      ],
+      "fuf": [
+        30,
+        32
+      ]
+    },
+    {
+      "id": "R-02",
+      "nombre": "Actas de reuniones del CPHS",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 25,
+      "codigo": [
+        "Backend/handlers/activities/handler.js:21",
+        "Backend/handlers/activities/handler.js:218",
+        "Backend/handlers/activities/handler.js:656",
+        "Backend/handlers/activities/handler.js:877",
+        "Frontend/src/utils/ds44.ts:241"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe el campo tipo de reunion (ordinaria o extraordinaria). La actividad solo tiene tipo REUNION_COMITE, titulo y descripcion (activities/handler.js:218-248)",
+        "CONTENIDO MINIMO: no existe el campo causal, exigido en las extraordinarias (peticion conjunta de miembros, accidente fatal o grave, riesgo grave e inminente)",
+        "CONTENIDO MINIMO: las materias tratadas y los acuerdos solo pueden ir en el campo libre descripcion. El catalogo exige que los acuerdos sean entidades con plazo y responsable, porque de otro modo no se puede demostrar el seguimiento del plazo",
+        "Sin periodicidad mensual controlada para las ordinarias: no hay scheduler de vigencias y checkActivityAlerts (scheduler/handler.js:56) solo revisa las actividades del dia",
+        "Sin disparador automatico de reunion extraordinaria desde el modulo de incidentes ante accidente fatal o grave o riesgo grave e inminente",
+        "El item REG_ACTAS_CPHS del panel esta declarado moduloPendiente true (ds44.ts:241), es decir la propia aplicacion lo reconoce como no implementado",
+        "Nota positiva: la asistencia se firma con PIN via FirmaService (activities/handler.js:656) y los campos de contenido quedan congelados una vez que hay firmas (877-881), de modo que el soporte de acta firmada e inmutable ya existe; lo que falta es la estructura del acta"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar a la actividad REUNION_COMITE los campos tipoReunion (ordinaria|extraordinaria) y causal tipificada, validados en backend",
+        "Crear entidad AcuerdoCphs (activityId, acuerdo, responsablePersonaId, plazo, estado) en lugar de texto libre en descripcion",
+        "Emitir desde incidents-module un evento que cree la reunion extraordinaria pendiente ante accidente fatal o grave y ante riesgo grave e inminente",
+        "Agregar control de periodicidad mensual con alerta de reunion ordinaria faltante"
+      ],
+      "fuf": [
+        34,
+        35
+      ]
+    },
+    {
+      "id": "R-03",
+      "nombre": "Comunicacion escrita de los acuerdos del CPHS a la entidad empleadora",
+      "clase": "B",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/activities/handler.js:21",
+        "Backend/handlers/inbox-module/inbox.repository.js:54"
+      ],
+      "brechas": [
+        "No existe accion de comunicacion de acuerdos: no hay acuerdos como entidad (ver R-02) ni flujo que los remita a la entidad empleadora",
+        "No hay acuse por parte de la entidad empleadora distinto de la publicacion del acta. El inbox tiene read y readAt (inbox.repository.js:54, 235-241), que podria servir de base, pero ningun flujo lo usa para este proposito",
+        "Sin campos de acuerdos comunicados, fecha y receptor",
+        "El CPHS no existe como emisor: no hay rol cphs en ROLES (Persona.js:10-42)"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Una vez creada AcuerdoCphs (ver R-02), agregar accion comunicarAcuerdos que genere un item de inbox dirigido al representante de la entidad empleadora y registre receptor, fecha de envio y readAt como acuse"
+      ],
+      "fuf": [
+        36
+      ]
+    },
+    {
+      "id": "R-04",
+      "nombre": "Entrega de documentacion preventiva al CPHS",
+      "clase": "B",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/models/Persona.js:10",
+        "Backend/lib/permissions.js:25",
+        "Backend/handlers/documents/handler.js:266"
+      ],
+      "brechas": [
+        "No existe el rol CPHS en ROLES (Persona.js:10-42), por lo que no hay a quien conceder lectura sobre el repositorio preventivo de la obra",
+        "No existe log de acceso ni de entrega sobre documentos: documents.get (handler.js:266-290) devuelve el item sin registrar quien lo consulto. El catalogo es explicito en que un permiso concedido sin log no acredita entrega",
+        "Sin campos de documentos entregados o puestos a disposicion, fecha y receptor"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar rol cphs a ROLES con lectura sobre el repositorio preventivo de la obra",
+        "Registrar cada lectura de documento en una tabla AccesoDocumento (documentId, personaId, timestamp) y exponerla como registro de entrega"
+      ],
+      "fuf": [
+        37
+      ]
+    },
+    {
+      "id": "R-05",
+      "nombre": "Acta de eleccion del Delegado de Seguridad y Salud en el Trabajo",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/models/Persona.js:10",
+        "Backend/handlers/activities/handler.js:35",
+        "Frontend/src/utils/ds44.ts:199"
+      ],
+      "brechas": [
+        "El Delegado de SST no existe como entidad ni como rol. Lo unico que existe es el subtipo de capacitacion DELEGADO (activities/handler.js:35), que acredita formacion y no eleccion",
+        "No hay tipo de documento para el acta de asamblea ni campos de fecha, asistentes y resultado de la eleccion",
+        "METADATA ESTRUCTURADA AUSENTE: no hay control de vencimiento a 2 anos ni alerta de nueva eleccion, que es lo que el artefacto pide expresamente al sistema",
+        "La aplicabilidad por tramo (10 a 25 personas trabajadoras) solo se resuelve en frontend (ds44.ts:199) y sobre la dotacion de la empresa. El corte del backend (TAMANOS, Tenant.js:16-21) situa ese rango dentro de 'pequena' 10-49, que no corresponde"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion del acta de asamblea"
+      ],
+      "acciones": [
+        "Agregar rol delegado_sst a ROLES y entidad DelegadoSst (obraId, personaId, fechaEleccion, actaS3Key, vigenciaHasta calculada a 2 anos)",
+        "Agregar alerta de vencimiento del mandato con antelacion configurable"
+      ],
+      "fuf": [
+        39,
+        40
+      ]
+    },
+    {
+      "id": "R-06",
+      "nombre": "Certificados de capacitacion de los integrantes del CPHS",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 20,
+      "codigo": [
+        "Backend/handlers/activities/handler.js:33",
+        "Backend/handlers/activities/handler.js:34",
+        "Frontend/src/utils/ds44.ts:227",
+        "Frontend/src/utils/ds44.ts:228",
+        "Backend/handlers/activities/handler.js:656"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: el plazo del primer semestre del mandato no se controla, porque no existe fecha de eleccion del CPHS (ver R-01) desde la cual contar los 6 meses",
+        "No hay control por integrante: al no existir el CPHS como entidad con miembros, no se puede verificar que al menos un representante de la empresa y uno de los trabajadores completaron el curso de 20 horas",
+        "No hay adjunto de certificado por persona: el subtipo de capacitacion registra la actividad, no el certificado emitido",
+        "Sin alerta de plazo",
+        "Nota positiva: los subtipos CPHS_ORIENTACION y CPHS_20H existen como categorias estrictas (activities/handler.js:33-34, referidos en ds44.ts:227-228) y la asistencia se firma con PIN (656), de modo que la ejecucion de la capacitacion si queda acreditada"
+      ],
+      "fuera_de_alcance": [
+        "Contenido del curso de orientacion en prevencion de riesgos y del curso de 20 horas"
+      ],
+      "acciones": [
+        "Vincular las actividades de subtipo CPHS_ORIENTACION y CPHS_20H a los integrantes de la entidad Cphs y calcular el plazo de 6 meses desde fechaEleccion, con alerta por integrante",
+        "Agregar adjunto certificadoS3Key por persona en el registro de asistencia"
+      ],
+      "fuf": [
+        31
+      ]
+    },
+    {
+      "id": "R-07",
+      "nombre": "Designacion y certificado de capacitacion del Encargado de Gestion del Riesgo",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 15,
+      "codigo": [
+        "Backend/handlers/activities/handler.js:36",
+        "Frontend/src/utils/ds44.ts:230",
+        "Frontend/src/utils/ds44.ts:200",
+        "Backend/lib/models/Persona.js:10"
+      ],
+      "brechas": [
+        "APLICABILIDAD INCORRECTA: evalAplicabilidad resuelve la condicion encargado_oa como n > 0 && n <= 9 (ds44.ts:200), pero el artefacto aplica a entidades de hasta 100 personas trabajadoras que hayan designado encargado. El sistema retira la exigencia del checklist para todo el tramo de 10 a 100",
+        "No existe la designacion como entidad ni rol: no hay encargado_gestion_riesgo en ROLES (Persona.js:10-42), solo el subtipo de capacitacion ENCARGADO (activities/handler.js:36)",
+        "El elemento esta marcado cuenta false en ds44.ts:230 con la nota 'la entrega el OA', de modo que no incide en el porcentaje de cumplimiento y no genera pendiente visible",
+        "No hay adjunto del certificado de capacitacion emitido por el Organismo Administrador de la Ley 16.744 ni control de vigencia de la designacion"
+      ],
+      "fuera_de_alcance": [
+        "Contenido del certificado emitido por el Organismo Administrador"
+      ],
+      "acciones": [
+        "Corregir la condicion encargado_oa a n <= 100 en ds44.ts:200 y espejarla en backend",
+        "Agregar rol encargado_gestion_riesgo y entidad Designacion (obraId, personaId, fechaDesignacion, certificadoOalS3Key, vigenciaHasta)"
+      ],
+      "fuf": [
+        48
+      ]
+    },
+    {
+      "id": "R-08",
+      "nombre": "Designacion del experto e inscripcion en la SEREMI de Salud",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/models/Persona.js:10",
+        "Backend/lib/models/Tenant.js:16",
+        "Frontend/src/utils/ds44.ts:201"
+      ],
+      "brechas": [
+        "No existe el rol Experto en Prevencion ni el Departamento de Prevencion de Riesgos en el modelo: ROLES (Persona.js:10-42) no los contempla",
+        "No hay campos de designacion, categoria del experto, numero de registro en la SEREMI de Salud ni adjunto de la inscripcion. La busqueda de 'SEREMI' en todo el repositorio no arroja resultados",
+        "METADATA ESTRUCTURADA AUSENTE: sin control de vigencia de la inscripcion, que es lo unico que el artefacto pide al sistema",
+        "La aplicabilidad (mas de 100 personas trabajadoras) solo se resuelve en frontend (ds44.ts:201, n > 100) sobre la dotacion de la empresa, y el corte del backend es incorrecto"
+      ],
+      "fuera_de_alcance": [
+        "Contenido del certificado de inscripcion emitido por la SEREMI de Salud"
+      ],
+      "acciones": [
+        "Agregar rol experto_prevencion y entidad DepartamentoPrevencion (tenantId, expertoPersonaId, categoria, registroSeremi, inscripcionS3Key, vigenciaHasta) con alerta de vencimiento"
+      ],
+      "fuf": [
+        41
+      ]
+    },
+    {
+      "id": "R-09",
+      "nombre": "Registro de asistencia del encargado del Departamento de Prevencion",
+      "clase": "B",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/models/Persona.js:10",
+        "Backend/lib/models/Tenant.js:31",
+        "Backend/handlers/activities/handler.js:656"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: el tiempo de atencion exigido, calculado segun numero de personas trabajadoras y cotizacion generica, no se calcula ni se almacena en ninguna parte. El catalogo es explicito en que si el calculo esta ausente o hardcodeado el registro no acredita nada",
+        "CONTENIDO MINIMO: no hay asistencia efectiva del experto contrastable. El sistema registra asistencia firmada a actividades (activities/handler.js:656) pero no jornada ni dedicacion del encargado del Departamento",
+        "No existe comparacion automatica entre tiempo exigido y asistencia real, ni alerta por deficit",
+        "El Departamento de Prevencion no existe como entidad, y la cotizacion generica no es un dato del modelo (Tenant solo guarda cantidadTrabajadores, Tenant.js:31)"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo cotizacionGenerica al Tenant y una funcion tiempoAtencionExigido(dotacion, cotizacion) que persista el resultado como valor calculado y no digitado",
+        "Crear entidad AsistenciaExperto (expertoPersonaId, obraId, fecha, horas) y un read-model que compare acumulado real contra exigido, con alerta por deficit"
+      ],
+      "fuf": [
+        44,
+        45
+      ]
+    },
+    {
+      "id": "R-10",
+      "nombre": "Registro de actividades y funciones del CPHS",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 10,
+      "codigo": [
+        "Backend/handlers/incidents-module/incidents.repository.js:202",
+        "Backend/handlers/incidents-module/incidents.repository.js:646",
+        "Backend/handlers/incidents-module/incidents.repository.js:519",
+        "Backend/lib/models/Persona.js:10"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe campo de decision sobre negligencia inexcusable (Art. 47 letra d, concordante con Art. 70 Ley 16.744) en el modulo de investigacion. addInvestigation (incidents.repository.js:638-680) acepta hallazgos, recomendaciones y medidas, ninguno tipificado como esa decision",
+        "CONTENIDO MINIMO: no existe via de reporte del CPHS a la entidad empleadora ante riesgo grave e inminente (Art. 47 letra g), ni con acuse ni sin el. Ademas el evento riesgo grave e inminente no existe en el catalogo de incidentes (ver P-05)",
+        "No hay registro del ejercicio del resto de las funciones minimas",
+        "Nota parcial: existe un slot investigaciones.comiteParitario (incidents.repository.js:202, 519-521) y el valor comite_paritario entre los tiposValidos de investigacion (646), de modo que la funcion investigadora del CPHS si deja rastro, pero como investigacion generica y no como registro de funciones"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo tipificado negligenciaInexcusable (si|no|no_corresponde) mas fundamento a la investigacion cuando la realiza el comite paritario",
+        "Crear via de reporte del CPHS a la entidad empleadora con acuse, reutilizando read y readAt del inbox",
+        "Exponer un read-model de funciones ejercidas por el CPHS en el periodo"
+      ],
+      "fuf": [
+        33,
+        38
+      ]
+    },
+    {
+      "id": "R-11",
+      "nombre": "Difusion y firma de recepcion de la Politica de SST",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 65,
+      "codigo": [
+        "Backend/lib/ds44.js:90",
+        "Backend/handlers/documents/handler.js:465",
+        "Backend/handlers/documents/handler.js:532",
+        "Backend/handlers/inbox-module/inbox.repository.js:54",
+        "Backend/lib/services/FirmaService.js:141"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe el campo medio de difusion. La norma distingue aviso visible de correo electronico y el registro no lo captura",
+        "La difusion depende de que alguien asigne el documento: no hay asignacion automatica a la dotacion de la obra, de modo que la cobertura del 100 por ciento del personal no esta garantizada ni es visible como brecha",
+        "La firma de recepcion no incorpora hash del contenido (FirmaService.js:141-174), por lo que no se puede acreditar que se firmo la version que se difundio",
+        "Nota positiva: es el artefacto mejor cubierto del bloque. La Politica esta en el kit con accion DIFUSION_FIRMA (ds44.js:90); assign (handler.js:465-555) registra destinatario, fechaAsignacion y estado, y emite document.assigned que genera item de inbox con read y readAt (inbox.repository.js:54, 235-241); la firma con PIN queda en SignaturesTable con fecha, horario, timestamp e IP"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo medioDifusion tipificado (aviso_visible|correo|app|presencial) a la asignacion",
+        "Agregar accion de difusion masiva a la dotacion activa de la obra y exponer el porcentaje de cobertura como indicador",
+        "Agregar hashContenido a la firma"
+      ],
+      "fuf": [
+        1
+      ]
+    },
+    {
+      "id": "R-12",
+      "nombre": "Registro de difusion de la MIPER",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 35,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:465",
+        "Backend/lib/models/Persona.js:10",
+        "Backend/handlers/inbox-module/inbox.repository.js:54"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: faltan destinatarios nombrados expresamente por la norma. No existen en ROLES (Persona.js:10-42) el comite paritario, el delegado de SST ni los DIRIGENTES SINDICALES, que el catalogo senala como el rol mas omitido en el modelo de datos",
+        "CONTENIDO MINIMO: no hay constancia de disponibilidad de la MIPER en el lugar de trabajo, distinta de la difusion individual",
+        "No hay difusion a la linea de mando como grupo: la asignacion es persona a persona sin concepto de destinatario por rol",
+        "El registro hereda la debilidad de D-04: al no versionarse la MIPER, no se puede acreditar que version se difundio",
+        "Nota positiva: el mecanismo generico de asignacion con acuse (assign, inbox read y readAt) y firma con PIN aplica a la MIPER como a cualquier documento"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar los roles cphs, delegado_sst y dirigente_sindical a ROLES y permitir asignar por rol ademas de por persona",
+        "Agregar campo constanciaDisponibilidad (medio, fecha, ubicacion) al documento MIPER",
+        "Registrar en la asignacion la version del documento difundido"
+      ],
+      "fuf": [
+        4
+      ]
+    },
+    {
+      "id": "R-13",
+      "nombre": "Registro de difusion del PTP y remision al CPHS",
+      "clase": "B",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:34",
+        "Frontend/src/utils/ds44.ts:318",
+        "Backend/handlers/documents/handler.js:465"
+      ],
+      "brechas": [
+        "El PTP no existe como tipo de documento (ver D-06), por lo que su difusion no puede registrarse: no hay artefacto que difundir",
+        "CONTENIDO MINIMO: no existe la remision de un ejemplar al Comite Paritario como accion distinta de la difusion. El catalogo exige dos acciones separadas y el sistema solo tiene una (assign), ademas de que el CPHS no existe como destinatario",
+        "CONTENIDO MINIMO: no existe el campo medio (aviso visible o correo electronico)"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Una vez creada la entidad Ptp (ver D-06), agregar dos acciones separadas: difundir (a la dotacion, con acuse) y remitirAlCphs (con receptor, fecha y acuse), cada una con su propia constancia",
+        "Agregar campo medio tipificado a ambas acciones"
+      ],
+      "fuf": [
+        11
+      ]
+    },
+    {
+      "id": "R-14",
+      "nombre": "Acta de Informacion de Riesgos Laborales (IRL, ex ODI)",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 40,
+      "codigo": [
+        "Backend/handlers/personas-module/handler.js:108",
+        "Backend/lib/ds44.js:91",
+        "Backend/lib/services/PersonaService.js:354",
+        "Backend/handlers/documents/handler.js:498",
+        "Backend/handlers/documents/handler.js:561"
+      ],
+      "brechas": [
+        "PLAZO CRITICO NO VALIDADO: la anterioridad del IRL respecto del inicio de labores no se comprueba en ninguna parte. La fecha de inicio existe y es generada por el sistema (asignacion.fechaIngreso se fija con new Date().toISOString() en PersonaService.js:354) y la fecha de firma tambien (FirmaService.js:161-163), pero no hay ninguna comparacion entre ambas: la busqueda de comparaciones sobre fechaIngreso en Backend y Frontend no arroja resultados. No hay bloqueo ni alerta si el IRL se firma despues del ingreso",
+        "El PDF firmado no conserva la version vigente al momento de la firma: la asignacion (documents/handler.js:498-507) guarda personaId, nombre, rut, fechaAsignacion, fechaLimite, estado y notificado, sin campo de version del documento",
+        "El IRL no esta en TIPOS_PROCEDIMIENTO (handler.js:92-96), por lo que carece de historial de versiones y es mutable post firma via PUT /documents/{id}",
+        "El gatillante (nuevo proceso productivo, cambio de tecnologias, materiales o sustancias) no existe: no hay entidad Cambio que lo dispare (ver P-08)",
+        "La firma no incorpora hash del contenido",
+        "Nota positiva: el IRL se crea automaticamente por trabajador al vincularlo a la obra (personas-module/handler.js:108-113), es bloqueante en el kit (ds44.js:91) y se firma con PIN, de modo que la evidencia individual existe y es exportable"
+      ],
+      "fuera_de_alcance": [
+        "Caracteristicas minimas del lugar de trabajo",
+        "Riesgos a los que podria estar expuesto y medidas preventivas",
+        "Procedimientos de trabajo seguro",
+        "Caracteristicas de los productos y sustancias que manipulara",
+        "Riesgos de emergencias, catastrofes o desastres y procedimiento de evacuacion",
+        "Composicion de la plantilla desde la MIPER del puesto, los procedimientos vigentes y el plan de emergencia de la obra"
+      ],
+      "acciones": [
+        "Validar en documents.sign que, para tipo IRL, la fecha de firma sea anterior a asignacion.fechaIngreso de esa persona en esa obra, bloqueando o marcando el registro como extemporaneo de forma indeleble",
+        "Guardar versionDocumento en la asignacion al momento de firmar y congelar el s3Key firmado",
+        "Incluir IRL en TIPOS_PROCEDIMIENTO para que tenga historial de versiones"
+      ],
+      "fuf": [
+        21,
+        22
+      ]
+    },
+    {
+      "id": "R-15",
+      "nombre": "Informacion de riesgos por uso de maquinas, equipos y elementos de trabajo",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/catalogos-actividad.js:23",
+        "Backend/handlers/documents/handler.js:57",
+        "Backend/handlers/documents/handler.js:34"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe relacion trabajador a equipo, que es lo unico que el artefacto pide al sistema. El catalogo 'recursos' de catalogos-actividad.js:23-33 es una lista de seleccion para el registro de actividades, sin identidad por unidad ni vinculo a personas",
+        "No existe tipo de documento para el registro: OPERACION_MAQUINAS (handler.js:57) es el procedimiento P-01, no la constancia individual de informacion recibida",
+        "No hay adjuntos de manuales, instrucciones ni fichas tecnicas asociados a un equipo",
+        "No hay firma de la persona trabajadora sobre la informacion recibida por equipo",
+        "La capacitacion sobre uso correcto y seguro no se distingue: no hay subtipo de CAPACITACION para maquinas y equipos en CAPACITACION_SUBTIPOS (activities/handler.js:30-38)"
+      ],
+      "fuera_de_alcance": [
+        "Contenido sustancial de los manuales, instrucciones y fichas tecnicas"
+      ],
+      "acciones": [
+        "Crear entidad Equipo (ver P-01) y relacion EquipoPersona con documento firmado de informacion recibida",
+        "Agregar subtipo de capacitacion MAQUINAS_EQUIPOS para acreditar la capacitacion sobre uso correcto y seguro"
+      ],
+      "fuf": [
+        12
+      ]
+    },
+    {
+      "id": "R-16",
+      "nombre": "Envio del Reglamento Interno para observaciones",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:39",
+        "Backend/handlers/documents/handler.js:465",
+        "Backend/lib/models/Persona.js:10"
+      ],
+      "brechas": [
+        "No existe la accion de envio para observaciones: el unico flujo sobre documentos es assign (handler.js:465-555), que asigna para firma de recepcion, semanticamente distinto de remitir un borrador para observaciones",
+        "PLAZO CRITICO NO CALCULADO: los 30 dias de anticipacion a la entrada en vigencia no se validan. No existe campo fechaEntradaVigencia en el documento (ver D-07) ni fecha de remision, por lo que no hay diferencia que calcular",
+        "CONTENIDO MINIMO: los destinatarios exigidos no son representables. No existen en ROLES el Comite Paritario ni el Delegado de SST, y no existe la entidad organizacion sindical, que el catalogo pide verificar expresamente",
+        "Sin constancia de envio por destinatario"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar fechaEntradaVigencia al documento REGLAMENTO_INTERNO y una accion remitirParaObservaciones que registre fecha de remision por destinatario",
+        "Validar en backend que fechaEntradaVigencia menos fechaRemision sea de al menos 30 dias, bloqueando o marcando el incumplimiento",
+        "Crear entidad OrganizacionSindical (tenantId, nombre, representantes) y agregar los roles cphs y delegado_sst"
+      ],
+      "fuf": [
+        50
+      ]
+    },
+    {
+      "id": "R-17",
+      "nombre": "Acta de revision del Reglamento Interno",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:34",
+        "Frontend/src/utils/ds44.ts:319",
+        "Backend/handlers/scheduler/handler.js:56"
+      ],
+      "brechas": [
+        "No existe tipo de documento para el acta de revision ni entidad que la represente",
+        "METADATA ESTRUCTURADA AUSENTE: no hay control de vencimiento anual. El item 'Revisar Reglamento Interno (>=1 ano)' de ds44.ts:319 es una cadena de texto con un boton de navegacion, y el unico scheduler del sistema (scheduler/handler.js:56) solo revisa actividades del dia",
+        "CONTENIDO MINIMO parcial: no hay campos de fecha, participantes ni resultado de la revision",
+        "Los participantes exigidos varian por tramo (Departamento de Prevencion, o CPHS, o Delegado de SST, mas organizaciones sindicales) y ninguno de esos actores existe en el modelo, por lo que el registro de participantes segun tramo es irrealizable"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion del resultado de la revision"
+      ],
+      "acciones": [
+        "Agregar tipo ACTA_REVISION_RI con campos fecha, participantes por rol y resultado",
+        "Agregar scheduler de vigencias documentales que alerte a los 12 meses de la ultima revision registrada"
+      ],
+      "fuf": [
+        51
+      ]
+    },
+    {
+      "id": "R-18",
+      "nombre": "Registro de recepcion del Reglamento Interno",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 40,
+      "codigo": [
+        "Backend/handlers/personas-module/handler.js:126",
+        "Backend/handlers/documents/handler.js:498",
+        "Backend/handlers/documents/handler.js:92",
+        "Backend/lib/ds44.js:153"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: la version entregada NO queda congelada en el registro. La asignacion (documents/handler.js:498-507) no guarda campo de version, y REGLAMENTO_INTERNO no esta en TIPOS_PROCEDIMIENTO (92-96), por lo que ni siquiera existe historial de versiones al que apuntar. El registro es un enlace al documento vigente, exactamente lo que el catalogo prohibe",
+        "CONTENIDO MINIMO: no existe constancia de entrega gratuita como campo del registro",
+        "La firma de recepcion no incorpora hash del contenido, de modo que no se puede acreditar que se firmo el texto entregado",
+        "Nota positiva: el Reglamento Interno se incorpora automaticamente al kit de onboarding por trabajador con la descripcion 'Art. 56 - Entrega y recepcion firmada' (personas-module/handler.js:126-131, espejado en ds44.js:153), se asigna con fecha y se firma con PIN"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Incluir REGLAMENTO_INTERNO en TIPOS_PROCEDIMIENTO y guardar versionDocumento mas s3KeyEntregado en la asignacion al momento de firmar",
+        "Agregar campo entregaGratuita booleano al registro de recepcion",
+        "Agregar hashContenido a la firma"
+      ],
+      "fuf": [
+        49
+      ]
+    },
+    {
+      "id": "R-19",
+      "nombre": "Registro de consulta y participacion",
+      "clase": "B",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:65",
+        "Backend/handlers/incidents-module/incidents.repository.js:646",
+        "Backend/lib/models/Persona.js:10"
+      ],
+      "brechas": [
+        "No existe entidad Consulta: CONSULTA_REPRESENTANTES (handler.js:65) es el procedimiento P-10, no el registro de las consultas efectuadas",
+        "CONTENIDO MINIMO: no hay campos de materia consultada (MIPER, PTP, Reglamento Interno, cambios en procesos), fecha, participantes ni respuesta u observaciones recibidas",
+        "CONTENIDO MINIMO: la participacion en la investigacion de causas de AT o EP no se acredita como consulta. Existe el valor comite_paritario entre los tiposValidos de investigacion (incidents.repository.js:646) y un arreglo entrevistados en el snapshot, pero sin rol de representacion ni vinculo con el registro de consulta",
+        "No hay vinculo con los artefactos consultados: ninguna entidad relaciona una consulta con la version de MIPER, PTP o Reglamento sobre la que se consulto"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Crear entidad Consulta (obraId, materia tipificada, artefactoId, artefactoVersion, fecha, participantes con rol, observacionesRecibidas) vinculable a MIPER, PTP, Reglamento Interno, cambios e investigaciones",
+        "Agregar rol de representacion a los entrevistados de una investigacion y generar desde ahi un registro de consulta"
+      ],
+      "fuf": [
+        25
+      ]
+    },
+    {
+      "id": "R-20",
+      "nombre": "Registro de capacitacion en prevencion de riesgos laborales",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 25,
+      "codigo": [
+        "Backend/handlers/activities/handler.js:31",
+        "Backend/handlers/activities/handler.js:226",
+        "Backend/handlers/activities/handler.js:656",
+        "Backend/handlers/activities/handler.js:877",
+        "Backend/handlers/personas-module/handler.js:120",
+        "Frontend/src/utils/ds44.ts:225"
+      ],
+      "brechas": [
+        "DURACION MINIMA NO VALIDADA: las 8 horas del Art. 16 no se comprueban en ninguna parte. La actividad guarda horaInicio y horaFin como cadenas HH:MM (activities/handler.js:226-227), horaFin admite null por defecto, y no existe ningun campo numerico de duracion ni validacion de minimo. Al cerrar la actividad, horaFin se fija con la hora del sistema (951) sin contrastar la duracion resultante",
+        "El camino alternativo agrava el problema: CAPACITACION_SST se modela como documento cargable con firma cruzada relator y trabajador (personas-module/handler.js:118-125), donde la duracion no es un campo en absoluto. Un certificado de 2 horas y uno de 8 son indistinguibles para el sistema",
+        "CONTENIDO MINIMO: no existe checklist del temario. Ninguna de las ocho letras del Art. 16 (factores de riesgo, efectos en la salud, medidas de control, prestaciones medicas y economicas, establecimiento asistencial del OAL, plan de emergencias, senaletica, prevencion de incendios) tiene campo. Las letras d) y e), que el catalogo senala como las mas omitidas, no aparecen en ningun catalogo del sistema",
+        "CONTENIDO MINIMO: no existen los campos enfoque de genero ni metodologia",
+        "CONTENIDO MINIMO: el resultado de la evaluacion no se captura. notaMinima se configura por item de onboarding (ds44.js:91, personas-module/handler.js:288, 644) pero ninguna nota obtenida se registra: la accion CAPACITACION_EVALUACION no tiene destino donde guardar la calificacion",
+        "Sin control de vencimiento a 2 anos por trabajador: no hay scheduler de vigencias ni campo de proxima capacitacion exigible",
+        "Nota positiva: el subtipo PRL_8H existe como categoria estricta (activities/handler.js:31, ds44.ts:225), la asistencia se firma con PIN via FirmaService (656) y los campos de contenido quedan congelados una vez que hay firmas (877-881)"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo numerico duracionMinutos a la actividad, calculado de horaInicio y horaFin, y validar en backend un minimo de 480 minutos para el subtipo PRL_8H y para el documento CAPACITACION_SST",
+        "Agregar checklist booleano de las ocho letras del temario, mas los campos enfoqueGenero y metodologia, exigidos al cerrar la actividad",
+        "Agregar campo notaObtenida y validarlo contra notaMinima antes de dar por cumplido el item",
+        "Agregar control de vencimiento a 2 anos por trabajador con alerta"
+      ],
+      "fuf": [
+        23,
+        24
+      ]
+    },
+    {
+      "id": "R-21",
+      "nombre": "Registro de capacitacion en uso y mantencion de EPP",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 25,
+      "codigo": [
+        "Backend/lib/services/EppService.js:100",
+        "Backend/lib/services/EppService.js:103",
+        "Backend/handlers/personas-module/handler.js:148",
+        "Backend/lib/services/EppService.js:133",
+        "Frontend/src/pages/WorkerDetail.tsx:1209",
+        "Frontend/src/pages/WorkerDetail.tsx:391"
+      ],
+      "brechas": [
+        "DURACION MINIMA NO VALIDADA: la hora minima por EPP esta declarada como duracionCapacitacionMinutos 60 (personas-module/handler.js:148) y la duracion real se guarda como duracionRealMinutos (EppService.js:103), pero AMBOS VALORES NUNCA SE COMPARAN. crearEntrega no valida el minimo y validarEntrega (EppService.js:133-180) solo comprueba permisos y cambia el estado. Una capacitacion de 5 minutos se valida igual que una de 60",
+        "INTEGRIDAD DE INTERFAZ: WorkerDetail.tsx:1209 renderiza `${e.capacitacionUso.duracionRealMinutos || 60} min`. Cuando la duracion real es null, la interfaz muestra 60 min, es decir afirma el cumplimiento del minimo legal a partir de un literal de respaldo. Es el mismo defecto de clase que el alert del MIPER: la UI declara un estado que el dato no sostiene",
+        "CONTENIDO MINIMO: no existen los campos de actividades teoricas y practicas, resultados de las evaluaciones de aprendizaje ni actividades de reforzamiento. El catalogo senala expresamente que los dos ultimos son los que suelen faltar y que deben ser campos del modelo, no observaciones libres",
+        "CONTENIDO MINIMO: los relatores no se registran como tales. capacitacionUso.firmaRelator guarda un unico relatorId (EppService.js:105) sin firma real ni posibilidad de varios relatores",
+        "La duracion es por entrega, no por EPP: el minimo del Art. 13 es de 1 hora por elemento y una entrega puede incluir muchos items (itemsEntregados), sin duracion individual",
+        "Nota positiva: duracionRealMinutos ya es un campo numerico, de modo que la validacion es un cambio de una linea y no un cambio de modelo"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Validar en EppService.crearEntrega y en validarEntrega que capacitacionUso.duracionRealMinutos sea al menos 60 por elemento entregado, rechazando la validacion en caso contrario",
+        "Eliminar el respaldo literal 60 de WorkerDetail.tsx:1209 y mostrar 'sin registrar' cuando el dato sea null",
+        "Agregar campos modalidadTeoricaPractica, resultadoEvaluacion y actividadesReforzamiento al bloque capacitacionUso",
+        "Registrar relatores como firmas reales via FirmaService, no como un id suelto"
+      ],
+      "fuf": [
+        18,
+        19
+      ]
+    },
+    {
+      "id": "R-22",
+      "nombre": "Registro de entrega de EPP",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 60,
+      "codigo": [
+        "Backend/lib/services/EppService.js:33",
+        "Backend/lib/services/EppService.js:91",
+        "Backend/lib/services/EppService.js:133",
+        "Backend/handlers/documents/handler.js:601",
+        "Backend/lib/ds44.js:82"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe vinculo entre el EPP entregado y la fila de MIPER o el peligro que cubre. El catalogo es explicito en que sin ese vinculo no se puede acreditar que el EPP es adecuado al riesgo y el punto 15 del FUF queda incompleto aunque exista el registro de entrega. La matriz DS44_EPP_MATRIZ (ds44.js:35-75) asocia EPP a CARGO, no a peligro, y marca algunos como critico sin decir a que riesgo responden",
+        "CONTENIDO MINIMO: no existe constancia de entrega libre de costo. Ningun campo del documento ENTREGA_EPP ni de itemsEntregados registra la gratuidad, que es lo que acredita el punto 14 del FUF",
+        "La firma de recepcion no incorpora hash del contenido, por lo que no se puede acreditar que se firmo la lista de items efectivamente entregada",
+        "Nota positiva: es el registro mejor construido del bloque. itemsEntregados guarda descripcion, cantidad, talla y fechaVencimiento (EppService.js:91-97); la entrega exige validacion por instancia superior con permiso PERSONA_EPP (133-138) y la firma del trabajador esta BLOQUEADA hasta que esa validacion ocurre (documents/handler.js:601-605), de modo que el registro no puede ser autodeclarado; la reposicion queda tipificada por motivo"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo peligroCubiertoId o miperFilaId a cada item de itemsEntregados, poblado desde la MIPER del puesto",
+        "Agregar campo booleano entregaSinCosto al documento de entrega, exigido al crear",
+        "Agregar hashContenido a la firma de recepcion"
+      ],
+      "fuf": [
+        14,
+        15
+      ]
+    },
+    {
+      "id": "R-23",
+      "nombre": "Catalogo de EPP con certificacion de calidad",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/ds44.js:35",
+        "Backend/lib/services/EppService.js:91",
+        "Backend/handlers/documents/handler.js:34"
+      ],
+      "brechas": [
+        "No existe catalogo de EPP por modelo: DS44_EPP_MATRIZ (ds44.js:35-75) es una lista de descripciones de texto por cargo ('Casco de seguridad', 'Arnes de cuerpo completo'), sin modelo, marca, proveedor ni identidad de producto a la cual adjuntar una certificacion",
+        "METADATA ESTRUCTURADA AUSENTE: no hay campo de certificacion de calidad ni de registro en el Instituto de Salud Publica, ni adjunto ni fecha de vigencia. La busqueda de 'certificacion' e 'ISP' en el modulo de EPP no arroja resultados",
+        "Sin alerta por certificacion vencida, que es lo unico que el artefacto pide al sistema",
+        "El campo fechaVencimiento de itemsEntregados (EppService.js:96) es el vencimiento de la unidad entregada, no la vigencia de la certificacion del modelo, y no se compara con nada"
+      ],
+      "fuera_de_alcance": [
+        "Contenido del certificado de calidad o del registro emitido por el Instituto de Salud Publica"
+      ],
+      "acciones": [
+        "Crear entidad ModeloEpp (tenantId, descripcion, marca, modelo, certificacionS3Key, registroIsp, vigenciaHasta) y referenciarla desde itemsEntregados",
+        "Bloquear o marcar como incumplimiento la entrega de un modelo con certificacion vencida, y alertar antes del vencimiento"
+      ],
+      "fuf": [
+        16
+      ]
+    },
+    {
+      "id": "R-24",
+      "nombre": "Solicitud de incorporacion a programas de vigilancia",
+      "clase": "B",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/models/Persona.js:116",
+        "Frontend/src/utils/ds44.ts:239",
+        "Backend/handlers/documents/handler.js:34"
+      ],
+      "brechas": [
+        "No existe entidad de solicitud al Organismo Administrador ni tipo de documento que la represente",
+        "CONTENIDO MINIMO: no hay campos de protocolo solicitado, fecha de solicitud ni respuesta del OAL",
+        "El sistema solo guarda el resultado: Persona.vigilanciaSalud (Persona.js:116-122) registra enVigilancia, protocolos y aptitudLaboral, es decir el estado final. El catalogo advierte expresamente que la obligacion de solicitar se fiscaliza aunque el OAL no haya respondido, y que debe registrarse la solicitud y no solo el resultado",
+        "La fecha de solicitud debe ser generada por el sistema para acreditar oportunidad, y hoy no existe ningun campo de ese tipo"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Crear entidad SolicitudVigilanciaOAL (tenantId, obraId, protocolo, fechaSolicitud generada por el sistema, personaIds incluidas, estadoRespuesta, fechaRespuesta, respuestaS3Key)",
+        "Exponerla como registro exportable independiente del resultado de la vigilancia"
+      ],
+      "fuf": [
+        54,
+        55
+      ]
+    },
+    {
+      "id": "R-25",
+      "nombre": "Nomina de personas expuestas y estado de vigilancia",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 40,
+      "codigo": [
+        "Backend/lib/models/Persona.js:116",
+        "Backend/lib/services/RegistroService.js:233",
+        "Backend/lib/services/RegistroService.js:270",
+        "Frontend/src/utils/ds44.ts:239",
+        "Backend/lib/permissions.js:28"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe el campo agente o factor de exposicion. Persona.vigilanciaSalud guarda protocolos[] (Persona.js:118), que es el protocolo aplicable, pero no el agente que motiva la exposicion. Son datos distintos y el artefacto exige ambos",
+        "La nomina es mantenida a mano, no derivada: el catalogo exige que se derive automaticamente de la MIPER por puesto. Al no existir MIPER estructurada (ver D-04) la derivacion es imposible y el dato depende de digitacion",
+        "El estado en el programa es binario: enVigilancia booleano mas aptitudLaboral, sin estados intermedios (solicitado, citado, en control, alta)",
+        "El item REG_VIGILANCIA del panel esta marcado moduloPendiente true (ds44.ts:239)",
+        "Nota positiva: RegistroService si consolida la nomina con nombre, protocolos y aptitud laboral (233, 270-284) y la incluye en el registro firmado del Art. 72 con hash reproducible, de modo que existe una salida exportable e integra"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo agenteExposicion a vigilanciaSalud, separado de protocolos",
+        "Tipificar el estado en el programa (solicitado, citado, en_control, alta) en lugar del booleano enVigilancia",
+        "Derivar la nomina desde la MIPER por puesto cuando exista version estructurada"
+      ],
+      "fuf": [
+        55
+      ]
+    },
+    {
+      "id": "R-26",
+      "nombre": "Mediciones ambientales y resultados de examenes ocupacionales",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 10,
+      "codigo": [
+        "Backend/lib/models/Persona.js:119",
+        "Frontend/src/utils/ds44.ts:240",
+        "Backend/lib/permissions.js:28",
+        "Backend/handlers/documents/handler.js:266"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existen las mediciones ambientales. No hay entidad, tipo de documento ni campo alguno con fecha y resultado de medicion",
+        "CONTENIDO MINIMO: los resultados de examenes ocupacionales no se guardan. Persona.vigilanciaSalud tiene fechaUltimoExamen (Persona.js:119) pero ningun campo de resultado; se conoce cuando se hizo el examen, no que arrojo",
+        "METADATA ESTRUCTURADA AUSENTE: no hay log de acceso sobre datos de salud. Existe el permiso PERSONA_VIGILANCIA_SALUD (permissions.js:28) pero documents.get (handler.js:266-290) no registra quien consulto, y la nota de confidencialidad del Art. 73 exige control reforzado acreditable",
+        "El item REG_EXAMENES del panel esta marcado moduloPendiente true (ds44.ts:240), es decir la propia aplicacion lo declara no implementado"
+      ],
+      "fuera_de_alcance": [
+        "Contenido de los informes de medicion y de los resultados clinicos emitidos por el OAL"
+      ],
+      "acciones": [
+        "Crear entidad MedicionAmbiental (obraId, protocolo, agente, fecha, resultado, informeS3Key) y entidad ExamenOcupacional (personaId, protocolo, fecha, resultado, aptitud, informeS3Key)",
+        "Registrar cada lectura de estos registros en una tabla AccesoDatoSalud (registroId, personaId, timestamp)"
+      ],
+      "fuf": [
+        54,
+        55
+      ]
+    },
+    {
+      "id": "R-27",
+      "nombre": "Registro de citacion, autorizacion y asistencia a examenes de control",
+      "clase": "B",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/models/Persona.js:116",
+        "Backend/handlers/documents/handler.js:34",
+        "Backend/handlers/activities/handler.js:16"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe la citacion del OAL como entidad ni como campo",
+        "CONTENIDO MINIMO: no existe la autorizacion de la entidad empleadora para asistir",
+        "CONTENIDO MINIMO: no existe registro de asistencia al examen. El unico registro de asistencia del sistema es el de actividades (activities/handler.js), que no contempla examenes de control",
+        "CONTENIDO MINIMO: no existe constancia de que el tiempo empleado se considera trabajado para todos los efectos legales",
+        "Es exactamente el punto de omision que el catalogo anticipa: el sistema guarda a lo sumo fechaUltimoExamen (Persona.js:119) y nada de la citacion ni de la autorizacion"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Crear entidad CitacionExamen (personaId, protocolo, fechaCitacion, emisorOal, autorizadaPor, fechaAutorizacion, asistio, tiempoConsideradoTrabajado) con adjunto de la citacion",
+        "Exponerla como registro exportable vinculado a la nomina de vigilancia"
+      ],
+      "fuf": [
+        56
+      ]
+    },
+    {
+      "id": "R-28",
+      "nombre": "Registro de traslado de puesto por enfermedad profesional",
+      "clase": "C",
+      "estado": "INCOMPLETO",
+      "cobertura": 10,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:73",
+        "Backend/lib/models/Persona.js:125",
+        "Backend/lib/services/PersonaService.js:285",
+        "Backend/handlers/documents/handler.js:92"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe la prescripcion del Organismo Administrador como campo ni adjunto",
+        "CONTENIDO MINIMO: no existen puesto de origen ni puesto de destino. Persona.restriccionLaboral (Persona.js:125) es un campo libre sin estructura, y el puesto de trabajo no existe como entidad",
+        "CONTENIDO MINIMO: no existe constancia de que no hay detrimento de remuneraciones",
+        "METADATA ESTRUCTURADA AUSENTE: la validacion cruzada de que el puesto de destino no tenga en su MIPER el riesgo de origen es irrealizable, porque no hay puesto como entidad ni MIPER estructurada. El catalogo senala que esa validacion es lo que convierte el registro en evidencia solida",
+        "TRASLADO_PUESTO no esta en TIPOS_PROCEDIMIENTO (handler.js:92-96), por lo que carece de versionado y es mutable post firma via PUT /documents/{id}",
+        "La aplicabilidad (si hay EP diagnosticada) no se resuelve: no existe estado de diagnostico de enfermedad profesional en el modelo, y el catalogo de incidentes no distingue la EP como categoria (ver R-30)"
+      ],
+      "fuera_de_alcance": [
+        "Contenido de la prescripcion emitida por el Organismo Administrador"
+      ],
+      "acciones": [
+        "Estructurar restriccionLaboral como entidad TrasladoPuesto (personaId, prescripcionS3Key, fechaPrescripcion, puestoOrigenId, puestoDestinoId, riesgoOrigen, sinDetrimentoRemuneracion)",
+        "Crear entidad PuestoTrabajo y anclar la MIPER a ella para habilitar la validacion cruzada",
+        "Incluir TRASLADO_PUESTO en TIPOS_PROCEDIMIENTO"
+      ],
+      "fuf": [
+        57
+      ]
+    },
+    {
+      "id": "R-29",
+      "nombre": "Registro de incidentes o sucesos peligrosos",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 30,
+      "codigo": [
+        "Backend/handlers/incidents-module/incidents.repository.js:165",
+        "Backend/handlers/incidents-module/incidents.repository.js:182",
+        "Backend/handlers/incidents-module/incidents.repository.js:189",
+        "Frontend/src/pages/Incidents.tsx:717",
+        "Backend/lib/models/Persona.js:44"
+      ],
+      "brechas": [
+        "DESAGREGACION POR SEXO AUSENTE: el modelo Persona NO TIENE campo sexo ni genero. El unico rastro en todo el repositorio es trabajador.genero dentro del snapshot desnormalizado del incidente (incidents.repository.js:189), que se copia con valor por defecto cadena vacia y se inicializa vacio en 836. Es opcional, de texto libre, no vive en la persona y no se agrega en ningun calculo",
+        "CONTENIDO MINIMO: no existe tipificacion segun el Art. 2 N°7. Los tipos son accidente, incidente, condicion_subestandar y accion_subestandar (incidents.repository.js:182, Incidents.tsx:717-724); no hay categorias para incendios, explosiones, derrumbes, caidas de andamios y maquinas elevadoras, cortocircuitos ni fallos en sistemas de presion",
+        "El lugar se registra como centroTrabajo de texto libre, sin ubicacion estructurada dentro de la obra",
+        "Nota positiva: fecha, descripcion y personas involucradas si existen, y la validacion exige tipo y descripcion (incidents.repository.js:165-176)"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo sexo tipificado y obligatorio al modelo Persona, y derivarlo al snapshot del incidente en lugar del genero de texto libre",
+        "Agregar subtipo de suceso peligroso con el catalogo cerrado del Art. 2 N°7, exigido cuando clasificacion es incidente"
+      ],
+      "fuf": [
+        46
+      ]
+    },
+    {
+      "id": "R-30",
+      "nombre": "Registro de accidentes del trabajo, de trayecto y enfermedades profesionales",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 30,
+      "codigo": [
+        "Backend/handlers/incidents-module/incidents.repository.js:182",
+        "Backend/handlers/incidents-module/incidents.repository.js:189",
+        "Backend/lib/services/RegistroService.js:466",
+        "Backend/lib/models/Persona.js:44",
+        "Frontend/src/pages/Incidents.tsx:717"
+      ],
+      "brechas": [
+        "CAMPO SEXO NO OBLIGATORIO Y AUSENTE DEL MODELO: el artefacto lo exige expresamente. Persona no tiene el campo (Persona.js:44-120) y el snapshot del incidente lo copia como genero opcional con default cadena vacia (incidents.repository.js:189). En una fiscalizacion el registro no puede desagregarse",
+        "CONTENIDO MINIMO: accidente del trabajo, accidente de TRAYECTO y ENFERMEDAD PROFESIONAL no son categorias separadas. Los tipos disponibles son accidente, incidente, condicion_subestandar y accion_subestandar; no existe trayecto ni enfermedad_profesional, de modo que dos de las tres categorias exigidas no son representables",
+        "En entidades sin Departamento de Prevencion este registro y la tasa anual de accidentabilidad son la exigencia completa, por lo que la brecha se vuelve total para ese tramo (ver R-33)",
+        "Nota positiva: lugar y relato si existen (relatoAccidente y descripcion, consolidados en RegistroService.js:466-472) y el registro consolidado se firma con hash reproducible"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo sexo obligatorio al modelo Persona y propagarlo al snapshot del incidente",
+        "Agregar los tipos trayecto y enfermedad_profesional al catalogo de incidentes, como categorias separadas del accidente del trabajo"
+      ],
+      "fuf": [
+        46,
+        47
+      ]
+    },
+    {
+      "id": "R-31",
+      "nombre": "Informes de investigacion de accidentes y enfermedades profesionales",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 50,
+      "codigo": [
+        "Backend/lib/services/RegistroService.js:455",
+        "Backend/lib/services/RegistroService.js:481",
+        "Backend/handlers/incidents-module/incidents.repository.js:219",
+        "Backend/handlers/incidents-module/incidents.repository.js:638",
+        "Backend/lib/models/Persona.js:44"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe campo de metodologia indicada por el Organismo Administrador. addInvestigation valida un campo tipo cuyos valores son prevencionista, jefe_directo y comite_paritario (incidents.repository.js:646), que identifican al investigador y no la metodologia aplicada",
+        "CONTENIDO MINIMO: no existe enfoque de genero. Sin campo sexo en Persona (ver R-29 y R-30) el enfoque no puede sostenerse ni siquiera de forma derivada",
+        "CONTENIDO MINIMO: no existe decision sobre negligencia inexcusable cuando la investiga el CPHS (ver R-10)",
+        "CONTENIDO MINIMO: la participacion de trabajadores o sus representantes se registra como arreglo entrevistados (RegistroService.js:478) sin rol de representacion, por lo que no acredita participacion de representantes",
+        "ENCADENAMIENTO ROTO: las medidas correctivas no alimentan el PTP, que no existe (ver D-06), ni gatillan revision de la MIPER. El catalogo advierte que si el informe cierra sin generar medida la cadena esta rota; aqui la medida se genera pero no llega a ninguna parte",
+        "Nota positiva: es el registro mas solido del sistema. El snapshot incluye afectado, accidente, relato, lista de hechos, causas raiz, arbol de causas adjunto, medidas correctivas y entrevistados (RegistroService.js:455-480); se calcula hashSnapshot y se adjunta en la metadata de la firma real (481-500); y las medidas correctivas son entidades con causaRaiz, responsable, plazo y estado (incidents.repository.js:219, 328)"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo metodologia tipificado a la investigacion, con el valor indicado por el OAL",
+        "Agregar rol de representacion a entrevistados y campo negligenciaInexcusable cuando investiga el comite paritario",
+        "Emitir evento al cerrar la investigacion que cree medidas en el PTP y marque la MIPER de la obra como revision_pendiente"
+      ],
+      "fuf": [
+        38,
+        59
+      ]
+    },
+    {
+      "id": "R-32",
+      "nombre": "Indicadores de siniestralidad con Departamento de Prevencion",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 25,
+      "codigo": [
+        "Backend/lib/services/RegistroService.js:162",
+        "Backend/lib/services/RegistroService.js:155",
+        "Backend/lib/services/RegistroService.js:169",
+        "Backend/lib/models/Persona.js:44",
+        "Frontend/src/utils/ds44.ts:201"
+      ],
+      "brechas": [
+        "DESAGREGACION POR SEXO AUSENTE: calcularIndicadores (RegistroService.js:162-190) no desagrega ninguna tasa por sexo. Devuelve masaLaboral, numeroAccidentes, diasPerdidos, tasaFrecuencia, tasaAccidentabilidad, siniestralidad, porTipo y porGravedad, todos agregados. El campo sexo no existe en Persona, de modo que la desagregacion es imposible sin cambio de modelo",
+        "PERIODICIDADES NO IMPLEMENTADAS: el artefacto exige tasa MENSUAL de frecuencia y tasa SEMESTRAL de gravedad. El servicio calcula un unico snapshot sobre el periodo que se le pase, sin nocion de mes ni semestre, y no existe tasa de gravedad: siniestralidad se calcula como dias perdidos sobre masa laboral por 100 (169-178), que es otra formula",
+        "FILTRO DE UNA JORNADA AUSENTE: el catalogo pide verificar en el codigo que en frecuencia y gravedad se incluyan solo los lesionados con ausencia igual o superior a una jornada laboral. El calculo toma todos los incidentes con tipo accidente (164) sin filtrar por diasPerdidos, de modo que un accidente sin dias perdidos infla la tasa de frecuencia",
+        "Las horas trabajadas son una estimacion codificada: masaLaboral por 8 por 22 (168), supuesto fijo que no se declara en el documento resultante y que altera directamente la tasa de frecuencia",
+        "Sin aplicabilidad por tramo en backend: el mismo conjunto de indicadores se produce con o sin Departamento de Prevencion. La condicion depto_prevencion solo existe en frontend (ds44.ts:201)",
+        "El propio codigo reconoce la incertidumbre: 'NOTA (duda experto #5): las formulas exactas y periodicidad que exige la fiscalizacion deben confirmarse' (155-159)"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo sexo a Persona y desagregar cada tasa por sexo en calcularIndicadores",
+        "Implementar tasa mensual de frecuencia y tasa semestral de gravedad como series con periodo explicito, en lugar de un snapshot unico",
+        "Filtrar en frecuencia y gravedad los accidentes con diasPerdidos mayor o igual a 1 jornada",
+        "Persistir las horas trabajadas reales o declarar el supuesto en el documento exportado",
+        "Condicionar el conjunto de indicadores a tramoDS44(dotacion) en backend"
+      ],
+      "fuf": [
+        46
+      ]
+    },
+    {
+      "id": "R-33",
+      "nombre": "Indicadores de siniestralidad sin Departamento de Prevencion",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 30,
+      "codigo": [
+        "Backend/lib/services/RegistroService.js:162",
+        "Backend/lib/services/RegistroService.js:174",
+        "Frontend/src/utils/ds44.ts:201",
+        "Backend/lib/models/Tenant.js:16"
+      ],
+      "brechas": [
+        "EL CONJUNTO DE INDICADORES NO CAMBIA SEGUN TRAMO: el catalogo pide expresamente que no se exija frecuencia mensual ni gravedad semestral a empresas sin Departamento de Prevencion, y que si se exija la tasa anual de accidentabilidad a todas. calcularIndicadores (RegistroService.js:162-190) produce siempre el mismo conjunto, sin consultar el tramo",
+        "LA TASA NO ES ANUAL: tasaAccidentabilidad se calcula sobre el periodo que reciba el servicio (174-176), no sobre el ano. No existe nocion de periodo anual ni cierre",
+        "DESAGREGACION POR SEXO AUSENTE: aplica la misma brecha de R-32, agravada porque en este tramo el registro y la tasa son la exigencia completa",
+        "La aplicabilidad por tramo (hasta 100 personas trabajadoras) solo existe en frontend (ds44.ts:201) y sobre la dotacion de la empresa; el corte del backend (TAMANOS, Tenant.js:16-21) es incorrecto"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Condicionar el conjunto de indicadores a tramoDS44(dotacion) en backend: hasta 100, solo tasa anual de accidentabilidad",
+        "Implementar el calculo anual con periodo explicito y cierre de ano",
+        "Agregar campo sexo a Persona y desagregar"
+      ],
+      "fuf": [
+        47
+      ]
+    },
+    {
+      "id": "R-34",
+      "nombre": "Registro de personas trabajadoras en vigilancia de la salud",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 25,
+      "codigo": [
+        "Backend/lib/services/RegistroService.js:270",
+        "Backend/lib/services/RegistroService.js:60",
+        "Backend/lib/services/RegistroService.js:84",
+        "Backend/lib/models/Persona.js:44",
+        "Backend/lib/permissions.js:28"
+      ],
+      "brechas": [
+        "DESAGREGACION POR SEXO AUSENTE: la nomina consolidada (RegistroService.js:270-284) expone nombre, protocolos y aptitudLaboral por persona, sin sexo, porque el campo no existe en Persona",
+        "RESGUARDO DE CONFIDENCIALIDAD INVERTIDO: el render HTML del registro vuelca nombre completo, protocolos y aptitud laboral en una tabla del documento firmado (RegistroService.js:60-62, 84-85). Son datos de salud identificables dentro de un documento que despues se descarga y comparte, cuando la nota del Art. 73 exige resguardar la informacion sensible. No hay seudonimizacion ni control de quien accede al documento generado",
+        "Sin log de acceso: existe el permiso PERSONA_VIGILANCIA_SALUD (permissions.js:28) pero ninguna lectura queda registrada",
+        "La aplicabilidad (si existe Departamento de Prevencion) no se resuelve: el Departamento no existe como entidad",
+        "Nota positiva: la nomina si se consolida automaticamente desde las personas activas de la obra (233) y queda dentro del registro firmado con hash reproducible"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo sexo a Persona y desagregar la nomina",
+        "Seudonimizar la nomina en el documento exportado (identificador y no nombre, sin aptitud clinica) o generarla como anexo de acceso restringido",
+        "Registrar cada acceso al registro de vigilancia en una tabla de auditoria"
+      ],
+      "fuf": [
+        46
+      ]
+    },
+    {
+      "id": "R-35",
+      "nombre": "Acta de prueba de ensayo del plan de emergencias",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 35,
+      "codigo": [
+        "Backend/handlers/activities/handler.js:22",
+        "Backend/handlers/activities/handler.js:656",
+        "Frontend/src/pages/ObraDetalle.tsx:2296",
+        "Frontend/src/pages/ObraDetalle.tsx:2306",
+        "Frontend/src/pages/ObraDetalle.tsx:2322",
+        "Frontend/src/utils/ds44.ts:238"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe vinculo al plan que se ensaya. La actividad SIMULACRO no tiene campo planEmergenciaId ni referencia alguna al documento PLAN_EMERGENCIAS de la obra. El catalogo es explicito en que sin ese vinculo la evidencia queda huerfana y no acredita cual plan fue probado",
+        "CONTENIDO MINIMO: no existen campos de resultados ni de observaciones del ensayo. Solo esta el campo libre descripcion de la actividad",
+        "CONTROL ANUAL DEFECTUOSO: hasSimulacro se calcula como actividades.some(a => a.tipo === 'SIMULACRO') (ObraDetalle.tsx:2296), sin ningun filtro de fecha, mientras la etiqueta que se muestra al usuario dice 'Sin ensayo en el periodo' (2306). Un simulacro registrado hace tres anos satisface visualmente la exigencia anual",
+        "No hay alerta de ensayo vencido: no existe scheduler de vigencias y el elemento es un read-model del panel (ds44.ts:238), no una obligacion con plazo",
+        "Nota positiva: SIMULACRO es un tipo de actividad de primera clase (activities/handler.js:22), se programa desde el panel de la obra (ObraDetalle.tsx:2322) y los participantes quedan acreditados con firma PIN via FirmaService (656), con el contenido congelado una vez que hay firmas"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar campo planEmergenciaId obligatorio a la actividad SIMULACRO, apuntando al documento PLAN_EMERGENCIAS vigente de la obra al momento del ensayo",
+        "Agregar campos resultados y observaciones exigidos al cerrar la actividad",
+        "Corregir hasSimulacro para filtrar por los ultimos 12 meses y generar alerta de ensayo vencido"
+      ],
+      "fuf": [
+        28
+      ]
+    },
+    {
+      "id": "R-36",
+      "nombre": "Registro de actuacion ante riesgo grave e inminente",
+      "clase": "B",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/handlers/incidents-module/incidents.repository.js:182",
+        "Frontend/src/pages/Incidents.tsx:717",
+        "Backend/handlers/documents/handler.js:71",
+        "Backend/lib/services/FirmaService.js:161"
+      ],
+      "brechas": [
+        "El evento no existe en el modelo: los tipos de incidente son accidente, incidente, condicion_subestandar y accion_subestandar (incidents.repository.js:182, Incidents.tsx:717-724). No hay riesgo grave e inminente, por lo que el registro no tiene origen posible",
+        "El tipo de documento REGISTRO_RIESGO_GRAVE existe en el catalogo (documents/handler.js:71) pero es un slot de archivo sin estructura: no lo produce ningun flujo y no esta en TIPOS_PROCEDIMIENTO",
+        "CONTENIDO MINIMO: no existen campos de deteccion del riesgo, informacion inmediata a los trabajadores afectados, medidas adoptadas, suspension de faenas, evacuacion ni aviso a la Inspeccion del Trabajo",
+        "INMEDIATEZ NO ACREDITABLE: el catalogo exige que la inmediatez se demuestre con la diferencia entre el timestamp de deteccion y el de notificacion, ambos generados por el sistema. Ninguno de los dos existe. El sistema si sabe generar timestamps confiables (FirmaService.js:161-163 los produce en cada firma), de modo que la capacidad tecnica esta y lo que falta es la entidad",
+        "Sin encadenamiento con el procedimiento P-05, que existe como documento versionado pero no dispara nada"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Agregar el tipo riesgo_grave_inminente al catalogo de incidentes con timestampDeteccion generado por el sistema",
+        "Crear entidad ActuacionRiesgoGrave (incidentId, timestampNotificacion generado por el sistema, afectadosNotificados[], medidasAdoptadas, faenaSuspendida, evacuacionRealizada, avisoInspeccionTrabajo{fecha, constanciaS3Key}) y calcular la latencia entre deteccion y notificacion como dato derivado, no digitado"
+      ],
+      "fuf": [
+        26
+      ]
+    },
+    {
+      "id": "R-37",
+      "nombre": "Registro de coordinacion e informacion mutua entre entidades empleadoras",
+      "clase": "C",
+      "estado": "NO EXISTE",
+      "cobertura": 0,
+      "codigo": [
+        "Backend/lib/models/Obra.js:68",
+        "Backend/lib/models/Obra.js:72",
+        "Frontend/src/utils/ds44.ts:193",
+        "ARCHITECTURE.md:20",
+        "Backend/handlers/documents/handler.js:64"
+      ],
+      "brechas": [
+        "METADATA ESTRUCTURADA AUSENTE: no existe entidad de entidad empleadora participante. Obra.mandante es una cadena de texto libre (Obra.js:68) y no hay representacion de contratistas, subcontratistas ni trabajadores independientes sobre una obra comun",
+        "CONTENIDO MINIMO: no existen campos de riesgos informados mutuamente, medidas coordinadas ni planes de emergencia conjuntos. Solo existe COORDINACION_ENTIDADES (documents/handler.js:64) como documento del procedimiento P-09, no como registro de las coordinaciones efectuadas",
+        "LA ARQUITECTURA LO IMPIDE HOY: el aislamiento multi tenant es estricto por diseno (ARCHITECTURE.md:20-24, tenantId extraido del JWT y nunca del body, sin Scan sin filtro de tenant). No existe ningun mecanismo de comparticion controlada de evidencia entre tenants, que es precisamente lo que el artefacto exige. Es el requisito de arquitectura mas exigente del catalogo y no esta abordado",
+        "APLICABILIDAD OCULTADA POR DEFECTO: obra.faenaCompartida tiene default false (Obra.js:72) y evalAplicabilidad lo resuelve como no_aplica (ds44.ts:193). En construccion la faena compartida es la regla, de modo que el comportamiento por defecto retira del checklist un registro casi siempre exigible",
+        "Sin actas con fecha ni firmantes de las entidades participantes"
+      ],
+      "fuera_de_alcance": [
+        "Redaccion de las actas de coordinacion"
+      ],
+      "acciones": [
+        "Cambiar el default de obra.faenaCompartida a undefined para que la aplicabilidad devuelva 'verificar' en lugar de ocultar el registro",
+        "Crear entidad EntidadParticipante (obraId, tenantIdInvitado, rol mandante/contratista/subcontratista/independiente, fechaIncorporacion) y entidad ActaCoordinacion (obraId, participantes[], riesgosInformados, medidasCoordinadas, planConjuntoDocumentId, firmantes[])",
+        "Disenar el modelo de comparticion de evidencia entre tenants sobre una obra comun, con alcance explicito de que ve cada entidad, antes de implementar el registro"
+      ],
+      "fuf": [
+        29
+      ]
+    },
+    {
+      "id": "R-38",
+      "nombre": "Registro de medidas prescritas y su implementacion",
+      "clase": "B",
+      "estado": "INCOMPLETO",
+      "cobertura": 30,
+      "codigo": [
+        "Backend/handlers/incidents-module/handler.js:137",
+        "Backend/handlers/incidents-module/incidents.repository.js:355",
+        "Backend/handlers/incidents-module/incidents.repository.js:367",
+        "Backend/handlers/incidents-module/incidents.repository.js:219",
+        "Frontend/src/pages/ObraDetalle.tsx:2489"
+      ],
+      "brechas": [
+        "CONTENIDO MINIMO: no existe el campo origen de la medida. El artefacto exige distinguir SEREMI de Salud, Direccion del Trabajo, Organismo Administrador, Departamento de Prevencion y CPHS. La gobernanza de hallazgos (incidents-module/handler.js:137-147) no tiene ese campo y, de los cinco origenes, tres corresponden a organos que no existen en el modelo",
+        "EL REGISTRO MODELA OTRA COSA: la gobernanza solo aplica a incidentes con clasificacion 'hallazgo' (incidents.repository.js:363), es decir hallazgos internos detectados en obra. Una prescripcion externa de la SEREMI o de la Inspeccion del Trabajo no tiene donde registrarse: no hay tipo, entidad ni flujo que la represente",
+        "CONTENIDO MINIMO: no existe evidencia de cierre como adjunto. updateGobernanza acepta comentarioCierre de texto (incidents.repository.js:367) pero ningun archivo que acredite la implementacion de la medida",
+        "Sin visibilidad de prescripcion pendiente y vencida en el dashboard: plazoRespuestaISO se almacena pero no se compara con la fecha actual para producir un estado vencido. El catalogo advierte que esto es lo primero que un fiscalizador revisa en una segunda visita",
+        "No alimenta la fase CHECK: D-09 no existe como entidad y por lo tanto no consume estas medidas (ver D-09)",
+        "Nota positiva: la gobernanza de hallazgos es la aproximacion mas cercana del sistema. Tiene responsableId, responsableNombre, plazoRespuestaISO, estadoCierre tipificado (abierto, en_proceso, cerrado), verificadoPor, fechaVerificacion y comentarioCierre, y exige comentario de cierre para cerrar (incidents.repository.js:372-375). Las medidas correctivas de investigacion (219, 328) anaden causaRaiz y fechaMaxEjecucion"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Crear entidad MedidaPrescrita (tenantId, obraId, origen tipificado, medida, plazo, responsablePersonaId, estado, evidenciaCierreS3Key, fechaCierre, verificadaPor) reutilizando el modelo de gobernanza ya probado, pero desacoplada del incidente",
+        "Derivar el estado vencida comparando plazo contra la fecha del sistema y exponerlo en el dashboard de la obra",
+        "Conectar las medidas prescritas y las correctivas de investigacion como fuente de la evaluacion anual (D-09)"
+      ],
+      "fuf": [
+        58
+      ]
+    },
+    {
+      "id": "R-39",
+      "nombre": "Expediente de evidencia preventiva exportable",
+      "clase": "B",
+      "estado": "NO EXPORTABLE",
+      "cobertura": 5,
+      "codigo": [
+        "Backend/handlers/documents/handler.js:889",
+        "Backend/handlers/documents/handler.js:295",
+        "Backend/lib/services/FirmaService.js:141",
+        "Backend/lib/services/RegistroService.js:36",
+        "Backend/serverless.yml:743",
+        "Backend/lib/models/Tenant.js:37"
+      ],
+      "brechas": [
+        "NO EXISTE EXPORTACION CONSOLIDADA: no hay endpoint, servicio ni funcion que produzca un paquete por obra y periodo. Lo unico disponible es la descarga unitaria firmada (documents.downloadFirmado, handler.js:889-943) y getBatchDownloadUrls, que devuelve URLs sueltas. No hay indice, no hay estructura de carpetas, no hay manifiesto",
+        "SIN INDICE CON ESTADO POR ARTEFACTO: el catalogo exige que el indice declare COMPLETO, INCOMPLETO o NO APLICA por artefacto con la justificacion normativa del NO APLICA, porque un expediente que oculta lo faltante es peor que uno incompleto. No existe ninguna representacion del catalogo de 63 artefactos en el sistema contra la cual construir ese indice",
+        "SIN INTEGRIDAD VERIFICABLE: FirmaService.crear (FirmaService.js:141-174) no incorpora hash del contenido firmado. El unico sha256 del sistema es RegistroService.hashSnapshot (RegistroService.js:36-41), limitado al registro del Art. 72 y al informe de investigacion. No hay manifiesto de integridad ni sello de tiempo para el resto del expediente",
+        "INMUTABILIDAD POST FIRMA ROTA: PUT /documents/{id} (handler.js:295-336) permite reemplazar s3Key, archivoUrl, contenido, titulo y tipo sin verificar firmas.length. El objeto original no se sobrescribe (getUploadUrl genera keys unicos con timestamp y uuid, uploads/handler.js:67-74), pero el documento queda apuntando a otro archivo: la firma sigue registrada contra un documentId cuyo contenido cambio, sin dejar traza. Solo los once tipos de TIPOS_PROCEDIMIENTO (handler.js:92-96) estan protegidos por nuevaVersion",
+        "SIN INMUTABILIDAD EN LA CAPA DE ALMACENAMIENTO: el bucket DocumentsBucket (serverless.yml:743-754) no declara VersioningConfiguration ni ObjectLockConfiguration, y ninguna tabla DynamoDB declara PointInTimeRecoverySpecification. Ademas la politica de borrado de todos los recursos resuelve a 'Delete' por defecto (serverless.yml:21-23), de modo que la evidencia no sobrevive a la eliminacion del stack",
+        "RETENCION NO IMPLEMENTADA: Tenant.settings.dataRetentionDays existe con valor 365 (Tenant.js:37) y no se lee en ninguna parte del repositorio. Es configuracion muerta, no una politica de retencion",
+        "CONTENIDO MINIMO INALCANZABLE HOY: el expediente debe contener la totalidad de los artefactos aplicables con su metadata de version, fecha, firmantes e integridad. De los 63 artefactos del catalogo, 19 no existen y la mayoria de los restantes carece de fecha de aprobacion, de version o de hash, por lo que el paquete estaria vacio o incompleto para mas de un tercio del catalogo aunque la exportacion se implementara manana",
+        "CORS PERMISIVO SOBRE LA EVIDENCIA: el bucket admite AllowedMethods GET, PUT, POST y DELETE desde AllowedOrigins '*' (serverless.yml:748-753), configuracion inadecuada para el almacen de la evidencia de fiscalizacion"
+      ],
+      "fuera_de_alcance": [],
+      "acciones": [
+        "Representar el catalogo de 63 artefactos como dato del sistema (tabla o modulo) con su aplicabilidad por tramo, para poder construir el indice con estado y justificacion del NO APLICA",
+        "Agregar hashContenido a FirmaService.crear y bloquear en documents.update los campos de contenido cuando existan firmas, replicando el guard de activities.patch (activities/handler.js:815-830)",
+        "Habilitar VersioningConfiguration en DocumentsBucket y PointInTimeRecoverySpecification en las tablas, y cambiar la deletionPolicy de los recursos de evidencia a Retain",
+        "Implementar un job de exportacion que genere el paquete por obra y periodo con la estructura de carpetas del catalogo, 00_Indice.pdf y 12_Metadata con el manifiesto de integridad",
+        "Implementar la retencion declarada en dataRetentionDays o retirar el campo para no sugerir una politica inexistente",
+        "Restringir AllowedOrigins y retirar DELETE de la configuracion CORS del bucket de documentos"
+      ],
+      "fuf": [
+        60
+      ]
+    }
+  ]
+}

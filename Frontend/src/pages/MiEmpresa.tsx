@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
     FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
     FiUpload, FiX, FiInfo, FiUsers, FiArrowRight, FiAlertTriangle,
@@ -18,6 +18,8 @@ import { personasApi } from '../api/personas.api';
 import type { PersonaResponse } from '../api/types';
 import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS, PERMISSIONS } from '../permissions';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
+import { AMBITO } from '../utils/estructuraPreventiva';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const normalize = (s: string) =>
@@ -217,6 +219,7 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
     auth: { user: any; updateUser: (u: any) => void };
     toast: ReturnType<typeof useToast>['toast'];
 }) {
+    const navigate = useNavigate();
     const [nombre, setNombre] = useState(tenant.nombre || '');
     const [color, setColor] = useState(tenant.preferencias?.colorPrimario || DEFAULT_PRIMARY_COLOR);
     // Logo: vista previa actual (presignado vía branding) + base64 nuevo si se cambia.
@@ -366,6 +369,27 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                             </span>
                         </div>
                     </div>
+                </section>
+
+                {/* Estructura preventiva (DS 44 Arts. 23, 50, 65, 66). No bloquea nada:
+                    muestra qué corresponde según la dotación de la entidad y deja
+                    constituir también lo que no es obligatorio, como voluntario. */}
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Estructura preventiva</h3>
+                        <p className="me-section-hint">
+                            Órganos que corresponden a la entidad empleadora según su dotación.
+                            El comité paritario y el delegado de cada obra se gestionan en la obra.
+                        </p>
+                    </div>
+                    {tenant?.tenantId ? (
+                        <EstructuraPreventivaPanel
+                            tenantId={tenant.tenantId}
+                            ambito={AMBITO.EMPRESA}
+                            onConstituir={(tipo) => navigate(`/estructura/constituir?ambito=empresa&tipo=${tipo}`)}
+                            onVerOrgano={(organoId) => navigate(`/estructura/organos/${organoId}`)}
+                        />
+                    ) : null}
                 </section>
 
                 <section className="me-section">

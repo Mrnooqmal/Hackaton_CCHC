@@ -34,6 +34,16 @@ export interface Document {
     s3Key?: string;
     archivoUrl?: string;
     archivoNombre?: string;
+    /** Fase del ciclo Deming a la que pertenece el documento de obra
+     *  ('plan' | 'hacer' | 'verificar' | 'actuar'). El backend la persiste
+     *  (documents/handler.js), y sin ella un mismo `tipo` que existe en dos
+     *  fases —PLAN_EMERGENCIAS— se da por cumplido en la fase equivocada.
+     *  Los documentos antiguos no la tienen: por eso es opcional. */
+    fase?: string | null;
+    /** Período al que corresponde el documento ('2026'). Solo lo usan los que se
+     *  exigen una vez por período: programa de trabajo del CPHS (ítem 38) y
+     *  registros e indicadores de SST (ítems 46 y 47). */
+    periodo?: string | null;
     firmas: DocumentSignature[];
     asignaciones: DocumentAssignment[];
     estado: string;
@@ -80,6 +90,8 @@ export interface CreateDocumentData {
     relatorId?: string;
     archivoUrl?: string;
     archivoNombre?: string;
+    periodo?: string;
+    obraId?: string;
     createdBy?: string;
     creatorName?: string;
 }
