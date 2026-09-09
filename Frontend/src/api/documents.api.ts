@@ -82,6 +82,16 @@ export interface Document {
     updatedAt: string;
 }
 
+// FUF 51 / Art. 57 inc. 5: registro de quién participó en la revisión del
+// documento (Reglamento Interno, MIPER, procedimientos) que originó una versión.
+export type EntidadRevision = 'DEPTO_PREVENCION' | 'COMITE_PARITARIO' | 'DELEGADO_SST' | 'SINDICATO';
+
+export interface ParticipantesRevision {
+    entidades: EntidadRevision[];   // órganos que participaron en la revisión
+    detalle?: string;               // nombres de asistentes / referencia al acta
+    fechaRevision?: string;         // fecha de la reunión de revisión (YYYY-MM-DD)
+}
+
 export interface DocumentVersion {
     version: number;
     s3Key?: string | null;
@@ -90,6 +100,7 @@ export interface DocumentVersion {
     publicadaPorNombre?: string | null;
     publicadaEn?: string | null;
     motivo?: string | null;
+    participantes?: ParticipantesRevision | null;
     firmasArchivadas?: DocumentSignature[];
     asignacionesArchivadas?: DocumentAssignment[];
 }
@@ -101,6 +112,7 @@ export interface NuevaVersionData {
     notasCambio?: string;
     publicadaPor?: string;
     publicadaPorNombre?: string;
+    participantesRevision?: ParticipantesRevision | null;
     // Versión que el cliente cree vigente (control de concurrencia optimista).
     versionEsperada?: number;
 }
@@ -206,6 +218,7 @@ export const documentsApi = {
         notasCambio?: string;
         publicadaPor?: string;
         publicadaPorNombre?: string;
+        participantesRevision?: ParticipantesRevision | null;
     }) => apiRequest<{ message: string; copiasActualizadas: number; firmantesConvocados: number }>(
         '/documents/corporativo/nueva-version',
         { method: 'POST', body: JSON.stringify(data) },

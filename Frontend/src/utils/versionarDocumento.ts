@@ -1,4 +1,5 @@
 import { documentsApi, signatureRequestsApi } from '../api/client';
+import type { ParticipantesRevision } from '../api/documents.api';
 
 /**
  * Publicación de una nueva versión de un documento versionable (procedimientos
@@ -20,6 +21,8 @@ export interface PublicarVersionParams {
     archivoNombre?: string;
     /** Obligatorio: queda en el historial y en el aviso a la línea de mando. */
     motivo: string;
+    /** FUF 51: órganos que participaron en la revisión (RI, MIPER, procedimientos). */
+    participantesRevision?: ParticipantesRevision | null;
     notasCambio?: string;
     /** Nombre visible del documento en la solicitud de firma. */
     titulo: string;
@@ -52,6 +55,7 @@ export async function publicarNuevaVersion(p: PublicarVersionParams): Promise<Pu
         notasCambio: p.notasCambio || undefined,
         publicadaPor: p.autorId,
         publicadaPorNombre: p.autorNombre,
+        participantesRevision: p.participantesRevision || undefined,
         versionEsperada: p.versionActual,
     });
 

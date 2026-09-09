@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { apiRequest, apiBaseUrl } from './client';
 
 // ========================================
 // OBRAS API
@@ -44,6 +44,34 @@ export const obrasApi = {
                 body: JSON.stringify(data),
             }
         ),
+    /** Expediente consolidado (Art. 72 inc. 1) para poner a disposición del
+     *  fiscalizador / Organismo Administrador. Descarga el HTML autenticado y lo
+     *  abre en una pestaña nueva (desde ahí se imprime o guarda como PDF). */
+    abrirExpediente: async (
+        id: string,
+        tenantId: string,
+        periodo?: { desde?: string; hasta?: string },
+    ): Promise<{ ok: boolean; error?: string }> => {
+        const q = new URLSearchParams({ tenantId });
+        if (periodo?.desde) q.set('desde', periodo.desde);
+        if (periodo?.hasta) q.set('hasta', periodo.hasta);
+        const token = localStorage.getItem('auth_token');
+        try {
+            const res = await fetch(`${apiBaseUrl}/obras/${id}/expediente?${q}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (!res.ok) return { ok: false, error: 'No se pudo generar el expediente.' };
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const win = window.open(url, '_blank');
+            if (!win) return { ok: false, error: 'El navegador bloqueó la ventana. Habilita las ventanas emergentes.' };
+            // Se libera después para no romper la carga de la pestaña recién abierta.
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            return { ok: true };
+        } catch {
+            return { ok: false, error: 'Error de conexión al generar el expediente.' };
+        }
+    },
     // Read-model consolidado de la Fase CHECK (indicadores, investigaciones,
     // vigilancia y actividades del periodo). No firma nada.
     getCheckConsolidado: (id: string, periodo?: { desde?: string; hasta?: string }) => {

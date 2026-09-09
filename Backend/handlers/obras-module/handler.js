@@ -133,6 +133,37 @@ module.exports.obrasHandler = async (event) => {
             });
         }
 
+        // GET /obras/{id}/expediente — Expediente consolidado para puesta a
+        // disposición de fiscalizadores y del Organismo Administrador (Art. 72 inc. 1).
+        // Devuelve el documento HTML imprimible con TODA la información de gestión
+        // del riesgo (indicadores, actividades, EPP, MIPER, docs, incidentes, salud).
+        if (method === 'GET' && obraId && action === 'expediente') {
+            if (!tenantId) return error('tenantId es requerido');
+            const q = event.queryStringParameters || {};
+            const obra = await obraService.getById(obraId).catch(() => null);
+            if (!obra || obra.tenantId !== tenantId) return error('Obra no encontrada', 404);
+            const tenant = await tenantService.getById(tenantId).catch(() => null);
+            const { generadoEn, html } = await registroService.generarExpediente({
+                tenantId,
+                obraId,
+                periodo: { desde: q.desde || null, hasta: q.hasta || null },
+                empresaNombre: tenant?.nombre || tenant?.razonSocial || null,
+                obraNombre: obra?.nombre || null,
+            });
+            if (q.formato === 'json') {
+                return success({ generadoEn });
+            }
+            return {
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'text/html; charset=utf-8',
+                    'Access-Control-Allow-Origin': '*',
+                    'Content-Disposition': `inline; filename="expediente-prevencion-${obraId}.html"`,
+                },
+                body: html,
+            };
+        }
+
         // GET /obras/{id}/check/consolidado — Read-model consolidado de la Fase CHECK
         if (method === 'GET' && obraId && action === 'check' && subAction === 'consolidado') {
             if (!tenantId) return error('tenantId es requerido');

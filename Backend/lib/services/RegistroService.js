@@ -59,6 +59,11 @@ class RegistroService {
             <td>${esc(a.titulo)}</td><td>${esc(a.totalAsistentes)}</td></tr>`).join('');
         const filasVig = (snapshot.vigilanciaSalud?.personas || []).map((p) => `
             <tr><td>${esc(p.nombre)}</td><td>${esc((p.protocolos || []).join(', '))}</td><td>${esc(p.aptitudLaboral)}</td></tr>`).join('');
+        const filasEpp = (snapshot.entregasEpp || []).map((e) => `
+            <tr><td>${esc(e.fecha)}</td><td>${esc(e.nombre)}</td><td>${esc(e.items ?? '—')}</td><td>${esc(e.venceEn || '—')}</td></tr>`).join('');
+        const filasDoc = (snapshot.documentos || []).map((d) => `
+            <tr><td>${esc(d.tipo)}</td><td>${esc(d.titulo)}</td><td>v${esc(d.version)}</td><td>${esc(d.totalFirmas)}</td><td>${esc(d.estado)}</td></tr>`).join('');
+        const miper = snapshot.miper || {};
 
         return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
 <title>Registro de Actividad Preventiva (Art. 72)</title>
@@ -86,6 +91,16 @@ class RegistroService {
 
 <h2>Incidentes / AT / EP (${(snapshot.incidentes || []).length})</h2>
 <table><tr><th>Fecha</th><th>Tipo</th><th>Gravedad</th><th>Descripción</th><th>Días perdidos</th><th>Investigación</th></tr>${filasInc || '<tr><td colspan="6" class="muted">Sin incidentes en el periodo.</td></tr>'}</table>
+
+<h2>Entregas de EPP (${(snapshot.entregasEpp || []).length}) · Art. 13</h2>
+<table><tr><th>Fecha</th><th>Trabajador</th><th>Ítems</th><th>Vence</th></tr>${filasEpp || '<tr><td colspan="4" class="muted">Sin entregas de EPP en el periodo.</td></tr>'}</table>
+
+<h2>Matriz de Riesgos (MIPER) · Art. 72</h2>
+<table><tr><th>Presente</th><th>Versión</th><th>Firmas</th><th>Actualizada</th></tr>
+<tr><td>${miper.presente ? 'Sí' : 'No'}</td><td>${esc(miper.version ?? '—')}</td><td>${esc(miper.totalFirmas ?? 0)}</td><td>${esc(miper.actualizadaEn || '—')}</td></tr></table>
+
+<h2>Expediente documental (${(snapshot.documentos || []).length})</h2>
+<table><tr><th>Tipo</th><th>Título</th><th>Versión</th><th>Firmas</th><th>Estado</th></tr>${filasDoc || '<tr><td colspan="5" class="muted">Sin documentos en el expediente.</td></tr>'}</table>
 
 <div class="firma">
  <strong>Firma electrónica</strong><br>
@@ -150,6 +165,33 @@ class RegistroService {
     }
 
     /**
+     * Índice del expediente documental de la obra (MIPER, procedimientos,
+     * Reglamento Interno, actas, etc.). A diferencia de actividades/incidentes NO
+     * se filtra por periodo: el expediente documental es acumulativo — un
+     * procedimiento firmado el año pasado sigue siendo parte de la gestión del
+     * riesgo vigente (Art. 72: "toda la información vinculada a la gestión").
+     */
+    async consolidarDocumentos({ tenantId, obraId }) {
+        let items = [];
+        try {
+            const res = await docClient.send(new QueryCommand({
+                TableName: DOCUMENTS_TABLE,
+                IndexName: 'tenantId-index',
+                KeyConditionExpression: 'tenantId = :t',
+                ExpressionAttributeValues: { ':t': tenantId }
+            }));
+            items = res.Items || [];
+        } catch (err) {
+            const res = await docClient.send(new ScanCommand({ TableName: DOCUMENTS_TABLE }));
+            items = (res.Items || []).filter(d => d.tenantId === tenantId);
+        }
+        return items.filter(d =>
+            (!obraId || d.obraId === obraId || d.clasificacion === 'corporativo') &&
+            d.estado !== 'anulado'
+        );
+    }
+
+    /**
      * Indicadores de siniestralidad (Arts. 73-75).
      *
      * NOTA (duda experto #5): las formulas exactas y periodicidad que exige la
@@ -203,33 +245,24 @@ class RegistroService {
      * @param {Object} [p.contexto] { ipAddress, userAgent }
      * @returns {Promise<{documentId, token, hash, snapshot}>}
      */
-    async generarRegistroATEP(p) {
-        const { tenantId, obraId, periodo = {}, firmante, metodo = 'PIN', firmaManuscrita, contexto = {} } = p;
-
-        if (!tenantId) throw new Error('tenantId es requerido');
-        if (!obraId) throw new Error('obraId es requerido');
-        if (!firmante?.personaId) throw new Error('firmante.personaId es requerido');
-
-        const persona = await this.personaService.getById(firmante.personaId);
-        if (!persona) throw new Error('Firmante no encontrado');
-        if (persona.tenantId !== tenantId) throw new Error('El firmante no pertenece al tenant');
-
-        // Masa laboral: override o personas activas asignadas a la obra
-        // Personas de la obra (para masa laboral y vigilancia de salud).
+    /**
+     * Consolidación read-model (sin firmar ni persistir) de TODA la información
+     * de gestión de riesgo de una obra en un periodo: incidentes, actividades
+     * preventivas, entregas de EPP, expediente documental + MIPER, indicadores y
+     * vigilancia de la salud. Lo usan tanto el Registro AT/EP firmado (Art. 72)
+     * como el Expediente descargable, para que NUNCA diverjan.
+     */
+    async construirSnapshotConsolidado({ tenantId, obraId, periodo = {}, masaLaboral, generadoEn }) {
         const personasObra = await this.personaService.listByTenant(tenantId, { obraId }) || [];
         const personasActivas = personasObra.filter(per => per.estado === 'activo');
-        let masaLaboral = p.masaLaboral;
-        if (masaLaboral === undefined || masaLaboral === null) {
-            masaLaboral = personasActivas.length;
-        }
+        let masa = masaLaboral;
+        if (masa === undefined || masa === null) masa = personasActivas.length;
 
         const incidentes = await this.consolidarIncidentes({ tenantId, obraId, periodo });
         const actividades = await this.consolidarActividades({ tenantId, obraId, periodo });
-        const indicadores = this.calcularIndicadores(incidentes, masaLaboral);
+        const documentos = await this.consolidarDocumentos({ tenantId, obraId });
+        const indicadores = this.calcularIndicadores(incidentes, masa);
 
-        // El Registro de Actividad Preventiva (Art. 72) consolida TODA la actividad
-        // preventiva del periodo, NO solo incidentes: capacitaciones, EPP,
-        // inducciones, simulacros y la vigilancia de la salud.
         const personasEnVigilancia = personasActivas.filter(per => per.vigilanciaSalud?.enVigilancia);
         const actividadesPorTipo = actividades.reduce((acc, a) => {
             const key = a.subtipo ? `${a.tipo}:${a.subtipo}` : a.tipo;
@@ -237,17 +270,48 @@ class RegistroService {
             return acc;
         }, {});
 
-        const generadoEn = new Date().toISOString();
-        const documentId = uuidv4();
+        // Entregas de EPP (Art. 13): evidencia PERSONA-level, no actividades.
+        const entregasEpp = [];
+        for (const per of personasActivas) {
+            for (const ev of (per.evidencias || [])) {
+                if (ev.tipo !== 'ENTREGA_EPP') continue;
+                if (!RegistroService.enPeriodo(ev.fecha || ev.createdAt || ev.entregadoEn, periodo)) continue;
+                entregasEpp.push({
+                    personaId: per.personaId,
+                    nombre: `${per.nombre} ${per.apellido || ''}`.trim(),
+                    fecha: ev.fecha || ev.createdAt || ev.entregadoEn || null,
+                    venceEn: ev.venceEn || null,
+                    items: Array.isArray(ev.items) ? ev.items.length : (ev.epp?.length || null),
+                });
+            }
+        }
 
-        // Snapshot inmutable (read-model). Solo datos consolidados, sin PII extra.
-        const snapshot = {
-            tipoRegistro: 'REGISTRO_AT_EP',
-            articulos: 'Arts. 71-72',
+        // Expediente documental: índice de documentos firmados + estado de la MIPER.
+        const TIPOS_MIPER = new Set(['MIPER', 'MATRIZ_MIPPER']);
+        const documentosIndice = documentos.map(d => ({
+            documentId: d.documentId,
+            tipo: d.tipo || null,
+            titulo: d.titulo || null,
+            version: d.version || 1,
+            totalFirmas: Array.isArray(d.firmas) ? d.firmas.length : 0,
+            estado: d.estado || null,
+            actualizadoEn: d.updatedAt || d.createdAt || null,
+        }));
+        const miperDoc = documentos
+            .filter(d => TIPOS_MIPER.has(d.tipo))
+            .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))[0] || null;
+        const miper = {
+            presente: !!miperDoc,
+            version: miperDoc?.version || null,
+            totalFirmas: miperDoc && Array.isArray(miperDoc.firmas) ? miperDoc.firmas.length : 0,
+            actualizadaEn: miperDoc?.updatedAt || miperDoc?.createdAt || null,
+        };
+
+        return {
             tenantId,
             obraId,
             periodo,
-            generadoEn,
+            generadoEn: generadoEn || new Date().toISOString(),
             indicadores,
             incidentes: incidentes.map(i => ({
                 incidentId: i.incidentId || i.id,
@@ -267,6 +331,9 @@ class RegistroService {
                 totalAsistentes: (a.asistentes || []).length
             })),
             actividadesPorTipo,
+            entregasEpp,
+            documentos: documentosIndice,
+            miper,
             vigilanciaSalud: {
                 enVigilancia: personasEnVigilancia.length,
                 totalActivos: personasActivas.length,
@@ -280,8 +347,37 @@ class RegistroService {
             totales: {
                 incidentes: incidentes.length,
                 actividades: actividades.length,
+                entregasEpp: entregasEpp.length,
+                documentos: documentosIndice.length,
+                miperVigente: miper.presente,
                 enVigilancia: personasEnVigilancia.length
             }
+        };
+    }
+
+    async generarRegistroATEP(p) {
+        const { tenantId, obraId, periodo = {}, firmante, metodo = 'PIN', firmaManuscrita, contexto = {} } = p;
+
+        if (!tenantId) throw new Error('tenantId es requerido');
+        if (!obraId) throw new Error('obraId es requerido');
+        if (!firmante?.personaId) throw new Error('firmante.personaId es requerido');
+
+        const persona = await this.personaService.getById(firmante.personaId);
+        if (!persona) throw new Error('Firmante no encontrado');
+        if (persona.tenantId !== tenantId) throw new Error('El firmante no pertenece al tenant');
+
+        const generadoEn = new Date().toISOString();
+        const documentId = uuidv4();
+
+        // Snapshot inmutable (read-model). Reusa la MISMA consolidación que el
+        // Expediente descargable para que jamás diverjan (lección del punto 4).
+        const datos = await this.construirSnapshotConsolidado({
+            tenantId, obraId, periodo, masaLaboral: p.masaLaboral, generadoEn,
+        });
+        const snapshot = {
+            tipoRegistro: 'REGISTRO_AT_EP',
+            articulos: 'Arts. 71-72',
+            ...datos,
         };
 
         const hash = RegistroService.hashSnapshot(snapshot);
@@ -631,6 +727,104 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
             // el tamaño de la entidad (>100 trabajadores con Depto. Prevencion).
             requiereInformeAnual: masaLaboral > 100
         };
+    }
+
+    /**
+     * EXPEDIENTE consolidado de la obra (Art. 72 inc. 1 — puesta a disposición).
+     *
+     * A diferencia del Registro AT/EP, NO se firma ni se persiste: es un export
+     * on-demand que junta en UN solo documento imprimible TODA la información de
+     * gestión del riesgo (indicadores, actividades, EPP, MIPER, expediente
+     * documental, incidentes y vigilancia) para entregar a un fiscalizador o al
+     * Organismo Administrador de la Ley 16.744. Reusa `construirSnapshotConsolidado`
+     * para que refleje exactamente lo mismo que el registro firmado.
+     */
+    async generarExpediente({ tenantId, obraId, periodo = {}, empresaNombre = null, obraNombre = null }) {
+        if (!tenantId) throw new Error('tenantId es requerido');
+        if (!obraId) throw new Error('obraId es requerido');
+        const generadoEn = new Date().toISOString();
+        const datos = await this.construirSnapshotConsolidado({ tenantId, obraId, periodo, generadoEn });
+        const html = RegistroService.renderExpedienteHtml({ ...datos, empresaNombre, obraNombre });
+        return { generadoEn, datos, html };
+    }
+
+    /** Render imprimible del Expediente consolidado (HTML → PDF vía navegador). */
+    static renderExpedienteHtml(exp) {
+        const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+        ));
+        const ind = exp.indicadores || {};
+        const t = exp.totales || {};
+        const miper = exp.miper || {};
+        const filasInc = (exp.incidentes || []).map((i) => `
+            <tr><td>${esc(i.fecha)}</td><td>${esc(i.tipo)}</td><td>${esc(i.gravedad)}</td>
+            <td>${esc(i.descripcion)}</td><td>${esc(i.diasPerdidos)}</td><td>${i.investigacion ? 'Sí' : 'No'}</td></tr>`).join('');
+        const filasAct = (exp.actividadesPreventivas || []).map((a) => `
+            <tr><td>${esc(a.fecha)}</td><td>${esc(a.tipo)}${a.subtipo ? ' / ' + esc(a.subtipo) : ''}</td>
+            <td>${esc(a.titulo)}</td><td>${esc(a.totalAsistentes)}</td></tr>`).join('');
+        const filasEpp = (exp.entregasEpp || []).map((e) => `
+            <tr><td>${esc(e.fecha)}</td><td>${esc(e.nombre)}</td><td>${esc(e.items ?? '—')}</td><td>${esc(e.venceEn || '—')}</td></tr>`).join('');
+        const filasDoc = (exp.documentos || []).map((d) => `
+            <tr><td>${esc(d.tipo)}</td><td>${esc(d.titulo)}</td><td>v${esc(d.version)}</td><td>${esc(d.totalFirmas)}</td><td>${esc(d.estado)}</td></tr>`).join('');
+        const filasVig = (exp.vigilanciaSalud?.personas || []).map((p) => `
+            <tr><td>${esc(p.nombre)}</td><td>${esc((p.protocolos || []).join(', '))}</td><td>${esc(p.aptitudLaboral)}</td></tr>`).join('');
+
+        return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<title>Expediente de Prevención de Riesgos</title>
+<style>
+ body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:32px;font-size:13px}
+ h1{font-size:20px;margin-bottom:2px} h2{font-size:14px;margin-top:26px;border-bottom:2px solid #333;padding-bottom:4px}
+ table{border-collapse:collapse;width:100%;margin-top:8px} th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:12px}
+ th{background:#f0f0f0}
+ .muted{color:#666;font-size:12px} .kpi{display:inline-block;margin:4px 16px 4px 0}
+ .kpi b{font-size:16px} .aviso{margin-top:8px;padding:10px;border:1px solid #999;border-radius:6px;background:#f7f7f7;font-size:12px}
+</style></head><body>
+<h1>Expediente de Prevención de Riesgos</h1>
+<div class="muted">DS44 Art. 72 inc. 1 · Puesta a disposición de entidades fiscalizadoras y del Organismo Administrador (Ley 16.744)</div>
+<div class="muted">Empresa: ${esc(exp.empresaNombre || '—')} · Obra: ${esc(exp.obraNombre || exp.obraId)}</div>
+<div class="muted">Periodo: ${esc(exp.periodo?.desde || '—')} a ${esc(exp.periodo?.hasta || '—')} · Generado ${esc(exp.generadoEn)}</div>
+
+<h2>Resumen</h2>
+<div>
+ <span class="kpi">Actividades preventivas <b>${esc(t.actividades ?? 0)}</b></span>
+ <span class="kpi">Incidentes / AT / EP <b>${esc(t.incidentes ?? 0)}</b></span>
+ <span class="kpi">Entregas de EPP <b>${esc(t.entregasEpp ?? 0)}</b></span>
+ <span class="kpi">Documentos del expediente <b>${esc(t.documentos ?? 0)}</b></span>
+ <span class="kpi">MIPER vigente <b>${t.miperVigente ? 'Sí' : 'No'}</b></span>
+ <span class="kpi">En vigilancia de salud <b>${esc(t.enVigilancia ?? 0)}</b></span>
+</div>
+
+<h2>Indicadores de siniestralidad (Arts. 73-75)</h2>
+<table><tr><th>Masa laboral</th><th>Accidentes</th><th>Días perdidos</th><th>T. frecuencia</th><th>T. accidentabilidad</th><th>Siniestralidad</th></tr>
+<tr><td>${esc(ind.masaLaboral)}</td><td>${esc(ind.numeroAccidentes)}</td><td>${esc(ind.diasPerdidos)}</td>
+<td>${esc(ind.tasaFrecuencia)}</td><td>${esc(ind.tasaAccidentabilidad)}</td><td>${esc(ind.siniestralidad)}</td></tr></table>
+
+<h2>Actividades preventivas (${(exp.actividadesPreventivas || []).length})</h2>
+<table><tr><th>Fecha</th><th>Tipo</th><th>Título</th><th>Asistentes</th></tr>${filasAct || '<tr><td colspan="4" class="muted">Sin actividades en el periodo.</td></tr>'}</table>
+
+<h2>Entregas de EPP (${(exp.entregasEpp || []).length}) · Art. 13</h2>
+<table><tr><th>Fecha</th><th>Trabajador</th><th>Ítems</th><th>Vence</th></tr>${filasEpp || '<tr><td colspan="4" class="muted">Sin entregas de EPP en el periodo.</td></tr>'}</table>
+
+<h2>Matriz de Riesgos (MIPER) · Art. 72</h2>
+<table><tr><th>Presente</th><th>Versión</th><th>Firmas</th><th>Actualizada</th></tr>
+<tr><td>${miper.presente ? 'Sí' : 'No'}</td><td>${esc(miper.version ?? '—')}</td><td>${esc(miper.totalFirmas ?? 0)}</td><td>${esc(miper.actualizadaEn || '—')}</td></tr></table>
+
+<h2>Expediente documental (${(exp.documentos || []).length})</h2>
+<table><tr><th>Tipo</th><th>Título</th><th>Versión</th><th>Firmas</th><th>Estado</th></tr>${filasDoc || '<tr><td colspan="5" class="muted">Sin documentos en el expediente.</td></tr>'}</table>
+
+<h2>Vigilancia de la salud (${exp.vigilanciaSalud?.enVigilancia || 0} de ${exp.vigilanciaSalud?.totalActivos || 0})</h2>
+<table><tr><th>Persona</th><th>Protocolos</th><th>Aptitud</th></tr>${filasVig || '<tr><td colspan="3" class="muted">Sin personas en vigilancia.</td></tr>'}</table>
+
+<h2>Incidentes / AT / EP (${(exp.incidentes || []).length})</h2>
+<table><tr><th>Fecha</th><th>Tipo</th><th>Gravedad</th><th>Descripción</th><th>Días perdidos</th><th>Investigación</th></tr>${filasInc || '<tr><td colspan="6" class="muted">Sin incidentes en el periodo.</td></tr>'}</table>
+
+<div class="aviso">
+ <strong>Nota:</strong> este expediente es una consolidación generada bajo demanda para su puesta a disposición.
+ Cada firma, evidencia y versión de documento aquí resumida permanece almacenada de forma íntegra y trazable
+ en el sistema (registro inmutable de firmas con hash verificable). Los <em>Registros AT/EP</em> firmados
+ aparecen en el expediente documental con su recuento de firmas.
+</div>
+</body></html>`;
     }
 }
 

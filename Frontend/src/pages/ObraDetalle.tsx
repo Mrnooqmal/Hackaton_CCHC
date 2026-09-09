@@ -32,11 +32,23 @@ import { completitudDeFase } from '../utils/completitudObra';
 import { colorProgreso } from '../utils/completitud';
 import { AMBITO as AMBITO_ESTRUCTURA } from '../utils/estructuraPreventiva';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
-import type { SignatureRequest, DocumentVersion, Document as DocumentoApi } from '../api/client';
+import type { SignatureRequest, DocumentVersion, Document as DocumentoApi, EntidadRevision } from '../api/client';
 
 /** Una entrada del historial: las archivadas más la vigente, marcada como tal. */
 type VersionHistorial = DocumentVersion & { actual: boolean };
 import { PERMISSIONS } from '../permissions';
+
+// FUF 51 / Art. 57 inc. 5: órganos que pueden participar en la revisión de un
+// documento (Reglamento Interno, MIPER, procedimientos). Se registran al publicar
+// una nueva versión y quedan en el historial de cambios.
+const ENTIDADES_REVISION: { id: EntidadRevision; label: string }[] = [
+  { id: 'DEPTO_PREVENCION', label: 'Departamento de Prevención de Riesgos' },
+  { id: 'COMITE_PARITARIO', label: 'Comité Paritario de Higiene y Seguridad' },
+  { id: 'DELEGADO_SST', label: 'Delegado de Seguridad y Salud en el Trabajo' },
+  { id: 'SINDICATO', label: 'Organización sindical' },
+];
+const labelEntidadRevision = (id: string) =>
+  ENTIDADES_REVISION.find((e) => e.id === id)?.label || id;
 
 interface Ds44Item {
   key: string;
@@ -409,6 +421,9 @@ export default function ObraDetalle() {
   // Motivo del cambio: obligatorio al reemplazar el archivo de un documento
   // versionable (hoy, la MIPER). Queda en el historial y en el aviso al mando.
   const [ds44Motivo, setDs44Motivo] = useState('');
+  // FUF 51: participantes de la revisión que origina esta nueva versión.
+  const [ds44Participantes, setDs44Participantes] = useState<EntidadRevision[]>([]);
+  const [ds44ParticipantesDetalle, setDs44ParticipantesDetalle] = useState('');
   const [eliminandoDoc, setEliminandoDoc] = useState(false);
   const [docPreview, setDocPreview] = useState<{ url: string | null; name: string } | null>(null);
   const [selectedDs44Detail, setSelectedDs44Detail] = useState<any | null>(null);
@@ -457,6 +472,8 @@ export default function ObraDetalle() {
   const [bulkUploadDone, setBulkUploadDone] = useState<Record<string, boolean>>({});
   // Registro AT/EP export
   const [registroSignModal, setRegistroSignModal] = useState(false);
+  // Expediente consolidado (Art. 72 inc. 1 — puesta a disposición).
+  const [expedienteLoading, setExpedienteLoading] = useState(false);
   const [exportingRegistro, setExportingRegistro] = useState(false);
   const [registroPin, setRegistroPin] = useState('');
   const [registroError, setRegistroError] = useState<string | null>(null);
@@ -1691,6 +1708,8 @@ export default function ObraDetalle() {
     setExpiryApplicable(Boolean(!doc.document || docExpiry));
     setPendingDs44File(null);
     setDs44Motivo('');
+    setDs44Participantes([]);
+    setDs44ParticipantesDetalle('');
     setIsDs44ModalOpen(true);
 
     if (doc.documentId) {
@@ -1807,6 +1826,9 @@ export default function ObraDetalle() {
           s3Key: fileKey,
           archivoNombre: fileName || undefined,
           motivo: ds44Motivo,
+          participantesRevision: ds44Participantes.length
+            ? { entidades: ds44Participantes, detalle: ds44ParticipantesDetalle.trim() || undefined }
+            : undefined,
           titulo: tituloDocumento,
           asignaciones: targetSignerIds.map((id: string) => ({ personaId: id })),
           autorId: user?.personaId,
@@ -2102,6 +2124,7 @@ export default function ObraDetalle() {
       publicadaEn: d.updatedAt || d.createdAt || null,
       publicadaPorNombre: d.ultimaPublicacionNombre || d.creatorName || null,
       motivo: d.ultimoMotivoVersion || null,
+      participantes: d.ultimosParticipantesRevision || null,
       actual: true,
     };
     const previas = [...archivadas]
@@ -2903,6 +2926,21 @@ export default function ObraDetalle() {
                         onClick={() => navigate(`/incidents?obraId=${obraId}`)}
                       >
                         <LuFileText size={14} /> Ver incidentes
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: '6px 14px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        title="Expediente consolidado para fiscalizadores y Organismo Administrador (Art. 72 inc. 1)"
+                        disabled={expedienteLoading || !obra?.tenantId}
+                        onClick={async () => {
+                          if (!obra?.tenantId || !obraId) return;
+                          setExpedienteLoading(true);
+                          const res = await obrasApi.abrirExpediente(obraId, obra.tenantId);
+                          setExpedienteLoading(false);
+                          if (!res.ok) alert(res.error || 'No se pudo generar el expediente.');
+                        }}
+                      >
+                        <LuFileText size={14} /> {expedienteLoading ? 'Generando…' : 'Descargar expediente'}
                       </button>
                       <button
                         className="btn btn-primary"
@@ -3760,6 +3798,8 @@ export default function ObraDetalle() {
           setIsDs44ModalOpen(false);
           setPendingDs44File(null);
           setDs44Motivo('');
+          setDs44Participantes([]);
+          setDs44ParticipantesDetalle('');
         }}
         title={selectedDs44Doc?.titulo ? `Documento DS44 - ${selectedDs44Doc.titulo}` : 'Documento DS44'}
         subtitle="Sube el archivo, selecciona firmantes y define caducidad"
@@ -3932,6 +3972,36 @@ export default function ObraDetalle() {
                 {' '}{selectedWorkerIds.length > 0 ? `${selectedWorkerIds.length} firmas` : 'firmas'} recogidas
                 dejan de ser válidas: el personal debe firmar de nuevo.
               </span>
+
+              {/* FUF 51 / Art. 57 inc. 5: participantes de la revisión. */}
+              <div style={{ marginTop: 'var(--space-3)', display: 'grid', gap: 'var(--space-2)' }}>
+                <label className="form-label">Participantes de la revisión</label>
+                <span className="text-muted" style={{ fontSize: 'var(--text-xs)', marginTop: 'calc(-1 * var(--space-1))' }}>
+                  Marca quiénes participaron en la revisión (Art. 57 inc. 5). Queda en el registro de control de cambios.
+                </span>
+                <div style={{ display: 'grid', gap: 'var(--space-1)' }}>
+                  {ENTIDADES_REVISION.map((ent) => (
+                    <label key={ent.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={ds44Participantes.includes(ent.id)}
+                        onChange={(e) => setDs44Participantes((prev) =>
+                          e.target.checked ? [...prev, ent.id] : prev.filter((x) => x !== ent.id),
+                        )}
+                      />
+                      <span style={{ fontSize: 'var(--text-sm)' }}>{ent.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <textarea
+                  className="form-input"
+                  rows={2}
+                  maxLength={300}
+                  value={ds44ParticipantesDetalle}
+                  placeholder="Nombres de los participantes o referencia al acta de la reunión (opcional)"
+                  onChange={(e) => setDs44ParticipantesDetalle(e.target.value)}
+                />
+              </div>
             </div>
           )}
 
@@ -4623,6 +4693,14 @@ export default function ObraDetalle() {
                     : 'Autor no registrado'}
                   {v.motivo && ` · ${v.motivo}`}
                 </div>
+                {/* FUF 51: participantes de la revisión que originó esta versión. */}
+                {v.participantes && (v.participantes.entidades?.length || v.participantes.detalle) && (
+                  <div className="ver-sub" style={{ marginTop: 2 }}>
+                    <strong>Revisión con participación de:</strong>{' '}
+                    {(v.participantes.entidades || []).map(labelEntidadRevision).join(', ')}
+                    {v.participantes.detalle && ` — ${v.participantes.detalle}`}
+                  </div>
+                )}
               </div>
               <button
                 type="button"

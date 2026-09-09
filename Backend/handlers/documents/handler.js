@@ -444,6 +444,7 @@ module.exports.update = async (event) => {
                     publicadaPorNombre: doc.ultimaPublicacionNombre || doc.creatorName || null,
                     publicadaEn: doc.updatedAt || doc.createdAt || null,
                     motivo: doc.ultimoMotivoVersion || null,
+                    participantes: doc.ultimosParticipantesRevision || null,
                 };
                 const versiones = Array.isArray(doc.versiones) ? [...doc.versiones, snapshot] : [snapshot];
 
@@ -524,7 +525,7 @@ module.exports.update = async (event) => {
 module.exports.nuevaVersionCorporativa = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
-        const { tenantId, tipo, s3Key, archivoNombre, motivo, notasCambio, publicadaPor, publicadaPorNombre } = body;
+        const { tenantId, tipo, s3Key, archivoNombre, motivo, notasCambio, publicadaPor, publicadaPorNombre, participantesRevision } = body;
 
         if (!tenantId) return error('tenantId es requerido');
         if (!TIPOS_CORPORATIVOS.has(tipo)) {
@@ -558,6 +559,8 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                 s3Key: doc.s3Key || doc.archivoUrl || null,
                 archivoNombre: doc.archivoNombre || null,
                 motivo: doc.ultimoMotivoVersion || null,
+                // FUF 51 / Art. 57 inc. 5: participantes de la revisión anual.
+                participantes: doc.ultimosParticipantesRevision || null,
                 firmas: doc.firmas || [],
                 publicadaPor: doc.ultimaPublicacionPor || null,
                 publicadaEn: doc.updatedAt || null,
@@ -576,6 +579,7 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                         + ' asignaciones = :asig, documentoFirmadoS3Key = :nulo,'
                         + ' ultimoMotivoVersion = :m, notasCambio = :nc,'
                         + ' ultimaPublicacionPor = :p, ultimaPublicacionNombre = :pn,'
+                        + ' ultimosParticipantesRevision = :part,'
                         + ' versiones = list_append(if_not_exists(versiones, :vacio), :snap), updatedAt = :now',
                     ExpressionAttributeNames: { '#version': 'version' },
                     ExpressionAttributeValues: {
@@ -589,6 +593,7 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                         ':nc': notasCambio || null,
                         ':p': publicadaPor || null,
                         ':pn': publicadaPorNombre || null,
+                        ':part': participantesRevision || null,
                         ':snap': [snapshot],
                         ':now': now,
                     },
@@ -635,7 +640,7 @@ module.exports.nuevaVersion = async (event) => {
         if (!id) return error('ID de documento requerido');
 
         const body = JSON.parse(event.body || '{}');
-        const { s3Key, motivo, notasCambio, publicadaPor, versionEsperada } = body;
+        const { s3Key, motivo, notasCambio, publicadaPor, versionEsperada, participantesRevision } = body;
 
         if (!s3Key) return error('s3Key (archivo de la nueva versión) es requerido');
         if (!motivo || !String(motivo).trim()) return error('El motivo del cambio es requerido');
@@ -681,6 +686,9 @@ module.exports.nuevaVersion = async (event) => {
             publicadaPorNombre: doc.ultimaPublicacionNombre || doc.creatorName || null,
             publicadaEn: doc.updatedAt || doc.createdAt || null,
             motivo: doc.ultimoMotivoVersion || null,
+            // FUF 51 / Art. 57 inc. 5: participantes de la revisión (comité paritario,
+            // delegado, depto. prevención, sindicato) que dieron origen a esta versión.
+            participantes: doc.ultimosParticipantesRevision || null,
             firmasArchivadas: doc.firmas || [],
             asignacionesArchivadas: doc.asignaciones || [],
         };
@@ -697,7 +705,7 @@ module.exports.nuevaVersion = async (event) => {
             Key: { documentId: id },
             UpdateExpression: 'SET version = :v, versiones = :vs, s3Key = :s3, archivoUrl = :s3, archivoNombre = :an, '
                 + 'firmas = :empty, asignaciones = :asig, documentoFirmadoS3Key = :nulo, documentoFirmadoFirmaCount = :cero, '
-                + '#um = :motivo, notasCambio = :notas, ultimaPublicacionPor = :pby, ultimaPublicacionNombre = :pbn, updatedAt = :now',
+                + '#um = :motivo, notasCambio = :notas, ultimaPublicacionPor = :pby, ultimaPublicacionNombre = :pbn, ultimosParticipantesRevision = :part, updatedAt = :now',
             ExpressionAttributeNames: { '#um': 'ultimoMotivoVersion' },
             ExpressionAttributeValues: {
                 ':v': nuevaVer,
@@ -712,6 +720,7 @@ module.exports.nuevaVersion = async (event) => {
                 ':notas': notasCambio || null,
                 ':pby': publicadaPor || null,
                 ':pbn': body.publicadaPorNombre || null,
+                ':part': participantesRevision || null,
                 ':now': now,
             },
         }));

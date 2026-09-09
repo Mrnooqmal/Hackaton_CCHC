@@ -431,6 +431,14 @@ functions:
     events:
       - schedule: cron(0 13 * * ? *)
 
+  # Recordatorio de revisión anual del Reglamento Interno / Política (Art. 57 inc. 5).
+  # Diario a las 13:10 UTC; avisa al inbox de la línea de mando, idempotente.
+  checkDocumentReviewAlerts:
+    handler: handlers/scheduler/handler.checkDocumentReviewAlerts
+    timeout: 120
+    events:
+      - schedule: cron(10 13 * * ? *)
+
   # Documents (Documentos)
   listDocuments:
     handler: handlers/documents/handler.list

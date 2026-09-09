@@ -153,6 +153,15 @@ module.exports.checkActivityAlerts = async () => {
  * hitos de calendario (mandatos, plazos, cierres de mes) que solo cambian una vez
  * al día. Correrlas cada media hora sería 48 veces el mismo trabajo.
  */
+// Recordatorio de revisión anual de documentos (RI/Política, Art. 57 inc. 5).
+module.exports.checkDocumentReviewAlerts = async () => {
+    const { revisarRevisionDocumental } = require('./revision-documental');
+    const ahora = new Date();
+    const resumen = await revisarRevisionDocumental(ahora);
+    console.log('[revision-documental]', JSON.stringify(resumen));
+    return resumen;
+};
+
 module.exports.checkEstructuraAlerts = async () => {
     const { revisarEstructuraPreventiva, revisarEstructuraFaltante } = require('./estructura-alertas');
     const ahora = new Date();
