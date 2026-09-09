@@ -33,6 +33,14 @@ const TIPO_ORGANO = {
     ENCARGADO_GESTION_RIESGO: 'EncargadoGestionRiesgo',
 };
 
+/** Nombre con el que el decreto llama a cada figura. Se usa en avisos y export. */
+const TIPO_ORGANO_LABEL = {
+    ComiteParitario: 'Comité Paritario de Higiene y Seguridad',
+    DelegadoSST: 'Delegado de Seguridad y Salud en el Trabajo',
+    DepartamentoPrevencion: 'Departamento de Prevención de Riesgos',
+    EncargadoGestionRiesgo: 'Encargado en materia de Gestión del Riesgo',
+};
+
 /** Ámbito en que se cuenta la dotación. CPHS y delegado se calculan por cada uno. */
 const AMBITO = { EMPRESA: 'empresa', OBRA: 'obra' };
 
@@ -527,7 +535,7 @@ const CONTENIDO_REGISTROS_INDICADORES = {
 };
 
 module.exports = {
-    TIPO_ORGANO, AMBITO, ORIGEN, ESTADO_ORGANO, ESTAMENTO, CALIDAD, CARGO_ORGANO,
+    TIPO_ORGANO, TIPO_ORGANO_LABEL, AMBITO, ORIGEN, ESTADO_ORGANO, ESTAMENTO, CALIDAD, CARGO_ORGANO,
     TIPO_REUNION, CAUSAL_EXTRAORDINARIA, ESTADO_REUNION,
     UMBRAL_CPHS, UMBRAL_DELEGADO_MIN, UMBRAL_DPR,
     ANIOS_MANDATO, MESES_CURSO_OPR, DIAS_HABILES_REGISTRO_DT,

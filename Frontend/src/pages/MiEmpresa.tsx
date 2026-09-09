@@ -19,6 +19,7 @@ import type { PersonaResponse } from '../api/types';
 import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS, PERMISSIONS } from '../permissions';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
+import CompletitudFufPanel from '../components/CompletitudFufPanel';
 import { AMBITO } from '../utils/estructuraPreventiva';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -389,6 +390,21 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                             onConstituir={(tipo) => navigate(`/estructura/constituir?ambito=empresa&tipo=${tipo}`)}
                             onVerOrgano={(organoId) => navigate(`/estructura/organos/${organoId}`)}
                         />
+                    ) : null}
+                </section>
+
+                {/* Completitud del FUF a nivel entidad empleadora. El porcentaje se
+                    calcula sobre los requisitos EXIGIBLES: lo que no aplica sale del
+                    denominador en vez de penalizar. */}
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Cumplimiento del Formulario Único de Fiscalización</h3>
+                        <p className="me-section-hint">
+                            Estado de los requisitos que cubre el módulo de estructura preventiva.
+                        </p>
+                    </div>
+                    {tenant?.tenantId ? (
+                        <CompletitudFufPanel tenantId={tenant.tenantId} ambito={AMBITO.EMPRESA} />
                     ) : null}
                 </section>
 

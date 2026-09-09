@@ -23,6 +23,26 @@ const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const EP = require('../../lib/estructura-preventiva');
 
+const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { docClient } = require('../../lib/clients/dynamodb');
+const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
+
+/** Documentos del tenant. La completitud los necesita para los ítems 38, 46 y 47. */
+const listarDocumentosTenant = async (tenantId) => {
+    try {
+        const res = await docClient.send(new QueryCommand({
+            TableName: DOCUMENTS_TABLE,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :t',
+            ExpressionAttributeValues: { ':t': tenantId },
+        }));
+        return res.Items || [];
+    } catch (err) {
+        console.error('[estructura] no se pudieron leer los documentos:', err.message);
+        return [];
+    }
+};
+
 const estructuraService = new EstructuraPreventivaService();
 const personaService = new PersonaService();
 const tenantService = new TenantService();
@@ -111,6 +131,34 @@ module.exports.estructuraHandler = async (event) => {
                 fechaCreacionAmbito,
             });
             return success(resumen);
+        }
+
+        // ── GET /estructura/completitud ──────────────────────────────────────
+        // Estado de los requisitos del FUF del ámbito. Lee las mismas definiciones
+        // que leerá el export: una sola fuente para panel y expediente.
+        if (method === 'GET' && recurso === 'completitud') {
+            const ambito = q.ambito === EP.AMBITO.OBRA ? EP.AMBITO.OBRA : EP.AMBITO.EMPRESA;
+            const obraId = q.obraId || null;
+            if (ambito === EP.AMBITO.OBRA && !obraId) return error('obraId es requerido para el ámbito obra');
+
+            const [personas, documentos] = await Promise.all([
+                personaService.listByTenant(tenantId).catch(() => []),
+                listarDocumentosTenant(tenantId),
+            ]);
+
+            let declarada = null;
+            if (ambito === EP.AMBITO.OBRA) {
+                const obra = await obraService.getById(obraId).catch(() => null);
+                declarada = obra?.dotacionDeclarada ?? null;
+            } else {
+                const tenant = await tenantService.getById(tenantId).catch(() => null);
+                declarada = tenant ? tenant.toSafeFormat()?.cantidadTrabajadores || null : null;
+            }
+
+            const resultado = await estructuraService.completitudAmbito({
+                tenantId, ambito, obraId, personas, documentos, dotacionDeclarada: declarada,
+            });
+            return success(resultado);
         }
 
         // ── GET /estructura/organos ──────────────────────────────────────────

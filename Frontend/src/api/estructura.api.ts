@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import type { CompletitudAmbito } from '../utils/completitud';
 import type {
     Ambito, TipoOrgano, Origen, EstadoOrgano, Estamento, Calidad, CargoOrgano,
     TipoReunion, CausalExtraordinaria, EstadoReunion, Obligaciones, DotacionEfectiva,
@@ -109,6 +110,11 @@ export const estructuraApi = {
     /** Dotación, obligación por figura, órganos y destinatarios del ámbito. */
     resumen: (tenantId: string, ambito: Ambito, obraId?: string | null) =>
         apiRequest<ResumenEstructura>(`/estructura/resumen${qs({ tenantId, ambito, obraId })}`),
+
+    /** Estado de los requisitos del FUF del ámbito. Lee las mismas definiciones
+     *  que el export, para que panel y expediente no discrepen. */
+    completitud: (tenantId: string, ambito: Ambito, obraId?: string | null) =>
+        apiRequest<CompletitudAmbito>(`/estructura/completitud${qs({ tenantId, ambito, obraId })}`),
 
     listar: (tenantId: string, filtros: { ambito?: Ambito; obraId?: string | null } = {}) =>
         apiRequest<{ total: number; organos: OrganoPreventivo[] }>(

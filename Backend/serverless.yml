@@ -423,6 +423,14 @@ functions:
     events:
       - schedule: rate(30 minutes)
 
+  # Recordatorios de estructura preventiva (DS 44). Diario a las 13:00 UTC
+  # (manana en Chile): son hitos de calendario, no estados que cambien en el dia.
+  checkEstructuraAlerts:
+    handler: handlers/scheduler/handler.checkEstructuraAlerts
+    timeout: 120
+    events:
+      - schedule: cron(0 13 * * ? *)
+
   # Documents (Documentos)
   listDocuments:
     handler: handlers/documents/handler.list

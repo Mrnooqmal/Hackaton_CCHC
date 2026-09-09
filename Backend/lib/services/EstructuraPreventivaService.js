@@ -32,6 +32,9 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const EP = require('../estructura-preventiva');
+const C = require('../completitud');
+const { definicionesPara } = require('../completitud-estructura');
+const { sumarDiasHabiles } = require('../utils/fechaChile');
 
 const TABLE = process.env.ESTRUCTURA_TABLE || 'EstructuraPreventiva';
 
@@ -480,6 +483,56 @@ class EstructuraPreventivaService {
                 ? EP.perfilRegistrosIndicadores(dot.dotacion)
                 : null,
             fechaCreacionAmbito,
+        };
+    }
+
+    // ─── Completitud del FUF (sección 8) ─────────────────────────────────────
+
+    /**
+     * Estado de los requisitos del FUF que cubre este módulo, para el ámbito.
+     *
+     * Devuelve lo MISMO que leerá el export: las definiciones de
+     * `completitud-estructura.js` son el único lugar donde un ítem del FUF se
+     * vincula con su evidencia, así que el panel y el expediente no pueden
+     * discrepar.
+     */
+    async completitudAmbito({ tenantId, ambito, obraId = null, personas = [], documentos = [], dotacionDeclarada = null, ahora = new Date() }) {
+        const resumen = await this.resumenAmbito({
+            tenantId, ambito, obraId, personas, dotacionDeclarada, ahora,
+        });
+
+        // Integrantes y reuniones de todos los órganos del ámbito, en paralelo.
+        const completos = await Promise.all(
+            resumen.organos.map((o) => this.getOrgano(tenantId, o.organoId))
+        );
+        const miembros = completos.flatMap((o) => o?.miembros || []);
+        const reuniones = completos.flatMap((o) => o?.reuniones || []);
+
+        // Plazo del Art. 36 sobre el comité vigente. Se calcula excluyendo solo
+        // fin de semana: llega antes que el real, así que avisa temprano.
+        const comite = resumen.organos.find(
+            (o) => o.tipo === EP.TIPO_ORGANO.COMITE_PARITARIO && o.estado === EP.ESTADO_ORGANO.VIGENTE
+        );
+        const limiteRegistroDT = comite
+            ? sumarDiasHabiles(comite.fechaEleccionODesignacion, EP.DIAS_HABILES_REGISTRO_DT)
+            : null;
+
+        const ctx = {
+            ahora,
+            dotacion: resumen.dotacion.dotacion,
+            obligaciones: resumen.obligaciones,
+            organos: completos.filter(Boolean),
+            miembros, reuniones, documentos,
+            limiteRegistroDT,
+        };
+
+        const evaluacion = C.evaluarCompletitud(definicionesPara(ambito), ctx);
+        return {
+            ambito, obraId,
+            dotacion: resumen.dotacion,
+            limiteRegistroDT,
+            ...evaluacion,
+            bloques: C.agruparPorBloque(evaluacion.requisitos),
         };
     }
 }

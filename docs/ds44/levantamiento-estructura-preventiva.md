@@ -151,3 +151,35 @@ Actualizado: 2026-09-09
 1. **Feriados excluidos del cálculo de días hábiles** (ítem 32). Conservador, pero la fecha límite es referencial.
 2. **Offline**: hoy solo cubre firmas (`offlineStore` + `useOfflineSync`). La carga de actas y el registro de reuniones NO funcionan sin conexión. El cálculo de obligaciones sí es local.
 3. **No hay export del FUF**: la §10.4 pide que panel y export lean lo mismo. El export no existe todavía; el registro requisito→evidencia se construye en la fase 9.
+
+## Fase 9 (2026-09-09)
+
+**Motor de completitud** — `lib/completitud.js` + `lib/completitud-estructura.js`.
+
+- Seis estados. `NoAplica` y `FueraDeAlcance` salen del denominador: un porcentaje
+  que castiga por no tener lo que no corresponde miente y el usuario deja de creerle.
+- `Parcial` cuenta como medio punto. Un documento cargado sin firmar no es lo mismo
+  que no tenerlo, pero tampoco es cumplimiento.
+- `NoAplica` siempre lleva justificación normativa: ocultar lo excluido es tan opaco
+  como castigar de más.
+- Un requisito NO está `Cumplido` si su documento tiene firma pendiente; el estado se
+  deriva de las asignaciones del documento, no de un campo duplicado.
+- Un requisito que lanza excepción se reporta como `Pendiente` con el motivo: no
+  tumba el panel ni se da por cumplido.
+- `completitud-estructura.js` es el único lugar que vincula ítem del FUF con
+  evidencia (§10.4). Cubre 19 ítems (30 a 48), incluidos los declarados fuera de
+  alcance (33, 42-45), que se muestran en vez de omitirse.
+
+**Recordatorios** — `handlers/scheduler/estructura-alertas.js`, Lambda diaria
+`cron(0 13 * * ? *)`. Escriben en el Inbox con `senderRol: 'system'` (sin SMS).
+Idempotentes por clave con período en `alertas` del propio órgano o reunión.
+
+Bug encontrado por los tests: el hito de "0 días" del término de mandato tenía borde
+inferior, así que solo avisaba el día exacto del vencimiento. Si el scheduler no
+corría ese día, el aviso se perdía para siempre. Corregido con ventanas explícitas
+y test de regresión.
+
+**Pendiente de la fase 9**: `revisarEstructuraFaltante` (aviso semanal de estructura
+obligatoria no constituida) quedó como stub. Necesita recorrer tenants y obras, que
+es exactamente lo que hace `completitudAmbito`; se cierra cuando ese recorrido exista
+a nivel de job.

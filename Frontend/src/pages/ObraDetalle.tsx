@@ -27,6 +27,7 @@ import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { useObraContext } from '../context/ObraContext';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
+import CompletitudFufPanel from '../components/CompletitudFufPanel';
 import { AMBITO as AMBITO_ESTRUCTURA } from '../utils/estructuraPreventiva';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import type { SignatureRequest, DocumentVersion, Document as DocumentoApi } from '../api/client';
@@ -2625,6 +2626,13 @@ export default function ObraDetalle() {
                       onConstituir={(tipo) => navigate(`/estructura/constituir?ambito=obra&obraId=${obraId}&tipo=${tipo}`)}
                       onVerOrgano={(id) => navigate(`/estructura/organos/${id}`)}
                     />
+                    <div style={{ marginTop: 'var(--space-3)' }}>
+                      <CompletitudFufPanel
+                        tenantId={obra.tenantId}
+                        ambito={AMBITO_ESTRUCTURA.OBRA}
+                        obraId={obraId}
+                      />
+                    </div>
                   </div>
                 )}
                 <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>

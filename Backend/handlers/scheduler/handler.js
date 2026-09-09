@@ -144,3 +144,23 @@ module.exports.checkActivityAlerts = async () => {
     console.log(`checkActivityAlerts hoy=${hoy} hhmm=${hhmm} horaLimite=${avisosHoraLimite} mediodia=${avisosMediodia}`);
     return { hoy, hhmm, avisosHoraLimite, avisosMediodia };
 };
+
+/**
+ * Lambda programada diaria: recordatorios de estructura preventiva (sección 8).
+ *
+ * Va aparte de `checkActivityAlerts` porque su cadencia es distinta: las alertas
+ * de actividades miran el día en curso cada 30 minutos, mientras que éstas son
+ * hitos de calendario (mandatos, plazos, cierres de mes) que solo cambian una vez
+ * al día. Correrlas cada media hora sería 48 veces el mismo trabajo.
+ */
+module.exports.checkEstructuraAlerts = async () => {
+    const { revisarEstructuraPreventiva } = require('./estructura-alertas');
+    try {
+        const resumen = await revisarEstructuraPreventiva(new Date());
+        console.log('[estructura-alertas]', JSON.stringify(resumen));
+        return resumen;
+    } catch (err) {
+        console.error('[estructura-alertas] fallo la pasada:', err);
+        throw err;
+    }
+};
