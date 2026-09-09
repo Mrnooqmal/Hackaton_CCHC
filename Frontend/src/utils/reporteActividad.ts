@@ -128,6 +128,58 @@ export function estadoEvaluacion(activity: Activity): EstadoEvaluacion | null {
     };
 }
 
+export type EstadoDuracion = {
+    /** Minutos que el decreto exige a esta capacitación. */
+    minimoMin: number;
+    /** Minutos declarados desde el certificado, o null si nadie los declaró. */
+    declaradaMin: number | null;
+    tieneRespaldo: boolean;
+    nombreArchivo: string | null;
+    fileKey: string | null;
+    /** false solo cuando hay declaración y NO alcanza; null mientras no se declare. */
+    cumple: boolean | null;
+};
+
+/**
+ * Duración de una capacitación contra el mínimo del DS 44 (FUF 18 y 23):
+ * 1 hora para el uso de EPP (Art. 13 inc. 3) y 8 horas para la capacitación en
+ * prevención de riesgos (Art. 16 inc. 1 letra d).
+ *
+ * La plataforma NO cronometra la clase ni deduce las horas del reloj de la
+ * actividad: la capacitación la puede dictar un OAL externo sin pasar por el
+ * sistema, y `horaFin` se sobrescribe con la hora en que alguien cerró la
+ * actividad. Se declara lo que dice el certificado y se custodia el certificado
+ * — el mismo criterio de la evaluación de aprendizaje y del PTP.
+ */
+export function estadoDuracion(activity: Activity): EstadoDuracion | null {
+    const cfg = (activity as { duracion?: {
+        minimaMin?: number | null;
+        declaradaMin?: number | null;
+        respaldo?: { fileKey?: string; nombre?: string } | null;
+    } }).duracion;
+    if (!cfg?.minimaMin || cfg.minimaMin <= 0) return null;
+
+    const declarada = cfg.declaradaMin ?? null;
+    const r = cfg.respaldo || null;
+    return {
+        minimoMin: cfg.minimaMin,
+        declaradaMin: declarada,
+        tieneRespaldo: Boolean(r?.fileKey),
+        nombreArchivo: r?.nombre || null,
+        fileKey: r?.fileKey || null,
+        cumple: declarada === null ? null : declarada >= cfg.minimaMin,
+    };
+}
+
+/** "8 h" / "1 h 30 min" / "45 min" a partir de minutos. */
+export function formatoDuracion(min?: number | null): string | null {
+    if (min === null || min === undefined || min < 0) return null;
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    if (h === 0) return `${m} min`;
+    return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
 /** Etiqueta legible de un código del catálogo (o el código, si no está). */
 export const labelDe = (items: { codigo: string; label: string }[], codigo: string) =>
     items.find((i) => i.codigo === codigo)?.label || codigo;

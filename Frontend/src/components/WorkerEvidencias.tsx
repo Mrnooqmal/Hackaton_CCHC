@@ -13,6 +13,10 @@ type Evidencia = { tipo: string; nombre?: string; fileKey?: string; emitidoEn?: 
 const TIPOS_COMUNES = [
   'EXAMEN_ALTURA', 'CERT_MOLDAJES', 'CAP_ALZAHOMBRE',
   'VIGILANCIA_PREXOR', 'VIGILANCIA_TMERT', 'VIGILANCIA_MMC', 'VIGILANCIA_RUV', 'VIGILANCIA_SILICE',
+  // Art. 68: la autorizacion a asistir a los examenes de control del Organismo
+  // Administrador es por persona y el tiempo se cuenta como trabajado. Va aca y
+  // no en la obra porque acompaña al trabajador cuando lo transfieren.
+  'AUTORIZACION_EXAMENES',
 ];
 
 interface Props {

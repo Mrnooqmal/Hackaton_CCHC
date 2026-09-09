@@ -107,6 +107,13 @@ Hackaton_CCHC/
     └── manual-src/         # Manual VitePress (build → public/manual/)
 ```
 
+> **⚠️ Los catálogos de fase NO son espejo.** `DS44_PLAN_DOCS`, `DS44_DO_PROCEDIMIENTOS`,
+> `DS44_DO_REGISTROS_EJECUCION` y `DS44_DO_EVENTOS` viven **solo** en
+> `Frontend/src/utils/ds44.ts`; el `ds44.js` del backend tiene únicamente cargos, matriz
+> EPP y kits. Lo que sí hay que sincronizar al agregar un tipo documental es
+> `DOCUMENT_TYPES` en `Backend/handlers/documents/handler.js`, que **valida y rechaza**
+> cualquier tipo no registrado.
+>
 > **⚠️ Archivos espejo críticos:** `Backend/lib/ds44.js` ↔ `Frontend/src/utils/ds44.ts`,
 > `Backend/lib/permissions.js` ↔ `Frontend/src/permissions.ts` y
 > `Backend/lib/ptp.js` ↔ `Frontend/src/utils/ptp.ts`. Si cambias uno, cambia el
@@ -303,6 +310,81 @@ el archivo y su test deberían borrarse.
 > (`reporteActividadPdf.ts`), el Registro Art. 72 y el Informe Art. 71
 > (`RegistroService`) —, porque nadie más puede producirlos.
 
+### 4.6.4 Registros de ejecución (`DS44_DO_REGISTROS_EJECUCION`)
+Cuarta categoría de la fase HACER, distinta de las tres que ya existían: los
+**procedimientos** son el texto que la empresa redacta una vez, los **registros de
+gestión** son read-models derivados de datos del sistema, los **eventos
+sobrevinientes** ocurren solo ante el hecho — y esto es la **evidencia documental de
+que algo se ejecutó**, que solo puede llegar subida por la obra.
+
+Cubre los ítems 28, 29, 53 y 25 del FUF: acta del ensayo del plan de emergencias
+(Art. 19), registro de reuniones de coordinación (Art. 20), evidencia de publicación
+del mapa de riesgos (Art. 62) y registro de consulta a los representantes (Art. 17).
+En los cuatro casos el *procedimiento* ya existía; lo que faltaba era el acta.
+
+- Son `multiple`: el hecho se repite (un ensayo por año) y cada ocurrencia se
+  acumula, no reemplaza a la anterior. La fila despliega el historial completo.
+- `vigenciaMeses` marca la caducidad de la evidencia y se mide contra
+  **`doc.fecha`** (cuándo ocurrió el hecho), no contra `createdAt`: un acta de un
+  simulacro del año pasado subida hoy no renueva nada. Un registro vencido **no
+  cuenta** en el % de cumplimiento HACER.
+- El campo `fecha` se agregó al documento en `documents/handler.js` (create +
+  `allowedFields`) y el modal lo pide como "Fecha del hecho" solo para estos tipos
+  (`esRegistroEjecucion`).
+- El ítem 56 (autorización a exámenes, Art. 68) NO va acá: es de alcance **persona**
+  y se resolvió como un tipo más de `WorkerEvidencias`, que ya era un mecanismo
+  genérico de evidencias reutilizables entre obras.
+
+⚠️ El backend valida `DOCUMENT_TYPES` (`documents/handler.js`) y rechaza cualquier
+tipo que no esté ahí. **Ese es el espejo real de los tipos documentales**, no
+`lib/ds44.js`: los catálogos de fase (`DS44_PLAN_DOCS`, `DS44_DO_*`) viven **solo en
+el frontend**.
+
+### 4.6.5 Constancia de difusión (`utils/difusion.ts` + `EventBus`)
+El DS 44 no se conforma con que el documento exista: obliga a informarlo a los
+**representantes de las personas trabajadoras** — comité paritario, delegado,
+dirigentes sindicales (Art. 7 inc. 9 para la MIPER, Art. 8 inc. 3 para el PTP,
+Art. 57 inc. 2 para el Reglamento). Ninguno de esos es un `rol` de PersonasTable:
+son cargos electos que viven en la estructura preventiva.
+
+- **`EventBus.resolverRepresentantesSST(tenantId, obraId)`** devuelve los
+  `personaId` de los integrantes activos de los órganos **vigentes**. Consulta dos
+  ámbitos —los de la empresa aplican a todas las obras, los de la obra son propios
+  de ella— porque el conteo del Art. 23 es por lugar de trabajo. Un órgano vencido
+  no notifica. Nunca bloquea la publicación: si la estructura falla, el aviso sale
+  igual a la línea de mando.
+- `onDocumentVersionUpdated` pasó a tener **tres** grupos: línea de mando (gestión),
+  representantes (información, no se les pide firmar) y firmantes previos
+  (re-firma), con deduplicación en cascada.
+- **`EventBus.registrarDifusion`** escribe `doc.difusiones[]` con a quién se informó
+  y cuándo. Va en el documento y no en tabla aparte porque la constancia solo tiene
+  sentido junto a la versión que se difundió. El fiscalizador pide la prueba, no la
+  capacidad de notificar.
+- En la UI, los tipos de `DS44_REQUIEREN_DIFUSION` muestran `Sin constancia de
+  difusión` / **`Difundido sin representantes`** / `Informado a N el DD/MM`. El del
+  medio es exactamente el incumplimiento parcial que el FUF marca en los ítems 4 y 11.
+- `estadoPlazoReglamento` (Art. 57 inc. 2, 30 días de anticipación) **está escrita
+  pero sin conectar**: falta un campo de fecha de entrada en vigencia. El ítem 50
+  queda a medias a propósito — destinatarios sí, plazo no.
+
+### 4.6.6 Versionado de documentos corporativos (FUF 51) — sin UI todavía
+`REGLAMENTO_INTERNO` y `POLITICA_SSO` **no son documentos de obra**. En
+`ObraDetalle.tsx`, `TENANT_LEVEL_PLAN_KEYS` los renderiza como un **espejo de solo
+lectura** (`tenantLevel: true`, sin `documentId`), y su archivo maestro es una
+plantilla del catálogo de cargos del tenant — ni siquiera un Document.
+`createOnboardingDocument` reparte **una copia por persona** (`clasificacion:
+'empresa'`).
+
+Por eso no hay un `documentId` único al que versionar, y `POST
+/documents/corporativo/nueva-version` versiona **las N copias a la vez**: archiva
+cada versión anterior, resetea todas las asignaciones a `pendiente` (la re-firma del
+Art. 57 inc. 5) y emite **una sola** notificación consolidada — el hecho que se
+comunica es que cambió el Reglamento, no que cambiaron N archivos.
+
+⚠️ **El endpoint no tiene punto de entrada en la UI.** El lugar natural es
+`/cargos-onboarding`, donde se sube la plantilla maestra. Hasta que se agregue, el
+ítem 51 no está cerrado.
+
 ### 4.7 Firmas digitales (`lib/services/FirmaService.js`) — Strategy Pattern
 4 estrategias de validación:
 - **PIN**: verifica PIN contra `pinHash` (hasheado con `personaId`). Método principal.
@@ -398,6 +480,26 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
     `puedeAdjuntarEval` (`canManage || relator`), **no** `puedeGestionar`: éste excluye
     el historial (`fecha < today`), lo que dejaría el respaldo sin forma de entrar al
     día siguiente de la charla.
+- **Duración de capacitaciones (FUF 18 y 23):** el DS 44 le fija un piso de horas —
+  1 hora para el uso de EPP (Art. 13 inc. 3) y 8 horas para prevención de riesgos
+  (Art. 16 inc. 1 letra d)—. Hasta acá esos mínimos vivían en el **título** del ítem
+  del kit ("Capacitación SST 8 horas") sin que nadie los verificara.
+  - Bloque `duracion = { minimaMin, declaradaMin, respaldo }`, espejo exacto de
+    `evaluacion`. `minimaMin` se deriva del subtipo (`DURACIONES_MINIMAS`) y se
+    guarda **en la actividad**, no se busca en el catálogo, para que el acta diga
+    contra qué mínimo se midió aunque el catálogo cambie después.
+  - ⚠️ **La duración NO se deriva del reloj.** Se intentó primero con
+    `horaFin - horaInicio` y estaba mal por dos razones: al cerrar una actividad el
+    backend **sobrescribe `horaFin` con la hora del cierre**, así que el reloj mide
+    cuánto tardaron en apretar el botón; y una capacitación dictada por un OAL
+    externo no pasa por la plataforma y habría quedado marcada como incumplida.
+    Se declara lo que dice el certificado y se custodia el certificado — el mismo
+    criterio del PTP y de la evaluación.
+  - Como la evaluación, **no se congela con las firmas ni con el cierre**: el
+    certificado llega días después. Corregir las horas no borra el respaldo.
+  - En el cumplimiento DS44 una capacitación sin horas declaradas **no cuenta como
+    completa**. Retrocompatible: las actividades anteriores no tienen el bloque y
+    `estadoDuracion` devuelve `null`; a esas no se les exige nada.
 - **Semáforo/vencidas (§6, ítems 1 y 6):** `Frontend/src/utils/seguimientoActividad.ts`
   → `estadoSeguimiento(actividad)` = verde/amarillo/rojo (rojo = **vencida**: no
   completada/cancelada con `fecha < hoy`). Derivado en cliente (no cambia estado en DB);
@@ -423,7 +525,7 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
 | `obras-module/` | itty-router | CRUD obras, fases, asignación de equipo, plantillas onboarding |
 | `personas-module/` | itty-router | CRUD personas, carga masiva, enrolamiento, transferencia entre obras, currículum/historial |
 | `auth/` | por-endpoint | login, change/forgot/reset-password, logout, me, validate-token |
-| `documents/` | por-endpoint | CRUD, **nueva-version** (versionado de procedimientos + notificación a la línea de mando, §4.6.1), assign, sign, sign-bulk, sign-assisted, download-firmado, stamp |
+| `documents/` | por-endpoint | CRUD, **nueva-version** (versionado de procedimientos + notificación a la línea de mando, §4.6.1), **corporativo/nueva-version** (versiona las N copias del Reglamento/Política, §4.6.6), assign, sign, sign-bulk, sign-assisted, download-firmado, stamp |
 | `signatures/` | por-endpoint | crear firma, enrolamiento, verify por token, disputas/resolución |
 | `signature-requests/` | por-endpoint | solicitudes de firma, pendientes/historial por worker, offline-batch, stats |
 | `activities/` | por-endpoint | charlas, capacitaciones; planificación mensual (`plan`), edición/cierre/**reasignación de relator** (`patch`), registro de asistencia, respaldo de **evaluaciones** (vía `patch`), stats (ver §4.9) |
@@ -530,6 +632,12 @@ reflejadas aquí). Estructura S3: un bucket con aislamiento por prefijo
 - **`tenantId` del JWT, nunca del body.** Regla de seguridad transversal.
 - **Archivos espejo** (`ds44`, `permissions`) front↔back: sincronizar siempre.
 - **No modificar `FirmaService`** hasta resolver la consulta legal del PIN.
+- **La plataforma es un repositorio, no un autor.** Reafirmado por el equipo el
+  2026-09-09: si algo se puede acreditar con un archivo subido y firmas, así se
+  resuelve. No se generan documentos normativos ni se miden hechos que ocurren fuera
+  del sistema (ver §4.9, duración de capacitaciones, por un caso donde derivar del
+  reloj fue el error). La excepción siguen siendo los **registros de lo ocurrido
+  dentro de la plataforma**: acta de actividad, Registro Art. 72 e Informe Art. 71.
 - **README/ARCHITECTURE parcialmente desactualizados:** describen una versión más
   antigua (p.ej. tablas "Users"/"Workers" separadas, módulos sin cargos DS44).
   El código real usa Persona unificada, kits DS44 por cargo, ciclo Deming, y
@@ -598,6 +706,51 @@ mando (ver §4.6.1). Pendientes conocidos fuera de §3/§6: fix responsivo
 de firma en vertical (§7), módulo "comando" y vínculo cargo↔actividad (§8),
 exportar reportes del dashboard (§9), FAQ/tutoriales (§10), PITR y salida de SES
 del sandbox (infra).
+
+### Estado del FUF (Formulario Único de Fiscalización del DS 44)
+
+El **FUF** es la pauta con que la Dirección del Trabajo fiscaliza: 60 requisitos
+numerados. El equipo lo usa como backlog, con columnas internas "Soporte del
+sistema" y "Comentarios". Vive en un `.docx` fuera del repo (SharePoint del equipo).
+Estado inicial: 23 FALTANTE, 8 CHECK PARCIAL, 11 CHECK, 18 FUERA DE ALCANCE.
+
+**Reparto:** Adrean tomó los ítems 30-48 (estructura preventiva) y de los
+transversales (4, 11, 25, 50, 51, 58) solo la capa de roles — que comité, delegado y
+DPR existan y sean consultables como destinatarios. La difusión en sí es del otro
+lado. Ver `Backend/auditoria/` para su levantamiento.
+
+**Cerrados por Adrean (commit `c7db5a4`):** 30, 31, 32, 34-41, 46, 47, 48 —
+módulo de estructura preventiva con tabla propia (`EstructuraPreventivaTable`) y 13
+tipos documentales nuevos.
+
+**Cerrados en este lado:** 26, 28, 29, 53, 56 (§4.6.4) · 4, 11, 25 (§4.6.5) ·
+8, 9, 49 (fase ACTUAR con estado derivado) · 18, 23 (§4.9, duración).
+
+**Abiertos:**
+- **1** — carpeta única del SGSST (Arts. 22, 64). Sin tocar.
+- **50** — a medias: destinatarios sí, el plazo de 30 días no (§4.6.5).
+- **51** — backend listo, **sin punto de entrada en la UI** (§4.6.6).
+- **58** — el comentario del FUF ("verificar cargas, cambios de cargos y los motivos
+  de cambios") no calza obviamente con el Art. 70; falta aclararlo con el equipo.
+- **60** — `RegistroService` está construido y enchufado; falta la auditoría que el
+  propio comentario pide.
+- **46 inciso e** — Adrean lo dio por cerrado, pero `RegistroService.calcularIndicadores`
+  **no segmenta por sexo**. `incidents.repository.js` ya guarda `trabajador.genero` y
+  los indicadores no lo usan. ⚠️ **Límite compartido:** los ítems 46/47 (de Adrean) y
+  el 60 corren sobre el mismo `RegistroService`. Acordarlo antes de tocarlo.
+
+### La fase ACTUAR ahora deriva estado (FUF 8, 9 y 49)
+`DS44_ACT_ACTUALIZACIONES` era una lista estática de cinco títulos con un botón: no
+decía si la MIPER cambió, si el PTP quedó fuera de plazo ni hace cuánto no se revisa
+el Reglamento — literalmente el reparo del FUF ("está en la fase ACTUAR pero no
+lleva a nada"). Toda la lógica ya existía (`estadoPtp`,
+`aprobadoPorRepresentanteLegal`, `revisionVencida`), solo no se consultaba ahí.
+Ahora cada fila trae badge `Sin documento` / `Vencida` / `Al día`, y el catálogo
+declara `revisionMeses` (Reglamento 12, capacitación 24).
+
+⚠️ El botón "Revisar documento" apuntaba a `/documents`, **ruta que no existe** (solo
+`/documents-repository`): caía en el catch-all `path="*"` y devolvía al dashboard.
+Ahora cambia a la fase PLAN de la misma obra, donde esos documentos ya están.
 
 ---
 

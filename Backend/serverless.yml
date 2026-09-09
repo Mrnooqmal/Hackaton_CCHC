@@ -466,6 +466,16 @@ functions:
           path: /documents/{id}/nueva-version
           method: POST
 
+  # Versionado de documentos corporativos (Reglamento, Política): no tienen un
+  # documentId único, se reparten en copias por persona. Va antes que
+  # /documents/{id}/... porque 'corporativo' no es un id.
+  documentNuevaVersionCorporativa:
+    handler: handlers/documents/handler.nuevaVersionCorporativa
+    events:
+      - httpApi:
+          path: /documents/corporativo/nueva-version
+          method: POST
+
   assignDocument:
     handler: handlers/documents/handler.assign
     events:

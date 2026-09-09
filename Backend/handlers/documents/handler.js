@@ -67,6 +67,14 @@ const DOCUMENT_TYPES = {
     // Tipos historicos (compatibilidad con datos previos)
     PLAN_CAPACITACION: 'Plan de Capacitación (Art. 16)',
     INFO_RIESGOS_LABORALES: 'Información de Riesgos Laborales (Art. 15)',
+    // Fase HACER — registros de ejecucion (evidencia de que la actividad ocurrio).
+    // Se distinguen del procedimiento homonimo: PLAN_EMERGENCIAS es el plan escrito
+    // y ACTA_ENSAYO_EMERGENCIA es el acta del ensayo; COORDINACION_ENTIDADES es el
+    // procedimiento y REGISTRO_COORDINACION el acta de las reuniones.
+    ACTA_ENSAYO_EMERGENCIA: 'Acta del Ensayo del Plan de Emergencias (Art. 19)',
+    REGISTRO_COORDINACION: 'Registro de Reuniones de Coordinación entre Empleadores (Art. 20)',
+    PUBLICACION_MAPA_RIESGOS: 'Evidencia de Publicación del Mapa de Riesgos (Art. 62)',
+    REGISTRO_CONSULTA: 'Registro de Consulta a los Representantes de las Personas Trabajadoras (Art. 17)',
     // Fase HACER — eventos sobrevinientes
     REGISTRO_RIESGO_GRAVE: 'Registro de Riesgo Grave e Inminente (Art. 18)',
     REGISTRO_AT_EP: 'Registro AT, EP e Incidentes Peligrosos (Arts. 71-72)',
@@ -116,8 +124,18 @@ const TIPOS_PROCEDIMIENTO = new Set([
     'PROCEDIMIENTO_INVESTIGACION', 'GESTION_CAMBIOS', 'COORDINACION_ENTIDADES', 'CONSULTA_REPRESENTANTES',
     'VIGILANCIA_AMBIENTAL', 'VIGILANCIA_SALUD',
     'MIPER', 'MATRIZ_MIPPER',
+    // El Art. 57 inc. 5 obliga a revisar el Reglamento al menos cada año CON
+    // participacion del comite o del delegado, y el FUF 51 pide el registro de
+    // control de cambios. Es el mismo ciclo de la MIPER: al publicar una version
+    // se re-informa y se re-firma, asi que se versiona igual aunque sea un
+    // documento de la fase PLAN.
+    'REGLAMENTO_INTERNO',
 ]);
 const esProcedimiento = (tipo) => TIPOS_PROCEDIMIENTO.has(tipo);
+
+// Documentos corporativos: su archivo maestro es una plantilla del catalogo del
+// tenant y se reparte en copias por persona (ver nuevaVersionCorporativa).
+const TIPOS_CORPORATIVOS = new Set(['REGLAMENTO_INTERNO', 'POLITICA_SSO']);
 
 /**
  * POST /documents - Crear nuevo documento
@@ -170,6 +188,10 @@ module.exports.create = async (event) => {
             archivoNombre: body.archivoNombre || null,
             fechaCaducidad: body.fechaCaducidad || null,
             periodo: body.periodo || null,
+            // Fecha del hecho que el documento acredita. Distinta de createdAt:
+            // un acta de un simulacro de marzo subida en septiembre acredita marzo,
+            // y es contra esta fecha que se mide la vigencia anual (Art. 19).
+            fecha: body.fecha || null,
             createdBy: body.createdBy || null,
             creatorName: body.creatorName || null,
             firmas: [],
@@ -373,7 +395,7 @@ module.exports.update = async (event) => {
         if (!id) return error('ID de documento requerido');
 
         const body = JSON.parse(event.body || '{}');
-        const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad', 'periodo'];
+        const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad', 'periodo', 'fecha'];
         const updateExpressions = [];
         const expressionNames = {};
         const expressionValues = {};
@@ -464,6 +486,135 @@ module.exports.update = async (event) => {
  * Body: { s3Key, archivoNombre?, motivo, notasCambio?, publicadaPor?,
  *         publicadaPorNombre?, versionEsperada? }
  */
+/**
+ * POST /documents/corporativo/nueva-version
+ *
+ * Publica una version nueva de un documento CORPORATIVO (Reglamento Interno,
+ * Politica SST) — FUF 51, Art. 57 inc. 5.
+ *
+ * Por que existe aparte de `nuevaVersion`: el Reglamento no es un documento de
+ * obra. Su archivo maestro vive como plantilla del catalogo de cargos del tenant
+ * y `createOnboardingDocument` reparte UNA COPIA POR PERSONA al vincularla. No
+ * hay un unico documentId al que apuntar, asi que versionar "el Reglamento" es
+ * versionar las N copias a la vez.
+ *
+ * Hace tres cosas que la norma pide juntas:
+ *   1. archiva la version anterior de cada copia y sube su `version`,
+ *   2. resetea las asignaciones a `pendiente` — re-firma obligatoria, y
+ *   3. emite UNA sola notificacion consolidada (no N), que con el resolver de
+ *      representantes alcanza al comite paritario y al delegado.
+ *
+ * El archivo maestro del catalogo lo actualiza el frontend por separado: es
+ * config del tenant, no un documento.
+ */
+module.exports.nuevaVersionCorporativa = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+        const { tenantId, tipo, s3Key, archivoNombre, motivo, notasCambio, publicadaPor, publicadaPorNombre } = body;
+
+        if (!tenantId) return error('tenantId es requerido');
+        if (!TIPOS_CORPORATIVOS.has(tipo)) {
+            return error(`tipo inválido. Corporativos: ${[...TIPOS_CORPORATIVOS].join(', ')}`);
+        }
+        if (!s3Key) return error('s3Key (archivo de la nueva versión) es requerido');
+        if (!motivo || !String(motivo).trim()) return error('El motivo del cambio es requerido');
+
+        // Copias vigentes de ese tipo en el tenant (GSI, no Scan).
+        const res = await docClient.send(new QueryCommand({
+            TableName: TABLE_NAME,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :t',
+            FilterExpression: '#tipo = :tipo AND #estado <> :anulado',
+            ExpressionAttributeNames: { '#tipo': 'tipo', '#estado': 'estado' },
+            ExpressionAttributeValues: { ':t': tenantId, ':tipo': tipo, ':anulado': 'anulado' },
+        }));
+        const copias = res.Items || [];
+        if (copias.length === 0) {
+            return error('No hay copias de este documento para versionar. Súbelo primero desde el catálogo de cargos.', 404);
+        }
+
+        const now = new Date().toISOString();
+        const firmantes = new Set();
+        let actualizados = 0;
+
+        for (const doc of copias) {
+            const versionPrevia = doc.version || 1;
+            const snapshot = {
+                version: versionPrevia,
+                s3Key: doc.s3Key || doc.archivoUrl || null,
+                archivoNombre: doc.archivoNombre || null,
+                motivo: doc.ultimoMotivoVersion || null,
+                firmas: doc.firmas || [],
+                publicadaPor: doc.ultimaPublicacionPor || null,
+                publicadaEn: doc.updatedAt || null,
+            };
+            const asignacionesReset = (doc.asignaciones || []).map(a => ({
+                ...a, estado: 'pendiente', fechaFirma: null, notificado: true,
+            }));
+            (doc.asignaciones || []).forEach(a => a.personaId && firmantes.add(a.personaId));
+
+            try {
+                await docClient.send(new UpdateCommand({
+                    TableName: TABLE_NAME,
+                    Key: { documentId: doc.documentId },
+                    UpdateExpression: 'SET #version = :v'
+                        + ', s3Key = :k, archivoUrl = :k, archivoNombre = :n, firmas = :vacio,'
+                        + ' asignaciones = :asig, documentoFirmadoS3Key = :nulo,'
+                        + ' ultimoMotivoVersion = :m, notasCambio = :nc,'
+                        + ' ultimaPublicacionPor = :p, ultimaPublicacionNombre = :pn,'
+                        + ' versiones = list_append(if_not_exists(versiones, :vacio), :snap), updatedAt = :now',
+                    ExpressionAttributeNames: { '#version': 'version' },
+                    ExpressionAttributeValues: {
+                        ':v': versionPrevia + 1,
+                        ':k': s3Key,
+                        ':n': archivoNombre || doc.archivoNombre || null,
+                        ':vacio': [],
+                        ':asig': asignacionesReset,
+                        ':nulo': null,
+                        ':m': String(motivo).trim(),
+                        ':nc': notasCambio || null,
+                        ':p': publicadaPor || null,
+                        ':pn': publicadaPorNombre || null,
+                        ':snap': [snapshot],
+                        ':now': now,
+                    },
+                }));
+                actualizados += 1;
+            } catch (e) {
+                console.error(`No se pudo versionar la copia ${doc.documentId}:`, e.message);
+            }
+        }
+
+        // UNA notificación por la publicación, no una por copia: el hecho que se
+        // comunica es que cambió el Reglamento, no que cambiaron N archivos.
+        try {
+            await eventBus.emit('document.version.updated', {
+                documentId: copias[0].documentId,
+                tenantId,
+                obraId: null,
+                documentName: DOCUMENT_TYPES[tipo] || tipo,
+                version: (copias[0].version || 1) + 1,
+                motivo: String(motivo).trim(),
+                publicadaPor: publicadaPor || null,
+                publicadaPorNombre: publicadaPorNombre || null,
+                firmanteIds: [...firmantes],
+            });
+        } catch (eventErr) {
+            console.error('Error emitting document.version.updated (corporativo):', eventErr);
+        }
+
+        return success({
+            message: `Nueva versión publicada en ${actualizados} copia(s). El personal debe re-firmar.`,
+            tipo,
+            copiasActualizadas: actualizados,
+            firmantesConvocados: firmantes.size,
+        });
+    } catch (err) {
+        console.error('Error publicando versión corporativa:', err);
+        return error('Error al publicar la nueva versión', 500);
+    }
+};
+
 module.exports.nuevaVersion = async (event) => {
     try {
         const { id } = event.pathParameters || {};

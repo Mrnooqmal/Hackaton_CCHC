@@ -201,6 +201,12 @@ export type Ds44DoElemento = {
     cuenta?: boolean;
     // true => admite varios documentos a la vez (ver Ds44DocDefinition.multiple).
     multiple?: boolean;
+    // Meses de validez de la evidencia. La ocurrencia más reciente vence pasado
+    // ese plazo y el elemento vuelve a quedar pendiente (Art. 19: ensayo anual).
+    vigenciaMeses?: number;
+    // Minutos mínimos que el decreto exige a la capacitación (FUF 18 y 23).
+    // Espejo de DURACIONES_MINIMAS en Backend/handlers/activities/handler.js.
+    duracionMinimaMin?: number;
 };
 
 // Evalua si un elemento aplica a la obra. Si falta el dato para decidir,
@@ -247,10 +253,10 @@ export const DS44_DO_PROCEDIMIENTOS: Ds44DoElemento[] = [
 // El estado se lee de actividades ejecutadas con asistentes firmados.
 // El match con ActivitiesTable es por `subtipo` exacto (no por palabras del titulo).
 export const DS44_DO_CAPACITACIONES: Ds44DoElemento[] = [
-    { key: 'CAP_PRL_8H', tipo: 'CAPACITACION', titulo: 'Capacitación 8h Prevención de Riesgos Laborales', articulo: 'Art. 16', fuente: 'actividad', condicion: 'siempre', actividadTipos: ['CAPACITACION'], subtipo: 'PRL_8H', cuenta: true },
-    { key: 'CAP_EPP', tipo: 'CAPACITACION', titulo: 'Uso y mantención de EPP (mín. 1h por EPP)', articulo: 'Art. 13', fuente: 'actividad', condicion: 'siempre', actividadTipos: ['CAPACITACION'], subtipo: 'EPP', cuenta: true },
-    { key: 'CAP_CPHS_ORIENTACION', tipo: 'CAPACITACION', titulo: 'Curso Orientación CPHS (8h)', articulo: 'Art. 32', fuente: 'actividad', condicion: 'cphs', actividadTipos: ['CAPACITACION'], subtipo: 'CPHS_ORIENTACION', cuenta: true },
-    { key: 'CAP_CPHS_20H', tipo: 'CAPACITACION', titulo: 'Curso 20h CPHS', articulo: 'Art. 32', fuente: 'actividad', condicion: 'cphs', actividadTipos: ['CAPACITACION'], subtipo: 'CPHS_20H', cuenta: true },
+    { key: 'CAP_PRL_8H', tipo: 'CAPACITACION', titulo: 'Capacitación 8h Prevención de Riesgos Laborales', articulo: 'Art. 16', fuente: 'actividad', condicion: 'siempre', actividadTipos: ['CAPACITACION'], subtipo: 'PRL_8H', cuenta: true, duracionMinimaMin: 480 },
+    { key: 'CAP_EPP', tipo: 'CAPACITACION', titulo: 'Uso y mantención de EPP (mín. 1h por EPP)', articulo: 'Art. 13', fuente: 'actividad', condicion: 'siempre', actividadTipos: ['CAPACITACION'], subtipo: 'EPP', cuenta: true, duracionMinimaMin: 60 },
+    { key: 'CAP_CPHS_ORIENTACION', tipo: 'CAPACITACION', titulo: 'Curso Orientación CPHS (8h)', articulo: 'Art. 32', fuente: 'actividad', condicion: 'cphs', actividadTipos: ['CAPACITACION'], subtipo: 'CPHS_ORIENTACION', cuenta: true, duracionMinimaMin: 480 },
+    { key: 'CAP_CPHS_20H', tipo: 'CAPACITACION', titulo: 'Curso 20h CPHS', articulo: 'Art. 32', fuente: 'actividad', condicion: 'cphs', actividadTipos: ['CAPACITACION'], subtipo: 'CPHS_20H', cuenta: true, duracionMinimaMin: 1200 },
     { key: 'CAP_DELEGADO', tipo: 'CAPACITACION', titulo: 'Capacitación Delegado SST', articulo: 'Art. 66', fuente: 'actividad', condicion: 'delegado', actividadTipos: ['CAPACITACION'], subtipo: 'DELEGADO', cuenta: true },
     { key: 'CAP_ENCARGADO', tipo: 'CAPACITACION', titulo: 'Capacitación Encargado Gestión del Riesgo (la entrega el OA)', articulo: 'Art. 65', fuente: 'actividad', condicion: 'encargado_oa', actividadTipos: ['CAPACITACION'], subtipo: 'ENCARGADO', cuenta: false }
 ];
@@ -267,6 +273,46 @@ export const DS44_DO_REGISTROS_GESTION: Ds44DoElemento[] = [
     { key: 'REG_VIGILANCIA', tipo: 'VIGILANCIA', titulo: 'Personas en vigilancia de la salud', articulo: 'Art. 73', fuente: 'readmodel', condicion: 'siempre', modulo: '/personas', accion: 'consulta' },
     { key: 'REG_ACTAS_CPHS', tipo: 'ACTAS_CPHS', titulo: 'Actas CPHS, acuerdos y entrega de documentación', articulo: 'Arts. 36-46', fuente: 'readmodel', condicion: 'cphs', modulo: '/activities', accion: 'consulta', moduloPendiente: true }
 ];
+
+// C) REGISTROS DE EJECUCIÓN — evidencia documental de que algo se hizo.
+// Se distinguen de los PROCEDIMIENTOS (el texto que la empresa redacta una vez) y
+// de los REGISTROS DE GESTIÓN (read-models que derivan de datos del sistema): acá
+// va el acta o la foto que prueba la ejecución, y esa evidencia solo puede llegar
+// subida por la empresa. La plataforma no la genera; declara el slot, la fecha y
+// la vigencia, y afirma lo verificable sin abrir el archivo.
+// Son `multiple` porque el hecho se repite (un ensayo por año, una reunión de
+// coordinación por mes) y cada ocurrencia se guarda, no se reemplaza.
+export const DS44_DO_REGISTROS_EJECUCION: Ds44DoElemento[] = [
+    // FUF 28. El procedimiento (PLAN_EMERGENCIAS) ya existe y el read-model
+    // REG_ENSAYO_EMERGENCIA detecta la actividad SIMULACRO; lo que falta es el acta
+    // del ensayo, que es lo que pide el fiscalizador. Vence al año (Art. 19: "a lo
+    // menos una vez al año").
+    { key: 'ACTA_ENSAYO_EMERGENCIA', tipo: 'ACTA_ENSAYO_EMERGENCIA', titulo: 'Acta del ensayo del plan de emergencias', articulo: 'Art. 19', fuente: 'documento', condicion: 'siempre', cuenta: true, multiple: true, vigenciaMeses: 12 },
+    // FUF 29. COORDINACION_ENTIDADES cubre el procedimiento; el FUF pide además el
+    // registro de que la coordinación efectivamente ocurrió.
+    { key: 'REGISTRO_COORDINACION', tipo: 'REGISTRO_COORDINACION', titulo: 'Registro de reuniones de coordinación entre empleadores', articulo: 'Art. 20', fuente: 'documento', condicion: 'faena_compartida', cuenta: true, multiple: true },
+    // FUF 53. El Art. 62 no se satisface con tener el mapa: exige que esté publicado
+    // en lugares visibles. Esa evidencia es fotográfica y la levanta la obra.
+    { key: 'PUBLICACION_MAPA_RIESGOS', tipo: 'PUBLICACION_MAPA_RIESGOS', titulo: 'Evidencia de publicación del mapa de riesgos', articulo: 'Art. 62', fuente: 'documento', condicion: 'siempre', cuenta: true, multiple: true, vigenciaMeses: 12 },
+    // FUF 25. CONSULTA_REPRESENTANTES (procedimientos) declara CÓMO se consulta;
+    // el Art. 17 exige además la constancia de cada consulta efectiva al comité o
+    // al delegado ante cambios en los procesos de trabajo.
+    { key: 'REGISTRO_CONSULTA', tipo: 'REGISTRO_CONSULTA', titulo: 'Registro de consulta a los representantes', articulo: 'Art. 17', fuente: 'documento', condicion: 'siempre', cuenta: true, multiple: true }
+];
+
+// Documentos cuya difusión el DS 44 exige explícitamente a los representantes de
+// las personas trabajadoras, no solo a la línea de mando (FUF 4, 11, 49 y 50).
+export const DS44_REQUIEREN_DIFUSION = new Set([
+    'MIPER', 'PROGRAMA_TRABAJO_PREVENTIVO', 'REGLAMENTO_INTERNO', 'POLITICA_SSO',
+]);
+
+// ¿El tipo es un registro de ejecución? Se usa para pedir la FECHA DEL HECHO al
+// subirlo: es la única familia de documentos donde la fecha del acta y la de
+// subida se separan, y contra la primera se mide la vigencia.
+const TIPOS_REGISTRO_EJECUCION = new Set(DS44_DO_REGISTROS_EJECUCION.map((el) => el.tipo));
+export function esRegistroEjecucion(tipo?: string | null): boolean {
+    return Boolean(tipo && TIPOS_REGISTRO_EJECUCION.has(tipo));
+}
 
 // Eventos sobrevinientes: se crean SOLO ante el hecho. NO cuentan como faltante
 // en el % de cumplimiento.
@@ -340,14 +386,28 @@ export const DS44_ACT_DOCS: Ds44FaseDoc[] = [
 
 // Actualizaciones condicionales del ciclo ACT: cada una enlaza a un documento de
 // PLAN/DO que debe revisarse, cerrando el ciclo Deming hacia PLAN.
-export const DS44_ACT_ACTUALIZACIONES = [
+// Cada actualización declara su periodicidad máxima cuando el decreto le fija
+// una. `revisionMeses` es lo que permite decir "vencida" en vez de solo listar
+// el título: el Reglamento se revisa al menos cada año (Art. 57 inc. 5) y la
+// capacitación se refuerza al menos cada dos (Art. 16 inc. 1 letra a).
+// La MIPER y el PTP no llevan plazo fijo acá: el suyo depende de un hecho
+// (que cambie la MIPER), y eso lo deriva `estadoPtp`.
+export type Ds44ActActualizacion = {
+    key: string;
+    titulo: string;
+    articulo: string;
+    tipoOrigen: string;
+    revisionMeses?: number;
+};
+
+export const DS44_ACT_ACTUALIZACIONES: Ds44ActActualizacion[] = [
     { key: 'MIPER', titulo: 'Actualizar MIPER', articulo: 'Art. 7 inc. final', tipoOrigen: 'MIPER' },
     // El origen es el Programa de Trabajo Preventivo, no el procedimiento de
     // trabajo seguro (Art. 10): son documentos distintos y apuntar a PROCEDIMIENTO_TRABAJO
     // llevaba a revisar el equivocado al cerrar el ciclo.
     { key: 'PTP', titulo: 'Actualizar PTP (≤30 días desde cambio de MIPER)', articulo: 'Art. 8', tipoOrigen: 'PROGRAMA_TRABAJO_PREVENTIVO' },
-    { key: 'REGLAMENTO_INTERNO', titulo: 'Revisar Reglamento Interno (≥1 año)', articulo: 'Art. 57', tipoOrigen: 'REGLAMENTO_INTERNO' },
-    { key: 'CAPACITACION', titulo: 'Reforzar capacitación', articulo: 'Arts. 15-16', tipoOrigen: 'PLAN_CAPACITACION' },
+    { key: 'REGLAMENTO_INTERNO', titulo: 'Revisar Reglamento Interno (≥1 año)', articulo: 'Art. 57', tipoOrigen: 'REGLAMENTO_INTERNO', revisionMeses: 12 },
+    { key: 'CAPACITACION', titulo: 'Reforzar capacitación', articulo: 'Arts. 15-16', tipoOrigen: 'PLAN_CAPACITACION', revisionMeses: 24 },
     { key: 'CONSULTA_CPHS', titulo: 'Consulta a CPHS', articulo: 'Art. 17', tipoOrigen: 'CONSULTA_REPRESENTANTES' }
 ];
 

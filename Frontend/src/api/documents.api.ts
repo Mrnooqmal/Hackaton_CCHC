@@ -22,6 +22,22 @@ export interface DocumentAssignment {
     fechaFirma?: string;
 }
 
+export interface DocumentDifusion {
+    fecha: string;
+    version: number | null;
+    motivo: string | null;
+    publicadaPor: string | null;
+    destinatarios: {
+        /** Roles de gestión (admin, jefe de obra, supervisor, prevencionista). */
+        mando: string[];
+        /** Integrantes de órganos vigentes: comité paritario, delegado, DPR. */
+        representantes: string[];
+        /** Firmantes de la versión anterior, convocados a re-firmar. */
+        firmantes: string[];
+    };
+    totales: { mando: number; representantes: number; firmantes: number };
+}
+
 export interface Document {
     documentId: string;
     tipo: string;
@@ -44,9 +60,17 @@ export interface Document {
      *  exigen una vez por período: programa de trabajo del CPHS (ítem 38) y
      *  registros e indicadores de SST (ítems 46 y 47). */
     periodo?: string | null;
+    /** Constancia de difusión: a quién se informó cada versión y cuándo. La
+     *  escribe el EventBus al publicar (Art. 7 inc. 9, Art. 8 inc. 3, Art. 57
+     *  inc. 2); el fiscalizador pide la prueba, no la capacidad de notificar. */
+    difusiones?: DocumentDifusion[];
     firmas: DocumentSignature[];
     asignaciones: DocumentAssignment[];
     estado: string;
+    /** Fecha del hecho que el documento acredita, distinta de `createdAt`: un acta
+     *  de un simulacro de marzo subida en septiembre acredita marzo, y es contra
+     *  esta fecha que se mide la vigencia anual (Art. 19). */
+    fecha?: string | null;
     version: number;
     // Historial de versiones de un procedimiento (snapshot inmutable por versión).
     versiones?: DocumentVersion[];
@@ -91,6 +115,7 @@ export interface CreateDocumentData {
     archivoUrl?: string;
     archivoNombre?: string;
     periodo?: string;
+    fecha?: string;
     obraId?: string;
     createdBy?: string;
     creatorName?: string;
@@ -159,6 +184,23 @@ export interface DownloadFirmadoResult {
 }
 
 export const documentsApi = {
+    /** Publica una versión nueva de un documento corporativo (Reglamento, Política).
+     *  No lleva documentId: versiona todas las copias por persona a la vez y emite
+     *  una sola notificación (Art. 57 inc. 5 — FUF 51). */
+    nuevaVersionCorporativa: (data: {
+        tenantId: string;
+        tipo: 'REGLAMENTO_INTERNO' | 'POLITICA_SSO';
+        s3Key: string;
+        archivoNombre?: string;
+        motivo: string;
+        notasCambio?: string;
+        publicadaPor?: string;
+        publicadaPorNombre?: string;
+    }) => apiRequest<{ message: string; copiasActualizadas: number; firmantesConvocados: number }>(
+        '/documents/corporativo/nueva-version',
+        { method: 'POST', body: JSON.stringify(data) },
+    ),
+
     list: (params?: DocumentListParams) => {
         const query = new URLSearchParams(params as Record<string, string>).toString();
         return apiRequest<DocumentListResponse>(`/documents${query ? `?${query}` : ''}`);

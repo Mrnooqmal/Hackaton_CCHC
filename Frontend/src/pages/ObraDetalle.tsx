@@ -4,15 +4,17 @@ import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
 import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido, resolverDocumentoFirmable } from '../utils/documentoFirmado';
 import { publicarNuevaVersion } from '../utils/versionarDocumento';
-import { caducidadPorDefecto, tiempoRelativo, MESES_VIGENCIA_DEFECTO } from '../utils/vigenciaDocumento';
+import { caducidadPorDefecto, tiempoRelativo, revisionVencida, MESES_VIGENCIA_DEFECTO } from '../utils/vigenciaDocumento';
+import { ultimaDifusion, totalInformados } from '../utils/difusion';
+import { estadoDuracion } from '../utils/reporteActividad';
 import ObraAplicabilidadKit from '../components/ObraAplicabilidadKit';
 import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
 import { estadoPtp, aprobadoPorRepresentanteLegal, etiquetaEstadoPtp } from '../utils/ptp';
 import { incidenteAbierto, incidenteCerrado } from '../utils/incidentes';
 import { LuFileText, LuUsers, LuShieldAlert, LuPencil, LuUserPlus, LuClock, LuChevronUp, LuChevronDown, LuCircleCheck, LuDownload, LuSettings, LuEllipsisVertical, LuHistory } from 'react-icons/lu';
-import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
+import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck, FiChevronRight } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl, PageHeader } from '../components/ui';
-import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, normalizeCargoCodigo, unionKits, getCargoLabel, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
+import { DS44_ACT_ACTUALIZACIONES, DS44_ACT_DOCS, DS44_CHECK_DOCS, DS44_DO_PROCEDIMIENTOS, DS44_DO_CAPACITACIONES, DS44_DO_REGISTROS_GESTION, DS44_DO_REGISTROS_EJECUCION, esRegistroEjecucion, DS44_REQUIEREN_DIFUSION, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, DS44_PLAN_DOCS, resolveCargoKit, normalizeCargoCodigo, unionKits, getCargoLabel, type Ds44DoContext, type Ds44DoElemento } from '../utils/ds44';
 
 // Roles de gestión/staff que NO entran al onboarding de terreno (espejo del backend).
 const ROLES_GESTION_ONBOARDING = new Set(['admin', 'jefe_obra', 'supervisor', 'prevencionista', 'relator']);
@@ -85,6 +87,9 @@ const TIPOS_PROCEDIMIENTO = new Set<string>([
   'PROCEDIMIENTO_TRABAJO',
   'MIPER',
   'MATRIZ_MIPPER',
+  // Art. 57 inc. 5: revisión anual con participación del comité o del delegado.
+  // El FUF 51 pide el control de cambios, que es exactamente el versionado.
+  'REGLAMENTO_INTERNO',
 ]);
 const esProcedimiento = (tipo?: string): boolean => !!tipo && TIPOS_PROCEDIMIENTO.has(tipo);
 
@@ -440,6 +445,8 @@ export default function ObraDetalle() {
   const autoAdvanceRef = useRef<string | null>(null); // fase desde la que ya se auto-avanzó
   // Panel DO: workers expandidos
   const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set());
+  const [expandedCargos, setExpandedCargos] = useState<Set<string>>(new Set());
+  const [expandedRegistros, setExpandedRegistros] = useState<Set<string>>(new Set());
   const [planToast, setPlanToast] = useState(false);
   // Modal de onboarding post-asignación
   const [onboardingUploadModal, setOnboardingUploadModal] = useState<{ show: boolean; addedWorkers: any[] } | null>(null);
@@ -627,6 +634,32 @@ export default function ObraDetalle() {
     return { completed, total, progress, byWorker };
   }, [documentosPrevencion, obraSignatureRequests, trabajadores, actividades, encuestas, obraId, cargoCatalog, obra]);
 
+  // El onboarding se agrupa por cargo porque el kit DS44 es por cargo: dos
+  // carpinteros tienen exactamente los mismos items, y en una obra con 40
+  // personas la lista plana obligaba a bajar por decenas de filas identicas.
+  // La clave es el `cargo` ya resuelto en byWorker (multi-cargo llega unido con
+  // coma, y esa combinacion es su propio grupo porque su kit es la union).
+  const onboardingPorCargo = useMemo(() => {
+    // El tipo sale del propio read-model en vez de re-declararse: byWorker no
+    // esta tipado y duplicar su forma aca solo crearia otra copia que mantener.
+    type OnboardingWorker = (typeof onboardingSummary.byWorker)[number];
+    const grupos = new Map<string, OnboardingWorker[]>();
+    onboardingSummary.byWorker.forEach((w: OnboardingWorker) => {
+      const cargo = w.cargo || 'Sin cargo asignado';
+      if (!grupos.has(cargo)) grupos.set(cargo, []);
+      grupos.get(cargo)!.push(w);
+    });
+    return [...grupos.entries()]
+      .map(([cargo, workers]) => ({
+        cargo,
+        workers,
+        completed: workers.reduce((n, w) => n + w.completed, 0),
+        total: workers.reduce((n, w) => n + w.total, 0),
+        sinApto: workers.filter((w) => !w.aptoTerreno).length,
+      }))
+      .sort((a, b) => a.cargo.localeCompare(b.cargo));
+  }, [onboardingSummary]);
+
   const getSignatureStats = (doc: any) => {
     // Prefer obraSignatureRequests (live data) over doc.asignaciones (may be absent in list responses)
     if (doc?.documentId) {
@@ -682,7 +715,19 @@ export default function ObraDetalle() {
       if (el.subtipo) return a.subtipo === el.subtipo || a.titulo === el.titulo;
       return true;
     });
-    const ejecutada = matches.some((a: any) => a.estado === 'completada' && (a.asistentes?.length || 0) > 0);
+    // Ejecutada = cerrada, con asistentes firmados Y con las horas que exige el
+    // decreto declaradas y alcanzadas (FUF 18 y 23). Una capacitación de 8 horas
+    // no acredita el Art. 16 si nadie declaró cuánto duró, aunque el acta esté
+    // firmada por todos.
+    //
+    // Retrocompatible: las actividades anteriores a este bloque no tienen
+    // `duracion` y `estadoDuracion` devuelve null; a esas no se les exige nada,
+    // porque su incumplimiento sería del sistema y no de la obra.
+    const ejecutada = matches.some((a: any) => {
+      if (a.estado !== 'completada' || (a.asistentes?.length || 0) === 0) return false;
+      const dur = estadoDuracion(a);
+      return dur === null || dur.cumple === true;
+    });
     const estado = ejecutada ? 'completo' : matches.length > 0 ? 'pendiente_firma' : 'faltante';
     return { matches, estado };
   };
@@ -701,6 +746,29 @@ export default function ObraDetalle() {
       ...estadoCapacitacion(el),
     })), [doContext, actividades]);
 
+  // Estado de un registro de ejecucion: la evidencia existe y, si el articulo le
+  // pone plazo, la ocurrencia mas reciente sigue vigente. Se mira la fecha del
+  // documento (cuando ocurrio el hecho), no la de subida: un acta de un simulacro
+  // del año pasado subida hoy no renueva la vigencia.
+  const estadoRegistroEjecucion = (el: Ds44DoElemento) => {
+    const documentos = obraDocs
+      .filter((d: DocumentoApi) => d.tipo === el.tipo && esDocumentoDeFaseHacer(d))
+      .sort((a: DocumentoApi, b: DocumentoApi) => String(b.fecha || b.createdAt || '').localeCompare(String(a.fecha || a.createdAt || '')));
+    const ultimo = documentos[0];
+    const ultimaFecha = ultimo ? (ultimo.fecha || ultimo.createdAt || null) : null;
+    const vencido = Boolean(el.vigenciaMeses && revisionVencida(ultimaFecha, el.vigenciaMeses));
+    const estado: 'faltante' | 'vencido' | 'completo' =
+      documentos.length === 0 ? 'faltante' : vencido ? 'vencido' : 'completo';
+    return { documentos, ultimo, ultimaFecha, vencido, estado };
+  };
+
+  const doRegistrosEjecucion = useMemo(() =>
+    DS44_DO_REGISTROS_EJECUCION.map((el) => ({
+      el,
+      aplicabilidad: evalAplicabilidad(el.condicion, doContext),
+      ...estadoRegistroEjecucion(el),
+    })), [doContext, obraDocs]);
+
   const doRegistros = useMemo(() =>
     DS44_DO_REGISTROS_GESTION
       .map((el) => ({ el, aplicabilidad: evalAplicabilidad(el.condicion, doContext) }))
@@ -713,14 +781,18 @@ export default function ObraDetalle() {
   const doCumplimiento = useMemo(() => {
     const procCuenta = doProcedimientos.filter((p) => p.el.cuenta && p.aplicabilidad === 'aplica');
     const capCuenta = doCapacitaciones.filter((c) => c.el.cuenta && c.aplicabilidad === 'aplica');
-    const total = procCuenta.length + capCuenta.length + 1; // +1 = registro maestro Art.72
+    const ejecCuenta = doRegistrosEjecucion.filter((r) => r.el.cuenta && r.aplicabilidad === 'aplica');
+    const total = procCuenta.length + capCuenta.length + ejecCuenta.length + 1; // +1 = registro maestro Art.72
     const completados =
       procCuenta.filter((p) => p.estado === 'completo').length +
       capCuenta.filter((c) => c.estado === 'completo').length +
+      // Un registro vencido no cuenta: el Art. 19 exige el ensayo "al menos una
+      // vez al año", asi que la evidencia del año pasado ya no acredita nada.
+      ejecCuenta.filter((r) => r.estado === 'completo').length +
       (registroMaestroGenerado ? 1 : 0);
     const progress = total > 0 ? Math.round((completados / total) * 100) : 0;
     return { total, completados, progress };
-  }, [doProcedimientos, doCapacitaciones, registroMaestroGenerado]);
+  }, [doProcedimientos, doCapacitaciones, doRegistrosEjecucion, registroMaestroGenerado]);
 
   const indicadores = useMemo(() => {
     const pendientesFirma = obraSignatureRequests
@@ -856,6 +928,41 @@ export default function ObraDetalle() {
     () => aprobadoPorRepresentanteLegal(ptpDoc, representanteLegal),
     [ptpDoc, representanteLegal],
   );
+
+  // Estado real de cada actualización de la fase ACTUAR (FUF 8, 9 y 49).
+  //
+  // Esta sección era una lista estática de títulos con un botón: no decía si la
+  // MIPER cambió, si el PTP quedó fuera de plazo ni hace cuánto no se revisa el
+  // Reglamento — que es literalmente el reparo del FUF ("está en la fase ACTUAR
+  // pero no lleva a nada"). Toda la lógica ya existía; solo no se consultaba acá.
+  //
+  // Sigue siendo repositorio: nada se genera. Se derivan hechos verificables sin
+  // abrir el archivo — que el documento exista, su fecha, su versión y su firma.
+  const actActualizaciones = useMemo(() =>
+    DS44_ACT_ACTUALIZACIONES.map((act) => {
+      const docs = obraDocs.filter((d: DocumentoApi) => d.tipo === act.tipoOrigen);
+      const doc = docs[0] || null;
+      const actualizadoEn = doc?.updatedAt || doc?.createdAt || null;
+
+      // El PTP no se rige por un plazo de calendario sino por un hecho: que la
+      // MIPER haya cambiado. Su estado ya lo deriva utils/ptp.ts.
+      const esPtp = act.key === 'PTP';
+      const vencidaPorPlazo = Boolean(act.revisionMeses && revisionVencida(actualizadoEn, act.revisionMeses));
+
+      let estado: 'sin_documento' | 'vencida' | 'al_dia';
+      if (!doc) estado = 'sin_documento';
+      else if (esPtp) estado = ptpEstado.vencido ? 'vencida' : 'al_dia';
+      else estado = vencidaPorPlazo ? 'vencida' : 'al_dia';
+
+      return {
+        act, doc, estado, actualizadoEn,
+        // El Art. 8 exige que el PTP esté aprobado por el representante legal, y
+        // esa aprobación es su firma real sobre el documento, no una casilla.
+        aprobacionPendiente: esPtp && Boolean(doc) && !ptpAprobado,
+        detalle: esPtp ? ptpEstado.detalle : null,
+      };
+    }), [obraDocs, ptpEstado, ptpAprobado]);
+
 
   const reloadDocs = useCallback(async () => {
     if (!obraId) return;
@@ -997,9 +1104,11 @@ export default function ObraDetalle() {
   // Abre el modal inline pre-rellenado con los datos del elemento DO.
   const openDoCreate = (mode: 'documento' | 'actividad', el: any, existingDoc?: any) => {
     setDoCreateForm({
-      titulo: el.titulo || '',
-      descripcion: '',
-      fecha: new Date().toISOString().slice(0, 10),
+      titulo: existingDoc?.titulo || el.titulo || '',
+      descripcion: existingDoc?.descripcion || '',
+      // Al corregir un registro ya cargado se abre con SU fecha del hecho, no con
+      // hoy: si no, editar el titulo movia la fecha sin que nadie lo pidiera.
+      fecha: existingDoc?.fecha || new Date().toISOString().slice(0, 10),
       relatorId: '',
       file: null,
       motivo: '',
@@ -1098,6 +1207,8 @@ export default function ObraDetalle() {
           // Actualización de metadatos/archivo sin versionar (doc no procedimiento).
           const r = await documentsApi.update(existingDoc.documentId, {
             titulo: doCreateForm.titulo, descripcion: doCreateForm.descripcion,
+            // Sin esto, corregir la fecha de un acta ya cargada no hacia nada.
+            ...(esRegistroEjecucion(el.tipo) ? { fecha: doCreateForm.fecha } : {}),
             ...(s3Key ? { s3Key, archivoUrl: s3Key, archivoNombre } : {}),
           } as any);
           if (!r.success) { setDoCreateError(r.error || 'No se pudo actualizar el documento.'); return; }
@@ -1107,6 +1218,9 @@ export default function ObraDetalle() {
           const r = await documentsApi.create({
             obraId, tenantId: obra.tenantId, tipo: el.tipo, titulo: doCreateForm.titulo,
             descripcion: doCreateForm.descripcion, clasificacion: 'obra', fase: 'hacer',
+            // El modal ya pedia la fecha y la descartaba para documentos: sin ella
+            // la vigencia se media contra la fecha de subida.
+            fecha: doCreateForm.fecha,
             s3Key, archivoUrl: s3Key, archivoNombre,
             createdBy: user?.personaId, creatorName: autorNombre,
           } as any);
@@ -2602,6 +2716,12 @@ export default function ObraDetalle() {
                     // representante legal. Se muestran en su propia fila.
                     const esPtp = doc.key === 'PROGRAMA_TRABAJO_PREVENTIVO';
                     const plazoPtp = esPtp ? etiquetaEstadoPtp(ptpEstado) : null;
+                    // Constancia de difusión (Arts. 7 inc. 9, 8 inc. 3, 57 inc. 2).
+                    // Informar solo a la línea de mando es el incumplimiento exacto
+                    // que el FUF marca en los ítems 4 y 11, así que se distingue.
+                    const requiereDifusion = DS44_REQUIEREN_DIFUSION.has(doc.key);
+                    const difusion = requiereDifusion ? ultimaDifusion(doc.document) : null;
+                    const sinRepresentantes = Boolean(difusion) && (difusion?.totales?.representantes || 0) === 0;
                     return (
                       <div key={doc.key} className="ds44-doc-row">
                         <div style={{ minWidth: 0 }}>
@@ -2622,6 +2742,20 @@ export default function ObraDetalle() {
                                 title={ptpEstado.detalle}
                               >
                                 {plazoPtp}
+                              </span>
+                            )}
+                            {requiereDifusion && doc.archivoSubido && (
+                              <span
+                                style={{ color: !difusion || sinRepresentantes ? 'var(--danger-500, #dc2626)' : undefined }}
+                                title={difusion
+                                  ? `Informado el ${formatDate(difusion.fecha)} · ${difusion.totales.mando} de la línea de mando, ${difusion.totales.representantes} representantes, ${difusion.totales.firmantes} firmantes`
+                                  : 'El DS 44 exige informar este documento a los representantes de las personas trabajadoras'}
+                              >
+                                {!difusion
+                                  ? 'Sin constancia de difusión'
+                                  : sinRepresentantes
+                                    ? 'Difundido sin representantes'
+                                    : `Informado a ${totalInformados(difusion)} el ${formatDate(difusion.fecha)}`}
                               </span>
                             )}
                             {esPtp && doc.archivoSubido && (
@@ -2863,7 +2997,10 @@ export default function ObraDetalle() {
                     // Conteo/estado real segun la naturaleza del registro.
                     const incCount = incidentes.length;
                     const invPend = incidentes.filter((i: any) => ['grave', 'fatal'].includes(i.gravedad) && i.estado !== 'cerrado').length;
-                    const hasSimulacro = actividades.some((a: any) => a.tipo === 'SIMULACRO');
+                    // Art. 19: el ensayo vale "al menos una vez al año". Preguntar solo si existe
+                    // alguno daba por cumplido un simulacro de hace tres años.
+                    const hasSimulacro = actividades.some((a: any) => a.tipo === 'SIMULACRO'
+                      && !revisionVencida(a.fecha || a.createdAt, 12));
                     const enVigilancia = trabajadores.filter((w: any) => w.vigilanciaSalud?.enVigilancia).length;
                     return (
                       <div key={el.key} className="ds44-doc-row">
@@ -2898,6 +3035,73 @@ export default function ObraDetalle() {
                           )}
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+
+                {/* ── Sección: Registros de ejecución (evidencia de que se hizo) ── */}
+                <div className="ds44-section-label">Registros de ejecución</div>
+                <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: 'var(--space-2)' }}>
+                  Evidencia de que la actividad ocurrió (actas, fotos). La sube la obra; cuentan en el %.
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+                  {doRegistrosEjecucion.filter((r) => r.aplicabilidad !== 'no_aplica').map(({ el, aplicabilidad, documentos, ultimaFecha, estado }) => {
+                    const abierto = expandedRegistros.has(el.key);
+                    return (
+                    <div key={el.key} style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', background: 'var(--surface)' }}>
+                      <div className="ds44-doc-row" style={{ border: 'none' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                            {el.articulo}
+                            {` · ${documentos.length > 0 ? `${documentos.length} registro(s)` : 'Sin registros'}`}
+                            {ultimaFecha && tiempoRelativo(ultimaFecha) && ` · último ${tiempoRelativo(ultimaFecha)}`}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
+                          {aplicabilidad === 'verificar' && <span className="badge badge-warning">Verificar si aplica</span>}
+                          {estado === 'vencido' && <span className="badge badge-danger">Vencido</span>}
+                          {estado === 'completo' && <span className="badge badge-success">Vigente</span>}
+                          {documentos.length > 0 && (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              type="button"
+                              aria-expanded={abierto}
+                              onClick={() => setExpandedRegistros((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(el.key)) next.delete(el.key); else next.add(el.key);
+                                return next;
+                              })}
+                            >
+                              {abierto ? 'Ocultar' : 'Ver registros'}
+                            </button>
+                          )}
+                          <button className="btn btn-secondary btn-sm" type="button" onClick={() => openDoCreate('documento', el)}>
+                            {documentos.length === 0 ? 'Registrar' : 'Registrar otro'}
+                          </button>
+                        </div>
+                      </div>
+                      {abierto && (
+                        <div style={{ borderTop: '1px solid var(--surface-border)', padding: 'var(--space-2) var(--space-3)', display: 'grid', gap: '6px' }}>
+                          {documentos.map((doc: DocumentoApi) => {
+                            const f = doc.fecha || doc.createdAt || null;
+                            const caduco = Boolean(el.vigenciaMeses && revisionVencida(f, el.vigenciaMeses));
+                            return (
+                              <div key={doc.documentId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', fontSize: '0.83rem' }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <span>{f ? new Date(f).toLocaleDateString('es-CL') : 'Sin fecha'}</span>
+                                  <span className="text-muted"> · {doc.archivoNombre || doc.titulo}</span>
+                                  {caduco && <span className="text-muted"> · fuera de vigencia</span>}
+                                </div>
+                                <button className="btn btn-ghost btn-sm" type="button" onClick={() => openDoCreate('documento', el, doc)}>
+                                  Corregir
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                     );
                   })}
                 </div>
@@ -3126,15 +3330,39 @@ export default function ObraDetalle() {
                 <div className="card" style={{ padding: 'var(--space-4)' }}>
                   <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>Actualizaciones (cierre de ciclo hacia PLAN)</div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {DS44_ACT_ACTUALIZACIONES.map((act, idx) => (
-                      <div key={act.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-2) 0', borderBottom: idx < DS44_ACT_ACTUALIZACIONES.length - 1 ? '1px solid var(--surface-border)' : 'none', flexWrap: 'wrap' }}>
+                    {actActualizaciones.map(({ act, estado, actualizadoEn, aprobacionPendiente, detalle }, idx) => (
+                      <div key={act.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-2) 0', borderBottom: idx < actActualizaciones.length - 1 ? '1px solid var(--surface-border)' : 'none', flexWrap: 'wrap' }}>
                         <div style={{ minWidth: 0 }}>
                           <div className="font-medium" style={{ fontSize: '0.88rem' }}>{act.titulo}</div>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>{act.articulo}</div>
+                          <div className="text-muted ds44-doc-meta" style={{ fontSize: '0.78rem' }}>
+                            <span>{act.articulo}</span>
+                            {estado === 'sin_documento'
+                              ? <span>Sin documento cargado</span>
+                              : actualizadoEn && tiempoRelativo(actualizadoEn) && (
+                                <span title={`Última actualización: ${formatDate(actualizadoEn)}`}>
+                                  Revisado {tiempoRelativo(actualizadoEn)}
+                                </span>
+                              )}
+                            {detalle && <span title={detalle}>{detalle}</span>}
+                            {aprobacionPendiente && (
+                              <span style={{ color: 'var(--danger-500, #dc2626)' }}>
+                                Falta la firma del representante legal
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/documents?obraId=${obraId}&tipo=${act.tipoOrigen}`)}>
-                          Revisar documento
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0, flexWrap: 'wrap' }}>
+                          {estado === 'sin_documento' && <span className="badge badge-danger">Sin documento</span>}
+                          {estado === 'vencida' && <span className="badge badge-danger">Vencida</span>}
+                          {estado === 'al_dia' && !aprobacionPendiente && <span className="badge badge-success">Al día</span>}
+                          {/* La ruta /documents no existe (solo /documents-repository),
+                              así que este botón caía en el catch-all y devolvía al
+                              dashboard. Estos documentos son de ESTA obra y ya están
+                              en pantalla: lo correcto es llevar a su fase, no salir. */}
+                          <button className="btn btn-secondary btn-sm" type="button" onClick={() => setSelectedDemingPhase('plan')}>
+                            Revisar documento
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -3215,7 +3443,44 @@ export default function ObraDetalle() {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                {onboardingSummary.byWorker.map((worker) => {
+                {onboardingPorCargo.map((grupo) => {
+                  // Con un solo cargo no hay nada que elegir: se muestra abierto.
+                  const grupoAbierto = expandedCargos.has(grupo.cargo) || onboardingPorCargo.length === 1;
+                  const pctGrupo = grupo.total > 0 ? Math.round((grupo.completed / grupo.total) * 100) : 0;
+                  return (
+                  <div key={grupo.cargo} style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', background: 'var(--surface-elevated)' }}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedCargos((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(grupo.cargo)) next.delete(grupo.cargo); else next.add(grupo.cargo);
+                        return next;
+                      })}
+                      disabled={onboardingPorCargo.length === 1}
+                      aria-expanded={grupoAbierto}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', background: 'transparent', border: 'none', cursor: onboardingPorCargo.length === 1 ? 'default' : 'pointer', textAlign: 'left' }}
+                    >
+                      <FiChevronRight
+                        size={16}
+                        style={{ flexShrink: 0, color: 'var(--text-muted)', transform: grupoAbierto ? 'rotate(90deg)' : 'none', transition: 'transform 150ms ease' }}
+                      />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div className="font-medium" style={{ fontSize: '0.9rem' }}>{grupo.cargo}</div>
+                        <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                          {grupo.workers.length} {grupo.workers.length === 1 ? 'persona' : 'personas'} · {grupo.completed}/{grupo.total} ítems
+                          {grupo.sinApto > 0 && ` · ${grupo.sinApto} sin apto para terreno`}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
+                        <div style={{ width: 60, height: '5px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface)', border: '1px solid var(--surface-border)' }}>
+                          <div style={{ width: `${pctGrupo}%`, height: '100%', background: 'linear-gradient(90deg, #006edc, #004fa3)' }} />
+                        </div>
+                        <span className="text-muted" style={{ fontSize: '0.78rem', minWidth: '32px', textAlign: 'right' }}>{pctGrupo}%</span>
+                      </div>
+                    </button>
+                    {grupoAbierto && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-2)', borderTop: '1px solid var(--surface-border)', background: 'var(--surface)' }}>
+                {grupo.workers.map((worker) => {
                   const pct = worker.total > 0 ? Math.round((worker.completed / worker.total) * 100) : 0;
                   const isExpanded = expandedWorkers.has(worker.workerId);
                   const hasPendingFirma = ((worker as any).itemDetail as any[]).some(
@@ -3380,6 +3645,11 @@ export default function ObraDetalle() {
                         </div>
                       )}
                     </div>
+                  );
+                })}
+                      </div>
+                    )}
+                  </div>
                   );
                 })}
 
@@ -3749,6 +4019,15 @@ export default function ObraDetalle() {
                   <div style={{ fontWeight: 600, marginBottom: '2px' }}>Versión vigente: v{versionActual}</div>
                   <div className="text-muted">
                     Subir un archivo publica la <strong>v{versionActual + 1}</strong>, notifica a la línea de mando y exige re-firma. La versión anterior queda en el historial.
+                  </div>
+                </div>
+              )}
+              {esRegistroEjecucion(doCreateModal?.el?.tipo) && (
+                <div className="form-group">
+                  <label className="form-label">Fecha del hecho</label>
+                  <input type="date" className="form-input" value={doCreateForm.fecha} onChange={(e) => setDoCreateForm((p) => ({ ...p, fecha: e.target.value }))} />
+                  <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '4px' }}>
+                    Cuándo ocurrió, no cuándo se sube. La vigencia se mide desde esta fecha.
                   </div>
                 </div>
               )}

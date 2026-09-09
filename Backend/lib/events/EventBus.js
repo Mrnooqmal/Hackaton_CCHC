@@ -1,7 +1,13 @@
 const { InboxRepository } = require('../../handlers/inbox-module/inbox.repository');
 const { ObraService } = require('../services/ObraService');
 const { PersonaService } = require('../services/PersonaService');
+const { EstructuraPreventivaService } = require('../services/EstructuraPreventivaService');
+const EP = require('../estructura-preventiva');
 const { normalizeRol } = require('../utils/validation');
+const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { docClient } = require('../clients/dynamodb');
+
+const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 
 // Nombre del remitente de las notificaciones automáticas del sistema.
 const SYSTEM_SENDER_NAME = 'Build & Serve';
@@ -20,6 +26,7 @@ class EventBus {
         this.inboxRepo = new InboxRepository();
         this.obraService = new ObraService();
         this.personaService = new PersonaService();
+        this.estructuraService = new EstructuraPreventivaService();
     }
 
     /**
@@ -36,6 +43,47 @@ class EventBus {
                 .filter(Boolean);
         } catch (err) {
             console.error('Error resolviendo línea de mando para notificación:', err);
+            return [];
+        }
+    }
+
+    /**
+     * Resuelve los personaId de los REPRESENTANTES de las personas trabajadoras:
+     * integrantes activos de los organos vigentes (comite paritario, delegado de
+     * SST, departamento de prevencion) del ambito que corresponde.
+     *
+     * Existen porque el DS 44 no razona por rol de sistema: el Art. 7 inc. 9
+     * obliga a informar la MIPER al comite, al delegado y a los dirigentes
+     * sindicales, y ninguno de los tres es un `rol` de PersonasTable. Son cargos
+     * electos que viven en la estructura preventiva.
+     *
+     * Se consultan DOS ambitos: los organos de la empresa aplican a todas las
+     * obras, y los de la obra son propios de ella (el conteo del Art. 23 es por
+     * lugar de trabajo). Un organo VENCIDO no notifica: su mandato expiro y sus
+     * integrantes ya no representan a nadie.
+     */
+    async resolverRepresentantesSST(tenantId, obraId = null) {
+        if (!tenantId) return [];
+        try {
+            const organos = await this.estructuraService.listarOrganos(tenantId);
+            const delAmbito = organos.filter((o) =>
+                (o.ambito === EP.AMBITO.EMPRESA) || (obraId && o.obraId === obraId));
+            const vigentes = delAmbito.filter((o) => EP.estadoOrgano(o) === EP.ESTADO_ORGANO.VIGENTE);
+            if (vigentes.length === 0) return [];
+
+            const detalles = await Promise.all(
+                vigentes.map((o) => this.estructuraService.getOrgano(tenantId, o.organoId).catch(() => null)),
+            );
+            const ids = detalles
+                .filter(Boolean)
+                .flatMap((o) => (o.miembros || [])
+                    .filter((m) => m.estado === 'activo' && !m.fechaTermino)
+                    .map((m) => m.personaId));
+            return [...new Set(ids.filter(Boolean))];
+        } catch (err) {
+            // Nunca bloquea la publicacion: si la estructura falla, el aviso sale
+            // igual a la linea de mando y queda el error en el log.
+            console.error('Error resolviendo representantes SST para notificación:', err);
             return [];
         }
     }
@@ -292,8 +340,32 @@ class EventBus {
                 });
             }
 
-            // 2) Firmantes previos — tarea de re-firma (excluye a los ya avisados como mando).
-            const firmantes = (firmanteIds || []).filter(pid => pid && pid !== publicadaPor && !mandoRecipients.includes(pid));
+            // 2) Representantes de las personas trabajadoras (Art. 7 inc. 9, Art. 8
+            // inc. 3, Art. 57 inc. 2). No se les pide firmar: se les INFORMA, que es
+            // lo que exige la norma. Se excluye a quien ya recibio el aviso de mando
+            // —un prevencionista puede ser ademas integrante del comite— para no
+            // mandarle dos mensajes del mismo hecho.
+            const representantes = await this.resolverRepresentantesSST(tenantId, obraId);
+            const repRecipients = representantes.filter(
+                pid => pid && pid !== publicadaPor && !mandoRecipients.includes(pid));
+            if (repRecipients.length > 0) {
+                await this.inboxRepo.sendMessage({
+                    senderId: publicadaPor || 'system',
+                    senderName,
+                    senderRol: 'system',
+                    recipientIds: repRecipients,
+                    type: 'alert',
+                    priority: 'normal',
+                    subject: `Documento actualizado a v${version}: ${documentName}`,
+                    content: `Se informa la versión ${version} de "${documentName}".${obraText} Motivo: ${motivo}. Se remite en tu calidad de representante de las personas trabajadoras.`,
+                    linkedEntity: { type: 'document', id: documentId },
+                });
+            }
+
+            // 3) Firmantes previos — tarea de re-firma (excluye a los ya avisados).
+            const firmantes = (firmanteIds || []).filter(
+                pid => pid && pid !== publicadaPor
+                    && !mandoRecipients.includes(pid) && !repRecipients.includes(pid));
             if (firmantes.length > 0) {
                 await this.inboxRepo.sendMessage({
                     senderId: publicadaPor || 'system',
@@ -308,9 +380,55 @@ class EventBus {
                 });
             }
 
-            console.log(`✅ Notificación de versión ${version} de ${documentId} (mando: ${mandoRecipients.length}, re-firma: ${firmantes.length})`);
+            await this.registrarDifusion({
+                documentId, version, motivo, publicadaPor,
+                mando: mandoRecipients, representantes: repRecipients, firmantes,
+            });
+
+            console.log(`✅ Notificación de versión ${version} de ${documentId} (mando: ${mandoRecipients.length}, representantes: ${repRecipients.length}, re-firma: ${firmantes.length})`);
         } catch (error) {
             console.error('Error sending document version notification:', error);
+        }
+    }
+
+    /**
+     * Deja constancia en el documento de a quien se informo y cuando.
+     *
+     * El fiscalizador no pregunta si el sistema "puede" notificar: pide la prueba
+     * de que se informo, a quienes y en que fecha (Art. 7 inc. 9, Art. 8 inc. 3).
+     * Se guarda en el propio documento y no en una tabla aparte porque la
+     * constancia solo tiene sentido junto a la version que se difundio.
+     *
+     * Nunca lanza: la difusion ya ocurrio: si falla el registro se pierde la
+     * constancia, no el aviso, y eso queda en el log.
+     */
+    async registrarDifusion({ documentId, version, motivo, publicadaPor, mando = [], representantes = [], firmantes = [] }) {
+        if (!documentId) return;
+        const constancia = {
+            fecha: new Date().toISOString(),
+            version: version || null,
+            motivo: motivo || null,
+            publicadaPor: publicadaPor || null,
+            destinatarios: { mando, representantes, firmantes },
+            totales: {
+                mando: mando.length,
+                representantes: representantes.length,
+                firmantes: firmantes.length,
+            },
+        };
+        try {
+            await docClient.send(new UpdateCommand({
+                TableName: DOCUMENTS_TABLE,
+                Key: { documentId },
+                UpdateExpression: 'SET difusiones = list_append(if_not_exists(difusiones, :vacio), :d), updatedAt = :now',
+                ExpressionAttributeValues: {
+                    ':d': [constancia],
+                    ':vacio': [],
+                    ':now': constancia.fecha,
+                },
+            }));
+        } catch (err) {
+            console.error('Error registrando constancia de difusión:', err);
         }
     }
 

@@ -25,6 +25,9 @@ export default function ObraPlantillasOnboarding({ obraId, tenantId, cargos, ini
   const [map, setMap] = useState<PlantillasMap>(initial || {});
   const [busy, setBusy] = useState<string | null>(null); // `${cargo}:${key}` en subida
   const [saving, setSaving] = useState(false);
+  // Un cargo abierto a la vez, igual que ObraAplicabilidadKit: con 5 cargos y sus
+  // kits completos la lista plana ocupaba varias pantallas de scroll.
+  const [openCargo, setOpenCargo] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   // Cargos que tienen al menos un ítem de alcance 'obra' (los que requieren plantilla por obra).
@@ -122,9 +125,23 @@ export default function ObraPlantillasOnboarding({ obraId, tenantId, cargos, ini
       )}
 
       <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
-        {filas.map(({ cargo, items }) => (
-          <div key={cargo.codigo} style={{ display: 'grid', gap: 'var(--space-2)' }}>
-            <div className="font-medium" style={{ fontSize: '0.9rem' }}>{cargo.label}</div>
+        {filas.map(({ cargo, items }) => {
+          const abierto = openCargo === cargo.codigo;
+          const cargadas = items.filter((it) => map[cargo.codigo]?.[it.key]).length;
+          return (
+          <div key={cargo.codigo} style={{ border: '1px solid var(--surface-border)', borderRadius: 8, background: 'var(--surface)' }}>
+            <button
+              type="button"
+              onClick={() => setOpenCargo(abierto ? null : cargo.codigo)}
+              style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', padding: '10px 12px', cursor: 'pointer', color: 'var(--text-primary)' }}
+            >
+              <span className="font-medium" style={{ fontSize: '0.9rem' }}>{cargo.label}</span>
+              <span className="text-muted" style={{ fontSize: '0.8rem' }}>
+                {cargadas}/{items.length} plantillas · {abierto ? '▲' : '▼'}
+              </span>
+            </button>
+            {abierto && (
+            <div style={{ borderTop: '1px solid var(--surface-border)', padding: '8px 12px', display: 'grid', gap: 'var(--space-2)' }}>
             {items.map((item) => {
               const current = map[cargo.codigo]?.[item.key];
               const id = `${cargo.codigo}:${item.key}`;
@@ -172,8 +189,11 @@ export default function ObraPlantillasOnboarding({ obraId, tenantId, cargos, ini
                 </div>
               );
             })}
+            </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

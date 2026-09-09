@@ -38,7 +38,7 @@ import {
 } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
 import { estadoSeguimiento, hoyISO } from '../utils/seguimientoActividad';
-import { construirFilasAsistencia, labelDe, listaSeleccion, CLIMA_LABEL } from '../utils/reporteActividad';
+import { construirFilasAsistencia, labelDe, listaSeleccion, CLIMA_LABEL, estadoDuracion, formatoDuracion } from '../utils/reporteActividad';
 import { construirReporteActividadPdf, nombreArchivoReporte } from '../utils/reporteActividadPdf';
 import PlanificacionDiariaForm from '../components/actividades/PlanificacionDiariaForm';
 import PermisosTrabajoForm from '../components/actividades/PermisosTrabajoForm';
@@ -137,6 +137,8 @@ export default function Activities() {
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [detailActivity, setDetailActivity] = useState<Activity | null>(null);
     const [guardandoEval, setGuardandoEval] = useState(false);
+    const [guardandoDur, setGuardandoDur] = useState(false);
+    const [durInput, setDurInput] = useState<string>('');
     const [cerrando, setCerrando] = useState(false);
     // Ausencias/permisos del día (control de asistencia §6).
     const [ausencias, setAusencias] = useState<Ausencia[]>([]);
@@ -692,6 +694,32 @@ export default function Activities() {
             }
         } finally {
             setGuardandoEval(false);
+        }
+    };
+
+    // Duración declarada + certificado (Arts. 13 inc. 3 y 16). Se declara lo que
+    // dice el certificado; el sistema no cronometra la clase.
+    const handleGuardarDuracion = async (
+        activity: Activity,
+        declaradaMin: number | null,
+        respaldo: EvaluacionRespaldo | null,
+    ) => {
+        if (!user?.personaId || guardandoDur) return;
+        setGuardandoDur(true);
+        try {
+            const res = await activitiesApi.patch(activity.activityId, {
+                solicitanteId: user.personaId,
+                duracion: { declaradaMin, respaldo },
+            } as never);
+            if (res.success && res.data) {
+                setActivities((prev) => prev.map((x) => x.activityId === res.data!.activityId ? res.data! : x));
+                setDetailActivity(res.data);
+                toast.success('Duración actualizada');
+            } else {
+                toast.error(res.error || 'No se pudo guardar la duración');
+            }
+        } finally {
+            setGuardandoDur(false);
         }
     };
 
@@ -2160,6 +2188,59 @@ export default function Activities() {
                                     <h3 className="ad-section-title">Asistencia</h3>
                                     <ReporteActividad activity={a} workers={workers} />
                                 </section>
+
+                                {/* Duración (Arts. 13 inc. 3 y 16). El decreto le fija un piso de
+                                    horas a la capacitación. No se cronometra ni se deduce del reloj
+                                    de la actividad: se declara lo que dice el certificado y se
+                                    custodia el certificado, igual que la evaluación. */}
+                                {(() => {
+                                    const dur = estadoDuracion(a);
+                                    if (!dur) return null;
+                                    return (
+                                        <section className="ad-section">
+                                            <h3 className="ad-section-title">Duración</h3>
+                                            <div className="text-muted" style={{ fontSize: '0.85rem', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                                                <span>Mínimo exigido: <b>{formatoDuracion(dur.minimoMin)}</b></span>
+                                                <span>·</span>
+                                                <span>Declarado: <b>{dur.declaradaMin === null ? 'sin declarar' : formatoDuracion(dur.declaradaMin)}</b></span>
+                                                {dur.cumple === true && <span className="badge badge-success">Cumple</span>}
+                                                {dur.cumple === false && <span className="badge badge-danger">No alcanza el mínimo</span>}
+                                                {dur.cumple === null && <span className="badge badge-warning">Sin declarar</span>}
+                                                {dur.tieneRespaldo
+                                                    ? <span className="badge badge-success">Certificado cargado</span>
+                                                    : <span className="badge badge-warning">Sin certificado</span>}
+                                            </div>
+                                            {dur.nombreArchivo && (
+                                                <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 8 }}>{dur.nombreArchivo}</div>
+                                            )}
+                                            {puedeAdjuntarEval && (
+                                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                                    <input
+                                                        type="number"
+                                                        className="input"
+                                                        style={{ maxWidth: 150 }}
+                                                        min={1}
+                                                        max={1440}
+                                                        placeholder="Minutos del certificado"
+                                                        value={durInput}
+                                                        onChange={(e) => setDurInput(e.target.value)}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-secondary btn-sm"
+                                                        disabled={guardandoDur || !durInput}
+                                                        onClick={() => handleGuardarDuracion(a, Number(durInput), null)}
+                                                    >
+                                                        {guardandoDur ? 'Guardando…' : 'Declarar duración'}
+                                                    </button>
+                                                    <span className="text-muted" style={{ fontSize: '0.78rem' }}>
+                                                        El certificado se adjunta como respaldo de la evaluación.
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </section>
+                                    );
+                                })()}
 
                                 {/* Evaluación de aprendizaje: solo si la capacitación la exige.
                                     Usa `puedeAdjuntarEval`, NO `puedeGestionar`: la capacitación se

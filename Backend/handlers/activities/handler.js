@@ -90,6 +90,55 @@ const normalizarEvaluacion = (raw, tipo, opts = {}) => {
     return { exigida: true, notaMinima: nota, escala: 'porcentaje', respaldo };
 };
 
+/**
+ * Duracion de una capacitacion (FUF 18 y 23).
+ *
+ * El DS 44 le fija un piso de horas: minimo 1 hora para el uso de EPP (Art. 13
+ * inc. 3) y al menos 8 horas para la capacitacion en prevencion de riesgos
+ * (Art. 16 inc. 1 letra d). Hasta aca esos minimos vivian en el titulo del item
+ * del kit ("Capacitacion SST 8 horas") sin que nadie los verificara.
+ *
+ * La plataforma NO dicta ni cronometra la capacitacion, y NO deriva la duracion
+ * del reloj: la capacitacion la puede dictar un OAL externo sin pasar por el
+ * sistema, y al cerrar una actividad `horaFin` se sobrescribe con la hora del
+ * cierre, asi que el reloj mide cuanto tardaron en apretar el boton, no cuanto
+ * duro la clase.
+ *
+ * Mismo criterio que `evaluacion`: se declara lo que dice el certificado y se
+ * custodia el certificado. El sistema afirma solo lo verificable sin abrir el
+ * archivo — que el decreto exige N horas, que se declararon M, y si el respaldo
+ * esta cargado o falta.
+ *
+ * `minimaMin` se guarda EN LA ACTIVIDAD y no se va a buscar al catalogo, para
+ * que el acta diga contra que minimo se midio aunque el catalogo cambie despues.
+ */
+const DURACIONES_MINIMAS = { EPP: 60, PRL_8H: 480, CPHS_ORIENTACION: 480, CPHS_20H: 1200 };
+
+const minutosValidos = (raw, campo) => {
+    if (raw === undefined || raw === null || raw === '') return null;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n <= 0 || n > 1440) {
+        throw new Error(`${campo} debe ser un entero de minutos entre 1 y 1440.`);
+    }
+    return n;
+};
+
+const normalizarDuracion = (raw, tipo, subtipo, opts = {}) => {
+    if (tipo !== 'CAPACITACION') return null;
+
+    const minimaMin = minutosValidos(raw?.minimaMin, 'minimaMin') ?? (DURACIONES_MINIMAS[subtipo] || null);
+    const declaradaMin = minutosValidos(raw?.declaradaMin, 'declaradaMin');
+
+    // El respaldo se conserva si el request no lo trae: corregir las horas
+    // declaradas no debe borrar el certificado ya cargado.
+    let respaldo = opts.previa?.respaldo || null;
+    if (opts.permitirRespaldo && raw?.respaldo !== undefined) {
+        respaldo = normalizarRespaldo(raw.respaldo, opts.subidoPor);
+    }
+
+    return { minimaMin, declaradaMin, respaldo };
+};
+
 // Tope de ocurrencias por serie, para evitar crear cantidades desmedidas.
 const MAX_OCURRENCIAS = 180;
 
@@ -244,6 +293,15 @@ module.exports.create = async (event) => {
             return error(evalErr.message, 400);
         }
 
+        // Al crear solo se declara la exigencia; las horas efectivas y el
+        // certificado llegan despues de dictada, via PATCH.
+        let duracion;
+        try {
+            duracion = normalizarDuracion(body.duracion, body.tipo, subtipo);
+        } catch (durErr) {
+            return error(durErr.message, 400);
+        }
+
         let bloques;
         try {
             bloques = await validarBloquesActividad({
@@ -291,6 +349,7 @@ module.exports.create = async (event) => {
             descripcion: body.descripcion || '',
             horaInicio: body.horaInicio || now.split('T')[1].substring(0, 5),
             horaFin: body.horaFin || null,
+            duracion,
             relatorId: body.relatorId,
             responsables,
             ubicacion: body.ubicacion || '',
@@ -1002,6 +1061,25 @@ module.exports.patch = async (event) => {
                 });
             } catch (evalErr) {
                 return error(evalErr.message, 400);
+            }
+        }
+
+        // Duracion: igual que la evaluacion, NO se congela con las firmas. El
+        // certificado del relator o del OAL llega despues de dictada la
+        // capacitacion, con la asistencia ya firmada y la actividad cerrada.
+        if (body.duracion !== undefined) {
+            if (activity.tipo !== 'CAPACITACION') {
+                return error('Solo una CAPACITACION admite bloque de duración', 400);
+            }
+            const previaDur = activity.duracion || null;
+            try {
+                updates.duracion = normalizarDuracion(body.duracion, activity.tipo, activity.subtipo, {
+                    previa: previaDur,
+                    permitirRespaldo: true,
+                    subidoPor: solicitanteId,
+                });
+            } catch (durErr) {
+                return error(durErr.message, 400);
             }
         }
 
