@@ -85,3 +85,75 @@ export interface CompletitudAmbito {
 /** Color del porcentaje, con los mismos cortes que ya usa el resto del panel DS44. */
 export const colorProgreso = (p: number): string =>
     p >= 80 ? '#10b981' : p >= 50 ? '#f59e0b' : '#ef4444';
+
+// ─── Reglas de evaluación (espejo de Backend/lib/completitud.js) ─────────────
+//
+// El motor del servidor evalúa los requisitos del FUF, que necesitan el
+// repositorio completo. Estas mismas reglas se replican acá para el cumplimiento
+// POR FASE DEMING, que se calcula con datos que la pantalla ya tiene cargados.
+// Son las mismas reglas a propósito: dos formas distintas de contar lo mismo es
+// exactamente lo que este motor viene a eliminar.
+
+/** ¿El documento existe y tiene archivo? Sin archivo no hay documento. */
+export const tieneArchivo = (doc: any): boolean =>
+    Boolean(doc && (doc.s3Key || doc.archivoUrl));
+
+/** Firmas que faltan. Se deriva de las asignaciones, no de un campo duplicado. */
+export function firmasPendientes(doc: any): number {
+    const asignaciones = Array.isArray(doc?.asignaciones) ? doc.asignaciones : [];
+    if (asignaciones.length === 0) return 0;
+    return asignaciones.filter((a: any) => a?.estado !== 'firmado' && !a?.fechaFirma).length;
+}
+
+/**
+ * Estado de un requisito que se acredita con un documento.
+ * Un documento con firmas pendientes NO está Cumplido.
+ */
+export function estadoPorDocumento(
+    doc: any,
+    { exigeFirma = false, fechaLimite = null, ahora = new Date() }:
+        { exigeFirma?: boolean; fechaLimite?: string | null; ahora?: Date } = {}
+): { estado: EstadoRequisito; detalle: string } {
+    if (!tieneArchivo(doc)) {
+        const vencido = Boolean(fechaLimite && new Date(fechaLimite).getTime() < ahora.getTime());
+        return {
+            estado: vencido ? ESTADO_REQUISITO.VENCIDO : ESTADO_REQUISITO.PENDIENTE,
+            detalle: vencido ? 'El plazo venció sin documento cargado.' : 'Falta cargar el documento.',
+        };
+    }
+    if (exigeFirma) {
+        const faltan = firmasPendientes(doc);
+        if (faltan > 0) {
+            return { estado: ESTADO_REQUISITO.PARCIAL, detalle: `Documento cargado, ${faltan} firma(s) pendiente(s).` };
+        }
+    }
+    return { estado: ESTADO_REQUISITO.CUMPLIDO, detalle: 'Documento cargado.' };
+}
+
+/**
+ * Resumen agregado con las mismas reglas del motor: los que no penalizan salen
+ * del denominador y `Parcial` cuenta medio punto.
+ */
+export function resumirCompletitud(requisitos: Array<{ estado: EstadoRequisito }>): ResumenCompletitud {
+    const lista = requisitos || [];
+    const porEstado = Object.fromEntries(
+        Object.values(ESTADO_REQUISITO).map((e) => [e, 0])
+    ) as Record<EstadoRequisito, number>;
+    for (const r of lista) porEstado[r.estado] = (porEstado[r.estado] || 0) + 1;
+
+    const exigibles = lista.filter((r) => !ESTADOS_NO_PENALIZAN.includes(r.estado));
+    const puntaje = exigibles.reduce((n, r) => {
+        if (r.estado === ESTADO_REQUISITO.CUMPLIDO) return n + 1;
+        if (r.estado === ESTADO_REQUISITO.PARCIAL) return n + 0.5;
+        return n;
+    }, 0);
+
+    return {
+        total: lista.length,
+        exigibles: exigibles.length,
+        excluidos: lista.length - exigibles.length,
+        cumplidos: porEstado[ESTADO_REQUISITO.CUMPLIDO],
+        porEstado,
+        progreso: exigibles.length > 0 ? Math.round((puntaje / exigibles.length) * 100) : 0,
+    };
+}

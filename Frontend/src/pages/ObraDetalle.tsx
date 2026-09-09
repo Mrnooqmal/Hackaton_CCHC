@@ -28,6 +28,8 @@ import { useObraContext } from '../context/ObraContext';
 import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
 import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
 import CompletitudFufPanel from '../components/CompletitudFufPanel';
+import { completitudDeFase } from '../utils/completitudObra';
+import { colorProgreso } from '../utils/completitud';
 import { AMBITO as AMBITO_ESTRUCTURA } from '../utils/estructuraPreventiva';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import type { SignatureRequest, DocumentVersion, Document as DocumentoApi } from '../api/client';
@@ -681,12 +683,17 @@ export default function ObraDetalle() {
   // capacitaciones aplicables + registro maestro Art.72. NO sobre el onboarding
   // ni sobre eventos sobrevinientes. Gating por firma: un elemento con firmantes
   // asignados pendientes NO cuenta como completo hasta que todas las firmas esten.
+  // Dotación que gobierna TODA la aplicabilidad por tramo de esta pantalla.
+  // Una sola fuente evita que dos condicionales del mismo umbral miren números
+  // distintos y el sistema declare "no te aplica" sobre un tramo equivocado.
+  const dotacionEntidad = tenantSize ?? trabajadores.filter((w) => w.estado !== 'inactivo').length;
+
   const doContext = useMemo<Ds44DoContext>(() => ({
-    tamanoEntidad: tenantSize ?? trabajadores.filter((w) => w.estado !== 'inactivo').length,
+    tamanoEntidad: dotacionEntidad,
     faenaCompartida: obra?.faenaCompartida,
     tieneMaquinaria: obra?.tieneMaquinaria,
     agentesFQB: obra?.agentesFQB,
-  }), [tenantSize, trabajadores, obra]);
+  }), [dotacionEntidad, obra]);
 
   // Estado de un elemento-documento con gating por firma. Los documentos de esta
   // fase son los creados con `fase: 'hacer'`; ver la nota sobre PLAN_EMERGENCIAS
@@ -2140,9 +2147,6 @@ export default function ObraDetalle() {
     if (!fechaCaducidad) return false;
     return new Date(fechaCaducidad) < new Date();
   });
-  const ds44Total = ds44Docs.length;
-  const ds44Uploaded = ds44Docs.filter(docFaseCompleto).length; // completos (subido + firmado)
-  const ds44Progress = ds44Total > 0 ? Math.round((ds44Uploaded / ds44Total) * 100) : 0;
   const documentosPendientesTitulos = documentosPendientes.map((doc) => doc.titulo);
   const inactiveWorkers = trabajadores.filter((worker) => worker.estado === 'inactivo');
   const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
@@ -2157,13 +2161,31 @@ export default function ObraDetalle() {
 
   // CHECK completo: todos los documentos CHECK obligatorios aplicables están registrados.
   const checkCompleto = DS44_CHECK_DOCS
-    .filter((d) => d.obligatorio && (d.condicional !== 'mas_100_trabajadores' || activeWorkers.length > 100))
+    .filter((d) => d.obligatorio && (d.condicional !== 'mas_100_trabajadores' || dotacionEntidad > 100))
     .every((d) => obraDocs.some((od: any) => od.tipo === d.tipo));
 
   const doPendientes = doDocs.filter((doc) => !doc.archivoSubido);
   const doTotal = doDocs.length;
   const doUploaded = doTotal - doPendientes.length;
   void doUploaded; // reservado para indicador de fase DO
+
+  // Cumplimiento DE LA FASE SELECCIONADA, con las reglas del motor de completitud.
+  //
+  // Antes se mostraba siempre el conteo de los documentos base de PLAN bajo el
+  // encabezado de la fase activa: en HACER o VERIFICAR el número describía otra
+  // cosa que su etiqueta. Ahora cada fase mide su propio universo, y lo que no
+  // aplica a la obra sale del denominador con su motivo en vez de penalizar.
+  const faseCompletitud = useMemo(() => completitudDeFase({
+    fase: selectedDemingPhase as 'plan' | 'hacer' | 'verificar' | 'actuar',
+    docsPlan: ds44Docs,
+    procedimientos: doProcedimientos,
+    capacitaciones: doCapacitaciones,
+    registroMaestroGenerado,
+    obraDocs,
+    dotacion: dotacionEntidad,
+    ctx: doContext,
+  }), [selectedDemingPhase, ds44Docs, doProcedimientos, doCapacitaciones,
+    registroMaestroGenerado, obraDocs, dotacionEntidad, doContext]);
 
   const faseLabel = DS44_PHASE_LABELS[selectedDemingPhase] || selectedDemingPhase.toUpperCase();
   const isPlanPhase = selectedDemingPhase === 'plan';
@@ -2513,10 +2535,10 @@ export default function ObraDetalle() {
               <div style={{ marginBottom: 'var(--space-4)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                   <span className="text-muted" style={{ fontSize: '0.85rem' }}>Fase {faseLabel}</span>
-                  <span style={{ fontWeight: 700, fontSize: '1.2rem', color: ds44Progress >= 80 ? '#10b981' : ds44Progress >= 50 ? '#f59e0b' : '#ef4444' }}>{ds44Progress}%</span>
+                  <span style={{ fontWeight: 700, fontSize: '1.2rem', color: colorProgreso(faseCompletitud.resumen.progreso) }}>{faseCompletitud.resumen.progreso}%</span>
                 </div>
                 <div style={{ height: '10px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)' }}>
-                  <div style={{ width: `${ds44Progress}%`, height: '100%', background: ds44Progress >= 80 ? '#10b981' : ds44Progress >= 50 ? '#f59e0b' : '#ef4444', transition: 'width 300ms' }} />
+                  <div style={{ width: `${faseCompletitud.resumen.progreso}%`, height: '100%', background: colorProgreso(faseCompletitud.resumen.progreso), transition: 'width 300ms' }} />
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
@@ -2571,15 +2593,20 @@ export default function ObraDetalle() {
             <div className="ds44-progress-bar">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                 <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, color: 'var(--text-secondary)' }}>Fase {faseLabel}</span>
-                <span style={{ fontWeight: 700, fontSize: '1rem', color: ds44Progress >= 80 ? '#10b981' : ds44Progress >= 50 ? '#f59e0b' : '#ef4444' }}>{ds44Progress}%</span>
+                <span style={{ fontWeight: 700, fontSize: '1rem', color: colorProgreso(faseCompletitud.resumen.progreso) }}>{faseCompletitud.resumen.progreso}%</span>
               </div>
               <div className="ds44-progress-track">
                 <div className="ds44-progress-fill" style={{
-                  width: `${ds44Progress}%`,
-                  background: ds44Progress >= 80 ? '#10b981' : ds44Progress >= 50 ? '#f59e0b' : '#ef4444',
+                  width: `${faseCompletitud.resumen.progreso}%`,
+                  background: colorProgreso(faseCompletitud.resumen.progreso),
                 }} />
               </div>
-              <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 5 }}>{ds44Uploaded}/{ds44Total} documentos completados</div>
+              {/* El denominador se declara: sin esto el porcentaje es un número
+                  sin procedencia y nadie sabe qué quedó fuera ni por qué. */}
+              <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 5 }}>
+                {faseCompletitud.resumen.cumplidos}/{faseCompletitud.resumen.exigibles} {faseCompletitud.unidad} de esta fase
+                {faseCompletitud.resumen.excluidos > 0 && ` · ${faseCompletitud.resumen.excluidos} no aplican`}
+              </div>
             </div>
             <div className="ds44-content-section">
               <div className="ds44-content-header">
@@ -3231,7 +3258,7 @@ export default function ObraDetalle() {
 
                 {/* Documentos de la Fase CHECK */}
                 {DS44_CHECK_DOCS.map((doc) => {
-                  const aplica = doc.condicional !== 'mas_100_trabajadores' || activeWorkers.length > 100;
+                  const aplica = doc.condicional !== 'mas_100_trabajadores' || dotacionEntidad > 100;
                   if (!aplica) return null;
 
                   const existing = obraDocs.find((d: any) => d.tipo === doc.tipo);

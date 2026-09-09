@@ -20,6 +20,11 @@ beforeEach(() => {
         const name = cmd.constructor.name;
         const i = cmd.input || {};
         if (name === 'ScanCommand') return { Items: [...tabla.values()] };
+        if (name === 'GetCommand') return { Item: tabla.get(i.Key.sk) || undefined };
+        if (name === 'QueryCommand') {
+            const prefijo = i.ExpressionAttributeValues[':p'];
+            return { Items: [...tabla.values()].filter((it) => String(it.sk).startsWith(prefijo)) };
+        }
         if (name === 'UpdateCommand') {
             const item = tabla.get(i.Key.sk) || { sk: i.Key.sk, tenantId: i.Key.tenantId };
             if (/alertas = if_not_exists/.test(i.UpdateExpression)) item.alertas = item.alertas || {};
@@ -237,4 +242,116 @@ test('las ventanas de 60 y 30 días no se solapan', async () => {
     await revisarEstructuraPreventiva(new Date('2026-09-09T12:00:00.000Z'));
     const deMandato = avisos.filter((a) => /mandato/i.test(a.subject));
     assert.equal(deMandato.length, 1, 'un solo aviso por pasada, no uno por hito');
+});
+
+// ─── Estructura obligatoria no constituida (aviso semanal) ───────────────────
+
+const { revisarEstructuraFaltante, semanaISO } = require('../handlers/scheduler/estructura-alertas');
+const { ObraService } = require('../lib/services/ObraService');
+
+const conTenantsYObras = (obras = []) => {
+    TenantService.prototype.listAll = async () => ([
+        { tenantId: TENANT, nombre: 'Constructora Norte', estado: 'activo', createdAt: '2026-01-01T00:00:00.000Z' },
+    ]);
+    ObraService.prototype.listByTenant = async () => obras;
+};
+
+const personasEnObra = (n, obraId) => Array.from({ length: n }, (_, i) => ({
+    personaId: `p${i}`, estado: 'activo', rol: 'trabajador',
+    asignaciones: [{ obraId, estado: 'activa' }],
+}));
+
+const LUNES = new Date('2026-09-07T13:00:00.000Z');
+
+test('el aviso de estructura faltante solo corre los lunes', async () => {
+    conTenantsYObras([]);
+    const r = await revisarEstructuraFaltante(new Date('2026-09-09T13:00:00.000Z')); // miércoles
+    assert.ok(r.omitido, 'debe declarar por qué no corrió');
+    assert.equal(avisos.length, 0);
+});
+
+test('avisa cuando una obra sobre el umbral no tiene comité', async () => {
+    conTenantsYObras([{ obraId: 'o-1', nombre: 'Obra Norte', estado: 'activa', createdAt: '2026-02-01T00:00:00.000Z' }]);
+    PersonaService.prototype.listByTenant = async () => ([
+        { personaId: 'admin-1', estado: 'activo', rol: 'admin', asignaciones: [] },
+        ...personasEnObra(40, 'o-1'),
+    ]);
+    await revisarEstructuraFaltante(LUNES);
+    // El ámbito EMPRESA también avisa (40 personas): se busca el de la obra.
+    const aviso = avisos.find((a) => /Obra Norte/.test(a.subject));
+    assert.ok(aviso, asuntos().join(' | '));
+    assert.match(aviso.content, /Comité Paritario/);
+});
+
+test('no avisa si la obra está bajo el umbral', async () => {
+    conTenantsYObras([{ obraId: 'o-1', nombre: 'Obra Chica', estado: 'activa' }]);
+    PersonaService.prototype.listByTenant = async () => ([
+        { personaId: 'admin-1', estado: 'activo', rol: 'admin', asignaciones: [] },
+        ...personasEnObra(5, 'o-1'),
+    ]);
+    await revisarEstructuraFaltante(LUNES);
+    assert.equal(avisos.filter((a) => /Falta constituir/.test(a.subject)).length, 0);
+});
+
+test('el comité de la empresa no exime a la faena (Art. 23)', async () => {
+    // Comité vigente de ámbito EMPRESA; la obra de 40 personas igual necesita el suyo.
+    tabla.set('ORG#emp', {
+        tenantId: TENANT, sk: 'ORG#emp', organoId: 'emp', ambito: EP.AMBITO.EMPRESA, obraId: null,
+        tipo: EP.TIPO_ORGANO.COMITE_PARITARIO, fechaTerminoMandato: '2028-01-01T00:00:00.000Z',
+        estado: EP.ESTADO_ORGANO.VIGENTE, documentos: { comprobanteDT: 'd' },
+    });
+    conTenantsYObras([{ obraId: 'o-1', nombre: 'Obra Norte', estado: 'activa' }]);
+    PersonaService.prototype.listByTenant = async () => ([
+        { personaId: 'admin-1', estado: 'activo', rol: 'admin', asignaciones: [] },
+        ...personasEnObra(40, 'o-1'),
+    ]);
+    await revisarEstructuraFaltante(LUNES);
+    const aviso = avisos.find((a) => /Falta constituir/.test(a.subject) && /Obra Norte/.test(a.subject));
+    assert.ok(aviso, 'la faena necesita su propio comité');
+});
+
+test('no avisa si el órgano del ámbito ya está vigente', async () => {
+    tabla.set('ORG#o1', {
+        tenantId: TENANT, sk: 'ORG#o1', organoId: 'o1', ambito: EP.AMBITO.OBRA, obraId: 'o-1',
+        tipo: EP.TIPO_ORGANO.COMITE_PARITARIO, fechaTerminoMandato: '2028-01-01T00:00:00.000Z',
+        estado: EP.ESTADO_ORGANO.VIGENTE, documentos: { comprobanteDT: 'd' },
+    });
+    conTenantsYObras([{ obraId: 'o-1', nombre: 'Obra Norte', estado: 'activa' }]);
+    PersonaService.prototype.listByTenant = async () => ([
+        { personaId: 'admin-1', estado: 'activo', rol: 'admin', asignaciones: [] },
+        ...personasEnObra(40, 'o-1'),
+    ]);
+    await revisarEstructuraFaltante(LUNES);
+    assert.equal(avisos.filter((a) => /Obra Norte/.test(a.subject)).length, 0);
+});
+
+test('no repite el aviso el mismo lunes, pero sí el siguiente', async () => {
+    conTenantsYObras([{ obraId: 'o-1', nombre: 'Obra Norte', estado: 'activa' }]);
+    PersonaService.prototype.listByTenant = async () => ([
+        { personaId: 'admin-1', estado: 'activo', rol: 'admin', asignaciones: [] },
+        ...personasEnObra(40, 'o-1'),
+    ]);
+    const faltantes = () => avisos.filter((a) => /Falta constituir/.test(a.subject)).length;
+
+    await revisarEstructuraFaltante(LUNES);
+    const primera = faltantes();
+    assert.ok(primera > 0);
+
+    await revisarEstructuraFaltante(LUNES);
+    assert.equal(faltantes(), primera, 'no dos veces la misma semana');
+
+    await revisarEstructuraFaltante(new Date('2026-09-14T13:00:00.000Z')); // lunes siguiente
+    assert.equal(faltantes(), primera * 2, 'sigue faltando: se recuerda la semana siguiente');
+});
+
+test('los tenants que no están activos se omiten', async () => {
+    TenantService.prototype.listAll = async () => ([{ tenantId: TENANT, nombre: 'X', estado: 'setup' }]);
+    ObraService.prototype.listByTenant = async () => ([{ obraId: 'o-1', nombre: 'O', estado: 'activa' }]);
+    await revisarEstructuraFaltante(LUNES);
+    assert.equal(avisos.length, 0, 'no molestar a una empresa en configuración');
+});
+
+test('semanaISO cambia de una semana a la siguiente', () => {
+    assert.notEqual(semanaISO(new Date('2026-09-07T00:00:00Z')), semanaISO(new Date('2026-09-14T00:00:00Z')));
+    assert.equal(semanaISO(new Date('2026-09-07T00:00:00Z')), semanaISO(new Date('2026-09-09T00:00:00Z')));
 });

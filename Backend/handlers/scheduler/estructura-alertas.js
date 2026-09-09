@@ -13,11 +13,12 @@
  * por investidura: ser miembro del comité no es un rol del sistema.
  */
 
-const { QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { InboxRepository } = require('../inbox-module/inbox.repository');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
+const { ObraService } = require('../../lib/services/ObraService');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { sumarDiasHabiles } = require('../../lib/utils/fechaChile');
 const EP = require('../../lib/estructura-preventiva');
@@ -27,6 +28,7 @@ const TABLE = process.env.ESTRUCTURA_TABLE || 'EstructuraPreventiva';
 const inboxRepo = new InboxRepository();
 const personaService = new PersonaService();
 const tenantService = new TenantService();
+const obraService = new ObraService();
 
 const DIA_MS = 86400000;
 const diasEntre = (a, b) => Math.floor((new Date(a).getTime() - new Date(b).getTime()) / DIA_MS);
@@ -232,14 +234,124 @@ async function revisarEstructuraPreventiva(ahora = new Date()) {
 }
 
 /**
- * Estructura obligatoria declarada pero no constituida. Semanal (lunes) para no
- * repetir el mismo aviso todos los días sobre algo que tarda semanas en resolverse.
+ * Estructura obligatoria que corresponde constituir y todavía no se constituye.
+ *
+ * SEMANAL (lunes), no diario: constituir un comité paritario implica convocar una
+ * elección, y avisar todos los días de algo que tarda semanas convierte el inbox
+ * en ruido que se deja de leer.
+ *
+ * Recorre cada ámbito por separado —la empresa y CADA obra— porque el Art. 23
+ * cuenta por empresa, faena, sucursal o agencia: un comité en la empresa no exime
+ * a una faena de 30 personas de tener el suyo.
+ *
+ * La obligación NO se recalcula acá: se pregunta al módulo de dominio, que es el
+ * único lugar donde viven los umbrales.
  */
 async function revisarEstructuraFaltante(ahora = new Date()) {
-    if (ahora.getUTCDay() !== 1) return { revisados: 0, avisos: 0 };
-    // Requiere recorrer tenants y obras: se implementa junto con el panel de
-    // completitud transversal, que ya calcula exactamente esta condición.
-    return { revisados: 0, avisos: 0, nota: 'pendiente: depende del recorrido de ámbitos' };
+    const resumen = { ambitos: 0, avisos: 0 };
+    if (ahora.getUTCDay() !== 1) return { ...resumen, omitido: 'solo corre los lunes' };
+
+    const cacheAdmins = new Map();
+    const tenants = await tenantService.listAll().catch((err) => {
+        console.error('[estructura-alertas] no se pudieron listar los tenants:', err.message);
+        return [];
+    });
+
+    for (const t of tenants) {
+        const tenantId = t.tenantId || t.id;
+        if (!tenantId) continue;
+        if (t.estado && t.estado !== 'activo') continue; // no molestar a tenants en setup o suspendidos
+
+        const [personas, obras, organos] = await Promise.all([
+            personaService.listByTenant(tenantId).catch(() => []),
+            obraService.listByTenant(tenantId).catch(() => []),
+            listarOrganosDe(tenantId),
+        ]);
+        const destinatarios = await administradoresDe(tenantId, cacheAdmins);
+        if (destinatarios.length === 0) continue;
+
+        // Un ámbito por la entidad empleadora, más uno por cada obra activa.
+        const ambitos = [
+            { ambito: EP.AMBITO.EMPRESA, obraId: null, nombre: t.nombre || 'la empresa', creadoEn: t.createdAt },
+            ...obras
+                .filter((o) => (o.estado || 'activa') === 'activa')
+                .map((o) => ({ ambito: EP.AMBITO.OBRA, obraId: o.obraId, nombre: o.nombre || 'la obra', creadoEn: o.createdAt })),
+        ];
+
+        for (const a of ambitos) {
+            resumen.ambitos += 1;
+            const delAmbito = organos.filter((o) => (a.obraId ? o.obraId === a.obraId : o.ambito === EP.AMBITO.EMPRESA));
+            const dotacion = a.obraId
+                ? EP.dotacionDeObra(personas, a.obraId)
+                : EP.dotacionDeEmpresa(personas);
+
+            const obligaciones = EP.obligacionesDeAmbito({
+                dotacion, ambito: a.ambito, hayCphsVigente: EP.hayCphsVigente(delAmbito, ahora),
+            });
+
+            const faltantes = Object.values(EP.TIPO_ORGANO).filter((tipo) => {
+                if (!obligaciones[tipo]?.obligatorio) return false;
+                return !delAmbito.some((o) => o.tipo === tipo && EP.estadoOrgano(o, ahora) === EP.ESTADO_ORGANO.VIGENTE);
+            });
+            if (faltantes.length === 0) continue;
+
+            // La marca va sobre el ámbito y la semana: se repite el lunes siguiente
+            // si sigue faltando, pero no dos veces la misma semana.
+            const semana = semanaISO(ahora);
+            const claveAmbito = `FALTA#${a.ambito}#${a.obraId || 'empresa'}`;
+            const clave = `faltante_${semana}`;
+            const marca = await leerMarca(tenantId, claveAmbito);
+            if (yaAvisado(marca, clave)) continue;
+
+            const lista = faltantes.map((tipo) => EP.TIPO_ORGANO_LABEL[tipo] || tipo).join(', ');
+            const ok = await avisar({
+                tenantId, destinatarios, obraId: a.obraId,
+                subject: `Falta constituir ${faltantes.length === 1 ? 'un órgano' : 'órganos'} en ${a.nombre}`,
+                content: `Con ${dotacion} persona(s) trabajadora(s) corresponde constituir: ${lista}. `
+                    + 'Mientras no se constituya, el requisito aparece pendiente en el cumplimiento del FUF.',
+            });
+            if (ok) {
+                await marcarAlerta(tenantId, claveAmbito, clave);
+                resumen.avisos += 1;
+            }
+        }
+    }
+    return resumen;
 }
 
-module.exports = { revisarEstructuraPreventiva, revisarEstructuraFaltante, diasEntre };
+/** Órganos de un tenant (solo las filas ORG#). */
+async function listarOrganosDe(tenantId) {
+    try {
+        const res = await docClient.send(new QueryCommand({
+            TableName: TABLE,
+            KeyConditionExpression: 'tenantId = :t AND begins_with(sk, :p)',
+            ExpressionAttributeValues: { ':t': tenantId, ':p': 'ORG#' },
+        }));
+        return res.Items || [];
+    } catch (err) {
+        console.error('[estructura-alertas] no se pudieron leer los órganos:', err.message);
+        return [];
+    }
+}
+
+/** Fila de marcas de un ámbito sin órgano. No es un órgano: solo guarda `alertas`. */
+async function leerMarca(tenantId, sk) {
+    try {
+        const res = await docClient.send(new GetCommand({ TableName: TABLE, Key: { tenantId, sk } }));
+        return res.Item || null;
+    } catch {
+        return null;
+    }
+}
+
+/** Año-semana ISO, para que la marca se renueve cada lunes. */
+function semanaISO(fecha) {
+    const d = new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()));
+    const dia = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dia);
+    const inicioAnio = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const semana = Math.ceil(((d - inicioAnio) / DIA_MS + 1) / 7);
+    return `${d.getUTCFullYear()}W${String(semana).padStart(2, '0')}`;
+}
+
+module.exports = { revisarEstructuraPreventiva, revisarEstructuraFaltante, diasEntre, semanaISO };

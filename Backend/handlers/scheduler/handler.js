@@ -154,13 +154,25 @@ module.exports.checkActivityAlerts = async () => {
  * al día. Correrlas cada media hora sería 48 veces el mismo trabajo.
  */
 module.exports.checkEstructuraAlerts = async () => {
-    const { revisarEstructuraPreventiva } = require('./estructura-alertas');
+    const { revisarEstructuraPreventiva, revisarEstructuraFaltante } = require('./estructura-alertas');
+    const ahora = new Date();
+    // Las dos pasadas van por separado y con su propio try: si el recorrido
+    // semanal de tenants falla, los recordatorios de mandatos y actas —que son
+    // los de plazo corto— tienen que salir igual.
+    let organos = null;
+    let faltantes = null;
     try {
-        const resumen = await revisarEstructuraPreventiva(new Date());
-        console.log('[estructura-alertas]', JSON.stringify(resumen));
-        return resumen;
+        organos = await revisarEstructuraPreventiva(ahora);
     } catch (err) {
-        console.error('[estructura-alertas] fallo la pasada:', err);
-        throw err;
+        console.error('[estructura-alertas] fallo la revision de organos:', err);
     }
+    try {
+        faltantes = await revisarEstructuraFaltante(ahora);
+    } catch (err) {
+        console.error('[estructura-alertas] fallo la revision de estructura faltante:', err);
+    }
+    const resumen = { organos, faltantes };
+    console.log('[estructura-alertas]', JSON.stringify(resumen));
+    if (!organos && !faltantes) throw new Error('Ninguna revision de estructura preventiva pudo completarse');
+    return resumen;
 };
