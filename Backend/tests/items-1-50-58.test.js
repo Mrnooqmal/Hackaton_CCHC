@@ -36,9 +36,21 @@ test('los ítems 39 y 40 van en la sección 8, como en el formulario', () => {
 
 test('agruparPorSeccion no omite secciones sin requisitos evaluados', () => {
     const grupos = F.agruparPorSeccion([{ item: 30 }, { item: 50 }]);
-    assert.equal(grupos.length, 15, 'un formulario al que le faltan secciones no se puede recorrer');
+    // Las 15 del formulario más la 16, que acompaña lo que el FUF no fiscaliza.
+    assert.equal(grupos.length, 16, 'un formulario al que le faltan secciones no se puede recorrer');
+    assert.equal(grupos.filter((g) => !g.fueraDelFormulario).length, 15);
     assert.equal(grupos.find((g) => g.seccion === 8).items.find((i) => i.numero === 30).requisitos.length, 1);
     assert.equal(grupos.find((g) => g.seccion === 11).items[0].requisitos.length, 0);
+});
+
+test('la sección 16 se declara fuera del formulario y sus ítems también', () => {
+    // Un número de ítem inventado en el formulario rompe justo la auditabilidad
+    // que el formulario existe para dar: se muestran por su artículo.
+    const extra = F.agruparPorSeccion([]).find((g) => g.seccion === 16);
+    assert.equal(extra.fueraDelFormulario, true);
+    assert.ok(extra.items.every((i) => i.fueraDelFormulario === true));
+    assert.equal(F.SECCIONES_FUF.length, 15, 'el FUF sigue teniendo 15 secciones');
+    assert.equal(F.ITEMS_FUF.length, 60, 'y 60 ítems');
 });
 
 // ─── Distribución (componente genérico) ──────────────────────────────────────

@@ -44,6 +44,35 @@ const listarDocumentosTenant = async (tenantId) => {
     }
 };
 
+/**
+ * Arma la completitud de un ámbito.
+ *
+ * Existe porque el panel y el export la pedían por separado y el export había
+ * quedado sin `reglas`: evaluaba el reglamento sin las organizaciones sindicales
+ * y el programa de trabajo sin representante legal, así que el reporte impreso y
+ * la pantalla podían decir cosas distintas del mismo requisito. Con un solo
+ * armado eso no puede volver a pasar.
+ */
+const armarCompletitud = async (tenantId, ambito, obraId) => {
+    const [personas, documentos, tenant, obra] = await Promise.all([
+        personaService.listByTenant(tenantId).catch(() => []),
+        listarDocumentosTenant(tenantId),
+        tenantService.getById(tenantId).catch(() => null),
+        obraId ? obraService.getById(obraId).catch(() => null) : Promise.resolve(null),
+    ]);
+    const tenantSafe = tenant ? tenant.toSafeFormat() : null;
+
+    const completitud = await estructuraService.completitudAmbito({
+        tenantId, ambito, obraId, personas, documentos,
+        dotacionDeclarada: ambito === EP.AMBITO.OBRA
+            ? (obra?.dotacionDeclarada ?? null)
+            : (tenantSafe?.cantidadTrabajadores || null),
+        reglas: tenantSafe?.reglas || {},
+        faenaCompartida: obra?.faenaCompartida ?? null,
+    });
+    return { completitud, tenantSafe, obra };
+};
+
 const estructuraService = new EstructuraPreventivaService();
 const personaService = new PersonaService();
 const tenantService = new TenantService();
@@ -142,26 +171,8 @@ module.exports.estructuraHandler = async (event) => {
             const obraId = q.obraId || null;
             if (ambito === EP.AMBITO.OBRA && !obraId) return error('obraId es requerido para el ámbito obra');
 
-            const [personas, documentos] = await Promise.all([
-                personaService.listByTenant(tenantId).catch(() => []),
-                listarDocumentosTenant(tenantId),
-            ]);
-
-            let declarada = null;
-            if (ambito === EP.AMBITO.OBRA) {
-                const obra = await obraService.getById(obraId).catch(() => null);
-                declarada = obra?.dotacionDeclarada ?? null;
-            } else {
-                const tenant = await tenantService.getById(tenantId).catch(() => null);
-                declarada = tenant ? tenant.toSafeFormat()?.cantidadTrabajadores || null : null;
-            }
-
-            const tenantCompl = await tenantService.getById(tenantId).catch(() => null);
-            const resultado = await estructuraService.completitudAmbito({
-                tenantId, ambito, obraId, personas, documentos, dotacionDeclarada: declarada,
-                reglas: tenantCompl ? tenantCompl.toSafeFormat()?.reglas || {} : {},
-            });
-            return success(resultado);
+            const { completitud } = await armarCompletitud(tenantId, ambito, obraId);
+            return success(completitud);
         }
 
         // ── GET /estructura/completitud/export ───────────────────────────────
@@ -172,20 +183,7 @@ module.exports.estructuraHandler = async (event) => {
             const obraId = q.obraId || null;
             if (ambito === EP.AMBITO.OBRA && !obraId) return error('obraId es requerido para el ámbito obra');
 
-            const [personas, documentos, tenant, obra] = await Promise.all([
-                personaService.listByTenant(tenantId).catch(() => []),
-                listarDocumentosTenant(tenantId),
-                tenantService.getById(tenantId).catch(() => null),
-                obraId ? obraService.getById(obraId).catch(() => null) : Promise.resolve(null),
-            ]);
-            const tenantSafe = tenant ? tenant.toSafeFormat() : null;
-
-            const completitud = await estructuraService.completitudAmbito({
-                tenantId, ambito, obraId, personas, documentos,
-                dotacionDeclarada: ambito === EP.AMBITO.OBRA
-                    ? (obra?.dotacionDeclarada ?? null)
-                    : (tenantSafe?.cantidadTrabajadores || null),
-            });
+            const { completitud, tenantSafe, obra } = await armarCompletitud(tenantId, ambito, obraId);
 
             const exp = construirExport(completitud, {
                 nombreEmpresa: tenantSafe?.nombre || null,

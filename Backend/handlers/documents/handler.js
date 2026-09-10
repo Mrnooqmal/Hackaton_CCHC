@@ -12,6 +12,7 @@ const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PdfStampingService } = require('../../lib/services/PdfStampingService');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { TIPOS_SALUD, filtrarSalud } = require('../../lib/documentos-salud');
 const { DESTINATARIO, MEDIO } = require('../../lib/distribucion');
 
 const DESTINATARIOS_VALIDOS = new Set(Object.values(DESTINATARIO));
@@ -106,6 +107,15 @@ const DOCUMENT_TYPES = {
     // FUF 37 / Art. 46 inc. 3. Es la CONSTANCIA de la entrega, no la
     // documentación entregada: el sistema no abre los archivos ni verifica qué
     // contienen. Se pueden registrar varias entregas, una por documento.
+    // FUF 16 / Art. 13 inc. 2. Lo emite el fabricante o el ISP, no la empresa: se
+    // custodia y se muestra, no se valida su contenido.
+    // FUF 18 y 19 / Art. 13 incs. 3 y 4. Un solo documento para dos obligaciones:
+    // que la capacitación se haya hecho, y que conste quiénes asistieron.
+    CAPACITACION_EPP: 'Capacitacion en uso y mantencion de EPP (Art. 13)',
+    CERTIFICACION_EPP: 'Certificacion de calidad o registro ISP de los EPP (Art. 13)',
+    // FUF 49 / Arts. 56 a 61. El comprobante del sitio de la Direccion del Trabajo.
+    // Distinto de COMPROBANTE_REGISTRO_DT, que es el registro del comite (Art. 36).
+    INGRESO_RIOHS_DT: 'Comprobante de ingreso del Reglamento Interno en la Direccion del Trabajo',
     ENTREGA_DOCUMENTACION_CPHS: 'Constancia de entrega de documentacion preventiva al comite (Art. 46)',
     PROGRAMA_TRABAJO_CPHS: 'Programa de trabajo del Comite Paritario (Art. 47)',
     // --- Sistema de Gestion de SST (item 1, Art. 22) ---
@@ -250,7 +260,9 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId, tipo, estado, clasificacion, obraId, pendienteDe, asignadoA } = event.queryStringParameters || {};
+        const {
+            tenantId, tipo, estado, clasificacion, obraId, pendienteDe, asignadoA, solicitanteId,
+        } = event.queryStringParameters || {};
         if (!tenantId) return error('tenantId es requerido');
 
         // Query por GSI tenantId-index (no Scan)
@@ -312,6 +324,20 @@ module.exports.list = async (event) => {
             documents = documents.filter((doc) =>
                 (doc.asignaciones || []).some((a) => a.personaId === asignadoA)
             );
+        }
+
+        // Resguardo de datos sensibles (Arts. 67 y 68). Se resuelve al final, sobre
+        // el conjunto ya filtrado, para no pagar la consulta de persona cuando el
+        // resultado no trae ningún documento de salud.
+        if (documents.some((d) => TIPOS_SALUD.has(d.tipo))) {
+            const [persona, tenant] = await Promise.all([
+                solicitanteId
+                    ? new PersonaService().getById(solicitanteId).catch(() => null)
+                    : Promise.resolve(null),
+                new TenantService().getById(tenantId).catch(() => null),
+            ]);
+            const tenantSafe = tenant ? tenant.toSafeFormat() : null;
+            documents = filtrarSalud(documents, persona, tenantSafe);
         }
 
         return success({

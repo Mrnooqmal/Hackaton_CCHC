@@ -49,6 +49,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.removeItem('auth_token');
             localStorage.removeItem('session_id');
             localStorage.removeItem('tenant_id');
+        localStorage.removeItem('persona_id');
+            localStorage.removeItem('persona_id');
             setUser(null);
             setSession(null);
             setSessionExpired(true);
@@ -80,10 +82,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (enrichedUser.tenantId) {
                     localStorage.setItem('tenant_id', enrichedUser.tenantId);
                 }
+                // La capa de API lo adjunta a las consultas de documentos: sin saber
+                // quién pregunta, el servidor oculta los documentos de salud.
+                if (enrichedUser.personaId) {
+                    localStorage.setItem('persona_id', enrichedUser.personaId);
+                }
             } else {
                 localStorage.removeItem('auth_token');
                 localStorage.removeItem('session_id');
                 localStorage.removeItem('tenant_id');
+        localStorage.removeItem('persona_id');
+            localStorage.removeItem('persona_id');
             }
         } catch (err) {
             console.error('Error checking auth:', err);
@@ -117,6 +126,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             personaId: (userData as any).personaId,
             tenantId: (userData as any).tenantId,
         };
+        if (enrichedUser.personaId) {
+            localStorage.setItem('persona_id', enrichedUser.personaId);
+        }
 
         setUser(enrichedUser);
         setSession({
@@ -192,6 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('auth_token');
         localStorage.removeItem('session_id');
         localStorage.removeItem('tenant_id');
+        localStorage.removeItem('persona_id');
         setUser(null);
         setSession(null);
     };

@@ -380,6 +380,40 @@ function evaluarItem23(ctx) {
         : { estado: E.CUMPLIDO, detalle: `Última capacitación hace ${Math.floor(meses)} mes(es).` };
 }
 
+// ─── Ítem 16: certificación de los EPP ───────────────────────────────────────
+
+/**
+ * Art. 13 inc. 2. El certificado lo emite el fabricante o el ISP: la plataforma
+ * lo custodia y lo muestra, no verifica que sea auténtico ni que corresponda al
+ * equipo entregado. Eso no se puede afirmar sin abrir el archivo.
+ */
+function evaluarItem16(ctx) {
+    const cert = vigenteDeTipo(ctx, 'CERTIFICACION_EPP');
+    return cert
+        ? { estado: E.CUMPLIDO, detalle: 'Certificación o registro ISP cargado.' }
+        : { estado: E.PENDIENTE, detalle: 'Falta la certificación de calidad o el registro ISP de los EPP.' };
+}
+
+// ─── Ítem 49: Reglamento Interno vigente e ingresado en la DT ────────────────
+
+/**
+ * Arts. 56 a 61: el Reglamento debe estar al día e ingresado en el sitio de la
+ * Dirección del Trabajo.
+ *
+ * La REMISIÓN a los destinatarios es el ítem 50 y no se repite acá: son dos
+ * obligaciones distintas sobre el mismo documento, y mezclarlas haría que una
+ * tapara a la otra.
+ */
+function evaluarItem49(ctx) {
+    const doc = vigenteDeTipo(ctx, 'REGLAMENTO_INTERNO');
+    if (!doc) return { estado: E.PENDIENTE, detalle: 'No hay Reglamento Interno cargado.' };
+
+    const ingreso = vigenteDeTipo(ctx, 'INGRESO_RIOHS_DT');
+    return ingreso
+        ? { estado: E.CUMPLIDO, detalle: 'Reglamento cargado y con comprobante de ingreso en la Dirección del Trabajo.' }
+        : { estado: E.PARCIAL, detalle: 'Reglamento cargado, falta el comprobante de ingreso en la Dirección del Trabajo.' };
+}
+
 // ─── Ítem 37: entrega de documentación preventiva al comité ──────────────────
 
 /**
@@ -559,6 +593,21 @@ const DEFINICIONES_DOCUMENTALES = [
         }),
     },
     {
+        // El EPP se entrega en el lugar de trabajo, igual que su respaldo.
+        id: 'FUF-16', item: 16, ambito: 'obra',
+        titulo: 'Certificación de calidad o registro ISP de los EPP',
+        tipos: ['CERTIFICACION_EPP'],
+        evaluar: evaluarItem16,
+    },
+    {
+        // El Reglamento es de la entidad y rige en todas las faenas: se pide en
+        // los dos ámbitos y el documento, sin obra, acredita en ambos.
+        id: 'FUF-49', item: 49, ambito: 'ambos',
+        titulo: 'Reglamento Interno vigente, entregado e ingresado en la DT',
+        tipos: ['REGLAMENTO_INTERNO', 'INGRESO_RIOHS_DT'],
+        evaluar: evaluarItem49,
+    },
+    {
         id: 'FUF-37', item: 37, ambito: 'ambos',
         titulo: 'Entrega de documentación preventiva al comité',
         tipos: ['ENTREGA_DOCUMENTACION_CPHS'],
@@ -602,7 +651,8 @@ const definicionesDocumentalesPara = (ambito) =>
 module.exports = {
     DEFINICIONES_DOCUMENTALES, definicionesDocumentalesPara,
     componentesSgsst,
-    evaluarItem1, evaluarItem8, evaluarItem9, evaluarItem23, evaluarItem37,
+    evaluarItem1, evaluarItem8, evaluarItem9, evaluarItem16, evaluarItem23,
+    evaluarItem37, evaluarItem49,
     evaluarItem50, evaluarItem51, evaluarItem58, evaluarItem60,
     // Expuestos para las pruebas y para que otros ítems reutilicen la mecánica.
     distribucionPara, evaluarDifusion,

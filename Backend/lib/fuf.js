@@ -100,7 +100,47 @@ const ITEMS_FUF = [
     [60, 'Registro documental fidedigno de la actividad preventiva', 'Art. 72', 'CHECK'],
 ].map(([numero, texto, articulo, fase]) => ({ numero, texto, articulo, fase }));
 
-const POR_NUMERO = new Map(ITEMS_FUF.map((i) => [i.numero, i]));
+/**
+ * Sección 16: requisitos que NO son ítems del formulario.
+ *
+ * El FUF tiene 15 secciones y 60 ítems, y eso no se toca: es la norma. Pero el
+ * DS 44 obliga a cosas que el formulario no fiscaliza (la gestión de cambios del
+ * Art. 12) y la empresa mantiene documentos propios que igual quiere ver junto al
+ * resto.
+ *
+ * Viven acá, en una sección aparte y con `fueraDelFormulario` en cada uno, para
+ * que la interfaz los muestre por su ARTÍCULO y no como "FUF 61": un número de
+ * ítem inventado sería exactamente lo que rompe la auditabilidad que el
+ * formulario existe para dar.
+ *
+ * Los números 61 en adelante son internos, para agrupar. No los usa nadie más.
+ */
+const SECCION_EXTRA = {
+    numero: 16,
+    nombre: 'Otros requisitos y documentos de la entidad',
+    desde: 61,
+    hasta: 99,
+    fueraDelFormulario: true,
+};
+
+const ITEMS_EXTRA = [
+    [61, 'Gestión de cambios en procesos, tecnologías o materiales', 'Art. 12', 'PLAN'],
+    [62, 'Utilización de agentes físicos, químicos y biológicos', 'Art. 2 N.° 14 c)', 'DO'],
+    [63, 'Diagnóstico de aspectos legales aplicables', 'Práctica de la entidad', 'PLAN'],
+    [64, 'Registro de desviaciones e incumplimientos detectados', 'Práctica de la entidad', 'CHECK'],
+    [65, 'Procedimientos de trabajo seguro', 'Práctica de la entidad', 'DO'],
+    // El Art. 71 sí lo exige, pero su ítem del formulario (el 59) quedó fuera del
+    // alcance de la plataforma: el documento se acompaña acá igual.
+    [66, 'Investigación de accidentes y enfermedades profesionales', 'Art. 71', 'CHECK'],
+].map(([numero, texto, articulo, fase]) => ({
+    numero, texto, articulo, fase, fueraDelFormulario: true,
+}));
+
+/** El formulario más lo que lo acompaña. Es lo que recorre la interfaz. */
+const SECCIONES_TODAS = [...SECCIONES_FUF, SECCION_EXTRA];
+const ITEMS_TODOS = [...ITEMS_FUF, ...ITEMS_EXTRA];
+
+const POR_NUMERO = new Map(ITEMS_TODOS.map((i) => [i.numero, i]));
 
 /** Ítem del FUF por su número. */
 const itemFuf = (numero) => POR_NUMERO.get(Number(numero)) || null;
@@ -108,13 +148,13 @@ const itemFuf = (numero) => POR_NUMERO.get(Number(numero)) || null;
 /** Sección a la que pertenece un ítem. Los ítems 39 y 40 caen en la 8, como en el formulario. */
 const seccionDeItem = (numero) => {
     const n = Number(numero);
-    return SECCIONES_FUF.find((s) => n >= s.desde && n <= s.hasta) || null;
+    return SECCIONES_TODAS.find((s) => n >= s.desde && n <= s.hasta) || null;
 };
 
 /** Ítems de una sección, en orden. */
 const itemsDeSeccion = (numeroSeccion) => {
-    const s = SECCIONES_FUF.find((x) => x.numero === Number(numeroSeccion));
-    return s ? ITEMS_FUF.filter((i) => i.numero >= s.desde && i.numero <= s.hasta) : [];
+    const s = SECCIONES_TODAS.find((x) => x.numero === Number(numeroSeccion));
+    return s ? ITEMS_TODOS.filter((i) => i.numero >= s.desde && i.numero <= s.hasta) : [];
 };
 
 /**
@@ -132,9 +172,10 @@ function agruparPorSeccion(requisitos) {
         if (!porItem.has(n)) porItem.set(n, []);
         porItem.get(n).push(r);
     }
-    return SECCIONES_FUF.map((s) => ({
+    return SECCIONES_TODAS.map((s) => ({
         seccion: s.numero,
         nombre: s.nombre,
+        fueraDelFormulario: Boolean(s.fueraDelFormulario),
         items: itemsDeSeccion(s.numero).map((i) => ({
             ...i,
             requisitos: porItem.get(i.numero) || [],
@@ -142,4 +183,7 @@ function agruparPorSeccion(requisitos) {
     }));
 }
 
-module.exports = { SECCIONES_FUF, ITEMS_FUF, itemFuf, seccionDeItem, itemsDeSeccion, agruparPorSeccion };
+module.exports = {
+    SECCIONES_FUF, ITEMS_FUF, SECCION_EXTRA, ITEMS_EXTRA, SECCIONES_TODAS, ITEMS_TODOS,
+    itemFuf, seccionDeItem, itemsDeSeccion, agruparPorSeccion,
+};

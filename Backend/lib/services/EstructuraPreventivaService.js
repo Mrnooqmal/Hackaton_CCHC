@@ -35,6 +35,7 @@ const EP = require('../estructura-preventiva');
 const C = require('../completitud');
 const { definicionesPara } = require('../completitud-estructura');
 const { definicionesDocumentalesPara, componentesSgsst } = require('../completitud-documental');
+const { definicionesOperacionPara } = require('../completitud-operacion');
 const { sumarDiasHabiles } = require('../utils/fechaChile');
 const PRE = require('../prescripciones');
 
@@ -592,7 +593,10 @@ class EstructuraPreventivaService {
      * vincula con su evidencia, así que el panel y el expediente no pueden
      * discrepar.
      */
-    async completitudAmbito({ tenantId, ambito, obraId = null, personas = [], documentos = [], dotacionDeclarada = null, reglas = {}, ahora = new Date() }) {
+    async completitudAmbito({
+        tenantId, ambito, obraId = null, personas = [], documentos = [],
+        dotacionDeclarada = null, reglas = {}, faenaCompartida = null, ahora = new Date(),
+    }) {
         const resumen = await this.resumenAmbito({
             tenantId, ambito, obraId, personas, dotacionDeclarada, ahora,
         });
@@ -646,15 +650,26 @@ class EstructuraPreventivaService {
             // El ítem 9 verifica la aprobación del PTP contra la firma de esta
             // persona. Vive a nivel empresa: la representación es una sola.
             representanteLegal: reglas.representanteLegal || null,
+            // Art. 20: la coordinación solo es exigible si concurren varias
+            // entidades. El sistema no lo puede deducir, lo declara la obra.
+            faenaCompartida: faenaCompartida ?? null,
             sinOrganizacionesSindicales: reglas.sinOrganizacionesSindicales || null,
             limiteRegistroDT,
         };
 
-        // Dos fuentes de definiciones, un solo motor: estructura preventiva
-        // (ítems 30-48) y las documentales (1, 50, 58). Ninguna calcula por su
-        // cuenta; ambas describen cómo se acredita su ítem.
+        // Tres fuentes de definiciones, un solo motor: estructura preventiva
+        // (órganos), documentales (sistema de gestión, reglamento, prescripciones)
+        // y operación (MIPER, EPP, emergencias, vigilancia). Ninguna calcula por su
+        // cuenta; las tres describen cómo se acredita su ítem y el motor normaliza.
+        //
+        // Un ítem tiene UNA definición. Si dos archivos declararan el mismo, el
+        // panel mostraría dos filas para la misma obligación.
         const evaluacion = C.evaluarCompletitud(
-            [...definicionesPara(ambito), ...definicionesDocumentalesPara(ambito)],
+            [
+                ...definicionesPara(ambito),
+                ...definicionesDocumentalesPara(ambito),
+                ...definicionesOperacionPara(ambito),
+            ],
             ctx
         );
         return {

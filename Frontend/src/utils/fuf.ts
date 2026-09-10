@@ -10,8 +10,16 @@
 
 export type FaseFuf = 'PLAN' | 'DO' | 'CHECK' | 'ACT';
 
-export interface SeccionFuf { numero: number; nombre: string; desde: number; hasta: number; }
-export interface ItemFuf { numero: number; texto: string; articulo: string; fase: FaseFuf; }
+export interface SeccionFuf {
+    numero: number; nombre: string; desde: number; hasta: number;
+    /** La 16: acompaña al formulario sin ser parte de él. */
+    fueraDelFormulario?: boolean;
+}
+export interface ItemFuf {
+    numero: number; texto: string; articulo: string; fase: FaseFuf;
+    /** Sin número de ítem del FUF: la interfaz lo muestra por su artículo. */
+    fueraDelFormulario?: boolean;
+}
 
 export const SECCIONES_FUF: SeccionFuf[] = [
     { numero: 1, nombre: 'Sistema de Gestión de Seguridad y Salud en el Trabajo', desde: 1, hasta: 1 },
@@ -96,19 +104,53 @@ export const ITEMS_FUF: ItemFuf[] = ([
     numero, texto, articulo, fase: fase as FaseFuf,
 }));
 
-const POR_NUMERO = new Map(ITEMS_FUF.map((i) => [i.numero, i]));
+/**
+ * Sección 16: requisitos que NO son ítems del formulario.
+ *
+ * El FUF tiene 15 secciones y 60 ítems, y eso no se toca: es la norma. Acá viven
+ * lo que el DS 44 exige sin fiscalizar en el formulario (el Art. 12) y los
+ * documentos que la entidad mantiene por recomendación profesional.
+ *
+ * Los números 61 en adelante son internos, para agrupar. La interfaz muestra el
+ * ARTÍCULO y no "FUF 61": un número de ítem inventado rompería exactamente la
+ * auditabilidad que el formulario existe para dar.
+ */
+export const SECCION_EXTRA: SeccionFuf = {
+    numero: 16,
+    nombre: 'Otros requisitos y documentos de la entidad',
+    desde: 61,
+    hasta: 99,
+    fueraDelFormulario: true,
+};
+
+export const ITEMS_EXTRA: ItemFuf[] = ([
+    [61, 'Gestión de cambios en procesos, tecnologías o materiales', 'Art. 12', 'PLAN'],
+    [62, 'Utilización de agentes físicos, químicos y biológicos', 'Art. 2 N.° 14 c)', 'DO'],
+    [63, 'Diagnóstico de aspectos legales aplicables', 'Práctica de la entidad', 'PLAN'],
+    [64, 'Registro de desviaciones e incumplimientos detectados', 'Práctica de la entidad', 'CHECK'],
+    [65, 'Procedimientos de trabajo seguro', 'Práctica de la entidad', 'DO'],
+    [66, 'Investigación de accidentes y enfermedades profesionales', 'Art. 71', 'CHECK'],
+] as const).map(([numero, texto, articulo, fase]) => ({
+    numero, texto, articulo, fase: fase as FaseFuf, fueraDelFormulario: true,
+}));
+
+/** El formulario más lo que lo acompaña. Es lo que recorre la interfaz. */
+export const SECCIONES_TODAS: SeccionFuf[] = [...SECCIONES_FUF, SECCION_EXTRA];
+export const ITEMS_TODOS: ItemFuf[] = [...ITEMS_FUF, ...ITEMS_EXTRA];
+
+const POR_NUMERO = new Map(ITEMS_TODOS.map((i) => [i.numero, i]));
 
 export const itemFuf = (numero: number): ItemFuf | null => POR_NUMERO.get(Number(numero)) || null;
 
 /** Sección de un ítem. Los ítems 39 y 40 caen en la 8, como en el formulario. */
 export const seccionDeItem = (numero: number): SeccionFuf | null => {
     const n = Number(numero);
-    return SECCIONES_FUF.find((s) => n >= s.desde && n <= s.hasta) || null;
+    return SECCIONES_TODAS.find((s) => n >= s.desde && n <= s.hasta) || null;
 };
 
 export const itemsDeSeccion = (numeroSeccion: number): ItemFuf[] => {
-    const s = SECCIONES_FUF.find((x) => x.numero === Number(numeroSeccion));
-    return s ? ITEMS_FUF.filter((i) => i.numero >= s.desde && i.numero <= s.hasta) : [];
+    const s = SECCIONES_TODAS.find((x) => x.numero === Number(numeroSeccion));
+    return s ? ITEMS_TODOS.filter((i) => i.numero >= s.desde && i.numero <= s.hasta) : [];
 };
 
 /**
@@ -124,7 +166,8 @@ export function agruparPorSeccion<T extends { item?: number | null }>(requisitos
         if (!porItem.has(n)) porItem.set(n, []);
         porItem.get(n)!.push(r);
     }
-    return SECCIONES_FUF.map((s) => ({
+    return SECCIONES_TODAS.map((s) => ({
+        fueraDelFormulario: Boolean(s.fueraDelFormulario),
         seccion: s.numero,
         nombre: s.nombre,
         items: itemsDeSeccion(s.numero).map((i) => ({ ...i, requisitos: porItem.get(i.numero) || [] })),

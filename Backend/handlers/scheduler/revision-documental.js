@@ -22,10 +22,15 @@ const personaService = new PersonaService();
 const tenantService = new TenantService();
 
 // Documentos con obligación legal de revisión al menos anual (Art. 57 inc. 5).
-const TIPOS_REVISION_ANUAL = new Set(['REGLAMENTO_INTERNO', 'POLITICA_SSO']);
+// La MIPER entra por el Art. 7 inc. final: se revisa al menos una vez al año o
+// ante cambios. Faltaba, así que su revisión anual vencía sin avisar mientras el
+// ítem 6 del formulario la marcaba vencida sin que nadie lo viera venir.
+const TIPOS_REVISION_ANUAL = new Set(['REGLAMENTO_INTERNO', 'POLITICA_SSO', 'MIPER', 'MATRIZ_MIPPER']);
 const LABEL_TIPO = {
     REGLAMENTO_INTERNO: 'Reglamento Interno (RIHS/RIOHS)',
     POLITICA_SSO: 'Política de Seguridad y Salud en el Trabajo',
+    MIPER: 'MIPER — Identificación de Peligros y Evaluación de Riesgos',
+    MATRIZ_MIPPER: 'MIPER — Identificación de Peligros y Evaluación de Riesgos',
 };
 
 const DIAS_AVISO = 330;    // ~11 meses: avisa antes de cumplir el año.

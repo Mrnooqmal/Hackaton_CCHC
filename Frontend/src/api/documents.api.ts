@@ -159,6 +159,19 @@ export interface CreateDocumentData {
     creatorName?: string;
 }
 
+/**
+ * Quién está preguntando. Sale de la sesión guardada y no de un parámetro, para
+ * que ninguna pantalla pueda olvidarlo: son unas veinte llamadas y basta una sin
+ * identificar para que a alguien le desaparezcan sus propios exámenes.
+ */
+function solicitanteActual(): string | null {
+    try {
+        return localStorage.getItem('persona_id');
+    } catch {
+        return null;
+    }
+}
+
 export interface DocumentListParams {
     empresaId?: string;
     obraId?: string;
@@ -240,8 +253,20 @@ export const documentsApi = {
         { method: 'POST', body: JSON.stringify(data) },
     ),
 
+    /**
+     * Lista documentos del tenant.
+     *
+     * Se adjunta SIEMPRE el `solicitanteId` de quien pregunta: los documentos con
+     * información de salud (vigilancia, exámenes, restricciones) solo los ve quien
+     * tiene el permiso de vigilancia o la persona a la que se refieren. Si no va
+     * identificado, el servidor los oculta — la falla segura es que falten
+     * documentos, nunca que se filtren datos de salud.
+     */
     list: (params?: DocumentListParams) => {
-        const query = new URLSearchParams(params as Record<string, string>).toString();
+        const query = new URLSearchParams({
+            ...(params as Record<string, string>),
+            ...(solicitanteActual() ? { solicitanteId: solicitanteActual() as string } : {}),
+        }).toString();
         return apiRequest<DocumentListResponse>(`/documents${query ? `?${query}` : ''}`);
     },
 
