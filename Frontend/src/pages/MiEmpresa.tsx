@@ -21,6 +21,7 @@ import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
 import CompletitudFufPanel from '../components/CompletitudFufPanel';
 import SgsstPanel from '../components/SgsstPanel';
+import OrganizacionesSindicales from '../components/OrganizacionesSindicales';
 import { AMBITO } from '../utils/estructuraPreventiva';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -371,6 +372,27 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                             </span>
                         </div>
                     </div>
+                </section>
+
+                {/* Art. 57 inc. 2: las organizaciones sindicales son destinatarias
+                    del Reglamento Interno. Va acá y no en el repositorio porque es
+                    un dato de la empresa, no del documento. */}
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Organizaciones sindicales</h3>
+                        <p className="me-section-hint">
+                            A quiénes hay que remitir el Reglamento Interno además de las personas
+                            trabajadoras y del comité. Si no hay ninguna, declararlo evita que el
+                            requisito quede pendiente sin forma de cerrarse.
+                        </p>
+                    </div>
+                    {tenant?.tenantId ? (
+                        <OrganizacionesSindicales
+                            tenantId={tenant.tenantId}
+                            reglas={tenant.reglas}
+                            personaId={auth?.user?.personaId || null}
+                        />
+                    ) : null}
                 </section>
 
                 {/* Art. 22: el SGSST es de la entidad empleadora, no de cada obra,

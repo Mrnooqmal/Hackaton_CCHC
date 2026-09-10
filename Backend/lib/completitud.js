@@ -145,6 +145,12 @@ function evaluarCompletitud(definiciones, ctx = {}) {
             // muestre sin recalcular a qué ítem corresponde cada documento.
             tipos: def.tipos || [],
             modulo: def.modulo || null,
+            // Desglose por destinatario, cuando el requisito se acredita
+            // informando a alguien (Art. 57 inc. 2 y equivalentes). Lo calcula la
+            // definición al evaluar; el motor solo lo deja pasar para que la
+            // interfaz lo muestre sin volver a calcularlo. Duplicar esta regla en
+            // el cliente es la forma segura de que panel y pantalla discrepen.
+            distribucion: resultado?.distribucion || null,
             estado: resultado?.estado || ESTADO_REQUISITO.PENDIENTE,
             detalle: resultado?.detalle || null,
             // Justificación normativa del NoAplica: el indice del expediente la

@@ -32,20 +32,17 @@ const vigenteDeTipo = (ctx, tipo) =>
  * Se pide el que exista en el ámbito; si no existe ninguno, ese destinatario sale
  * del denominador con su razón.
  */
-function evaluarItem50(ctx) {
-    const doc = vigenteDeTipo(ctx, 'REGLAMENTO_INTERNO');
-    if (!doc) {
-        return { estado: E.PENDIENTE, detalle: 'No hay Reglamento Interno cargado (ítem 49).' };
-    }
-    if (!doc.fechaEntradaVigencia) {
-        // Sin fecha de vigencia el plazo no es medible. No es cumplimiento ni
-        // incumplimiento: es un dato que falta, y decirlo es más útil que un rojo.
-        return {
-            estado: E.PARCIAL,
-            detalle: 'Falta declarar desde cuándo rige el Reglamento: sin esa fecha no se puede medir la anticipación del Art. 57.',
-        };
-    }
-
+/**
+ * Desglose de la remisión del Reglamento, destinatario por destinatario.
+ *
+ * Devuelve TODO lo que la pantalla necesita para operar el requisito sin volver
+ * a calcular nada: el estado de cada destinatario, el documento sobre el que se
+ * registran las constancias y el plazo exigido. La regla vive en un solo lugar.
+ *
+ * `diasExigidos` puede venir en null: sin fecha de vigencia declarada el plazo no
+ * es medible, pero los envíos sí se pueden registrar.
+ */
+function distribucionDe(doc, ctx, diasExigidos) {
     const hayComite = Boolean(ctx.organos?.some(
         (o) => o.tipo === EP.TIPO_ORGANO.COMITE_PARITARIO && EP.estadoOrgano(o, ctx.ahora) === EP.ESTADO_ORGANO.VIGENTE));
     const hayDelegado = Boolean(ctx.organos?.some(
@@ -53,7 +50,7 @@ function evaluarItem50(ctx) {
     const sindicatos = ctx.organizacionesSindicales || [];
     const declaroSinSindicatos = Boolean(ctx.sinOrganizacionesSindicales?.declarado);
 
-    const r = D.evaluarDistribucion({
+    const resultado = D.evaluarDistribucion({
         difusiones: doc.difusiones || [],
         destinatariosExigidos: D.DESTINATARIOS_REGLAMENTO,
         existencia: {
@@ -67,24 +64,69 @@ function evaluarItem50(ctx) {
                 ? 'La entidad declaró que no hay organizaciones sindicales en este ámbito.'
                 : 'No hay organizaciones sindicales registradas.',
         },
-        fechaVigencia: doc.fechaEntradaVigencia,
-        diasExigidos: D.DIAS_ANTICIPACION_REGLAMENTO,
+        fechaVigencia: doc.fechaEntradaVigencia || null,
+        diasExigidos,
     });
 
+    return {
+        documentoId: doc.documentId,
+        tipoDocumento: doc.tipo,
+        titulo: doc.titulo || null,
+        fechaVigencia: doc.fechaEntradaVigencia || null,
+        // La pantalla necesita saber que este requisito EXIGE una fecha de
+        // vigencia para poder pedirla; sin el dato solo podría mostrar el vacío.
+        exigeVigencia: true,
+        diasExigidos: D.DIAS_ANTICIPACION_REGLAMENTO,
+        articulo: 'Art. 57 inc. 2',
+        resultado,
+    };
+}
+
+function evaluarItem50(ctx) {
+    const doc = vigenteDeTipo(ctx, 'REGLAMENTO_INTERNO');
+    if (!doc) {
+        return { estado: E.PENDIENTE, detalle: 'No hay Reglamento Interno cargado (ítem 49).' };
+    }
+    if (!doc.fechaEntradaVigencia) {
+        // Sin fecha de vigencia el plazo no es medible. No es cumplimiento ni
+        // incumplimiento: es un dato que falta, y decirlo es más útil que un rojo.
+        // El desglose viaja igual, sin plazo: la interfaz necesita poder pedir la
+        // fecha y registrar envíos aunque todavía no se pueda medir la
+        // anticipación. Un requisito que no se puede operar hasta estar completo
+        // no se completa nunca.
+        return {
+            estado: E.PARCIAL,
+            detalle: 'Falta declarar desde cuándo rige el Reglamento: sin esa fecha no se puede medir la anticipación del Art. 57.',
+            distribucion: distribucionDe(doc, ctx, null),
+        };
+    }
+
+    const dist = distribucionDe(doc, ctx, D.DIAS_ANTICIPACION_REGLAMENTO);
+    const r = dist.resultado;
+
     if (r.exigibles === 0) {
-        return { estado: E.NO_APLICA, detalle: 'No hay destinatarios exigibles en este ámbito.' };
+        return { estado: E.NO_APLICA, detalle: 'No hay destinatarios exigibles en este ámbito.', distribucion: dist };
     }
     if (r.completa) {
-        return { estado: E.CUMPLIDO, detalle: `Remitido con la anticipación exigida a ${r.enviados} destinatario(s).` };
+        return {
+            estado: E.CUMPLIDO,
+            detalle: `Remitido con la anticipación exigida a ${r.enviados} destinatario(s).`,
+            distribucion: dist,
+        };
     }
     // Anti contradicción 4: enviar con menos de 30 días NUNCA es Cumplido.
     if (r.fueraDePlazo > 0) {
         const peor = r.detalle.find((d) => d.estado === D.ESTADO_DESTINATARIO.FUERA_DE_PLAZO);
-        return { estado: E.PARCIAL, detalle: peor?.detalle || 'Remitido fuera del plazo del Art. 57.' };
+        return {
+            estado: E.PARCIAL,
+            detalle: peor?.detalle || 'Remitido fuera del plazo del Art. 57.',
+            distribucion: dist,
+        };
     }
     return {
         estado: r.enviados > 0 ? E.PARCIAL : E.PENDIENTE,
         detalle: `${r.enviados} de ${r.exigibles} destinatario(s) con constancia de envío.`,
+        distribucion: dist,
     };
 }
 

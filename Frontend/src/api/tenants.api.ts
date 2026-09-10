@@ -32,11 +32,25 @@ export interface RepresentanteLegal {
     rut?: string | null;
 }
 
+/** Registro mínimo de una organización sindical: solo lo necesario para saber
+ *  a quién informar (Art. 57 inc. 2). No es un módulo sindical. */
+export interface OrganizacionSindical {
+    id: string;
+    nombre: string;
+    contacto?: string | null;
+}
+
 export interface TenantReglas {
     fasesObligatorias?: string[];
     limiteObras?: number;
     requiereFirmaPin?: boolean;
     representanteLegal?: RepresentanteLegal | null;
+    /** Destinatarias del Reglamento Interno (Art. 57 inc. 2). */
+    organizacionesSindicales?: OrganizacionSindical[];
+    /** Declaración de que no hay ninguna. Sin esto el destinatario quedaría
+     *  Pendiente para siempre en una empresa sin sindicatos, que es un
+     *  incumplimiento imposible de cerrar. */
+    sinOrganizacionesSindicales?: { declarado: boolean; fecha: string; personaId: string | null } | null;
 }
 
 export interface TenantPreferencias {
@@ -185,6 +199,17 @@ export const tenantsApi = {
         }),
 
     // Guarda la definición de roles del tenant (Mi Empresa › Roles y permisos).
+    /** Mergea solo estas dos reglas; `updateConfig` conserva el resto. */
+    updateOrganizacionesSindicales: (
+        id: string,
+        organizacionesSindicales: OrganizacionSindical[],
+        sinOrganizacionesSindicales: TenantReglas['sinOrganizacionesSindicales'],
+    ) =>
+        apiRequest<Tenant>(`/tenants/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ reglas: { organizacionesSindicales, sinOrganizacionesSindicales } }),
+        }),
+
     updateRoles: (id: string, roles: TenantRole[]) =>
         apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
             method: 'PUT',

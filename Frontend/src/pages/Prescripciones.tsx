@@ -7,8 +7,7 @@ import type { DataTableColumn } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { useToast } from '../context/ToastContext';
-import { uploadsApi } from '../api/uploads.api';
-import { documentsApi } from '../api/documents.api';
+import { subirComoDocumento } from '../utils/subirDocumento';
 import {
     estructuraApi, ORIGEN_PRESCRIPCION_LABEL,
     type EstadoPrescripcion, type OrigenPrescripcion, type Prescripcion,
@@ -105,23 +104,13 @@ export default function Prescripciones() {
         [lista, filtro]
     );
 
-    /** Sube un archivo y lo deja como Documento tipificado del repositorio. */
-    const subirComoDocumento = useCallback(async (file: File, tipo: string, titulo: string) => {
-        if (!tenantId) throw new Error('Sin empresa activa.');
-        const up = await uploadsApi.uploadFile(file, 'prescripciones', tenantId, tenantId);
-        if (!up.success || !up.data) throw new Error(up.error || 'No se pudo subir el archivo.');
-        const doc = await documentsApi.create({
-            tipo, titulo,
-            empresaId: tenantId,
-            obraId: selectedObraId || undefined,
-            archivoUrl: up.data.url,
-            archivoNombre: file.name,
-        });
-        if (!doc.success || !doc.data?.documentId) {
-            throw new Error(doc.error || 'No se pudo registrar el documento.');
-        }
-        return doc.data.documentId;
-    }, [tenantId, selectedObraId]);
+    const subirEvidencia = useCallback(
+        (file: File, titulo: string) => subirComoDocumento({
+            file, tipo: 'ACTA_REGISTRO', titulo,
+            tenantId: tenantId || '', obraId: selectedObraId, categoria: 'prescripciones',
+        }),
+        [tenantId, selectedObraId]
+    );
 
     const registrar = useCallback(async () => {
         if (!tenantId) return;
@@ -129,8 +118,8 @@ export default function Prescripciones() {
         try {
             let documentoPrescripcionId: string | null = null;
             if (archivoPrescripcion) {
-                documentoPrescripcionId = await subirComoDocumento(
-                    archivoPrescripcion, 'ACTA_REGISTRO', `Prescripción de medidas · ${fmt(aISO(form.fechaPrescripcion))}`
+                documentoPrescripcionId = await subirEvidencia(
+                    archivoPrescripcion, `Prescripción de medidas · ${fmt(aISO(form.fechaPrescripcion))}`
                 );
             }
             const res = await estructuraApi.crearPrescripcion(tenantId, {
@@ -153,15 +142,15 @@ export default function Prescripciones() {
         } finally {
             setGuardando(false);
         }
-    }, [tenantId, selectedObraId, form, archivoPrescripcion, subirComoDocumento, user, toast, cargar]);
+    }, [tenantId, selectedObraId, form, archivoPrescripcion, subirEvidencia, user, toast, cargar]);
 
     /** Art. 70: sin evidencia no se puede dar por implementada. El backend valida lo mismo. */
     const marcarImplementada = useCallback(async () => {
         if (!tenantId || !implementando || !archivoEvidencia) return;
         setSubiendoEvidencia(true);
         try {
-            const evidenciaId = await subirComoDocumento(
-                archivoEvidencia, 'ACTA_REGISTRO', `Evidencia de implementación · ${implementando.descripcion.slice(0, 60)}`
+            const evidenciaId = await subirEvidencia(
+                archivoEvidencia, `Evidencia de implementación · ${implementando.descripcion.slice(0, 60)}`
             );
             const res = await estructuraApi.actualizarPrescripcion(tenantId, implementando.prescripcionId, {
                 fechaImplementacion: aISO(fechaImpl),
@@ -177,7 +166,7 @@ export default function Prescripciones() {
         } finally {
             setSubiendoEvidencia(false);
         }
-    }, [tenantId, implementando, archivoEvidencia, fechaImpl, subirComoDocumento, toast, cargar]);
+    }, [tenantId, implementando, archivoEvidencia, fechaImpl, subirEvidencia, toast, cargar]);
 
     const columnas: DataTableColumn<Prescripcion>[] = [
         {

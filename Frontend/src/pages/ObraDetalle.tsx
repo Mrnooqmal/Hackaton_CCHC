@@ -5,7 +5,7 @@ import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, worker
 import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido, resolverDocumentoFirmable } from '../utils/documentoFirmado';
 import { publicarNuevaVersion } from '../utils/versionarDocumento';
 import { caducidadPorDefecto, tiempoRelativo, revisionVencida, MESES_VIGENCIA_DEFECTO } from '../utils/vigenciaDocumento';
-import { ultimaDifusion, totalInformados } from '../utils/difusion';
+import { ultimaDifusion, descripcionDifusion } from '../utils/difusion';
 import { estadoDuracion } from '../utils/reporteActividad';
 import ObraAplicabilidadKit from '../components/ObraAplicabilidadKit';
 import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
@@ -2805,15 +2805,14 @@ export default function ObraDetalle() {
                             {requiereDifusion && doc.archivoSubido && (
                               <span
                                 style={{ color: !difusion || sinRepresentantes ? 'var(--danger-500, #dc2626)' : undefined }}
-                                title={difusion
-                                  ? `Informado el ${formatDate(difusion.fecha)} · ${difusion.totales.mando} de la línea de mando, ${difusion.totales.representantes} representantes, ${difusion.totales.firmantes} firmantes`
-                                  : 'El DS 44 exige informar este documento a los representantes de las personas trabajadoras'}
+                                title={descripcionDifusion(difusion)?.titulo
+                                  || 'El DS 44 exige informar este documento a los representantes de las personas trabajadoras'}
                               >
                                 {!difusion
                                   ? 'Sin constancia de difusión'
                                   : sinRepresentantes
                                     ? 'Difundido sin representantes'
-                                    : `Informado a ${totalInformados(difusion)} el ${formatDate(difusion.fecha)}`}
+                                    : descripcionDifusion(difusion)?.texto}
                               </span>
                             )}
                             {esPtp && doc.archivoSubido && (

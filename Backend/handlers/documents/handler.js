@@ -409,7 +409,7 @@ module.exports.update = async (event) => {
         if (!id) return error('ID de documento requerido');
 
         const body = JSON.parse(event.body || '{}');
-        const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad', 'periodo', 'fecha'];
+        const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad', 'periodo', 'fecha', 'fechaEntradaVigencia'];
         const updateExpressions = [];
         const expressionNames = {};
         const expressionValues = {};

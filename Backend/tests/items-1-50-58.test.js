@@ -6,7 +6,9 @@ const D = require('../lib/distribucion');
 const PRE = require('../lib/prescripciones');
 const F = require('../lib/fuf');
 const EP = require('../lib/estructura-preventiva');
-const { evaluarItem1, evaluarItem50, evaluarItem58, componentesSgsst } = require('../lib/completitud-documental');
+const {
+    evaluarItem1, evaluarItem50, evaluarItem58, componentesSgsst, definicionesDocumentalesPara,
+} = require('../lib/completitud-documental');
 
 const E = C.ESTADO_REQUISITO;
 const AHORA = new Date('2026-09-09T12:00:00.000Z');
@@ -163,6 +165,47 @@ test('ítem 50: declarar que no hay sindicatos los saca del denominador con raz�
         sinOrganizacionesSindicales: { declarado: true, fecha: '2026-01-01', personaId: 'p1' },
     }));
     assert.equal(r.estado, E.CUMPLIDO, 'no se castiga por no informar a quien no existe');
+});
+
+test('ítem 50: el desglose por destinatario viaja con la evaluación', () => {
+    const doc = riohs({ difusiones: [difManual(D.DESTINATARIO.PERSONAS_TRABAJADORAS, '2026-08-01T00:00:00.000Z')] });
+    const r = evaluarItem50(ctx50({ documentos: [doc] }));
+    assert.ok(r.distribucion, 'la pantalla necesita el desglose para operar el requisito');
+    assert.equal(r.distribucion.documentoId, 'r1');
+    assert.equal(r.distribucion.diasExigidos, D.DIAS_ANTICIPACION_REGLAMENTO);
+    assert.equal(r.distribucion.resultado.detalle.length, D.DESTINATARIOS_REGLAMENTO.length);
+    const trabajadores = r.distribucion.resultado.detalle.find(
+        (d) => d.tipo === D.DESTINATARIO.PERSONAS_TRABAJADORAS);
+    assert.equal(trabajadores.estado, D.ESTADO_DESTINATARIO.ENVIADO);
+});
+
+test('ítem 50: sin fecha de vigencia el desglose viaja igual, para poder registrar envíos', () => {
+    // Si el desglose solo apareciera con la fecha declarada, el requisito sería
+    // inoperable justo cuando falta el dato que lo desbloquea.
+    const r = evaluarItem50(ctx50({ documentos: [riohs({ fechaEntradaVigencia: null })] }));
+    assert.ok(r.distribucion);
+    assert.equal(r.distribucion.fechaVigencia, null);
+    assert.equal(r.distribucion.exigeVigencia, true);
+    assert.equal(r.distribucion.resultado.detalle.length, D.DESTINATARIOS_REGLAMENTO.length);
+});
+
+test('ítem 50: el motor deja pasar el desglose hasta el requisito', () => {
+    const doc = riohs();
+    const { requisitos } = C.evaluarCompletitud(
+        definicionesDocumentalesPara('empresa'),
+        { ahora: AHORA, documentos: [doc], organos: [], obligaciones: {}, prescripciones: [] }
+    );
+    const item50 = requisitos.find((r) => r.item === 50);
+    assert.ok(item50.distribucion, 'sin esto la interfaz tendría que recalcular la regla');
+    assert.equal(item50.distribucion.articulo, 'Art. 57 inc. 2');
+});
+
+test('ítem 58: no trae desglose de distribución porque no se acredita informando', () => {
+    const { requisitos } = C.evaluarCompletitud(
+        definicionesDocumentalesPara('empresa'),
+        { ahora: AHORA, documentos: [], organos: [], obligaciones: {}, prescripciones: [] }
+    );
+    assert.equal(requisitos.find((r) => r.item === 58).distribucion, null);
 });
 
 // ─── Ítem 1 ──────────────────────────────────────────────────────────────────

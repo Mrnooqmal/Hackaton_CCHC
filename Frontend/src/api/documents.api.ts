@@ -25,9 +25,21 @@ export interface DocumentAssignment {
 export interface DocumentDifusion {
     fecha: string;
     version: number | null;
-    motivo: string | null;
-    publicadaPor: string | null;
-    destinatarios: {
+    /** `automatica`: la escribió el EventBus al publicar una versión.
+     *  `manual`: la declaró alguien con destinatario tipificado y medio.
+     *  Los documentos anteriores al Art. 57 no la traen: por eso es opcional. */
+    origen?: 'automatica' | 'manual';
+    // ── Solo en las manuales ──
+    destinatarioTipo?: string;
+    medio?: 'Correo' | 'Entrega' | 'Plataforma' | 'Otro';
+    evidenciaDocumentoId?: string | null;
+    observacion?: string | null;
+    registradoPor?: string | null;
+    registradoEn?: string;
+    // ── Solo en las automáticas ──
+    motivo?: string | null;
+    publicadaPor?: string | null;
+    destinatarios?: {
         /** Roles de gestión (admin, jefe de obra, supervisor, prevencionista). */
         mando: string[];
         /** Integrantes de órganos vigentes: comité paritario, delegado, DPR. */
@@ -35,7 +47,7 @@ export interface DocumentDifusion {
         /** Firmantes de la versión anterior, convocados a re-firmar. */
         firmantes: string[];
     };
-    totales: { mando: number; representantes: number; firmantes: number };
+    totales?: { mando: number; representantes: number; firmantes: number };
 }
 
 export interface Document {
@@ -64,6 +76,10 @@ export interface Document {
      *  escribe el EventBus al publicar (Art. 7 inc. 9, Art. 8 inc. 3, Art. 57
      *  inc. 2); el fiscalizador pide la prueba, no la capacidad de notificar. */
     difusiones?: DocumentDifusion[];
+    /** Desde cuándo rige el documento. El Art. 57 inc. 2 mide la anticipación
+     *  del envío contra ESTA fecha, no contra la de subida: subir el archivo no
+     *  es informarlo. Solo la usan los documentos que entran en vigencia. */
+    fechaEntradaVigencia?: string | null;
     firmas: DocumentSignature[];
     asignaciones: DocumentAssignment[];
     estado: string;

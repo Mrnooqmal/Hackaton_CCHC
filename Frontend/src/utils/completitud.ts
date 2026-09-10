@@ -60,6 +60,45 @@ export interface RequisitoFuf {
     tipos?: string[];
     /** Módulo que resuelve el requisito cuando no se acredita con documentos. */
     modulo?: string | null;
+    /** Presente solo en los requisitos que se acreditan informando a alguien. */
+    distribucion?: DistribucionRequisito | null;
+}
+
+/** Estado de UN destinatario frente a un documento. Lo calcula el servidor. */
+export interface EstadoDestinatario {
+    tipo: string;
+    estado: 'Enviado' | 'FueraDePlazo' | 'Pendiente' | 'NoAplica';
+    envio: { fecha: string; medio?: string; observacion?: string | null } | null;
+    dias: number | null;
+    detalle: string;
+}
+
+/**
+ * Desglose de a quién hay que informar un documento y cómo va cada destinatario.
+ *
+ * Viene calculado del motor: la interfaz lo pinta y registra envíos contra él,
+ * pero NO recalcula el plazo ni decide quién es exigible. Es genérico a
+ * propósito — los ítems 4, 11, 25, 37 y 51 exigen el mismo hecho con otros
+ * destinatarios, y se enganchan devolviendo este mismo bloque.
+ */
+export interface DistribucionRequisito {
+    documentoId: string;
+    tipoDocumento: string;
+    titulo: string | null;
+    fechaVigencia: string | null;
+    /** Si el requisito necesita una fecha de vigencia declarada para medir el plazo. */
+    exigeVigencia: boolean;
+    diasExigidos: number;
+    articulo: string;
+    resultado: {
+        detalle: EstadoDestinatario[];
+        exigibles: number;
+        excluidos: number;
+        enviados: number;
+        fueraDePlazo: number;
+        completa: boolean;
+        parcial: boolean;
+    };
 }
 
 export interface ResumenCompletitud {

@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FiAlertTriangle, FiArrowRight, FiCheck, FiUploadCloud } from 'react-icons/fi';
 import { Badge } from './ui';
 import { estructuraApi } from '../api/estructura.api';
-import { documentsApi } from '../api/documents.api';
-import { uploadsApi } from '../api/uploads.api';
+import { subirComoDocumento } from '../utils/subirDocumento';
 import {
     ESTADO_REQUISITO, ESTADO_LABEL, ESTADO_VARIANTE, colorProgreso,
     type ComponenteSgsst,
@@ -41,9 +40,11 @@ export default function SgsstPanel({ tenantId, onIrA }: SgsstPanelProps) {
     const [subiendo, setSubiendo] = useState<string | null>(null);
     const inputs = useRef<Record<string, HTMLInputElement | null>>({});
 
-    const cargar = useCallback(async () => {
+    /** `refresco` recarga sin colapsar el panel: tras subir un documento el
+     *  usuario está mirando la fila que acaba de completar, no un texto de carga. */
+    const cargar = useCallback(async (refresco = false) => {
         if (!tenantId) return;
-        setCargando(true);
+        if (!refresco) setCargando(true);
         setError(null);
         const res = await estructuraApi.completitud(tenantId, 'empresa', null);
         if (res.success && res.data) setComponentes(res.data.sgsst || []);
@@ -58,17 +59,11 @@ export default function SgsstPanel({ tenantId, onIrA }: SgsstPanelProps) {
         setSubiendo(comp.clave);
         setError(null);
         try {
-            const up = await uploadsApi.uploadFile(file, 'sgsst', tenantId, tenantId);
-            if (!up.success || !up.data) throw new Error(up.error || 'No se pudo subir el archivo.');
-            const doc = await documentsApi.create({
-                tipo: comp.tipo,
+            await subirComoDocumento({
+                file, tipo: comp.tipo, tenantId, categoria: 'sgsst',
                 titulo: TITULO_SUBIDA[comp.tipo] || comp.literal,
-                empresaId: tenantId,
-                archivoUrl: up.data.url,
-                archivoNombre: file.name,
             });
-            if (!doc.success) throw new Error(doc.error || 'No se pudo registrar el documento.');
-            await cargar();
+            await cargar(true);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Error al cargar el documento.');
         } finally {

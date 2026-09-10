@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FiAlertTriangle, FiChevronDown, FiChevronRight, FiExternalLink, FiFileText } from 'react-icons/fi';
-import { Badge } from './ui';
+import { FiAlertTriangle, FiChevronDown, FiChevronRight, FiExternalLink, FiFileText, FiSend } from 'react-icons/fi';
+import { Badge, Drawer } from './ui';
+import DistribucionPanel from './DistribucionPanel';
 import { estructuraApi } from '../api/estructura.api';
 import { documentsApi, type Document } from '../api/documents.api';
 import { agruparPorSeccion } from '../utils/fuf';
@@ -41,10 +42,20 @@ export default function RepositorioFuf({ tenantId, ambito, obraId = null, onVerD
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [abiertas, setAbiertas] = useState<Set<number>>(new Set());
+    // Requisito cuya remisión se está gestionando. Se guarda el ítem y no el
+    // objeto: al recargar hay que reabrir el panel con los datos frescos, y un
+    // objeto guardado quedaría mostrando el estado anterior al registro.
+    const [gestionando, setGestionando] = useState<number | null>(null);
 
-    const cargar = useCallback(async () => {
+    /**
+     * `refresco` recarga sin levantar el estado de carga. Importa: el panel de
+     * remisión vive en un Drawer dentro de este componente, y mostrar el
+     * "Cargando…" lo desmontaría y volvería a montar tras cada constancia
+     * registrada, con el panel parpadeando en medio de la tarea.
+     */
+    const cargar = useCallback(async (refresco = false) => {
         if (!tenantId) return;
-        setCargando(true);
+        if (!refresco) setCargando(true);
         setError(null);
         const [comp, docs] = await Promise.all([
             estructuraApi.completitud(tenantId, ambito, obraId),
@@ -73,6 +84,13 @@ export default function RepositorioFuf({ tenantId, ambito, obraId = null, onVerD
     const secciones = useMemo(
         () => (data ? agruparPorSeccion(data.requisitos) : []),
         [data]
+    );
+
+    /** Se resuelve desde `data` en cada render: tras registrar un envío el panel
+     *  abierto tiene que mostrar el estado nuevo, no el que tenía al abrirse. */
+    const reqGestionado = useMemo(
+        () => (gestionando == null ? null : data?.requisitos.find((r) => r.item === gestionando) || null),
+        [data, gestionando]
     );
 
     /** Documentos que sostienen un requisito, según los tipos que su definición declara. */
@@ -193,6 +211,25 @@ export default function RepositorioFuf({ tenantId, ambito, obraId = null, onVerD
                                                         <FiExternalLink size={11} /> Se resuelve en el módulo de {reqs[0].modulo}.
                                                     </div>
                                                 )}
+
+                                                {/* Cualquier requisito que se acredite informando trae su
+                                                    desglose. El repositorio no sabe cuál es: cuando otro ítem
+                                                    devuelva su bloque `distribucion`, hereda esto sin cambios. */}
+                                                {reqs[0]?.distribucion && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-secondary btn-sm"
+                                                        style={{ marginTop: '8px', fontSize: '0.75rem' }}
+                                                        onClick={() => setGestionando(item.numero)}
+                                                    >
+                                                        <FiSend size={12} /> Gestionar remisión
+                                                        {reqs[0].distribucion.resultado.exigibles > 0 && (
+                                                            <span style={{ color: 'var(--text-secondary)' }}>
+                                                                {' '}({reqs[0].distribucion.resultado.enviados}/{reqs[0].distribucion.resultado.exigibles})
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                )}
                                             </div>
                                             <Badge variant={estado ? ESTADO_VARIANTE[estado] : 'neutral'}>
                                                 {estado ? ESTADO_LABEL[estado] : 'Sin cubrir'}
@@ -205,6 +242,23 @@ export default function RepositorioFuf({ tenantId, ambito, obraId = null, onVerD
                     </div>
                 );
             })}
+
+            {reqGestionado?.distribucion && (
+                <Drawer
+                    isOpen
+                    onClose={() => setGestionando(null)}
+                    title="Constancias de envío"
+                    subtitle={`FUF ${reqGestionado.item} · ${reqGestionado.distribucion.titulo || reqGestionado.titulo}`}
+                    width={560}
+                >
+                    <DistribucionPanel
+                        distribucion={reqGestionado.distribucion}
+                        tenantId={tenantId}
+                        obraId={obraId}
+                        onCambio={() => cargar(true)}
+                    />
+                </Drawer>
+            )}
         </div>
     );
 }

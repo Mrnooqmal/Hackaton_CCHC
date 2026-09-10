@@ -32,11 +32,55 @@ export function difundidoARepresentantes(doc?: Pick<Document, 'difusiones'> | nu
     return (ultimaDifusion(doc)?.totales?.representantes || 0) > 0;
 }
 
-/** Total de personas informadas en la última difusión. */
+/** Total de personas informadas en la última difusión. Solo las automáticas
+ *  cuentan personas: una constancia declarada registra un destinatario, no una
+ *  nómina, y sumar cero ahí diría que no se informó a nadie. */
 export function totalInformados(dif?: DocumentDifusion | null): number {
     if (!dif) return 0;
     const t = dif.totales;
     return (t?.mando || 0) + (t?.representantes || 0) + (t?.firmantes || 0);
+}
+
+export const DESTINATARIO_LABEL: Record<string, string> = {
+    PersonaTrabajadora: 'Personas trabajadoras',
+    ComiteParitario: 'Comité Paritario',
+    DelegadoSST: 'Delegado de SST',
+    OrganizacionSindical: 'Organizaciones sindicales',
+    LineaMando: 'Línea de mando',
+    DepartamentoPrevencion: 'Departamento de Prevención',
+};
+
+export const MEDIO_LABEL: Record<string, string> = {
+    Correo: 'Correo electrónico',
+    Entrega: 'Entrega en mano',
+    Plataforma: 'Plataforma',
+    Otro: 'Otro medio',
+};
+
+/**
+ * Cómo se describe una constancia, sea automática o declarada.
+ *
+ * Las dos formas conviven en `difusiones[]` y no se describen igual: la
+ * automática informó a una nómina, la manual a un destinatario tipificado por un
+ * medio. Contarle personas a una constancia manual daría "informado a 0", que es
+ * lo contrario de lo que dice.
+ */
+export function descripcionDifusion(dif?: DocumentDifusion | null): { texto: string; titulo: string } | null {
+    if (!dif) return null;
+    const fecha = String(dif.fecha).slice(0, 10);
+    if (dif.origen === 'manual') {
+        const quien = DESTINATARIO_LABEL[dif.destinatarioTipo || ''] || dif.destinatarioTipo || 'destinatario';
+        const medio = MEDIO_LABEL[dif.medio || ''] || dif.medio || null;
+        return {
+            texto: `Informado a ${quien} el ${fecha}`,
+            titulo: `Constancia declarada${medio ? ` · ${medio}` : ''}${dif.observacion ? ` · ${dif.observacion}` : ''}`,
+        };
+    }
+    const t = dif.totales;
+    return {
+        texto: `Informado a ${totalInformados(dif)} el ${fecha}`,
+        titulo: `Informado el ${fecha} · ${t?.mando || 0} de la línea de mando, ${t?.representantes || 0} representantes, ${t?.firmantes || 0} firmantes`,
+    };
 }
 
 export type EstadoPlazoReglamento =
