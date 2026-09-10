@@ -2201,9 +2201,22 @@ select.form-input option {
   color: var(--info-500);
 }
 
+/* Un paso más que `--surface-elevated` a propósito: las filas de evidencia del
+   DS44 usan ese mismo tono de fondo, y con él la pastilla desaparecía contra la
+   fila y "No aplica"/"Sin cubrir" quedaban como texto suelto. */
 .badge-neutral {
-  background: var(--surface-elevated);
+  background: var(--surface-hover);
   color: var(--text-muted);
+}
+
+/* `badge-secondary` se usaba en varias pantallas sin estar definido: se
+   pintaba sin fondo y heredando el color del texto, así que en modo oscuro
+   quedaba como texto suelto sin pastilla. Va perfilado en vez de relleno para
+   distinguirse de `neutral`, que es el gris macizo. */
+.badge-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--surface-border);
 }
 
 /* Avatar */

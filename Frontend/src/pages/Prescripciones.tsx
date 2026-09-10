@@ -231,8 +231,9 @@ export default function Prescripciones() {
     const puedeRegistrar = form.descripcion.trim().length > 0 && !guardando;
 
     return (
-        <div className="page">
+        <div className="page-content">
             <PageHeader
+                banner
                 title="Prescripciones de medidas"
                 description={selectedObra?.nombre
                     ? `Medidas ordenadas para ${selectedObra.nombre} y para la empresa`
