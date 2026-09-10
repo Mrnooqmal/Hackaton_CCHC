@@ -39,7 +39,12 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // El bundle principal pasó los 2 MiB que Workbox precachea por
+        // defecto. La app tiene modo offline real (firmas y sincronización),
+        // así que dejarlo fuera del precaché rompería justo eso: se sube el
+        // límite en vez de perder el chunk que sostiene la app sin red.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024
       }
     })
   ],

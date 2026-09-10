@@ -243,21 +243,27 @@ class InboxRepository {
         return result.Item;
     }
 
-    async markAsRead(messageId, userId) {
+    // `read` permite marcar y desmarcar: la lista ofrece el mismo control para
+    // ambos sentidos, así que el endpoint acepta los dos. Por defecto marca
+    // como leído (comportamiento previo de los llamadores existentes).
+    async markAsRead(messageId, userId, read = true) {
         if (!messageId || !userId) {
             throw new Error('messageId y userId son requeridos');
         }
 
-        const now = new Date().toISOString();
+        const leido = read !== false;
         await this.dynamo.send(new UpdateCommand({
             TableName: this.inboxTable,
             Key: { recipientId: userId, messageId },
             UpdateExpression: 'SET #read = :read, readAt = :readAt',
             ExpressionAttributeNames: { '#read': 'read' },
-            ExpressionAttributeValues: { ':read': true, ':readAt': now }
+            ExpressionAttributeValues: {
+                ':read': leido,
+                ':readAt': leido ? new Date().toISOString() : null
+            }
         }));
 
-        return { message: 'Mensaje marcado como leído' };
+        return { message: leido ? 'Mensaje marcado como leído' : 'Mensaje marcado como no leído' };
     }
 
     async markAllAsRead(userId) {

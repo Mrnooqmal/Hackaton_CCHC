@@ -10,7 +10,7 @@ import { inboxApi, personasApi, tenantsApi, type InboxMessage, type InboxRecipie
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useObraContext } from '../context/ObraContext';
-import { Modal, Select, SegmentedControl } from '../components/ui';
+import { Modal, Select, SegmentedControl, PageHeader } from '../components/ui';
 
 type TabType = 'inbox' | 'sent' | 'archived';
 type FilterType = 'all' | 'unread' | 'archived';
@@ -27,6 +27,99 @@ const ROL_LABELS: Record<string, string> = {
     relator: 'Relator',
 };
 const rolLabel = (rol: string) => ROL_LABELS[rol] || rol || 'Sin rol';
+
+// Etiqueta del tipo de mensaje. Solo se muestra cuando el mensaje no es una
+// comunicación corriente: el resto sería ruido repetido en cada fila.
+const TIPO_LABELS: Record<string, string> = {
+    alert: 'Alerta',
+    notification: 'Notificación',
+    task: 'Tarea',
+    message: 'Mensaje',
+};
+const tipoLabel = (tipo: string) => TIPO_LABELS[tipo] || 'Mensaje';
+
+const MESES = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+
+const inicioDelDia = (d: Date) => {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    return x;
+};
+
+/**
+ * Tramo temporal al que pertenece un mensaje. Reproduce los cortes que usa
+ * cualquiera al buscar en su correo: primero el día, después la semana en
+ * curso, después el mes, y de ahí hacia atrás por nombre de mes.
+ *
+ * "Esta semana" son los últimos 7 días y no la semana calendario: así el
+ * tramo nunca queda vacío un lunes ni empuja el domingo anterior a un grupo
+ * que se lee como mucho más antiguo de lo que es.
+ */
+function tramoTemporal(iso: string, ahora: Date): string {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'Sin fecha';
+
+    const hoy = inicioDelDia(ahora);
+    const dia = inicioDelDia(d);
+    const diasAtras = Math.round((hoy.getTime() - dia.getTime()) / 86400000);
+
+    if (diasAtras <= 0) return 'Hoy';
+    if (diasAtras === 1) return 'Ayer';
+    if (diasAtras < 7) return 'Esta semana';
+
+    const mismoAnio = d.getFullYear() === ahora.getFullYear();
+    if (mismoAnio && d.getMonth() === ahora.getMonth()) return 'Este mes';
+
+    const mesPasado = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+    if (d.getFullYear() === mesPasado.getFullYear() && d.getMonth() === mesPasado.getMonth()) {
+        return 'El mes pasado';
+    }
+
+    return mismoAnio ? MESES[d.getMonth()] : `${MESES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// Grupo de filtro del carril. Con tres o cuatro opciones, un desplegable
+// esconde el estado detrás de un clic; en chips el valor vigente se lee sin
+// abrir nada y cambiarlo cuesta un toque.
+//
+// Hay dos niveles de marcado a propósito: `is-current` dice cuál es el valor
+// elegido y `is-narrowing` sólo se enciende cuando ese valor además recorta la
+// lista. Así se distingue "esto es lo que está puesto" de "esto te está
+// escondiendo mensajes", que es lo que uno necesita saber de un vistazo.
+function FiltroChips({
+    label, value, valorNeutro, options, onChange,
+}: {
+    label: string;
+    value: string;
+    valorNeutro: string;
+    options: { value: string; label: string }[];
+    onChange: (value: string) => void;
+}) {
+    return (
+        <div className="inbox-filtro">
+            <span className="inbox-filtro-label">{label}</span>
+            <div className="inbox-filtro-chips" role="group" aria-label={label}>
+                {options.map((o) => {
+                    const vigente = value === o.value;
+                    return (
+                        <button
+                            key={o.value}
+                            type="button"
+                            className={`inbox-chip${vigente ? ' is-current' : ''}${vigente && o.value !== valorNeutro ? ' is-narrowing' : ''}`}
+                            aria-pressed={vigente}
+                            onClick={() => onChange(o.value)}
+                        >
+                            {o.label}
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
 
 // Dropdown multi-select con checkboxes, estilo igual al Select de la interfaz.
 function MultiSelectDropdown({
@@ -110,6 +203,12 @@ export default function Inbox() {
     const [filter, setFilter] = useState<FilterType>('all');
     const [searchTerm, setSearchTerm] = useState('');
     const [unreadCount, setUnreadCount] = useState(0);
+    const [errorCarga, setErrorCarga] = useState<string | null>(null);
+    // Descarta respuestas que llegan tarde tras cambiar de carpeta.
+    const cargaVigente = useRef(0);
+    // En móvil los filtros van plegados: en un teléfono, tres grupos de
+    // opciones antes del primer mensaje son más estorbo que ayuda.
+    const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
 
     // Filtros de la lista de mensajes
     const [dateRange, setDateRange] = useState<DateRangeFilter>('all');
@@ -206,7 +305,12 @@ export default function Inbox() {
 
     const loadMessages = async () => {
         if (!currentUserId) return;
+        // Cada carga lleva su número. Al cambiar de carpeta rápido, la respuesta
+        // de la anterior puede llegar después: si ya no es la vigente, se
+        // descarta en vez de pintar los mensajes de la carpeta equivocada.
+        const cargaId = ++cargaVigente.current;
         setLoading(true);
+        setErrorCarga(null);
         try {
             let response;
             if (activeTab === 'inbox') {
@@ -216,6 +320,7 @@ export default function Inbox() {
             } else {
                 response = await inboxApi.getInbox(currentUserId, 'archived');
             }
+            if (cargaId !== cargaVigente.current) return;
 
             if (response.success && response.data) {
                 // Orden tipo correo: mas recientes primero por fecha/hora de llegada.
@@ -223,11 +328,19 @@ export default function Inbox() {
                     String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
                 );
                 setMessages(ordenados);
+            } else {
+                // Sin esto la lista se quedaba con los mensajes de la carpeta
+                // anterior y parecía que la carpeta nueva no filtraba nada.
+                setMessages([]);
+                setErrorCarga(response.error || 'No se pudieron cargar los mensajes.');
             }
         } catch (error) {
             console.error('Error loading messages:', error);
+            if (cargaId !== cargaVigente.current) return;
+            setMessages([]);
+            setErrorCarga('No se pudieron cargar los mensajes. Revisa tu conexión.');
         } finally {
-            setLoading(false);
+            if (cargaId === cargaVigente.current) setLoading(false);
         }
     };
 
@@ -303,6 +416,28 @@ export default function Inbox() {
             setSelectedMessage(null);
         } catch (error) {
             console.error('Error deleting:', error);
+        }
+    };
+
+    // Marcar / desmarcar un mensaje concreto. Se actualiza primero la vista y
+    // se revierte si el servidor falla: el punto tiene que responder al toque.
+    const handleToggleRead = async (message: InboxMessage, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!currentUserId) return;
+        const leido = !message.read;
+        setMessages(prev => prev.map(m =>
+            m.messageId === message.messageId ? { ...m, read: leido } : m
+        ));
+        setUnreadCount(prev => Math.max(0, prev + (leido ? -1 : 1)));
+        try {
+            const res = await inboxApi.markAsRead(message.messageId, currentUserId, leido);
+            if (!res.success) throw new Error(res.error || 'Error');
+        } catch {
+            setMessages(prev => prev.map(m =>
+                m.messageId === message.messageId ? { ...m, read: !leido } : m
+            ));
+            setUnreadCount(prev => Math.max(0, prev + (leido ? 1 : -1)));
+            toast.error('No se pudo cambiar el estado del mensaje');
         }
     };
 
@@ -514,15 +649,6 @@ export default function Inbox() {
         }
     };
 
-    const getPriorityBadge = (priority: string) => {
-        const badges: Record<string, string> = {
-            urgent: 'badge-danger',
-            high: 'badge-warning',
-            normal: 'badge-secondary'
-        };
-        return badges[priority] || 'badge-secondary';
-    };
-
     const getPriorityLabel = (priority: string): string => {
         const labels: Record<string, string> = {
             urgent: 'Urgente',
@@ -635,491 +761,308 @@ export default function Inbox() {
             return (isNaN(tb) ? 0 : tb) - (isNaN(ta) ? 0 : ta);
         });
 
+    const hayFiltrosActivos =
+        dateRange !== 'all' || classification !== 'all' || searchTerm.trim() !== '' ||
+        (activeTab === 'inbox' && filter !== 'all');
+
+    const limpiarFiltros = () => {
+        setDateRange('all');
+        setClassification('all');
+        setSearchTerm('');
+        if (activeTab === 'inbox') setFilter('all');
+    };
+
+    // La lista ya viene ordenada de más nuevo a más viejo, así que basta con
+    // abrir un grupo cada vez que cambia el tramo: quedan en orden y sin repetir.
+    const gruposTemporales = useMemo(() => {
+        const ahora = new Date();
+        const grupos: { label: string; items: InboxMessage[] }[] = [];
+        filteredMessages.forEach((m) => {
+            const label = tramoTemporal(m.createdAt, ahora);
+            const ultimo = grupos[grupos.length - 1];
+            if (ultimo && ultimo.label === label) ultimo.items.push(m);
+            else grupos.push({ label, items: [m] });
+        });
+        return grupos;
+    }, [filteredMessages]);
+
+    // El vacío dice qué hacer, no solo que no hay nada. Distingue la bandeja
+    // realmente vacía de la que quedó vacía por los filtros aplicados.
+    const textoVacio = hayFiltrosActivos
+        ? { titulo: 'Ningún mensaje coincide', detalle: 'Ajusta la búsqueda o los filtros del costado para ver más.' }
+        : activeTab === 'sent'
+            ? { titulo: 'Aún no has enviado mensajes', detalle: 'Usa «Nuevo mensaje» para escribirle a tu equipo en obra.' }
+            : activeTab === 'archived'
+                ? { titulo: 'No hay mensajes archivados', detalle: 'Los mensajes que archives desde la bandeja aparecerán aquí.' }
+                : { titulo: 'Bandeja al día', detalle: 'No tienes mensajes pendientes de tu equipo ni de tus supervisores.' };
+
     return (
         <>
 
             <div className="page-content">
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <h2 className="page-header-title">
-                            <FiInbox className="text-primary-500" />
-                            Mensajería Interna
-                        </h2>
-                        <p className="page-header-description">Comunicación directa con tu equipo y supervisores.</p>
-                    </div>
-                    <div className="page-header-actions">
+                <PageHeader
+                    banner
+                    title="Mensajería interna"
+                    description="Comunicación directa con tu equipo y supervisores."
+                    actions={
                         <button className="btn btn-primary" onClick={handleCompose}>
-                            <FiPlus className="mr-2" />
-                            <span className="hide-mobile">Nuevo Mensaje</span>
+                            <FiPlus size={15} />
+                            <span className="hide-mobile">Nuevo mensaje</span>
                             <span className="show-mobile-only">Nuevo</span>
                         </button>
-                    </div>
-                </div>
+                    }
+                />
 
                 <div className={`inbox-container ${selectedMessage ? 'has-selection' : ''}`}>
 
                     {/* Message List */}
+                    {/* Carril izquierdo: carpetas + filtros.
+                        Las carpetas son navegación (dónde estoy) y los filtros
+                        acotan lo que estoy viendo. Ambas cosas son persistentes,
+                        así que viven al costado y dejan la barra superior libre
+                        para lo único que cambia a cada rato: buscar. */}
+                    <aside className="inbox-rail">
+                        <nav className="inbox-rail-nav" aria-label="Carpetas">
+                            <button
+                                type="button"
+                                className={`inbox-rail-item ${activeTab === 'inbox' ? 'active' : ''}`}
+                                onClick={() => { setActiveTab('inbox'); setFilter('all'); setSelectedMessage(null); }}
+                                aria-current={activeTab === 'inbox' ? 'page' : undefined}
+                            >
+                                <FiInbox size={16} />
+                                <span>Recibidos</span>
+                                {unreadCount > 0 && <span className="inbox-rail-count">{unreadCount}</span>}
+                            </button>
+                            <button
+                                type="button"
+                                className={`inbox-rail-item ${activeTab === 'sent' ? 'active' : ''}`}
+                                onClick={() => { setActiveTab('sent'); setSelectedMessage(null); }}
+                                aria-current={activeTab === 'sent' ? 'page' : undefined}
+                            >
+                                <FiSend size={16} />
+                                <span>Enviados</span>
+                            </button>
+                            <button
+                                type="button"
+                                className={`inbox-rail-item ${activeTab === 'archived' ? 'active' : ''}`}
+                                onClick={() => { setActiveTab('archived'); setSelectedMessage(null); }}
+                                aria-current={activeTab === 'archived' ? 'page' : undefined}
+                            >
+                                <FiArchive size={16} />
+                                <span>Archivados</span>
+                            </button>
+                        </nav>
+
+                        {/* En móvil los filtros se pliegan tras este botón; en
+                            escritorio el carril siempre los muestra. */}
+                        <button
+                            type="button"
+                            className={`inbox-rail-filtros-toggle${filtrosAbiertos ? ' is-open' : ''}`}
+                            onClick={() => setFiltrosAbiertos(o => !o)}
+                            aria-expanded={filtrosAbiertos}
+                        >
+                            <FiFlag size={14} />
+                            <span>Filtros</span>
+                            {hayFiltrosActivos && <span className="inbox-rail-filtros-dot" aria-label="con filtros aplicados" />}
+                            <FiChevronDown size={14} className="inbox-rail-filtros-caret" />
+                        </button>
+
+                        <div className={`inbox-rail-filters${filtrosAbiertos ? ' is-open' : ''}`}>
+                            {activeTab === 'inbox' && (
+                                <FiltroChips
+                                    label="Estado"
+                                    value={filter}
+                                    valorNeutro="all"
+                                    onChange={(v) => setFilter(v as FilterType)}
+                                    options={[
+                                        { value: 'all', label: 'Todos' },
+                                        { value: 'unread', label: 'No leídos' },
+                                    ]}
+                                />
+                            )}
+
+                            <FiltroChips
+                                label="Fecha"
+                                value={dateRange}
+                                valorNeutro="all"
+                                onChange={(v) => setDateRange(v as DateRangeFilter)}
+                                options={[
+                                    { value: 'all', label: 'Todas' },
+                                    { value: 'today', label: 'Hoy' },
+                                    { value: 'week', label: 'Semana' },
+                                    { value: 'month', label: 'Mes' },
+                                ]}
+                            />
+
+                            <FiltroChips
+                                label="Prioridad"
+                                value={classification}
+                                valorNeutro="all"
+                                onChange={(v) => setClassification(v as ClassificationFilter)}
+                                options={[
+                                    { value: 'all', label: 'Todas' },
+                                    { value: 'priority', label: 'Prioritarios' },
+                                    { value: 'normal', label: 'Normales' },
+                                ]}
+                            />
+
+                            {hayFiltrosActivos && (
+                                <button type="button" className="inbox-rail-clear" onClick={limpiarFiltros}>
+                                    <FiX size={13} /> Quitar filtros
+                                </button>
+                            )}
+                        </div>
+                    </aside>
+
+                    {/* Lista de mensajes */}
                     <div className="inbox-list">
-                        <div className="inbox-list-header">
-                            {/* Search bar */}
+                        <div className="inbox-toolbar">
                             <div className="inbox-search">
-                                <FiSearch />
+                                <FiSearch size={15} />
                                 <input
                                     type="text"
-                                    placeholder="Buscar..."
+                                    placeholder="Buscar por asunto, remitente o contenido"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                 />
+                                {searchTerm && (
+                                    <button
+                                        type="button"
+                                        className="inbox-search-clear"
+                                        onClick={() => setSearchTerm('')}
+                                        aria-label="Limpiar búsqueda"
+                                    >
+                                        <FiX size={14} />
+                                    </button>
+                                )}
                             </div>
-
-                            {/* Desktop actions */}
-                            <div className="flex gap-2 desktop-only">
+                            <div className="inbox-toolbar-actions">
+                                {!loading && filteredMessages.length > 0 && (
+                                    <span className="inbox-toolbar-count">
+                                        {filteredMessages.length} {filteredMessages.length === 1 ? 'mensaje' : 'mensajes'}
+                                    </span>
+                                )}
                                 {activeTab === 'inbox' && unreadCount > 0 && (
                                     <button className="btn btn-sm btn-secondary" onClick={handleMarkAllAsRead}>
-                                        <FiCheck /> Marcar todos leídos
+                                        <FiCheck size={14} />
+                                        <span className="hide-mobile">Marcar todos como leídos</span>
+                                        <span className="show-mobile-only">Todos leídos</span>
                                     </button>
                                 )}
                             </div>
                         </div>
 
-                        {/* Filtros de temporalidad y clasificación */}
-                        <div className="inbox-toolbar-filters">
-                            <div className="inbox-toolbar-filter">
-                                <FiClock size={14} />
-                                <Select
-                                    ariaLabel="Filtrar por fecha"
-                                    value={dateRange}
-                                    onChange={(v) => setDateRange(v as DateRangeFilter)}
-                                    options={[
-                                        { value: 'all', label: 'Todas las fechas' },
-                                        { value: 'today', label: 'Hoy' },
-                                        { value: 'week', label: 'Esta semana' },
-                                        { value: 'month', label: 'Este mes' },
-                                    ]}
-                                />
-                            </div>
-                            <div className="inbox-toolbar-filter">
-                                <FiFlag size={14} />
-                                <Select
-                                    ariaLabel="Filtrar por clasificación"
-                                    value={classification}
-                                    onChange={(v) => setClassification(v as ClassificationFilter)}
-                                    options={[
-                                        { value: 'all', label: 'Todas las prioridades' },
-                                        { value: 'priority', label: 'Solo prioritarios' },
-                                        { value: 'normal', label: 'Solo normales' },
-                                    ]}
-                                />
-                            </div>
-                        </div>
-
-                        {/* DESKTOP TABS */}
-                        <div className="desktop-only" style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '12px',
-                            padding: '16px 16px 12px 16px',
-                            borderBottom: '1px solid var(--surface-border)'
-                        }}>
-                            {/* Tabs horizontales para desktop */}
-                            <div style={{
-                                display: 'flex',
-                                gap: '4px',
-                                background: 'var(--surface-elevated)',
-                                padding: '4px',
-                                borderRadius: 'var(--radius-lg)',
-                                border: '1px solid var(--surface-border)'
-                            }}>
-                                <button
-                                    className={`desktop-nav-item ${activeTab === 'inbox' ? 'active' : ''}`}
-                                    onClick={() => { setActiveTab('inbox'); setFilter('all'); }}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px 16px',
-                                        fontSize: '14px',
-                                        whiteSpace: 'nowrap',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '8px',
-                                        background: activeTab === 'inbox' ? 'var(--primary-500)' : 'transparent',
-                                        color: activeTab === 'inbox' ? 'white' : 'var(--text-muted)',
-                                        border: 'none',
-                                        borderRadius: 'var(--radius-md)',
-                                        cursor: 'pointer',
-                                        fontWeight: '500'
-                                    }}
-                                >
-                                    <FiInbox size={16} />
-                                    <span>Recibidos</span>
-                                    {unreadCount > 0 && (
-                                        <span style={{
-                                            width: '8px',
-                                            height: '8px',
-                                            background: activeTab === 'inbox' ? 'white' : 'var(--danger-500)',
-                                            borderRadius: '50%'
-                                        }} />
-                                    )}
-                                </button>
-                                <button
-                                    className={`desktop-nav-item ${activeTab === 'sent' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('sent')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px 16px',
-                                        fontSize: '14px',
-                                        whiteSpace: 'nowrap',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '8px',
-                                        background: activeTab === 'sent' ? 'var(--primary-500)' : 'transparent',
-                                        color: activeTab === 'sent' ? 'white' : 'var(--text-muted)',
-                                        border: 'none',
-                                        borderRadius: 'var(--radius-md)',
-                                        cursor: 'pointer',
-                                        fontWeight: '500'
-                                    }}
-                                >
-                                    <FiSend size={16} />
-                                    <span>Enviados</span>
-                                </button>
-                                <button
-                                    className={`desktop-nav-item ${activeTab === 'archived' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('archived')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px 16px',
-                                        fontSize: '14px',
-                                        whiteSpace: 'nowrap',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '8px',
-                                        background: activeTab === 'archived' ? 'var(--primary-500)' : 'transparent',
-                                        color: activeTab === 'archived' ? 'white' : 'var(--text-muted)',
-                                        border: 'none',
-                                        borderRadius: 'var(--radius-md)',
-                                        cursor: 'pointer',
-                                        fontWeight: '500'
-                                    }}
-                                >
-                                    <FiArchive size={16} />
-                                    <span>Archivados</span>
-                                </button>
-                            </div>
-
-                            {/* Filtros para inbox - SOLO CUANDO ESTÁ EN RECIBIDOS - DESKTOP */}
-                            {activeTab === 'inbox' && (
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    background: 'var(--surface-elevated)',
-                                    padding: '8px',
-                                    borderRadius: 'var(--radius-lg)',
-                                    border: '1px solid var(--surface-border)'
-                                }}>
-                                    <span style={{
-                                        fontSize: '14px',
-                                        fontWeight: '500',
-                                        color: 'var(--text-secondary)',
-                                        padding: '0 16px'
-                                    }}>
-                                        Mostrar:
-                                    </span>
-                                    <div style={{
-                                        display: 'flex',
-                                        flex: 1,
-                                        gap: '6px',
-                                        maxWidth: '250px'
-                                    }}>
-                                        <button
-                                            onClick={() => setFilter('all')}
-                                            style={{
-                                                flex: 1,
-                                                padding: '10px 16px',
-                                                fontSize: '14px',
-                                                fontWeight: '600',
-                                                whiteSpace: 'nowrap',
-                                                background: filter === 'all' ? 'var(--primary-500)' : 'transparent',
-                                                color: filter === 'all' ? 'white' : 'var(--text-secondary)',
-                                                border: 'none',
-                                                borderRadius: 'var(--radius-md)',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '8px'
-                                            }}
-                                        >
-                                            <FiInbox size={16} />
-                                            <span>TODOS</span>
-                                        </button>
-                                        <button
-                                            onClick={() => setFilter('unread')}
-                                            style={{
-                                                flex: 1,
-                                                padding: '10px 16px',
-                                                fontSize: '14px',
-                                                fontWeight: '600',
-                                                whiteSpace: 'nowrap',
-                                                background: filter === 'unread' ? 'var(--primary-500)' : 'transparent',
-                                                color: filter === 'unread' ? 'white' : 'var(--text-secondary)',
-                                                border: 'none',
-                                                borderRadius: 'var(--radius-md)',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '8px'
-                                            }}
-                                        >
-                                            <FiBell size={16} />
-                                            <span>NO LEÍDOS</span>
-                                            {unreadCount > 0 && filter !== 'unread' && (
-                                                <span style={{
-                                                    fontSize: '12px',
-                                                    background: 'var(--danger-500)',
-                                                    color: 'white',
-                                                    padding: '2px 8px',
-                                                    borderRadius: '12px',
-                                                    minWidth: '20px'
-                                                }}>
-                                                    {unreadCount}
-                                                </span>
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* MOBILE TABS */}
-                        <div className="show-mobile" style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '8px',
-                            padding: '12px 12px 8px 12px'
-                        }}>
-                            {/* Tabs horizontales para móvil */}
-                            <div style={{
-                                display: 'flex',
-                                gap: '4px',
-                                background: 'var(--surface-elevated)',
-                                padding: '4px',
-                                borderRadius: 'var(--radius-lg)',
-                                border: '1px solid var(--surface-border)'
-                            }}>
-                                <button
-                                    className={`mobile-nav-item ${activeTab === 'inbox' ? 'active' : ''}`}
-                                    onClick={() => { setActiveTab('inbox'); setFilter('all'); }}
-                                    style={{
-                                        flex: 1,
-                                        padding: '8px 12px',
-                                        fontSize: '13px',
-                                        whiteSpace: 'nowrap',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '6px',
-                                        background: activeTab === 'inbox' ? 'var(--primary-500)' : 'transparent',
-                                        color: activeTab === 'inbox' ? 'white' : 'var(--text-muted)',
-                                        border: 'none',
-                                        borderRadius: 'var(--radius-md)',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    <FiInbox size={14} />
-                                    <span>Recibidos</span>
-                                    {unreadCount > 0 && (
-                                        <span style={{
-                                            width: '6px',
-                                            height: '6px',
-                                            background: activeTab === 'inbox' ? 'white' : 'var(--danger-500)',
-                                            borderRadius: '50%'
-                                        }} />
-                                    )}
-                                </button>
-                                <button
-                                    className={`mobile-nav-item ${activeTab === 'sent' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('sent')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '8px 12px',
-                                        fontSize: '13px',
-                                        whiteSpace: 'nowrap',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '6px',
-                                        background: activeTab === 'sent' ? 'var(--primary-500)' : 'transparent',
-                                        color: activeTab === 'sent' ? 'white' : 'var(--text-muted)',
-                                        border: 'none',
-                                        borderRadius: 'var(--radius-md)',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    <FiSend size={14} />
-                                    <span>Enviados</span>
-                                </button>
-                                <button
-                                    className={`mobile-nav-item ${activeTab === 'archived' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('archived')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '8px 12px',
-                                        fontSize: '13px',
-                                        whiteSpace: 'nowrap',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '6px',
-                                        background: activeTab === 'archived' ? 'var(--primary-500)' : 'transparent',
-                                        color: activeTab === 'archived' ? 'white' : 'var(--text-muted)',
-                                        border: 'none',
-                                        borderRadius: 'var(--radius-md)',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    <FiArchive size={14} />
-                                    <span>Archivados</span>
-                                </button>
-                            </div>
-
-                            {/* Filtros para inbox - SOLO CUANDO ESTÁ EN RECIBIDOS - MÓVIL */}
-                            {activeTab === 'inbox' && (
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    background: 'var(--surface-elevated)',
-                                    padding: '6px',
-                                    borderRadius: 'var(--radius-lg)',
-                                    border: '1px solid var(--surface-border)'
-                                }}>
-                                    <span style={{
-                                        fontSize: '13px',
-                                        fontWeight: '500',
-                                        color: 'var(--text-secondary)',
-                                        padding: '0 12px'
-                                    }}>
-                                        Mostrar:
-                                    </span>
-                                    <div style={{
-                                        display: 'flex',
-                                        flex: 1,
-                                        gap: '4px',
-                                        maxWidth: '200px'
-                                    }}>
-                                        <button
-                                            onClick={() => setFilter('all')}
-                                            style={{
-                                                flex: 1,
-                                                padding: '8px 12px',
-                                                fontSize: '13px',
-                                                fontWeight: '600',
-                                                whiteSpace: 'nowrap',
-                                                background: filter === 'all' ? 'var(--primary-500)' : 'transparent',
-                                                color: filter === 'all' ? 'white' : 'var(--text-secondary)',
-                                                border: 'none',
-                                                borderRadius: 'var(--radius-md)',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '6px'
-                                            }}
-                                        >
-                                            <FiInbox size={14} />
-                                            <span>TODOS</span>
-                                        </button>
-                                        <button
-                                            onClick={() => setFilter('unread')}
-                                            style={{
-                                                flex: 1,
-                                                padding: '8px 12px',
-                                                fontSize: '13px',
-                                                fontWeight: '600',
-                                                whiteSpace: 'nowrap',
-                                                background: filter === 'unread' ? 'var(--primary-500)' : 'transparent',
-                                                color: filter === 'unread' ? 'white' : 'var(--text-secondary)',
-                                                border: 'none',
-                                                borderRadius: 'var(--radius-md)',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '6px'
-                                            }}
-                                        >
-                                            <FiBell size={14} />
-                                            <span>NO LEÍDOS</span>
-                                            {unreadCount > 0 && filter !== 'unread' && (
-                                                <span style={{
-                                                    fontSize: '11px',
-                                                    background: 'var(--danger-500)',
-                                                    color: 'white',
-                                                    padding: '2px 6px',
-                                                    borderRadius: '10px',
-                                                    minWidth: '18px'
-                                                }}>
-                                                    {unreadCount}
-                                                </span>
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Messages List */}
-                        <div className="inbox-messages" style={{ paddingTop: '0' }}>
+                        <div className="inbox-messages">
                             {loading ? (
                                 <div className="inbox-empty">
                                     <div className="spinner" />
                                 </div>
+                            ) : errorCarga ? (
+                                /* Antes el fallo era mudo y la lista se quedaba con
+                                   los mensajes de la carpeta anterior. Ahora dice qué
+                                   pasó y ofrece la salida. */
+                                <div className="inbox-empty">
+                                    <FiAlertCircle size={40} />
+                                    <p className="inbox-empty-title">No se pudo cargar esta carpeta</p>
+                                    <p className="inbox-empty-hint">{errorCarga}</p>
+                                    <button type="button" className="btn btn-sm btn-secondary" onClick={loadMessages}>
+                                        Reintentar
+                                    </button>
+                                </div>
                             ) : filteredMessages.length === 0 ? (
                                 <div className="inbox-empty">
-                                    <FiInbox size={48} />
-                                    <p>No hay mensajes</p>
+                                    <FiInbox size={40} />
+                                    <p className="inbox-empty-title">{textoVacio.titulo}</p>
+                                    <p className="inbox-empty-hint">{textoVacio.detalle}</p>
+                                    {hayFiltrosActivos && (
+                                        <button type="button" className="btn btn-sm btn-secondary" onClick={limpiarFiltros}>
+                                            Quitar filtros
+                                        </button>
+                                    )}
                                 </div>
                             ) : (
-                                filteredMessages.map((message) => (
-                                    <div
-                                        key={message.messageId}
-                                        className={`inbox-message-item ${!message.read ? 'unread' : ''} ${selectedMessage?.messageId === message.messageId ? 'selected' : ''}`}
-                                        onClick={() => handleOpenMessage(message)}
-                                    >
-                                        <div className="inbox-message-icon">
-                                            {getTypeIcon(message.type)}
-                                        </div>
-                                        <div className="inbox-message-content">
-                                            <div className="inbox-message-header">
-                                                <span className="inbox-message-sender">
-                                                    {activeTab === 'sent' && (message as InboxMessage & { recipientCount?: number }).recipientCount && (message as InboxMessage & { recipientCount?: number }).recipientCount! > 1
-                                                        ? `Para: ${(message as InboxMessage & { recipientCount?: number }).recipientCount} destinatarios`
-                                                        : `De: ${message.senderName || 'Desconocido'}`}
-                                                </span>
-                                                <span className="inbox-message-time">{formatDate(message.createdAt)}</span>
-                                            </div>
-                                            <div className="inbox-message-subject">{message.subject || '(Sin asunto)'}</div>
-                                            <div className="inbox-message-preview">
-                                                {message.content
-                                                    ? `${message.content.substring(0, 80)}${message.content.length > 80 ? '…' : ''}`
-                                                    : 'Sin contenido'}
-                                            </div>
-                                        </div>
-                                        {message.priority !== 'normal' && (
-                                            <span className={`badge ${getPriorityBadge(message.priority)}`}>
-                                                {getPriorityLabel(message.priority)}
-                                            </span>
-                                        )}
-                                    </div>
+                                gruposTemporales.map((grupo) => (
+                                    <section key={grupo.label} className="inbox-group">
+                                        {/* El separador queda fijo mientras se recorre el grupo:
+                                            al bajar por la lista siempre se sabe de qué tramo de
+                                            tiempo son los mensajes que se están leyendo. */}
+                                        <h3 className="inbox-group-header">
+                                            <span className="inbox-group-label">{grupo.label}</span>
+                                            <span className="inbox-group-rule" aria-hidden="true" />
+                                        </h3>
+
+                                        {grupo.items.map((message) => {
+                                            const conteoDestinatarios = (message as InboxMessage & { recipientCount?: number }).recipientCount;
+                                            const esEnviado = activeTab === 'sent';
+                                            const leido = esEnviado || message.read;
+                                            return (
+                                                <div
+                                                    key={message.messageId}
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    aria-label={`${message.subject || 'Sin asunto'}, de ${message.senderName || 'desconocido'}`}
+                                                    className={`inbox-row ${!leido ? 'unread' : ''} ${selectedMessage?.messageId === message.messageId ? 'selected' : ''}`}
+                                                    onClick={() => handleOpenMessage(message)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                            e.preventDefault();
+                                                            handleOpenMessage(message);
+                                                        }
+                                                    }}
+                                                >
+                                                    {/* Un solo control hace de indicador y de interruptor:
+                                                        el punto muestra si está leído y al tocarlo lo cambia.
+                                                        En obra se usa el teléfono, así que el estado tiene que
+                                                        ser tocable y no depender del hover. */}
+                                                    {esEnviado ? (
+                                                        <span className="inbox-row-dot is-static" aria-hidden="true" />
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            className="inbox-row-dot"
+                                                            aria-pressed={!message.read}
+                                                            title={message.read ? 'Marcar como no leído' : 'Marcar como leído'}
+                                                            aria-label={message.read ? 'Marcar como no leído' : 'Marcar como leído'}
+                                                            onClick={(e) => handleToggleRead(message, e)}
+                                                        />
+                                                    )}
+
+                                                    <div className="inbox-row-body">
+                                                        <div className="inbox-row-top">
+                                                            <span className="inbox-row-from">
+                                                                {esEnviado && conteoDestinatarios && conteoDestinatarios > 1
+                                                                    ? `${conteoDestinatarios} destinatarios`
+                                                                    : esEnviado
+                                                                        ? 'Enviado'
+                                                                        : message.senderName || 'Desconocido'}
+                                                            </span>
+                                                            <span className="inbox-row-time">{formatDate(message.createdAt)}</span>
+                                                        </div>
+                                                        <div className="inbox-row-line">
+                                                            {message.type !== 'message' && (
+                                                                <span className="inbox-row-kind" title={tipoLabel(message.type)}>
+                                                                    {getTypeIcon(message.type)}
+                                                                </span>
+                                                            )}
+                                                            <span className="inbox-row-subject">{message.subject || '(Sin asunto)'}</span>
+                                                            {message.content && (
+                                                                <span className="inbox-row-preview">
+                                                                    <span className="inbox-row-dash" aria-hidden="true">—</span>
+                                                                    {message.content.replace(/\s+/g, ' ').trim()}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {message.priority !== 'normal' && (
+                                                        <span className={`inbox-row-priority ${message.priority}`}>
+                                                            {getPriorityLabel(message.priority)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </section>
                                 ))
                             )}
                         </div>
@@ -1127,16 +1070,28 @@ export default function Inbox() {
 
                     {/* Message Detail */}
                     {selectedMessage && (
-                        <div className="inbox-detail desktop-only">
+                        <div className="inbox-detail">
                             <div className="inbox-detail-header">
-                                <button className="btn btn-ghost btn-sm" onClick={() => setSelectedMessage(null)}>
+                                <button className="btn btn-ghost btn-sm" onClick={() => setSelectedMessage(null)} title="Volver a la lista" aria-label="Volver a la lista">
                                     <FiChevronLeft />
                                 </button>
                                 <div className="inbox-detail-actions">
-                                    <button className="btn btn-ghost btn-sm" onClick={() => handleArchive(selectedMessage.messageId)} title="Archivar">
+                                    {/* Abrir un mensaje lo marca leído, así que aquí hace
+                                        falta el camino de vuelta: dejarlo pendiente. */}
+                                    {activeTab !== 'sent' && (
+                                        <button
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={(e) => { handleToggleRead(selectedMessage, e); setSelectedMessage(null); }}
+                                            title="Marcar como no leído"
+                                            aria-label="Marcar como no leído"
+                                        >
+                                            <FiMail />
+                                        </button>
+                                    )}
+                                    <button className="btn btn-ghost btn-sm" onClick={() => handleArchive(selectedMessage.messageId)} title="Archivar" aria-label="Archivar">
                                         <FiArchive />
                                     </button>
-                                    <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(selectedMessage.messageId)} title="Eliminar">
+                                    <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(selectedMessage.messageId)} title="Eliminar" aria-label="Eliminar">
                                         <FiTrash2 />
                                     </button>
                                 </div>
@@ -1398,208 +1353,458 @@ export default function Inbox() {
             </Modal>
 
             <style>{`
+                /* ── Estructura ──
+                   Tres zonas: carril de carpetas y filtros, lista y detalle.
+                   El carril es fijo; la lista y el detalle hacen scroll propio,
+                   así que la página nunca crece más allá del alto disponible. */
                 .inbox-container {
                     display: grid;
-                    grid-template-columns: 1fr;
-                    /* Limita la fila a la altura del contenedor para que las columnas
-                       (lista y detalle) puedan hacer scroll interno en vez de crecer. */
+                    grid-template-columns: 240px minmax(0, 1fr);
                     grid-template-rows: minmax(0, 1fr);
-                    gap: var(--space-4);
                     height: calc(100vh - var(--header-height) - var(--space-12));
                     background: var(--surface-card);
-                    border-radius: var(--radius-xl);
+                    border-radius: var(--radius-lg);
                     border: 1px solid var(--surface-border);
                     overflow: hidden;
                 }
 
-                .inbox-sidebar {
-                    padding: var(--space-4);
+                /* ── Carril ── */
+                .inbox-rail {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-5);
+                    padding: var(--space-4) var(--space-3);
                     border-right: 1px solid var(--surface-border);
-                    display: flex;
-                    flex-direction: column;
+                    background: var(--surface-elevated);
+                    overflow-y: auto;
                 }
 
-                .inbox-nav {
+                .inbox-rail-nav {
                     display: flex;
                     flex-direction: column;
-                    gap: var(--space-1);
+                    gap: 2px;
                 }
 
-                .inbox-nav-item {
+                .inbox-rail-item {
                     display: flex;
                     align-items: center;
                     gap: var(--space-3);
-                    padding: var(--space-3);
-                    border-radius: var(--radius-md);
-                    background: transparent;
-                    border: none;
-                    color: var(--text-secondary);
-                    cursor: pointer;
-                    transition: all 0.2s;
-                    text-align: left;
                     width: 100%;
-                }
-
-                .inbox-nav-item:hover {
-                    background: var(--surface-hover);
-                }
-
-                .inbox-nav-item.active {
-                    background: var(--primary-500);
-                    color: white;
-                }
-
-                .inbox-badge {
-                    margin-left: auto;
-                    background: var(--danger-500);
-                    color: white;
-                    font-size: 11px;
-                    font-weight: 600;
-                    padding: 2px 8px;
+                    padding: var(--space-2) var(--space-3);
+                    border: none;
                     border-radius: var(--radius-full);
+                    background: transparent;
+                    color: var(--text-secondary);
+                    font-family: inherit;
+                    font-size: var(--text-sm);
+                    font-weight: 500;
+                    text-align: left;
+                    cursor: pointer;
+                    transition: background var(--transition-fast), color var(--transition-fast);
                 }
 
-                .inbox-filters {
-                    margin-top: var(--space-6);
+                .inbox-rail-item:hover { background: var(--surface-hover); color: var(--text-primary); }
+
+                .inbox-rail-item.active {
+                    background: var(--accent-tint);
+                    color: var(--accent-text);
+                    font-weight: 700;
+                }
+
+                .inbox-rail-count {
+                    margin-left: auto;
+                    min-width: 20px;
+                    padding: 1px 6px;
+                    border-radius: var(--radius-full);
+                    background: var(--primary-500);
+                    color: #fff;
+                    font-size: 11px;
+                    font-weight: 700;
+                    text-align: center;
+                }
+
+                .inbox-rail-filters {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-4);
                     padding-top: var(--space-4);
                     border-top: 1px solid var(--surface-border);
                 }
 
-                .inbox-filters h4 {
-                    font-size: var(--text-xs);
+                /* El plegado es sólo de móvil: en escritorio el carril tiene
+                   sitio de sobra y esconder los filtros sería trabajo extra. */
+                .inbox-rail-filtros-toggle { display: none; }
+
+                .inbox-filtro {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-2);
+                }
+
+                .inbox-filtro-label {
+                    padding: 0 var(--space-3);
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.09em;
                     text-transform: uppercase;
                     color: var(--text-muted);
-                    margin-bottom: var(--space-2);
                 }
 
-                .inbox-filter-item {
+                .inbox-filtro-chips {
                     display: flex;
-                    align-items: center;
-                    gap: var(--space-2);
-                    padding: var(--space-2);
-                    cursor: pointer;
-                    font-size: var(--text-sm);
+                    flex-wrap: wrap;
+                    gap: 4px;
+                    padding: 0 4px;
                 }
 
+                .inbox-chip {
+                    padding: 4px 8px;
+                    border: 1px solid transparent;
+                    border-radius: var(--radius-full);
+                    background: transparent;
+                    color: var(--text-secondary);
+                    font-family: inherit;
+                    font-size: 12px;
+                    font-weight: 500;
+                    line-height: 1.4;
+                    cursor: pointer;
+                    transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+                }
+
+                .inbox-chip:hover { background: var(--surface-hover); color: var(--text-primary); }
+
+                .inbox-chip:focus-visible {
+                    outline: 2px solid var(--accent);
+                    outline-offset: 1px;
+                }
+
+                /* Valor elegido que no recorta nada: se marca en gris. */
+                .inbox-chip.is-current {
+                    background: var(--surface-hover);
+                    border-color: var(--surface-border);
+                    color: var(--text-primary);
+                    font-weight: 600;
+                }
+
+                /* Valor elegido que sí esconde mensajes: se enciende en azul,
+                   igual que la carpeta activa, para que se note que hay algo
+                   fuera de la vista. */
+                .inbox-chip.is-narrowing {
+                    background: var(--accent-tint);
+                    border-color: transparent;
+                    color: var(--accent-text);
+                    font-weight: 700;
+                }
+
+                .inbox-rail-clear {
+                    display: inline-flex;
+                    align-items: center;
+                    align-self: flex-start;
+                    gap: 5px;
+                    margin-left: 4px;
+                    padding: 4px 8px;
+                    border: none;
+                    border-radius: var(--radius-md);
+                    background: transparent;
+                    color: var(--text-muted);
+                    font-family: inherit;
+                    font-size: 12.5px;
+                    cursor: pointer;
+                    transition: background var(--transition-fast), color var(--transition-fast);
+                }
+
+                .inbox-rail-clear:hover { background: var(--surface-hover); color: var(--text-primary); }
+
+                /* ── Lista ── */
                 .inbox-list {
                     display: flex;
                     flex-direction: column;
-                    overflow: hidden;
-                    width: 100%;
+                    min-width: 0;
                     min-height: 0;
+                    overflow: hidden;
                 }
 
-                .inbox-list-header {
-                    padding: var(--space-4);
-                    border-bottom: 1px solid var(--surface-border);
+                .inbox-toolbar {
                     display: flex;
-                    gap: var(--space-3);
                     align-items: center;
+                    gap: var(--space-3);
+                    padding: var(--space-3) var(--space-4);
+                    border-bottom: 1px solid var(--surface-border);
                 }
 
                 .inbox-search {
                     flex: 1;
+                    min-width: 0;
                     display: flex;
                     align-items: center;
                     gap: var(--space-2);
-                    background: var(--surface-elevated);
                     padding: var(--space-2) var(--space-3);
-                    border-radius: var(--radius-md);
+                    border: 1px solid transparent;
+                    border-radius: var(--radius-full);
+                    background: var(--surface-elevated);
+                    color: var(--text-muted);
+                    transition: border-color var(--transition-fast), background var(--transition-fast);
+                }
+
+                .inbox-search:focus-within {
+                    border-color: var(--accent);
+                    background: var(--surface-card);
                 }
 
                 .inbox-search input {
                     flex: 1;
-                    background: transparent;
+                    min-width: 0;
                     border: none;
                     outline: none;
+                    background: transparent;
                     color: var(--text-primary);
+                    font-family: inherit;
+                    font-size: var(--text-sm);
+                }
+
+                .inbox-search-clear {
+                    display: flex;
+                    padding: 2px;
+                    border: none;
+                    border-radius: var(--radius-full);
+                    background: transparent;
+                    color: var(--text-muted);
+                    cursor: pointer;
+                }
+
+                .inbox-search-clear:hover { color: var(--text-primary); }
+
+                .inbox-toolbar-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-3);
+                    flex-shrink: 0;
+                }
+
+                .inbox-toolbar-count {
+                    font-size: 12.5px;
+                    color: var(--text-muted);
+                    white-space: nowrap;
                 }
 
                 .inbox-messages {
                     flex: 1;
-                    overflow-y: auto;
-                    width: 100%;
                     min-height: 0;
+                    overflow-y: auto;
                 }
 
+                /* ── Separadores por tramo de tiempo ──
+                   Se quedan pegados arriba mientras se recorre el grupo: el
+                   tramo que se está leyendo siempre está a la vista. */
+                .inbox-group-header {
+                    position: sticky;
+                    top: 0;
+                    z-index: 2;
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-3);
+                    margin: 0;
+                    padding: var(--space-3) var(--space-4) var(--space-2);
+                    background: var(--surface-card);
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.09em;
+                    text-transform: uppercase;
+                    color: var(--text-muted);
+                }
+
+                .inbox-group-rule {
+                    flex: 1;
+                    height: 1px;
+                    background: var(--surface-border);
+                }
+
+                /* ── Fila ── */
+                .inbox-row {
+                    display: flex;
+                    align-items: baseline;
+                    gap: var(--space-3);
+                    padding: 10px var(--space-4);
+                    border-bottom: 1px solid var(--surface-border);
+                    cursor: pointer;
+                    transition: background var(--transition-fast);
+                }
+
+                .inbox-row:last-child { border-bottom: none; }
+                .inbox-row:hover { background: var(--surface-hover); }
+                .inbox-row:focus-visible {
+                    outline: 2px solid var(--accent);
+                    outline-offset: -2px;
+                }
+
+                .inbox-row.selected {
+                    background: var(--accent-tint);
+                    box-shadow: inset 3px 0 0 var(--primary-500);
+                }
+
+                /* El punto es a la vez indicador y control: lleno = no leído,
+                   contorno = leído. Un solo toque cambia el estado. */
+                .inbox-row-dot {
+                    flex-shrink: 0;
+                    width: 20px;
+                    height: 20px;
+                    position: relative;
+                    align-self: center;
+                    padding: 0;
+                    border: none;
+                    border-radius: var(--radius-full);
+                    background: transparent;
+                    cursor: pointer;
+                    transition: background var(--transition-fast);
+                }
+
+                .inbox-row-dot::after {
+                    content: '';
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    width: 9px;
+                    height: 9px;
+                    transform: translate(-50%, -50%);
+                    border-radius: var(--radius-full);
+                    border: 1.5px solid var(--text-muted);
+                    background: transparent;
+                    transition: background var(--transition-fast), border-color var(--transition-fast);
+                }
+
+                .inbox-row.unread .inbox-row-dot::after {
+                    border-color: var(--primary-500);
+                    background: var(--primary-500);
+                }
+
+                button.inbox-row-dot:hover { background: var(--surface-border); }
+                button.inbox-row-dot:focus-visible {
+                    outline: 2px solid var(--accent);
+                    outline-offset: 1px;
+                }
+
+                .inbox-row-dot.is-static { cursor: default; }
+                .inbox-row-dot.is-static::after { opacity: 0.45; }
+
+                .inbox-row-body { flex: 1; min-width: 0; }
+
+                .inbox-row-top {
+                    display: flex;
+                    align-items: baseline;
+                    justify-content: space-between;
+                    gap: var(--space-3);
+                    margin-bottom: 2px;
+                }
+
+                .inbox-row-from {
+                    min-width: 0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    font-size: 13px;
+                    font-weight: 500;
+                    color: var(--text-secondary);
+                }
+
+                .inbox-row-time {
+                    flex-shrink: 0;
+                    font-size: 12px;
+                    color: var(--text-muted);
+                    font-variant-numeric: tabular-nums;
+                }
+
+                /* Asunto y adelanto en una sola línea, como en el correo: cabe
+                   más historial en pantalla y el ojo baja por una sola columna. */
+                .inbox-row-line {
+                    display: flex;
+                    align-items: baseline;
+                    gap: 6px;
+                    min-width: 0;
+                    white-space: nowrap;
+                    overflow: hidden;
+                }
+
+                .inbox-row-kind {
+                    display: inline-flex;
+                    align-self: center;
+                    flex-shrink: 0;
+                    line-height: 0;
+                }
+
+                .inbox-row-subject {
+                    flex-shrink: 0;
+                    max-width: 60%;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    font-size: 13.5px;
+                    color: var(--text-secondary);
+                }
+
+                .inbox-row-preview {
+                    min-width: 0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    font-size: 13px;
+                    color: var(--text-muted);
+                }
+
+                .inbox-row-dash { margin-right: 5px; }
+
+                /* No leído: peso y contraste, sin teñir la fila. El color queda
+                   libre para lo único que sí es una alarma, la prioridad. */
+                .inbox-row.unread .inbox-row-from { font-weight: 700; color: var(--text-primary); }
+                .inbox-row.unread .inbox-row-subject { font-weight: 700; color: var(--text-primary); }
+                .inbox-row.unread .inbox-row-time { color: var(--text-secondary); font-weight: 600; }
+
+                .inbox-row-priority {
+                    flex-shrink: 0;
+                    align-self: center;
+                    padding: 2px 8px;
+                    border-radius: var(--radius-full);
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.02em;
+                    white-space: nowrap;
+                }
+
+                .inbox-row-priority.urgent {
+                    background: var(--danger-600);
+                    color: #fff;
+                }
+
+                .inbox-row-priority.high {
+                    background: var(--warning-500);
+                    color: #4a3708;
+                }
+
+                /* ── Vacío ── */
                 .inbox-empty {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
+                    gap: var(--space-2);
                     height: 100%;
+                    padding: var(--space-8) var(--space-6);
+                    text-align: center;
                     color: var(--text-muted);
-                    gap: var(--space-3);
                 }
 
-                .inbox-message-item {
-                    display: flex;
-                    align-items: flex-start;
-                    gap: var(--space-3);
-                    padding: var(--space-4);
-                    border-bottom: 1px solid var(--surface-border);
-                    cursor: pointer;
-                    transition: background 0.2s;
+                .inbox-empty-title {
+                    margin: var(--space-2) 0 0;
+                    font-size: var(--text-base);
+                    font-weight: 600;
+                    color: var(--text-primary);
                 }
 
-                .inbox-message-item:hover {
-                    background: var(--surface-hover);
-                }
-
-                .inbox-message-item.selected {
-                    background: var(--surface-elevated);
-                }
-
-                .inbox-message-item.unread {
-                    background: rgba(76, 175, 80, 0.05);
-                }
-
-                .inbox-message-item.unread .inbox-message-subject {
-                    font-weight: 700;
-                }
-
-                .inbox-message-icon {
-                    width: 32px;
-                    height: 32px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-
-                .inbox-message-content {
-                    flex: 1;
-                    min-width: 0;
-                }
-
-                .inbox-message-header {
-                    display: flex;
-                    justify-content: space-between;
-                    margin-bottom: var(--space-1);
-                }
-
-                .inbox-message-sender {
+                .inbox-empty-hint {
+                    margin: 0 0 var(--space-2);
+                    max-width: 34ch;
                     font-size: var(--text-sm);
-                    font-weight: 500;
+                    line-height: 1.5;
                 }
 
-                .inbox-message-time {
-                    font-size: var(--text-xs);
-                    color: var(--text-muted);
-                }
-
-                .inbox-message-subject {
-                    font-size: var(--text-sm);
-                    margin-bottom: var(--space-1);
-                }
-
-                .inbox-message-preview {
-                    font-size: var(--text-xs);
-                    color: var(--text-muted);
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-
+                /* ── Detalle ── */
                 .inbox-detail {
                     display: none;
                     flex-direction: column;
@@ -1618,13 +1823,15 @@ export default function Inbox() {
                 .inbox-detail-header {
                     display: flex;
                     justify-content: space-between;
-                    padding: var(--space-4);
+                    align-items: center;
+                    gap: var(--space-2);
+                    padding: var(--space-3) var(--space-4);
                     border-bottom: 1px solid var(--surface-border);
                 }
 
                 .inbox-detail-actions {
                     display: flex;
-                    gap: var(--space-2);
+                    gap: var(--space-1);
                 }
 
                 .inbox-detail-content {
@@ -1643,6 +1850,8 @@ export default function Inbox() {
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
+                    gap: var(--space-3);
+                    flex-wrap: wrap;
                     padding-bottom: var(--space-4);
                     border-bottom: 1px solid var(--surface-border);
                     margin-bottom: var(--space-4);
@@ -1663,25 +1872,13 @@ export default function Inbox() {
                     margin-bottom: var(--space-3);
                 }
 
-                /* Filtros de la lista (temporalidad + clasificación) */
-                .inbox-toolbar-filters {
-                    display: flex;
-                    gap: var(--space-2);
-                    padding: var(--space-2) var(--space-4) 0 var(--space-4);
-                    flex-wrap: wrap;
-                }
-
-                .inbox-toolbar-filter {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-2);
-                    flex: 1;
-                    min-width: 160px;
-                    color: var(--text-muted);
-                }
-
-                .inbox-toolbar-filter > div {
-                    flex: 1;
+                @media (prefers-reduced-motion: reduce) {
+                    .inbox-rail-item,
+                    .inbox-chip,
+                    .inbox-row,
+                    .inbox-row-dot,
+                    .inbox-row-dot::after,
+                    .inbox-search { transition: none; }
                 }
 
                 /* Selector de destinatarios */
@@ -1941,97 +2138,136 @@ export default function Inbox() {
                     margin-right: var(--space-2);
                 }
 
-                .show-mobile { display: none !important; }
-                .desktop-only { display: flex !important; }
-                .inbox-sidebar.desktop-only { display: flex !important; }
+                .hide-mobile { display: inline !important; }
                 .show-mobile-only { display: none !important; }
 
-                /* DESKTOP: Cuando hay mensaje seleccionado, mostramos 2 columnas */
+                /* Con un mensaje abierto se parte en dos columnas: lista a la
+                   izquierda, mensaje a la derecha. */
                 @media (min-width: 1025px) {
                     .inbox-container.has-selection {
-                        grid-template-columns: 1fr 400px;
+                        grid-template-columns: 240px minmax(0, 1fr) 400px;
                     }
-                    
-                    .inbox-detail.desktop-only {
-                        display: flex;
-                    }
+
+                    .inbox-detail { display: flex; }
                 }
 
+                /* Tablet: el carril pasa a ser una franja horizontal sobre la
+                   lista. Es el MISMO marcado, solo cambia el eje: las carpetas
+                   siguen siendo carpetas y los filtros siguen siendo filtros. */
                 @media (max-width: 1024px) {
-                    .show-mobile { display: flex !important; }
-                    .desktop-only { display: none !important; }
                     .inbox-container {
-                        grid-template-columns: 1fr;
+                        grid-template-columns: minmax(0, 1fr);
+                        grid-template-rows: auto minmax(0, 1fr);
                         height: calc(100vh - var(--header-height) - 140px);
                         margin-bottom: var(--space-4);
+                        position: relative;
                     }
-                    
-                    .inbox-sidebar {
-                        display: none !important;
+
+                    .inbox-rail {
+                        flex-direction: row;
+                        align-items: center;
+                        flex-wrap: wrap;
+                        gap: var(--space-2) var(--space-3);
+                        padding: var(--space-3);
+                        border-right: none;
+                        border-bottom: 1px solid var(--surface-border);
+                        overflow-x: auto;
+                        overflow-y: visible;
                     }
-                    
-                    .inbox-container.has-selection .inbox-list {
+
+                    .inbox-rail-nav { flex-direction: row; gap: var(--space-1); }
+                    .inbox-rail-item { width: auto; white-space: nowrap; }
+
+                    /* Plegados tras el botón «Filtros»: en un teléfono, tres
+                       grupos de opciones antes del primer mensaje estorban más
+                       de lo que ayudan. Abiertos, ocupan el ancho completo. */
+                    .inbox-rail-filtros-toggle {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                        flex-shrink: 0;
+                        padding: var(--space-2) var(--space-3);
+                        border: 1px solid var(--surface-border);
+                        border-radius: var(--radius-full);
+                        background: var(--surface-card);
+                        color: var(--text-secondary);
+                        font-family: inherit;
+                        font-size: var(--text-sm);
+                        font-weight: 500;
+                        cursor: pointer;
+                    }
+
+                    .inbox-rail-filtros-toggle.is-open {
+                        background: var(--accent-tint);
+                        border-color: transparent;
+                        color: var(--accent-text);
+                    }
+
+                    .inbox-rail-filtros-caret { transition: transform var(--transition-fast); }
+                    .inbox-rail-filtros-toggle.is-open .inbox-rail-filtros-caret { transform: rotate(180deg); }
+
+                    /* Aviso de que hay filtros puestos aunque estén plegados. */
+                    .inbox-rail-filtros-dot {
+                        width: 6px;
+                        height: 6px;
+                        border-radius: var(--radius-full);
+                        background: var(--primary-500);
+                    }
+
+                    .inbox-rail-filters {
                         display: none;
+                        width: 100%;
+                        gap: var(--space-3);
+                        padding-top: var(--space-3);
                     }
-                    
-                    .inbox-container.has-selection .inbox-detail {
-                        display: flex !important;
+
+                    .inbox-rail-filters.is-open { display: flex; }
+
+                    .inbox-filtro { flex-direction: row; align-items: center; gap: var(--space-3); }
+                    .inbox-filtro-label { flex: 0 0 68px; padding: 0; }
+                    .inbox-filtro-chips { flex: 1; padding: 0; }
+
+                    .inbox-detail {
+                        display: none;
                         position: absolute;
-                        top: 0;
-                        left: 0;
-                        right: 0;
-                        bottom: 0;
+                        inset: 0;
                         z-index: 10;
                         background: var(--surface-card);
                         border-left: none;
                     }
 
-                    .inbox-list-header {
-                        padding: var(--space-3);
-                        flex-direction: column !important;
-                        gap: var(--space-3) !important;
-                    }
-                    
-                    .inbox-search {
-                        width: 100% !important;
-                        order: 2;
-                    }
-                    
-                    .mobile-nav-container {
-                        order: 1;
-                        width: 100%;
-                    }
+                    .inbox-container.has-selection .inbox-rail,
+                    .inbox-container.has-selection .inbox-list { display: none; }
+                    .inbox-container.has-selection .inbox-detail { display: flex; }
                 }
 
                 @media (max-width: 640px) {
                     .hide-mobile { display: none !important; }
                     .show-mobile-only { display: inline !important; }
-                    
-                    .inbox-list-header {
-                        padding: var(--space-2) !important;
-                    }
-                    
-                    .inbox-search {
-                        width: 100%;
-                    }
-                    
-                    .inbox-message-item {
-                        padding: var(--space-3);
-                    }
-                    
-                    .inbox-message-preview {
-                        width: 100%;
-                    }
-                    
-                    .page-header-actions {
-                        flex-direction: column;
-                        gap: var(--space-2);
-                    }
-                    
-                    .page-header-actions .btn {
-                        width: 100%;
-                        justify-content: center;
-                    }
+
+                    .inbox-rail { gap: var(--space-2); }
+                    .inbox-rail-nav { width: 100%; }
+                    .inbox-rail-item { flex: 1; justify-content: center; gap: var(--space-2); padding: var(--space-2); }
+                    .inbox-rail-filters { width: 100%; min-width: 0; flex-wrap: wrap; }
+
+                    .inbox-toolbar { padding: var(--space-2) var(--space-3); }
+                    .inbox-group-header { padding: var(--space-3) var(--space-3) var(--space-2); }
+                    .inbox-row { padding: var(--space-3); gap: var(--space-2); }
+
+                    /* En pantalla angosta el adelanto baja a su propia línea: el
+                       asunto completo pesa más que ver dos palabras del cuerpo.
+                       Cada línea se corta con puntos suspensivos en vez de
+                       envolverse, para que todas las filas midan lo mismo. */
+                    .inbox-row-line { flex-wrap: wrap; }
+                    .inbox-row-subject { flex: 1 1 0; min-width: 0; max-width: 100%; }
+                    .inbox-row-preview { flex: 0 0 100%; white-space: nowrap; }
+                    .inbox-row-dash { display: none; }
+
+                    .inbox-detail-content { padding: var(--space-4); }
+                }
+
+                @media (max-width: 380px) {
+                    .inbox-rail-item span:not(.inbox-rail-count) { display: none; }
                 }
             `}</style>
         </>

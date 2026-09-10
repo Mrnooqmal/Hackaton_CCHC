@@ -77,10 +77,11 @@ export const inboxApi = {
     getMessage: (messageId: string, userId: string) =>
         apiRequest<InboxMessage>(`/inbox/${messageId}?userId=${userId}`),
 
-    markAsRead: (messageId: string, userId: string) =>
+    /** `read: false` desmarca el mensaje (volver a no leído). */
+    markAsRead: (messageId: string, userId: string, read: boolean = true) =>
         apiRequest<{ message: string }>(`/inbox/${messageId}/read`, {
             method: 'PUT',
-            body: JSON.stringify({ userId }),
+            body: JSON.stringify({ userId, read }),
         }),
 
     markAllAsRead: (userId: string) =>

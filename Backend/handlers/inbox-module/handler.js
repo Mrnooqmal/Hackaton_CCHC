@@ -122,8 +122,8 @@ async function markAsRead(request) {
     try {
         const { messageId } = request.params;
         const body = parseBody(request.event);
-        const { userId } = body;
-        const result = await inboxRepo.markAsRead(messageId, userId);
+        const { userId, read } = body;
+        const result = await inboxRepo.markAsRead(messageId, userId, read);
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
