@@ -182,23 +182,9 @@ const DEFINICIONES_ESTRUCTURA = [
                 : { estado: E.PARCIAL, detalle: `${realizadas.length - conActa} reunión(es) realizada(s) sin acta.` };
         },
     },
-    {
-        id: 'FUF-37', item: 37, ambito: 'ambos',
-        titulo: 'Documentación preventiva entregada al comité',
-        evaluar: (ctx) => {
-            const obligatorio = ctx.obligaciones?.[EP.TIPO_ORGANO.COMITE_PARITARIO]?.obligatorio;
-            const bloqueo = sinOrgano(ctx, EP.TIPO_ORGANO.COMITE_PARITARIO, obligatorio);
-            if (bloqueo) return bloqueo;
-            // Este encargo solo garantiza que el comité EXISTA y sea consultable
-            // como destinatario asignable. La distribución documental y su acuse
-            // son de otro encargo (sección 7).
-            const o = vigente(ctx, EP.TIPO_ORGANO.COMITE_PARITARIO);
-            const integrantes = (ctx.miembros || []).filter((m) => m.organoId === o.organoId).length;
-            return integrantes > 0
-                ? { estado: E.CUMPLIDO, detalle: `Comité consultable como destinatario, con ${integrantes} integrante(s).` }
-                : { estado: E.PARCIAL, detalle: 'Comité constituido sin integrantes registrados.' };
-        },
-    },
+    // El ítem 37 vive en `completitud-documental.js`: se acredita con la
+    // constancia de entrega al comité, no con la existencia del órgano. Antes
+    // estaba acá y podía marcar cumplimiento sin que se hubiera entregado nada.
     {
         id: 'FUF-36', item: 36, ambito: 'ambos', tipos: ['COMUNICACION_ACUERDOS_CPHS'],
         titulo: 'Acuerdos comunicados por escrito a la entidad empleadora',

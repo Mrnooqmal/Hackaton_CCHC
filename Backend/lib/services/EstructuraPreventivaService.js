@@ -617,14 +617,35 @@ class EstructuraPreventivaService {
         // acá para que las definiciones sigan siendo funciones puras del contexto.
         const prescripciones = await this.listarPrescripciones(tenantId, { obraId, ahora }).catch(() => []);
 
+        // Documentos DEL ÁMBITO.
+        //
+        // El handler entrega todos los del tenant. En una obra eso significaba que
+        // el PTP de otra faena daba por cumplido el de ésta, porque las
+        // definiciones buscan por tipo y no por obra. Se acota acá, en el único
+        // lugar por el que pasan el panel, el repositorio y el export.
+        //
+        // Los documentos SIN obra se conservan siempre: el Reglamento Interno es de
+        // la entidad empleadora y acredita igual dentro de la obra.
+        const documentosAcotados = C.documentosDelAmbito(documentos, ambito, obraId);
+
         const ctx = {
             ahora,
             dotacion: resumen.dotacion.dotacion,
             obligaciones: resumen.obligaciones,
             organos: completos.filter(Boolean),
-            miembros, reuniones, documentos,
+            miembros, reuniones,
+            documentos: documentosAcotados,
+            // Todos los del tenant, sin acotar. Los usa SOLO el ítem 1: el sistema
+            // de gestión es de la entidad y abarca sus lugares de trabajo, así que
+            // su componente de planificación se cumple con la MIPER y el programa
+            // de las obras, sin exigir una copia a nivel casa matriz.
+            documentosTenant: documentos || [],
+            obraId,
             prescripciones,
             organizacionesSindicales: reglas.organizacionesSindicales || [],
+            // El ítem 9 verifica la aprobación del PTP contra la firma de esta
+            // persona. Vive a nivel empresa: la representación es una sola.
+            representanteLegal: reglas.representanteLegal || null,
             sinOrganizacionesSindicales: reglas.sinOrganizacionesSindicales || null,
             limiteRegistroDT,
         };

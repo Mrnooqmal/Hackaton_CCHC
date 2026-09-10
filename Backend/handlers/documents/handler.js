@@ -103,6 +103,10 @@ const DOCUMENT_TYPES = {
     CERTIFICADO_CAPACITACION_ENCARGADO: 'Certificado de capacitacion del encargado de gestion del riesgo (Art. 65)',
     REGISTRO_SEREMI_EXPERTO: 'Registro en la Seremi de Salud del experto del Departamento de Prevencion (Art. 55)',
     DESIGNACION_ENCARGADO_RIESGO: 'Designacion del encargado en materia de gestion del riesgo (Art. 65)',
+    // FUF 37 / Art. 46 inc. 3. Es la CONSTANCIA de la entrega, no la
+    // documentación entregada: el sistema no abre los archivos ni verifica qué
+    // contienen. Se pueden registrar varias entregas, una por documento.
+    ENTREGA_DOCUMENTACION_CPHS: 'Constancia de entrega de documentacion preventiva al comite (Art. 46)',
     PROGRAMA_TRABAJO_CPHS: 'Programa de trabajo del Comite Paritario (Art. 47)',
     // --- Sistema de Gestion de SST (item 1, Art. 22) ---
     // Los literales d) y e) del Art. 22 no tenian dueno: la evaluacion del

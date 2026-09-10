@@ -252,6 +252,31 @@ test('ítem 1: los cinco literales viajan con el requisito', () => {
     assert.ok(r.subrequisitos.every((c) => c.titulo && c.estado));
 });
 
+test('ítem 1: el literal c) se cumple con la MIPER y el programa de las obras', () => {
+    // El sistema de gestión es de la entidad y abarca sus lugares de trabajo.
+    // Pedir una copia a nivel casa matriz sería exigir un documento que la norma
+    // no manda hacer; por eso este componente mira todo el tenant.
+    const deObra = (tipo) => ({ documentId: tipo, tipo, s3Key: `${tipo}.pdf`, version: 1, obraId: 'obra-A' });
+    const comps = componentesSgsst({
+        ahora: AHORA,
+        documentos: [],                                    // nada a nivel empresa
+        documentosTenant: [deObra('MIPER'), deObra('PROGRAMA_TRABAJO_PREVENTIVO')],
+        obligaciones: {}, organos: [],
+    });
+    assert.equal(comps.find((c) => c.clave === 'c').estado, E.CUMPLIDO);
+});
+
+test('ítem 1: los demás literales NO miran los documentos de las obras', () => {
+    // La Política es de la entidad: una cargada dentro de una obra no la acredita.
+    const comps = componentesSgsst({
+        ahora: AHORA,
+        documentos: [],
+        documentosTenant: [{ documentId: 'p', tipo: 'POLITICA_SSO', s3Key: 'p.pdf', version: 1, obraId: 'obra-A' }],
+        obligaciones: {}, organos: [],
+    });
+    assert.equal(comps.find((c) => c.clave === 'a').estado, E.PENDIENTE);
+});
+
 // ─── Ítem 58 ─────────────────────────────────────────────────────────────────
 
 const presc = (over = {}) => ({

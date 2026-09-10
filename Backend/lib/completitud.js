@@ -115,18 +115,49 @@ function estadoPorDocumento(doc, { exigeFirma = false, fechaLimite = null, ahora
 // ─── Evaluación ──────────────────────────────────────────────────────────────
 
 /**
+ * Documentos que acreditan requisitos DE ESTE ÁMBITO.
+ *
+ * Las definiciones buscan evidencia por TIPO, no por obra, así que sin acotar
+ * antes cada ámbito se cumplía con papeles ajenos: la obra Norte daba por bueno
+ * el Programa de Trabajo de la obra Sur, y la entidad empleadora daba por bueno
+ * el de cualquiera de las dos.
+ *
+ * La regla es la misma en los dos sentidos: cada ámbito se acredita con lo suyo.
+ *   - Obra: sus documentos MÁS los de la entidad, porque el Reglamento Interno se
+ *     carga una vez y rige en todas las faenas.
+ *   - Entidad empleadora: solo los suyos. Los de una obra tienen su propio panel
+ *     y prestarlos acá deja en verde el lugar de trabajo de la casa matriz.
+ */
+function documentosDelAmbito(documentos, ambito, obraId = null) {
+    const lista = documentos || [];
+    return ambito === 'obra'
+        ? lista.filter((d) => !d.obraId || d.obraId === obraId)
+        : lista.filter((d) => !d.obraId);
+}
+
+/**
  * Evalúa una lista de definiciones de requisito contra un contexto.
  *
  * Una definición es `{ id, item, bloque, titulo, ambito, evaluar(ctx) }`, donde
  * `evaluar` devuelve `{ estado, detalle }`. Cada módulo aporta las suyas: el motor
  * no conoce el dominio de nadie, solo normaliza y agrega. Eso es lo que permite
  * que el panel y el export lean exactamente lo mismo.
+ *
+ * Una definición con `agregado: true` no tiene evidencia propia: se responde
+ * mirando cómo quedó el resto del formulario (el ítem 60). Ésas corren en una
+ * SEGUNDA pasada y reciben los requisitos ya resueltos como segundo argumento,
+ * sin incluirse a sí mismas: un ítem que se mira al espejo se daría por cumplido
+ * solo.
  */
 function evaluarCompletitud(definiciones, ctx = {}) {
-    const evaluados = (definiciones || []).map((def) => {
+    const todas = definiciones || [];
+    const directas = todas.filter((d) => !d.agregado);
+    const agregadas = todas.filter((d) => d.agregado);
+
+    const evaluar = (def, previos) => {
         let resultado;
         try {
-            resultado = def.evaluar ? def.evaluar(ctx) : { estado: ESTADO_REQUISITO.PENDIENTE };
+            resultado = def.evaluar ? def.evaluar(ctx, previos) : { estado: ESTADO_REQUISITO.PENDIENTE };
         } catch (err) {
             // Un requisito que revienta no puede dar por cumplido el conjunto ni
             // tumbar el panel entero: se reporta como pendiente con el motivo.
@@ -163,7 +194,14 @@ function evaluarCompletitud(definiciones, ctx = {}) {
                 ? (resultado?.detalle || 'No exigible a este ámbito.')
                 : null,
         };
-    });
+    };
+
+    const directos = directas.map((def) => evaluar(def, null));
+    // Los agregados leen el resultado de los demás, ya limpio de lo que no se
+    // emite: preguntar por lo que la plataforma no cubre los dejaría en rojo por
+    // algo que no se puede resolver desde acá.
+    const visiblesDirectos = directos.filter((r) => r.estado !== ESTADO_REQUISITO.FUERA_DE_ALCANCE);
+    const evaluados = [...directos, ...agregadas.map((def) => evaluar(def, visiblesDirectos))];
 
     // Lo que la plataforma NO cubre no se devuelve.
     //
@@ -230,6 +268,6 @@ function agruparPorBloque(requisitos) {
 
 module.exports = {
     ESTADO_REQUISITO, ESTADOS_NO_PENALIZAN, BLOQUE_FUF, bloqueDeItem,
-    tieneArchivo, firmasPendientes, estadoPorDocumento,
+    tieneArchivo, firmasPendientes, estadoPorDocumento, documentosDelAmbito,
     evaluarCompletitud, resumirCompletitud, agruparPorBloque,
 };
