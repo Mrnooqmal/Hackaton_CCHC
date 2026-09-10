@@ -29,6 +29,33 @@ const { docClient } = require('../../lib/clients/dynamodb');
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 
 /** Documentos del tenant. La completitud los necesita para los ítems 38, 46 y 47. */
+const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE || 'Activities';
+
+/**
+ * Actividades del tenant.
+ *
+ * Varios requisitos NO se acreditan con un PDF: la capacitación de 8 horas del
+ * Art. 16 y la de EPP del Art. 13 son actividades ejecutadas con asistentes
+ * firmados. Sin esto el motor no las veía y marcaba pendientes obras que sí
+ * habían capacitado.
+ */
+const listarActividadesTenant = async (tenantId) => {
+    try {
+        const res = await docClient.send(new QueryCommand({
+            TableName: ACTIVITIES_TABLE,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :t',
+            ExpressionAttributeValues: { ':t': tenantId },
+        }));
+        return res.Items || [];
+    } catch (err) {
+        // Que falte el índice o la tabla no puede tumbar el panel entero: se
+        // reporta y los requisitos por actividad quedan pendientes, no en verde.
+        console.error('[estructura] no se pudieron leer las actividades:', err.message);
+        return [];
+    }
+};
+
 const listarDocumentosTenant = async (tenantId) => {
     try {
         const res = await docClient.send(new QueryCommand({
@@ -53,14 +80,28 @@ const listarDocumentosTenant = async (tenantId) => {
  * la pantalla podían decir cosas distintas del mismo requisito. Con un solo
  * armado eso no puede volver a pasar.
  */
-const armarCompletitud = async (tenantId, ambito, obraId) => {
-    const [personas, documentos, tenant, obra] = await Promise.all([
+/**
+ * Lo que NO depende del ámbito: personas, documentos, actividades y el tenant.
+ *
+ * Se aísla para poder evaluar varias obras compartiendo estas consultas. Sin
+ * esto, el resumen del panel principal repetía cuatro lecturas por obra.
+ */
+const contextoDelTenant = async (tenantId) => {
+    const [personas, documentos, actividades, tenant] = await Promise.all([
         personaService.listByTenant(tenantId).catch(() => []),
         listarDocumentosTenant(tenantId),
+        listarActividadesTenant(tenantId),
         tenantService.getById(tenantId).catch(() => null),
+    ]);
+    return { personas, documentos, actividades, tenantSafe: tenant ? tenant.toSafeFormat() : null };
+};
+
+const armarCompletitud = async (tenantId, ambito, obraId) => {
+    const [base, obra] = await Promise.all([
+        contextoDelTenant(tenantId),
         obraId ? obraService.getById(obraId).catch(() => null) : Promise.resolve(null),
     ]);
-    const tenantSafe = tenant ? tenant.toSafeFormat() : null;
+    const { personas, documentos, actividades, tenantSafe } = base;
 
     const completitud = await estructuraService.completitudAmbito({
         tenantId, ambito, obraId, personas, documentos,
@@ -68,7 +109,8 @@ const armarCompletitud = async (tenantId, ambito, obraId) => {
             ? (obra?.dotacionDeclarada ?? null)
             : (tenantSafe?.cantidadTrabajadores || null),
         reglas: tenantSafe?.reglas || {},
-        faenaCompartida: obra?.faenaCompartida ?? null,
+        actividades,
+        obra,
     });
     return { completitud, tenantSafe, obra };
 };
@@ -173,6 +215,52 @@ module.exports.estructuraHandler = async (event) => {
 
             const { completitud } = await armarCompletitud(tenantId, ambito, obraId);
             return success(completitud);
+        }
+
+        // ── GET /estructura/completitud/resumen ──────────────────────────────
+        //
+        // Avance de TODAS las obras del tenant, más el de la entidad, en una sola
+        // pasada. El panel principal lo calculaba por su cuenta contando documentos
+        // de una lista propia: dos números para lo mismo, y el de la portada era el
+        // que no coincidía con el del formulario.
+        //
+        // Comparte las consultas pesadas entre obras: sin esto serían cuatro
+        // lecturas del tenant por cada faena.
+        if (method === 'GET' && recurso === 'completitud' && organoId === 'resumen') {
+            const base = await contextoDelTenant(tenantId);
+            const obras = await obraService.listByTenant(tenantId).catch(() => []);
+
+            const evaluar = (ambito, obra) => estructuraService.completitudAmbito({
+                tenantId, ambito,
+                obraId: obra?.obraId || null,
+                personas: base.personas,
+                documentos: base.documentos,
+                actividades: base.actividades,
+                dotacionDeclarada: obra
+                    ? (obra.dotacionDeclarada ?? null)
+                    : (base.tenantSafe?.cantidadTrabajadores || null),
+                reglas: base.tenantSafe?.reglas || {},
+                obra: obra || null,
+            });
+
+            const soloResumen = (c) => ({
+                progreso: c.resumen.progreso,
+                cumplidos: c.resumen.cumplidos,
+                exigibles: c.resumen.exigibles,
+                excluidos: c.resumen.excluidos,
+            });
+
+            const [empresa, ...porObra] = await Promise.all([
+                evaluar(EP.AMBITO.EMPRESA, null),
+                ...obras.map((o) => evaluar(EP.AMBITO.OBRA, o)),
+            ]);
+
+            return success({
+                empresa: soloResumen(empresa),
+                obras: Object.fromEntries(
+                    obras.map((o, i) => [o.obraId, soloResumen(porObra[i])])
+                ),
+            });
         }
 
         // ── GET /estructura/completitud/export ───────────────────────────────

@@ -595,7 +595,7 @@ class EstructuraPreventivaService {
      */
     async completitudAmbito({
         tenantId, ambito, obraId = null, personas = [], documentos = [],
-        dotacionDeclarada = null, reglas = {}, faenaCompartida = null, ahora = new Date(),
+        dotacionDeclarada = null, reglas = {}, actividades = [], obra = null, ahora = new Date(),
     }) {
         const resumen = await this.resumenAmbito({
             tenantId, ambito, obraId, personas, dotacionDeclarada, ahora,
@@ -650,9 +650,19 @@ class EstructuraPreventivaService {
             // El ítem 9 verifica la aprobación del PTP contra la firma de esta
             // persona. Vive a nivel empresa: la representación es una sola.
             representanteLegal: reglas.representanteLegal || null,
-            // Art. 20: la coordinación solo es exigible si concurren varias
-            // entidades. El sistema no lo puede deducir, lo declara la obra.
-            faenaCompartida: faenaCompartida ?? null,
+            // Actividades ejecutadas: son la evidencia de los ítems 18, 19 y 23,
+            // que no se acreditan con un documento sino con el acta de la
+            // capacitación y sus asistentes firmados.
+            actividades: (actividades || []).filter(
+                (a) => !obraId || !a.obraId || a.obraId === obraId),
+            // Lo que la obra declara sobre sí misma decide qué requisitos le
+            // corresponden: maquinaria (Art. 10), agentes (Art. 2) y faena
+            // compartida (Art. 20).
+            obra: obra ? {
+                faenaCompartida: obra.faenaCompartida,
+                tieneMaquinaria: obra.tieneMaquinaria,
+                agentesFQB: obra.agentesFQB,
+            } : {},
             sinOrganizacionesSindicales: reglas.sinOrganizacionesSindicales || null,
             limiteRegistroDT,
         };

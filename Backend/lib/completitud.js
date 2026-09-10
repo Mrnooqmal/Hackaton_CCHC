@@ -48,6 +48,7 @@ const ESTADOS_NO_PENALIZAN = new Set([ESTADO_REQUISITO.NO_APLICA, ESTADO_REQUISI
  * acá sola.
  */
 const { SECCIONES_FUF, seccionDeItem } = require('./fuf');
+const A = require('./aplicabilidad');
 
 const BLOQUE_FUF = Object.fromEntries(
     SECCIONES_FUF.map((s) => [`S${s.numero}`, s.nombre])
@@ -157,7 +158,29 @@ function evaluarCompletitud(definiciones, ctx = {}) {
     const evaluar = (def, previos) => {
         let resultado;
         try {
-            resultado = def.evaluar ? def.evaluar(ctx, previos) : { estado: ESTADO_REQUISITO.PENDIENTE };
+            // La condición se resuelve ANTES de evaluar. Un requisito que no
+            // corresponde a la obra no se pregunta: exigirle un procedimiento de
+            // maquinaria a una obra sin maquinaria es un rojo que nadie puede
+            // cerrar. Y si falta el dato para decidir, se evalúa igual y se avisa:
+            // suponer que no aplica es como se pierde una obligación.
+            const aplicabilidad = def.condicion
+                ? A.evaluarAplicabilidad(def.condicion, ctx)
+                : A.APLICABILIDAD.APLICA;
+
+            if (aplicabilidad === A.APLICABILIDAD.NO_APLICA) {
+                resultado = {
+                    estado: ESTADO_REQUISITO.NO_APLICA,
+                    detalle: A.RAZON_NO_APLICA[def.condicion] || 'No corresponde a esta obra.',
+                };
+            } else {
+                resultado = def.evaluar ? def.evaluar(ctx, previos) : { estado: ESTADO_REQUISITO.PENDIENTE };
+                if (aplicabilidad === A.APLICABILIDAD.VERIFICAR && resultado?.estado === ESTADO_REQUISITO.PENDIENTE) {
+                    resultado = {
+                        ...resultado,
+                        detalle: `${A.RAZON_VERIFICAR[def.condicion]} ${resultado.detalle || ''}`.trim(),
+                    };
+                }
+            }
         } catch (err) {
             // Un requisito que revienta no puede dar por cumplido el conjunto ni
             // tumbar el panel entero: se reporta como pendiente con el motivo.
@@ -186,6 +209,16 @@ function evaluarCompletitud(definiciones, ctx = {}) {
             // (el Art. 22 del ítem 1). Se calculan al evaluar y viajan para que el
             // repositorio muestre el desglose sin volver a resolverlo.
             subrequisitos: resultado?.subrequisitos || null,
+            // Cómo se puede acreditar un requisito que admite dos vías: agendar la
+            // actividad en la plataforma o cargar el certificado de una dictada
+            // fuera. Viaja para que la pantalla ofrezca ambas sin deducir nada.
+            acreditacion: resultado?.acreditacion || null,
+            // Qué declaración de la obra decide si este requisito corresponde, y
+            // cómo quedó esa decisión. Viaja para que la pantalla pueda PEDIR el
+            // dato cuando falta: sin esto, un requisito en `verificar` se quedaría
+            // ahí para siempre porque nadie sabría qué preguntar.
+            condicion: def.condicion || null,
+            aplicabilidad: def.condicion ? A.evaluarAplicabilidad(def.condicion, ctx) : null,
             estado: resultado?.estado || ESTADO_REQUISITO.PENDIENTE,
             detalle: resultado?.detalle || null,
             // Justificación normativa del NoAplica: el indice del expediente la

@@ -30,59 +30,6 @@ export const DS44_PHASE_LABELS: Record<string, string> = {
     actuar: 'ACTUAR'
 };
 
-// ─── FASE PLAN — 5 documentos obligatorios ────────────────────────────────────
-export const DS44_PLAN_DOCS: Ds44DocDefinition[] = [
-    {
-        key: 'POLITICA_SSO',
-        tipos: ['POLITICA_SSO'],
-        titulo: 'Política de SST',
-        estadoFirma: 'Representante Legal'
-    },
-    {
-        key: 'DIAGNOSTICO_LEGAL',
-        tipos: ['DIAGNOSTICO_LEGAL'],
-        titulo: 'Matriz Legal aplicable',
-        estadoFirma: 'Prevencionista'
-    },
-    {
-        key: 'MIPER',
-        tipos: ['MIPER', 'MATRIZ_MIPPER'],
-        titulo: 'MIPER — Identificación de Peligros y Evaluación de Riesgos',
-        estadoFirma: 'Prevencionista + Jefe de Obra'
-    },
-    {
-        key: 'MAPA_RIESGOS',
-        tipos: ['MAPA_RIESGOS'],
-        titulo: 'Mapa de Riesgos',
-        estadoFirma: 'Jefe de Obra'
-    },
-    {
-        key: 'REGLAMENTO_INTERNO',
-        tipos: ['REGLAMENTO_INTERNO'],
-        titulo: 'Reglamento Interno (RIHS/RIOHS)',
-        estadoFirma: 'Jefe de Obra'
-    },
-    {
-        // Plan de Emergencias: documento BASE de la obra (específico del sitio,
-        // se sube una vez por obra). Antes vivía en el kit por-cargo; se movió aquí.
-        key: 'PLAN_EMERGENCIAS',
-        tipos: ['PLAN_EMERGENCIAS'],
-        titulo: 'Plan de Emergencias de la Obra',
-        estadoFirma: 'Jefe de Obra',
-        multiple: true
-    },
-    {
-        // Programa de Trabajo Preventivo (Art. 8): lo redacta la empresa a partir
-        // de la MIPER y se sube acá. Su aprobación es la firma del representante
-        // legal sobre este documento; el seguimiento de las medidas que compromete
-        // vive aparte, en obra.ptp (ver utils/ptp.ts).
-        key: 'PROGRAMA_TRABAJO_PREVENTIVO',
-        tipos: ['PROGRAMA_TRABAJO_PREVENTIVO'],
-        titulo: 'Programa de Trabajo Preventivo',
-        estadoFirma: 'Representante Legal'
-    }
-];
-
 // ─── FASE DO — Documento formal de nivel obra (Art. 72) ───────────────────────
 export const DS44_DO_OBRA_DOC: Ds44DocDefinition = {
     key: 'REGISTRO_ACTIVIDAD',
@@ -249,20 +196,6 @@ export const DS44_DO_PROCEDIMIENTOS: Ds44DoElemento[] = [
     { key: 'CONSULTA_REPRESENTANTES', tipo: 'CONSULTA_REPRESENTANTES', titulo: 'Consulta y participación de trabajadores', articulo: 'Arts. 17, 37, 71', fuente: 'documento', condicion: 'siempre', cuenta: true }
 ];
 
-// B) CAPACITACIONES — se modelan como ACTIVIDADES (ActivitiesTable), NO PDF.
-// El estado se lee de actividades ejecutadas con asistentes firmados.
-// El match con ActivitiesTable es por `subtipo` exacto (no por palabras del titulo).
-export const DS44_DO_CAPACITACIONES: Ds44DoElemento[] = [
-    { key: 'CAP_PRL_8H', tipo: 'CAPACITACION', titulo: 'Capacitación 8h Prevención de Riesgos Laborales', articulo: 'Art. 16', fuente: 'actividad', condicion: 'siempre', actividadTipos: ['CAPACITACION'], subtipo: 'PRL_8H', cuenta: true, duracionMinimaMin: 480 },
-    { key: 'CAP_EPP', tipo: 'CAPACITACION', titulo: 'Uso y mantención de EPP (mín. 1h por EPP)', articulo: 'Art. 13', fuente: 'actividad', condicion: 'siempre', actividadTipos: ['CAPACITACION'], subtipo: 'EPP', cuenta: true, duracionMinimaMin: 60 },
-    { key: 'CAP_CPHS_ORIENTACION', tipo: 'CAPACITACION', titulo: 'Curso Orientación CPHS (8h)', articulo: 'Art. 32', fuente: 'actividad', condicion: 'cphs', actividadTipos: ['CAPACITACION'], subtipo: 'CPHS_ORIENTACION', cuenta: true, duracionMinimaMin: 480 },
-    { key: 'CAP_CPHS_20H', tipo: 'CAPACITACION', titulo: 'Curso 20h CPHS', articulo: 'Art. 32', fuente: 'actividad', condicion: 'cphs', actividadTipos: ['CAPACITACION'], subtipo: 'CPHS_20H', cuenta: true, duracionMinimaMin: 1200 },
-    { key: 'CAP_DELEGADO', tipo: 'CAPACITACION', titulo: 'Capacitación Delegado SST', articulo: 'Art. 66', fuente: 'actividad', condicion: 'delegado', actividadTipos: ['CAPACITACION'], subtipo: 'DELEGADO', cuenta: true },
-    { key: 'CAP_ENCARGADO', tipo: 'CAPACITACION', titulo: 'Capacitación Encargado Gestión del Riesgo (la entrega el OA)', articulo: 'Art. 65', fuente: 'actividad', condicion: 'encargado_oa', actividadTipos: ['CAPACITACION'], subtipo: 'ENCARGADO', cuenta: false }
-];
-
-// D) REGISTROS DE GESTIÓN — read-models que leen de modulos existentes.
-// NO cuentan en el % (reflejan datos del sistema, no son documentos a "completar").
 export const DS44_DO_REGISTROS_GESTION: Ds44DoElemento[] = [
     { key: 'REG_INCIDENTES', tipo: 'INCIDENTES', titulo: 'Incidentes / sucesos peligrosos', articulo: 'Art. 73', fuente: 'readmodel', condicion: 'siempre', modulo: '/incidents', accion: 'incidentes' },
     { key: 'REG_INVESTIGACIONES', tipo: 'INVESTIGACIONES', titulo: 'Investigaciones de accidentes y EP', articulo: 'Art. 71', fuente: 'readmodel', condicion: 'siempre', modulo: '/incidents', accion: 'investigaciones' },
@@ -274,42 +207,20 @@ export const DS44_DO_REGISTROS_GESTION: Ds44DoElemento[] = [
     { key: 'REG_ACTAS_CPHS', tipo: 'ACTAS_CPHS', titulo: 'Actas CPHS, acuerdos y entrega de documentación', articulo: 'Arts. 36-46', fuente: 'readmodel', condicion: 'cphs', modulo: '/activities', accion: 'consulta', moduloPendiente: true }
 ];
 
-// C) REGISTROS DE EJECUCIÓN — evidencia documental de que algo se hizo.
-// Se distinguen de los PROCEDIMIENTOS (el texto que la empresa redacta una vez) y
-// de los REGISTROS DE GESTIÓN (read-models que derivan de datos del sistema): acá
-// va el acta o la foto que prueba la ejecución, y esa evidencia solo puede llegar
-// subida por la empresa. La plataforma no la genera; declara el slot, la fecha y
-// la vigencia, y afirma lo verificable sin abrir el archivo.
-// Son `multiple` porque el hecho se repite (un ensayo por año, una reunión de
-// coordinación por mes) y cada ocurrencia se guarda, no se reemplaza.
-export const DS44_DO_REGISTROS_EJECUCION: Ds44DoElemento[] = [
-    // FUF 28. El procedimiento (PLAN_EMERGENCIAS) ya existe y el read-model
-    // REG_ENSAYO_EMERGENCIA detecta la actividad SIMULACRO; lo que falta es el acta
-    // del ensayo, que es lo que pide el fiscalizador. Vence al año (Art. 19: "a lo
-    // menos una vez al año").
-    { key: 'ACTA_ENSAYO_EMERGENCIA', tipo: 'ACTA_ENSAYO_EMERGENCIA', titulo: 'Acta del ensayo del plan de emergencias', articulo: 'Art. 19', fuente: 'documento', condicion: 'siempre', cuenta: true, multiple: true, vigenciaMeses: 12 },
-    // FUF 29. COORDINACION_ENTIDADES cubre el procedimiento; el FUF pide además el
-    // registro de que la coordinación efectivamente ocurrió.
-    { key: 'REGISTRO_COORDINACION', tipo: 'REGISTRO_COORDINACION', titulo: 'Registro de reuniones de coordinación entre empleadores', articulo: 'Art. 20', fuente: 'documento', condicion: 'faena_compartida', cuenta: true, multiple: true },
-    // FUF 53. El Art. 62 no se satisface con tener el mapa: exige que esté publicado
-    // en lugares visibles. Esa evidencia es fotográfica y la levanta la obra.
-    { key: 'PUBLICACION_MAPA_RIESGOS', tipo: 'PUBLICACION_MAPA_RIESGOS', titulo: 'Evidencia de publicación del mapa de riesgos', articulo: 'Art. 62', fuente: 'documento', condicion: 'siempre', cuenta: true, multiple: true, vigenciaMeses: 12 },
-    // FUF 25. CONSULTA_REPRESENTANTES (procedimientos) declara CÓMO se consulta;
-    // el Art. 17 exige además la constancia de cada consulta efectiva al comité o
-    // al delegado ante cambios en los procesos de trabajo.
-    { key: 'REGISTRO_CONSULTA', tipo: 'REGISTRO_CONSULTA', titulo: 'Registro de consulta a los representantes', articulo: 'Art. 17', fuente: 'documento', condicion: 'siempre', cuenta: true, multiple: true }
-];
-
-// Documentos cuya difusión el DS 44 exige explícitamente a los representantes de
-// las personas trabajadoras, no solo a la línea de mando (FUF 4, 11, 49 y 50).
-export const DS44_REQUIEREN_DIFUSION = new Set([
-    'MIPER', 'PROGRAMA_TRABAJO_PREVENTIVO', 'REGLAMENTO_INTERNO', 'POLITICA_SSO',
+/**
+ * Registros de EJECUCIÓN: acreditan que algo ocurrió, así que llevan la fecha del
+ * hecho y no la de carga. Lo usa el modal de creación para pedirla.
+ *
+ * Su exigibilidad ya no vive acá: la evalúa el motor de completitud. Esta lista
+ * solo dice qué tipos necesitan fecha en el formulario de creación.
+ */
+const TIPOS_REGISTRO_EJECUCION = new Set([
+    'ACTA_ENSAYO_EMERGENCIA',
+    'REGISTRO_COORDINACION',
+    'PUBLICACION_MAPA_RIESGOS',
+    'REGISTRO_CONSULTA',
 ]);
 
-// ¿El tipo es un registro de ejecución? Se usa para pedir la FECHA DEL HECHO al
-// subirlo: es la única familia de documentos donde la fecha del acta y la de
-// subida se separan, y contra la primera se mide la vigencia.
-const TIPOS_REGISTRO_EJECUCION = new Set(DS44_DO_REGISTROS_EJECUCION.map((el) => el.tipo));
 export function esRegistroEjecucion(tipo?: string | null): boolean {
     return Boolean(tipo && TIPOS_REGISTRO_EJECUCION.has(tipo));
 }
@@ -340,58 +251,6 @@ export type Ds44FaseDoc = {
     descripcion?: string;
 };
 
-// Documentos de la Fase CHECK. La evaluacion de desempeño es la instancia unica
-// exigida; el informe anual es condicional a >100 trabajadores con Depto. Prev.
-export const DS44_CHECK_DOCS: Ds44FaseDoc[] = [
-    {
-        key: 'EVALUACION_DESEMPENO',
-        tipo: 'EVALUACION_DESEMPENO',
-        titulo: 'Evaluación de desempeño del SGSST',
-        articulo: 'Arts. 14, 22.4',
-        obligatorio: true,
-        descripcion: 'Instancia única exigida por el DS44 (duda experto #7: periodicidad).'
-    },
-    {
-        key: 'INFORME_ANUAL_GESTION',
-        tipo: 'INFORME_ANUAL_GESTION',
-        titulo: 'Informe anual de gestión preventiva',
-        articulo: 'Art. 52.15',
-        obligatorio: false,
-        condicional: 'mas_100_trabajadores',
-        descripcion: 'Solo entidades >100 trabajadores con Departamento de Prevención.'
-    },
-    {
-        key: 'REGISTRO_DESVIACIONES',
-        tipo: 'REGISTRO_DESVIACIONES',
-        titulo: 'Registro de desviaciones / incumplimientos',
-        articulo: 'Fase CHECK',
-        obligatorio: false,
-        descripcion: 'Insumo de la Fase ACT (medidas correctivas).'
-    }
-];
-
-// ─── FASE ACT (ACTUAR — mejora continua) ──────────────────────────────────────
-// ACT consume las desviaciones de CHECK y genera medidas de mejora trazables,
-// que pueden disparar la actualizacion de documentos de PLAN/DO (cierre de ciclo).
-export const DS44_ACT_DOCS: Ds44FaseDoc[] = [
-    {
-        key: 'PLAN_MEJORA',
-        tipo: 'PLAN_MEJORA',
-        titulo: 'Plan de mejora / medidas correctivas',
-        articulo: 'Art. 2.16, Art. 14',
-        obligatorio: true,
-        descripcion: 'Medidas con responsable y plazo, a partir de las desviaciones del CHECK.'
-    }
-];
-
-// Actualizaciones condicionales del ciclo ACT: cada una enlaza a un documento de
-// PLAN/DO que debe revisarse, cerrando el ciclo Deming hacia PLAN.
-// Cada actualización declara su periodicidad máxima cuando el decreto le fija
-// una. `revisionMeses` es lo que permite decir "vencida" en vez de solo listar
-// el título: el Reglamento se revisa al menos cada año (Art. 57 inc. 5) y la
-// capacitación se refuerza al menos cada dos (Art. 16 inc. 1 letra a).
-// La MIPER y el PTP no llevan plazo fijo acá: el suyo depende de un hecho
-// (que cambie la MIPER), y eso lo deriva `estadoPtp`.
 export type Ds44ActActualizacion = {
     key: string;
     titulo: string;

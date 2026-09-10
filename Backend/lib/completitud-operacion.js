@@ -16,6 +16,8 @@
  */
 
 const C = require('./completitud');
+const A = require('./aplicabilidad');
+const ACT = require('./actividades-evidencia');
 
 const { ESTADO_REQUISITO: E } = C;
 
@@ -109,28 +111,147 @@ function evaluarItem6(ctx) {
  * Se separan por lo que se mira, no por el archivo: el 18 mira la fecha, el 19
  * mira las firmas. Pedir dos cargas del mismo hecho sería duplicar evidencia.
  */
+/** Criterio que vincula una actividad con la capacitación de EPP (Art. 13). */
+const CRITERIO_CAP_EPP = {
+    tipos: ['CAPACITACION'], subtipo: 'EPP',
+    titulo: 'Uso y mantención de EPP (mín. 1h por EPP)',
+};
+
+/** Criterio de la capacitación de 8 horas (Art. 16). */
+const CRITERIO_CAP_PRL = {
+    tipos: ['CAPACITACION'], subtipo: 'PRL_8H',
+    titulo: 'Capacitación 8h Prevención de Riesgos Laborales',
+};
+
+/**
+ * Bloque que la interfaz necesita para ofrecer las DOS vías: agendar la actividad
+ * o cargar el certificado. Viaja dentro del requisito, como el desglose de
+ * remisión, para que la pantalla no tenga que deducir nada.
+ */
+const bloqueAcreditacion = (r, criterio, tipos) => ({
+    via: r.via,
+    criterio: { subtipo: criterio.subtipo, titulo: criterio.titulo, tipos: criterio.tipos },
+    tipos,
+    actividades: (r.actividades || []).map((a) => ({
+        actividadId: a.actividadId || a.id || null,
+        titulo: a.titulo || null,
+        estado: a.estado || null,
+        fecha: a.fechaEjecucion || a.fecha || a.fechaProgramada || null,
+        asistentes: (a.asistentes || []).length,
+        firmados: (a.asistentes || []).filter((x) => x.firmado || x.fechaFirma).length,
+    })),
+    documentos: (r.documentos || []).map((d) => d.documentId),
+});
+
 function evaluarItem18(ctx) {
-    const doc = vigenteDeTipo(ctx, 'CAPACITACION_EPP');
-    if (!doc) return { estado: E.PENDIENTE, detalle: 'Sin registro de capacitación en uso y mantención de EPP.' };
-    return fechaDelHecho(doc)
-        ? { estado: E.CUMPLIDO, detalle: `Capacitación registrada el ${String(fechaDelHecho(doc)).slice(0, 10)}.` }
-        : { estado: E.PARCIAL, detalle: 'Capacitación cargada sin fecha.' };
+    // Dos vías: la actividad agendada en la plataforma, o el certificado de una
+    // capacitación dictada fuera. Cualquiera acredita.
+    const r = ACT.acreditacionDual({
+        actividades: ctx.actividades, documentos: ctx.documentos,
+        criterio: CRITERIO_CAP_EPP, tipos: ['CAPACITACION_EPP'],
+    });
+    const acreditacion = bloqueAcreditacion(r, CRITERIO_CAP_EPP, ['CAPACITACION_EPP']);
+
+    if (r.completo) {
+        return {
+            estado: E.CUMPLIDO, acreditacion,
+            detalle: r.via === 'actividad'
+                ? 'Capacitación en EPP ejecutada con asistentes firmados.'
+                : 'Capacitación en EPP acreditada con el certificado cargado.',
+        };
+    }
+    if (r.parcial) {
+        return {
+            estado: E.PARCIAL, acreditacion,
+            detalle: `Capacitación en EPP agendada: ${ACT.motivoIncompleto(r.actividades[0])}.`,
+        };
+    }
+    return {
+        estado: E.PENDIENTE, acreditacion,
+        detalle: 'Sin capacitación en uso y mantención de EPP: agéndala o carga el certificado.',
+    };
 }
 
 function evaluarItem19(ctx) {
-    const doc = vigenteDeTipo(ctx, 'CAPACITACION_EPP');
-    if (!doc) return { estado: E.PENDIENTE, detalle: 'Sin registro de las capacitaciones en EPP (ítem 18).' };
+    // Art. 13 inc. 4: el REGISTRO de esas capacitaciones. Mismo hecho que el ítem
+    // 18, mirando otra cosa: que conste quién asistió. Con la actividad son los
+    // asistentes firmados; con el certificado, las asignaciones del documento.
+    const r = ACT.acreditacionDual({
+        actividades: ctx.actividades, documentos: ctx.documentos,
+        criterio: CRITERIO_CAP_EPP, tipos: ['CAPACITACION_EPP'],
+    });
+    const acreditacion = bloqueAcreditacion(r, CRITERIO_CAP_EPP, ['CAPACITACION_EPP']);
 
-    const asignaciones = doc.asignaciones || [];
-    if (asignaciones.length === 0) {
-        // El inciso 4 pide constancia de QUIÉNES se capacitaron. Un acta sin
-        // asistentes asignados no la deja.
-        return { estado: E.PARCIAL, detalle: 'Registro cargado sin asistentes asignados: no consta quién se capacitó.' };
+    if (r.via === 'actividad') {
+        const total = r.actividades.reduce((n, a) => n + (a.asistentes || []).length, 0);
+        const firmados = r.actividades.reduce(
+            (n, a) => n + (a.asistentes || []).filter((x) => x.firmado || x.fechaFirma).length, 0);
+        if (total === 0) {
+            return { estado: E.PARCIAL, acreditacion, detalle: 'Capacitación sin asistentes: no consta quién se capacitó.' };
+        }
+        return firmados === total
+            ? { estado: E.CUMPLIDO, acreditacion, detalle: `${total} asistente(s) con constancia firmada.` }
+            : { estado: E.PARCIAL, acreditacion, detalle: `${firmados} de ${total} asistente(s) con constancia firmada.` };
     }
-    const firmadas = asignaciones.filter((a) => a.estado === 'firmado' || a.fechaFirma).length;
-    return firmadas === asignaciones.length
-        ? { estado: E.CUMPLIDO, detalle: `${firmadas} asistente(s) con constancia firmada.` }
-        : { estado: E.PARCIAL, detalle: `${firmadas} de ${asignaciones.length} asistente(s) con constancia firmada.` };
+
+    if (r.via === 'documento') {
+        const doc = r.documentos[0];
+        const asignaciones = doc.asignaciones || [];
+        if (asignaciones.length === 0) {
+            // El inciso 4 pide constancia de QUIÉNES se capacitaron. Un certificado
+            // sin asistentes asignados no la deja.
+            return { estado: E.PARCIAL, acreditacion, detalle: 'Certificado cargado sin asistentes asignados: no consta quién se capacitó.' };
+        }
+        const firmadas = asignaciones.filter((a) => a.estado === 'firmado' || a.fechaFirma).length;
+        return firmadas === asignaciones.length
+            ? { estado: E.CUMPLIDO, acreditacion, detalle: `${firmadas} asistente(s) con constancia firmada.` }
+            : { estado: E.PARCIAL, acreditacion, detalle: `${firmadas} de ${asignaciones.length} asistente(s) con constancia firmada.` };
+    }
+
+    return { estado: E.PENDIENTE, acreditacion, detalle: 'Sin registro de capacitaciones en EPP (ítem 18).' };
+}
+
+// ─── Ítem 23: capacitación en prevención de riesgos ──────────────────────────
+
+/** Art. 16 inc. 1: la capacitación no puede espaciarse más de 2 años. */
+const ANIOS_CAPACITACION = 2;
+
+/**
+ * La capacitación de 8 horas del Art. 16 es una ACTIVIDAD ejecutada, no un
+ * documento: la puede dictar un OAL externo y lo que acredita es el acta con
+ * asistentes firmados y las horas declaradas.
+ *
+ * Se mira la fecha del HECHO —cuándo se dictó— y no la de carga, porque es contra
+ * ésa que corren los dos años.
+ */
+function evaluarItem23(ctx) {
+    const r = ACT.acreditacionDual({
+        actividades: ctx.actividades, documentos: ctx.documentos,
+        criterio: CRITERIO_CAP_PRL, tipos: ['CAPACITACION_SST'],
+    });
+    const acreditacion = bloqueAcreditacion(r, CRITERIO_CAP_PRL, ['CAPACITACION_SST']);
+
+    if (!r.completo) {
+        return r.parcial
+            ? { estado: E.PARCIAL, acreditacion, detalle: `Capacitación agendada: ${ACT.motivoIncompleto(r.actividades[0])}.` }
+            : { estado: E.PENDIENTE, acreditacion, detalle: 'Sin capacitación en prevención de riesgos: agéndala o carga el certificado.' };
+    }
+
+    // La fecha del HECHO, sea de la actividad o del documento: es contra ésa que
+    // corren los dos años, no contra la de carga.
+    const fechas = [
+        ...r.actividades.map((a) => a.fechaEjecucion || a.fecha || a.fechaProgramada),
+        ...r.documentos.map(fechaDelHecho),
+    ].filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
+
+    const meses = mesesDesde(fechas[0], ctx.ahora);
+    if (meses === null) {
+        return { estado: E.CUMPLIDO, acreditacion, detalle: 'Capacitación acreditada.' };
+    }
+    const limite = ANIOS_CAPACITACION * 12;
+    return meses > limite
+        ? { estado: E.VENCIDO, acreditacion, detalle: `La última capacitación tiene ${Math.floor(meses)} meses; el Art. 16 admite hasta ${limite}.` }
+        : { estado: E.CUMPLIDO, acreditacion, detalle: `Última capacitación hace ${Math.floor(meses)} mes(es).` };
 }
 
 // ─── Ítem 29: coordinación en faena compartida ───────────────────────────────
@@ -138,26 +259,18 @@ function evaluarItem19(ctx) {
 /**
  * Art. 20. Solo es exigible cuando concurren varias entidades empleadoras en la
  * misma faena, y eso el sistema no lo puede deducir: lo declara quien administra
- * la obra, igual que la ausencia de organizaciones sindicales.
+ * la obra.
  *
- * Sin declaración NO se deja pendiente: sería un incumplimiento imposible de
- * cerrar para las obras donde no concurre nadie más.
+ * La condición ya no se resuelve acá: la aplica el motor con la misma regla que
+ * el resto de los requisitos condicionados. Esta función solo mira la evidencia.
  *
  * NO modela contratistas ni terceros. Solo registra el documento de coordinación.
  */
 function evaluarItem29(ctx) {
     const doc = primeroDe(ctx, ['COORDINACION_ENTIDADES', 'REGISTRO_COORDINACION']);
-    if (doc) return { estado: E.CUMPLIDO, detalle: 'Documento de coordinación entre entidades cargado.' };
-
-    if (ctx.faenaCompartida === true) {
-        return { estado: E.PENDIENTE, detalle: 'La obra se declaró como faena compartida y falta el documento de coordinación.' };
-    }
-    return {
-        estado: E.NO_APLICA,
-        detalle: ctx.faenaCompartida === false
-            ? 'La obra declaró que no concurren otras entidades empleadoras.'
-            : 'No se ha declarado si concurren otras entidades empleadoras en esta faena.',
-    };
+    return doc
+        ? { estado: E.CUMPLIDO, detalle: 'Documento de coordinación entre entidades cargado.' }
+        : { estado: E.PENDIENTE, detalle: 'Falta el documento de coordinación entre entidades empleadoras.' };
 }
 
 // ─── Ítem 53: mapas de riesgos visibles ──────────────────────────────────────
@@ -199,6 +312,9 @@ const DEFINICIONES_OPERACION = [
         id: 'FUF-12', item: 12, ambito: 'obra',
         titulo: 'Máquinas, equipos y elementos de trabajo',
         tipos: ['OPERACION_MAQUINAS'],
+        // Art. 10: exigirle esto a una obra sin maquinaria es un rojo que nadie
+        // puede cerrar. Lo declara la obra; sin declarar se pide igual y se avisa.
+        condicion: A.CONDICION.TIENE_MAQUINARIA,
         evaluar: porDocumento(['OPERACION_MAQUINAS'], {
             falta: 'Sin información ni procedimientos de operación segura de máquinas y equipos.',
             tiene: 'Procedimiento de operación segura cargado.',
@@ -216,13 +332,16 @@ const DEFINICIONES_OPERACION = [
     {
         id: 'FUF-18', item: 18, ambito: 'obra',
         titulo: 'Capacitación en uso y mantención de EPP',
+        // Dos vías: actividad agendada o certificado cargado. Las dos acreditan.
         tipos: ['CAPACITACION_EPP'],
+        modulo: 'actividades',
         evaluar: evaluarItem18,
     },
     {
         id: 'FUF-19', item: 19, ambito: 'obra',
         titulo: 'Registro de las capacitaciones en EPP',
         tipos: ['CAPACITACION_EPP'],
+        modulo: 'actividades',
         evaluar: evaluarItem19,
     },
     {
@@ -248,6 +367,14 @@ const DEFINICIONES_OPERACION = [
             falta: 'Sin registro de la información de riesgos entregada.',
             tiene: 'Información de riesgos laborales registrada.',
         }),
+    },
+    {
+        id: 'FUF-23', item: 23, ambito: 'obra',
+        titulo: 'Ejecución de la capacitación en prevención de riesgos',
+        // Dos vías: actividad agendada o certificado cargado. Las dos acreditan.
+        tipos: ['CAPACITACION_SST'],
+        modulo: 'actividades',
+        evaluar: evaluarItem23,
     },
     {
         id: 'FUF-26', item: 26, ambito: 'obra',
@@ -282,6 +409,7 @@ const DEFINICIONES_OPERACION = [
         id: 'FUF-29', item: 29, ambito: 'obra',
         titulo: 'Coordinación en faena compartida',
         tipos: ['COORDINACION_ENTIDADES', 'REGISTRO_COORDINACION'],
+        condicion: A.CONDICION.FAENA_COMPARTIDA,
         evaluar: evaluarItem29,
     },
     {
@@ -340,6 +468,7 @@ const DEFINICIONES_OPERACION = [
         id: 'EXTRA-62', item: 62, ambito: 'obra',
         titulo: 'Utilización de agentes físicos, químicos y biológicos',
         tipos: ['PROCEDIMIENTO_AGENTES'],
+        condicion: A.CONDICION.AGENTES_FQB,
         evaluar: porDocumento(['PROCEDIMIENTO_AGENTES'], {
             falta: 'Sin procedimiento de utilización de agentes físicos, químicos o biológicos.',
             tiene: 'Procedimiento de agentes cargado.',
@@ -427,6 +556,6 @@ const definicionesOperacionPara = (ambito) =>
 
 module.exports = {
     DEFINICIONES_OPERACION, definicionesOperacionPara,
-    evaluarItem6, evaluarItem18, evaluarItem19, evaluarItem29, evaluarItem53,
+    evaluarItem6, evaluarItem18, evaluarItem19, evaluarItem23, evaluarItem29, evaluarItem53,
     porDocumento, porPeriodicidad, porEvento,
 };

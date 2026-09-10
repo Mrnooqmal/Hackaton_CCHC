@@ -70,6 +70,20 @@ export type OrganoCompleto = OrganoPreventivo & {
     reuniones: ReunionOrgano[];
 };
 
+/** Avance por ámbito, tal como lo calcula el motor. */
+export interface AvanceAmbito {
+    progreso: number;
+    cumplidos: number;
+    exigibles: number;
+    excluidos: number;
+}
+
+export interface ResumenCompletitudTenant {
+    empresa: AvanceAmbito;
+    /** Indexado por obraId. */
+    obras: Record<string, AvanceAmbito>;
+}
+
 export interface ResumenEstructura {
     ambito: Ambito;
     obraId: string | null;
@@ -163,6 +177,17 @@ export const estructuraApi = {
     /** URL del reporte imprimible. Se abre en pestaña nueva en vez de descargarse
      *  por fetch: el navegador ya sabe mostrar e imprimir HTML, y así el usuario
      *  decide si guardarlo como PDF. */
+    /**
+     * Avance de todas las obras del tenant y de la entidad, en una sola llamada.
+     *
+     * Lo calcula el mismo motor que el formulario: el panel principal ya no cuenta
+     * documentos por su cuenta, que era de dónde salía el número que no coincidía.
+     */
+    resumenCompletitud: (tenantId: string) =>
+        apiRequest<ResumenCompletitudTenant>(
+            `/estructura/completitud/resumen${qs({ tenantId })}`
+        ),
+
     urlExport: (tenantId: string, ambito: Ambito, obraId?: string | null) =>
         `${apiBaseUrl}/estructura/completitud/export${qs({ tenantId, ambito, obraId, formato: 'html' })}`,
 

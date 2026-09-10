@@ -12,7 +12,7 @@ const C = require('../lib/completitud');
 const D = require('../lib/distribucion');
 const EP = require('../lib/estructura-preventiva');
 const {
-    evaluarItem8, evaluarItem9, evaluarItem23, evaluarItem37, evaluarItem51,
+    evaluarItem8, evaluarItem9, evaluarItem37, evaluarItem51,
     evaluarItem60, definicionesDocumentalesPara,
 } = require('../lib/completitud-documental');
 
@@ -110,25 +110,6 @@ test('ítem 9: la firma del representante legal lo cumple', () => {
     }));
     assert.equal(r.estado, E.CUMPLIDO);
     assert.match(r.detalle, /Ana Rivas/);
-});
-
-// ─── Ítem 23: periodicidad de la capacitación ────────────────────────────────
-
-test('ítem 23: capacitación de hace más de 2 años queda Vencida', () => {
-    const r = evaluarItem23(ctx({
-        documentos: [doc('CAPACITACION_SST', { fecha: '2024-01-01T00:00:00.000Z' })],
-    }));
-    assert.equal(r.estado, E.VENCIDO);
-});
-
-test('ítem 23: se mide contra la fecha del hecho, no la de subida', () => {
-    // Cargada ayer, pero la capacitación fue hace tres años: sigue vencida.
-    const r = evaluarItem23(ctx({
-        documentos: [doc('CAPACITACION_SST', {
-            fecha: '2023-01-01T00:00:00.000Z', createdAt: '2026-09-09T00:00:00.000Z',
-        })],
-    }));
-    assert.equal(r.estado, E.VENCIDO);
 });
 
 // ─── Ítem 37: entrega de documentación al comité ─────────────────────────────
@@ -238,11 +219,11 @@ test('los ítems por lugar de trabajo no se piden a la entidad empleadora', () =
     // La MIPER y el programa son por faena: exigir una copia a nivel casa matriz
     // sería pedir un documento que la norma no manda hacer.
     const empresa = definicionesDocumentalesPara('empresa').map((d) => d.item);
-    for (const item of [4, 8, 9, 11, 23, 25]) {
+    for (const item of [4, 8, 9, 11, 25]) {
         assert.ok(!empresa.includes(item), `el ítem ${item} no debe pedirse a la empresa`);
     }
     const obra = definicionesDocumentalesPara('obra').map((d) => d.item);
-    for (const item of [4, 8, 9, 11, 23, 25]) {
+    for (const item of [4, 8, 9, 11, 25]) {
         assert.ok(obra.includes(item), `el ítem ${item} sí debe pedirse en la obra`);
     }
 });

@@ -356,30 +356,6 @@ function evaluarItem9(ctx) {
         : { estado: E.PARCIAL, detalle: 'Programa cargado, falta la firma del representante legal.' };
 }
 
-// ─── Ítem 23: periodicidad de la capacitación ────────────────────────────────
-
-/** Art. 16 inc. 1: la capacitación no puede espaciarse más de 2 años. */
-const ANIOS_CAPACITACION = 2;
-
-function evaluarItem23(ctx) {
-    const doc = vigenteDeTipo(ctx, 'CAPACITACION_SST') || vigenteDeTipo(ctx, 'CAPACITACION');
-    if (!doc) return { estado: E.PENDIENTE, detalle: 'Sin registro de capacitación en prevención de riesgos.' };
-
-    // La fecha del HECHO, no la de subida: una capacitación de marzo cargada en
-    // septiembre acredita marzo, y es contra ésa que corre la periodicidad.
-    const fecha = doc.fecha || doc.updatedAt || doc.createdAt;
-    const meses = fecha
-        ? (new Date(ctx.ahora) - new Date(fecha)) / (1000 * 60 * 60 * 24 * 30.44)
-        : null;
-    if (meses === null || Number.isNaN(meses)) {
-        return { estado: E.PARCIAL, detalle: 'Registro cargado sin fecha: no se puede medir la periodicidad.' };
-    }
-    const limite = ANIOS_CAPACITACION * 12;
-    return meses > limite
-        ? { estado: E.VENCIDO, detalle: `La última capacitación registrada tiene ${Math.floor(meses)} meses; el Art. 16 admite hasta ${limite}.` }
-        : { estado: E.CUMPLIDO, detalle: `Última capacitación hace ${Math.floor(meses)} mes(es).` };
-}
-
 // ─── Ítem 16: certificación de los EPP ───────────────────────────────────────
 
 /**
@@ -569,13 +545,6 @@ const DEFINICIONES_DOCUMENTALES = [
         }),
     },
     {
-        // La capacitación se ejecuta en el lugar de trabajo.
-        id: 'FUF-23', item: 23, ambito: 'obra',
-        titulo: 'Ejecución de la capacitación en prevención de riesgos',
-        tipos: ['CAPACITACION_SST', 'CAPACITACION'],
-        evaluar: evaluarItem23,
-    },
-    {
         // La consulta es a las personas trabajadoras de cada faena.
         id: 'FUF-25', item: 25, ambito: 'obra',
         titulo: 'Consulta y participación de las personas trabajadoras',
@@ -651,8 +620,7 @@ const definicionesDocumentalesPara = (ambito) =>
 module.exports = {
     DEFINICIONES_DOCUMENTALES, definicionesDocumentalesPara,
     componentesSgsst,
-    evaluarItem1, evaluarItem8, evaluarItem9, evaluarItem16, evaluarItem23,
-    evaluarItem37, evaluarItem49,
+    evaluarItem1, evaluarItem8, evaluarItem9, evaluarItem16, evaluarItem37, evaluarItem49,
     evaluarItem50, evaluarItem51, evaluarItem58, evaluarItem60,
     // Expuestos para las pruebas y para que otros ítems reutilicen la mecánica.
     distribucionPara, evaluarDifusion,

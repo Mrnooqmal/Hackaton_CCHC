@@ -21,8 +21,8 @@ import {
 import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi, signatureRequestsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
-import type { Worker, Activity, SignatureRequest } from '../api/client';
-import { DS44_ONBOARDING_ITEMS, DS44_PLAN_DOCS } from '../utils/ds44';
+import type { Worker, Activity } from '../api/client';
+import { estructuraApi } from '../api/estructura.api';
 import { incidenteAbierto } from '../utils/incidentes';
 import { PageHeader } from '../components/ui';
 
@@ -147,158 +147,50 @@ export default function Dashboard() {
         };
     }, [user, selectedObraId]);
 
-    const buildDocStatusMap = (docs: any[]) => {
-        const status = new Map<string, boolean>();
-        docs.forEach((doc) => {
-            const tipo = doc.tipo;
-            (doc.asignaciones || []).forEach((asig: any) => {
-                const personaId = asig.personaId || asig.workerId;
-                if (!personaId || !tipo) return;
-                const key = `${personaId}:${tipo}`;
-                if (asig.estado === 'firmado') {
-                    status.set(key, true);
-                } else if (!status.has(key)) {
-                    status.set(key, false);
-                }
-            });
-        });
-        return status;
-    };
 
-    const buildSignatureStatusMap = (requests: SignatureRequest[]) => {
-        const status = new Map<string, boolean>();
-        requests.forEach((request) => {
-            (request.trabajadores || []).forEach((trabajador) => {
-                const workerId = trabajador.workerId;
-                if (!workerId || !request.tipo) return;
-                const key = `${workerId}:${request.tipo}`;
-                if (trabajador.firmado) {
-                    status.set(key, true);
-                } else if (!status.has(key)) {
-                    status.set(key, false);
-                }
-            });
-        });
-        return status;
-    };
 
-    const computeOnboardingProgress = (
-        workers: Worker[],
-        docs: any[],
-        requests: SignatureRequest[]
-    ) => {
-        if (!workers.length) {
-            return { uploaded: 0, total: 0, progress: 0, label: 'tareas de onboarding completadas' };
-        }
 
-        const docStatus = buildDocStatusMap(docs);
-        const requestStatus = buildSignatureStatusMap(requests);
-
-        let total = 0;
-        let completed = 0;
-
-        workers.forEach((worker) => {
-            DS44_ONBOARDING_ITEMS.forEach((item) => {
-                if (item.kind === 'persona') {
-                    const vigilancia = (worker as any).vigilanciaSalud?.enVigilancia;
-                    if (!vigilancia) {
-                        return;
-                    }
-                    total += 1;
-                    if (item.key === 'VIGILANCIA_SALUD') {
-                        completed += 1;
-                    } else if (item.key === 'EXAMEN_OCUPACIONAL') {
-                        const fecha = (worker as any).vigilanciaSalud?.fechaUltimoExamen;
-                        if (fecha) completed += 1;
-                    }
-                    return;
-                }
-
-                total += 1;
-                const key = `${worker.personaId}:${item.tipo}`;
-                if (item.kind === 'document') {
-                    if (docStatus.get(key)) completed += 1;
-                } else if (item.kind === 'signature') {
-                    if (requestStatus.get(key)) completed += 1;
-                }
-            });
-        });
-
-        const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-        return { uploaded: completed, total, progress, label: 'tareas de onboarding completadas' };
-    };
-
+    /**
+     * Avance DS 44 de cada obra.
+     *
+     * Sale del motor de completitud, el mismo que evalúa el formulario. Antes se
+     * contaban documentos contra una lista propia de la portada: dos números para
+     * la misma obra, y el de acá era el que no coincidía con el del detalle.
+     *
+     * Una sola llamada para todas las obras: el servidor comparte entre ellas las
+     * consultas pesadas, así que ya no son cuatro lecturas por faena.
+     */
     const loadDs44Progress = async (targetObras: typeof obras) => {
         if (targetObras.length === 0) {
             setObraProgress({});
             return;
         }
+        const tenantId = targetObras[0]?.tenantId || localStorage.getItem('tenant_id') || '';
+        if (!tenantId) {
+            setObraProgress({});
+            return;
+        }
+
+        const res = await estructuraApi.resumenCompletitud(tenantId);
+        if (!res.success || !res.data) {
+            // Sin datos NO se inventa un 0%: se deja vacío y la tarjeta muestra
+            // que no se pudo calcular, en vez de un rojo que nadie provocó.
+            console.error('No se pudo cargar el avance DS44:', res.error);
+            setObraProgress({});
+            return;
+        }
 
         const progressMap: Record<string, { uploaded: number; total: number; progress: number; label?: string }> = {};
-
-        await Promise.all(targetObras.map(async (obra) => {
-            try {
-                const faseDeming = obra.faseDeming || 'plan';
-                if (faseDeming === 'plan') {
-                    const docsObraRes = await documentsApi.list({ obraId: obra.obraId, clasificacion: 'obra' } as any);
-                    const docsObra = docsObraRes.success && docsObraRes.data ? docsObraRes.data.documents || [] : [];
-                    const ds44Total = DS44_PLAN_DOCS.length;
-                    const ds44Uploaded = DS44_PLAN_DOCS.filter(req => {
-                        const existing = docsObra.find((doc: any) => req.tipos.includes(doc.tipo));
-                        return Boolean(existing?.s3Key || existing?.archivoUrl);
-                    }).length;
-                    const progress = ds44Total > 0 ? Math.round((ds44Uploaded / ds44Total) * 100) : 0;
-                    progressMap[obra.obraId] = {
-                        uploaded: ds44Uploaded,
-                        total: ds44Total,
-                        progress,
-                        label: 'documentos planificados listos'
-                    };
-                    return;
-                }
-
-                if (faseDeming === 'hacer') {
-                    const tenantId = obra.tenantId || localStorage.getItem('tenant_id') || '';
-                    const [workersRes, docsDiarioRes, requestsRes] = await Promise.all([
-                        workersApi.list({ obraId: obra.obraId }),
-                        documentsApi.list({ obraId: obra.obraId, clasificacion: 'diario' } as any),
-                        signatureRequestsApi.list({ tenantId, obraId: obra.obraId })
-                    ]);
-
-                    const workers = workersRes.success && workersRes.data ? (workersRes.data as Worker[]) : [];
-                    const docsDiario = docsDiarioRes.success && docsDiarioRes.data ? docsDiarioRes.data.documents || [] : [];
-                    const requests = requestsRes.success && requestsRes.data ? requestsRes.data.requests || [] : [];
-
-                    progressMap[obra.obraId] = computeOnboardingProgress(workers, docsDiario, requests);
-                    return;
-                }
-
-                if (faseDeming === 'verificar') {
-                    const hasEval = Boolean((obra as any).cumplimientoDS44?.check?.ultimaEvaluacion);
-                    const total = 1;
-                    const uploaded = hasEval ? 1 : 0;
-                    const progress = Math.round((uploaded / total) * 100);
-                    progressMap[obra.obraId] = {
-                        uploaded,
-                        total,
-                        progress,
-                        label: 'evaluacion anual completada'
-                    };
-                    return;
-                }
-
-                progressMap[obra.obraId] = {
-                    uploaded: 0,
-                    total: 0,
-                    progress: 0,
-                    label: 'tareas DS44 completadas'
-                };
-            } catch (err) {
-                console.error(`Error loading DS44 docs for obra ${obra.obraId}:`, err);
-                progressMap[obra.obraId] = { uploaded: 0, total: DS44_PLAN_DOCS.length, progress: 0 };
-            }
-        }));
-
+        for (const obra of targetObras) {
+            const avance = res.data.obras[obra.obraId];
+            if (!avance) continue;
+            progressMap[obra.obraId] = {
+                uploaded: avance.cumplidos,
+                total: avance.exigibles,
+                progress: avance.progreso,
+                label: 'requisitos del DS 44 cumplidos',
+            };
+        }
         setObraProgress(progressMap);
     };
 
@@ -1002,7 +894,7 @@ export default function Dashboard() {
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
                                     {(selectedObraId ? obras.filter(o => o.obraId === selectedObraId) : obras).map((obra) => {
-                                        const obraStats = obraProgress[obra.obraId] || { uploaded: 0, total: DS44_PLAN_DOCS.length, progress: 0 };
+                                        const obraStats = obraProgress[obra.obraId] || { uploaded: 0, total: 0, progress: 0 };
                                         return (
                                             <ObraProgressCard
                                                 key={obra.obraId}

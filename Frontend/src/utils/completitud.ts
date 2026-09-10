@@ -64,6 +64,45 @@ export interface RequisitoFuf {
     distribucion?: DistribucionRequisito | null;
     /** Literales internos que la norma enumera por letras (Art. 22 del ítem 1). */
     subrequisitos?: SubrequisitoFuf[] | null;
+    /** Presente en los requisitos que admiten dos vías de acreditación. */
+    acreditacion?: AcreditacionRequisito | null;
+    /** Declaración de la obra que decide si el requisito corresponde. */
+    condicion?: CondicionObra | null;
+    aplicabilidad?: 'aplica' | 'no_aplica' | 'verificar' | null;
+}
+
+/** Lo que la obra declara sobre sí misma y que decide qué se le exige. */
+export type CondicionObra = 'siempre' | 'faena_compartida' | 'tiene_maquinaria' | 'agentes_fqb';
+
+/** La pregunta que hay que hacerle a quien administra la obra, y el campo que responde. */
+export const PREGUNTA_CONDICION: Record<string, { campo: 'faenaCompartida' | 'tieneMaquinaria' | 'agentesFQB'; pregunta: string }> = {
+    faena_compartida: { campo: 'faenaCompartida', pregunta: '¿Esta obra comparte sitio con otra entidad empleadora?' },
+    tiene_maquinaria: { campo: 'tieneMaquinaria', pregunta: '¿Hay máquinas o herramientas motrices en esta obra?' },
+    agentes_fqb: { campo: 'agentesFQB', pregunta: '¿Se utilizan agentes físicos, químicos o biológicos?' },
+};
+
+/**
+ * Las dos formas de acreditar una capacitación: agendarla en la plataforma
+ * —queda calendarizada, vinculada al requisito y con asistentes que firman— o
+ * cargar el certificado de una dictada fuera, por el Organismo Administrador.
+ *
+ * Ninguna reemplaza a la otra. `via` dice cuál acreditó, o null si falta todo.
+ */
+export interface AcreditacionRequisito {
+    via: 'actividad' | 'documento' | null;
+    /** Qué actividad crear si se elige agendarla. */
+    criterio: { subtipo?: string; titulo?: string; tipos?: string[] };
+    /** Tipos de documento que sirven como certificado. */
+    tipos: string[];
+    actividades: Array<{
+        actividadId: string | null;
+        titulo: string | null;
+        estado: string | null;
+        fecha: string | null;
+        asistentes: number;
+        firmados: number;
+    }>;
+    documentos: string[];
 }
 
 /** Un literal dentro de un requisito. Su estado lo calcula el motor. */
