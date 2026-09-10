@@ -243,6 +243,15 @@ test('ítem 1: con los cinco componentes queda Cumplido', () => {
     assert.equal(evaluarItem1(ctx).estado, E.CUMPLIDO);
 });
 
+test('ítem 1: los cinco literales viajan con el requisito', () => {
+    // Una sola fila del formulario, cinco obligaciones distintas: un badge único
+    // no dice cuál falta.
+    const r = evaluarItem1({ ahora: AHORA, documentos: [], obligaciones: {}, organos: [] });
+    assert.equal(r.subrequisitos.length, 5);
+    assert.deepEqual(r.subrequisitos.map((c) => c.clave), ['a', 'b', 'c', 'd', 'e']);
+    assert.ok(r.subrequisitos.every((c) => c.titulo && c.estado));
+});
+
 // ─── Ítem 58 ─────────────────────────────────────────────────────────────────
 
 const presc = (over = {}) => ({

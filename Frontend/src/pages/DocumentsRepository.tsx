@@ -24,7 +24,7 @@ import RepositorioFuf from '../components/RepositorioFuf';
 import { AMBITO as AMBITO_FUF } from '../utils/estructuraPreventiva';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
-import { AlertBanner, Select, PageHeader } from '../components/ui';
+import { AlertBanner, Select, PageHeader, SegmentedControl } from '../components/ui';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 
 // ── Carpetas del repositorio ──────────────────────────────────────────────
@@ -98,6 +98,9 @@ export default function DocumentsRepository() {
     const [openFolder, setOpenFolder] = useState<FolderKey | null>(null);
     const canViewGeneral = user?.rol !== 'trabajador';
     const [activeScope, setActiveScope] = useState<'general' | 'personal'>(canViewGeneral ? 'general' : 'personal');
+    // Ámbito del formulario DS44. La entidad empleadora tiene sus propios ítems
+    // (1, 50) que no viven en ninguna faena, así que no basta con el de la obra.
+    const [ambitoFuf, setAmbitoFuf] = useState<'empresa' | 'obra'>('obra');
 
     const canUpload = hasPermission(PERMISSIONS.REPOSITORIO_SUBIR);
     const [showUploadForm, setShowUploadForm] = useState(false);
@@ -186,6 +189,25 @@ export default function DocumentsRepository() {
     }, [scopeDocuments]);
 
     const isSearching = searchTerm.trim().length > 0;
+
+    /** El formulario es del cumplimiento de la entidad, no de los archivos que a
+     *  una persona le asignaron: no tiene sentido en el ámbito personal. */
+    const puedeVerFuf = canViewGeneral && activeScope === 'general';
+
+    /** Sin obra seleccionada solo el ámbito empresa es evaluable. */
+    const ambitoEfectivo: 'empresa' | 'obra' = selectedObraId ? ambitoFuf : 'empresa';
+
+    /**
+     * Carpetas de la raíz.
+     *
+     * DS44 aparece SIEMPRE, con conteo 0 si corresponde. No es una carpeta de
+     * archivos: es el formulario de fiscalización. Esconderla mientras está vacía
+     * la volvía inalcanzable justo cuando más sirve, que es para ver qué falta.
+     */
+    const carpetasVisibles = useMemo(
+        () => FOLDER_ORDER.filter((k) => folderCounts[k] || (k === 'ds44' && puedeVerFuf)),
+        [folderCounts, puedeVerFuf]
+    );
 
     // Documentos visibles: al buscar se aplana todo el scope; si no, se filtra por
     // la carpeta abierta. La raíz (sin carpeta, sin búsqueda) muestra carpetas.
@@ -374,7 +396,7 @@ export default function DocumentsRepository() {
                 <PageHeader
                     banner
                     title="Repositorio de documentos"
-                    description="Archivos de la obra organizados por carpetas: documentos base, cumplimiento DS44, registros y los documentos asignados a cada persona."
+                    description="Documentos organizados por carpetas: base, registros y los asignados a cada persona. La carpeta DS44 no es una carpeta de archivos, es el formulario de fiscalización."
                     actions={
                         canUpload && selectedObraId ? (
                             <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)}>
@@ -386,8 +408,10 @@ export default function DocumentsRepository() {
 
                 {!selectedObraId && (
                     <AlertBanner
-                        variant="warning"
-                        message="Selecciona una obra desde la barra superior para ver su repositorio de documentos."
+                        variant={puedeVerFuf ? 'info' : 'warning'}
+                        message={puedeVerFuf
+                            ? 'Selecciona una obra desde la barra superior para ver su repositorio. El formulario de cumplimiento de la entidad empleadora no depende de la obra y está disponible abajo.'
+                            : 'Selecciona una obra desde la barra superior para ver su repositorio de documentos.'}
                     />
                 )}
 
@@ -507,8 +531,10 @@ export default function DocumentsRepository() {
                     </div>
                 )}
 
-                {/* ── Toolbar: breadcrumb + búsqueda ── */}
-                {selectedObraId && (
+                {/* ── Toolbar: breadcrumb + búsqueda ──
+                    También sin obra: la carpeta DS44 se puede abrir a nivel empresa,
+                    y sin migas no habría forma de volver a la raíz. */}
+                {(selectedObraId || puedeVerFuf) && (
                     <div className="repo-toolbar">
                         <div className="repo-breadcrumb">
                             <button
@@ -558,19 +584,40 @@ export default function DocumentsRepository() {
                     Es una VISTA sobre los documentos que ya viven en su módulo dueño,
                     con el estado que calcula el panel de cumplimiento. No indexa una
                     lista plana de archivos: el fiscalizador recorre el FUF por sección. */}
-                {!loading && openFolder === 'ds44' && selectedObraId && !isSearching && (
-                    <RepositorioFuf
-                        tenantId={user?.tenantId || localStorage.getItem('tenant_id') || ''}
-                        ambito={AMBITO_FUF.OBRA}
-                        obraId={selectedObraId}
-                        onVerDocumento={(doc) => handlePreview(doc as any)}
-                    />
+                {!loading && openFolder === 'ds44' && !isSearching && puedeVerFuf && (
+                    <>
+                        {/* El selector solo tiene sentido con obra activa: sin ella el
+                            único ámbito evaluable es el de la entidad empleadora. */}
+                        {selectedObraId && (
+                            <div className="ds44-filtros" style={{ marginBottom: 'var(--space-4)' }}>
+                                <SegmentedControl
+                                    ariaLabel="Ámbito del formulario"
+                                    value={ambitoFuf}
+                                    onChange={(v) => setAmbitoFuf(v as 'empresa' | 'obra')}
+                                    options={[
+                                        { value: 'obra', label: 'Esta obra' },
+                                        { value: 'empresa', label: 'Entidad empleadora' },
+                                    ]}
+                                />
+                            </div>
+                        )}
+                        {/* `key` fuerza el remontaje al cambiar de ámbito: son dos
+                            evaluaciones distintas, y reusar el estado dejaría abiertas
+                            las secciones del ámbito anterior. */}
+                        <RepositorioFuf
+                            key={ambitoEfectivo}
+                            tenantId={user?.tenantId || localStorage.getItem('tenant_id') || ''}
+                            ambito={ambitoEfectivo === 'obra' ? AMBITO_FUF.OBRA : AMBITO_FUF.EMPRESA}
+                            obraId={ambitoEfectivo === 'obra' ? selectedObraId : null}
+                            onVerDocumento={(doc) => handlePreview(doc as any)}
+                        />
+                    </>
                 )}
 
                 {/* ── Vista de carpetas (raíz) ── */}
-                {!loading && selectedObraId && showFolders && scopeDocuments.length > 0 && (
+                {!loading && showFolders && carpetasVisibles.length > 0 && (
                     <div className="repo-folder-grid">
-                        {FOLDER_ORDER.filter((k) => folderCounts[k]).map((k) => {
+                        {carpetasVisibles.map((k) => {
                             const f = FOLDERS[k];
                             const Icon = f.icon;
                             return (
@@ -580,7 +627,11 @@ export default function DocumentsRepository() {
                                     </div>
                                     <div className="repo-folder-info">
                                         <div className="repo-folder-name">{f.label}</div>
-                                        <div className="repo-folder-count">{folderCounts[k]} documento{folderCounts[k] === 1 ? '' : 's'}</div>
+                                        <div className="repo-folder-count">
+                                            {k === 'ds44' && !folderCounts[k]
+                                                ? 'Formulario de fiscalización'
+                                                : `${folderCounts[k] || 0} documento${folderCounts[k] === 1 ? '' : 's'}`}
+                                        </div>
                                     </div>
                                     <FiChevronRight className="repo-folder-arrow" size={18} />
                                 </button>
@@ -590,22 +641,34 @@ export default function DocumentsRepository() {
                 )}
 
                 {/* ── Scope vacío ── */}
+                {/* Sin documentos pero con la carpeta DS44 presente, el mensaje no
+                    puede decir que no hay nada: la contradiría el formulario que sí
+                    está ahí arriba. */}
                 {!loading && selectedObraId && showFolders && scopeDocuments.length === 0 && (
-                    <div className="repo-empty">
-                        <div className="repo-empty-icon"><FiFolder size={34} /></div>
-                        <h3>{activeScope === 'personal' ? 'Aún no tienes documentos asignados' : 'No hay documentos en esta obra'}</h3>
-                        <p>{activeScope === 'personal'
-                            ? 'Los documentos que se te asignen aparecerán aquí, organizados por carpeta.'
-                            : 'Sube un archivo o registra documentos DS44 para comenzar a poblar el repositorio.'}</p>
-                    </div>
+                    carpetasVisibles.length > 0 ? (
+                        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 'var(--space-4)' }}>
+                            Todavía no hay documentos cargados en esta obra. El formulario de
+                            fiscalización ya muestra qué corresponde según la dotación.
+                        </p>
+                    ) : (
+                        <div className="repo-empty">
+                            <div className="repo-empty-icon"><FiFolder size={34} /></div>
+                            <h3>{activeScope === 'personal' ? 'Aún no tienes documentos asignados' : 'No hay documentos en esta obra'}</h3>
+                            <p>{activeScope === 'personal'
+                                ? 'Los documentos que se te asignen aparecerán aquí, organizados por carpeta.'
+                                : 'Sube un archivo o registra documentos DS44 para comenzar a poblar el repositorio.'}</p>
+                        </div>
+                    )
                 )}
 
                 {/* ── Lista de documentos (dentro de carpeta o búsqueda) ── */}
                 {/* La carpeta DS44 se muestra como formulario seccionado, no como lista
                     plana: con las dos a la vez el mismo documento aparecía dos veces.
                     Al buscar sí se aplana todo, incluido DS44, porque buscar es
-                    justamente pedir resultados sin importar dónde estén. */}
-                {!loading && selectedObraId && !showFolders && (openFolder !== 'ds44' || isSearching) && (
+                    justamente pedir resultados sin importar dónde estén. En el ámbito
+                    personal el formulario no aplica, así que ahí la carpeta vuelve a
+                    ser una lista: sin esto quedaría en blanco. */}
+                {!loading && selectedObraId && !showFolders && (openFolder !== 'ds44' || isSearching || !puedeVerFuf) && (
                     visibleDocuments.length === 0 ? (
                         <div className="repo-empty">
                             <div className="repo-empty-icon"><FiFileText size={34} /></div>
@@ -783,6 +846,7 @@ export default function DocumentsRepository() {
                 url={preview?.url ?? null}
                 fileName={preview?.name}
                 onDownload={preview ? () => handleDownload(preview.doc) : undefined}
+                documento={preview?.doc ?? null}
             />
         </>
     );

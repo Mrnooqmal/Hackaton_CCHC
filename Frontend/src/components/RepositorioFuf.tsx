@@ -81,10 +81,17 @@ export default function RepositorioFuf({ tenantId, ambito, obraId = null, onVerD
 
     useEffect(() => { void cargar(); }, [cargar]);
 
-    const secciones = useMemo(
-        () => (data ? agruparPorSeccion(data.requisitos) : []),
-        [data]
-    );
+    const secciones = useMemo(() => {
+        if (!data) return [];
+        // Los ítems que la plataforma no cubre no se pintan. No es lo mismo que
+        // "Sin cubrir": aquéllos se acreditan fuera del sistema y no hay nada que
+        // el usuario pueda hacer acá, así que la fila solo sería ruido.
+        const noCubiertos = new Set(data.itemsNoCubiertos || []);
+        return agruparPorSeccion(data.requisitos).map((s) => ({
+            ...s,
+            items: s.items.filter((i) => !noCubiertos.has(i.numero)),
+        }));
+    }, [data]);
 
     /** Se resuelve desde `data` en cada render: tras registrar un envío el panel
      *  abierto tiene que mostrar el estado nuevo, no el que tenía al abrirse. */
@@ -210,6 +217,37 @@ export default function RepositorioFuf({ tenantId, ambito, obraId = null, onVerD
                                                     <div className="text-muted" style={{ fontSize: '0.74rem', marginTop: '4px' }}>
                                                         <FiExternalLink size={11} /> Se resuelve en el módulo de {reqs[0].modulo}.
                                                     </div>
+                                                )}
+
+                                                {/* Literales de la norma dentro de un mismo ítem: el 1
+                                                    es una fila del formulario pero cinco obligaciones, y
+                                                    un badge único no dice cuál falta. */}
+                                                {reqs[0]?.subrequisitos && reqs[0].subrequisitos.length > 0 && (
+                                                    <ul style={{
+                                                        listStyle: 'none', margin: '8px 0 0', padding: 0,
+                                                        display: 'flex', flexDirection: 'column', gap: '6px',
+                                                    }}>
+                                                        {reqs[0].subrequisitos.map((sub) => (
+                                                            <li key={sub.clave} style={{
+                                                                display: 'flex', alignItems: 'flex-start',
+                                                                gap: 'var(--space-2)', flexWrap: 'wrap',
+                                                            }}>
+                                                                <span style={{ minWidth: 0, flex: '1 1 220px' }}>
+                                                                    <span style={{ fontSize: '0.79rem', color: 'var(--text-primary)' }}>
+                                                                        {sub.titulo}
+                                                                    </span>
+                                                                    {sub.detalle && (
+                                                                        <span style={{ display: 'block', fontSize: '0.73rem', color: 'var(--text-secondary)' }}>
+                                                                            {sub.detalle}
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                                <Badge variant={ESTADO_VARIANTE[sub.estado]}>
+                                                                    {ESTADO_LABEL[sub.estado]}
+                                                                </Badge>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
                                                 )}
 
                                                 {/* Cualquier requisito que se acredite informando trae su

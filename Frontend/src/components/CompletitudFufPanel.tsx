@@ -3,7 +3,7 @@ import { FiAlertTriangle, FiChevronDown, FiChevronRight, FiPrinter } from 'react
 import { Badge } from './ui';
 import { estructuraApi } from '../api/estructura.api';
 import {
-    ESTADO_REQUISITO, ESTADO_LABEL, ESTADO_VARIANTE, colorProgreso,
+    ESTADO_LABEL, ESTADO_VARIANTE, colorProgreso,
     type CompletitudAmbito,
 } from '../utils/completitud';
 import type { Ambito } from '../utils/estructuraPreventiva';
@@ -169,12 +169,6 @@ export default function CompletitudFufPanel({ tenantId, ambito, obraId = null }:
                 </div>
             )}
 
-            {resumen.porEstado[ESTADO_REQUISITO.FUERA_DE_ALCANCE] > 0 && (
-                <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                    {resumen.porEstado[ESTADO_REQUISITO.FUERA_DE_ALCANCE]} requisito(s) se acreditan de forma
-                    indirecta y no tienen evidencia propia en el sistema.
-                </div>
-            )}
         </div>
     );
 }

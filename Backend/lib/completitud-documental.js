@@ -204,10 +204,21 @@ function componentesSgsst(ctx) {
 function evaluarItem1(ctx) {
     const comps = componentesSgsst(ctx);
     const cumplidos = comps.filter((c) => c.estado === E.CUMPLIDO).length;
-    if (cumplidos === comps.length) return { estado: E.CUMPLIDO, detalle: 'Los cinco componentes del Art. 22 están cubiertos.' };
+    // Los cinco literales viajan con el requisito: el ítem 1 es una sola fila del
+    // formulario pero cinco obligaciones distintas, y verlo como un badge único no
+    // dice cuál falta. Es el mismo desglose que muestra el panel del SGSST, no una
+    // segunda evaluación.
+    const subrequisitos = comps.map((c) => ({
+        clave: c.clave, titulo: c.literal, estado: c.estado, detalle: c.detalle,
+        modulo: c.propio ? null : c.enlace,
+    }));
+    if (cumplidos === comps.length) {
+        return { estado: E.CUMPLIDO, detalle: 'Los cinco componentes del Art. 22 están cubiertos.', subrequisitos };
+    }
     return {
         estado: cumplidos > 0 ? E.PARCIAL : E.PENDIENTE,
         detalle: `${cumplidos} de ${comps.length} componentes del Art. 22 cubiertos.`,
+        subrequisitos,
     };
 }
 

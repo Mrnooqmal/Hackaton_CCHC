@@ -62,6 +62,18 @@ export interface RequisitoFuf {
     modulo?: string | null;
     /** Presente solo en los requisitos que se acreditan informando a alguien. */
     distribucion?: DistribucionRequisito | null;
+    /** Literales internos que la norma enumera por letras (Art. 22 del ítem 1). */
+    subrequisitos?: SubrequisitoFuf[] | null;
+}
+
+/** Un literal dentro de un requisito. Su estado lo calcula el motor. */
+export interface SubrequisitoFuf {
+    clave: string;
+    titulo: string;
+    estado: EstadoRequisito;
+    detalle: string | null;
+    /** Módulo donde se acredita, cuando no tiene documento propio. */
+    modulo?: string | null;
 }
 
 /** Estado de UN destinatario frente a un documento. Lo calcula el servidor. */
@@ -142,6 +154,11 @@ export interface CompletitudAmbito {
     requisitos: RequisitoFuf[];
     resumen: ResumenCompletitud;
     bloques: BloqueCompletitud[];
+    /** Ítems que la plataforma no cubre. No se pintan: su cumplimiento se acredita
+     *  fuera del sistema, y declarar acá lo que el sistema no hace no le deja al
+     *  usuario nada que hacer. Distinto de los ítems aún no implementados, que sí
+     *  aparecen como "Sin cubrir". */
+    itemsNoCubiertos?: number[];
     /** Desglose del Art. 22. Solo viene en ámbito empresa: el SGSST es de la
      *  entidad empleadora, no de cada obra. */
     sgsst?: ComponenteSgsst[] | null;

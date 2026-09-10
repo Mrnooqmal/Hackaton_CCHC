@@ -123,7 +123,7 @@ function estadoPorDocumento(doc, { exigeFirma = false, fechaLimite = null, ahora
  * que el panel y el export lean exactamente lo mismo.
  */
 function evaluarCompletitud(definiciones, ctx = {}) {
-    const requisitos = (definiciones || []).map((def) => {
+    const evaluados = (definiciones || []).map((def) => {
         let resultado;
         try {
             resultado = def.evaluar ? def.evaluar(ctx) : { estado: ESTADO_REQUISITO.PENDIENTE };
@@ -151,6 +151,10 @@ function evaluarCompletitud(definiciones, ctx = {}) {
             // interfaz lo muestre sin volver a calcularlo. Duplicar esta regla en
             // el cliente es la forma segura de que panel y pantalla discrepen.
             distribucion: resultado?.distribucion || null,
+            // Literales internos de un requisito que la norma enumera por letras
+            // (el Art. 22 del ítem 1). Se calculan al evaluar y viajan para que el
+            // repositorio muestre el desglose sin volver a resolverlo.
+            subrequisitos: resultado?.subrequisitos || null,
             estado: resultado?.estado || ESTADO_REQUISITO.PENDIENTE,
             detalle: resultado?.detalle || null,
             // Justificación normativa del NoAplica: el indice del expediente la
@@ -161,7 +165,25 @@ function evaluarCompletitud(definiciones, ctx = {}) {
         };
     });
 
-    return { requisitos, resumen: resumirCompletitud(requisitos) };
+    // Lo que la plataforma NO cubre no se devuelve.
+    //
+    // Decirle al usuario "fuera de alcance del sistema" DENTRO del sistema no le
+    // resuelve nada: no puede actuar sobre eso desde acá. Esos requisitos se
+    // acreditan fuera de la plataforma y su cumplimiento lo documenta quien lleva
+    // la prevención. Las definiciones se conservan porque dejan escrito CUÁLES son
+    // y por qué, pero no llegan ni al panel ni al repositorio ni al export.
+    //
+    // `itemsNoCubiertos` viaja para que la vista tampoco pinte la fila del ítem:
+    // sin eso caería en el "Sin cubrir" de los ítems aún no implementados, que es
+    // otra cosa distinta.
+    const requisitos = evaluados.filter((r) => r.estado !== ESTADO_REQUISITO.FUERA_DE_ALCANCE);
+    const itemsNoCubiertos = [...new Set(
+        evaluados
+            .filter((r) => r.estado === ESTADO_REQUISITO.FUERA_DE_ALCANCE && r.item != null)
+            .map((r) => r.item)
+    )];
+
+    return { requisitos, itemsNoCubiertos, resumen: resumirCompletitud(requisitos) };
 }
 
 /**

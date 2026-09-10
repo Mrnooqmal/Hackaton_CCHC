@@ -200,11 +200,26 @@ test('ítems 46 y 47 son excluyentes: uno aplica y el otro sale del denominador'
     assert.notEqual(req(sinDpr, 47).estado, E.NO_APLICA);
 });
 
-test('los ítems 33 y 42 a 45 están declarados fuera de alcance, no omitidos', () => {
+test('los ítems que la plataforma no cubre no se emiten', () => {
+    // Decirle al usuario "fuera de alcance del sistema" dentro del sistema no le
+    // deja nada que hacer: esos requisitos se acreditan fuera de la plataforma.
     const res = C.evaluarCompletitud(definicionesPara('empresa'), ctxBase());
     for (const item of [33, 42, 43, 44, 45]) {
-        assert.equal(req(res, item)?.estado, E.FUERA_DE_ALCANCE, `ítem ${item}`);
+        assert.equal(req(res, item), undefined, `el ítem ${item} no debe llegar a la vista`);
     }
+});
+
+test('los ítems no cubiertos viajan por número, para que la vista tampoco los pinte', () => {
+    // Sin esta lista caerían en el "Sin cubrir" de los ítems aún no implementados,
+    // que es un estado distinto y sí temporal.
+    const res = C.evaluarCompletitud(definicionesPara('empresa'), ctxBase());
+    assert.deepEqual([...res.itemsNoCubiertos].sort((a, b) => a - b), [33, 42, 43, 44, 45]);
+});
+
+test('lo no cubierto no altera el porcentaje: ya estaba fuera del denominador', () => {
+    const res = C.evaluarCompletitud(definicionesPara('empresa'), ctxBase());
+    assert.equal(res.resumen.porEstado[E.FUERA_DE_ALCANCE], 0);
+    assert.equal(res.resumen.total, res.requisitos.length);
 });
 
 test('DPR y encargado no aplican al ámbito obra', () => {
@@ -254,10 +269,11 @@ test('los NoAplica se DECLARAN con su justificación, no se omiten', () => {
     assert.match(html, /No exigible con la dotación/);
 });
 
-test('los ítems fuera de alcance se marcan, no se omiten (§12)', () => {
+test('el export tampoco declara lo que la plataforma no cubre', () => {
+    // El reporte va a manos del fiscalizador: una fila que dice qué no hace el
+    // sistema no acredita ni desacredita nada.
     const html = renderHtml(construirExport(completitudDemo(), {}));
-    assert.match(html, /Fuera de alcance/);
-    assert.match(html, /Facilidades para el funcionamiento/);
+    assert.doesNotMatch(html, /Fuera de alcance/);
 });
 
 test('un órgano voluntario se rotula como tal (§2)', () => {

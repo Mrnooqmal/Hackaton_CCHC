@@ -15,7 +15,9 @@
  * Reglas que el encargo pide sostener en el export:
  *   - Los NoAplica se DECLARAN con su justificación normativa. Un expediente que
  *     oculta lo que excluyó es peor que uno incompleto.
- *   - Los ítems fuera de alcance se marcan como tales, no se omiten (§12).
+ *   - Los ítems que la plataforma no cubre NO aparecen. El motor ya no los emite:
+ *     un reporte del sistema que declara lo que el sistema no hace no le sirve al
+ *     fiscalizador, y su cumplimiento se acredita fuera de acá.
  *   - Un órgano constituido sin estar obligado se rotula VOLUNTARIO (§2).
  */
 
