@@ -2203,10 +2203,13 @@ select.form-input option {
 
 /* Un paso más que `--surface-elevated` a propósito: las filas de evidencia del
    DS44 usan ese mismo tono de fondo, y con él la pastilla desaparecía contra la
-   fila y "No aplica"/"Sin cubrir" quedaban como texto suelto. */
+   fila. El texto también se subió de `--text-muted` a `--text-secondary`: en
+   oscuro el primero da 3.16:1 sobre este fondo (bajo el mínimo AA de 4.5:1),
+   así que aunque la pastilla ya se viera, "No aplica"/"Sin cubrir" seguían
+   ilegibles. `--text-secondary` da 5.77:1. */
 .badge-neutral {
   background: var(--surface-hover);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 /* `badge-secondary` se usaba en varias pantallas sin estar definido: se
