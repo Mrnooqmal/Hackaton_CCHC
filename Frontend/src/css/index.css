@@ -284,6 +284,16 @@ button {
   font-size: inherit;
 }
 
+/* Los <button> NO heredan color: el navegador les aplica `color: ButtonText`.
+   Como el documento no declara `color-scheme: dark`, ese valor se resuelve
+   como negro, así que todo botón sin color propio (los de fondo transparente:
+   cabeceras desplegables, chips, enlaces-botón) quedaba en negro sobre fondo
+   oscuro — 1.24:1 de contraste, ilegible. Los botones con `.btn` o color
+   propio no se ven afectados: su regla gana por especificidad. */
+button {
+  color: inherit;
+}
+
 /* Focus visible */
 :focus-visible {
   outline: 2px solid var(--accent);
