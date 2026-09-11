@@ -26,4 +26,4 @@ STAGE=dev node scripts/migrate-workerId-to-personaId.js --apply
 Nombres de tabla: se leen de las variables de entorno
 (`DOCUMENTS_TABLE`, `SIGNATURE_REQUESTS_TABLE`, `ACTIVITIES_TABLE`,
 `INCIDENTS_TABLE`); si no estan, se construyen como
-`${SERVICE_NAME:-hackatonbackendv2}-<tabla>-${STAGE:-dev}`.
+`${SERVICE_NAME:-BuildAndServe}-<tabla>-${STAGE:-dev}`.

@@ -20,7 +20,7 @@ const stage = args.find(a => a.startsWith('--stage'))?.split('=')[1]
     || args[args.indexOf('--stage') + 1]
     || 'dev';
 
-const SERVICE_NAME = 'HackatonBackend';
+const SERVICE_NAME = 'BuildAndServe';
 const TENANTS_TABLE = `${SERVICE_NAME}-tenants-${stage}`;
 const OBRAS_TABLE = `${SERVICE_NAME}-obras-${stage}`;
 const PERSONAS_TABLE = `${SERVICE_NAME}-personas-${stage}`;

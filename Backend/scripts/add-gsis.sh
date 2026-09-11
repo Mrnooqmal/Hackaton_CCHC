@@ -61,24 +61,24 @@ add_gsi() {
 echo "=== Creando GSIs en tablas existentes ==="
 
 # Documents
-add_gsi "HackatonBackend-documents-dev" "tenantId-index" "tenantId" "S"
-add_gsi "HackatonBackend-documents-dev" "obraId-index" "obraId" "S"
+add_gsi "BuildAndServe-documents-dev" "tenantId-index" "tenantId" "S"
+add_gsi "BuildAndServe-documents-dev" "obraId-index" "obraId" "S"
 
 # Activities
-add_gsi "HackatonBackend-activities-dev" "tenantId-index" "tenantId" "S"
+add_gsi "BuildAndServe-activities-dev" "tenantId-index" "tenantId" "S"
 
 # Incidents
-add_gsi "HackatonBackend-incidents-dev" "tenantId-fecha-index" "tenantId" "S" "fecha" "S"
+add_gsi "BuildAndServe-incidents-dev" "tenantId-fecha-index" "tenantId" "S" "fecha" "S"
 
 # Signatures
-add_gsi "HackatonBackend-signatures-dev" "tenantId-index" "tenantId" "S"
-add_gsi "HackatonBackend-signatures-dev" "personaId-index" "personaId" "S"
+add_gsi "BuildAndServe-signatures-dev" "tenantId-index" "tenantId" "S"
+add_gsi "BuildAndServe-signatures-dev" "personaId-index" "personaId" "S"
 
 # Signature Requests
-add_gsi "HackatonBackend-signature-requests-dev" "tenantId-index" "tenantId" "S"
+add_gsi "BuildAndServe-signature-requests-dev" "tenantId-index" "tenantId" "S"
 
 # Surveys
-add_gsi "HackatonBackend-surveys-dev" "tenantId-index" "tenantId" "S"
+add_gsi "BuildAndServe-surveys-dev" "tenantId-index" "tenantId" "S"
 
 echo ""
 echo "✅ TODOS LOS GSIs CREADOS!"

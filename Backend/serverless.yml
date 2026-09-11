@@ -1,7 +1,5 @@
-# Service parametrizable: default 'hackatonbackendv2' (backend de DESARROLLO).
-# Para la prueba en vivo/producción (EBCO): SLS_SERVICE=hackatonbackendv2-testeo
-# (o usar `npm run deploy:testeo`). Ver DEPLOY.md. Nunca editar esta línea a mano.
-service: ${env:SLS_SERVICE, 'hackatonbackendv2'}
+# Service fijo 'BuildAndServe'. Dev y Prod se deployan por --stage (dev|prod)
+service: BuildAndServe
 
 plugins:
   - serverless-prune-plugin
@@ -14,13 +12,11 @@ custom:
   serverless-offline:
     httpPort: 3001
     lambdaPort: 3002
-  bucketName: ${self:service}-documents-v245-${self:provider.stage}-${aws:accountId}
-  # Protección de datos: 'Retain' SOLO en producción (-testeo) para que un remove/
-  # reemplazo de stack no borre tablas ni buckets. En dev = 'Delete' (teardown limpio).
-  # Se resuelve por nombre de service. Ver DEPLOY.md.
+  repositoryBucketName: buildandserve-repository-${self:provider.stage}
+  evidenceBucketName: buildandserve-evidence-${self:provider.stage}
   deletionPolicies:
-    hackatonbackendv2-testeo: Retain
-  deletionPolicy: ${self:custom.deletionPolicies.${self:service}, 'Delete'}
+    prod: Retain
+  deletionPolicy: ${self:custom.deletionPolicies.${self:provider.stage}, 'Delete'}
 
 provider:
   name: aws
@@ -46,8 +42,8 @@ provider:
     EPP_TABLE: ${self:service}-epp-${self:provider.stage}
     ESTRUCTURA_TABLE: ${self:service}-estructura-preventiva-${self:provider.stage}
     # --- Storage ---
-    DOCUMENTS_BUCKET: ${self:custom.bucketName}
-    INCIDENT_EVIDENCE_BUCKET: ${self:service}-evidence-${self:provider.stage}-${aws:accountId}
+    DOCUMENTS_BUCKET: ${self:custom.repositoryBucketName}
+    INCIDENT_EVIDENCE_BUCKET: ${self:custom.evidenceBucketName}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     DOCUMENT_STAMP_QUEUE_URL: !Ref DocumentStampQueue
     # --- External ---
@@ -134,14 +130,14 @@ provider:
             - s3:GetObject
             - s3:DeleteObject
           Resource:
-            - !Sub '${IncidentEvidenceBucket.Arn}/*'
+            - !Sub 'arn:aws:s3:::${self:custom.evidenceBucketName}/*'
         - Effect: Allow
           Action:
             - s3:PutObject
             - s3:GetObject
             - s3:DeleteObject
           Resource:
-            - !Sub 'arn:aws:s3:::${self:custom.bucketName}/*'
+            - !Sub 'arn:aws:s3:::${self:custom.repositoryBucketName}/*'
         - Effect: Allow
           Action:
             - sqs:SendMessage
@@ -727,31 +723,12 @@ resources:
     # ==========================================
     # S3 BUCKETS
     # ==========================================
-    DocumentsBucket:
-      Type: AWS::S3::Bucket
-      DeletionPolicy: ${self:custom.deletionPolicy}
-      UpdateReplacePolicy: ${self:custom.deletionPolicy}
-      Properties:
-        BucketName: ${self:custom.bucketName}
-        CorsConfiguration:
-          CorsRules:
-            - AllowedHeaders: ['*']
-              AllowedMethods: [GET, PUT, POST, DELETE]
-              AllowedOrigins: ['*']
-              MaxAge: 3000
-
-    IncidentEvidenceBucket:
-      Type: AWS::S3::Bucket
-      DeletionPolicy: ${self:custom.deletionPolicy}
-      UpdateReplacePolicy: ${self:custom.deletionPolicy}
-      Properties:
-        BucketName: ${self:provider.environment.INCIDENT_EVIDENCE_BUCKET}
-        CorsConfiguration:
-          CorsRules:
-            - AllowedOrigins: ['*']
-              AllowedMethods: [GET, PUT, POST]
-              AllowedHeaders: ['*']
-              MaxAge: 3000
+    # Los buckets de documentos (repository) y evidencia ya NO se declaran como
+    # recursos CloudFormation: viven fuera de este stack (creados y poblados
+    # manualmente vía AWS CLI como parte de la migración a BuildAndServe), para
+    # que un `serverless remove` o reemplazo de stack nunca pueda borrarlos.
+    # Ver ${self:custom.repositoryBucketName} / ${self:custom.evidenceBucketName}
+    # más arriba y sus permisos IAM correspondientes.
 
     # ==========================================
     # SNS

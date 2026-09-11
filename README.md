@@ -59,11 +59,11 @@ aws s3 sync dist/ s3://tu-bucket-frontend --delete
 ```env
 AWS_REGION=us-east-1
 AWS_ACCOUNT_ID=123456789012
-USERS_TABLE=hackaton-users-dev
-INCIDENTS_TABLE=hackaton-incidents-dev
-INBOX_TABLE=hackaton-inbox-dev
-DOCUMENTS_TABLE=hackaton-documents-dev
-INCIDENT_EVIDENCE_BUCKET=hackaton-evidence-dev
+USERS_TABLE=buildandserve-users-dev
+INCIDENTS_TABLE=buildandserve-incidents-dev
+INBOX_TABLE=buildandserve-inbox-dev
+DOCUMENTS_TABLE=buildandserve-documents-dev
+INCIDENT_EVIDENCE_BUCKET=buildandserve-evidence-dev
 JWT_SECRET=tu-secreto-super-seguro
 ```
 

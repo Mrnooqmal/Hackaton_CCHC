@@ -5,7 +5,7 @@ const { success, error } = require('../../lib/utils/response');
 const { validateRequired } = require('../../lib/utils/validation');
 
 const isOffline = process.env.IS_OFFLINE === 'true';
-const BUCKET_NAME = process.env.DOCUMENTS_BUCKET || 'hackaton-documents';
+const BUCKET_NAME = process.env.DOCUMENTS_BUCKET || 'buildandserve-repository';
 
 // Configuración del cliente S3
 const { s3Client } = require("../../lib/clients/s3");

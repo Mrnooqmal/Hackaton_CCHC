@@ -391,7 +391,7 @@ Tenant
 Diagrama ASCII de estructura S3:
 
 ```
-hackaton-documents-{stage}/
+buildandserve-repository-{stage}/
   tenants/
     {tenantId}/
       config/

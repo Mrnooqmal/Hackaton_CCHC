@@ -78,7 +78,7 @@ export default function AddressAutocomplete({ value, onChange, placeholder = 'Ej
             try {
                 const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Chile')}&countrycodes=cl&format=json&addressdetails=1&limit=6&accept-language=es`;
                 const res = await fetch(url, {
-                    headers: { 'User-Agent': 'HackatonCCHC/1.0 (contacto@example.com)' }
+                    headers: { 'User-Agent': 'BuildAndServe/1.0 (contacto@example.com)' }
                 });
                 const data: NominatimResult[] = await res.json();
                 setResults(data);

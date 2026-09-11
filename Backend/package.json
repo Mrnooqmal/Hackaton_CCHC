@@ -1,16 +1,16 @@
 {
-    "name": "hackaton-backend",
+    "name": "build-and-serve-backend",
     "version": "1.0.0",
     "description": "Backend serverless para sistema de prevención de riesgos",
     "main": "index.js",
     "scripts": {
         "dev": "serverless offline start --httpPort 3001",
-        "deploy": "serverless deploy",
-        "deploy:dev": "serverless deploy",
-        "deploy:testeo": "cross-env SLS_SERVICE=hackatonbackendv2-testeo serverless deploy",
-        "print:dev": "serverless print",
-        "print:testeo": "cross-env SLS_SERVICE=hackatonbackendv2-testeo serverless print",
-        "remove": "serverless remove",
+        "deploy": "serverless deploy --stage dev",
+        "deploy:dev": "serverless deploy --stage dev",
+        "deploy:prod": "serverless deploy --stage prod",
+        "print:dev": "serverless print --stage dev",
+        "print:prod": "serverless print --stage prod",
+        "remove": "serverless remove --stage dev",
         "test": "node --test tests/*.test.js"
     },
     "dependencies": {

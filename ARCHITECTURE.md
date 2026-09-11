@@ -488,7 +488,7 @@ Proposito: sesiones de autenticacion.
 Un solo bucket compartido con aislamiento por prefijo:
 
 ```
-hackaton-documents-{stage}/
+buildandserve-repository-{stage}/
   tenants/
     {tenantId}/
       config/

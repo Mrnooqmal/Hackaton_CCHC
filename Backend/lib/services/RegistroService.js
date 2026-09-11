@@ -26,7 +26,7 @@ const { PersonaService } = require('./PersonaService');
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 const INCIDENTS_TABLE = process.env.INCIDENTS_TABLE || 'Incidents';
 const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE || 'Activities';
-const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET || 'hackaton-documents';
+const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET || 'buildandserve-repository';
 
 class RegistroService {
     constructor() {

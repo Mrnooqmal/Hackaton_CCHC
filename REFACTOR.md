@@ -1,4 +1,4 @@
-# Estado del Refactor (Hackaton CCHC)
+# Estado del Refactor (Build & Serve)
 
 ## 1. Lo que hemos hecho hasta ahora (Completado)
 

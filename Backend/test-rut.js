@@ -4,7 +4,7 @@ const { docClient } = require('./lib/dynamodb');
 async function test() {
     console.log('Checking Workers table...');
     const result = await docClient.send(new ScanCommand({
-        TableName: 'hackatonbackend-workers-alonso',
+        TableName: 'buildandserve-workers-alonso',
         Limit: 5
     }));
     console.log('Workers found:', result.Items.length);
@@ -14,7 +14,7 @@ async function test() {
 
     console.log('\nChecking Users table...');
     const users = await docClient.send(new ScanCommand({
-        TableName: 'hackatonbackend-users-alonso',
+        TableName: 'buildandserve-users-alonso',
         Limit: 5
     }));
     console.log('Users found:', users.Items.length);

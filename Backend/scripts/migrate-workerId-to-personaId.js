@@ -22,7 +22,7 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 
-const SERVICE_NAME = process.env.SERVICE_NAME || 'hackatonbackendv2';
+const SERVICE_NAME = process.env.SERVICE_NAME || 'BuildAndServe';
 const STAGE = process.env.STAGE || process.env.STAGE_NAME || 'dev';
 const REGION = process.env.AWS_REGION || 'us-east-1';
 

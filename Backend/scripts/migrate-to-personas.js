@@ -25,7 +25,7 @@ const stage = args.find(a => a.startsWith('--stage'))?.split('=')[1]
     || args[args.indexOf('--stage') + 1]
     || 'dev';
 const dryRun = args.includes('--dry-run');
-const SERVICE_NAME = 'HackatonBackend';
+const SERVICE_NAME = 'BuildAndServe';
 
 const USERS_TABLE = `${SERVICE_NAME}-users-${stage}`;
 const WORKERS_TABLE = `${SERVICE_NAME}-workers-${stage}`;
