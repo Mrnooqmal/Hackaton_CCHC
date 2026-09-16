@@ -10,7 +10,21 @@ const handler = require('../handlers/documents/handler');
 let store;
 let originalSend;
 
-const ev = (id, body) => ({ pathParameters: { id }, body: JSON.stringify(body) });
+// Contexto de sesión que pone el autorizador. Los handlers de documentos exigen
+// sesión y que el documento sea de la MISMA empresa, así que las pruebas firman
+// sus llamadas como una persona de 't1' con permiso para subir documentos.
+const SESION = {
+    requestContext: {
+        authorizer: {
+            lambda: {
+                sessionId: 's-1', personaId: 'p-editor', tenantId: 't1', rol: 'prevencionista',
+                permisos: 'repositorio.subir,obra.subir_documentos',
+            },
+        },
+    },
+};
+
+const ev = (id, body) => ({ ...SESION, pathParameters: { id }, body: JSON.stringify(body) });
 
 /**
  * Reconstruye los valores escritos por el UpdateCommand capturado, resolviendo
@@ -50,6 +64,7 @@ afterEach(() => { docClient.send = originalSend; });
 test('reemplazar el archivo archiva la versión anterior y sube el contador', async () => {
     store.doc = {
         documentId: 'd1',
+        tenantId: 't1',
         s3Key: 'obras/politica-v1.pdf',
         archivoNombre: 'politica-v1.pdf',
         version: 1,
@@ -77,6 +92,7 @@ test('reemplazar el archivo archiva la versión anterior y sube el contador', as
 test('el historial se acumula: la segunda actualización deja dos versiones', async () => {
     store.doc = {
         documentId: 'd1',
+        tenantId: 't1',
         s3Key: 'obras/v2.pdf',
         version: 2,
         versiones: [{ version: 1, s3Key: 'obras/v1.pdf', publicadaEn: '2026-02-01T00:00:00.000Z' }],
@@ -92,7 +108,7 @@ test('el historial se acumula: la segunda actualización deja dos versiones', as
 });
 
 test('actualizar metadatos sin cambiar el archivo no crea versiones', async () => {
-    store.doc = { documentId: 'd1', s3Key: 'obras/v1.pdf', version: 1 };
+    store.doc = { documentId: 'd1', tenantId: 't1', s3Key: 'obras/v1.pdf', version: 1 };
 
     await handler.update(ev('d1', { fechaCaducidad: '2027-01-01' }));
 
@@ -103,7 +119,7 @@ test('actualizar metadatos sin cambiar el archivo no crea versiones', async () =
 });
 
 test('reenviar el mismo s3Key no crea una versión duplicada', async () => {
-    store.doc = { documentId: 'd1', s3Key: 'obras/v1.pdf', version: 1 };
+    store.doc = { documentId: 'd1', tenantId: 't1', s3Key: 'obras/v1.pdf', version: 1 };
 
     await handler.update(ev('d1', { s3Key: 'obras/v1.pdf', fechaCaducidad: '2027-01-01' }));
 
@@ -113,7 +129,7 @@ test('reenviar el mismo s3Key no crea una versión duplicada', async () => {
 });
 
 test('la primera subida (documento sin archivo) no genera versión previa', async () => {
-    store.doc = { documentId: 'd1', s3Key: null, version: 1 };
+    store.doc = { documentId: 'd1', tenantId: 't1', s3Key: null, version: 1 };
 
     await handler.update(ev('d1', { s3Key: 'obras/v1.pdf' }));
 
@@ -122,7 +138,7 @@ test('la primera subida (documento sin archivo) no genera versión previa', asyn
 });
 
 test('reemplazar el archivo invalida el PDF firmado cacheado', async () => {
-    store.doc = { documentId: 'd1', s3Key: 'obras/v1.pdf', version: 1, documentoFirmadoS3Key: 'stamped/v1.pdf', documentoFirmadoFirmaCount: 3 };
+    store.doc = { documentId: 'd1', tenantId: 't1', s3Key: 'obras/v1.pdf', version: 1, documentoFirmadoS3Key: 'stamped/v1.pdf', documentoFirmadoFirmaCount: 3 };
 
     await handler.update(ev('d1', { s3Key: 'obras/v2.pdf' }));
 
@@ -135,7 +151,7 @@ test('reemplazar el archivo invalida el PDF firmado cacheado', async () => {
 //    fase PLAN, pero al revisarla hay que re-informarla y re-firmarla igual que un
 //    procedimiento, así que entra en TIPOS_PROCEDIMIENTO y acepta /nueva-version.
 
-const evVersion = (id, body) => ({ pathParameters: { id }, body: JSON.stringify(body) });
+const evVersion = (id, body) => ({ ...SESION, pathParameters: { id }, body: JSON.stringify(body) });
 
 test('la MIPER acepta publicar una nueva versión', async () => {
     store.doc = {
@@ -218,7 +234,7 @@ test('publicar una versión exige motivo', async () => {
 test('elimina un documento sin firmas', async () => {
     store.doc = { documentId: 'd1', tenantId: 't1', titulo: 'Plan de evacuación torre A', firmas: [] };
 
-    const res = await handler.remove({ pathParameters: { id: 'd1' }, queryStringParameters: null });
+    const res = await handler.remove({ ...SESION, pathParameters: { id: 'd1' }, queryStringParameters: null });
 
     assert.equal(res.statusCode, 200);
     assert.equal(store.deletes.length, 1, 'se envió el DeleteCommand');
@@ -228,7 +244,7 @@ test('elimina un documento sin firmas', async () => {
 test('no elimina un documento ya firmado', async () => {
     store.doc = { documentId: 'd1', tenantId: 't1', firmas: [{ personaId: 'p1', token: 'abc' }] };
 
-    const res = await handler.remove({ pathParameters: { id: 'd1' }, queryStringParameters: null });
+    const res = await handler.remove({ ...SESION, pathParameters: { id: 'd1' }, queryStringParameters: null });
 
     assert.equal(res.statusCode, 409);
     assert.equal(store.deletes.length, 0, 'no se borra nada');
@@ -238,7 +254,7 @@ test('no elimina un documento ya firmado', async () => {
 test('devuelve 404 si el documento no existe', async () => {
     store.doc = null;
 
-    const res = await handler.remove({ pathParameters: { id: 'inexistente' }, queryStringParameters: null });
+    const res = await handler.remove({ ...SESION, pathParameters: { id: 'inexistente' }, queryStringParameters: null });
 
     assert.equal(res.statusCode, 404);
     assert.equal(store.deletes.length, 0);

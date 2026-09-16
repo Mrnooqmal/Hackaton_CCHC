@@ -11,7 +11,8 @@ const { FirmaService } = require('../../lib/services/FirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PdfStampingService } = require('../../lib/services/PdfStampingService');
-const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { PERMISSIONS } = require('../../lib/permissions');
+const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { TIPOS_SALUD, filtrarSalud } = require('../../lib/documentos-salud');
 const { DESTINATARIO, MEDIO } = require('../../lib/distribucion');
 
@@ -33,6 +34,38 @@ const PERMISOS_SUBIR_DOC = [
     PERMISSIONS.REPOSITORIO_SUBIR,
     PERMISSIONS.OBRA_SUBIR_DOCUMENTOS,
 ];
+
+/** ¿La sesión puede subir o modificar documentos? */
+const puedeSubir = (sesion) => PERMISOS_SUBIR_DOC.some((p) => sesionPuede(sesion, p));
+
+/**
+ * Documento de la empresa de la sesión, o null.
+ *
+ * `DocumentsTable` está indexada por `documentId` a secas: leer o escribir con el
+ * id bastaba, sin importar de qué empresa fuera el documento. Quien use esto
+ * responde 404 — que el id exista en otra empresa no se informa.
+ */
+const documentoDelTenant = async (documentId, sesion) => {
+    if (!documentId) return null;
+    const res = await docClient.send(new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { documentId },
+    }));
+    const doc = res.Item;
+    return doc && doc.tenantId === sesion.tenantId ? doc : null;
+};
+
+/**
+ * ¿Puede esta sesión ver este documento?
+ *
+ * Los de salud (Arts. 67 y 68) solo para quien tiene el permiso o para la persona
+ * a la que se refieren — el mismo criterio que `filtrarSalud` aplica al listado.
+ */
+const puedeVerDocumento = (doc, sesion) => {
+    if (!TIPOS_SALUD.has(doc.tipo)) return true;
+    if (sesionPuede(sesion, PERMISSIONS.PERSONA_VIGILANCIA_SALUD)) return true;
+    return (doc.asignaciones || []).some((a) => a.personaId === sesion.personaId);
+};
 
 // Tipos de documentos según el DS 44
 const DOCUMENT_TYPES = {
@@ -166,9 +199,14 @@ const TIPOS_CORPORATIVOS = new Set(['REGLAMENTO_INTERNO', 'POLITICA_SSO']);
  */
 module.exports.create = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const body = JSON.parse(event.body || '{}');
-        const tenantId = body.tenantId || event.queryStringParameters?.tenantId;
-        if (!tenantId) return error('tenantId es requerido');
+        // La empresa dueña del documento sale de la sesión: con `tenantId` en el
+        // cuerpo se podían sembrar documentos en la empresa de otro.
+        const tenantId = sesion.tenantId;
 
         const validation = validateRequired(body, ['tipo', 'titulo']);
         if (!validation.valid) {
@@ -179,17 +217,11 @@ module.exports.create = async (event) => {
             return error(`Tipo de documento inválido. Tipos válidos: ${Object.keys(DOCUMENT_TYPES).join(', ')}`);
         }
 
-        // Enforcement por permiso cuando se identifica al creador.
-        if (body.createdBy) {
-            const personaService = new PersonaService();
-            const creador = await personaService.getById(body.createdBy).catch(() => null);
-            const tenant = await new TenantService().getById(tenantId).catch(() => null);
-            const tenantSafe = tenant ? tenant.toSafeFormat() : null;
-            const puede = creador && PERMISOS_SUBIR_DOC.some(p => personaPuede(creador, tenantSafe, p));
-            if (!puede) {
-                return error('No tienes permiso para subir documentos', 403);
-            }
+        // El permiso se exige SIEMPRE: antes bastaba con no mandar `createdBy`.
+        if (!puedeSubir(sesion)) {
+            return error('No tienes permiso para subir documentos', 403);
         }
+        const creador = await new PersonaService().getById(sesion.personaId).catch(() => null);
 
         const now = new Date().toISOString();
         const documentId = uuidv4();
@@ -220,8 +252,9 @@ module.exports.create = async (event) => {
             // un acta de un simulacro de marzo subida en septiembre acredita marzo,
             // y es contra esta fecha que se mide la vigencia anual (Art. 19).
             fecha: body.fecha || null,
-            createdBy: body.createdBy || null,
-            creatorName: body.creatorName || null,
+            // Quién lo subió es un hecho de auditoría: sale de la sesión.
+            createdBy: sesion.personaId,
+            creatorName: creador ? `${creador.nombre} ${creador.apellido || ''}`.trim() : (body.creatorName || null),
             firmas: [],
             asignaciones: [],
             estado: 'activo',
@@ -238,8 +271,8 @@ module.exports.create = async (event) => {
                 await eventBus.emit('document.assigned', {
                     documentId: document.documentId,
                     userIds: body.assignedTo,
-                    assignedBy: body.createdBy || 'system',
-                    creatorName: body.creatorName || 'Gestor SST',
+                    assignedBy: sesion.personaId,
+                    creatorName: document.creatorName || 'Gestor SST',
                     documentName: document.titulo,
                     dueDate: body.dueDate || null
                 });
@@ -260,10 +293,18 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const {
-            tenantId, tipo, estado, clasificacion, obraId, pendienteDe, asignadoA, solicitanteId,
+            tipo, estado, clasificacion, obraId, pendienteDe, asignadoA,
         } = event.queryStringParameters || {};
-        if (!tenantId) return error('tenantId es requerido');
+        // Empresa y solicitante salen de la sesión: `?tenantId=` listaba los
+        // documentos de cualquier empresa, y `?solicitanteId=` permitía pasar por
+        // quien sí puede ver los documentos de salud.
+        const tenantId = sesion.tenantId;
+        const solicitanteId = sesion.personaId;
 
         // Query por GSI tenantId-index (no Scan)
         const params = {
@@ -331,9 +372,7 @@ module.exports.list = async (event) => {
         // resultado no trae ningún documento de salud.
         if (documents.some((d) => TIPOS_SALUD.has(d.tipo))) {
             const [persona, tenant] = await Promise.all([
-                solicitanteId
-                    ? new PersonaService().getById(solicitanteId).catch(() => null)
-                    : Promise.resolve(null),
+                new PersonaService().getById(solicitanteId).catch(() => null),
                 new TenantService().getById(tenantId).catch(() => null),
             ]);
             const tenantSafe = tenant ? tenant.toSafeFormat() : null;
@@ -355,24 +394,24 @@ module.exports.list = async (event) => {
  */
 module.exports.get = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
 
         if (!id) {
             return error('ID de documento requerido');
         }
 
-        const result = await docClient.send(
-            new GetCommand({
-                TableName: TABLE_NAME,
-                Key: { documentId: id },
-            })
-        );
-
-        if (!result.Item) {
+        // Pertenencia y salud: mismo 404 en los dos casos, para no delatar por la
+        // diferencia de respuestas que el documento existe.
+        const doc = await documentoDelTenant(id, sesion);
+        if (!doc || !puedeVerDocumento(doc, sesion)) {
             return error('Documento no encontrado', 404);
         }
 
-        return success(result.Item);
+        return success(doc);
     } catch (err) {
         console.error('Error getting document:', err);
         return error(err.message, 500);
@@ -390,30 +429,23 @@ module.exports.get = async (event) => {
  */
 module.exports.remove = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         if (!id) return error('ID de documento requerido');
 
-        const cur = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
-        const doc = cur.Item;
+        const doc = await documentoDelTenant(id, sesion);
         if (!doc) return error('Documento no encontrado', 404);
 
         if (Array.isArray(doc.firmas) && doc.firmas.length > 0) {
             return error('Este documento ya tiene firmas y no se puede eliminar. Sube una versión nueva si necesitas corregirlo.', 409);
         }
 
-        // Enforcement por permiso + aislamiento de tenant cuando se identifica al actor.
-        const actorId = event.queryStringParameters?.actorId;
-        if (actorId) {
-            const personaService = new PersonaService();
-            const actor = await personaService.getById(actorId).catch(() => null);
-            if (!actor || actor.tenantId !== doc.tenantId) {
-                return error('No autorizado para este documento', 403);
-            }
-            const tenant = await new TenantService().getById(doc.tenantId).catch(() => null);
-            const tenantSafe = tenant ? tenant.toSafeFormat() : null;
-            if (!PERMISOS_SUBIR_DOC.some((p) => personaPuede(actor, tenantSafe, p))) {
-                return error('No tienes permiso para eliminar documentos', 403);
-            }
+        // El permiso se exige SIEMPRE: antes se saltaba omitiendo `?actorId=`.
+        if (!puedeSubir(sesion)) {
+            return error('No tienes permiso para eliminar documentos', 403);
         }
 
         await docClient.send(new DeleteCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
@@ -435,8 +467,20 @@ module.exports.remove = async (event) => {
  */
 module.exports.update = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         if (!id) return error('ID de documento requerido');
+
+        const actual = await documentoDelTenant(id, sesion);
+        if (!actual) return error('Documento no encontrado', 404);
+        // Adjuntar el archivo de un ítem de onboarding es parte de la gestión de la
+        // ficha, por eso ese permiso vale además de los de subida.
+        if (!puedeSubir(sesion) && !sesionPuede(sesion, PERMISSIONS.PERSONA_ONBOARDING)) {
+            return error('No tienes permiso para modificar documentos', 403);
+        }
 
         const body = JSON.parse(event.body || '{}');
         const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad', 'periodo', 'fecha', 'fechaEntradaVigencia'];
@@ -459,9 +503,7 @@ module.exports.update = async (event) => {
         // Archivar la versión saliente cuando el archivo cambia de verdad.
         const nuevoS3Key = body.s3Key !== undefined ? body.s3Key : body.archivoUrl;
         if (nuevoS3Key) {
-            const cur = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
-            const doc = cur.Item;
-            if (!doc) return error('Documento no encontrado', 404);
+            const doc = actual;
 
             const s3KeyActual = doc.s3Key || doc.archivoUrl || null;
             if (s3KeyActual && s3KeyActual !== nuevoS3Key) {
@@ -491,13 +533,12 @@ module.exports.update = async (event) => {
                 expressionValues[':nulo'] = null;
                 expressionValues[':cero'] = 0;
 
-                if (body.publicadaPor !== undefined) {
-                    updateExpressions.push('#pubPor = :pubPor', '#pubNombre = :pubNombre');
-                    expressionNames['#pubPor'] = 'ultimaPublicacionPor';
-                    expressionNames['#pubNombre'] = 'ultimaPublicacionNombre';
-                    expressionValues[':pubPor'] = body.publicadaPor || null;
-                    expressionValues[':pubNombre'] = body.publicadaPorNombre || null;
-                }
+                // Quién publicó: de la sesión, no del cuerpo.
+                updateExpressions.push('#pubPor = :pubPor', '#pubNombre = :pubNombre');
+                expressionNames['#pubPor'] = 'ultimaPublicacionPor';
+                expressionNames['#pubNombre'] = 'ultimaPublicacionNombre';
+                expressionValues[':pubPor'] = sesion.personaId;
+                expressionValues[':pubNombre'] = body.publicadaPorNombre || null;
             }
         }
 
@@ -554,10 +595,20 @@ module.exports.update = async (event) => {
  */
 module.exports.nuevaVersionCorporativa = async (event) => {
     try {
-        const body = JSON.parse(event.body || '{}');
-        const { tenantId, tipo, s3Key, archivoNombre, motivo, notasCambio, publicadaPor, publicadaPorNombre, participantesRevision } = body;
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
 
-        if (!tenantId) return error('tenantId es requerido');
+        const body = JSON.parse(event.body || '{}');
+        const { tipo, s3Key, archivoNombre, motivo, notasCambio, publicadaPorNombre, participantesRevision } = body;
+
+        // Empresa y publicante salen de la sesión: esto reescribe TODAS las copias
+        // del Reglamento de una empresa y obliga a re-firmar a su personal.
+        const tenantId = sesion.tenantId;
+        const publicadaPor = sesion.personaId;
+        if (!puedeSubir(sesion)) {
+            return error('No tienes permiso para publicar una nueva versión', 403);
+        }
         if (!TIPOS_CORPORATIVOS.has(tipo)) {
             return error(`tipo inválido. Corporativos: ${[...TIPOS_CORPORATIVOS].join(', ')}`);
         }
@@ -666,17 +717,22 @@ module.exports.nuevaVersionCorporativa = async (event) => {
 
 module.exports.nuevaVersion = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         if (!id) return error('ID de documento requerido');
 
         const body = JSON.parse(event.body || '{}');
-        const { s3Key, motivo, notasCambio, publicadaPor, versionEsperada, participantesRevision } = body;
+        const { s3Key, motivo, notasCambio, versionEsperada, participantesRevision } = body;
+        // Quién publica sale de la sesión (el cuerpo podía nombrar a cualquiera).
+        const publicadaPor = sesion.personaId;
 
         if (!s3Key) return error('s3Key (archivo de la nueva versión) es requerido');
         if (!motivo || !String(motivo).trim()) return error('El motivo del cambio es requerido');
 
-        const cur = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
-        const doc = cur.Item;
+        const doc = await documentoDelTenant(id, sesion);
         if (!doc) return error('Documento no encontrado', 404);
         if (!esProcedimiento(doc.tipo)) {
             return error('El versionado con notificación solo aplica a procedimientos', 400);
@@ -684,17 +740,9 @@ module.exports.nuevaVersion = async (event) => {
 
         const tenantId = doc.tenantId;
 
-        // Enforcement por permiso + aislamiento de tenant cuando se identifica al actor.
-        if (publicadaPor) {
-            const personaService = new PersonaService();
-            const actor = await personaService.getById(publicadaPor).catch(() => null);
-            if (!actor || actor.tenantId !== tenantId) {
-                return error('No autorizado para este documento', 403);
-            }
-            const tenant = await new TenantService().getById(tenantId).catch(() => null);
-            const tenantSafe = tenant ? tenant.toSafeFormat() : null;
-            const puede = PERMISOS_SUBIR_DOC.some(p => personaPuede(actor, tenantSafe, p));
-            if (!puede) return error('No tienes permiso para publicar una nueva versión', 403);
+        // El permiso se exige SIEMPRE: antes se saltaba omitiendo `publicadaPor`.
+        if (!puedeSubir(sesion)) {
+            return error('No tienes permiso para publicar una nueva versión', 403);
         }
 
         // Control de concurrencia optimista (evita pisar una versión publicada en paralelo).
@@ -787,24 +835,30 @@ module.exports.nuevaVersion = async (event) => {
  */
 module.exports.assign = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
         if (!id) return error('ID de documento requerido');
 
         const personaIds = body.personaIds;
-        const { fechaLimite, notificar, assignedBy, assignerName, replace } = body;
+        const { fechaLimite, notificar, assignerName, replace } = body;
+        // Quién asigna sale de la sesión.
+        const assignedBy = sesion.personaId;
 
         if (!personaIds || !Array.isArray(personaIds) || personaIds.length === 0) {
             return error('Se requiere un array de IDs de personas');
         }
 
-        const docResult = await docClient.send(new GetCommand({
-            TableName: TABLE_NAME,
-            Key: { documentId: id }
-        }));
-
-        if (!docResult.Item) return error('Documento no encontrado', 404);
+        const doc = await documentoDelTenant(id, sesion);
+        if (!doc) return error('Documento no encontrado', 404);
+        if (!puedeSubir(sesion) && !sesionPuede(sesion, PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES)) {
+            return error('No tienes permiso para asignar documentos', 403);
+        }
+        const docResult = { Item: doc };
 
         // Lookup personas via PersonaService (solo del tenant del documento)
         const personaService = new PersonaService();
@@ -859,7 +913,7 @@ module.exports.assign = async (event) => {
             await eventBus.emit('document.assigned', {
                 documentId: id,
                 userIds: assignedIds,
-                assignedBy: assignedBy || 'system',
+                assignedBy,
                 creatorName: assignerName || docResult.Item.creatorName || 'Gestor SST',
                 documentName: docResult.Item.titulo,
                 dueDate: fechaLimite || null
@@ -883,6 +937,10 @@ module.exports.assign = async (event) => {
  */
 module.exports.sign = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
@@ -893,12 +951,24 @@ module.exports.sign = async (event) => {
             return error('personaId y tipoFirma son requeridos');
         }
 
-        const docResult = await docClient.send(new GetCommand({
-            TableName: TABLE_NAME,
-            Key: { documentId: id }
-        }));
-        if (!docResult.Item) return error('Documento no encontrado', 404);
-        const documentData = docResult.Item;
+        // Una firma sin PIN no prueba nada: el método PRESENCIAL valida siempre
+        // (ver FirmaService), así que omitir el PIN permitía firmar por otro. Toda
+        // firma de documento exige el PIN de quien firma.
+        if (!body.pin) {
+            return error('Debes ingresar tu PIN para firmar', 400);
+        }
+
+        // Quien tiene la sesión firma por sí mismo. Firmar por otro es la firma
+        // asistida (el trabajador teclea SU PIN en el dispositivo de quien asiste)
+        // y exige ese permiso: el PIN sigue siendo la prueba del consentimiento.
+        if (signerPersonaId !== sesion.personaId
+            && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
+            return error('No tienes permiso para registrar la firma de otra persona', 403);
+        }
+
+        const documentData = await documentoDelTenant(id, sesion);
+        if (!documentData) return error('Documento no encontrado', 404);
+        const docResult = { Item: documentData };
 
         const personaService = new PersonaService();
         const persona = await personaService.getById(signerPersonaId);
@@ -932,7 +1002,7 @@ module.exports.sign = async (event) => {
             userAgent: event.headers?.['user-agent'] || 'unknown'
         };
 
-        const metodo = body.pin ? 'PIN' : 'PRESENCIAL';
+        const metodo = 'PIN';
         let firmaResult;
         try {
             firmaResult = await FirmaService.crear({
@@ -940,7 +1010,7 @@ module.exports.sign = async (event) => {
                 tenantId: documentData.tenantId,
                 obraId: documentData.obraId || null,
                 metodo,
-                credencial: body.pin || {},
+                credencial: body.pin,
                 tipoFirma: body.tipoFirma,
                 referenciaId: id,
                 referenciaTipo: 'document',
@@ -1006,13 +1076,19 @@ module.exports.sign = async (event) => {
  */
 module.exports.signAssisted = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
         if (!id) return error('ID de documento requerido');
 
-        const { firmanteId, asistidoPor } = body;
+        const { firmanteId } = body;
+        // Quién asiste la firma es quien tiene la sesión: con `asistidoPor` en el
+        // cuerpo se podía dejar constancia a nombre de otro.
+        const asistidoPor = sesion.personaId;
         if (!firmanteId) return error('firmanteId (trabajador) es requerido');
-        if (!asistidoPor) return error('asistidoPor (quien asiste la firma) es requerido');
 
         // Solo firma con PIN del trabajador: sin PIN no hay evidencia real, así que
         // la modalidad presencial queda descartada en la firma asistida.
@@ -1028,13 +1104,9 @@ module.exports.signAssisted = async (event) => {
             return error('No tienes permiso para iniciar una firma asistida', 403);
         }
 
-        // 2. Documento existe y el firmante esta asignado a el
-        const docResult = await docClient.send(new GetCommand({
-            TableName: TABLE_NAME,
-            Key: { documentId: id }
-        }));
-        if (!docResult.Item) return error('Documento no encontrado', 404);
-        const documentData = docResult.Item;
+        // 2. Documento de la empresa de la sesión y firmante asignado a él
+        const documentData = await documentoDelTenant(id, sesion);
+        if (!documentData) return error('Documento no encontrado', 404);
 
         const asignacionFirmante = (documentData.asignaciones || []).find(
             (a) => a.personaId === firmanteId
@@ -1119,6 +1191,10 @@ module.exports.signAssisted = async (event) => {
  */
 module.exports.signBulk = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
@@ -1131,24 +1207,30 @@ module.exports.signBulk = async (event) => {
             return error('Se requiere un array de IDs de personas');
         }
 
-        const docResult = await docClient.send(new GetCommand({
-            TableName: TABLE_NAME,
-            Key: { documentId: id }
-        }));
-        if (!docResult.Item) return error('Documento no encontrado', 404);
-        const documentData = docResult.Item;
+        // Sin PIN esto firmaba por una lista entera de personas (método PRESENCIAL,
+        // que valida siempre): era el camino más corto para fabricar evidencia.
+        // Con PIN obligatorio solo puede prosperar la firma de quien lo conoce.
+        if (!pin) {
+            return error('Debes ingresar el PIN de quien firma', 400);
+        }
+        if (!sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
+            return error('No tienes permiso para registrar firmas de otras personas', 403);
+        }
+
+        const documentData = await documentoDelTenant(id, sesion);
+        if (!documentData) return error('Documento no encontrado', 404);
 
         const contexto = {
             ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
             userAgent: event.headers?.['user-agent'] || 'unknown'
         };
 
-        const metodo = pin ? 'PIN' : 'PRESENCIAL';
+        const metodo = 'PIN';
         const resultado = await FirmaService.crearBatch(personaIds, {
             tenantId: documentData.tenantId,
             obraId: documentData.obraId || null,
             metodo,
-            credencial: pin || {},
+            credencial: pin,
             tipoFirma: tipoFirma || 'trabajador',
             referenciaId: id,
             referenciaTipo: 'document',
@@ -1211,15 +1293,22 @@ function keyDocumentoFirmado(s3Key) {
  */
 module.exports.downloadFirmado = async (event) => {
     try {
+        // Estuvo cerrado a la fuerza (403) mientras la API no tenía autenticación:
+        // emitía una URL prefirmada sin comprobar sesión ni empresa, y `GET
+        // /documents` repartía los identificadores. Se reabre con las dos
+        // comprobaciones que le faltaban — sesión y pertenencia del documento a la
+        // empresa de quien pide — más el resguardo de los documentos de salud.
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         if (!id) return error('ID de documento requerido');
 
-        const docResult = await docClient.send(new GetCommand({
-            TableName: TABLE_NAME,
-            Key: { documentId: id }
-        }));
-        if (!docResult.Item) return error('Documento no encontrado', 404);
-        const documentData = docResult.Item;
+        const documentData = await documentoDelTenant(id, sesion);
+        if (!documentData || !puedeVerDocumento(documentData, sesion)) {
+            return error('Documento no encontrado', 404);
+        }
 
         // El archivo puede haber quedado guardado en s3Key o en archivoUrl
         // según el flujo de creación (ver documents.create / documents.list).
@@ -1340,11 +1429,18 @@ module.exports.stamp = async (event) => {
  */
 module.exports.registrarDifusion = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         if (!id) return error('ID de documento requerido');
 
         const body = JSON.parse(event.body || '{}');
-        const { destinatarioTipo, medio, fecha, evidenciaDocumentoId, observacion, registradoPor } = body;
+        const { destinatarioTipo, medio, fecha, evidenciaDocumentoId, observacion } = body;
+        // Quién declara el envío queda registrado desde la sesión: la constancia
+        // vale por quién la firma.
+        const registradoPor = sesion.personaId;
 
         if (!DESTINATARIOS_VALIDOS.has(destinatarioTipo)) {
             return error(`destinatarioTipo inválido. Válidos: ${[...DESTINATARIOS_VALIDOS].join(', ')}`);
@@ -1358,8 +1454,11 @@ module.exports.registrarDifusion = async (event) => {
         if (Number.isNaN(fechaEnvio.getTime())) return error('La fecha de envío no es válida');
         if (fechaEnvio.getTime() > Date.now()) return error('La fecha de envío no puede ser futura');
 
-        const doc = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
+        const doc = { Item: await documentoDelTenant(id, sesion) };
         if (!doc.Item) return error('Documento no encontrado', 404);
+        if (!puedeSubir(sesion)) {
+            return error('No tienes permiso para registrar la difusión de un documento', 403);
+        }
 
         const constancia = {
             origen: 'manual',

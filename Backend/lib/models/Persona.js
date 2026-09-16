@@ -272,9 +272,19 @@ class Persona {
     }
 
     /**
-     * Formato seguro para API (sin hashes)
+     * Formato seguro para API (sin hashes).
+     *
+     * La vigilancia de la salud y la restricción laboral (Arts. 67 a 69) son
+     * datos sensibles de una persona identificable y NO viajan por omisión:
+     * sin ellos la ficha se ve igual, con ellos cualquier pantalla que liste
+     * personas los repartía a todo el que pudiera ver la lista. Los incluye
+     * quien resuelva que corresponde — el permiso `persona.vigilancia_salud`, o
+     * la propia persona sobre su ficha — pasando `{ incluirSalud: true }`. Es el
+     * mismo criterio que ya aplica `lib/documentos-salud.js` a los documentos.
+     *
+     * @param {{incluirSalud?: boolean}} [opciones]
      */
-    toSafeFormat() {
+    toSafeFormat({ incluirSalud = false } = {}) {
         return {
             personaId: this.personaId,
             tenantId: this.tenantId,
@@ -305,8 +315,10 @@ class Persona {
             estado: this.estado,
             passwordTemporal: this.passwordTemporal,
             onboardingDS44: this.onboardingDS44,
-            vigilanciaSalud: this.vigilanciaSalud,
-            restriccionLaboral: this.restriccionLaboral,
+            ...(incluirSalud ? {
+                vigilanciaSalud: this.vigilanciaSalud,
+                restriccionLaboral: this.restriccionLaboral,
+            } : {}),
             preferencias: this.preferencias,
             creadoPor: this.creadoPor,
             desvinculacion: this.desvinculacion,

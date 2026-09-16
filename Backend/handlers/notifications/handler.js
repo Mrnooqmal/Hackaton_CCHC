@@ -348,9 +348,21 @@ Este es un mensaje automático. Por favor no respondas a este correo.
  */
 module.exports.sendWelcome = async (event) => {
     try {
+        // ENDPOINT ELIMINADO — `POST /test-email`.
+        //
+        // Era un endpoint de prueba expuesto públicamente en producción: permitía
+        // que cualquiera disparara correos desde el remitente verificado del
+        // sistema. Además registraba el cuerpo completo del request en CloudWatch,
+        // que incluye RUT y contraseña temporal, con retención infinita.
+        //
+        // La ruta se retira de `serverless.yml` en el despliegue completo. Este
+        // corte cubre el intervalo. La función interna `sendWelcomeEmail`, que sí
+        // usa el alta de empresa, no se toca.
+        return error('Endpoint eliminado.', 410);
+
+        // eslint-disable-next-line no-unreachable
         const body = JSON.parse(event.body || '{}');
         const { email, nombre, rut, passwordTemporal } = body;
-        console.log('Received notification request body:', body);
         if (!email || !nombre || !rut || !passwordTemporal) {
             console.error('Missing required fields in notification request');
             return error('Faltan campos requeridos: email, nombre, rut, passwordTemporal');

@@ -26,6 +26,7 @@ const { construirExport, renderHtml } = require('../../lib/completitud-export');
 
 const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
+const { tenantIdDeSesion } = require('../../lib/auth/sesion');
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 
 /** Documentos del tenant. La completitud los necesita para los ítems 38, 46 y 47. */
@@ -160,9 +161,9 @@ module.exports.estructuraHandler = async (event) => {
     const accion = seg(5);
 
     const q = event.queryStringParameters || {};
-    const tenantId = q.tenantId
-        || event.requestContext?.authorizer?.claims?.['custom:tenantId']
-        || null;
+    // El tenantId sale de la SESIÓN, nunca del cliente. Ver la nota en
+    // `personas-module`: el orden anterior dejaba ganar al valor del llamante.
+    const tenantId = tenantIdDeSesion(event);
 
     try {
         if (method === 'OPTIONS') return cors();

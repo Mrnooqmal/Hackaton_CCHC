@@ -12,6 +12,7 @@ const { sanitizeCatalogosActividad, resolveCatalogos, PERMISOS_TRABAJO_DEF } = r
 const { EppCatalogoService } = require('../../lib/services/EppCatalogoService');
 const { PutObjectCommand } = require('@aws-sdk/client-s3');
 const { s3Client } = require('../../lib/clients/s3');
+const crypto = require('crypto');
 
 const BUCKET_NAME = process.env.DOCUMENTS_BUCKET;
 
@@ -67,16 +68,26 @@ module.exports.tenantsHandler = async (event) => {
             const body = JSON.parse(event.body || '{}');
             const personaService = new PersonaService();
 
-            // Gating: código de habilitación requerido para crear empresa.
-            // Fase 1: PIN estático en variable de entorno. Encapsulado para migrar a
-            // códigos emitidos por el super admin sin tocar el resto del flujo.
-            // Si TENANT_SIGNUP_CODE no está configurado, el alta no se gatea (dev/offline).
+            // Código de habilitación: FALLA CERRADO.
+            //
+            // Antes, con la variable vacía el alta no se gateaba. Estaba vacía en dev
+            // y en prod, así que cualquiera podía crear empresas en producción.
+            // Ahora sin código configurado no se crea nada.
+            //
+            // Es una medida transitoria: el alta debe dejar de ser pública y pasar a
+            // ser una operación administrativa. Para probar en local, definir
+            // TENANT_SIGNUP_CODE en el entorno de serverless-offline.
             const expectedSignupCode = process.env.TENANT_SIGNUP_CODE;
-            if (expectedSignupCode) {
-                const provided = (body.codigoHabilitacion || '').trim();
-                if (provided !== expectedSignupCode) {
-                    return error('Código de habilitación inválido. Solicítalo al administrador de la plataforma.', 403);
-                }
+            if (!expectedSignupCode) {
+                return error('El alta de empresas no está habilitada en este ambiente.', 403);
+            }
+            const provided = String(body.codigoHabilitacion || '').trim();
+            const a = Buffer.from(provided);
+            const b = Buffer.from(expectedSignupCode);
+            // Comparación de tiempo constante: `!==` sobre un secreto filtra por
+            // cuánto tarda en fallar cuántos caracteres acertó.
+            if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+                return error('Código de habilitación inválido. Solicítalo al administrador de la plataforma.', 403);
             }
 
             // Validar RUT del admin antes de crear el tenant

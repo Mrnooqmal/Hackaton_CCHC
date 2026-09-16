@@ -110,6 +110,19 @@ module.exports.getUploadUrl = async (event) => {
  */
 module.exports.getDownloadUrl = async (event) => {
     try {
+        // CONTENCIÓN TEMPORAL — no quitar sin reemplazo.
+        //
+        // Este endpoint emitía una URL de lectura para CUALQUIER clave de S3 que
+        // le pasaran, sin comprobar sesión, empresa ni propiedad del documento. La
+        // API además no tiene autorizador, así que era lectura anónima de cualquier
+        // archivo del bucket, incluidos los de salud.
+        //
+        // Se cierra hasta que exista autenticación y la validación de permiso sobre
+        // el documento. Rompe el visor de documentos a propósito: preferimos la app
+        // sin visor a la fuga abierta.
+        return error('Endpoint temporalmente deshabilitado por seguridad.', 403);
+
+        // eslint-disable-next-line no-unreachable
         const body = JSON.parse(event.body || '{}');
 
         if (!body.fileKey) {
@@ -203,6 +216,17 @@ module.exports.confirmUpload = async (event) => {
  */
 module.exports.deleteFile = async (event) => {
     try {
+        // CONTENCIÓN TEMPORAL — no quitar sin reemplazo.
+        //
+        // Borraba CUALQUIER objeto del bucket a partir de la clave, sin comprobar
+        // sesión, empresa ni propiedad. Sin versionado en los buckets, el borrado
+        // era irreversible.
+        //
+        // Ninguna pantalla lo llama: solo existía el envoltorio en
+        // `Frontend/src/api/uploads.api.ts`. Cerrarlo no rompe ningún flujo.
+        return error('Endpoint temporalmente deshabilitado por seguridad.', 403);
+
+        // eslint-disable-next-line no-unreachable
         // El fileKey viene codificado en la URL
         const fileKey = decodeURIComponent(event.pathParameters?.fileKey || '');
 
@@ -236,6 +260,18 @@ module.exports.deleteFile = async (event) => {
  */
 module.exports.getBatchDownloadUrls = async (event) => {
     try {
+        // CONTENCIÓN TEMPORAL — no quitar sin reemplazo.
+        //
+        // Mismo fallo que `/uploads/download-url` y peor: recibe un ARREGLO de
+        // claves, así que emitía en una sola llamada anónima tantas URLs de lectura
+        // como se le pidieran. Cerrar solo el endpoint unitario habría dejado la
+        // puerta abierta acá.
+        //
+        // Lo usa el listado de obras (`Frontend/src/pages/Obras.tsx`) para las
+        // miniaturas: se degradan a sin imagen, que es aceptable.
+        return error('Endpoint temporalmente deshabilitado por seguridad.', 403);
+
+        // eslint-disable-next-line no-unreachable
         const body = JSON.parse(event.body || '{}');
 
         if (!body.fileKeys || !Array.isArray(body.fileKeys)) {

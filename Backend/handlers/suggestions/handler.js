@@ -4,6 +4,7 @@ const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { created, error } = require('../../lib/utils/response');
 const { validateRequired } = require('../../lib/utils/validation');
+const { conSesion } = require('../../lib/auth/sesion');
 
 const SUGGESTIONS_TABLE = process.env.SUGGESTIONS_TABLE || 'Suggestions';
 const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'noreply@buildandserve.cl';
@@ -129,13 +130,12 @@ const sendSuggestionEmail = async ({ userName, interfaceLabel, message, createdA
 module.exports.create = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
-        const tenantId = body.tenantId
-            || event.queryStringParameters?.tenantId
-            || event.requestContext?.authorizer?.claims?.['custom:tenantId']
-            || null;
-        const userId = body.userId
-            || event.requestContext?.authorizer?.claims?.sub
-            || null;
+        // Empresa y autor salen de la SESIÓN. Antes ganaba el cuerpo del request,
+        // así que una sugerencia podía atribuirse a otra empresa o a otra persona.
+        const sesion = conSesion(event);
+        if (!sesion.ok) return sesion.respuesta;
+        const tenantId = sesion.sesion.tenantId;
+        const userId = sesion.sesion.personaId;
         const userName = body.userName || body.creatorName || null;
         const message = body.message || body.suggestion || '';
         const source = body.source || null;

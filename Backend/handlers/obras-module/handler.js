@@ -10,6 +10,7 @@ const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
+const { tenantIdDeSesion } = require('../../lib/auth/sesion');
 
 const obraService = new ObraService();
 const registroService = new RegistroService();
@@ -27,10 +28,16 @@ module.exports.obrasHandler = async (event) => {
     const subAction = obrasIndex !== -1 ? pathParts[obrasIndex + 3] || null : null;
     const subSubAction = obrasIndex !== -1 ? pathParts[obrasIndex + 4] || null : null;
 
-    // tenantId debe venir del JWT o query param (temporalmente)
-    const tenantId = event.queryStringParameters?.tenantId
-        || event.requestContext?.authorizer?.claims?.['custom:tenantId']
-        || null;
+    // El tenantId sale de la SESIÓN, nunca del cliente.
+    //
+    // Antes era `query.tenantId || authorizer.claims`, en ese orden: el valor
+    // del llamante ganaba sobre el del autorizador. Con un autorizador puesto
+    // y esta línea intacta, el sistema parecía seguro y seguía permitiendo
+    // leer otra empresa con `?tenantId=`.
+    //
+    // Queda `null` en las rutas públicas de este módulo, que ya contemplan ese
+    // caso.
+    const tenantId = tenantIdDeSesion(event);
 
     try {
         // CORS preflight

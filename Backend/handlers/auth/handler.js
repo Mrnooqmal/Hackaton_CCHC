@@ -18,6 +18,7 @@ const { validateRut, validateRequired, hashPassword, verifyPassword } = require(
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { resolvePersonaPermisos } = require('../../lib/permissions');
+const { hashToken, tokenDelEvento, sesionDesdeToken, conSesion } = require('../../lib/auth/sesion');
 const crypto = require('crypto');
 
 const SESSIONS_TABLE = process.env.SESSIONS_TABLE || 'Sessions';
@@ -62,7 +63,9 @@ const buildUserPayload = async (persona) => {
         console.error('Error resolviendo permisos:', permErr);
         permisos = resolvePersonaPermisos(persona, null);
     }
-    return { ...persona.toSafeFormat(), permisos, branding };
+    // Es la ficha de quien inicia sesión: sobre sus propios datos de salud no hay
+    // nada que ocultarle (ver Persona.toSafeFormat).
+    return { ...persona.toSafeFormat({ incluirSalud: true }), permisos, branding };
 };
 
 const generateSessionToken = () => {
@@ -93,7 +96,10 @@ const crearSesionParaPersona = async (persona, event) => {
         sessionId,
         personaId: persona.personaId,
         tenantId: persona.tenantId,
-        token,
+        // Solo el hash. El token en claro existe únicamente en el cliente: es una
+        // credencial portadora y guardarla legible convierte un volcado de la
+        // tabla en suplantación de cualquier usuario.
+        tokenHash: hashToken(token),
         ipAddress: event.requestContext?.http?.sourceIp
             || event.requestContext?.identity?.sourceIp || 'unknown',
         userAgent: event.headers?.['user-agent'] || 'unknown',
@@ -265,14 +271,25 @@ module.exports.selectTenant = async (event) => {
  */
 module.exports.changePassword = async (event) => {
     try {
+        // La persona sale de la SESIÓN, no del cuerpo.
+        //
+        // Antes se tomaba `personaId` del body y la contraseña actual solo se
+        // exigía si la persona ya no tenía contraseña temporal. Es decir: con el
+        // `personaId` de alguien que aún no cambiaba su clave inicial —y todo
+        // listado de personas los expone— se le podía fijar una contraseña nueva
+        // sin token ni credencial previa. Era una toma de cuenta.
+        const sesion = conSesion(event);
+        if (!sesion.ok) return sesion.respuesta;
+        const personaId = sesion.sesion.personaId;
+
         const body = JSON.parse(event.body || '{}');
 
-        const validation = validateRequired(body, ['personaId', 'passwordNuevo', 'confirmarPassword']);
+        const validation = validateRequired(body, ['passwordNuevo', 'confirmarPassword']);
         if (!validation.valid) {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
-        const { personaId, passwordActual, passwordNuevo, confirmarPassword } = body;
+        const { passwordActual, passwordNuevo, confirmarPassword } = body;
 
         if (passwordNuevo !== confirmarPassword) {
             return error('Las contraseñas no coinciden');
@@ -478,12 +495,14 @@ module.exports.resetPassword = async (event) => {
  */
 module.exports.logout = async (event) => {
     try {
-        const body = JSON.parse(event.body || '{}');
-        if (!body.sessionId) return error('sessionId es requerido');
+        // La sesión a cerrar sale del token, no del cuerpo. Antes bastaba con
+        // mandar un `sessionId` para cerrar la sesión de otra persona.
+        const session = await sesionDesdeToken(tokenDelEvento(event));
+        if (!session) return error('No autenticado', 401);
 
         await docClient.send(new UpdateCommand({
             TableName: SESSIONS_TABLE,
-            Key: { sessionId: body.sessionId },
+            Key: { sessionId: session.sessionId },
             UpdateExpression: 'SET activa = :activa',
             ExpressionAttributeValues: { ':activa': false }
         }));
@@ -505,31 +524,11 @@ module.exports.me = async (event) => {
             return error('Token no proporcionado', 401);
         }
 
-        const token = authHeader.substring(7);
-
-        // Buscar sesión por token (Scan temporal — en prod Cognito resuelve esto)
-        const sessionResult = await docClient.send(new ScanCommand({
-            TableName: SESSIONS_TABLE,
-            FilterExpression: '#token = :token AND activa = :activa',
-            ExpressionAttributeNames: { '#token': 'token' },
-            ExpressionAttributeValues: { ':token': token, ':activa': true }
-        }));
-
-        if (!sessionResult.Items || sessionResult.Items.length === 0) {
-            return error('Sesión inválida o expirada', 401);
-        }
-
-        const session = sessionResult.Items[0];
-
-        if (new Date(session.expiresAt) < new Date()) {
-            await docClient.send(new UpdateCommand({
-                TableName: SESSIONS_TABLE,
-                Key: { sessionId: session.sessionId },
-                UpdateExpression: 'SET activa = :activa',
-                ExpressionAttributeValues: { ':activa': false }
-            }));
-            return error('Sesión expirada', 401);
-        }
+        // Búsqueda por índice sobre el hash. Antes era un `Scan` de la tabla
+        // completa en cada llamada; el comentario original ya lo daba por
+        // temporal. `sesionDesdeToken` comprueba además vigencia y estado.
+        const session = await sesionDesdeToken(authHeader.substring(7));
+        if (!session) return error('Sesión inválida o expirada', 401);
 
         // Obtener persona
         const persona = await personaService.getById(session.personaId);
@@ -566,21 +565,10 @@ module.exports.validateToken = async (event) => {
         const body = JSON.parse(event.body || '{}');
         if (!body.token) return error('Token es requerido');
 
-        const sessionResult = await docClient.send(new ScanCommand({
-            TableName: SESSIONS_TABLE,
-            FilterExpression: '#token = :token AND activa = :activa',
-            ExpressionAttributeNames: { '#token': 'token' },
-            ExpressionAttributeValues: { ':token': body.token, ':activa': true }
-        }));
-
-        if (!sessionResult.Items || sessionResult.Items.length === 0) {
-            return success({ valid: false, reason: 'Token no encontrado' });
-        }
-
-        const session = sessionResult.Items[0];
-        if (new Date(session.expiresAt) < new Date()) {
-            return success({ valid: false, reason: 'Token expirado' });
-        }
+        // Un solo motivo para token ausente, cerrado o vencido: distinguirlos le
+        // diría a quien prueba tokens cuáles existieron alguna vez.
+        const session = await sesionDesdeToken(body.token);
+        if (!session) return success({ valid: false, reason: 'Token inválido o expirado' });
 
         return success({
             valid: true,

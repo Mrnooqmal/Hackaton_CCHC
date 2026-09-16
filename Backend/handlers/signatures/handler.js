@@ -10,6 +10,29 @@ const signatureRequests = require('../signature-requests/handler');
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { PERMISSIONS } = require('../../lib/permissions');
+const { normalizeRol } = require('../../lib/utils/validation');
+
+/**
+ * Firma de la empresa de la sesión, o null.
+ *
+ * La tabla está indexada por `signatureId`: con el id se leía, se disputaba y se
+ * revocaba la firma de cualquier empresa. Quien use esto responde 404.
+ */
+const firmaDelTenant = async (signatureId, sesion) => {
+    if (!signatureId) return null;
+    const res = await docClient.send(new GetCommand({
+        TableName: SIGNATURES_TABLE,
+        Key: { signatureId },
+    }));
+    const firma = res.Item;
+    return firma && firma.tenantId === sesion.tenantId ? firma : null;
+};
+
+/** Deja fuera lo que no sea de la empresa de la sesión. */
+const soloDelTenant = (items, sesion) =>
+    (items || []).filter((f) => f.tenantId === sesion.tenantId);
 
 /**
  * POST /signatures - Crear firma con validación de PIN
@@ -23,6 +46,10 @@ const { PersonaService } = require('../../lib/services/PersonaService');
  */
 module.exports.create = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const body = JSON.parse(event.body || '{}');
 
         // Validar campos requeridos
@@ -33,11 +60,24 @@ module.exports.create = async (event) => {
 
         const { personaId: inputPersonaId, pin, requestId, metadata } = body;
 
+        // Cada quien firma por sí mismo. Firmar por otro es la firma asistida (el
+        // trabajador teclea su PIN en el dispositivo de quien asiste) y exige ese
+        // permiso; el PIN sigue siendo la prueba del consentimiento.
+        if (inputPersonaId !== sesion.personaId
+            && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
+            return error('No tienes permiso para registrar la firma de otra persona', 403);
+        }
+
         // Obtener persona
         const personaService = new PersonaService();
         const persona = await personaService.getById(inputPersonaId);
 
         if (!persona) {
+            return error('Persona no encontrada', 404);
+        }
+
+        // Quien firma tiene que ser de la empresa de la sesión.
+        if (persona.tenantId !== sesion.tenantId) {
             return error('Persona no encontrada', 404);
         }
 
@@ -231,6 +271,10 @@ module.exports.create = async (event) => {
  */
 module.exports.createEnrollment = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const body = JSON.parse(event.body || '{}');
 
         const validation = validateRequired(body, ['personaId', 'pin']);
@@ -240,11 +284,17 @@ module.exports.createEnrollment = async (event) => {
 
         const { personaId, pin, signatureData } = body;
 
+        // La persona se enrola ella misma, o lo hace quien la registra en su
+        // dispositivo (mismo criterio que POST /personas/{id}/enrolamiento).
+        if (personaId !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.PERSONAS_CREAR)) {
+            return error('No tienes permiso para enrolar a otra persona', 403);
+        }
+
         // Obtener persona
         const personaService = new PersonaService();
         const persona = await personaService.getById(personaId);
 
-        if (!persona) {
+        if (!persona || persona.tenantId !== sesion.tenantId) {
             return error('Persona no encontrada', 404);
         }
 
@@ -319,24 +369,21 @@ module.exports.createEnrollment = async (event) => {
  */
 module.exports.get = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+
         const { id } = event.pathParameters || {};
 
         if (!id) {
             return error('ID de firma requerido');
         }
 
-        const result = await docClient.send(
-            new GetCommand({
-                TableName: SIGNATURES_TABLE,
-                Key: { signatureId: id },
-            })
-        );
-
-        if (!result.Item) {
+        const firma = await firmaDelTenant(id, ses.sesion);
+        if (!firma) {
             return error('Firma no encontrada', 404);
         }
 
-        return success(result.Item);
+        return success(firma);
     } catch (err) {
         console.error('Error getting signature:', err);
         return error(err.message, 500);
@@ -349,10 +396,20 @@ module.exports.get = async (event) => {
  */
 module.exports.getByWorker = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { workerId: inputId } = event.pathParameters || {};
         if (!inputId) return error('ID requerido');
 
-        // Query por GSI personaId-index
+        // El historial de firmas de otra persona es parte de su ficha.
+        if (inputId !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.PERSONAS_DETALLE)) {
+            return error('No tienes permiso para ver las firmas de otra persona', 403);
+        }
+
+        // Query por GSI personaId-index (índice global: el resultado se acota a la
+        // empresa de la sesión, porque una misma persona puede estar en varias).
         const result = await docClient.send(
             new QueryCommand({
                 TableName: SIGNATURES_TABLE,
@@ -362,7 +419,7 @@ module.exports.getByWorker = async (event) => {
             })
         );
 
-        const signatures = (result.Items || []).sort((a, b) =>
+        const signatures = soloDelTenant(result.Items, sesion).sort((a, b) =>
             new Date(b.timestamp) - new Date(a.timestamp)
         );
 
@@ -382,6 +439,9 @@ module.exports.getByWorker = async (event) => {
  */
 module.exports.getByRequest = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+
         const { requestId } = event.pathParameters || {};
 
         if (!requestId) {
@@ -400,8 +460,8 @@ module.exports.getByRequest = async (event) => {
             })
         );
 
-        // Ordenar por timestamp
-        const signatures = (result.Items || []).sort((a, b) =>
+        // Ordenar por timestamp (solo las de la empresa de la sesión)
+        const signatures = soloDelTenant(result.Items, ses.sesion).sort((a, b) =>
             new Date(a.timestamp) - new Date(b.timestamp)
         );
 
@@ -472,6 +532,10 @@ module.exports.verifyByToken = async (event) => {
  */
 module.exports.dispute = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
@@ -479,23 +543,23 @@ module.exports.dispute = async (event) => {
             return error('ID de firma requerido');
         }
 
-        const validation = validateRequired(body, ['motivo', 'reportadoPor']);
+        const validation = validateRequired(body, ['motivo']);
         if (!validation.valid) {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
-        const sigResult = await docClient.send(
-            new GetCommand({
-                TableName: SIGNATURES_TABLE,
-                Key: { signatureId: id },
-            })
-        );
-
-        if (!sigResult.Item) {
+        const firma = await firmaDelTenant(id, sesion);
+        if (!firma) {
             return error('Firma no encontrada', 404);
         }
 
-        if (sigResult.Item.estado === 'disputada') {
+        // Desconocer una firma lo hace la persona a la que se le atribuye, o quien
+        // gestiona firmas en la empresa.
+        if (firma.personaId !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.FIRMAS_CREAR)) {
+            return error('No tienes permiso para reportar esta firma', 403);
+        }
+
+        if (firma.estado === 'disputada') {
             return error('Esta firma ya está en disputa', 400);
         }
 
@@ -503,7 +567,8 @@ module.exports.dispute = async (event) => {
 
         const disputaInfo = {
             motivo: body.motivo,
-            reportadoPor: body.reportadoPor,
+            // Quién reporta sale de la sesión: es el sujeto de la disputa.
+            reportadoPor: sesion.personaId,
             fechaReporte: now,
             resolucion: null,
             resueltoPor: null,
@@ -538,6 +603,10 @@ module.exports.dispute = async (event) => {
  */
 module.exports.resolve = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
@@ -545,7 +614,7 @@ module.exports.resolve = async (event) => {
             return error('ID de firma requerido');
         }
 
-        const validation = validateRequired(body, ['resolucion', 'resueltoPor', 'nuevoEstado']);
+        const validation = validateRequired(body, ['resolucion', 'nuevoEstado']);
         if (!validation.valid) {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
@@ -554,26 +623,28 @@ module.exports.resolve = async (event) => {
             return error('Estado inválido. Debe ser "valida" o "revocada"');
         }
 
-        const sigResult = await docClient.send(
-            new GetCommand({
-                TableName: SIGNATURES_TABLE,
-                Key: { signatureId: id },
-            })
-        );
+        // Resolver una disputa puede REVOCAR una firma, que es la prueba de que se
+        // cumplió una obligación del DS 44: queda en manos del administrador de la
+        // empresa, no de cualquiera que conozca el identificador.
+        if (normalizeRol(sesion.rol) !== 'admin') {
+            return error('Solo un administrador puede resolver una disputa de firma', 403);
+        }
 
-        if (!sigResult.Item) {
+        const firma = await firmaDelTenant(id, sesion);
+        if (!firma) {
             return error('Firma no encontrada', 404);
         }
 
-        if (sigResult.Item.estado !== 'disputada') {
+        if (firma.estado !== 'disputada') {
             return error('Esta firma no está en disputa', 400);
         }
 
         const now = new Date().toISOString();
         const disputaInfo = {
-            ...sigResult.Item.disputaInfo,
+            ...firma.disputaInfo,
             resolucion: body.resolucion,
-            resueltoPor: body.resueltoPor,
+            // Quién resuelve sale de la sesión.
+            resueltoPor: sesion.personaId,
             fechaResolucion: now,
         };
 
@@ -606,12 +677,13 @@ module.exports.resolve = async (event) => {
  */
 module.exports.listDisputes = async (event) => {
     try {
-        const { tenantId } = event.queryStringParameters || {};
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
 
-        // Sin tenant un Scan expondría disputas de todas las empresas
-        if (!tenantId) {
-            return error('tenantId es requerido', 400);
-        }
+        // La empresa sale de la sesión. Antes se leía de `?tenantId=` —que el
+        // frontend ni siquiera manda, envía `empresaId`—, así que la pantalla no
+        // funcionaba y, con el parámetro correcto, listaba disputas ajenas.
+        const tenantId = ses.sesion.tenantId;
 
         // Query por GSI + filter
         const result = await docClient.send(

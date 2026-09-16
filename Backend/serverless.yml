@@ -64,6 +64,19 @@ provider:
     TENANT_SIGNUP_CODE: ${env:TENANT_SIGNUP_CODE, ''}
 
   httpApi:
+    # Autorizador de sesión. Se referencia explícitamente en cada ruta privada.
+    # La lista de rutas públicas está declarada en `tests/rutas-autenticadas.test.js`,
+    # que falla la build si aparece una ruta sin autorizador fuera de esa lista.
+    authorizers:
+      sesion:
+        type: request
+        functionName: sesionAuthorizer
+        identitySource:
+          - $request.header.Authorization
+        # 60s de caché por token: evita una lectura de DynamoDB por request, al
+        # precio de que un cierre de sesión tarde hasta un minuto en propagarse.
+        resultTtlInSeconds: 60
+        enableSimpleResponses: true
     cors:
       allowedOrigins:
         - '*'
@@ -102,6 +115,10 @@ provider:
             - !GetAtt SignaturesTable.Arn
             - !Sub ${SignaturesTable.Arn}/index/*
             - !GetAtt SessionsTable.Arn
+            # El índice `tokenHash-index` es el que resuelve el token en cada
+            # request: sin esta línea el autorizador niega todo, porque falla la
+            # consulta y el fallo se traduce en denegación.
+            - !Sub ${SessionsTable.Arn}/index/*
             - !GetAtt SurveysTable.Arn
             - !Sub ${SurveysTable.Arn}/index/*
             - !GetAtt IncidentsTable.Arn
@@ -172,17 +189,66 @@ package:
 
 functions:
   # ========================================
+  # AUTORIZADOR DE SESIÓN
+  # ========================================
+  # Resuelve el token de sesión y entrega `personaId` y `tenantId` a los
+  # handlers. No lleva eventos: lo invoca API Gateway, no una ruta.
+  sesionAuthorizer:
+    handler: handlers/auth/authorizer.autorizar
+
+  # ========================================
   # TENANTS (Empresas / Multi-Tenant)
   # ========================================
   tenantsModule:
     handler: handlers/tenants-module/handler.tenantsHandler
+    # El alta de empresa (/tenants/setup) encadena varias escrituras en
+    # DynamoDB más el envío síncrono del correo de bienvenida por SES. El
+    # default de 6s se queda corto y el timeout no es un fallo real: el envío
+    # de correo ya está protegido con try/catch y no revierte la creación.
+    # 29s y no 30: HTTP API tiene un tope duro de 30s en el integration timeout,
+    # así que igualarlo deja una carrera entre Lambda y el Gateway cortando
+    # primero. Un segundo de margen evita el 504 con Lambda ya resuelto.
+    timeout: 29
     events:
       - httpApi:
           path: /tenants
           method: any
+          authorizer:
+            name: sesion
       - httpApi:
           path: /tenants/{proxy+}
           method: any
+          authorizer:
+            name: sesion
+
+  # Acciones públicas del alta de empresa. Viven dentro del módulo catch-all,
+  # que ahora exige sesión, así que se exponen como rutas propias más
+  # específicas para poder dejarlas abiertas sin abrir el módulo entero.
+  # El mismo handler las atiende: enruta por segmento de path.
+  tenantsValidate:
+    handler: handlers/tenants-module/handler.tenantsHandler
+    events:
+      - httpApi:
+          path: /tenants/validate
+          method: get
+
+  tenantsSetup:
+    handler: handlers/tenants-module/handler.tenantsHandler
+    # Mismo motivo que `tenantsModule`: encadena escrituras y el correo por SES.
+    timeout: 29
+    events:
+      - httpApi:
+          path: /tenants/setup
+          method: post
+
+  # Validación de RUT disponible durante el alta: se consulta antes de existir
+  # la sesión.
+  personasValidate:
+    handler: handlers/personas-module/handler.personasHandler
+    events:
+      - httpApi:
+          path: /personas/validate
+          method: get
 
   # ========================================
   # OBRAS (Proyectos de Construcción)
@@ -195,9 +261,13 @@ functions:
       - httpApi:
           path: /estructura
           method: any
+          authorizer:
+            name: sesion
       - httpApi:
           path: /estructura/{proxy+}
           method: any
+          authorizer:
+            name: sesion
 
   obrasModule:
     handler: handlers/obras-module/handler.obrasHandler
@@ -205,9 +275,13 @@ functions:
       - httpApi:
           path: /obras
           method: any
+          authorizer:
+            name: sesion
       - httpApi:
           path: /obras/{proxy+}
           method: any
+          authorizer:
+            name: sesion
 
   # ========================================
   # PERSONAS (Identidad Unificada - reemplaza Users + Workers)
@@ -218,9 +292,13 @@ functions:
       - httpApi:
           path: /personas
           method: any
+          authorizer:
+            name: sesion
       - httpApi:
           path: /personas/{proxy+}
           method: any
+          authorizer:
+            name: sesion
 
   # Auth (Autenticación)
   authLogin:
@@ -243,6 +321,8 @@ functions:
       - httpApi:
           path: /auth/change-password
           method: POST
+          authorizer:
+            name: sesion
 
   authForgotPassword:
     handler: handlers/auth/handler.forgotPassword
@@ -264,6 +344,8 @@ functions:
       - httpApi:
           path: /auth/logout
           method: POST
+          authorizer:
+            name: sesion
 
   authMe:
     handler: handlers/auth/handler.me
@@ -271,6 +353,8 @@ functions:
       - httpApi:
           path: /auth/me
           method: GET
+          authorizer:
+            name: sesion
 
   authValidateToken:
     handler: handlers/auth/handler.validateToken
@@ -289,6 +373,8 @@ functions:
       - httpApi:
           path: /signature-requests
           method: POST
+          authorizer:
+            name: sesion
 
   listSignatureRequests:
     handler: handlers/signature-requests/handler.list
@@ -296,6 +382,8 @@ functions:
       - httpApi:
           path: /signature-requests
           method: GET
+          authorizer:
+            name: sesion
 
   getSignatureRequest:
     handler: handlers/signature-requests/handler.get
@@ -303,6 +391,8 @@ functions:
       - httpApi:
           path: /signature-requests/{id}
           method: GET
+          authorizer:
+            name: sesion
 
   getPendingByWorker:
     handler: handlers/signature-requests/handler.getPendingByWorker
@@ -310,6 +400,8 @@ functions:
       - httpApi:
           path: /signature-requests/pending/{workerId}
           method: GET
+          authorizer:
+            name: sesion
 
   getHistoryByWorker:
     handler: handlers/signature-requests/handler.getHistoryByWorker
@@ -317,6 +409,8 @@ functions:
       - httpApi:
           path: /signature-requests/history/{workerId}
           method: GET
+          authorizer:
+            name: sesion
 
   cancelSignatureRequest:
     handler: handlers/signature-requests/handler.cancel
@@ -324,6 +418,8 @@ functions:
       - httpApi:
           path: /signature-requests/{id}/cancel
           method: POST
+          authorizer:
+            name: sesion
 
   getSignatureRequestStats:
     handler: handlers/signature-requests/handler.getStats
@@ -331,6 +427,8 @@ functions:
       - httpApi:
           path: /signature-requests/stats
           method: GET
+          authorizer:
+            name: sesion
 
   processOfflineBatch:
     handler: handlers/signature-requests/handler.processOfflineBatch
@@ -338,6 +436,8 @@ functions:
       - httpApi:
           path: /signature-requests/offline-batch
           method: POST
+          authorizer:
+            name: sesion
 
   # Activities (Actividades)
   listActivities:
@@ -346,6 +446,8 @@ functions:
       - httpApi:
           path: /activities
           method: GET
+          authorizer:
+            name: sesion
 
   createActivity:
     handler: handlers/activities/handler.create
@@ -353,6 +455,8 @@ functions:
       - httpApi:
           path: /activities
           method: POST
+          authorizer:
+            name: sesion
 
   getActivity:
     handler: handlers/activities/handler.get
@@ -360,6 +464,8 @@ functions:
       - httpApi:
           path: /activities/{id}
           method: GET
+          authorizer:
+            name: sesion
 
   planActivities:
     handler: handlers/activities/handler.plan
@@ -367,6 +473,8 @@ functions:
       - httpApi:
           path: /activities/plan
           method: POST
+          authorizer:
+            name: sesion
 
   patchActivity:
     handler: handlers/activities/handler.patch
@@ -374,6 +482,8 @@ functions:
       - httpApi:
           path: /activities/{id}
           method: PATCH
+          authorizer:
+            name: sesion
 
   registerActivityAttendance:
     handler: handlers/activities/handler.registerAttendance
@@ -381,6 +491,8 @@ functions:
       - httpApi:
           path: /activities/{id}/attendance
           method: POST
+          authorizer:
+            name: sesion
 
   getActivityStats:
     handler: handlers/activities/handler.getStats
@@ -388,6 +500,8 @@ functions:
       - httpApi:
           path: /activities/stats
           method: GET
+          authorizer:
+            name: sesion
 
   # Ausencias / permisos del día (control de asistencia §6)
   createAusencia:
@@ -396,6 +510,8 @@ functions:
       - httpApi:
           path: /ausencias
           method: POST
+          authorizer:
+            name: sesion
 
   listAusencias:
     handler: handlers/ausencias/handler.list
@@ -403,6 +519,8 @@ functions:
       - httpApi:
           path: /ausencias
           method: GET
+          authorizer:
+            name: sesion
 
   removeAusencia:
     handler: handlers/ausencias/handler.remove
@@ -410,6 +528,8 @@ functions:
       - httpApi:
           path: /ausencias
           method: DELETE
+          authorizer:
+            name: sesion
 
   # Scheduler de alertas de asistencia (§6): avisa al inbox de los responsables
   # cuando una charla superó su hora de término sin cerrarse, y a mediodía si
@@ -442,6 +562,8 @@ functions:
       - httpApi:
           path: /documents
           method: GET
+          authorizer:
+            name: sesion
 
   createDocument:
     handler: handlers/documents/handler.create
@@ -449,6 +571,8 @@ functions:
       - httpApi:
           path: /documents
           method: POST
+          authorizer:
+            name: sesion
 
   getDocument:
     handler: handlers/documents/handler.get
@@ -456,6 +580,8 @@ functions:
       - httpApi:
           path: /documents/{id}
           method: GET
+          authorizer:
+            name: sesion
 
   updateDocument:
     handler: handlers/documents/handler.update
@@ -463,6 +589,8 @@ functions:
       - httpApi:
           path: /documents/{id}
           method: PUT
+          authorizer:
+            name: sesion
 
   deleteDocument:
     handler: handlers/documents/handler.remove
@@ -470,6 +598,8 @@ functions:
       - httpApi:
           path: /documents/{id}
           method: DELETE
+          authorizer:
+            name: sesion
 
   documentNuevaVersion:
     handler: handlers/documents/handler.nuevaVersion
@@ -477,6 +607,8 @@ functions:
       - httpApi:
           path: /documents/{id}/nueva-version
           method: POST
+          authorizer:
+            name: sesion
 
   # Versionado de documentos corporativos (Reglamento, Política): no tienen un
   # documentId único, se reparten en copias por persona. Va antes que
@@ -487,6 +619,8 @@ functions:
       - httpApi:
           path: /documents/corporativo/nueva-version
           method: POST
+          authorizer:
+            name: sesion
 
   # Constancia de envio declarado (Art. 57 inc. 2 y equivalentes). Se suma al
   # mismo array difusiones[] que escribe EventBus al publicar una version.
@@ -496,6 +630,8 @@ functions:
       - httpApi:
           path: /documents/{id}/difusion
           method: POST
+          authorizer:
+            name: sesion
 
   assignDocument:
     handler: handlers/documents/handler.assign
@@ -503,6 +639,8 @@ functions:
       - httpApi:
           path: /documents/{id}/assign
           method: POST
+          authorizer:
+            name: sesion
 
   signDocument:
     handler: handlers/documents/handler.sign
@@ -510,6 +648,8 @@ functions:
       - httpApi:
           path: /documents/{id}/sign
           method: POST
+          authorizer:
+            name: sesion
 
   signBulkDocuments:
     handler: handlers/documents/handler.signBulk
@@ -517,6 +657,8 @@ functions:
       - httpApi:
           path: /documents/{id}/sign-bulk
           method: POST
+          authorizer:
+            name: sesion
 
   signAssistedDocument:
     handler: handlers/documents/handler.signAssisted
@@ -524,6 +666,8 @@ functions:
       - httpApi:
           path: /documents/{id}/sign-assisted
           method: POST
+          authorizer:
+            name: sesion
 
   downloadSignedDocument:
     handler: handlers/documents/handler.downloadFirmado
@@ -531,6 +675,8 @@ functions:
       - httpApi:
           path: /documents/{id}/download-firmado
           method: GET
+          authorizer:
+            name: sesion
 
   stampSignedDocument:
     handler: handlers/documents/handler.stamp
@@ -549,6 +695,8 @@ functions:
       - httpApi:
           path: /signatures
           method: POST
+          authorizer:
+            name: sesion
 
   createEnrollmentSignature:
     handler: handlers/signatures/handler.createEnrollment
@@ -556,6 +704,8 @@ functions:
       - httpApi:
           path: /signatures/enroll
           method: POST
+          authorizer:
+            name: sesion
 
   getSignature:
     handler: handlers/signatures/handler.get
@@ -563,6 +713,8 @@ functions:
       - httpApi:
           path: /signatures/{id}
           method: GET
+          authorizer:
+            name: sesion
 
   getSignaturesByWorker:
     handler: handlers/signatures/handler.getByWorker
@@ -570,6 +722,8 @@ functions:
       - httpApi:
           path: /signatures/worker/{workerId}
           method: GET
+          authorizer:
+            name: sesion
 
   getSignaturesByRequest:
     handler: handlers/signatures/handler.getByRequest
@@ -577,6 +731,8 @@ functions:
       - httpApi:
           path: /signatures/request/{requestId}
           method: GET
+          authorizer:
+            name: sesion
 
   verifySignatureByToken:
     handler: handlers/signatures/handler.verifyByToken
@@ -591,6 +747,8 @@ functions:
       - httpApi:
           path: /signatures/{id}/dispute
           method: POST
+          authorizer:
+            name: sesion
 
   resolveSignatureDispute:
     handler: handlers/signatures/handler.resolve
@@ -598,6 +756,8 @@ functions:
       - httpApi:
           path: /signatures/{id}/resolve
           method: PUT
+          authorizer:
+            name: sesion
 
   listSignatureDisputes:
     handler: handlers/signatures/handler.listDisputes
@@ -605,6 +765,8 @@ functions:
       - httpApi:
           path: /signatures/disputes
           method: GET
+          authorizer:
+            name: sesion
 
   # ========================================
   # UPLOADS (Subida de archivos a S3)
@@ -615,6 +777,8 @@ functions:
       - httpApi:
           path: /uploads/presigned-url
           method: POST
+          authorizer:
+            name: sesion
 
   getDownloadUrl:
     handler: handlers/uploads/handler.getDownloadUrl
@@ -622,6 +786,8 @@ functions:
       - httpApi:
           path: /uploads/download-url
           method: POST
+          authorizer:
+            name: sesion
 
   confirmUpload:
     handler: handlers/uploads/handler.confirmUpload
@@ -629,6 +795,8 @@ functions:
       - httpApi:
           path: /uploads/confirm
           method: POST
+          authorizer:
+            name: sesion
 
   deleteUpload:
     handler: handlers/uploads/handler.deleteFile
@@ -636,6 +804,8 @@ functions:
       - httpApi:
           path: /uploads/{fileKey}
           method: DELETE
+          authorizer:
+            name: sesion
 
   getBatchDownloadUrls:
     handler: handlers/uploads/handler.getBatchDownloadUrls
@@ -643,6 +813,8 @@ functions:
       - httpApi:
           path: /uploads/batch-download-urls
           method: POST
+          authorizer:
+            name: sesion
 
   # Transcripción de audio (dictado del relato al reportar un incidente)
   aiTranscribeAudio:
@@ -652,6 +824,8 @@ functions:
       - httpApi:
           path: /ai/transcribe
           method: POST
+          authorizer:
+            name: sesion
 
   # Surveys (Encuestas)
   createSurvey:
@@ -660,6 +834,8 @@ functions:
       - httpApi:
           path: /surveys
           method: POST
+          authorizer:
+            name: sesion
 
   listSurveys:
     handler: handlers/surveys/handler.list
@@ -667,6 +843,8 @@ functions:
       - httpApi:
           path: /surveys
           method: GET
+          authorizer:
+            name: sesion
 
   getSurvey:
     handler: handlers/surveys/handler.get
@@ -674,6 +852,8 @@ functions:
       - httpApi:
           path: /surveys/{id}
           method: GET
+          authorizer:
+            name: sesion
 
   updateSurveyResponse:
     handler: handlers/surveys/handler.updateResponseStatus
@@ -681,6 +861,8 @@ functions:
       - httpApi:
           path: /surveys/{id}/responses/{workerId}
           method: POST
+          authorizer:
+            name: sesion
 
   incidentsModule:
     handler: handlers/incidents-module/handler.incidentsHandler
@@ -688,17 +870,18 @@ functions:
       - httpApi:
           path: /incidents
           method: any
+          authorizer:
+            name: sesion
       - httpApi:
           path: /incidents/{proxy+}
           method: any
+          authorizer:
+            name: sesion
 
-  # Notifications
-  sendWelcomeEmail:
-    handler: handlers/notifications/handler.sendWelcome
-    events:
-      - httpApi:
-          path: /test-email
-          method: POST
+  # `POST /test-email` retirado: endpoint de prueba expuesto en producción que
+  # permitía disparar correos desde el remitente verificado del sistema y
+  # registraba RUT y contraseña temporal en CloudWatch. La función interna
+  # `sendWelcomeEmail` la sigue usando el alta de empresa y no se toca.
 
   inboxModule:
     handler: handlers/inbox-module/handler.inboxHandler
@@ -706,9 +889,13 @@ functions:
       - httpApi:
           path: /inbox
           method: any
+          authorizer:
+            name: sesion
       - httpApi:
           path: /inbox/{proxy+}
           method: any
+          authorizer:
+            name: sesion
 
   # Suggestions (Sugerencias)
   createSuggestion:
@@ -717,6 +904,8 @@ functions:
       - httpApi:
           path: /suggestions
           method: POST
+          authorizer:
+            name: sesion
 
 resources:
   Resources:
@@ -1186,9 +1375,27 @@ resources:
         AttributeDefinitions:
           - AttributeName: sessionId
             AttributeType: S
+          - AttributeName: tokenHash
+            AttributeType: S
         KeySchema:
           - AttributeName: sessionId
             KeyType: HASH
+        GlobalSecondaryIndexes:
+          # Resolución token -> sesión en cada request autenticado. Antes era un
+          # `Scan` de la tabla completa. Proyección acotada: el autorizador solo
+          # necesita saber quién es y de qué empresa, no la sesión entera.
+          - IndexName: tokenHash-index
+            KeySchema:
+              - AttributeName: tokenHash
+                KeyType: HASH
+            Projection:
+              ProjectionType: INCLUDE
+              NonKeyAttributes:
+                - sessionId
+                - personaId
+                - tenantId
+                - expiresAt
+                - activa
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true

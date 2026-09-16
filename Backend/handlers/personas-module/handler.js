@@ -15,11 +15,12 @@ const { EppService } = require('../../lib/services/EppService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { normalizeRol, validateRut } = require('../../lib/utils/validation');
-const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { PERMISSIONS } = require('../../lib/permissions');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
 const { normalizeCargoCodigo, resolveCargoKitFromCatalog, resolveKitUnion, esEvidenciaReutilizable } = require('../../lib/ds44');
 const { InboxRepository } = require('../inbox-module/inbox.repository');
+const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
 const personaService = new PersonaService();
 const obraService = new ObraService();
@@ -1169,10 +1170,96 @@ module.exports.personasHandler = async (event) => {
     const personaId = segments[0] || null;
     const action = segments[1] || null;
 
-    // tenantId: del JWT o query (temporal durante migración)
-    const tenantId = event.queryStringParameters?.tenantId
-        || event.requestContext?.authorizer?.claims?.['custom:tenantId']
-        || null;
+    // El tenantId sale de la SESIÓN, nunca del cliente.
+    //
+    // Antes era `query.tenantId || authorizer.claims`, en ese orden: el valor
+    // del llamante ganaba sobre el del autorizador. Con un autorizador puesto
+    // y esta línea intacta, el sistema parecía seguro y seguía permitiendo
+    // leer otra empresa con `?tenantId=`.
+    //
+    // Queda `null` en las rutas públicas de este módulo, que ya contemplan ese
+    // caso.
+    const tenantId = tenantIdDeSesion(event);
+
+    // Quién pregunta. `/personas/validate` es pública (registro de empresa) y sigue
+    // resolviéndose sin sesión; todo el resto la exige antes de tocar un dato.
+    const sesionRes = conSesion(event);
+    const sesion = sesionRes.ok ? sesionRes.sesion : null;
+    const puede = (permiso) => sesionPuede(sesion, permiso);
+    const sesionEsAdmin = () => normalizeRol(sesion?.rol) === 'admin';
+    const verSalud = () => puede(PERMISSIONS.PERSONA_VIGILANCIA_SALUD);
+
+    // Persona de ESTA empresa, o null.
+    //
+    // `personaService.getById` resuelve por el índice global `personaId-index`: con
+    // el id a mano devolvía la persona de cualquier empresa, y las escrituras usan
+    // `PK: TENANT#{tenantId}` de la sesión, así que además de leer ajeno se podía
+    // crear un registro fantasma en la empresa propia. Se responde 404 y no 403:
+    // que ese id exista en otra empresa tampoco corresponde contarlo.
+    const personaDelTenant = async (id) => {
+        if (!id || !tenantId) return null;
+        const p = await personaService.getById(id).catch(() => null);
+        return p && p.tenantId === tenantId ? p : null;
+    };
+
+    // Ficha de una persona tal como puede verla quien pide: los datos de salud solo
+    // para quien tiene el permiso o para ella misma.
+    const fichaVisible = (persona) => persona.toSafeFormat({
+        incluirSalud: verSalud() || persona.personaId === sesion?.personaId,
+    });
+
+    /**
+     * Qué puede cambiar quien pide, campo por campo (PUT /personas/{id}).
+     *
+     * Antes la ruta no miraba ni la empresa ni el permiso: con el id de alguien se
+     * le podía cambiar el rol a `admin`, el estado a desvinculado o la ficha de
+     * vigilancia de salud. Se resuelve por campo y no por ruta porque la misma
+     * ruta atiende dos cosas distintas: cada quien editando su perfil (foto,
+     * teléfono, avisos) y la gestión de la ficha de un tercero.
+     *
+     * Devuelve el mensaje del rechazo, o null si todo lo enviado está permitido.
+     */
+    const campoNoPermitido = (body, objetivo) => {
+        // Lo que cualquiera puede cambiar de SU PROPIA ficha.
+        const CAMPOS_PROPIOS = new Set([
+            'fotoPerfil', 'telefono', 'notificacionesSms', 'preferencias', 'contactoEmergencia',
+        ]);
+        // Campos con dueño distinto de PERSONAS_CREAR (el resto exige ese permiso).
+        const PERMISOS_POR_CAMPO = {
+            rol: [PERMISSIONS.EMPRESA_ROLES, PERMISSIONS.PERSONAS_CREAR],
+            estado: [PERMISSIONS.PERSONAS_CREAR, PERMISSIONS.PERSONA_DESVINCULAR],
+            vigilanciaSalud: [PERMISSIONS.PERSONA_VIGILANCIA_SALUD],
+            restriccionLaboral: [PERMISSIONS.PERSONA_VIGILANCIA_SALUD],
+            evidencias: [PERMISSIONS.PERSONAS_CREAR, PERMISSIONS.PERSONA_ONBOARDING],
+            onboardingDS44: [PERMISSIONS.PERSONAS_CREAR, PERMISSIONS.PERSONA_ONBOARDING],
+        };
+        const esPropia = objetivo.personaId === sesion.personaId;
+
+        // `solicitanteId` es metadato del llamante, no un campo de la persona:
+        // `PersonaService.actualizar` lo ignora y acá tampoco se evalúa.
+        const campos = Object.keys(body).filter((c) => c !== 'solicitanteId');
+
+        for (const campo of campos) {
+            if (esPropia && CAMPOS_PROPIOS.has(campo)) continue;
+            const permisos = PERMISOS_POR_CAMPO[campo] || [PERMISSIONS.PERSONAS_CREAR];
+            if (!permisos.some(puede)) {
+                return campo === 'vigilanciaSalud' || campo === 'restriccionLaboral'
+                    ? 'No tienes permiso para modificar la información de salud de una persona'
+                    : `No tienes permiso para modificar "${campo}"`;
+            }
+        }
+
+        // Escalada de privilegios: nombrar administradores es cosa de administradores.
+        if (campos.includes('rol') && normalizeRol(body.rol) === 'admin' && !sesionEsAdmin()) {
+            return 'Solo un administrador puede otorgar el rol de administrador';
+        }
+        return null;
+    };
+
+    // Mover gente entre obras: el permiso de la pantalla de equipo de obra, o el
+    // de gestión de personas (la ficha del trabajador hace lo mismo).
+    const puedeAsignarObras = () =>
+        puede(PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES) || puede(PERMISSIONS.PERSONAS_CREAR);
 
     try {
         // CORS preflight
@@ -1180,6 +1267,7 @@ module.exports.personasHandler = async (event) => {
 
         // GET /personas/plantilla — Descargar plantilla Excel
         if (method === 'GET' && personaId === 'plantilla') {
+            if (!sesion) return sesionRes.respuesta;
             // Plantilla tenant-aware: pobla los desplegables de rol, cargo y obra con
             // los valores reales de la empresa cuando hay tenantId disponible.
             let roles, cargos, obras;
@@ -1207,6 +1295,7 @@ module.exports.personasHandler = async (event) => {
 
         // POST /personas/parse-excel — Parsear Excel sin crear personas (para onboarding)
         if (method === 'POST' && personaId === 'parse-excel') {
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
             const fileBase64 = body.fileBase64 || body.archivoBase64 || '';
             const fileName = body.fileName || 'personas.xlsx';
@@ -1289,7 +1378,10 @@ module.exports.personasHandler = async (event) => {
 
         // POST /personas/carga-masiva/validar — Wizard paso 1: parsea + valida SIN crear.
         if (method === 'POST' && personaId === 'carga-masiva' && action === 'validar') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!puede(PERMISSIONS.PERSONAS_CREAR)) {
+                return error('No tienes permiso para cargar personas', 403);
+            }
             const body = JSON.parse(event.body || '{}');
             const fileBase64 = body.fileBase64 || body.archivoBase64 || '';
             if (!fileBase64) return error('No se proporcionó ningún archivo');
@@ -1339,7 +1431,10 @@ module.exports.personasHandler = async (event) => {
 
         // POST /personas/carga-masiva/confirmar — Wizard paso 2: crea (2 pasadas) las filas aprobadas (JSON).
         if (method === 'POST' && personaId === 'carga-masiva' && action === 'confirmar') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!puede(PERMISSIONS.PERSONAS_CREAR)) {
+                return error('No tienes permiso para cargar personas', 403);
+            }
             const body = JSON.parse(event.body || '{}');
             const filasInput = Array.isArray(body.filas) ? body.filas : [];
             const sendEmails = Boolean(body.sendWelcomeEmail);
@@ -1426,7 +1521,10 @@ module.exports.personasHandler = async (event) => {
 
         // POST /personas/carga-masiva — Procesar Excel (flujo directo, sin wizard)
         if (method === 'POST' && personaId === 'carga-masiva' && !action) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!puede(PERMISSIONS.PERSONAS_CREAR)) {
+                return error('No tienes permiso para cargar personas', 403);
+            }
             const body = JSON.parse(event.body || '{}');
             const fileBase64 = body.fileBase64 || body.archivoBase64 || '';
             const fileName = body.fileName || 'personas.xlsx';
@@ -1639,18 +1737,22 @@ module.exports.personasHandler = async (event) => {
 
         // POST /personas — Crear persona
         if (method === 'POST' && !personaId) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
 
-            // Enforcement por permiso cuando se identifica al creador.
-            // (El onboarding inicial crea el admin sin creador y queda exento.)
-            const creadorId = body.creadorId || body.solicitanteId || null;
-            if (creadorId) {
-                const creadorPersona = await personaService.getById(creadorId).catch(() => null);
-                if (!creadorPersona || !personaPuede(creadorPersona, await tenantSafe(tenantId), PERMISSIONS.PERSONAS_CREAR)) {
-                    return error('No tienes permiso para crear personas', 403);
-                }
+            // El permiso se exige SIEMPRE, no solo cuando el cuerpo trae creador:
+            // antes bastaba con omitir `creadorId` para saltarse la comprobación.
+            // (El primer administrador lo crea /tenants/setup, no esta ruta.)
+            if (!puede(PERMISSIONS.PERSONAS_CREAR)) {
+                return error('No tienes permiso para crear personas', 403);
             }
+            // Escalada de privilegios: solo un administrador nombra administradores.
+            if (normalizeRol(body.rol) === 'admin' && !sesionEsAdmin()) {
+                return error('Solo un administrador puede crear otro administrador', 403);
+            }
+
+            // Quién crea sale de la sesión, no del cuerpo.
+            const creadorId = sesion.personaId;
 
             const { persona, passwordTemporal } = await personaService.crear(tenantId, {
                 ...body,
@@ -1664,7 +1766,7 @@ module.exports.personasHandler = async (event) => {
 
             // Documentos de empresa (RI/Política) a nivel tenant: a TODA persona
             // no-admin, tenga o no obra.
-            const solicitanteCreate = body.solicitanteId ? await personaService.getById(body.solicitanteId).catch(() => null) : null;
+            const solicitanteCreate = await personaService.getById(creadorId).catch(() => null);
             if (normalizeRol(persona.rol) !== 'admin') {
                 await ensureCompanyDocsForPersona({ tenantId, persona, solicitante: solicitanteCreate }).catch((e) =>
                     console.error('Docs empresa al crear persona:', e.message));
@@ -1697,7 +1799,7 @@ module.exports.personasHandler = async (event) => {
 
             return created({
                 message: 'Persona creada exitosamente',
-                persona: persona.toSafeFormat(),
+                persona: fichaVisible(persona),
                 passwordTemporal: passwordTemporal || undefined,
                 emailNotificado: emailSent
             });
@@ -1705,7 +1807,7 @@ module.exports.personasHandler = async (event) => {
 
         // GET /personas — Listar personas del tenant
         if (method === 'GET' && !personaId) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const { rol, estado, obraId } = event.queryStringParameters || {};
             const personas = await personaService.listByTenant(tenantId, { rol, estado, obraId });
             // Resuelve nombre/tipo del rol desde la def. del tenant para que el
@@ -1714,7 +1816,7 @@ module.exports.personasHandler = async (event) => {
             return success({
                 total: personas.length,
                 personas: personas.map(p => {
-                    const safe = p.toSafeFormat();
+                    const safe = fichaVisible(p);
                     const r = resolverRol(p.rol, tenantDef);
                     return {
                         ...safe,
@@ -1747,25 +1849,32 @@ module.exports.personasHandler = async (event) => {
 
         // GET /personas/by-rut/{rut} — Buscar por RUT
         if (method === 'GET' && personaId === 'by-rut' && action) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const persona = await personaService.getByRut(tenantId, action);
             if (!persona) return error('Persona no encontrada', 404);
-            return success(persona.toSafeFormat());
+            return success(fichaVisible(persona));
         }
 
-        // GET /personas/{id} — Obtener persona
+        // GET /personas/{id} — Obtener persona (solo de la empresa de la sesión)
         if (method === 'GET' && personaId && !action) {
-            const persona = await personaService.getById(personaId);
+            if (!sesion) return sesionRes.respuesta;
+            const persona = await personaDelTenant(personaId);
             if (!persona) return error('Persona no encontrada', 404);
-            return success(persona.toSafeFormat());
+            return success(fichaVisible(persona));
         }
 
         // PUT /personas/{id} — Actualizar persona
         if (method === 'PUT' && personaId && !action) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
-            const previousPersona = await personaService.getById(personaId);
-            const previousObraIds = new Set(previousPersona?.obraIds || []);
+
+            const previousPersona = await personaDelTenant(personaId);
+            if (!previousPersona) return error('Persona no encontrada', 404);
+
+            const negado = campoNoPermitido(body, previousPersona);
+            if (negado) return error(negado, 403);
+
+            const previousObraIds = new Set(previousPersona.obraIds || []);
             const persona = await personaService.actualizar(tenantId, personaId, body);
 
             try {
@@ -1774,12 +1883,7 @@ module.exports.personasHandler = async (event) => {
                 const noEsAdmin = normalizeRol(persona.rol) !== 'admin';
 
                 if (noEsAdmin && addedObras.length > 0) {
-                    const solicitanteId = body.solicitanteId
-                        || event.requestContext?.authorizer?.claims?.sub
-                        || null;
-                    const solicitante = solicitanteId
-                        ? await personaService.getById(solicitanteId)
-                        : null;
+                    const solicitante = await personaService.getById(sesion.personaId).catch(() => null);
 
                     for (const obraId of addedObras) {
                         await runOnboardingForObra({
@@ -1796,7 +1900,7 @@ module.exports.personasHandler = async (event) => {
 
             return success({
                 message: 'Persona actualizada',
-                persona: persona.toSafeFormat()
+                persona: fichaVisible(persona)
             });
         }
 
@@ -1804,20 +1908,15 @@ module.exports.personasHandler = async (event) => {
         // Requiere el permiso PERSONA_DESVINCULAR del solicitante. No se permite
         // desvincular al administrador. Decrementa el conteo del tenant.
         if (method === 'DELETE' && personaId && !action) {
-            if (!tenantId) return error('tenantId es requerido');
-            const body = JSON.parse(event.body || '{}');
-
-            const solicitanteId = body.solicitanteId
-                || event.requestContext?.authorizer?.claims?.sub
-                || null;
-            if (solicitanteId) {
-                const solicitante = await personaService.getById(solicitanteId).catch(() => null);
-                if (!solicitante || !personaPuede(solicitante, await tenantSafe(tenantId), PERMISSIONS.PERSONA_DESVINCULAR)) {
-                    return error('No tienes permiso para desvincular personas de la empresa', 403);
-                }
+            if (!sesion) return sesionRes.respuesta;
+            // El permiso se exige SIEMPRE (antes bastaba con no mandar solicitante)
+            // y quien desvincula es quien tiene la sesión.
+            if (!puede(PERMISSIONS.PERSONA_DESVINCULAR)) {
+                return error('No tienes permiso para desvincular personas de la empresa', 403);
             }
+            const solicitanteId = sesion.personaId;
 
-            const persona = await personaService.getById(personaId);
+            const persona = await personaDelTenant(personaId);
             if (!persona) return error('Persona no encontrada', 404);
             if (normalizeRol(persona.rol) === 'admin') {
                 return error('No se puede desvincular al administrador de la empresa', 400);
@@ -1835,14 +1934,18 @@ module.exports.personasHandler = async (event) => {
         // en una obra (multi-cargo). Dispara onboarding por obra si la asignación es
         // nueva. Body: { obraId, cargos: string[], solicitanteId? }
         if (method === 'POST' && personaId && action === 'asignaciones' && !segments[2]) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
             if (!body.obraId) return error('obraId es requerido');
             const cargos = Array.isArray(body.cargos) ? body.cargos : (body.cargo ? [body.cargo] : []);
 
+            if (!puedeAsignarObras()) {
+                return error('No tienes permiso para asignar personas a obras', 403);
+            }
+
             // Cuadrilla: una persona trabajadora debe tener supervisor en la obra.
             // Se exige al crear o actualizar la asignación de un trabajador.
-            const personaActual = await personaService.getById(personaId);
+            const personaActual = await personaDelTenant(personaId);
             if (!personaActual) return error('Persona no encontrada', 404);
             const tenantDef = await tenantSafe(tenantId);
             const esTrabajador = tipoDeRol(personaActual, tenantDef) === 'trabajador';
@@ -1863,7 +1966,7 @@ module.exports.personasHandler = async (event) => {
                 }
             }
 
-            const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
+            const solicitanteId = sesion.personaId;
             // Cargos previos vs nuevos (normalizados) para detectar cambio de cargo.
             const cargosPrevNorm = (asignacionPrevia?.cargos || []).map((c) => normalizeCargoCodigo(String(c))).filter(Boolean).sort();
             const cargosNewNorm = cargos.map((c) => normalizeCargoCodigo(String(c))).filter(Boolean);
@@ -1891,16 +1994,20 @@ module.exports.personasHandler = async (event) => {
                 console.error('Error creating onboarding tasks (asignación):', onboardingError);
             }
 
-            return success({ message: 'Asignación guardada', persona: persona.toSafeFormat() });
+            return success({ message: 'Asignación guardada', persona: fichaVisible(persona) });
         }
 
         // DELETE /personas/{id}/asignaciones/{obraId} — Quita al trabajador de una obra
         // (mueve la asignación al historial con egreso + auditoría; no la borra).
         if (method === 'DELETE' && personaId && action === 'asignaciones' && segments[2]) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const obraIdQuitar = segments[2];
             const delBody = (() => { try { return JSON.parse(event.body || '{}'); } catch { return {}; } })();
-            const finalizadaPor = delBody.solicitanteId || delBody.finalizadaPor || event.requestContext?.authorizer?.claims?.sub || null;
+            if (!puedeAsignarObras()) {
+                return error('No tienes permiso para quitar personas de una obra', 403);
+            }
+            if (!await personaDelTenant(personaId)) return error('Persona no encontrada', 404);
+            const finalizadaPor = sesion.personaId;
             const persona = await personaService.quitarDeObra(tenantId, personaId, obraIdQuitar, {
                 finalizadaPor,
                 motivo: delBody.motivo || 'egreso',
@@ -1920,7 +2027,7 @@ module.exports.personasHandler = async (event) => {
                 console.error('No se pudieron archivar documentos de onboarding al desasignar:', archErr.message);
             }
 
-            return success({ message: 'Asignación eliminada', persona: persona.toSafeFormat() });
+            return success({ message: 'Asignación eliminada', persona: fichaVisible(persona) });
         }
 
         // POST /personas/{id}/transferir — Mueve a la persona de una obra a otra:
@@ -1928,20 +2035,24 @@ module.exports.personasHandler = async (event) => {
         // en destino (+ onboarding). El currículum (cursos/evidencias) se conserva.
         // Body: { obraOrigen, obraDestino, cargos?, supervisorPersonaId?, solicitanteId?, motivo? }
         if (method === 'POST' && personaId && action === 'transferir') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
             const { obraOrigen, obraDestino } = body;
             if (!obraOrigen || !obraDestino) return error('obraOrigen y obraDestino son requeridos');
             if (obraOrigen === obraDestino) return error('La obra de origen y destino no pueden ser la misma');
 
-            const personaActual = await personaService.getById(personaId);
+            if (!puedeAsignarObras()) {
+                return error('No tienes permiso para transferir personas entre obras', 403);
+            }
+
+            const personaActual = await personaDelTenant(personaId);
             if (!personaActual) return error('Persona no encontrada', 404);
             if (!personaActual.asignaciones.some((a) => a.obraId === obraOrigen)) {
                 return error('La persona no está asignada a la obra de origen', 400);
             }
 
             const tenantDef = await tenantSafe(tenantId);
-            const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
+            const solicitanteId = sesion.personaId;
             const cargos = Array.isArray(body.cargos) ? body.cargos
                 : (body.cargo ? [body.cargo] : personaActual.cargosEnObra(obraOrigen));
 
@@ -1978,23 +2089,33 @@ module.exports.personasHandler = async (event) => {
                 }
             } catch (e) { console.error('Onboarding destino (transferencia):', e.message); }
 
-            return success({ message: 'Transferencia realizada', persona: persona.toSafeFormat() });
+            return success({ message: 'Transferencia realizada', persona: fichaVisible(persona) });
         }
 
         // POST /personas/{id}/evidencias — Registra evidencia persona-level con
         // vigencia (examen altura, SPDC…), reutilizable entre obras.
         // Body: { tipo, fileKey?, nombre?, emitidoEn?, venceEn?, origenObraId? }
         if (method === 'POST' && personaId && action === 'evidencias') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
             if (!body.tipo) return error('tipo es requerido');
+            if (!puede(PERMISSIONS.PERSONA_ONBOARDING) && !puede(PERMISSIONS.PERSONAS_CREAR)) {
+                return error('No tienes permiso para registrar evidencias de una persona', 403);
+            }
+            if (!await personaDelTenant(personaId)) return error('Persona no encontrada', 404);
             const persona = await personaService.addEvidencia(tenantId, personaId, body);
-            return success({ message: 'Evidencia registrada', persona: persona.toSafeFormat() });
+            return success({ message: 'Evidencia registrada', persona: fichaVisible(persona) });
         }
 
         // GET /personas/{id}/historial-epp — Historial dinamico de entregas EPP (Art. 13)
         if (method === 'GET' && personaId && action === 'historial-epp') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            const objetivoEpp = await personaDelTenant(personaId);
+            if (!objetivoEpp) return error('Persona no encontrada', 404);
+            if (objetivoEpp.personaId !== sesion.personaId
+                && !puede(PERMISSIONS.PERSONA_EPP) && !puede(PERMISSIONS.PERSONAS_DETALLE)) {
+                return error('No tienes permiso para ver el historial de EPP de otra persona', 403);
+            }
             const historial = await eppService.getHistorial({ tenantId, personaId });
             return success(historial);
         }
@@ -2003,7 +2124,12 @@ module.exports.personasHandler = async (event) => {
         // donde la persona asistió (cross-obra). Fuente: tabla Activities. Sirve para
         // que el supervisor evalúe recapacitación al recibir a la persona en su obra.
         if (method === 'GET' && personaId && action === 'capacitaciones') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            const objetivoCap = await personaDelTenant(personaId);
+            if (!objetivoCap) return error('Persona no encontrada', 404);
+            if (objetivoCap.personaId !== sesion.personaId && !puede(PERMISSIONS.PERSONAS_DETALLE)) {
+                return error('No tienes permiso para ver el historial de otra persona', 403);
+            }
             const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE || 'Activities';
             let items = [];
             try {
@@ -2041,16 +2167,17 @@ module.exports.personasHandler = async (event) => {
 
         // POST /personas/{id}/epp — Crear entrega/reposicion de EPP (solo instancia superior)
         if (method === 'POST' && personaId && action === 'epp' && !segments[2]) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
-            if (!body.creadorId) return error('creadorId es requerido');
 
-            const creador = await personaService.getById(body.creadorId);
-            if (!creador) return error('Creador no encontrado', 404);
-            if (!personaPuede(creador, await tenantSafe(creador.tenantId), PERMISSIONS.PERSONA_EPP)) {
+            // Quién entrega sale de la sesión: `creadorId` del cuerpo permitía
+            // firmar la entrega a nombre de cualquiera.
+            if (!puede(PERMISSIONS.PERSONA_EPP)) {
                 return error('No tienes permiso para registrar entregas de EPP', 403);
             }
-            const persona = await personaService.getById(personaId);
+            const creador = await personaService.getById(sesion.personaId);
+            if (!creador) return error('Creador no encontrado', 404);
+            const persona = await personaDelTenant(personaId);
             if (!persona) return error('Trabajador no encontrado', 404);
 
             const entrega = await eppService.crearEntrega({
@@ -2068,44 +2195,78 @@ module.exports.personasHandler = async (event) => {
 
         // POST /personas/{id}/epp/validar — Validar entrega (instancia superior)
         if (method === 'POST' && personaId && action === 'epp' && segments[2] === 'validar') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
             if (!body.entregaDocumentId) return error('entregaDocumentId es requerido');
-            if (!body.validadorId) return error('validadorId es requerido');
 
-            const validador = await personaService.getById(body.validadorId);
+            // La validación es el acto de la instancia superior: quien valida es
+            // quien tiene la sesión, no un `validadorId` que venga en el cuerpo.
+            const validador = await personaService.getById(sesion.personaId);
             if (!validador) return error('Validador no encontrado', 404);
 
             const entrega = await eppService.validarEntrega({
                 entregaDocumentId: body.entregaDocumentId,
                 validador,
                 observacion: body.observacion || null,
-                tenant: await tenantSafe(validador.tenantId)
+                tenant: await tenantSafe(tenantId),
+                tenantId,
             });
             return success({ message: 'Entrega de EPP validada', entrega });
         }
 
-        // POST /personas/{id}/set-pin — Configurar PIN
+        // POST /personas/{id}/set-pin — Configurar PIN.
+        //
+        // El PIN es la credencial con la que se firma: quien lo sobreescribe puede
+        // firmar por esa persona. Antes cualquiera con el id podía reemplazarlo sin
+        // conocer el actual. Ahora:
+        //   - si la persona YA tiene PIN, solo ella lo cambia, y probando el actual;
+        //   - si no lo tiene (enrolamiento en el dispositivo de quien registra), lo
+        //     configura ella misma o quien tenga el permiso de crear personas.
         if (method === 'POST' && personaId && action === 'set-pin') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
+            const objetivoPin = await personaDelTenant(personaId);
+            if (!objetivoPin) return error('Persona no encontrada', 404);
+
+            const esPropio = objetivoPin.personaId === sesion.personaId;
+            const yaTienePin = objetivoPin.tienePinConfigurado();
+            if (yaTienePin) {
+                if (!esPropio) return error('Solo la propia persona puede cambiar su PIN', 403);
+                if (!body.pinActual) return error('Debes ingresar tu PIN actual para cambiarlo', 400);
+            } else if (!esPropio && !puede(PERMISSIONS.PERSONAS_CREAR)) {
+                return error('No tienes permiso para configurar el PIN de otra persona', 403);
+            }
+
             const result = await personaService.setPin(tenantId, personaId, body.pin, body.pinActual);
             return success(result);
         }
 
-        // POST /personas/{id}/enrolamiento — Completar enrolamiento
+        // POST /personas/{id}/enrolamiento — Completar enrolamiento.
+        // La persona lo completa tecleando su PIN (se verifica adentro), sea en su
+        // dispositivo o en el de quien la registra.
         if (method === 'POST' && personaId && action === 'enrolamiento') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
+            const objetivoEnrol = await personaDelTenant(personaId);
+            if (!objetivoEnrol) return error('Persona no encontrada', 404);
+            if (objetivoEnrol.personaId !== sesion.personaId && !puede(PERMISSIONS.PERSONAS_CREAR)) {
+                return error('No tienes permiso para completar el enrolamiento de otra persona', 403);
+            }
             const result = await personaService.completarEnrolamiento(
                 tenantId, personaId, body.pin, event
             );
             return success(result);
         }
 
-        // POST /personas/{id}/reset-password — Resetear contraseña
+        // POST /personas/{id}/reset-password — Resetear contraseña.
+        // Devuelve la contraseña temporal en la respuesta: sin permiso era una toma
+        // de cuenta de un solo paso sobre cualquier persona conocida.
         if (method === 'POST' && personaId && action === 'reset-password') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!puede(PERMISSIONS.PERSONAS_CREAR)) {
+                return error('No tienes permiso para resetear contraseñas', 403);
+            }
+            if (!await personaDelTenant(personaId)) return error('Persona no encontrada', 404);
             const result = await personaService.resetPassword(tenantId, personaId);
             return success(result);
         }

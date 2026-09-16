@@ -130,7 +130,7 @@ class EppService {
     /**
      * Valida una entrega de EPP. Solo roles de instancia superior.
      */
-    async validarEntrega({ entregaDocumentId, validador, observacion, tenant }) {
+    async validarEntrega({ entregaDocumentId, validador, observacion, tenant, tenantId }) {
         if (!entregaDocumentId) throw new Error('entregaDocumentId es requerido');
         if (!validador) throw new Error('Validador no encontrado');
         if (!personaPuede(validador, tenant, PERMISSIONS.PERSONA_EPP)) {
@@ -142,6 +142,9 @@ class EppService {
             Key: { documentId: entregaDocumentId }
         }));
         if (!res.Item) throw new Error('Entrega de EPP no encontrada');
+        // La entrega tiene que ser de la empresa de quien valida: el documentId por
+        // sí solo no acredita nada (mismo criterio en documents y signatures).
+        if (tenantId && res.Item.tenantId !== tenantId) throw new Error('Entrega de EPP no encontrada');
         if (res.Item.tipo !== 'ENTREGA_EPP') throw new Error('El documento no es una entrega de EPP');
 
         const now = new Date().toISOString();
