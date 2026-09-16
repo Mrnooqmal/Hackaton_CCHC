@@ -86,7 +86,34 @@ export interface ResolveDisputeData {
     nuevoEstado: 'valida' | 'revocada';
 }
 
+export interface ValesResponse {
+    vales: string[];
+    personaId: string;
+    expiraEn: string;
+    vigenciaHoras: number;
+    mensaje: string;
+}
+
 export const signaturesApi = {
+    /**
+     * Habilita la firma sin conexión para una persona: valida su PIN (con red) y
+     * devuelve vales de un solo uso. El PIN no se guarda en el dispositivo; los
+     * vales sí, y no sirven para nada más que firmar en nombre de esa persona
+     * durante su vigencia.
+     */
+    emitirVales: (data: { personaId?: string; pin: string; cantidad?: number; deviceId?: string }) =>
+        apiRequest<ValesResponse>('/firmas/vales', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    /** Confirma o rechaza una firma sincronizada con un vale vencido. */
+    revisar: (id: string, data: { decision: 'confirmada' | 'rechazada'; motivo?: string }) =>
+        apiRequest<{ message: string; signatureId: string }>(`/signatures/${id}/revision`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+
     create: (data: CreateSignatureData) =>
         apiRequest<SignatureCreateResult>('/signatures', {
             method: 'POST',

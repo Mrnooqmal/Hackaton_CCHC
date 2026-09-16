@@ -311,9 +311,11 @@ module.exports.updateResponseStatus = async (event) => {
             return error('Estado inválido');
         }
 
-        // NUEVO: Requerir PIN para marcar como respondida
+        // La respuesta se firma: con PIN en línea, o con un vale de un solo uso
+        // cuando la encuesta se respondió sin red (ver ValeFirmaService).
         const pin = body.pin;
-        if (status === 'respondida' && !pin) {
+        const vale = body.vale || null;
+        if (status === 'respondida' && !pin && !vale) {
             return error('Se requiere PIN para firmar la respuesta de la encuesta');
         }
 
@@ -353,8 +355,10 @@ module.exports.updateResponseStatus = async (event) => {
                     personaId: workerId,
                     tenantId: survey.tenantId,
                     obraId: survey.obraId || null,
-                    metodo: 'PIN',
-                    credencial: pin,
+                    metodo: vale ? 'VALE' : 'PIN',
+                    credencial: vale
+                        ? { vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
+                        : pin,
                     tipoFirma: 'encuesta',
                     referenciaId: id,
                     referenciaTipo: 'survey',

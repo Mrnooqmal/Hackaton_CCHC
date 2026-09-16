@@ -951,10 +951,11 @@ module.exports.sign = async (event) => {
             return error('personaId y tipoFirma son requeridos');
         }
 
-        // Una firma sin PIN no prueba nada: el método PRESENCIAL valida siempre
-        // (ver FirmaService), así que omitir el PIN permitía firmar por otro. Toda
-        // firma de documento exige el PIN de quien firma.
-        if (!body.pin) {
+        // Una firma sin credencial no prueba nada: el método PRESENCIAL valida
+        // siempre (ver FirmaService), así que omitir el PIN permitía firmar por
+        // otro. Toda firma exige el PIN de quien firma o —cuando se tomó sin red—
+        // un vale de un solo uso que esa persona desbloqueó con su PIN.
+        if (!body.pin && !body.vale) {
             return error('Debes ingresar tu PIN para firmar', 400);
         }
 
@@ -1002,7 +1003,10 @@ module.exports.sign = async (event) => {
             userAgent: event.headers?.['user-agent'] || 'unknown'
         };
 
-        const metodo = 'PIN';
+        const metodo = body.vale ? 'VALE' : 'PIN';
+        const credencial = body.vale
+            ? { vale: body.vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
+            : body.pin;
         let firmaResult;
         try {
             firmaResult = await FirmaService.crear({
@@ -1010,7 +1014,7 @@ module.exports.sign = async (event) => {
                 tenantId: documentData.tenantId,
                 obraId: documentData.obraId || null,
                 metodo,
-                credencial: body.pin,
+                credencial,
                 tipoFirma: body.tipoFirma,
                 referenciaId: id,
                 referenciaTipo: 'document',

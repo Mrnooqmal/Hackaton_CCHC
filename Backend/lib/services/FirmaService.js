@@ -27,11 +27,16 @@ const ESTRATEGIAS_VALIDACION = {
             return verifyPin(credencial, persona._pinHash, persona.personaId);
         }
     },
-    OFFLINE: {
-        nombre: 'Offline',
-        validar: async (persona, credencial) => {
-            return !!credencial.timestampLocal && !!credencial.offlineToken;
-        }
+    // Firma tomada SIN CONEXIÓN, acreditada por un vale de un solo uso que la
+    // persona desbloqueó con su PIN al inicio del turno (ver ValeFirmaService).
+    //
+    // Antes esta estrategia se daba por válida con que el cliente mandara un
+    // `timestampLocal` y un `offlineToken` cualesquiera: no comprobaba nada. El
+    // consumo real del vale ocurre en `crear()`, porque necesita marcarlo usado de
+    // forma atómica y saber si venció.
+    VALE: {
+        nombre: 'Vale offline',
+        validar: async (persona, credencial) => Boolean(credencial && credencial.vale)
     },
     BIOMETRICO: {
         nombre: 'Biométrico',
@@ -134,6 +139,42 @@ class FirmaService {
             }
         }
 
+        // Firma sin conexión: se consume el vale (uso único, atómico) y se anota
+        // en la propia firma qué la acredita. Si el vale venció, la firma SE
+        // REGISTRA marcada para revisión: el acto ocurrió y descartarlo destruiría
+        // evidencia real, pero no puede contar como cumplimiento hasta que alguien
+        // con permiso lo confirme.
+        let trazaOffline = null;
+        if (metodo === 'VALE') {
+            const { ValeFirmaService, MOTIVOS } = require('./ValeFirmaService');
+            const consumo = await ValeFirmaService.consumir({
+                vale: credencial.vale,
+                personaId: persona.personaId,
+                deviceId: credencial.deviceId || null,
+            });
+            if (!consumo.ok) {
+                const explicacion = {
+                    [MOTIVOS.NO_EXISTE]: 'El vale de firma no es válido.',
+                    [MOTIVOS.OTRA_PERSONA]: 'El vale de firma no es válido.',
+                    [MOTIVOS.YA_USADO]: 'Este vale de firma ya se usó.',
+                    [MOTIVOS.DEMASIADO_VIEJO]: 'El vale de firma venció hace demasiado tiempo y ya no puede sincronizarse.',
+                }[consumo.motivo] || 'El vale de firma no es válido.';
+                throw new Error(explicacion);
+            }
+            trazaOffline = {
+                valeEmitidoEn: consumo.vale.createdAt,
+                valeExpiraEn: consumo.vale.expiresAt,
+                dispositivoEmision: consumo.vale.deviceIdEmision || null,
+                dispositivoUso: credencial.deviceId || null,
+                // Momento en que la persona firmó en terreno, según el reloj del
+                // dispositivo. Es declarado, no verificable: por eso se guarda
+                // aparte del `timestamp` del servidor y nunca lo reemplaza.
+                firmadaSinConexionEn: credencial.timestampLocal || null,
+                sincronizadaEn: new Date().toISOString(),
+                valeVencido: Boolean(consumo.vencido),
+            };
+        }
+
         // Crear firma
         const now = new Date();
         const signatureId = uuidv4();
@@ -170,6 +211,15 @@ class FirmaService {
 
             // Estado
             estado: 'valida',
+            // Una firma sincronizada con un vale vencido no cuenta como
+            // cumplimiento hasta que alguien con permiso la confirma. Los motores
+            // de completitud deben ignorar las firmas con `requiereRevision`.
+            requiereRevision: trazaOffline?.valeVencido || false,
+            motivoRevision: trazaOffline?.valeVencido
+                ? 'El vale de firma había vencido al sincronizar: la firma se registró pero requiere confirmación.'
+                : null,
+            revision: null,
+            offline: trazaOffline,
             createdAt: now.toISOString()
         };
 
@@ -305,12 +355,18 @@ class FirmaService {
      */
     static buildFirmaUpdateParts({ documentData, nuevasFirmas, asignacionUpdates = [] }) {
         const now = new Date().toISOString();
-        const names = { '#estado': 'estado' };
+
+        // DynamoDB rechaza la escritura completa si sobra un nombre o un valor
+        // declarado y no usado, y también si el mapa va vacío. Por eso todo lo que
+        // depende de tocar una asignación se agrega SOLO cuando hay una asignación
+        // que tocar: firmar un documento en el que la persona no está asignada —la
+        // firma del relator, o la de un rezagado cuya asignación ya estaba
+        // firmada— fallaba con un 500 ilegible.
+        const names = {};
         const values = {
             ':nuevasFirmas': nuevasFirmas,
             ':emptyList': [],
             ':updatedAt': now,
-            ':firmado': 'firmado',
         };
         const setClauses = [
             'firmas = list_append(if_not_exists(firmas, :emptyList), :nuevasFirmas)',
@@ -321,6 +377,10 @@ class FirmaService {
         asignacionUpdates.forEach((upd, i) => {
             const idx = asignaciones.findIndex((a) => a.personaId === upd.personaId && a.estado === 'pendiente');
             if (idx === -1) return;
+
+            names['#estado'] = 'estado';
+            values[':firmado'] = 'firmado';
+
             const fechaKey = `:fechaFirma${i}`;
             values[fechaKey] = now;
             setClauses.push(`asignaciones[${idx}].#estado = :firmado`);
@@ -332,7 +392,7 @@ class FirmaService {
             }
         });
 
-        return { setClauses, names, values, now };
+        return { setClauses, names: Object.keys(names).length ? names : undefined, values, now };
     }
 }
 

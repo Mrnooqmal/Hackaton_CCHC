@@ -48,6 +48,10 @@ const limpiarDatosLocales = () => {
     localStorage.removeItem('tenant_id');
     localStorage.removeItem('persona_id');
     localStorage.removeItem('pendingOfflineSignatures');
+    // Los vales de firma sin conexión son credenciales de un solo uso a nombre de
+    // quienes los desbloquearon: no sobreviven al cierre de sesión en un equipo
+    // compartido.
+    localStorage.removeItem('offlineVales');
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);

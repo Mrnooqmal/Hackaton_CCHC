@@ -682,6 +682,75 @@ module.exports.resolve = async (event) => {
 };
 
 /**
+ * PUT /signatures/{id}/revision — Confirmar o rechazar una firma marcada.
+ *
+ * Solo llegan acá las firmas tomadas SIN CONEXIÓN cuyo vale ya había vencido al
+ * sincronizar (ver `lib/services/ValeFirmaService.js`): la firma se registró
+ * porque el acto ocurrió, pero no cuenta como cumplimiento hasta que alguien con
+ * responsabilidad sobre las firmas dice, sabiendo lo que pasó, si la reconoce.
+ *
+ * Body: { decision: 'confirmada' | 'rechazada', motivo? }
+ */
+module.exports.revisar = async (event) => {
+    try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
+        const { id } = event.pathParameters || {};
+        if (!id) return error('ID de firma requerido');
+
+        const body = JSON.parse(event.body || '{}');
+        if (!['confirmada', 'rechazada'].includes(body.decision)) {
+            return error('decision debe ser "confirmada" o "rechazada"');
+        }
+
+        if (!sesionPuede(sesion, PERMISSIONS.FIRMAS_CREAR) && normalizeRol(sesion.rol) !== 'admin') {
+            return error('No tienes permiso para revisar firmas', 403);
+        }
+
+        const firma = await firmaDelTenant(id, sesion);
+        if (!firma) return error('Firma no encontrada', 404);
+        if (!firma.requiereRevision) {
+            return error('Esta firma no está pendiente de revisión', 400);
+        }
+
+        const ahora = new Date().toISOString();
+        const revision = {
+            decision: body.decision,
+            motivo: body.motivo || null,
+            revisadoPor: sesion.personaId,
+            fechaRevision: ahora,
+        };
+
+        // Rechazarla no la borra: queda como firma revocada, con el motivo. La
+        // evidencia de que alguien firmó y de que no se reconoció es parte del
+        // registro, igual que una disputa resuelta.
+        await docClient.send(new UpdateCommand({
+            TableName: SIGNATURES_TABLE,
+            Key: { signatureId: id },
+            UpdateExpression: 'SET requiereRevision = :no, revision = :rev, estado = :estado',
+            ExpressionAttributeValues: {
+                ':no': false,
+                ':rev': revision,
+                ':estado': body.decision === 'confirmada' ? 'valida' : 'revocada',
+            },
+        }));
+
+        return success({
+            message: body.decision === 'confirmada'
+                ? 'Firma confirmada: ya cuenta como evidencia de cumplimiento.'
+                : 'Firma rechazada: queda registrada como revocada.',
+            signatureId: id,
+            revision,
+        });
+    } catch (err) {
+        console.error('Error revisando firma:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
  * GET /signatures/disputes - Listar firmas en disputa
  */
 module.exports.listDisputes = async (event) => {

@@ -12,6 +12,17 @@ custom:
   serverless-offline:
     httpPort: 3001
     lambdaPort: 3002
+  # Orígenes que pueden hablarle a los buckets desde un navegador. El de
+  # producción es el CloudFront de la aplicación; en dev se agregan los de
+  # desarrollo local.
+  corsOrigins:
+    prod:
+      - https://d30jksx91fodea.cloudfront.net
+    dev:
+      - https://d30jksx91fodea.cloudfront.net
+      - http://localhost:5173
+      - http://localhost:3000
+
   repositoryBucketName: buildandserve-repository-${self:provider.stage}
   evidenceBucketName: buildandserve-evidence-${self:provider.stage}
   deletionPolicies:
@@ -32,6 +43,7 @@ provider:
     SIGNATURE_REQUESTS_TABLE: ${self:service}-signature-requests-${self:provider.stage}
     SIGNATURES_TABLE: ${self:service}-signatures-${self:provider.stage}
     SESSIONS_TABLE: ${self:service}-sessions-${self:provider.stage}
+    VALES_TABLE: ${self:service}-vales-firma-${self:provider.stage}
     SURVEYS_TABLE: ${self:service}-surveys-${self:provider.stage}
     INCIDENTS_TABLE: ${self:service}-incidents-${self:provider.stage}
     DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
@@ -68,7 +80,14 @@ provider:
     # La lista de rutas públicas está declarada en `tests/rutas-autenticadas.test.js`,
     # que falla la build si aparece una ruta sin autorizador fuera de esa lista.
     authorizers:
-      sesion:
+      # El nombre es `sesionUsuario` y no `sesion` por un incidente de despliegue:
+      # un rollback de CloudFormation sacó el autorizador de la plantilla de `dev`
+      # pero lo dejó vivo en API Gateway, y desde entonces ningún despliegue podía
+      # volver a crearlo ("Authorizer name must be unique"). Renombrarlo permite
+      # crear el nuevo SIN dejar en ningún momento las rutas sin autorizador, que
+      # era la alternativa. No lo vuelvas a llamar `sesion` sin comprobar antes que
+      # no exista un autorizador huérfano con ese nombre en la API.
+      sesionUsuario:
         type: request
         functionName: sesionAuthorizer
         identitySource:
@@ -119,6 +138,8 @@ provider:
             # request: sin esta línea el autorizador niega todo, porque falla la
             # consulta y el fallo se traduce en denegación.
             - !Sub ${SessionsTable.Arn}/index/*
+            - !GetAtt ValesFirmaTable.Arn
+            - !Sub ${ValesFirmaTable.Arn}/index/*
             - !GetAtt SurveysTable.Arn
             - !Sub ${SurveysTable.Arn}/index/*
             - !GetAtt IncidentsTable.Arn
@@ -214,12 +235,12 @@ functions:
           path: /tenants
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
       - httpApi:
           path: /tenants/{proxy+}
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # El alta de empresas YA NO ES UN ENDPOINT.
   #
@@ -248,12 +269,12 @@ functions:
           path: /estructura
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
       - httpApi:
           path: /estructura/{proxy+}
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   obrasModule:
     handler: handlers/obras-module/handler.obrasHandler
@@ -262,12 +283,12 @@ functions:
           path: /obras
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
       - httpApi:
           path: /obras/{proxy+}
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # ========================================
   # PERSONAS (Identidad Unificada - reemplaza Users + Workers)
@@ -279,12 +300,12 @@ functions:
           path: /personas
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
       - httpApi:
           path: /personas/{proxy+}
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # Auth (Autenticación)
   authLogin:
@@ -308,7 +329,7 @@ functions:
           path: /auth/change-password
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   authForgotPassword:
     handler: handlers/auth/handler.forgotPassword
@@ -331,7 +352,7 @@ functions:
           path: /auth/logout
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   authMe:
     handler: handlers/auth/handler.me
@@ -340,7 +361,7 @@ functions:
           path: /auth/me
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   authValidateToken:
     handler: handlers/auth/handler.validateToken
@@ -360,7 +381,7 @@ functions:
           path: /signature-requests
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   listSignatureRequests:
     handler: handlers/signature-requests/handler.list
@@ -369,7 +390,7 @@ functions:
           path: /signature-requests
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getSignatureRequest:
     handler: handlers/signature-requests/handler.get
@@ -378,7 +399,7 @@ functions:
           path: /signature-requests/{id}
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getPendingByWorker:
     handler: handlers/signature-requests/handler.getPendingByWorker
@@ -387,7 +408,7 @@ functions:
           path: /signature-requests/pending/{workerId}
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getHistoryByWorker:
     handler: handlers/signature-requests/handler.getHistoryByWorker
@@ -396,7 +417,7 @@ functions:
           path: /signature-requests/history/{workerId}
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   cancelSignatureRequest:
     handler: handlers/signature-requests/handler.cancel
@@ -405,7 +426,7 @@ functions:
           path: /signature-requests/{id}/cancel
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getSignatureRequestStats:
     handler: handlers/signature-requests/handler.getStats
@@ -414,7 +435,7 @@ functions:
           path: /signature-requests/stats
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   processOfflineBatch:
     handler: handlers/signature-requests/handler.processOfflineBatch
@@ -423,7 +444,7 @@ functions:
           path: /signature-requests/offline-batch
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # Activities (Actividades)
   listActivities:
@@ -433,7 +454,7 @@ functions:
           path: /activities
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   createActivity:
     handler: handlers/activities/handler.create
@@ -442,7 +463,7 @@ functions:
           path: /activities
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getActivity:
     handler: handlers/activities/handler.get
@@ -451,7 +472,7 @@ functions:
           path: /activities/{id}
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   planActivities:
     handler: handlers/activities/handler.plan
@@ -460,7 +481,7 @@ functions:
           path: /activities/plan
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   patchActivity:
     handler: handlers/activities/handler.patch
@@ -469,7 +490,7 @@ functions:
           path: /activities/{id}
           method: PATCH
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   registerActivityAttendance:
     handler: handlers/activities/handler.registerAttendance
@@ -478,7 +499,7 @@ functions:
           path: /activities/{id}/attendance
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getActivityStats:
     handler: handlers/activities/handler.getStats
@@ -487,7 +508,7 @@ functions:
           path: /activities/stats
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # Ausencias / permisos del día (control de asistencia §6)
   createAusencia:
@@ -497,7 +518,7 @@ functions:
           path: /ausencias
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   listAusencias:
     handler: handlers/ausencias/handler.list
@@ -506,7 +527,7 @@ functions:
           path: /ausencias
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   removeAusencia:
     handler: handlers/ausencias/handler.remove
@@ -515,7 +536,7 @@ functions:
           path: /ausencias
           method: DELETE
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # Scheduler de alertas de asistencia (§6): avisa al inbox de los responsables
   # cuando una charla superó su hora de término sin cerrarse, y a mediodía si
@@ -549,7 +570,7 @@ functions:
           path: /documents
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   createDocument:
     handler: handlers/documents/handler.create
@@ -558,7 +579,7 @@ functions:
           path: /documents
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getDocument:
     handler: handlers/documents/handler.get
@@ -567,7 +588,7 @@ functions:
           path: /documents/{id}
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   updateDocument:
     handler: handlers/documents/handler.update
@@ -576,7 +597,7 @@ functions:
           path: /documents/{id}
           method: PUT
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   deleteDocument:
     handler: handlers/documents/handler.remove
@@ -585,7 +606,7 @@ functions:
           path: /documents/{id}
           method: DELETE
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   documentNuevaVersion:
     handler: handlers/documents/handler.nuevaVersion
@@ -594,7 +615,7 @@ functions:
           path: /documents/{id}/nueva-version
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # Versionado de documentos corporativos (Reglamento, Política): no tienen un
   # documentId único, se reparten en copias por persona. Va antes que
@@ -606,7 +627,7 @@ functions:
           path: /documents/corporativo/nueva-version
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # Constancia de envio declarado (Art. 57 inc. 2 y equivalentes). Se suma al
   # mismo array difusiones[] que escribe EventBus al publicar una version.
@@ -617,7 +638,7 @@ functions:
           path: /documents/{id}/difusion
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   assignDocument:
     handler: handlers/documents/handler.assign
@@ -626,7 +647,7 @@ functions:
           path: /documents/{id}/assign
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   signDocument:
     handler: handlers/documents/handler.sign
@@ -635,7 +656,7 @@ functions:
           path: /documents/{id}/sign
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   signBulkDocuments:
     handler: handlers/documents/handler.signBulk
@@ -644,7 +665,7 @@ functions:
           path: /documents/{id}/sign-bulk
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   signAssistedDocument:
     handler: handlers/documents/handler.signAssisted
@@ -653,7 +674,7 @@ functions:
           path: /documents/{id}/sign-assisted
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   downloadSignedDocument:
     handler: handlers/documents/handler.downloadFirmado
@@ -662,7 +683,7 @@ functions:
           path: /documents/{id}/download-firmado
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   stampSignedDocument:
     handler: handlers/documents/handler.stamp
@@ -682,7 +703,7 @@ functions:
           path: /signatures
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   createEnrollmentSignature:
     handler: handlers/signatures/handler.createEnrollment
@@ -691,7 +712,7 @@ functions:
           path: /signatures/enroll
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getSignature:
     handler: handlers/signatures/handler.get
@@ -700,7 +721,7 @@ functions:
           path: /signatures/{id}
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getSignaturesByWorker:
     handler: handlers/signatures/handler.getByWorker
@@ -709,7 +730,7 @@ functions:
           path: /signatures/worker/{workerId}
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getSignaturesByRequest:
     handler: handlers/signatures/handler.getByRequest
@@ -718,7 +739,7 @@ functions:
           path: /signatures/request/{requestId}
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   verifySignatureByToken:
     handler: handlers/signatures/handler.verifyByToken
@@ -734,7 +755,7 @@ functions:
           path: /signatures/{id}/dispute
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   resolveSignatureDispute:
     handler: handlers/signatures/handler.resolve
@@ -743,7 +764,28 @@ functions:
           path: /signatures/{id}/resolve
           method: PUT
           authorizer:
-            name: sesion
+            name: sesionUsuario
+
+  # Habilita la firma sin conexión: la persona valida su PIN una vez, con red, y
+  # recibe vales de un solo uso. Ver lib/services/ValeFirmaService.js.
+  valesEmitir:
+    handler: handlers/vales/handler.emitir
+    events:
+      - httpApi:
+          path: /firmas/vales
+          method: post
+          authorizer:
+            name: sesionUsuario
+
+  # Confirma o rechaza una firma sincronizada con un vale vencido.
+  signatureRevisar:
+    handler: handlers/signatures/handler.revisar
+    events:
+      - httpApi:
+          path: /signatures/{id}/revision
+          method: put
+          authorizer:
+            name: sesionUsuario
 
   listSignatureDisputes:
     handler: handlers/signatures/handler.listDisputes
@@ -752,7 +794,7 @@ functions:
           path: /signatures/disputes
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # ========================================
   # UPLOADS (Subida de archivos a S3)
@@ -764,7 +806,7 @@ functions:
           path: /uploads/presigned-url
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getDownloadUrl:
     handler: handlers/uploads/handler.getDownloadUrl
@@ -773,7 +815,7 @@ functions:
           path: /uploads/download-url
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   confirmUpload:
     handler: handlers/uploads/handler.confirmUpload
@@ -782,7 +824,7 @@ functions:
           path: /uploads/confirm
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   deleteUpload:
     handler: handlers/uploads/handler.deleteFile
@@ -791,7 +833,7 @@ functions:
           path: /uploads/{fileKey}
           method: DELETE
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getBatchDownloadUrls:
     handler: handlers/uploads/handler.getBatchDownloadUrls
@@ -800,7 +842,7 @@ functions:
           path: /uploads/batch-download-urls
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # Transcripción de audio (dictado del relato al reportar un incidente)
   aiTranscribeAudio:
@@ -811,7 +853,7 @@ functions:
           path: /ai/transcribe
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # Surveys (Encuestas)
   createSurvey:
@@ -821,7 +863,7 @@ functions:
           path: /surveys
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   listSurveys:
     handler: handlers/surveys/handler.list
@@ -830,7 +872,7 @@ functions:
           path: /surveys
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   getSurvey:
     handler: handlers/surveys/handler.get
@@ -839,7 +881,7 @@ functions:
           path: /surveys/{id}
           method: GET
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   updateSurveyResponse:
     handler: handlers/surveys/handler.updateResponseStatus
@@ -848,7 +890,7 @@ functions:
           path: /surveys/{id}/responses/{workerId}
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   incidentsModule:
     handler: handlers/incidents-module/handler.incidentsHandler
@@ -857,12 +899,12 @@ functions:
           path: /incidents
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
       - httpApi:
           path: /incidents/{proxy+}
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # `POST /test-email` retirado: endpoint de prueba expuesto en producción que
   # permitía disparar correos desde el remitente verificado del sistema y
@@ -876,12 +918,12 @@ functions:
           path: /inbox
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
       - httpApi:
           path: /inbox/{proxy+}
           method: any
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
   # Suggestions (Sugerencias)
   createSuggestion:
@@ -891,19 +933,83 @@ functions:
           path: /suggestions
           method: POST
           authorizer:
-            name: sesion
+            name: sesionUsuario
 
 resources:
   Resources:
     # ==========================================
     # S3 BUCKETS
     # ==========================================
-    # Los buckets de documentos (repository) y evidencia ya NO se declaran como
-    # recursos CloudFormation: viven fuera de este stack (creados y poblados
-    # manualmente vía AWS CLI como parte de la migración a BuildAndServe), para
-    # que un `serverless remove` o reemplazo de stack nunca pueda borrarlos.
-    # Ver ${self:custom.repositoryBucketName} / ${self:custom.evidenceBucketName}
-    # más arriba y sus permisos IAM correspondientes.
+    # Estuvieron FUERA del stack: creados a mano durante la migración a
+    # BuildAndServe, con la idea de que un `serverless remove` no pudiera
+    # borrarlos. El efecto real era el contrario del buscado: nadie los
+    # gobernaba. Ningún despliegue podía comprobar —ni corregir— si tenían
+    # versionado, qué orígenes aceptaban por CORS o cómo estaban cifrados, y la
+    # respuesta resultó ser: sin versionado (un borrado era definitivo) y CORS
+    # abierto a cualquier origen.
+    #
+    # Ahora se declaran acá y se incorporaron al stack por IMPORT de
+    # CloudFormation, que los adopta SIN recrearlos ni tocar su contenido. La
+    # protección contra el borrado del stack no se pierde: la da
+    # `DeletionPolicy: Retain`, que es el mecanismo que corresponde, en vez de
+    # dejarlos huérfanos.
+    RepositoryBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        BucketName: ${self:custom.repositoryBucketName}
+        # El borrado deja de ser definitivo: la versión anterior queda y se puede
+        # restaurar. Es la contraparte en S3 del PITR de las tablas, y el
+        # prerrequisito del bloqueo de objetos que exige la política de retención.
+        VersioningConfiguration:
+          Status: Enabled
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+              BucketKeyEnabled: true
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        CorsConfiguration:
+          CorsRules:
+            # Acotado a los orígenes de la aplicación: estaba en '*', o sea
+            # cualquier página de internet podía hacerle peticiones al bucket
+            # desde el navegador de quien la visitara.
+            - AllowedHeaders: ['*']
+              AllowedMethods: [GET, PUT, HEAD]
+              AllowedOrigins: ${self:custom.corsOrigins.${self:provider.stage}, self:custom.corsOrigins.prod}
+              ExposedHeaders: [ETag]
+              MaxAge: 3000
+
+    EvidenceBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        BucketName: ${self:custom.evidenceBucketName}
+        VersioningConfiguration:
+          Status: Enabled
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+              BucketKeyEnabled: true
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders: ['*']
+              AllowedMethods: [GET, PUT, HEAD]
+              AllowedOrigins: ${self:custom.corsOrigins.${self:provider.stage}, self:custom.corsOrigins.prod}
+              ExposedHeaders: [ETag]
+              MaxAge: 3000
 
     # ==========================================
     # SNS
@@ -980,6 +1086,12 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Obras - Proyectos de construccion por tenant
     ObrasTable:
@@ -1008,6 +1120,12 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Personas - Identidad unificada (reemplaza Users + Workers)
     PersonasTable:
@@ -1056,6 +1174,12 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # ==========================================
     # OPERATIONAL TABLES (updated with tenant GSIs)
@@ -1085,6 +1209,12 @@ resources:
             Projection:
               ProjectionType: ALL
           # NOTE: obraId-index will be added in a follow-up deploy
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Suggestions Table
     SuggestionsTable:
@@ -1114,6 +1244,12 @@ resources:
             Projection:
               ProjectionType: ALL
           # (DynamoDB only allows 1 new GSI per CloudFormation update)
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Activities Table - with tenant GSI
     ActivitiesTable:
@@ -1138,6 +1274,12 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Ausencias / permisos del día. PK = tenantId, SK = "{obraId}#{fecha}#{personaId}"
     # (una ausencia por persona/día/obra; registrar de nuevo la sobrescribe).
@@ -1158,6 +1300,12 @@ resources:
             KeyType: HASH
           - AttributeName: sk
             KeyType: RANGE
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Catálogo de EPP del tenant (DS44 Art. 13). PK = tenantId, SK = eppId:
     # cada empresa administra sus propios elementos y una Query por PK basta
@@ -1179,6 +1327,12 @@ resources:
             KeyType: HASH
           - AttributeName: eppId
             KeyType: RANGE
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Estructura preventiva (DS 44 Arts. 23, 50, 65, 66): órganos, integrantes y
     # reuniones en una sola tabla, distinguidos por prefijo en la sort key:
@@ -1201,6 +1355,12 @@ resources:
             KeyType: HASH
           - AttributeName: sk
             KeyType: RANGE
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Incidents Table - rename empresaId to tenantId
     IncidentsTable:
@@ -1229,6 +1389,12 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Signatures Table - with tenant and persona GSIs
     SignaturesTable:
@@ -1269,6 +1435,12 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Signature Requests Table - with tenant GSI
     SignatureRequestsTable:
@@ -1293,6 +1465,12 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Surveys Table - with tenant GSI
     SurveysTable:
@@ -1317,6 +1495,12 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Inbox Messages Table
     InboxTable:
@@ -1349,6 +1533,53 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
+    # Vales de firma sin conexión.
+    #
+    # Reemplaza al PIN guardado en claro en el dispositivo: la persona desbloquea
+    # con su PIN, con red, y el dispositivo se queda con vales de un solo uso. Acá
+    # solo vive el HASH del vale, igual que con el token de sesión.
+    ValesFirmaTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.VALES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: valeHash
+            AttributeType: S
+          - AttributeName: personaId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: valeHash
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          # Resolución vale -> registro al sincronizar.
+          - IndexName: valeHash-index
+            KeySchema:
+              - AttributeName: valeHash
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          # Revocación de los vales sin usar de una persona (desvinculación).
+          - IndexName: personaId-index
+            KeySchema:
+              - AttributeName: personaId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # Sessions Table - with TTL
     SessionsTable:
@@ -1385,4 +1616,10 @@ resources:
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true
+        # Recuperación a un punto en el tiempo (35 días). Protege contra el
+        # error propio —un borrado o una escritura masiva equivocada—, que es
+        # bastante más probable que un atacante. Sin esto no hay ninguna vía
+        # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 

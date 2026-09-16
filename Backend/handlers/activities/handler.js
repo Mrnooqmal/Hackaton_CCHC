@@ -757,7 +757,10 @@ module.exports.registerAttendance = async (event) => {
         // Firma con PIN del trabajador (no presencial): la asistencia se firma de
         // forma INDIVIDUAL porque un PIN solo autentica a su dueño. El cliente
         // registra un trabajador a la vez con su propio PIN.
-        if (!pin) return error('Se requiere el PIN del trabajador para registrar la asistencia', 400);
+        // Sin red la asistencia se firma con un vale de un solo uso (ver
+        // ValeFirmaService); con red, con el PIN del trabajador.
+        const vale = body.vale || null;
+        if (!pin && !vale) return error('Se requiere el PIN del trabajador para registrar la asistencia', 400);
         if (personas.length > 1) {
             return error('La firma con PIN es individual: registra un trabajador a la vez con su propio PIN', 400);
         }
@@ -798,14 +801,16 @@ module.exports.registerAttendance = async (event) => {
             const persona = await personaService.getById(pid);
             if (!persona) continue;
 
-            // Crear firma en SignaturesTable (siempre con PIN del trabajador).
-            const metodo = 'PIN';
+            // Crear firma en SignaturesTable (PIN del trabajador, o su vale).
+            const metodo = vale ? 'VALE' : 'PIN';
             const firma = await FirmaService.crear({
                 personaId: pid,
                 tenantId: activity.tenantId,
                 obraId: activity.obraId || null,
                 metodo,
-                credencial: pin || {},
+                credencial: vale
+                    ? { vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
+                    : pin,
                 tipoFirma: 'actividad',
                 referenciaId: id,
                 referenciaTipo: 'activity',

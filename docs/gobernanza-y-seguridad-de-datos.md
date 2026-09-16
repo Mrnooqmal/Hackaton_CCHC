@@ -68,7 +68,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 2.7 | **Límite de intentos de PIN** | **Pendiente** | No existe bloqueo por intentos fallidos. Ver hallazgo crítico H-2. |
 | 2.8 | **Throttling a nivel de API** | **Pendiente** | Sin plan de uso ni límite de tasa configurado en `Backend/serverless.yml`. |
 | 2.9 | El token de sesión se almacena hasheado | **Implementado** | Se guarda `sha256(token)` y se resuelve por índice. Antes se guardaba el token en claro: un volcado de la tabla de sesiones era suplantación inmediata de cualquier usuario. `Backend/lib/auth/sesion.js` |
-| 2.10 | **El PIN viaja y se guarda en claro en el modo sin conexión** | **Pendiente** | Las firmas tomadas sin red se guardan en `localStorage` con el PIN **en texto plano**, porque el servidor lo necesita para validarlas al sincronizar. Es el hallazgo abierto más grave. Mitigación aplicada: el cierre de sesión borra esas firmas pendientes del dispositivo (`Frontend/src/context/AuthContext.tsx`). Corrección de fondo: reemplazar el PIN por un token de un solo uso emitido por el servidor. Ver H-8. |
+| 2.10 | El PIN ya no se guarda en el dispositivo (modo sin conexión) | **Implementado** | Las firmas sin red se acreditan con un **vale de un solo uso** que la persona desbloquea con su PIN al inicio del turno, con red; el dispositivo guarda vales, no el PIN, y el servidor solo guarda el hash del vale. `Backend/lib/services/ValeFirmaService.js`, `Backend/tests/vale-firma.test.js`. Ver D-3 para las dos decisiones de diseño (vale vencido y equipo que pierde su identificador). |
 
 ### 2.3 Sesiones y recuperación de acceso
 
@@ -110,7 +110,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 5.5 | Archivos servidos por URL prefirmada temporal | **Implementado** | No hay URL pública permanente sobre el almacenamiento. |
 | 5.6 | **Registro de auditoría de accesos a datos sensibles** | **Pendiente** | Se audita quién firma, no quién consulta una ficha de vigilancia. Ver hallazgo H-5. |
 | 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Pendiente** | Quien acceda a la tabla los lee en claro. |
-| 5.8 | **Los índices de personas proyectan todos los atributos** | **Pendiente** | `personaId-index`, `email-index` y `tenantRut-index` están declarados con `ProjectionType: ALL` (`Backend/serverless.yml`), así que cada índice contiene una **copia completa** de la ficha: hash del PIN, hash de la contraseña, RUT y campos de salud incluidos. Tres copias más de los datos sensibles, con la misma superficie de exposición que la tabla y sin que ningún consumidor necesite esos campos. Corrección: proyectar solo las claves y los atributos que cada índice usa realmente. Requiere recrear los índices, así que se planifica con ventana. |
+| 5.8 | **Los índices de personas proyectan todos los atributos** | **Pendiente** | `personaId-index`, `email-index` y `tenantRut-index` están declarados con `ProjectionType: ALL` (`Backend/serverless.yml`): cada índice es una **copia completa** de la ficha —hash del PIN, hash de la contraseña, RUT y campos de salud incluidos—, o sea tres copias más de los datos sensibles con la misma superficie de exposición que la tabla. Ver D-6 para el costo de corregirlo ahora frente a esperar. |
 | 5.9 | El RUT no viaja completo en la verificación pública de firmas | **Implementado** | `GET /signatures/verify/{token}` es público por diseño (un fiscalizador comprueba una firma sin cuenta), y devolvía nombre y **RUT completo**: el token se convertía en una consulta abierta de identidad. Ahora el RUT va parcial (`···.678-5`), que cumple igual la función de cotejo. |
 
 ### 2.6 Infraestructura y cifrado
@@ -118,13 +118,15 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | # | Punto | Estado | Evidencia o brecha |
 |---|---|---|---|
 | 6.1 | Cifrado en tránsito | **Implementado** | Todo el tráfico por HTTPS; API Gateway no admite HTTP plano. |
-| 6.2 | **Cifrado en reposo declarado** | **Parcial** | AWS cifra S3 y DynamoDB por defecto con clave gestionada por AWS, pero **no está declarado en `Backend/serverless.yml`** ni se usa clave propia (KMS). No queda constancia de la decisión. |
-| 6.3 | **Bloqueo explícito de acceso público a los buckets** | **Pendiente** | Sin `PublicAccessBlockConfiguration` en `Backend/serverless.yml`. |
-| 6.4 | **Restricción de orígenes CORS en almacenamiento** | **Pendiente** | `AllowedOrigins: ['*']` en ambos buckets. |
-| 6.5 | **Recuperación a un punto en el tiempo** | **Pendiente** | Sin `PointInTimeRecoverySpecification` en ninguna tabla: no hay restauración ante borrado o corrupción. |
+| 6.10 | Los buckets se gobiernan desde el stack | **Implementado** | Estaban **fuera** de CloudFormation, creados a mano: ningún despliegue podía comprobar ni corregir su configuración, y de ahí venían los dos hallazgos anteriores. Se incorporaron por `IMPORT` de CloudFormation —sin recrearlos ni tocar los 135 objetos de producción— con `DeletionPolicy: Retain`, que es la forma correcta de protegerlos de un `serverless remove`. |
+| 6.11 | **Bloqueo de objetos (Object Lock)** | **Pendiente, requiere migración** | No se puede activar sobre un bucket existente. Ver D-5. |
+| 6.2 | Cifrado en reposo declarado | **Parcial** | Verificado en AWS: los cuatro buckets cifran con `AES256` (clave gestionada por AWS), y ahora está **declarado** en `Backend/serverless.yml` en vez de depender del valor por defecto. Falta la clave propia (CMK): ver D-4, que explica por qué no se aplicó a ciegas. |
+| 6.3 | Bloqueo explícito de acceso público a los buckets | **Implementado** | *Corrección de la versión anterior:* se declaraba **Pendiente** por ausencia en `serverless.yml`, pero en AWS ya estaba activo (las cuatro opciones en `true`). Lo que faltaba era la declaración, no la protección. Ahora está en el stack. |
+| 6.4 | Restricción de orígenes CORS en almacenamiento | **Implementado** | Estaba en `AllowedOrigins: ['*']`, es decir cualquier página de internet podía hacerle peticiones al bucket desde el navegador de quien la visitara. Acotado al CloudFront de la aplicación (y `localhost` solo en dev), con métodos `GET`, `PUT` y `HEAD`. |
+| 6.5 | Recuperación a un punto en el tiempo | **Implementado** | `PointInTimeRecoverySpecification` en **las 16 tablas**, dev y prod, verificado `ENABLED` contra AWS. Antes estaba deshabilitado en todas: un borrado no tenía ninguna vía de recuperación. |
 | 6.6 | Política de retención de infraestructura | **Implementado** | `DeletionPolicy` y `UpdateReplacePolicy` configurados por ambiente. |
-| 6.7 | **Versionado de los buckets** | **Pendiente** | Verificado en AWS: `buildandserve-repository-prod` y `buildandserve-evidence-prod` **no tienen versionado**. Un borrado o una sobreescritura son irreversibles, y es la base sobre la que se apoya el bloqueo de objetos de la política de retención (punto 7.1). |
 | 6.8 | Región de tratamiento de los datos | **Evaluada y postergada** | Ver decisión D-1. |
+| 6.9 | Versionado de los buckets | **Implementado** | Habilitado en los cuatro buckets y declarado en el stack. Sustituye al punto 6.7, que lo reportaba pendiente. |
 
 ### 2.7 Gobernanza del dato personal
 
@@ -223,6 +225,108 @@ cumplimiento. Esa frontera —evidencia frente a conveniencia— es la que hay q
 sostener ante el titular y ante la agencia, y por eso queda escrita acá y no en la
 cabeza de quien responda la solicitud.
 
+### D-3. Firma sin conexión: vale de un solo uso
+**Estado: decidida e implementada — 16 de septiembre de 2026**
+
+El PIN dejó de guardarse en el dispositivo. La persona lo teclea una vez, con red,
+y recibe vales de un solo uso que el equipo guarda en su lugar. Dos preguntas
+había que responder antes de implementarlo, y ambas quedaron resueltas en el
+código:
+
+**¿Qué pasa con una firma cuyo vale venció antes de poder sincronizar?** Un turno
+se alarga, o el equipo no ve red en dos días. La firma **se registra igual**, con
+una marca (`requiereRevision`) que impide que cuente como cumplimiento hasta que
+alguien con responsabilidad sobre las firmas la confirme. Descartarla sería
+destruir evidencia de un acto que ocurrió y castigar al trabajador por una falla
+de red; darla por buena sin más sería fingir que la cadena de prueba es la misma.
+El acta registra las cuatro fechas que permiten juzgarla: cuándo se emitió el
+vale, cuándo venció, cuándo se firmó en terreno (según el reloj del equipo, dato
+declarado) y cuándo entró al sistema. Pasados 30 días del vencimiento ya no entra:
+en algún punto la cadena es demasiado débil.
+
+**¿Y si el equipo pierde su identificador?** Un navegador de terreno lo regenera
+al limpiar datos o cambiar de perfil. Por eso el identificador del equipo es
+**traza y no condición**: se guarda para el acta y no se compara al validar. Un
+identificador nuevo nunca invalida un vale. Y si lo que se perdió fue el
+almacenamiento entero —que es el caso real, porque los vales viven ahí—, el
+problema no es un vale rechazado sino un equipo sin vales: se resuelve volviendo a
+pedirlos con red, y la interfaz avisa cuando quedan pocos mientras todavía hay
+señal.
+
+### D-4. Clave propia (CMK) para el cifrado en reposo
+**Estado: pendiente de aplicar, con motivo**
+
+Los buckets cifran con `AES256` (clave gestionada por AWS) y eso ya está
+declarado en el stack. La clave propia (KMS) no se aplicó junto con el resto por
+tres razones que conviene tener a la vista antes de decidir:
+
+1. **No re-cifra lo que ya existe.** Cambiar el cifrado por defecto solo afecta a
+   los objetos nuevos: quedaría una mezcla de 135 objetos con AES256 y los
+   siguientes con CMK. Con el vaciado de datos que está planificado, la CMK sale
+   limpia desde el primer objeto.
+2. **Toca el camino de lectura.** El rol de las funciones y el worker de estampado
+   necesitan permiso `kms:Decrypt`; si falta, las descargas y el estampado fallan.
+   Es verificable, pero no es un cambio de una línea.
+3. **Lo que protege.** La CMK no protege contra el robo del bucket —AES256 ya
+   cifra— sino que permite revocar el acceso a los datos cortando la clave, y deja
+   el uso de la clave en CloudTrail. Es control y auditoría, no confidencialidad
+   adicional frente a un tercero externo.
+
+### D-5. Bloqueo de objetos (Object Lock): requiere bucket nuevo
+**Estado: pendiente de decisión, ligado al vaciado**
+
+Object Lock **solo se puede habilitar al crear el bucket**. Los actuales no lo
+tienen, así que la política de retención decidida en D-2 exige migrar a buckets
+nuevos. Lo que implica, con los números reales de producción:
+
+| | Repositorio | Evidencia |
+|---|---|---|
+| Objetos | 112 | 23 |
+| Tamaño | 159,4 MB | 71,6 MB |
+
+- **La copia es trivial**: `aws s3 sync` a ese volumen tarda menos de un minuto.
+- **La base de datos NO se migra**: lo que se guarda en DynamoDB son *claves* de
+  objeto, no URLs con el nombre del bucket. Cambia una variable de entorno y un
+  despliegue.
+- **La ventana de riesgo** es lo que haya entre la copia y el cambio de variable:
+  un archivo subido en ese lapso quedaría solo en el bucket viejo. Se cierra con
+  una segunda pasada de `sync` después del cambio.
+- **Lo irreversible**: con Object Lock en modo gobernanza, los objetos no se
+  pueden borrar durante el plazo salvo con un permiso explícito de excepción. Es
+  el comportamiento buscado, pero conviene entrar con las bases limpias.
+
+Por eso la recomendación es hacerlo **junto con el vaciado**, no antes: migrar
+ahora significa copiar datos que igual se van a descartar, y entrar a un bucket
+con bloqueo llevando objetos de prueba que después no se podrán borrar con
+facilidad.
+
+### D-6. Reproyección de los índices de personas
+**Estado: pendiente de decisión, ligado al vaciado**
+
+Los tres índices de `PersonasTable` se declararon con `ProjectionType: ALL`. La
+proyección de un índice **no se puede modificar**: hay que borrarlo y recrearlo.
+
+Lo que cuesta no es el volumen —la tabla de producción tiene 38 personas y 72 KB,
+así que el relleno del índice es instantáneo— sino dos cosas:
+
+1. **Una ventana sin ese índice.** Mientras se recrea, toda consulta que lo use
+   falla. `tenantRut-index` y `email-index` son los que resuelven el **login**, y
+   `personaId-index` lo usa el autorizador en cada request: la ventana es de
+   minutos, pero es indisponibilidad real, no degradación.
+2. **Cambios de código en cinco puntos.** Hoy el login lee el hash de la
+   contraseña *desde el índice*, porque busca por RUT o correo sin conocer la
+   clave primaria. Con una proyección acotada hay que leer la clave en el índice y
+   la ficha en la tabla, en dos pasos: `PersonaService.getById`, `getByRut`,
+   `getByEmail`, `auth.findPersonaByRut` y el flujo de restablecimiento de
+   contraseña, que además necesita campos que ni siquiera salen en la ficha
+   pública (`resetTokenHash`).
+
+El costo de esperar es que los datos sensibles siguen triplicados en el
+almacenamiento. El costo de hacerlo ahora es esa ventana de login más el cambio de
+código, con datos reales de por medio. **Con las bases vacías, ambos desaparecen**:
+no hay relleno que esperar ni sesión que interrumpir, y el cambio de código se
+prueba sin riesgo de dejar a alguien fuera del sistema.
+
 ---
 
 ## 4. Hallazgos priorizados
@@ -300,8 +404,8 @@ idéntico al que se subió.
 **Corrección:** calcular SHA-256 del archivo al confirmar la carga y guardarlo junto al
 documento; verificarlo al descargar.
 
-### H-8. El PIN se guarda en claro en el dispositivo (modo sin conexión)
-**Severidad: alta — es el hallazgo abierto más grave**
+### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
+**Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**
 
 Cuando no hay red, la firma se guarda en `localStorage` junto con el **PIN en texto
 plano** (`Frontend/src/hooks/useOfflineSignature.ts`), porque al sincronizar el
@@ -322,8 +426,10 @@ ninguno: describe una protección que nadie fue a verificar. Ya se corrigió.
   la usara. La subida de versión del esquema lo borra en los dispositivos que ya
   lo tengan.
 
-**Corrección de fondo:** que el modo sin conexión no use el PIN, sino un token de
-un solo uso emitido por el servidor. El diseño se acuerda antes de implementarlo.
+**Corrección aplicada:** el modo sin conexión ya no usa el PIN sino un vale de un
+solo uso emitido por el servidor (D-3). Lo que queda en el dispositivo es una
+credencial acotada a una firma, a una persona y a un turno; lo que quedaba antes
+era la credencial permanente de firma de esa persona.
 
 ---
 
