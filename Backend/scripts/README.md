@@ -1,7 +1,44 @@
-# Scripts de migracion
+# Scripts operativos
 
-Scripts operativos de migracion de datos. Todos siguen el patron
-`--dry-run` (default) / `--apply` y son idempotentes salvo que se indique.
+Scripts que se ejecutan con credenciales de AWS, no desde la aplicacion. Los de
+migracion siguen el patron `--dry-run` (default) / `--apply` y son idempotentes
+salvo que se indique.
+
+## crear-empresa.js
+
+Alta de una empresa y de su primer administrador. **Es la unica via**: el alta
+dejo de ser un endpoint publico (`POST /tenants/setup`), porque dependia de un
+codigo compartido —fragil por diseno y vacio en los dos ambientes— y porque no
+existe un rol de plataforma que pueda autorizarla desde dentro del sistema. Aca
+la autorizacion es IAM y cada escritura queda en CloudTrail.
+
+```
+# Ensayo: valida los datos y la unicidad, no escribe nada.
+AWS_PROFILE=<perfil> node scripts/crear-empresa.js --stage prod --datos empresa.json
+
+# Alta real.
+AWS_PROFILE=<perfil> node scripts/crear-empresa.js --stage prod --datos empresa.json --confirmar
+```
+
+`empresa.json`:
+
+```json
+{
+  "nombre": "Constructora Ejemplo SpA",
+  "rutEmpresa": "76.111.999-0",
+  "admin": {
+    "rut": "15.111.222-6",
+    "nombre": "Maria",
+    "apellidoPaterno": "Soto",
+    "apellidoMaterno": "Rivas",
+    "email": "maria.soto@ejemplo.cl"
+  }
+}
+```
+
+La contrasena temporal viaja por correo (SES) y se cambia en el primer ingreso;
+solo se imprime en pantalla si el envio falla. Roles, cargos y preferencias
+quedan en sus valores por defecto y se configuran despues desde Mi Empresa.
 
 ## migrate-to-personas.js
 Migracion historica: une `Users` + `Workers` legacy en `Personas`.

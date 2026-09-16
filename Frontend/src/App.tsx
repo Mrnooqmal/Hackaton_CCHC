@@ -21,7 +21,6 @@ import Settings from './pages/Settings';
 import EnrollMe from './pages/EnrollMe';
 import Unauthorized from './pages/Unauthorized';
 import RegisterAdmin from './pages/RegisterAdmin';
-import TenantOnboarding from './pages/TenantOnboarding';
 import SignatureRequests from './pages/SignatureRequests';
 import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
@@ -131,7 +130,11 @@ function AppContent() {
       <Route path="/recuperar-clave" element={<ForgotPassword />} />
       <Route path="/restablecer-clave" element={<ResetPassword />} />
       <Route path="/register-admin" element={<RegisterAdmin />} />
-      <Route path="/onboarding" element={<TenantOnboarding />} />
+      {/* El alta de empresas dejó de ser autoservicio: la realiza el operador de
+          la plataforma con Backend/scripts/crear-empresa.js (autorización por IAM,
+          auditada en CloudTrail). La pantalla se conserva en pages/TenantOnboarding.tsx
+          como base para rehacerla como operación administrativa autenticada, pero
+          no se enruta: su endpoint ya no existe. */}
       <Route path="/unauthorized" element={<Unauthorized />} />
       <Route path="/equipo" element={<Equipo />} />
       <Route path="/about" element={<About />} />

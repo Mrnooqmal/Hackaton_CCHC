@@ -19,14 +19,14 @@ const { EstructuraPreventivaService, ErrorValidacion } = require('../../lib/serv
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { ObraService } = require('../../lib/services/ObraService');
-const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { PERMISSIONS } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const EP = require('../../lib/estructura-preventiva');
 const { construirExport, renderHtml } = require('../../lib/completitud-export');
 
-const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { QueryCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
-const { tenantIdDeSesion } = require('../../lib/auth/sesion');
+const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 
 /** Documentos del tenant. La completitud los necesita para los ítems 38, 46 y 47. */
@@ -131,20 +131,34 @@ const responderError = (err) => {
 };
 
 /**
- * Exige que el solicitante pueda administrar el ámbito. Si no se identifica
- * solicitante se deja pasar, igual que el resto de los módulos: el enforcement
- * fuerte vive en el authorizer, esto es la segunda barrera.
+ * ¿Puede esta sesión administrar la estructura preventiva?
+ *
+ * Constituir, disolver, acreditar y registrar reuniones es el mismo acto de
+ * gobierno del órgano, y lo hace el perfil que ya administra la empresa u obra
+ * (ver el encabezado del módulo). Los permisos vienen resueltos en la sesión.
+ *
+ * Antes esto recibía un `solicitanteId` del cuerpo y **dejaba pasar si no venía
+ * ninguno**: omitir el campo bastaba para constituir o disolver un comité
+ * paritario. Ahora el permiso se exige siempre y el actor sale de la sesión.
  */
-const puedeAdministrar = async (solicitanteId, tenantId) => {
-    if (!solicitanteId) return true;
-    const [persona, tenant] = await Promise.all([
-        personaService.getById(solicitanteId).catch(() => null),
-        tenantService.getById(tenantId).catch(() => null),
-    ]);
-    if (!persona || persona.tenantId !== tenantId) return false;
-    const tenantSafe = tenant ? tenant.toSafeFormat() : null;
-    return personaPuede(persona, tenantSafe, PERMISSIONS.OBRAS_CREAR)
-        || personaPuede(persona, tenantSafe, PERMISSIONS.EMPRESA_VER);
+const puedeAdministrar = (sesion) =>
+    sesionPuede(sesion, PERMISSIONS.OBRAS_CREAR) || sesionPuede(sesion, PERMISSIONS.EMPRESA_VER);
+
+/**
+ * ¿El documento que se quiere usar como evidencia es de esta empresa?
+ *
+ * Las actas, los certificados y las comunicaciones de acuerdos se vinculan por
+ * `documentId`, y un requisito del FUF se da por cumplido cuando el vínculo
+ * existe. Sin esta comprobación se podía acreditar un órgano con el acta de otra
+ * empresa: el identificador es adivinable y el cumplimiento, auditable.
+ */
+const documentoEsDelTenant = async (documentoId, tenantId) => {
+    if (!documentoId) return true;   // el vínculo es opcional en varios flujos
+    const res = await docClient.send(new GetCommand({
+        TableName: DOCUMENTS_TABLE,
+        Key: { documentId: documentoId },
+    })).catch(() => null);
+    return Boolean(res?.Item && res.Item.tenantId === tenantId);
 };
 
 module.exports.estructuraHandler = async (event) => {
@@ -164,10 +178,12 @@ module.exports.estructuraHandler = async (event) => {
     // El tenantId sale de la SESIÓN, nunca del cliente. Ver la nota en
     // `personas-module`: el orden anterior dejaba ganar al valor del llamante.
     const tenantId = tenantIdDeSesion(event);
+    const sesionRes = conSesion(event);
+    const sesion = sesionRes.ok ? sesionRes.sesion : null;
 
     try {
         if (method === 'OPTIONS') return cors();
-        if (!tenantId) return error('tenantId es requerido');
+        if (!sesion) return sesionRes.respuesta;
 
         const body = event.body ? JSON.parse(event.body) : {};
 
@@ -304,21 +320,27 @@ module.exports.estructuraHandler = async (event) => {
                 return success({ total: lista.length, prescripciones: lista });
             }
             if (method === 'POST' && !prescripcionId) {
-                if (!(await puedeAdministrar(body.solicitanteId, tenantId))) {
+                if (!puedeAdministrar(sesion)) {
                     return error('No tienes permiso para registrar prescripciones', 403);
                 }
                 const creada = await estructuraService.crearPrescripcion({
-                    tenantId, ...body, registradoPor: body.solicitanteId || null,
+                    tenantId, ...body, registradoPor: sesion.personaId,
                 });
                 return created({ message: 'Prescripción registrada', prescripcion: creada });
             }
             if (method === 'PUT' && prescripcionId) {
+                if (!puedeAdministrar(sesion)) {
+                    return error('No tienes permiso para modificar prescripciones', 403);
+                }
                 const actualizada = await estructuraService.actualizarPrescripcion({
                     tenantId, prescripcionId, cambios: body,
                 });
                 return success({ message: 'Prescripción actualizada', prescripcion: actualizada });
             }
             if (method === 'DELETE' && prescripcionId) {
+                if (!puedeAdministrar(sesion)) {
+                    return error('No tienes permiso para eliminar prescripciones', 403);
+                }
                 await estructuraService.eliminarPrescripcion(tenantId, prescripcionId);
                 return success({ message: 'Prescripción eliminada' });
             }
@@ -341,7 +363,7 @@ module.exports.estructuraHandler = async (event) => {
 
         // ── POST /estructura/organos ─────────────────────────────────────────
         if (method === 'POST' && recurso === 'organos' && !organoId) {
-            if (!(await puedeAdministrar(body.solicitanteId, tenantId))) {
+            if (!puedeAdministrar(sesion)) {
                 return error('No tienes permiso para constituir órganos preventivos', 403);
             }
 
@@ -380,14 +402,14 @@ module.exports.estructuraHandler = async (event) => {
                 dotacion,
                 hayCphsVigente: EP.hayCphsVigente(organosAmbito),
                 fechaCreacionAmbito,
-                creadoPor: body.solicitanteId || null,
+                creadoPor: sesion.personaId,
             });
             return created({ message: 'Órgano preventivo constituido', organo });
         }
 
         // ── POST /estructura/organos/{id}/disolver ───────────────────────────
         if (method === 'POST' && organoId && sub === 'disolver') {
-            if (!(await puedeAdministrar(body.solicitanteId, tenantId))) {
+            if (!puedeAdministrar(sesion)) {
                 return error('No tienes permiso para disolver órganos preventivos', 403);
             }
             const res = await estructuraService.disolverOrgano({
@@ -400,6 +422,9 @@ module.exports.estructuraHandler = async (event) => {
         // Curso OPR (Art. 32), capacitación del OAL (Art. 65) y registro Seremi
         // (Art. 55) comparten este endpoint: los tres son check más documento.
         if (method === 'PUT' && organoId && sub === 'miembros' && subId && accion === 'acreditacion') {
+            if (!puedeAdministrar(sesion)) {
+                return error('No tienes permiso para acreditar miembros del órgano', 403);
+            }
             const miembro = await estructuraService.actualizarAcreditacion(
                 tenantId, organoId, subId, body.acreditacion || body
             );
@@ -408,6 +433,12 @@ module.exports.estructuraHandler = async (event) => {
 
         // ── POST /estructura/organos/{id}/documentos ─────────────────────────
         if (method === 'POST' && organoId && sub === 'documentos') {
+            if (!puedeAdministrar(sesion)) {
+                return error('No tienes permiso para vincular documentos al órgano', 403);
+            }
+            if (!(await documentoEsDelTenant(body.documentoId, tenantId))) {
+                return error('Documento no encontrado', 404);
+            }
             const organo = await estructuraService.vincularDocumento({
                 tenantId, organoId, clave: body.clave, documentoId: body.documentoId,
             });
@@ -417,11 +448,14 @@ module.exports.estructuraHandler = async (event) => {
         // ── POST /estructura/organos/{id}/reuniones ──────────────────────────
         // Solo extraordinarias: las ordinarias se generan al constituir.
         if (method === 'POST' && organoId && sub === 'reuniones' && !subId) {
+            if (!puedeAdministrar(sesion)) {
+                return error('No tienes permiso para convocar reuniones del órgano', 403);
+            }
             const reunion = await estructuraService.crearReunionExtraordinaria({
                 tenantId, organoId,
                 causal: body.causal,
                 fechaProgramada: body.fechaProgramada || null,
-                registradoPor: body.solicitanteId || null,
+                registradoPor: sesion.personaId,
             });
             return created({ message: 'Reunión extraordinaria creada', reunion });
         }
@@ -429,12 +463,18 @@ module.exports.estructuraHandler = async (event) => {
         // ── PUT /estructura/organos/{id}/reuniones/{reunionId} ───────────────
         // Registrar realizada (fecha + acta) o reagendar dentro del mes.
         if (method === 'PUT' && organoId && sub === 'reuniones' && subId && !accion) {
+            if (!puedeAdministrar(sesion)) {
+                return error('No tienes permiso para registrar reuniones del órgano', 403);
+            }
+            if (!(await documentoEsDelTenant(body.actaDocumentoId, tenantId))) {
+                return error('Documento no encontrado', 404);
+            }
             if (body.fechaRealizada || body.actaDocumentoId) {
                 const reunion = await estructuraService.registrarReunionRealizada({
                     tenantId, organoId, reunionId: subId,
                     fechaRealizada: body.fechaRealizada,
                     actaDocumentoId: body.actaDocumentoId,
-                    registradoPor: body.solicitanteId || null,
+                    registradoPor: sesion.personaId,
                 });
                 return success({ message: 'Reunión registrada', reunion });
             }
@@ -449,6 +489,12 @@ module.exports.estructuraHandler = async (event) => {
 
         // ── POST .../reuniones/{id}/comunicacion-acuerdos (ítem 36) ──────────
         if (method === 'POST' && organoId && sub === 'reuniones' && subId && accion === 'comunicacion-acuerdos') {
+            if (!puedeAdministrar(sesion)) {
+                return error('No tienes permiso para registrar la comunicación de acuerdos', 403);
+            }
+            if (!(await documentoEsDelTenant(body.documentoId, tenantId))) {
+                return error('Documento no encontrado', 404);
+            }
             const reunion = await estructuraService.registrarComunicacionAcuerdos({
                 tenantId, organoId, reunionId: subId,
                 documentoId: body.documentoId, fecha: body.fecha || null,

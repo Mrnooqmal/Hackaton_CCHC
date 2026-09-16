@@ -4,15 +4,14 @@
  * Router para endpoints de gestión de tenants (empresas).
  */
 const { TenantService } = require('../../lib/services/TenantService');
-const { PersonaService } = require('../../lib/services/PersonaService');
-const { sendWelcomeEmail } = require('../notifications/handler');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const { buildDefaultCargoCatalog, sanitizeCargoCatalog } = require('../../lib/ds44');
 const { sanitizeCatalogosActividad, resolveCatalogos, PERMISOS_TRABAJO_DEF } = require('../../lib/catalogos-actividad');
 const { EppCatalogoService } = require('../../lib/services/EppCatalogoService');
+const { PERMISSIONS } = require('../../lib/permissions');
 const { PutObjectCommand } = require('@aws-sdk/client-s3');
 const { s3Client } = require('../../lib/clients/s3');
-const crypto = require('crypto');
+const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
 const BUCKET_NAME = process.env.DOCUMENTS_BUCKET;
 
@@ -43,12 +42,39 @@ module.exports.tenantsHandler = async (event) => {
     const tenantId = segments[0] || null;
     const action = segments[1] || null;
 
+    const sesionRes = conSesion(event);
+    const sesion = sesionRes.ok ? sesionRes.sesion : null;
+    const puede = (permiso) => sesionPuede(sesion, permiso);
+
+    /**
+     * La empresa del path tiene que ser la de la sesión.
+     *
+     * Este módulo tomaba el `tenantId` del primer segmento de la ruta y no lo
+     * comparaba con nada: con la sesión de una empresa cualquiera se leía y se
+     * escribía la configuración de otra —roles y permisos incluidos, que es el
+     * control de acceso de esa empresa—, su catálogo de cargos y su EPP. Es la
+     * misma fuga lateral ya cerrada en personas, documentos y firmas, y por eso
+     * responde igual: 404.
+     */
+    const empresaAjena = () => tenantId && sesion && tenantId !== sesion.tenantId;
+
     try {
         // CORS preflight
         if (method === 'OPTIONS') return cors();
 
+        if (!sesion) return sesionRes.respuesta;
+        if (empresaAjena()) return error('Empresa no encontrada', 404);
+
         // GET /tenants/validate?nombre=...&rutEmpresa=... — Verificar unicidad antes de registrar
+        //
+        // Servía al formulario público de alta. Ese formulario ya no existe y la
+        // comprobación de unicidad la hace `scripts/crear-empresa.js` antes de
+        // escribir, así que la consulta se conserva solo CON SESIÓN: sin ella era
+        // un oráculo que confirmaba a cualquiera si una empresa está en el sistema.
         if (method === 'GET' && segments[0] === 'validate') {
+            const ses = conSesion(event);
+            if (!ses.ok) return ses.respuesta;
+
             const qs = event.queryStringParameters || {};
             const conflictos = {};
             if (qs.nombre) {
@@ -63,174 +89,28 @@ module.exports.tenantsHandler = async (event) => {
             return success({ conflictos, valido: Object.keys(conflictos).length === 0 });
         }
 
-        // POST /tenants/setup — Setup inicial de empresa
-        if (method === 'POST' && segments[0] === 'setup') {
-            const body = JSON.parse(event.body || '{}');
-            const personaService = new PersonaService();
+        // POST /tenants/setup — RETIRADO.
+        //
+        // El alta de empresas dejó de ser un endpoint: la hace el operador con
+        // `scripts/crear-empresa.js`, autorizado por IAM y auditado en CloudTrail
+        // (ver el comentario en serverless.yml). La ruta pública ya no existe,
+        // pero esta rama se elimina igual porque el catch-all `/tenants/{proxy+}`
+        // la seguiría alcanzando con cualquier sesión válida: dejarla habría
+        // convertido a cualquier usuario de cualquier empresa en creador de
+        // empresas.
 
-            // Código de habilitación: FALLA CERRADO.
-            //
-            // Antes, con la variable vacía el alta no se gateaba. Estaba vacía en dev
-            // y en prod, así que cualquiera podía crear empresas en producción.
-            // Ahora sin código configurado no se crea nada.
-            //
-            // Es una medida transitoria: el alta debe dejar de ser pública y pasar a
-            // ser una operación administrativa. Para probar en local, definir
-            // TENANT_SIGNUP_CODE en el entorno de serverless-offline.
-            const expectedSignupCode = process.env.TENANT_SIGNUP_CODE;
-            if (!expectedSignupCode) {
-                return error('El alta de empresas no está habilitada en este ambiente.', 403);
-            }
-            const provided = String(body.codigoHabilitacion || '').trim();
-            const a = Buffer.from(provided);
-            const b = Buffer.from(expectedSignupCode);
-            // Comparación de tiempo constante: `!==` sobre un secreto filtra por
-            // cuánto tarda en fallar cuántos caracteres acertó.
-            if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-                return error('Código de habilitación inválido. Solicítalo al administrador de la plataforma.', 403);
-            }
-
-            // Validar RUT del admin antes de crear el tenant
-            if (body.admin?.rut) {
-                const adminExistente = await personaService.getByRutGlobal(body.admin.rut);
-                if (adminExistente) {
-                    return error(`El RUT ${body.admin.rut} ya está registrado en el sistema`, 400);
-                }
-            }
-
-            // Strip logoBase64 from preferencias — it goes to S3, not DynamoDB
-            const logoBase64 = body.preferencias?.logoBase64;
-            const cleanPreferencias = { ...(body.preferencias || {}) };
-            delete cleanPreferencias.logoBase64;
-            const cleanBody = { ...body, preferencias: cleanPreferencias };
-
-            let tenant;
-            try {
-                tenant = await tenantService.setup(cleanBody);
-            } catch (setupErr) {
-                return error(setupErr.message, 400);
-            }
-
-            // Upload logo to S3 and store the key in preferencias
-            if (logoBase64 && BUCKET_NAME) {
-                try {
-                    const logoKey = await uploadTenantLogo(logoBase64, tenant.tenantId);
-                    const updatedPrefs = { ...tenant.preferencias, logoKey };
-                    await tenantService.updateConfig(tenant.tenantId, { preferencias: updatedPrefs });
-                    tenant.preferencias.logoKey = logoKey;
-                } catch (logoErr) {
-                    console.error('Logo upload failed, continuing without logo:', logoErr);
-                }
-            }
-
-            // Si se proporcionan datos del admin, crear persona admin
-            let adminResult = null;
-            let passwordTemporal = null;
-            if (body.admin) {
-                try {
-                    const { persona, passwordTemporal: pwd } = await personaService.crear(tenant.tenantId, {
-                        rut: body.admin.rut,
-                        nombre: body.admin.nombre,
-                        apellidoPaterno: body.admin.apellidoPaterno || '',
-                        apellidoMaterno: body.admin.apellidoMaterno || '',
-                        apellido: body.admin.apellido || '',
-                        fechaNacimiento: body.admin.fechaNacimiento || null,
-                        email: body.admin.email,
-                        rol: 'admin',
-                        tieneAccesoWeb: true
-                    });
-                    passwordTemporal = pwd;
-                    // Vincular admin al tenant
-                    await tenantService.updateConfig(tenant.tenantId, {
-                        adminPersonaId: persona.personaId
-                    });
-                    // Activar tenant
-                    await tenantService.activar(tenant.tenantId);
-
-                    // Enviar email de bienvenida con credenciales
-                    let emailAdmin = { sent: false, reason: 'no_credentials' };
-                    if (persona.email && passwordTemporal) {
-                        const nombreCompleto = [persona.nombre, persona.apellido].filter(Boolean).join(' ');
-                        emailAdmin = await sendWelcomeEmail(persona.email, nombreCompleto, persona.rut, passwordTemporal);
-                        console.log('Admin welcome email result:', JSON.stringify(emailAdmin));
-                    }
-                    adminResult = { ...persona.toSafeFormat(), emailNotificado: emailAdmin?.sent || false };
-                } catch (adminErr) {
-                    console.error('Error creating admin persona:', adminErr);
-                }
-            }
-
-            // Crear trabajadores iniciales (opcional) en el mismo setup, para que
-            // queden persistidos de forma confiable junto al tenant/admin. Cada uno
-            // se crea con el mismo servicio que el panel; los errores no bloquean.
-            const trabajadoresResult = [];
-            if (Array.isArray(body.trabajadores) && body.trabajadores.length > 0) {
-                for (const w of body.trabajadores) {
-                    const apellido = [w.apellidoPaterno, w.apellidoMaterno].filter(Boolean).join(' ').trim();
-                    try {
-                        const { persona, passwordTemporal: wPwd } = await personaService.crear(tenant.tenantId, {
-                            rut: w.rut,
-                            nombre: w.nombre,
-                            apellidoPaterno: w.apellidoPaterno || '',
-                            apellidoMaterno: w.apellidoMaterno || '',
-                            fechaNacimiento: w.fechaNacimiento || null,
-                            email: w.email || '',
-                            rol: w.rol || 'Colaborador',
-                            cargo: w.cargo || '',
-                            tieneAccesoWeb: w.tieneAccesoWeb !== undefined ? w.tieneAccesoWeb : true
-                        });
-                        let emailSent = false;
-                        if (persona.email && wPwd) {
-                            try {
-                                const nombreCompleto = [persona.nombre, persona.apellido].filter(Boolean).join(' ');
-                                const r = await sendWelcomeEmail(persona.email, nombreCompleto, persona.rut, wPwd);
-                                emailSent = r?.sent || false;
-                            } catch (mailErr) {
-                                console.error('Error sending worker welcome email:', mailErr.message);
-                            }
-                        }
-                        // Documentos de empresa (RI/Política) a nivel tenant para el trabajador.
-                        try {
-                            const { ensureCompanyDocsForPersona } = require('../personas-module/handler');
-                            await ensureCompanyDocsForPersona({ tenantId: tenant.tenantId, persona, solicitante: null });
-                        } catch (docErr) {
-                            console.error('Docs empresa (setup trabajador) falló:', docErr.message);
-                        }
-                        trabajadoresResult.push({ rut: persona.rut, nombre: persona.nombre, apellido, password: wPwd || undefined, emailNotificado: emailSent });
-                    } catch (wErr) {
-                        console.error(`Error creando trabajador ${w.rut}:`, wErr.message);
-                        trabajadoresResult.push({ rut: w.rut, nombre: w.nombre, apellido, error: wErr.message });
-                    }
-                }
-                const creados = trabajadoresResult.filter(t => !t.error).length;
-                if (creados > 0) {
-                    await tenantService.ajustarCantidadTrabajadores(tenant.tenantId, creados).catch((countErr) => {
-                        console.error('No se pudo actualizar la cantidad de trabajadores del tenant (setup):', countErr.message);
-                    });
-                }
-            }
-
-            return created({
-                message: 'Tenant creado exitosamente',
-                tenant: tenant.toSafeFormat(),
-                admin: adminResult,
-                passwordTemporal,
-                trabajadores: trabajadoresResult
-            });
-        }
-
-        // GET /tenants — Listar tenants
+        // GET /tenants — La empresa de la sesión.
+        //
+        // Devolvía TODAS las empresas de la plataforma (nombre, RUT, dotación,
+        // estado) a cualquier sesión: el listado de la cartera de clientes al
+        // alcance de cualquier usuario de cualquier empresa. No existe un rol de
+        // plataforma que necesite esa lista desde la API; el operador la consulta
+        // con sus credenciales de AWS.
         if (method === 'GET' && !tenantId) {
-            const estado = event.queryStringParameters?.estado || 'all';
-            let tenants;
-            if (estado === 'all') {
-                tenants = await tenantService.listAll();
-            } else {
-                tenants = await tenantService.listByEstado(estado);
-            }
+            const propio = await tenantService.getById(sesion.tenantId);
             return success({
-                total: tenants.length,
-                tenants: tenants.map(t => t.toSafeFormat())
+                total: propio ? 1 : 0,
+                tenants: propio ? [propio.toSafeFormat()] : [],
             });
         }
 
@@ -244,6 +124,27 @@ module.exports.tenantsHandler = async (event) => {
         // PUT /tenants/{id} — Actualizar configuración
         if (method === 'PUT' && tenantId && !action) {
             const body = JSON.parse(event.body || '{}');
+
+            // Permiso por campo: `roles` ES el control de acceso de la empresa
+            // (quién puede ver la ficha de salud, desvincular gente o firmar), así
+            // que no puede compartir puerta con cambiar el logo.
+            if (body.roles !== undefined && !puede(PERMISSIONS.EMPRESA_ROLES)) {
+                return error('No tienes permiso para modificar los roles de la empresa', 403);
+            }
+            if (body.preferencias !== undefined && !puede(PERMISSIONS.EMPRESA_IDENTIDAD)) {
+                return error('No tienes permiso para modificar la identidad de la empresa', 403);
+            }
+            // `reglas` por esta ruta son el representante legal y las
+            // organizaciones sindicales (Art. 8 inc. 1, Art. 57 inc. 2), que viven
+            // en la pestaña Identidad. Cargos y catálogos tienen ruta propia.
+            if (body.reglas !== undefined && !puede(PERMISSIONS.EMPRESA_IDENTIDAD)) {
+                return error('No tienes permiso para modificar la configuración de la empresa', 403);
+            }
+            // `settings` gobierna límites y retención: queda solo para el
+            // administrador, que los tiene todos.
+            if (body.settings !== undefined && !puede(PERMISSIONS.EMPRESA_ROLES)) {
+                return error('No tienes permiso para modificar los ajustes de la empresa', 403);
+            }
 
             // Las preferencias se mergean con las existentes para no perder campos no
             // enviados (updateConfig reemplaza el objeto completo). Si llega un logo
@@ -288,6 +189,11 @@ module.exports.tenantsHandler = async (event) => {
         // El eppId viaja como tercer segmento: /tenants/{id}/epp/{eppId}
         if (tenantId && action === 'epp') {
             const eppId = segments[2] || null;
+            // Leer el catálogo lo necesita cualquiera que registre una entrega;
+            // mantenerlo es del perfil que responde por el EPP (Art. 13).
+            if (method !== 'GET' && !puede(PERMISSIONS.EMPRESA_EPP)) {
+                return error('No tienes permiso para modificar el catálogo de EPP', 403);
+            }
 
             if (method === 'GET') {
                 const epp = await eppCatalogoService.list(tenantId);
@@ -340,6 +246,9 @@ module.exports.tenantsHandler = async (event) => {
         // PUT /tenants/{id}/cargos — Guardar catálogo de cargos. Mergea en
         // reglas.cargos sin pisar el resto de reglas del tenant.
         if (method === 'PUT' && tenantId && action === 'cargos') {
+            if (!puede(PERMISSIONS.EMPRESA_CARGOS) && !puede(PERMISSIONS.CARGOS_GESTIONAR)) {
+                return error('No tienes permiso para modificar el catálogo de cargos', 403);
+            }
             const body = JSON.parse(event.body || '{}');
             let cargos;
             try {
@@ -394,6 +303,9 @@ module.exports.tenantsHandler = async (event) => {
         // PUT /tenants/{id}/catalogos-actividad — Guarda los catálogos.
         // Mergea en reglas.catalogosActividad sin pisar el resto de reglas.
         if (method === 'PUT' && tenantId && action === 'catalogos-actividad') {
+            if (!puede(PERMISSIONS.CARGOS_GESTIONAR) && !puede(PERMISSIONS.ACTIVIDADES_PLANIFICAR)) {
+                return error('No tienes permiso para modificar los catálogos de actividad', 403);
+            }
             const body = JSON.parse(event.body || '{}');
             let catalogos;
             try {

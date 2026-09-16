@@ -6,16 +6,14 @@
 const { ObraService } = require('../../lib/services/ObraService');
 const { RegistroService } = require('../../lib/services/RegistroService');
 const { IncidentsRepository } = require('../incidents-module/incidents.repository');
-const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
-const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { PERMISSIONS } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
-const { tenantIdDeSesion } = require('../../lib/auth/sesion');
+const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
 const obraService = new ObraService();
 const registroService = new RegistroService();
 const incidentsRepo = new IncidentsRepository();
-const personaService = new PersonaService();
 const tenantService = new TenantService();
 
 module.exports.obrasHandler = async (event) => {
@@ -39,23 +37,39 @@ module.exports.obrasHandler = async (event) => {
     // caso.
     const tenantId = tenantIdDeSesion(event);
 
+    // Quién pregunta, y qué puede hacer.
+    const sesionRes = conSesion(event);
+    const sesion = sesionRes.ok ? sesionRes.sesion : null;
+    const puede = (permiso) => sesionPuede(sesion, permiso);
+    // Crear, editar y avanzar de fase son la misma potestad sobre la obra.
+    const puedeGestionarObras = () => puede(PERMISSIONS.OBRAS_CREAR);
+
+    // Obra de ESTA empresa, o null.
+    //
+    // `ObraService.getById` resuelve por el índice global `obraId-index`: con el
+    // id a mano devolvía la obra de cualquier empresa, y las escrituras usan el
+    // `tenantId` de la sesión como clave, así que sin esta comprobación una
+    // actualización sobre una obra ajena creaba un registro fantasma en la
+    // empresa propia. 404, no 403: la existencia tampoco se informa.
+    const obraDelTenant = async (id) => {
+        if (!id || !tenantId) return null;
+        const obra = await obraService.getById(id).catch(() => null);
+        return obra && obra.tenantId === tenantId ? obra : null;
+    };
+
     try {
         // CORS preflight
         if (method === 'OPTIONS') return cors();
 
         // POST /obras — Crear obra
         if (method === 'POST' && !obraId) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
 
-            // Enforcement por permiso cuando se identifica al creador.
-            const creadorId = body.creadorId || body.solicitanteId || null;
-            if (creadorId) {
-                const creador = await personaService.getById(creadorId).catch(() => null);
-                const tenant = await tenantService.getById(tenantId).catch(() => null);
-                if (!creador || !personaPuede(creador, tenant ? tenant.toSafeFormat() : null, PERMISSIONS.OBRAS_CREAR)) {
-                    return error('No tienes permiso para crear obras', 403);
-                }
+            // El permiso se exige SIEMPRE: antes solo se comprobaba si el cuerpo
+            // traía `creadorId`, así que omitirlo era saltárselo.
+            if (!puedeGestionarObras()) {
+                return error('No tienes permiso para crear obras', 403);
             }
 
             const obra = await obraService.crear(tenantId, body);
@@ -67,7 +81,7 @@ module.exports.obrasHandler = async (event) => {
 
         // GET /obras — Listar obras del tenant
         if (method === 'GET' && !obraId) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const obras = await obraService.listByTenant(tenantId);
             return success({
                 total: obras.length,
@@ -77,14 +91,17 @@ module.exports.obrasHandler = async (event) => {
 
         // GET /obras/{id} — Detalle de obra
         if (method === 'GET' && obraId && !action) {
-            const obra = await obraService.getById(obraId);
+            if (!sesion) return sesionRes.respuesta;
+            const obra = await obraDelTenant(obraId);
             if (!obra) return error('Obra no encontrada', 404);
             return success(obra.toSafeFormat());
         }
 
         // PUT /obras/{id} — Actualizar obra
         if (method === 'PUT' && obraId && !action) {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!puedeGestionarObras()) return error('No tienes permiso para editar obras', 403);
+            if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const body = JSON.parse(event.body || '{}');
             const obra = await obraService.actualizar(tenantId, obraId, body);
             return success({
@@ -95,7 +112,9 @@ module.exports.obrasHandler = async (event) => {
 
         // POST /obras/{id}/avanzar-fase — Avanzar fase constructiva
         if (method === 'POST' && obraId && action === 'avanzar-fase') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!puedeGestionarObras()) return error('No tienes permiso para avanzar la fase de la obra', 403);
+            if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const obra = await obraService.avanzarFase(tenantId, obraId);
             return success({
                 message: `Fase avanzada a: ${obra.etapaActual}`,
@@ -105,7 +124,9 @@ module.exports.obrasHandler = async (event) => {
 
         // POST /obras/{id}/avanzar-fase-deming — Avanzar fase ciclo Deming (PLAN→HACER→VERIFICAR→ACTUAR)
         if (method === 'POST' && obraId && action === 'avanzar-fase-deming') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!puedeGestionarObras()) return error('No tienes permiso para avanzar la fase de la obra', 403);
+            if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const obra = await obraService.avanzarFaseDeming(tenantId, obraId);
             return success({
                 message: `Fase Deming avanzada a: ${obra.faseDeming}`,
@@ -115,11 +136,20 @@ module.exports.obrasHandler = async (event) => {
 
         // POST /obras/{id}/registros/at-ep — Generar y firmar Registro AT/EP (Arts. 71-72)
         if (method === 'POST' && obraId && action === 'registros' && subAction === 'at-ep') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const body = JSON.parse(event.body || '{}');
-            if (!body.firmante?.personaId) {
-                return error('firmante.personaId es requerido');
+
+            // Quien firma es quien tiene la sesión, y firma con su PIN.
+            //
+            // El registro AT/EP es evidencia con validez legal (Arts. 71-72). El
+            // cuerpo traía a quién atribuir la firma y admitía `metodo:
+            // 'PRESENCIAL'`, que en FirmaService valida siempre: cualquiera podía
+            // emitir un registro firmado a nombre de otro.
+            if (!body.firmante?.pin) {
+                return error('Debes ingresar tu PIN para firmar el registro', 400);
             }
+            const firmante = { personaId: sesion.personaId, pin: body.firmante.pin };
             const contexto = {
                 ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
                 userAgent: event.headers?.['user-agent'] || event.headers?.['User-Agent'] || 'unknown'
@@ -128,9 +158,8 @@ module.exports.obrasHandler = async (event) => {
                 tenantId,
                 obraId,
                 periodo: body.periodo || {},
-                firmante: body.firmante,
-                metodo: body.metodo || 'PIN',
-                firmaManuscrita: body.firmaManuscrita,
+                firmante,
+                metodo: 'PIN',
                 masaLaboral: body.masaLaboral,
                 contexto
             });
@@ -145,10 +174,10 @@ module.exports.obrasHandler = async (event) => {
         // Devuelve el documento HTML imprimible con TODA la información de gestión
         // del riesgo (indicadores, actividades, EPP, MIPER, docs, incidentes, salud).
         if (method === 'GET' && obraId && action === 'expediente') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
             const q = event.queryStringParameters || {};
-            const obra = await obraService.getById(obraId).catch(() => null);
-            if (!obra || obra.tenantId !== tenantId) return error('Obra no encontrada', 404);
+            const obra = await obraDelTenant(obraId);
+            if (!obra) return error('Obra no encontrada', 404);
             const tenant = await tenantService.getById(tenantId).catch(() => null);
             const { generadoEn, html } = await registroService.generarExpediente({
                 tenantId,
@@ -173,7 +202,8 @@ module.exports.obrasHandler = async (event) => {
 
         // GET /obras/{id}/check/consolidado — Read-model consolidado de la Fase CHECK
         if (method === 'GET' && obraId && action === 'check' && subAction === 'consolidado') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const { desde, hasta } = event.queryStringParameters || {};
             const consolidado = await registroService.consolidarCheck({
                 tenantId,
@@ -185,7 +215,8 @@ module.exports.obrasHandler = async (event) => {
 
         // GET /obras/{id}/medidas-correctivas — Read-model de medidas (Art. 71) para ACT
         if (method === 'GET' && obraId && action === 'medidas-correctivas') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const { estado } = event.queryStringParameters || {};
             const resultado = await incidentsRepo.getMedidasByObra(tenantId, obraId, estado);
             return success(resultado);
@@ -194,12 +225,23 @@ module.exports.obrasHandler = async (event) => {
         // POST /obras/{id}/investigaciones/{incidentId}/cerrar — Genera y firma el
         // Informe Art. 71 (arbol de causas) y cierra la investigacion del incidente.
         if (method === 'POST' && obraId && action === 'investigaciones' && subAction && subSubAction === 'cerrar') {
-            if (!tenantId) return error('tenantId es requerido');
+            if (!sesion) return sesionRes.respuesta;
+            if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const body = JSON.parse(event.body || '{}');
-            if (!body.firmante?.personaId) return error('firmante.personaId es requerido');
+
+            // Mismo criterio que el registro AT/EP: el informe del Art. 71 lo firma
+            // quien tiene la sesión, con su PIN.
+            if (!body.firmante?.pin) {
+                return error('Debes ingresar tu PIN para firmar el informe', 400);
+            }
+            const firmante = { personaId: sesion.personaId, pin: body.firmante.pin };
 
             const incident = await incidentsRepo.get(subAction);
-            if (!incident) return error('Incidente no encontrado', 404);
+            // El incidente se comprueba contra la obra Y contra la empresa: con solo
+            // lo primero, un incidente de otra empresa con el mismo obraId pasaba.
+            if (!incident || (incident.tenantId && incident.tenantId !== tenantId)) {
+                return error('Incidente no encontrado', 404);
+            }
             if ((incident.obraId || null) !== obraId) return error('El incidente no pertenece a esta obra', 400);
 
             const contexto = {
@@ -210,9 +252,8 @@ module.exports.obrasHandler = async (event) => {
                 tenantId,
                 obraId,
                 incident,
-                firmante: body.firmante,
-                metodo: body.metodo || 'PIN',
-                firmaManuscrita: body.firmaManuscrita,
+                firmante,
+                metodo: 'PIN',
                 contexto
             });
 

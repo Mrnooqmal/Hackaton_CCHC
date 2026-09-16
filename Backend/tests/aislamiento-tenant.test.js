@@ -435,3 +435,37 @@ test('los datos de salud viajan solo cuando se piden explícitamente', () => {
 
     assert.equal(ficha.vigilanciaSalud.agente, 'sílice');
 });
+
+// ─── Verificación pública de firmas ──────────────────────────────────────────
+
+test('la verificación pública devuelve el RUT parcial, no el completo', async () => {
+    store.personaItems = [];
+    const originalScan = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'ScanCommand') {
+            return { Items: [{
+                signatureId: 'f-a', token: 'tok-publico', tenantId: EMPRESA_A,
+                workerNombre: 'Juan Pérez', workerRut: '12.345.678-5',
+                fecha: '2026-09-15', horario: '10:00', estado: 'valida',
+            }] };
+        }
+        return originalScan(cmd);
+    };
+
+    const res = await firmas.verifyByToken({ pathParameters: { token: 'tok-publico' } });
+    docClient.send = originalScan;
+
+    const { data } = JSON.parse(res.body);
+    assert.equal(res.statusCode, 200, 'sigue siendo pública: se verifica sin sesión');
+    assert.equal(data.firma.workerNombre, 'Juan Pérez', 'el nombre sí identifica la firma');
+    assert.equal(data.firma.workerRut, '···.678-5');
+    assert.doesNotMatch(res.body, /12\.345/, 'el RUT completo no viaja');
+});
+
+test('el RUT parcial conserva los últimos dígitos y el verificador', () => {
+    const { enmascararRut } = require('../lib/utils/validation');
+    assert.equal(enmascararRut('12.345.678-5'), '···.678-5');
+    assert.equal(enmascararRut('123456785'), '···.678-5');
+    assert.equal(enmascararRut('7.654.321-K'), '···.321-K');
+    assert.equal(enmascararRut(null), null);
+});

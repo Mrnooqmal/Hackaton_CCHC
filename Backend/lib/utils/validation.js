@@ -22,6 +22,29 @@ const validateRut = (rut) => {
 };
 
 /**
+ * RUT parcial, para respuestas que no exigen la identidad completa.
+ *
+ * Deja los tres últimos dígitos del cuerpo y el dígito verificador: alcanza para
+ * que quien ya tiene el RUT a la vista confirme que la firma es de esa persona, y
+ * no alcanza para llevarse el dato de quien solo pasaba por ahí. Se usa en la
+ * verificación pública de firmas (`GET /signatures/verify/{token}`), que es
+ * pública por diseño: cualquiera con el token de una firma puede comprobarla.
+ *
+ * @param {string} rut
+ * @returns {string|null} p. ej. "···.678-5"
+ */
+const enmascararRut = (rut) => {
+    if (!rut) return null;
+    const limpio = String(rut).replace(/[.\s]/g, '').toUpperCase();
+    const partes = limpio.split('-');
+    const cuerpo = partes[0] || '';
+    const dv = partes.length > 1 ? partes[1] : cuerpo.slice(-1);
+    const soloCuerpo = partes.length > 1 ? cuerpo : cuerpo.slice(0, -1);
+    const visibles = soloCuerpo.slice(-3);
+    return `···.${visibles}-${dv}`;
+};
+
+/**
  * Valida campos requeridos en un objeto
  * @param {Object} obj - Objeto a validar
  * @param {string[]} requiredFields - Lista de campos requeridos
@@ -192,6 +215,7 @@ const normalizeRol = (rol) => {
 
 module.exports = {
     validateRut,
+    enmascararRut,
     validateRequired,
     generateSignatureToken,
     hashPin,

@@ -3,7 +3,7 @@ const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = req
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
-const { validateRequired, generateSignatureToken, verifyPin } = require('../../lib/utils/validation');
+const { validateRequired, generateSignatureToken, verifyPin, enmascararRut } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const signatureRequests = require('../signature-requests/handler');
 
@@ -477,7 +477,15 @@ module.exports.getByRequest = async (event) => {
 };
 
 /**
- * GET /signatures/verify/{token} - Verificar firma por token (para auditoría)
+ * GET /signatures/verify/{token} - Verificar firma por token (para auditoría).
+ *
+ * Es el único endpoint público del módulo, y lo es por diseño: quien tenga el
+ * token impreso en el anexo de firmas —un fiscalizador, por ejemplo— debe poder
+ * comprobar la firma sin cuenta en el sistema.
+ *
+ * Por eso mismo el RUT viaja PARCIAL. Quien verifica ya tiene delante el RUT de
+ * la persona y solo necesita confirmar que coincide; devolverlo completo
+ * convertía un token en una consulta abierta de identidad.
  */
 module.exports.verifyByToken = async (event) => {
     try {
@@ -512,7 +520,8 @@ module.exports.verifyByToken = async (event) => {
                 signatureId: signature.signatureId,
                 token: signature.token,
                 workerNombre: signature.workerNombre,
-                workerRut: signature.workerRut,
+                // RUT parcial: ver el comentario del handler.
+                workerRut: enmascararRut(signature.workerRut || signature.personaRut),
                 fecha: signature.fecha,
                 horario: signature.horario,
                 requestTitulo: signature.requestTitulo,

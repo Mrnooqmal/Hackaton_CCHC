@@ -221,34 +221,20 @@ functions:
           authorizer:
             name: sesion
 
-  # Acciones públicas del alta de empresa. Viven dentro del módulo catch-all,
-  # que ahora exige sesión, así que se exponen como rutas propias más
-  # específicas para poder dejarlas abiertas sin abrir el módulo entero.
-  # El mismo handler las atiende: enruta por segmento de path.
-  tenantsValidate:
-    handler: handlers/tenants-module/handler.tenantsHandler
-    events:
-      - httpApi:
-          path: /tenants/validate
-          method: get
-
-  tenantsSetup:
-    handler: handlers/tenants-module/handler.tenantsHandler
-    # Mismo motivo que `tenantsModule`: encadena escrituras y el correo por SES.
-    timeout: 29
-    events:
-      - httpApi:
-          path: /tenants/setup
-          method: post
-
-  # Validación de RUT disponible durante el alta: se consulta antes de existir
-  # la sesión.
-  personasValidate:
-    handler: handlers/personas-module/handler.personasHandler
-    events:
-      - httpApi:
-          path: /personas/validate
-          method: get
+  # El alta de empresas YA NO ES UN ENDPOINT.
+  #
+  # Estaba abierta (`POST /tenants/setup`) tras un código compartido que además
+  # estaba vacío en los dos ambientes. Un código compartido no dice quién lo usó
+  # y no había a quién pedirle la autorización: todas las sesiones pertenecen a
+  # una empresa, así que no existe un administrador de plataforma que pueda crear
+  # la primera. Ahora la da de alta el operador con `scripts/crear-empresa.js`,
+  # donde la autorización es IAM y cada escritura queda en CloudTrail.
+  #
+  # Con el alta fuera, también se retiran las dos consultas públicas que solo
+  # servían a ese formulario (`GET /tenants/validate` y `GET /personas/validate`):
+  # respondían sin sesión si una empresa o un RUT ya existían. `/personas/validate`
+  # sigue disponible con sesión a través del módulo de personas, que es desde
+  # donde la usa el alta de una persona.
 
   # ========================================
   # OBRAS (Proyectos de Construcción)

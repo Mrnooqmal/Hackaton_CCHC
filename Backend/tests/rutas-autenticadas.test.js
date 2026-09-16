@@ -30,9 +30,6 @@ const PUBLICAS = {
     'POST /auth/reset-password': 'Se autentica con el token de un solo uso del correo.',
     'POST /auth/validate-token': 'Comprueba un token; el token es la credencial.',
     'GET /signatures/verify/{token}': 'Verificación pública de una firma. El token del enlace es la credencial.',
-    'GET /tenants/validate': 'Alta de empresa: comprueba disponibilidad antes de que exista sesión.',
-    'POST /tenants/setup': 'Crea la empresa y su primer administrador. Gateada por TENANT_SIGNUP_CODE.',
-    'GET /personas/validate': 'Alta de empresa: valida el RUT del administrador antes de que exista sesión.',
 };
 
 /** Extrae cada ruta de `serverless.yml` y si declara autorizador. */
