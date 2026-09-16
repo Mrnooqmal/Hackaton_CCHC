@@ -876,8 +876,10 @@ export default function Dashboard() {
 
                         <div>
                             <div className="dash-section-header">
-                                <h2 className="dash-section-title">Obras</h2>
-                                <Link to="/obras" className="btn btn-secondary btn-sm">Ver todas</Link>
+                                <h2 className="dash-section-title">{selectedObraId ? 'Tu obra' : 'Obras'}</h2>
+                                {/* El listado completo pertenece a la vista de empresa: dentro de una
+                                    obra el resto de las obras queda fuera del alcance. */}
+                                {!selectedObraId && <Link to="/obras" className="btn btn-secondary btn-sm">Ver todas</Link>}
                             </div>
 
                             {obras.length === 0 ? (

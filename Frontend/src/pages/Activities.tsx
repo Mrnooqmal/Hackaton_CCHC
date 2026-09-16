@@ -1055,7 +1055,7 @@ export default function Activities() {
                                     <button
                                         className="btn btn-primary"
                                         disabled={!selectedObraId}
-                                        title={!selectedObraId ? 'Selecciona una obra en la barra superior para crear una actividad' : undefined}
+                                        title={!selectedObraId ? 'Entra a una obra para crear una actividad' : undefined}
                                         onClick={() => { setVerTodaLaObra(false); setShowModal(true); }}
                                     >
                                         <FiPlus /> Nueva actividad
@@ -1072,10 +1072,10 @@ export default function Activities() {
                         <div className="empty-state-icon">
                             <FiCalendar size={48} style={{ color: 'var(--text-muted)' }} />
                         </div>
-                        <h3 className="empty-state-title">Seleccione una obra para ver sus actividades</h3>
+                        <h3 className="empty-state-title">No hay una obra activa</h3>
                         <p className="empty-state-description">
-                            Use el selector de obra en la barra superior para elegir la obra de la que
-                            desea ver o registrar actividades.
+                            Las actividades se registran dentro de una obra. Para ver o registrar
+                            actividades, usa «Cambiar de obra», en el botón de sesión al final del menú lateral.
                         </p>
                     </div>
                 )}

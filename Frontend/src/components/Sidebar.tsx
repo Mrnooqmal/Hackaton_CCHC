@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ConfirmModal from './ConfirmModal';
 import {
@@ -15,10 +15,13 @@ import {
     FiLogOut,
     FiList,
     FiClipboard,
-    FiShield
+    FiShield,
+    FiMapPin,
+    FiRepeat
 } from 'react-icons/fi';
 import { surveysApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 
 interface SidebarProps {
@@ -39,12 +42,18 @@ interface NavSection {
     items: NavItem[];
 }
 
-// Cada ítem declara el permiso de vista que lo habilita; el render filtra
-// por hasPermission y oculta secciones vacías. Los módulos sin permiso
-// (Inicio, Firma, Incidentes, Encuestas, Configuración) son siempre visibles;
-// sus subacciones se gatean dentro de la página.
-// El admin tiene bypass total en hasPermission, por lo que ve todos los ítems.
-const GENERIC_NAV: NavSection[] = [
+// El menú depende del ámbito con el que se entró: administrar la empresa y
+// operar una obra son dos trabajos distintos, y mezclar ambos menús fue lo que
+// hizo confuso el diseño anterior.
+//
+// Cada ítem declara el permiso de vista que lo habilita; el render filtra por
+// hasPermission y oculta secciones vacías. Los módulos sin permiso (Inicio,
+// Firmas, Incidentes, Encuestas, Configuración) son siempre visibles; sus
+// subacciones se gatean dentro de la página. El admin tiene bypass total en
+// hasPermission, por lo que ve todos los ítems.
+
+/** Vista de empresa: solo administración, ninguna operación de obra. */
+const NAV_EMPRESA: NavSection[] = [
     {
         section: 'Principal',
         items: [
@@ -54,7 +63,38 @@ const GENERIC_NAV: NavSection[] = [
     {
         section: 'Gestión',
         items: [
-            { path: '/obras', icon: FiHome, label: 'Obras', permission: PERMISSIONS.OBRAS_VER },
+            { path: '/obras', icon: FiMapPin, label: 'Obras', permission: PERMISSIONS.OBRAS_VER },
+        ]
+    },
+    {
+        section: 'Sistema',
+        items: [
+            { path: '/mi-empresa', icon: FiBriefcase, label: 'Mi Empresa', permission: PERMISSIONS.EMPRESA_VER },
+            { path: '/cargos-onboarding', icon: FiCheckSquare, label: 'Onboarding', permission: PERMISSIONS.CARGOS_GESTIONAR },
+            { path: '/catalogos-actividad', icon: FiList, label: 'Catálogos', permission: PERMISSIONS.CARGOS_GESTIONAR },
+        ]
+    }
+];
+
+/**
+ * Dentro de una obra: su operación diaria. Los módulos de empresa (Mi Empresa,
+ * Onboarding, Catálogos) viven en la otra vista. `obraId` puede faltar cuando
+ * alguien sin obras asignadas entra igual a la plataforma; ahí el primer ítem
+ * cae al listado y el permiso lo oculta si no corresponde.
+ */
+const navObra = (obraId: string | null): NavSection[] => [
+    {
+        section: 'Principal',
+        items: [
+            { path: '/', icon: FiHome, label: 'Inicio' },
+        ]
+    },
+    {
+        section: 'Gestión',
+        items: [
+            obraId
+                ? { path: `/obras/${obraId}`, icon: FiMapPin, label: 'Detalle de obra', permission: PERMISSIONS.OBRAS_DETALLE }
+                : { path: '/obras', icon: FiMapPin, label: 'Obras', permission: PERMISSIONS.OBRAS_VER },
             { path: '/personas', icon: FiUsers, label: 'Personas', permission: PERMISSIONS.PERSONAS_VER },
             { path: '/documents-repository', icon: FiFileText, label: 'Repositorio', permission: PERMISSIONS.REPOSITORIO_VER },
             { path: '/activities', icon: FiCalendar, label: 'Actividades', permission: PERMISSIONS.ACTIVIDADES_VER },
@@ -72,9 +112,6 @@ const GENERIC_NAV: NavSection[] = [
     {
         section: 'Sistema',
         items: [
-            { path: '/mi-empresa', icon: FiBriefcase, label: 'Mi Empresa', permission: PERMISSIONS.EMPRESA_VER },
-            { path: '/cargos-onboarding', icon: FiCheckSquare, label: 'Onboarding', permission: PERMISSIONS.CARGOS_GESTIONAR },
-            { path: '/catalogos-actividad', icon: FiList, label: 'Catálogos', permission: PERMISSIONS.CARGOS_GESTIONAR },
             { path: '/settings', icon: FiSettings, label: 'Configuración' },
         ]
     }
@@ -84,9 +121,12 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     const location = useLocation();
     const navigate = useNavigate();
     const { user, hasPermission, logout } = useAuth();
+    const { selectedObraId, modoEmpresa, puedeGestionarEmpresa, puedeCambiarDeObra, cambiarDeObra } = useObraContext();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
     const [workerId, setWorkerId] = useState<string | null>(null);
+    const sessionMenuRef = useRef<HTMLDivElement | null>(null);
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
     const pendingBadgeLabel = pendingSurveyCount > 99 ? '99+' : String(pendingSurveyCount);
 
@@ -184,10 +224,45 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     }, [workerId, canRespondSurveys]);
 
 
+    // Solo quien entró a administrar la empresa ve el menú de empresa: alguien
+    // sin obras asignadas también queda sin obra activa, y ahí lo que necesita
+    // es su operación (firmas, encuestas), no la administración.
+    const navSections = useMemo(
+        () => (modoEmpresa && puedeGestionarEmpresa ? NAV_EMPRESA : navObra(selectedObraId)),
+        [modoEmpresa, puedeGestionarEmpresa, selectedObraId]
+    );
+
+    // El menú de sesión se cierra al pinchar fuera o con Escape.
+    useEffect(() => {
+        if (!sessionMenuOpen) return;
+        const handleClickOutside = (event: MouseEvent) => {
+            if (sessionMenuRef.current && !sessionMenuRef.current.contains(event.target as Node)) {
+                setSessionMenuOpen(false);
+            }
+        };
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setSessionMenuOpen(false);
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleEscape);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, [sessionMenuOpen]);
+
     const handleLinkClick = () => {
         if (onClose) {
             onClose();
         }
+    };
+
+    // Cambiar de obra devuelve al paso de selección posterior al login.
+    const handleCambiarDeObra = () => {
+        setSessionMenuOpen(false);
+        if (onClose) onClose();
+        cambiarDeObra();
+        navigate('/seleccionar-obra');
     };
 
     return (
@@ -224,7 +299,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 )}
 
                 <nav className="sidebar-nav">
-                    {GENERIC_NAV.map((section: NavSection) => {
+                    {navSections.map((section: NavSection) => {
                         // Permissions are already filtered by role, but keep this for double-checking
                         const visibleItems = section.items.filter((item: NavItem) =>
                             !item.permission || hasPermission(item.permission)
@@ -302,14 +377,43 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                         <span className="sidebar-user-role">{roleLabel}</span>
                                     </div>
                                 </button>
-                                <button
-                                    className="sidebar-user-logout"
-                                    onClick={() => setShowLogoutConfirm(true)}
-                                    title="Cerrar sesión"
-                                    aria-label="Cerrar sesión"
-                                >
-                                    <FiLogOut />
-                                </button>
+                                <div className="sidebar-session" ref={sessionMenuRef}>
+                                    <button
+                                        className="sidebar-user-logout"
+                                        onClick={() => setSessionMenuOpen((prev) => !prev)}
+                                        title="Opciones de sesión"
+                                        aria-label="Opciones de sesión"
+                                        aria-haspopup="menu"
+                                        aria-expanded={sessionMenuOpen}
+                                    >
+                                        <FiLogOut />
+                                    </button>
+
+                                    {sessionMenuOpen && (
+                                        <div className="sidebar-session-menu" role="menu">
+                                            {puedeCambiarDeObra && (
+                                                <button
+                                                    type="button"
+                                                    role="menuitem"
+                                                    className="sidebar-session-item"
+                                                    onClick={handleCambiarDeObra}
+                                                >
+                                                    <FiRepeat />
+                                                    <span>Cambiar de obra</span>
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                role="menuitem"
+                                                className="sidebar-session-item sidebar-session-item--danger"
+                                                onClick={() => { setSessionMenuOpen(false); setShowLogoutConfirm(true); }}
+                                            >
+                                                <FiLogOut />
+                                                <span>Cerrar sesión</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     );

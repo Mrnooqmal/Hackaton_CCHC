@@ -410,8 +410,8 @@ export default function DocumentsRepository() {
                     <AlertBanner
                         variant={puedeVerFuf ? 'info' : 'warning'}
                         message={puedeVerFuf
-                            ? 'Selecciona una obra desde la barra superior para ver su repositorio. El formulario de cumplimiento de la entidad empleadora no depende de la obra y está disponible abajo.'
-                            : 'Selecciona una obra desde la barra superior para ver su repositorio de documentos.'}
+                            ? 'No hay una obra activa. Para ver el repositorio de una obra, usa «Cambiar de obra», en el botón de sesión al final del menú lateral. El formulario de cumplimiento de la entidad empleadora no depende de la obra y está disponible abajo.'
+                            : 'No hay una obra activa. Para ver el repositorio de documentos de una obra, usa «Cambiar de obra», en el botón de sesión al final del menú lateral.'}
                     />
                 )}
 

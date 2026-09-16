@@ -162,7 +162,7 @@ export default function ObraDetalle() {
   const canFirmaAsistida = hasPermission(PERMISSIONS.OBRA_FIRMA_ASISTIDA);
   const navigate = useNavigate();
   const { obraId } = useParams();
-  const { setSelectedObraId } = useObraContext();
+  const { setSelectedObraId, modoEmpresa } = useObraContext();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Atajo: agendar/asignar un ítem de onboarding precargado para una persona desde
@@ -2070,7 +2070,7 @@ export default function ObraDetalle() {
               </div>
             </div>
           }
-          backTo="/obras"
+          backTo={modoEmpresa ? '/obras' : '/'}
           actions={
             <button className="btn btn-secondary" onClick={handleEditToggle}>
               <LuPencil /> Editar

@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FiMenu, FiChevronDown, FiChevronRight, FiBell, FiHome, FiSun, FiMoon, FiHelpCircle } from 'react-icons/fi';
+import { FiMenu, FiChevronRight, FiBell, FiHome, FiSun, FiMoon, FiHelpCircle } from 'react-icons/fi';
 import { useLayout } from '../context/LayoutContext';
 import { useObraContext } from '../context/ObraContext';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { useBrand } from '../context/BrandContext';
 import { inboxApi } from '../api/client';
-import { Badge } from './ui';
 
 interface Crumb {
     label: string;
@@ -83,7 +82,7 @@ const SUBDETAIL_LEAF: Record<string, string> = {
     'obras/equipo': 'Equipo de obra',
 };
 
-function buildCrumbs(pathname: string): Crumb[] {
+function buildCrumbs(pathname: string, obraActiva = false): Crumb[] {
     const segments = pathname.split('/').filter(Boolean);
     const crumbs: Crumb[] = [{ label: 'Inicio', to: '/', home: true }];
 
@@ -95,10 +94,16 @@ function buildCrumbs(pathname: string): Crumb[] {
     const section = SECTION[first];
     const isLeafSection = segments.length === 1;
 
-    crumbs.push({
-        label: section?.label ?? first.charAt(0).toUpperCase() + first.slice(1),
-        to: isLeafSection ? undefined : (section?.path ?? `/${first}`),
-    });
+    // Con una obra activa el listado de obras queda fuera del flujo: el detalle
+    // de esa obra es el nodo de primer nivel, igual que en el menú lateral.
+    const omitirListadoObras = obraActiva && first === 'obras' && !isLeafSection;
+
+    if (!omitirListadoObras) {
+        crumbs.push({
+            label: section?.label ?? first.charAt(0).toUpperCase() + first.slice(1),
+            to: isLeafSection ? undefined : (section?.path ?? `/${first}`),
+        });
+    }
 
     if (segments.length > 1) {
         const actionLabel = ACTION_LEAF[`${first}/${segments[1]}`];
@@ -124,12 +129,10 @@ function buildCrumbs(pathname: string): Crumb[] {
 export default function Header() {
     const { user } = useAuth();
     const { toggleMobileMenu, toggleSidebarCollapsed } = useLayout();
-    const { obras, selectedObraId, setSelectedObraId, isLoadingObras } = useObraContext();
+    const { selectedObra, modoEmpresa, puedeGestionarEmpresa, isLoadingObras } = useObraContext();
     const { theme, toggleTheme } = useTheme();
     const { logo } = useBrand();
     const location = useLocation();
-    const [obraMenuOpen, setObraMenuOpen] = useState(false);
-    const obraMenuRef = useRef<HTMLDivElement | null>(null);
 
     // Badge de notificaciones no leidas en la campana del header.
     // Se refresca al cambiar de ruta (ej. tras leer mensajes en /inbox) y cada 60s.
@@ -149,22 +152,13 @@ export default function Header() {
         return () => { active = false; clearInterval(interval); };
     }, [user?.personaId, location.pathname]);
 
-    const crumbs = buildCrumbs(location.pathname);
+    const crumbs = buildCrumbs(location.pathname, !!selectedObra);
 
-    const isAdmin = user?.rol === 'admin';
-    const selectedObraObj = selectedObraId ? obras.find((o) => o.obraId === selectedObraId) : null;
-    const selectedObraLabel = selectedObraObj
-        ? [selectedObraObj.codigo, selectedObraObj.nombre].filter(Boolean).join(' · ')
-        : (isAdmin ? 'Vista empresa' : 'Todas las obras');
-
-    const obraEstadoBadge = (estado: string) => {
-        const map: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
-            activa: 'success', activo: 'success',
-            pausada: 'warning', pausa: 'warning',
-            finalizada: 'neutral', inactiva: 'neutral',
-        };
-        return map[estado?.toLowerCase()] ?? 'neutral';
-    };
+    // La obra se elige al entrar (y se cambia desde el menú de sesión), así que
+    // acá solo se recuerda en qué ámbito se está trabajando.
+    const scopeLabel = selectedObra
+        ? [selectedObra.codigo, selectedObra.nombre].filter(Boolean).join(' · ')
+        : (modoEmpresa && puedeGestionarEmpresa ? 'Vista empresa' : null);
 
     // El botón hamburguesa colapsa el sidebar en escritorio y abre el overlay en móvil
     const handleToggleSidebar = () => {
@@ -174,21 +168,6 @@ export default function Header() {
             toggleSidebarCollapsed();
         }
     };
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (obraMenuRef.current && !obraMenuRef.current.contains(event.target as Node)) {
-                setObraMenuOpen(false);
-            }
-        };
-        if (obraMenuOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [obraMenuOpen]);
-
-    const showObraSelector =
-        user && (user.rol === 'admin' || user.rol === 'prevencionista' || obras.length > 0);
 
     return (
         <header className="header">
@@ -251,75 +230,10 @@ export default function Header() {
                 </div>
 
                 <div className="header-mainbar-right">
-                    {showObraSelector && (
-                        <div className="header-obra" ref={obraMenuRef}>
-                            <button
-                                type="button"
-                                className="header-obra-trigger"
-                                onClick={() => setObraMenuOpen((prev) => !prev)}
-                                disabled={isLoadingObras}
-                                aria-haspopup="menu"
-                                aria-expanded={obraMenuOpen}
-                            >
-                                <span className="header-obra-label">
-                                    {isLoadingObras ? 'Cargando…' : selectedObraLabel}
-                                </span>
-                                {selectedObraObj && (
-                                    <Badge variant={obraEstadoBadge(selectedObraObj.estado)} size="sm">
-                                        {selectedObraObj.estado}
-                                    </Badge>
-                                )}
-                                <FiChevronDown className="header-obra-caret" />
-                            </button>
-
-                            {obraMenuOpen && (
-                                <div className="header-dropdown" role="menu">
-                                    {isAdmin && (
-                                        <button
-                                            type="button"
-                                            className={`header-dropdown-item ${!selectedObraId ? 'active' : ''}`}
-                                            onClick={() => {
-                                                setSelectedObraId(null);
-                                                setObraMenuOpen(false);
-                                            }}
-                                        >
-                                            <span className="header-dropdown-item-title">Vista empresa</span>
-                                            <span className="header-dropdown-item-sub">Todas las obras</span>
-                                        </button>
-                                    )}
-                                    {obras.length > 0 && isAdmin && <div className="header-dropdown-divider" />}
-                                    {obras.map((obra) => (
-                                        <button
-                                            key={obra.obraId}
-                                            type="button"
-                                            className={`header-dropdown-item ${selectedObraId === obra.obraId ? 'active' : ''}`}
-                                            onClick={() => {
-                                                setSelectedObraId(obra.obraId);
-                                                setObraMenuOpen(false);
-                                            }}
-                                        >
-                                            <div className="header-dropdown-item-info">
-                                                <span className="header-dropdown-item-title">
-                                                    {obra.codigo && <span className="header-dropdown-item-code">{obra.codigo}</span>}
-                                                    {obra.nombre}
-                                                </span>
-                                                <span className="header-dropdown-item-sub" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                    {obra.etapaActual && <span>{obra.etapaActual}</span>}
-                                                    {obra.etapaActual && obra.obraId && <span>·</span>}
-                                                    {obra.obraId && <span style={{ fontFamily: 'monospace', fontSize: '10px', opacity: 0.65 }}>{obra.obraId.slice(0, 8)}…</span>}
-                                                </span>
-                                            </div>
-                                            <Badge variant={obraEstadoBadge(obra.estado)} size="sm">
-                                                {obra.estado}
-                                            </Badge>
-                                        </button>
-                                    ))}
-                                    {obras.length === 0 && !isLoadingObras && (
-                                        <div className="header-dropdown-empty">No hay obras disponibles</div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                    {!isLoadingObras && scopeLabel && (
+                        <span className="header-obra-label" title={`Estás trabajando en: ${scopeLabel}`}>
+                            {scopeLabel}
+                        </span>
                     )}
 
                     {/* Ayuda contextual: abre el manual en la página del módulo actual */}

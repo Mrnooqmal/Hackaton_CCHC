@@ -44,8 +44,11 @@ export default function PersonasManagement() {
 
     const tenantId = user?.tenantId || user?.empresaId || localStorage.getItem('tenant_id') || '';
     const isAdmin = user?.rol === 'admin';
-    const isObraScoped = Boolean(user && !isAdmin);
-    const isMissingObra = isObraScoped && !selectedObraId;
+    // Con una obra activa la página es el equipo de esa obra, sea cual sea el rol:
+    // al entrar se eligió trabajar en ella. El directorio completo de la empresa
+    // solo existe en la vista de empresa, y solo para el admin.
+    const isObraScoped = Boolean(user && selectedObraId);
+    const isMissingObra = !selectedObraId && !isAdmin;
     const canCreatePersonas = hasPermission(PERMISSIONS.PERSONAS_CREAR);
     const canBulkUpload = hasPermission(PERMISSIONS.PERSONAS_CREAR);
     const canVerDetalle = hasPermission(PERMISSIONS.PERSONAS_DETALLE);
@@ -99,7 +102,7 @@ export default function PersonasManagement() {
 
     const pageTitle = isObraScoped ? 'Equipo de Obra' : 'Personas';
     const pageDescription = isObraScoped
-        ? selectedObra ? `Personas asignadas a ${selectedObra.nombre}.` : 'Selecciona una obra para ver el equipo.'
+        ? selectedObra ? `Personas asignadas a ${selectedObra.nombre}.` : 'Personas asignadas a la obra activa.'
         : 'Directorio de personas, roles y accesos de la empresa.';
 
     // DataTable columns
@@ -253,10 +256,10 @@ export default function PersonasManagement() {
                 />
 
                 {isMissingObra && (
-                    <AlertBanner variant="warning" message="Selecciona una obra en el encabezado para ver y gestionar el equipo asignado." />
+                    <AlertBanner variant="warning" message="No hay una obra activa. Para ver y gestionar el equipo asignado, usa «Cambiar de obra», en el botón de sesión al final del menú lateral." />
                 )}
 
-                {!isAdmin && selectedObraId && (
+                {selectedObraId && (
                     <AlertBanner variant="info" message="Las nuevas personas se crean a nivel empresa. Para sumar personas a esta obra, asígnalas desde la ficha de la obra.">
                         {canManageObra && (
                             <Link to={`/obras/${selectedObraId}`} className="btn btn-secondary btn-sm" style={{ marginTop: 'var(--space-2)' }}>

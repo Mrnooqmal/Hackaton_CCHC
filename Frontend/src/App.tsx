@@ -26,6 +26,7 @@ import SignatureRequests from './pages/SignatureRequests';
 import MySignatures from './pages/MySignatures';
 import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
+import SeleccionObra from './pages/SeleccionObra';
 import ObraNueva from './pages/ObraNueva';
 import ObraDetalle from './pages/ObraDetalle';
 import EstructuraConstituir from './pages/EstructuraConstituir';
@@ -50,7 +51,7 @@ const ManualLayout = lazy(() => import('./manual/ManualLayout'));
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ToastProvider } from './context/ToastContext';
-import { ObraProvider } from './context/ObraContext';
+import { ObraProvider, useObraContext } from './context/ObraContext';
 import { BrandProvider, useBrand } from './context/BrandContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PERMISSIONS } from './permissions';
@@ -93,8 +94,17 @@ function SessionExpiredModal() {
   );
 }
 
+// Rutas que no exigen tener un ámbito elegido: flujo público y pasos previos
+// al ingreso a la plataforma.
+const RUTAS_SIN_AMBITO = new Set([
+  '/login', '/recuperar-clave', '/restablecer-clave', '/register-admin',
+  '/onboarding', '/unauthorized', '/equipo', '/about',
+  '/change-password', '/enroll-me', '/seleccionar-obra',
+]);
+
 function AppContent() {
   const { user } = useAuth();
+  const { scopeElegido } = useObraContext();
   const { isMobileMenuOpen, closeMobileMenu, isSidebarCollapsed } = useLayout();
   const { setLogo, setPrimaryColor } = useBrand();
   const location = useLocation();
@@ -142,6 +152,9 @@ function AppContent() {
       <Route path="/workers" element={<Navigate to="/personas" replace />} />
       <Route path="/users" element={<Navigate to="/personas" replace />} />
       <Route path="/workers/:rut" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}><WorkerDetail /></ProtectedRoute>} />
+
+      {/* Paso posterior al login: elegir obra (o la vista de empresa). */}
+      <Route path="/seleccionar-obra" element={<ProtectedRoute><SeleccionObra /></ProtectedRoute>} />
 
       <Route path="/obras" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_VER}><Obras /></ProtectedRoute>} />
       <Route path="/obras/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_CREAR}><ObraNueva /></ProtectedRoute>} />
@@ -202,6 +215,24 @@ function AppContent() {
         </div>
       </div>
     );
+  }
+
+  // La obra se elige una vez al entrar, no con un selector suelto en el header:
+  // hasta que haya ámbito (una obra o la vista de empresa) la app no se
+  // renderiza y la elección ocupa la pantalla completa, como el login.
+  if (user && location.pathname === '/seleccionar-obra') {
+    return (
+      <>
+        <SessionExpiredModal />
+        <div className="route-outlet">
+          {routes}
+        </div>
+      </>
+    );
+  }
+
+  if (user && !scopeElegido && !RUTAS_SIN_AMBITO.has(location.pathname)) {
+    return <Navigate to="/seleccionar-obra" state={{ from: location }} replace />;
   }
 
   return (

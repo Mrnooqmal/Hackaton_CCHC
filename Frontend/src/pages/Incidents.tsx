@@ -1014,10 +1014,10 @@ export default function Incidents() {
                         </div>
                         <FiAlertCircle size={40} style={{ color: 'var(--warning-500, #f59e0b)', marginTop: '-68px', position: 'relative', zIndex: 1 }} />
                         <p style={{ fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--text-primary)', margin: 0 }}>
-                            Debe seleccionar una obra antes de acceder a los incidentes
+                            No hay una obra activa
                         </p>
                         <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', maxWidth: 380, margin: 0 }}>
-                            Use el selector de obra en la barra superior para elegir la obra de la que desea ver o reportar incidentes y hallazgos.
+                            Los incidentes y hallazgos pertenecen a una obra. Para verlos o reportarlos, usa «Cambiar de obra», en el botón de sesión al final del menú lateral.
                         </p>
                     </div>
                 )}
