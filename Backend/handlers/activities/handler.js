@@ -7,11 +7,27 @@ const { validateRequired, generateSignatureToken } = require('../../lib/utils/va
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
-const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { PERMISSIONS } = require('../../lib/permissions');
 const { resolveCatalogos, validatePlanificacion, validatePermisosTrabajo } = require('../../lib/catalogos-actividad');
 const { eventBus } = require('../../lib/events/EventBus');
+const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
 const TABLE_NAME = process.env.ACTIVITIES_TABLE || 'Activities';
+
+/**
+ * Actividad de la empresa de la sesión, o null.
+ *
+ * La tabla se indexa por `activityId`: con el id se leía y se editaba la
+ * actividad de cualquier empresa, incluida su lista de asistentes con RUT.
+ */
+const actividadDelTenant = async (activityId, sesion) => {
+    const res = await docClient.send(new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { activityId },
+    }));
+    const actividad = res.Item;
+    return actividad && actividad.tenantId === sesion.tenantId ? actividad : null;
+};
 
 // Tipos de actividades según el flujo de prevención
 const ACTIVITY_TYPES = {
@@ -259,9 +275,16 @@ module.exports.generarFechasRecurrencia = generarFechasRecurrencia;
  */
 module.exports.create = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        if (!sesionPuede(sesion, PERMISSIONS.ACTIVIDADES_CREAR)) {
+            return error('No tienes permiso para crear actividades', 403);
+        }
+
         const body = JSON.parse(event.body || '{}');
-        const tenantId = body.tenantId || event.queryStringParameters?.tenantId;
-        if (!tenantId) return error('tenantId es requerido');
+        // La empresa sale de la sesión, no del cuerpo ni del query.
+        const tenantId = sesion.tenantId;
 
         const validation = validateRequired(body, ['tipo', 'titulo', 'relatorId']);
         if (!validation.valid) {
@@ -430,11 +453,14 @@ module.exports.create = async (event) => {
  */
 module.exports.plan = async (event) => {
     try {
-        const body = JSON.parse(event.body || '{}');
-        const tenantId = body.tenantId || event.queryStringParameters?.tenantId;
-        if (!tenantId) return error('tenantId es requerido');
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
 
-        const validation = validateRequired(body, ['obraId', 'rangoDesde', 'rangoHasta', 'solicitanteId']);
+        const body = JSON.parse(event.body || '{}');
+        const tenantId = sesion.tenantId;
+
+        const validation = validateRequired(body, ['obraId', 'rangoDesde', 'rangoHasta']);
         if (!validation.valid) {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
@@ -452,23 +478,15 @@ module.exports.plan = async (event) => {
 
         const personaService = new PersonaService();
 
-        // Autorización: el solicitante debe poder planificar (actividades.planificar).
-        // Se resuelve contra la definición de roles del tenant para respetar roles
-        // personalizados (ej. un rol "Comité Paritario" con el permiso delegado).
-        const solicitante = await personaService.getById(body.solicitanteId);
-        if (!solicitante || solicitante.tenantId !== tenantId) {
-            return error('Solicitante no encontrado en la empresa', 403);
-        }
-        let tenant = null;
-        try {
-            const { TenantService } = require('../../lib/services/TenantService');
-            tenant = await new TenantService().getById(tenantId);
-        } catch (e) {
-            console.error('No se pudo cargar el tenant para resolver permisos:', e.message);
-        }
-        if (!personaPuede(solicitante, tenant, PERMISSIONS.ACTIVIDADES_PLANIFICAR)) {
+        // Autorización: quien planifica es quien tiene la sesión y debe traer el
+        // permiso `actividades.planificar` —resuelto por el autorizador contra los
+        // roles de la empresa, así que respeta roles personalizados (ej. un rol
+        // "Comité Paritario" con el permiso delegado). Antes el solicitante venía
+        // en el cuerpo: escribir el id de alguien con permiso bastaba.
+        if (!sesionPuede(sesion, PERMISSIONS.ACTIVIDADES_PLANIFICAR)) {
             return error('No tienes permiso para planificar actividades', 403);
         }
+        const solicitanteId = sesion.personaId;
 
         // Validación de ítems: tipo, periodicidad y responsables.
         const PERIODICIDADES = ['diaria', 'semanal', 'mensual'];
@@ -572,7 +590,7 @@ module.exports.plan = async (event) => {
                         recurrencia: { frecuencia: item.periodicidad, repetirHasta: body.rangoHasta, planId },
                         serieId: null,
                         kitItemKey: null,
-                        createdBy: body.solicitanteId,
+                        createdBy: solicitanteId,
                         createdAt: now,
                         updatedAt: now,
                     });
@@ -604,9 +622,11 @@ module.exports.plan = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId, obraId, tipo, estado, fecha, relatorId,
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const { obraId, tipo, estado, fecha, relatorId,
             planId, responsableId, tipoTrabajo, fechaDesde, fechaHasta } = event.queryStringParameters || {};
-        if (!tenantId) return error('tenantId es requerido');
+        const tenantId = ses.sesion.tenantId;
 
         // Query por GSI tenantId-index (no Scan)
         const params = {
@@ -691,24 +711,21 @@ module.exports.list = async (event) => {
  */
 module.exports.get = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+
         const { id } = event.pathParameters || {};
 
         if (!id) {
             return error('ID de actividad requerido');
         }
 
-        const result = await docClient.send(
-            new GetCommand({
-                TableName: TABLE_NAME,
-                Key: { activityId: id },
-            })
-        );
-
-        if (!result.Item) {
+        const actividad = await actividadDelTenant(id, ses.sesion);
+        if (!actividad) {
             return error('Actividad no encontrada', 404);
         }
 
-        return success(result.Item);
+        return success(actividad);
     } catch (err) {
         console.error('Error getting activity:', err);
         return error(err.message, 500);
@@ -720,6 +737,10 @@ module.exports.get = async (event) => {
  */
 module.exports.registerAttendance = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
@@ -741,14 +762,15 @@ module.exports.registerAttendance = async (event) => {
             return error('La firma con PIN es individual: registra un trabajador a la vez con su propio PIN', 400);
         }
 
-        // Obtener actividad
-        const actResult = await docClient.send(new GetCommand({
-            TableName: TABLE_NAME,
-            Key: { activityId: id }
-        }));
+        // Cada quien firma su asistencia. Firmar por otro es la firma asistida (el
+        // trabajador teclea su PIN en el dispositivo de quien asiste) y exige ese
+        // permiso; el PIN, que acá ya era obligatorio, sigue siendo la prueba.
+        if (personas[0] !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
+            return error('No tienes permiso para registrar la asistencia de otra persona', 403);
+        }
 
-        if (!actResult.Item) return error('Actividad no encontrada', 404);
-        const activity = actResult.Item;
+        const activity = await actividadDelTenant(id, sesion);
+        if (!activity) return error('Actividad no encontrada', 404);
 
         // Se puede firmar durante todo el día: una actividad completada (cerrada)
         // sigue admitiendo firmas de rezagados. Solo se bloquea si está cancelada
@@ -866,8 +888,10 @@ module.exports.registerAttendance = async (event) => {
  */
 module.exports.getStats = async (event) => {
     try {
-        const { tenantId, fechaInicio, fechaFin } = event.queryStringParameters || {};
-        if (!tenantId) return error('tenantId es requerido');
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const { fechaInicio, fechaFin } = event.queryStringParameters || {};
+        const tenantId = ses.sesion.tenantId;
 
         // Query por GSI tenantId-index
         const result = await docClient.send(new QueryCommand({
@@ -937,29 +961,20 @@ module.exports.getStats = async (event) => {
  * Autorización común de las vías de gestión de una actividad (PATCH y registro
  * de evaluaciones): el relator, cualquiera de `responsables[]`, o quien tenga el
  * permiso de crear actividades. Devuelve `{ error }` con la respuesta lista, o
- * `{ solicitanteId, solicitante, personaService }` si pasa.
+ * `{ solicitanteId, personaService }` si pasa.
  */
-const autorizarGestionActividad = async (event, body, activity) => {
-    const solicitanteId = body.solicitanteId || event.requestContext?.authorizer?.claims?.sub || null;
-    if (!solicitanteId) return { error: error('solicitanteId es requerido', 400) };
+const autorizarGestionActividad = async (sesion, activity) => {
+    // Quién edita sale de la SESIÓN. Antes venía en `body.solicitanteId`: escribir
+    // el id del relator de la actividad bastaba para editarla, cerrarla o
+    // reasignarla, incluso desde otra empresa.
+    const esResponsable = sesion.personaId === activity.relatorId
+        || (Array.isArray(activity.responsables) && activity.responsables.includes(sesion.personaId));
 
-    const personaService = new PersonaService();
-    const solicitante = await personaService.getById(solicitanteId).catch(() => null);
-    if (!solicitante || solicitante.tenantId !== activity.tenantId) {
+    if (!esResponsable && !sesionPuede(sesion, PERMISSIONS.ACTIVIDADES_CREAR)) {
         return { error: error('No autorizado para editar esta actividad', 403) };
     }
 
-    // Responsable = relator o cualquiera de responsables[] (multi-asignación).
-    const esResponsable = solicitante.personaId === activity.relatorId
-        || (Array.isArray(activity.responsables) && activity.responsables.includes(solicitante.personaId));
-    if (!esResponsable) {
-        const tenant = await new TenantService().getById(activity.tenantId).catch(() => null);
-        if (!personaPuede(solicitante, tenant, PERMISSIONS.ACTIVIDADES_CREAR)) {
-            return { error: error('No autorizado para editar esta actividad', 403) };
-        }
-    }
-
-    return { solicitanteId, solicitante, personaService };
+    return { solicitanteId: sesion.personaId, personaService: new PersonaService() };
 };
 
 /**
@@ -982,15 +997,17 @@ const autorizarGestionActividad = async (event, body, activity) => {
  */
 module.exports.patch = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+
         const { id } = event.pathParameters || {};
         if (!id) return error('ID de actividad requerido');
         const body = JSON.parse(event.body || '{}');
 
-        const actResult = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { activityId: id } }));
-        if (!actResult.Item) return error('Actividad no encontrada', 404);
-        const activity = actResult.Item;
+        const activity = await actividadDelTenant(id, ses.sesion);
+        if (!activity) return error('Actividad no encontrada', 404);
 
-        const auth = await autorizarGestionActividad(event, body, activity);
+        const auth = await autorizarGestionActividad(ses.sesion, activity);
         if (auth.error) return auth.error;
         const { solicitanteId, personaService } = auth;
 

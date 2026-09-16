@@ -29,6 +29,27 @@ interface AuthContextType {
     hasPermission: (permission: string) => boolean;
 }
 
+/**
+ * Borra del dispositivo todo rastro de la sesión.
+ *
+ * Incluye las firmas sin conexión pendientes, que guardan el PIN EN CLARO de
+ * quien firmó (ver services/offlineStore.ts). En un dispositivo compartido de
+ * terreno —que es el caso normal— esos PIN quedaban ahí después de cerrar
+ * sesión, al alcance del siguiente que lo tomara.
+ *
+ * Tiene una consecuencia que conviene tener presente: si quedaban firmas sin
+ * sincronizar, se pierden al cerrar sesión. Es deliberado mientras el PIN siga
+ * viajando en claro; se revisa cuando el modo sin conexión use un token de un
+ * solo uso en vez del PIN.
+ */
+const limpiarDatosLocales = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('session_id');
+    localStorage.removeItem('tenant_id');
+    localStorage.removeItem('persona_id');
+    localStorage.removeItem('pendingOfflineSignatures');
+};
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -46,11 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const ms = new Date(expiresAt).getTime() - Date.now();
         if (ms <= 0) return;
         expiryTimerRef.current = setTimeout(() => {
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('session_id');
-            localStorage.removeItem('tenant_id');
-        localStorage.removeItem('persona_id');
-            localStorage.removeItem('persona_id');
+            limpiarDatosLocales();
             setUser(null);
             setSession(null);
             setSessionExpired(true);
@@ -201,10 +218,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (sessionId) {
             await authApi.logout(sessionId);
         }
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('session_id');
-        localStorage.removeItem('tenant_id');
-        localStorage.removeItem('persona_id');
+        limpiarDatosLocales();
         setUser(null);
         setSession(null);
     };

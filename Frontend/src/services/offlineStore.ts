@@ -4,17 +4,29 @@
  */
 
 const DB_NAME = 'BuildServeOfflineDB';
-const DB_VERSION = 1;
+// v2: se elimina el almacén `cachedWorkers`. Guardaba en el dispositivo el hash
+// del PIN de cada trabajador para "validar sin conexión", una validación que
+// nunca se implementó: era una copia de credenciales en el navegador sin nadie
+// que la usara. Subir la versión no solo cambia el esquema, también BORRA ese
+// almacén en los dispositivos que ya lo tienen (ver onupgradeneeded).
+const DB_VERSION = 2;
 const STORES = {
     PENDING_REQUESTS: 'pendingRequests',
-    CACHED_WORKERS: 'cachedWorkers',
     SYNC_LOG: 'syncLog',
 };
+
+/** Almacén retirado en v2. Se conserva el nombre solo para poder borrarlo. */
+const STORE_RETIRADO_CACHED_WORKERS = 'cachedWorkers';
 
 export interface OfflineSignature {
     id: string;
     rut: string;
-    pin: string; // Se guarda hasheado
+    // PIN EN CLARO. No está hasheado, por más que antes lo dijera el comentario:
+    // hashearlo acá no serviría de nada, porque el servidor necesita el PIN para
+    // validar la firma cuando la solicitud se sincroniza. Es el problema abierto
+    // del modo sin conexión y se resuelve reemplazando el PIN por un token de un
+    // solo uso emitido por el servidor, no maquillando este campo.
+    pin: string;
     nombre?: string;
     timestampLocal: string;
     validated: boolean;
@@ -34,16 +46,6 @@ export interface OfflineRequest {
     syncError?: string;
     syncedAt?: string;
     serverRequestId?: string;
-}
-
-export interface CachedWorker {
-    oderId: string;
-    rut: string;
-    nombre: string;
-    apellido?: string;
-    pinHash: string;
-    habilitado: boolean;
-    cachedAt: string;
 }
 
 export interface SyncLogEntry {
@@ -87,10 +89,10 @@ class OfflineStoreService {
                     requestStore.createIndex('fechaCreacion', 'fechaCreacion', { unique: false });
                 }
 
-                // Store para trabajadores cacheados (para validación offline)
-                if (!db.objectStoreNames.contains(STORES.CACHED_WORKERS)) {
-                    const workerStore = db.createObjectStore(STORES.CACHED_WORKERS, { keyPath: 'rut' });
-                    workerStore.createIndex('workerId', 'workerId', { unique: true });
+                // Trabajadores cacheados: almacén RETIRADO. Se borra en los
+                // dispositivos que lo tengan, con los hashes de PIN que guardaba.
+                if (db.objectStoreNames.contains(STORE_RETIRADO_CACHED_WORKERS)) {
+                    db.deleteObjectStore(STORE_RETIRADO_CACHED_WORKERS);
                 }
 
                 // Store para log de sincronización
@@ -209,62 +211,6 @@ class OfflineStoreService {
 
         request.firmas = request.firmas.filter(s => s.id !== signatureId);
         await this.updateOfflineRequest(request);
-    }
-
-    // ==================== CACHED WORKERS ====================
-
-    async cacheWorkers(workers: CachedWorker[]): Promise<void> {
-        const db = await this.getDB();
-        const transaction = db.transaction(STORES.CACHED_WORKERS, 'readwrite');
-        const store = transaction.objectStore(STORES.CACHED_WORKERS);
-
-        for (const worker of workers) {
-            store.put({
-                ...worker,
-                cachedAt: new Date().toISOString(),
-            });
-        }
-
-        return new Promise((resolve, reject) => {
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error);
-        });
-    }
-
-    async getCachedWorker(rut: string): Promise<CachedWorker | null> {
-        const db = await this.getDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(STORES.CACHED_WORKERS, 'readonly');
-            const store = transaction.objectStore(STORES.CACHED_WORKERS);
-            const request = store.get(rut);
-
-            request.onsuccess = () => resolve(request.result || null);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    async getAllCachedWorkers(): Promise<CachedWorker[]> {
-        const db = await this.getDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(STORES.CACHED_WORKERS, 'readonly');
-            const store = transaction.objectStore(STORES.CACHED_WORKERS);
-            const request = store.getAll();
-
-            request.onsuccess = () => resolve(request.result || []);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    async clearCachedWorkers(): Promise<void> {
-        const db = await this.getDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(STORES.CACHED_WORKERS, 'readwrite');
-            const store = transaction.objectStore(STORES.CACHED_WORKERS);
-            const request = store.clear();
-
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
     }
 
     // ==================== SYNC LOG ====================

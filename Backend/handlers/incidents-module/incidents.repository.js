@@ -466,6 +466,22 @@ class IncidentsRepository {
     }
 
     // GET
+    /**
+     * Devuelve el incidente CRUDO, sin previsualizaciones de evidencia.
+     *
+     * Existe para comprobar a qué empresa pertenece antes de responder cualquier
+     * cosa sobre él: `get()` además arma URLs firmadas de la evidencia, y hacer
+     * ese trabajo (y pagar esas llamadas a S3) para un incidente que no es de
+     * quien pregunta sería exactamente al revés.
+     */
+    async getItem(incidentId) {
+        const result = await this.dynamo.send(new GetCommand({
+            TableName: this.incidentsTable,
+            Key: { incidentId }
+        }));
+        return result.Item || null;
+    }
+
     async get(id) {
         console.log('[GET] Repo.get called for ID:', id);
         const result = await this.dynamo.send(new GetCommand({

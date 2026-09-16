@@ -300,6 +300,24 @@ class PersonaService {
 
         if (updateExpressions.length === 0) throw new Error('No hay campos para actualizar');
 
+        // Reloj de la conservación: el plazo de retención de la evidencia de una
+        // persona se cuenta desde que termina su vínculo laboral, así que la fecha
+        // tiene que existir cuando eso ocurre. La escribe el servidor, no el
+        // cliente, y se limpia si la persona vuelve a estar activa.
+        if (updates.estado !== undefined) {
+            const termina = ['inactivo', 'desvinculado'].includes(updates.estado);
+            updateExpressions.push('#fechaTerminoVinculo = :fechaTerminoVinculo');
+            expressionNames['#fechaTerminoVinculo'] = 'fechaTerminoVinculo';
+            if (termina) {
+                // Si ya había una fecha (p. ej. inactivo → desvinculado) se conserva
+                // la primera: el vínculo terminó entonces, no ahora.
+                const actual = await this.getById(personaId).catch(() => null);
+                expressionValues[':fechaTerminoVinculo'] = actual?.fechaTerminoVinculo || new Date().toISOString();
+            } else {
+                expressionValues[':fechaTerminoVinculo'] = null;
+            }
+        }
+
         updateExpressions.push('#updatedAt = :updatedAt');
         expressionNames['#updatedAt'] = 'updatedAt';
         expressionValues[':updatedAt'] = new Date().toISOString();
@@ -550,7 +568,8 @@ class PersonaService {
                 PK: `TENANT#${tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: 'SET #estado = :estado, desvinculacion = :desvinculacion, updatedAt = :updatedAt',
+            UpdateExpression: 'SET #estado = :estado, desvinculacion = :desvinculacion,'
+                + ' fechaTerminoVinculo = :fechaTerminoVinculo, updatedAt = :updatedAt',
             ExpressionAttributeNames: { '#estado': 'estado' },
             ExpressionAttributeValues: {
                 ':estado': 'desvinculado',
@@ -558,6 +577,9 @@ class PersonaService {
                     fechaDesvinculacion: now,
                     desvinculadoPor: desvinculadoPor || null
                 },
+                // Desde acá se cuenta la conservación de su evidencia (ver el
+                // comentario del campo en lib/models/Persona.js).
+                ':fechaTerminoVinculo': now,
                 ':updatedAt': now
             }
         }));

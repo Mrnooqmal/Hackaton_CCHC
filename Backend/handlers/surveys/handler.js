@@ -7,6 +7,18 @@ const { ensureDefaultHealthSurvey } = require('../../lib/health/healthSurvey');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { eventBus } = require('../../lib/events/EventBus');
 const { FirmaService } = require('../../lib/services/FirmaService');
+const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { PERMISSIONS } = require('../../lib/permissions');
+
+/** Encuesta de la empresa de la sesión, o null. La tabla se indexa por surveyId. */
+const encuestaDelTenant = async (surveyId, sesion) => {
+    const res = await docClient.send(new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { surveyId },
+    }));
+    const encuesta = res.Item;
+    return encuesta && encuesta.tenantId === sesion.tenantId ? encuesta : null;
+};
 
 const TABLE_NAME = process.env.SURVEYS_TABLE || 'Surveys';
 
@@ -127,6 +139,13 @@ const sanitizeQuestions = (questions = []) => {
  */
 module.exports.create = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        if (!sesionPuede(sesion, PERMISSIONS.ENCUESTAS_CREAR)) {
+            return error('No tienes permiso para crear encuestas', 403);
+        }
+
         const body = JSON.parse(event.body || '{}');
         const validation = validateRequired(body, ['titulo', 'preguntas']);
         if (!validation.valid) {
@@ -146,9 +165,10 @@ module.exports.create = async (event) => {
             return error('Debe indicar al menos un RUT para la audiencia personalizada');
         }
 
-        // El tenantId llega por query (lo inyecta el cliente) o en el body.
-        const tenantId = event.queryStringParameters?.tenantId || body.tenantId;
-        if (!tenantId) return error('tenantId es requerido');
+        // La empresa sale de la sesión: con `?tenantId=` o `tenantId` en el cuerpo
+        // se creaba una encuesta dentro de otra empresa, dirigida a su personal
+        // (y la audiencia se resuelve leyendo su nómina completa).
+        const tenantId = sesion.tenantId;
         const workers = await scanAllWorkers(tenantId);
         const recipients = buildRecipients(workers, {
             tipo: audienceType,
@@ -169,7 +189,7 @@ module.exports.create = async (event) => {
             tenantId,
             obraId: body.obraId || null,
             estado: body.estado || 'activa',
-            createdBy: body.createdBy || null,
+            createdBy: sesion.personaId,
             audience: {
                 tipo: audienceType,
                 cargo: body.cargoDestino || null,
@@ -197,7 +217,7 @@ module.exports.create = async (event) => {
             await eventBus.emit('survey.assigned', {
                 surveyId: survey.surveyId,
                 userIds,
-                assignedBy: body.createdBy || 'system',
+                assignedBy: sesion.personaId,
                 creatorName: body.creatorName || 'Gestor SST',
                 surveyName: survey.titulo,
                 dueDate: body.dueDate || null,
@@ -220,8 +240,9 @@ module.exports.create = async (event) => {
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId } = event.queryStringParameters || {};
-        if (!tenantId) return error('tenantId es requerido');
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const tenantId = ses.sesion.tenantId;
 
         await ensureDefaultHealthSurvey();
 
@@ -246,21 +267,23 @@ module.exports.list = async (event) => {
  */
 module.exports.get = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+
         const { id } = event.pathParameters || {};
         if (!id) {
             return error('ID de encuesta requerido');
         }
 
-        const response = await docClient.send(new GetCommand({
-            TableName: TABLE_NAME,
-            Key: { surveyId: id },
-        }));
-
-        if (!response.Item) {
+        // Las respuestas viajan dentro de la encuesta, y la encuesta de salud
+        // pre-ocupacional las trae de todo el personal: sin comprobar empresa, un
+        // surveyId era la ficha de salud declarada de una nómina ajena.
+        const encuesta = await encuestaDelTenant(id, ses.sesion);
+        if (!encuesta) {
             return error('Encuesta no encontrada', 404);
         }
 
-        return success(response.Item);
+        return success(encuesta);
     } catch (err) {
         console.error('Error getting survey:', err);
         return error(err.message || 'Error interno al obtener encuesta', 500);
@@ -273,6 +296,10 @@ module.exports.get = async (event) => {
  */
 module.exports.updateResponseStatus = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const { id, workerId } = event.pathParameters || {};
         if (!id || !workerId) {
             return error('ID de encuesta y de trabajador son requeridos');
@@ -290,16 +317,17 @@ module.exports.updateResponseStatus = async (event) => {
             return error('Se requiere PIN para firmar la respuesta de la encuesta');
         }
 
-        const surveyResult = await docClient.send(new GetCommand({
-            TableName: TABLE_NAME,
-            Key: { surveyId: id },
-        }));
-
-        if (!surveyResult.Item) {
-            return error('Encuesta no encontrada', 404);
+        // Cada quien responde por sí mismo. Responder por otro es el equivalente a
+        // la firma asistida (el trabajador teclea su PIN en el dispositivo de quien
+        // asiste) y exige ese permiso.
+        if (workerId !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
+            return error('No tienes permiso para responder por otra persona', 403);
         }
 
-        const survey = surveyResult.Item;
+        const survey = await encuestaDelTenant(id, sesion);
+        if (!survey) {
+            return error('Encuesta no encontrada', 404);
+        }
         const recipients = survey.recipients || [];
         const index = recipients.findIndex((r) => r.workerId === workerId);
 

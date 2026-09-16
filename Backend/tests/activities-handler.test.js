@@ -12,7 +12,39 @@ const handler = require('../handlers/activities/handler');
 let store;
 let originalSend;
 
-const ev = (over = {}) => ({ pathParameters: {}, queryStringParameters: {}, body: '{}', requestContext: {}, headers: {}, ...over });
+// Todas las rutas de actividades exigen sesión, y el actor (quien edita, quien
+// planifica, quien firma) sale de ella y no del cuerpo. Para no reescribir cada
+// caso, el evento deriva el contexto del autorizador del `solicitanteId` que el
+// test ya declaraba, resolviendo sus permisos contra la persona del store: rol
+// admin ⇒ todos los permisos, cualquier otro ⇒ ninguno, que es lo que hacía
+// `resolvePersonaPermisos` antes de este cambio.
+const PERMISOS_ADMIN = Object.values(require('../lib/permissions').PERMISSIONS).join(',');
+
+const contextoSesion = (over) => {
+    if (over.sesion === null) return {};                       // sin sesión (401)
+    if (over.sesion) return { authorizer: { lambda: over.sesion } };
+    let solicitanteId = null;
+    try { solicitanteId = JSON.parse(over.body || '{}').solicitanteId || null; } catch { /* body no JSON */ }
+    if (!solicitanteId) return {};
+    const p = store.personas[solicitanteId] || { personaId: solicitanteId, tenantId: 't-1', rol: 'trabajador' };
+    return {
+        authorizer: {
+            lambda: {
+                sessionId: 's-1',
+                personaId: p.personaId,
+                tenantId: p.tenantId,
+                rol: p.rol,
+                permisos: p.rol === 'admin' ? PERMISOS_ADMIN : '',
+            },
+        },
+    };
+};
+
+const ev = (over = {}) => ({
+    pathParameters: {}, queryStringParameters: {}, body: '{}', headers: {},
+    ...over,
+    requestContext: { ...contextoSesion(over), ...(over.requestContext || {}) },
+});
 
 beforeEach(() => {
     store = {
@@ -48,6 +80,13 @@ afterEach(() => { docClient.send = originalSend; });
 
 const persona = (over = {}) => ({ personaId: 'p-1', tenantId: 't-1', rol: 'trabajador', nombre: 'Ana', apellidoPaterno: 'Soto', ...over });
 
+// Crear actividades exige el permiso y una sesión: la empresa ya no se lee del
+// cuerpo (`tenantId`), sale del token.
+const SESION_CREADOR = {
+    sessionId: 's-1', personaId: 'p-adm', tenantId: 't-1', rol: 'prevencionista',
+    permisos: 'actividades.crear,actividades.ver,actividades.planificar',
+};
+
 // ── PATCH: autorización ──
 
 test('PATCH 404 si la actividad no existe', async () => {
@@ -56,17 +95,21 @@ test('PATCH 404 si la actividad no existe', async () => {
     assert.equal(res.statusCode, 404);
 });
 
-test('PATCH 400 si falta solicitanteId', async () => {
+test('PATCH 401 sin sesión', async () => {
+    // Antes esto era un 400 por falta de `solicitanteId` en el cuerpo. Ya no hay
+    // tal campo: quien edita es quien tiene la sesión.
     store.activity = { activityId: 'a-1', tenantId: 't-1', tipo: 'CHARLA_5MIN', relatorId: 'p-9' };
-    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: '{}' }));
-    assert.equal(res.statusCode, 400);
+    const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: '{}', sesion: null }));
+    assert.equal(res.statusCode, 401);
 });
 
-test('PATCH 403 si el solicitante es de otro tenant', async () => {
+test('PATCH 404 si la actividad es de otra empresa', async () => {
+    // Antes respondía 403 tras cargar la actividad ajena. Ahora la pertenencia se
+    // comprueba primero y la respuesta no distingue de "no existe".
     store.activity = { activityId: 'a-1', tenantId: 't-1', tipo: 'CHARLA_5MIN', relatorId: 'p-9' };
     store.personas['p-2'] = persona({ personaId: 'p-2', tenantId: 't-OTRO', rol: 'admin' });
     const res = await handler.patch(ev({ pathParameters: { id: 'a-1' }, body: JSON.stringify({ solicitanteId: 'p-2' }) }));
-    assert.equal(res.statusCode, 403);
+    assert.equal(res.statusCode, 404);
 });
 
 test('PATCH 403 si no es relator ni tiene permiso de crear actividades', async () => {
@@ -185,7 +228,7 @@ test('PATCH rechaza un relator de otra empresa', async () => {
 
 test('CREATE 400 si una CHARLA_5MIN no trae tema tratado', async () => {
     store.tenant = null; // usa catálogos de fábrica
-    const res = await handler.create(ev({ body: JSON.stringify({ tenantId: 't-1', tipo: 'CHARLA_5MIN', titulo: 'Charla', relatorId: 'p-1' }) }));
+    const res = await handler.create(ev({ sesion: SESION_CREADOR, body: JSON.stringify({ tenantId: 't-1', tipo: 'CHARLA_5MIN', titulo: 'Charla', relatorId: 'p-1' }) }));
     assert.equal(res.statusCode, 400);
     assert.match(JSON.parse(res.body).error || JSON.parse(res.body).message || '', /tema/i);
     assert.equal(store.puts.length, 0);
@@ -193,7 +236,7 @@ test('CREATE 400 si una CHARLA_5MIN no trae tema tratado', async () => {
 
 test('CREATE guarda la planificación cuando es válida', async () => {
     store.tenant = null;
-    const res = await handler.create(ev({ body: JSON.stringify({
+    const res = await handler.create(ev({ sesion: SESION_CREADOR, body: JSON.stringify({
         tenantId: 't-1', tipo: 'CHARLA_5MIN', titulo: 'Charla', relatorId: 'p-1',
         planificacion: { tema: { codigo: 'FRAGUADO' }, observaciones: 'ok' },
     }) }));
@@ -207,7 +250,7 @@ test('CREATE guarda la planificación cuando es válida', async () => {
 
 test('CREATE deja la evaluación no exigida si no se pide', async () => {
     store.tenant = null;
-    const res = await handler.create(ev({ body: JSON.stringify({
+    const res = await handler.create(ev({ sesion: SESION_CREADOR, body: JSON.stringify({
         tenantId: 't-1', tipo: 'CAPACITACION', subtipo: 'EPP', titulo: 'Uso de EPP', relatorId: 'p-1',
     }) }));
     assert.equal(res.statusCode, 201);
@@ -216,7 +259,7 @@ test('CREATE deja la evaluación no exigida si no se pide', async () => {
 
 test('CREATE acepta la nota mínima del kit (70/90) y nace sin respaldo', async () => {
     store.tenant = null;
-    const res = await handler.create(ev({ body: JSON.stringify({
+    const res = await handler.create(ev({ sesion: SESION_CREADOR, body: JSON.stringify({
         tenantId: 't-1', tipo: 'CAPACITACION', subtipo: 'PRL_8H', titulo: 'PRL 8h', relatorId: 'p-1',
         evaluacion: { exigida: true, notaMinima: 90 },
     }) }));
@@ -228,7 +271,7 @@ test('CREATE acepta la nota mínima del kit (70/90) y nace sin respaldo', async 
 
 test('CREATE ignora un respaldo enviado al crear', async () => {
     store.tenant = null;
-    await handler.create(ev({ body: JSON.stringify({
+    await handler.create(ev({ sesion: SESION_CREADOR, body: JSON.stringify({
         tenantId: 't-1', tipo: 'CAPACITACION', titulo: 'Cap', relatorId: 'p-1',
         evaluacion: { exigida: true, notaMinima: 70, respaldo: { fileKey: 'x/y.pdf' } },
     }) }));
@@ -237,7 +280,7 @@ test('CREATE ignora un respaldo enviado al crear', async () => {
 
 test('CREATE 400 si la nota mínima no es una de las del catálogo de cargos', async () => {
     store.tenant = null;
-    const res = await handler.create(ev({ body: JSON.stringify({
+    const res = await handler.create(ev({ sesion: SESION_CREADOR, body: JSON.stringify({
         tenantId: 't-1', tipo: 'CAPACITACION', titulo: 'Cap', relatorId: 'p-1',
         evaluacion: { exigida: true, notaMinima: 55 },
     }) }));
@@ -247,7 +290,7 @@ test('CREATE 400 si la nota mínima no es una de las del catálogo de cargos', a
 
 test('CREATE ignora la evaluación en una actividad que no es CAPACITACION', async () => {
     store.tenant = null;
-    const res = await handler.create(ev({ body: JSON.stringify({
+    const res = await handler.create(ev({ sesion: SESION_CREADOR, body: JSON.stringify({
         tenantId: 't-1', tipo: 'CHARLA_5MIN', titulo: 'Charla', relatorId: 'p-1',
         planificacion: { tema: { codigo: 'FRAGUADO' } },
         evaluacion: { exigida: true, notaMinima: 70 },

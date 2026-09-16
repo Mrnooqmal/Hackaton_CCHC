@@ -89,65 +89,6 @@ export interface Tenant {
     updatedAt: string;
 }
 
-export interface TenantSetupData {
-    nombre: string;
-    rutEmpresa: string;
-    /** Código de habilitación (gating de alta de empresa). Validado server-side. */
-    codigoHabilitacion?: string;
-    // La empresa parte con tamaño 1 (solo el administrador) y crece automáticamente
-    // al registrar trabajadores. El backend lo fuerza a 1 en el setup.
-    cantidadTrabajadores?: number;
-    settings?: Partial<TenantSettings>;
-    reglas?: Partial<TenantReglas>;
-    preferencias?: Partial<TenantPreferencias> & { logoBase64?: string };
-    roles?: TenantRole[];
-    admin?: {
-        rut: string;
-        nombre: string;
-        apellidoPaterno?: string;
-        apellidoMaterno?: string;
-        fechaNacimiento?: string;
-        email: string;
-    };
-    /** Trabajadores iniciales creados junto al tenant (opcional). */
-    trabajadores?: Array<{
-        rut: string;
-        nombre: string;
-        apellidoPaterno?: string;
-        apellidoMaterno?: string;
-        fechaNacimiento?: string;
-        email?: string;
-        rol?: string;
-        cargo?: string;
-        tieneAccesoWeb?: boolean;
-    }>;
-}
-
-export interface TenantSetupResponse {
-    message: string;
-    tenant: Tenant;
-    admin: {
-        personaId: string;
-        rut: string;
-        nombre: string;
-        apellido: string;
-        email: string;
-        rol: string;
-        estado: string;
-    } | null;
-    trabajadores?: Array<{
-        rut: string;
-        nombre: string;
-        apellido: string;
-        password?: string;
-        emailNotificado?: boolean;
-        error?: string;
-    }>;
-}
-
-// ========================================
-// CATALOGOS Y PERMISOS DE TRABAJO
-// ========================================
 export interface CatalogoItem { codigo: string; label: string; }
 
 export interface CatalogosActividad {
@@ -163,18 +104,9 @@ export type PermisosTrabajoDef = Record<string, { label: string; checklist: { ke
 // TENANTS API
 // ========================================
 export const tenantsApi = {
-    validate: (params: { nombre?: string; rutEmpresa?: string }) => {
-        const qs = new URLSearchParams();
-        if (params.nombre) qs.set('nombre', params.nombre);
-        if (params.rutEmpresa) qs.set('rutEmpresa', params.rutEmpresa);
-        return apiRequest<{ conflictos: Record<string, string>; valido: boolean }>(`/tenants/validate?${qs}`);
-    },
-
-    setup: (data: TenantSetupData) =>
-        apiRequest<TenantSetupResponse>('/tenants/setup', {
-            method: 'POST',
-            body: JSON.stringify(data),
-        }),
+    // El alta de empresas no se hace desde la aplicación: la ejecuta el operador
+    // de la plataforma con Backend/scripts/crear-empresa.js. Acá no hay `setup`
+    // ni comprobación previa de disponibilidad porque esos endpoints ya no existen.
 
     list: (estado?: string) => {
         const query = estado ? `?estado=${estado}` : '';

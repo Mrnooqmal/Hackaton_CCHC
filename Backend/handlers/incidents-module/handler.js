@@ -1,12 +1,9 @@
 const { Router } = require('itty-router');
 const { IncidentsRepository } = require('./incidents.repository');
-const { PersonaService } = require('../../lib/services/PersonaService');
-const { TenantService } = require('../../lib/services/TenantService');
-const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { PERMISSIONS } = require('../../lib/permissions');
+const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
 const incidentsRepo = new IncidentsRepository();
-const personaService = new PersonaService();
-const tenantService = new TenantService();
 const router = Router();
 
 // ─── Taxonomia reunion 2026-06-10: hallazgos vs incidentes ───────────────────
@@ -15,15 +12,32 @@ const router = Router();
 const TIPOS_HALLAZGO = ['condicion_subestandar', 'accion_subestandar'];
 const TIPOS_INCIDENTE = ['accidente', 'incidente'];
 
-// Resuelve el tenant (toSafeFormat) de una persona para evaluar permisos.
-const tenantDe = async (persona) => {
-    if (!persona?.tenantId) return null;
-    const tenant = await tenantService.getById(persona.tenantId).catch(() => null);
-    return tenant ? tenant.toSafeFormat() : null;
-};
-
 // Deriva la clasificacion desde el tipo cuando el cliente no la envia.
 const derivarClasificacion = (tipo) => (TIPOS_HALLAZGO.includes(tipo) ? 'hallazgo' : 'incidente');
+
+/**
+ * Sesión de la request, o la respuesta 401 lista para devolver.
+ *
+ * `itty-router` no pasa el evento de Lambda a los handlers salvo por
+ * `request.event`, así que la sesión se resuelve acá y no en un middleware.
+ */
+const sesionDe = (request) => conSesion(request.event);
+
+/**
+ * Incidente de la empresa de la sesión, o null.
+ *
+ * La tabla está indexada por `incidentId`: con el id se leía, se editaba, se
+ * calificaba como accidente y se descargaba la documentación de un incidente de
+ * cualquier empresa. Son datos de salud de una persona identificable. 404.
+ */
+const incidenteDelTenant = async (incidentId, sesion) => {
+    const item = await incidentsRepo.getItem(incidentId).catch(() => null);
+    return item && item.tenantId === sesion.tenantId ? item : null;
+};
+
+/** Error 404 uniforme para lo que no es de la empresa de la sesión. */
+const noEncontrado = () => jsonResponse({ success: false, error: 'Incidente no encontrado' }, 404);
+const sinPermiso = (mensaje) => jsonResponse({ success: false, error: mensaje }, 403);
 
 // CORS Options Handler
 router.options('*', () => {
@@ -111,8 +125,14 @@ const errorResponse = (err) => {
 async function create(request) {
     console.log('[HANDLER] Create called - Method:', request.method, 'Path:', request.url);
     try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
         const body = parseBody(request.event);
-        console.log('[HANDLER] Parsed body:', JSON.stringify(body));
+        // La empresa y quien reporta salen de la sesión.
+        body.tenantId = sesion.tenantId;
+        body.reportadoPor = sesion.personaId;
 
         const clasificacion = body.clasificacion || derivarClasificacion(body.tipo);
         body.clasificacion = clasificacion;
@@ -125,13 +145,11 @@ async function create(request) {
             return jsonResponse({ success: false, error: `Tipo invalido para incidente. Tipos validos: ${TIPOS_INCIDENTE.join(', ')}` }, 400);
         }
 
-        // Incidentes/accidentes: requiere permiso 'incidentes.reportar' (sensibilidad legal).
-        if (clasificacion === 'incidente') {
-            const solicitanteId = body.solicitanteId || null;
-            const solicitante = solicitanteId ? await personaService.getById(solicitanteId).catch(() => null) : null;
-            if (!solicitante || !personaPuede(solicitante, await tenantDe(solicitante), PERMISSIONS.INCIDENTES_REPORTAR)) {
-                return jsonResponse({ success: false, error: 'No tienes permiso para reportar incidentes y accidentes.' }, 403);
-            }
+        // Incidentes/accidentes: requiere permiso 'incidentes.reportar' (sensibilidad
+        // legal). El permiso se mira en la sesión, no en un `solicitanteId` del
+        // cuerpo que cualquiera podía rellenar con el id de un supervisor.
+        if (clasificacion === 'incidente' && !sesionPuede(sesion, PERMISSIONS.INCIDENTES_REPORTAR)) {
+            return sinPermiso('No tienes permiso para reportar incidentes y accidentes.');
         }
 
         // Gobernanza de hallazgos: responsable, plazo y verificacion de cierre.
@@ -183,8 +201,10 @@ async function create(request) {
 
 async function list(request) {
     try {
-        console.log('List Incidents Request:', request.query);
-        const { tenantId, obraId, tipo, estado, fechaInicio, fechaFin } = request.query || {};
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const { obraId, tipo, estado, fechaInicio, fechaFin } = request.query || {};
+        const tenantId = ses.sesion.tenantId;
         const { items, total } = await incidentsRepo.list({ tenantId, obraId, tipo, estado, fechaInicio, fechaFin });
 
         // Return in format expected by frontend: data is the array, total is top-level
@@ -201,6 +221,9 @@ async function list(request) {
 
 async function get(request) {
     try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
         const result = await incidentsRepo.get(request.params.id);
         return jsonResponse(result);
     } catch (err) {
@@ -210,12 +233,11 @@ async function get(request) {
 
 async function markViewed(request) {
     try {
-        const body = parseBody(request.event);
-        const { userId } = body;
-        if (!userId) {
-            return errorResponse(new Error('userId es requerido'));
-        }
-        await incidentsRepo.markAsViewed(request.params.id, userId);
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        // Quién lo vio es quien tiene la sesión.
+        await incidentsRepo.markAsViewed(request.params.id, ses.sesion.personaId);
         return jsonResponse({ success: true });
     } catch (err) {
         return errorResponse(err);
@@ -224,7 +246,16 @@ async function markViewed(request) {
 
 async function update(request) {
     try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        if (!sesionPuede(ses.sesion, PERMISSIONS.INCIDENTES_REPORTAR)) {
+            return sinPermiso('No tienes permiso para editar incidentes.');
+        }
         const body = parseBody(request.event);
+        // `tenantId` no se reasigna por esta vía: mover un incidente de empresa no
+        // es una edición, es una fuga.
+        delete body.tenantId;
         const result = await incidentsRepo.update(request.params.id, body);
         // Return incident data directly for frontend compatibility
         return jsonResponse({
@@ -239,11 +270,11 @@ async function update(request) {
 
 async function calificarAccidente(request) {
     try {
-        const body = parseBody(request.event);
-        const actorId = body.actorId || null;
-        const actor = actorId ? await personaService.getById(actorId).catch(() => null) : null;
-        if (!actor || !personaPuede(actor, await tenantDe(actor), PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE)) {
-            return jsonResponse({ success: false, error: 'No tienes permiso para calificar como accidente.' }, 403);
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        if (!sesionPuede(ses.sesion, PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE)) {
+            return sinPermiso('No tienes permiso para calificar como accidente.');
         }
         const result = await incidentsRepo.update(request.params.id, {
             tipo: 'accidente',
@@ -257,7 +288,12 @@ async function calificarAccidente(request) {
 
 async function uploadEvidence(request) {
     try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
         const body = parseBody(request.event);
+        // La evidencia se adjunta a un incidente de la propia empresa; sin id se
+        // sube al prefijo temporal, que no expone nada de nadie.
+        if (body.incidentId && !await incidenteDelTenant(body.incidentId, ses.sesion)) return noEncontrado();
         const result = await incidentsRepo.uploadEvidence(body);
         return jsonResponse(result);
     } catch (err) {
@@ -267,8 +303,10 @@ async function uploadEvidence(request) {
 
 async function getStats(request) {
     try {
-        const { tenantId, obraId, mes, masaLaboral } = request.query || {};
-        const result = await incidentsRepo.getStats({ tenantId, obraId, mes, masaLaboral });
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const { obraId, mes, masaLaboral } = request.query || {};
+        const result = await incidentsRepo.getStats({ tenantId: ses.sesion.tenantId, obraId, mes, masaLaboral });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
@@ -277,6 +315,12 @@ async function getStats(request) {
 
 async function addInvestigation(request) {
     try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        if (!sesionPuede(ses.sesion, PERMISSIONS.INCIDENTES_REPORTAR)) {
+            return sinPermiso('No tienes permiso para registrar investigaciones.');
+        }
         const body = parseBody(request.event);
         const result = await incidentsRepo.addInvestigation(request.params.id, body);
         return jsonResponse(result);
@@ -285,26 +329,23 @@ async function addInvestigation(request) {
     }
 }
 
-// Valida que el actor (body.actorId) tenga permiso para gestionar incidentes/hallazgos.
-async function validarActorSupervisor(body) {
-    const actorId = body.actorId || null;
-    const actor = actorId ? await personaService.getById(actorId).catch(() => null) : null;
-    if (!actor || !personaPuede(actor, await tenantDe(actor), PERMISSIONS.INCIDENTES_REPORTAR)) {
-        return null;
-    }
-    return actor;
-}
+// Gestionar la gobernanza de un hallazgo o completar un reporte flash es cosa de
+// supervisor hacia arriba. El actor sale de la SESIÓN: antes venía en `actorId`
+// del cuerpo, así que bastaba con escribir el id de un supervisor.
+const esSupervisorOSuperior = (sesion) => sesionPuede(sesion, PERMISSIONS.INCIDENTES_REPORTAR);
 
 async function updateGobernanza(request) {
     try {
-        const body = parseBody(request.event);
-        const actor = await validarActorSupervisor(body);
-        if (!actor) {
-            return jsonResponse({ success: false, error: 'Solo supervisores y roles superiores pueden gestionar la gobernanza de hallazgos.' }, 403);
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        if (!esSupervisorOSuperior(ses.sesion)) {
+            return sinPermiso('Solo supervisores y roles superiores pueden gestionar la gobernanza de hallazgos.');
         }
-        // Quien verifica el cierre queda trazado con el actor.
-        if (body.estadoCierre === 'cerrado' && !body.verificadoPor) {
-            body.verificadoPor = actor.personaId;
+        const body = parseBody(request.event);
+        // Quien verifica el cierre es quien tiene la sesión.
+        if (body.estadoCierre === 'cerrado') {
+            body.verificadoPor = ses.sesion.personaId;
         }
         const result = await incidentsRepo.updateGobernanza(request.params.id, body);
         return jsonResponse(result);
@@ -315,11 +356,13 @@ async function updateGobernanza(request) {
 
 async function completarFlash(request) {
     try {
-        const body = parseBody(request.event);
-        const actor = await validarActorSupervisor(body);
-        if (!actor) {
-            return jsonResponse({ success: false, error: 'Solo supervisores y roles superiores pueden completar el reporte flash.' }, 403);
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        if (!esSupervisorOSuperior(ses.sesion)) {
+            return sinPermiso('Solo supervisores y roles superiores pueden completar el reporte flash.');
         }
+        const body = parseBody(request.event);
         const result = await incidentsRepo.completarFlash(request.params.id, body);
         return jsonResponse(result);
     } catch (err) {
@@ -329,6 +372,12 @@ async function completarFlash(request) {
 
 async function updateMedidaEstado(request) {
     try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        if (!esSupervisorOSuperior(ses.sesion)) {
+            return sinPermiso('No tienes permiso para actualizar las medidas correctivas.');
+        }
         const body = parseBody(request.event);
         const result = await incidentsRepo.updateMedidaEstado(
             request.params.id,
@@ -343,6 +392,9 @@ async function updateMedidaEstado(request) {
 
 async function uploadDocument(request) {
     try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
         const body = parseBody(request.event);
         const result = await incidentsRepo.uploadDocument(request.params.id, body);
         return jsonResponse(result);
@@ -353,6 +405,9 @@ async function uploadDocument(request) {
 
 async function getDocuments(request) {
     try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
         const result = await incidentsRepo.getDocuments(request.params.id);
         return jsonResponse(result);
     } catch (err) {
@@ -362,8 +417,10 @@ async function getDocuments(request) {
 
 async function getAnalytics(request) {
     try {
-        const { tenantId, obraId, fechaInicio, fechaFin } = request.query || {};
-        const result = await incidentsRepo.getAnalytics({ tenantId, obraId, fechaInicio, fechaFin });
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const { obraId, fechaInicio, fechaFin } = request.query || {};
+        const result = await incidentsRepo.getAnalytics({ tenantId: ses.sesion.tenantId, obraId, fechaInicio, fechaFin });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
@@ -372,7 +429,11 @@ async function getAnalytics(request) {
 
 async function quickReport(request) {
     try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
         const body = parseBody(request.event);
+        body.tenantId = ses.sesion.tenantId;
+        body.reportadoPor = ses.sesion.personaId;
         const result = await incidentsRepo.quickReport(body);
         return jsonResponse(result, 201);
     } catch (err) {

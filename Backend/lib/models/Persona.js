@@ -135,6 +135,23 @@ class Persona {
         this.creadoPor = data.creadoPor || null;
         this.desvinculacion = data.desvinculacion || null;
 
+        // Fecha de término del vínculo laboral.
+        //
+        // No es un dato de auditoría más: es el reloj desde el que se cuenta la
+        // conservación de la evidencia de esta persona (5 años desde el término
+        // del vínculo, por la prescripción de las acciones laborales y
+        // previsionales). El sistema ya registraba `desvinculacion` cuando alguien
+        // se desvinculaba por la vía formal, pero no cuando simplemente se le
+        // cambiaba el estado a inactivo: en ese caso no había fecha desde la cual
+        // contar, y sin fecha no hay retención que calcular.
+        //
+        // Lo escribe el servidor al pasar a 'inactivo' o 'desvinculado' (ver
+        // PersonaService), nunca el cliente. Se limpia si la persona vuelve a
+        // estar activa: el vínculo se reanudó y el reloj no corre.
+        this.fechaTerminoVinculo = data.fechaTerminoVinculo
+            || data.desvinculacion?.fechaDesvinculacion
+            || null;
+
         // Metadata
         this.createdAt = data.createdAt || new Date().toISOString();
         this.updatedAt = data.updatedAt || new Date().toISOString();
@@ -257,6 +274,7 @@ class Persona {
             preferencias: this.preferencias,
             creadoPor: this.creadoPor,
             desvinculacion: this.desvinculacion,
+            fechaTerminoVinculo: this.fechaTerminoVinculo,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
             ultimoAcceso: this.ultimoAcceso
@@ -322,6 +340,7 @@ class Persona {
             preferencias: this.preferencias,
             creadoPor: this.creadoPor,
             desvinculacion: this.desvinculacion,
+            fechaTerminoVinculo: this.fechaTerminoVinculo,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
             ultimoAcceso: this.ultimoAcceso
