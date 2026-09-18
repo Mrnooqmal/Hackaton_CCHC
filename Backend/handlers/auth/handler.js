@@ -24,7 +24,7 @@ const crypto = require('crypto');
 const SESSIONS_TABLE = process.env.SESSIONS_TABLE || 'Sessions';
 const SESSION_DURATION_HOURS = 6;
 const SELECTION_TOKEN_MINUTES = 5;
-const BUCKET_NAME = process.env.DOCUMENTS_BUCKET;
+const almacenamiento = require('../../lib/almacenamiento');
 
 const personaService = new PersonaService();
 const tenantService = new TenantService();
@@ -43,11 +43,11 @@ const buildUserPayload = async (persona) => {
         if (tenantData?.preferencias) {
             const prefs = tenantData.preferencias;
             let logoUrl = null;
-            if (prefs.logoKey && BUCKET_NAME) {
+            if (prefs.logoKey) {
                 try {
                     logoUrl = await getSignedUrl(
                         s3Client,
-                        new GetObjectCommand({ Bucket: BUCKET_NAME, Key: prefs.logoKey }),
+                        new GetObjectCommand({ Bucket: almacenamiento.bucketDeClave(prefs.logoKey), Key: prefs.logoKey }),
                         { expiresIn: SESSION_DURATION_HOURS * 3600 }
                     );
                 } catch (urlErr) {
@@ -341,6 +341,9 @@ module.exports.changePassword = async (event) => {
 const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 // Busca una persona por RUT sin conocer el tenant (mismo patrón que el login).
+//
+// El índice está proyectado con `KEYS_ONLY` —no guarda una copia de la ficha con
+// los hashes dentro—, así que devuelve la clave y la ficha se lee de la tabla.
 const findPersonaByRut = async (rutFormatted) => {
     const scanResult = await docClient.send(new ScanCommand({
         TableName: process.env.PERSONAS_TABLE || 'Personas',
@@ -348,11 +351,12 @@ const findPersonaByRut = async (rutFormatted) => {
         FilterExpression: 'rut = :rut',
         ExpressionAttributeValues: { ':rut': rutFormatted }
     }));
-    if (scanResult.Items && scanResult.Items.length > 0) {
-        const { Persona } = require('../../lib/models/Persona');
-        return Persona.fromDynamoItem(scanResult.Items[0]);
-    }
-    return null;
+    const clave = (scanResult.Items || [])[0];
+    if (!clave) return null;
+    // Se resuelve por la CLAVE DE TABLA que trae el índice (`PK`/`SK`), no por
+    // `personaId`: `tenantRut-index` proyecta sus propias claves —`tenantId` y
+    // `rut`— y no ese campo.
+    return personaService.fichaDesdeClave(clave);
 };
 
 const RESET_TOKEN_MINUTES = 30;
@@ -441,15 +445,10 @@ module.exports.resetPassword = async (event) => {
             return error('La contraseña debe tener al menos 6 caracteres');
         }
 
-        // Leemos el item crudo (no via modelo): el constructor de Persona no
-        // preserva resetTokenHash/resetTokenExpiry, así que los consultamos directo.
-        const personaQuery = await docClient.send(new QueryCommand({
-            TableName: process.env.PERSONAS_TABLE || 'Personas',
-            IndexName: 'personaId-index',
-            KeyConditionExpression: 'personaId = :pid',
-            ExpressionAttributeValues: { ':pid': personaId }
-        }));
-        const personaItem = personaQuery.Items && personaQuery.Items[0];
+        // Item crudo (no via modelo): el constructor de Persona no preserva
+        // resetTokenHash/resetTokenExpiry. Con el índice en `KEYS_ONLY`, el ítem se
+        // lee de la tabla y no del índice.
+        const personaItem = await personaService.getItemById(personaId);
 
         // Mensaje único para token inválido/expirado/persona inexistente.
         const invalidMsg = 'El enlace de recuperación es inválido o expiró. Solicita uno nuevo.';

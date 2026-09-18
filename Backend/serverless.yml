@@ -15,6 +15,13 @@ custom:
   # Orígenes que pueden hablarle a los buckets desde un navegador. El de
   # producción es el CloudFront de la aplicación; en dev se agregan los de
   # desarrollo local.
+  # Los logs guardaban peticiones para siempre. 90 días en producción alcanza
+  # para investigar un incidente; 14 en dev, para depurar la semana. Sin esto, el
+  # dato personal que pase por un log sobrevive a cualquier política de retención.
+  logRetention:
+    prod: 90
+    dev: 14
+
   corsOrigins:
     prod:
       - https://d30jksx91fodea.cloudfront.net
@@ -23,8 +30,11 @@ custom:
       - http://localhost:5173
       - http://localhost:3000
 
-  repositoryBucketName: buildandserve-repository-${self:provider.stage}
-  evidenceBucketName: buildandserve-evidence-${self:provider.stage}
+  # Dos buckets, y la diferencia entre ellos es de consecuencias, no de orden:
+  # lo que entra en `evidencia` no se puede borrar durante cinco años. La regla
+  # para decidir dónde va cada archivo vive en `lib/almacenamiento.js`.
+  evidenciaBucketName: buildandserve-evidencia-${self:provider.stage}
+  trabajoBucketName: buildandserve-trabajo-${self:provider.stage}
   deletionPolicies:
     prod: Retain
   deletionPolicy: ${self:custom.deletionPolicies.${self:provider.stage}, 'Delete'}
@@ -54,10 +64,9 @@ provider:
     EPP_TABLE: ${self:service}-epp-${self:provider.stage}
     ESTRUCTURA_TABLE: ${self:service}-estructura-preventiva-${self:provider.stage}
     # --- Storage ---
-    DOCUMENTS_BUCKET: ${self:custom.repositoryBucketName}
-    INCIDENT_EVIDENCE_BUCKET: ${self:custom.evidenceBucketName}
+    EVIDENCIA_BUCKET: ${self:custom.evidenciaBucketName}
+    TRABAJO_BUCKET: ${self:custom.trabajoBucketName}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
-    DOCUMENT_STAMP_QUEUE_URL: !Ref DocumentStampQueue
     # --- External ---
     SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
     # SMS (AWS SNS). SMS_ENABLED=false apaga el envío sin tocar código (útil en
@@ -74,6 +83,8 @@ provider:
     # Código de habilitación requerido para crear una empresa via /tenants/setup.
     # El valor vive en el .env de Backend (TENANT_SIGNUP_CODE). Si queda vacío, no se gatea.
     TENANT_SIGNUP_CODE: ${env:TENANT_SIGNUP_CODE, ''}
+
+  logRetentionInDays: ${self:custom.logRetention.${self:provider.stage}, self:custom.logRetention.dev}
 
   httpApi:
     # Autorizador de sesión. Se referencia explícitamente en cada ruta privada.
@@ -97,8 +108,11 @@ provider:
         resultTtlInSeconds: 60
         enableSimpleResponses: true
     cors:
-      allowedOrigins:
-        - '*'
+      # Acotado a los orígenes de la aplicación, igual que los buckets. No es una
+      # defensa contra un atacante con un script —CORS no gobierna eso— sino
+      # contra que una página cualquiera haga peticiones a la API desde el
+      # navegador de quien la visite.
+      allowedOrigins: ${self:custom.corsOrigins.${self:provider.stage}, self:custom.corsOrigins.prod}
       allowedHeaders:
         - Content-Type
         - Authorization
@@ -109,6 +123,9 @@ provider:
         - PATCH
         - DELETE
         - OPTIONS
+      # El navegador cachea el preflight 10 minutos: sin esto vuelve a preguntar
+      # cada pocos segundos y cada pregunta es una petición más.
+      maxAge: 600
   iam:
     role:
       statements:
@@ -162,28 +179,37 @@ provider:
             - ses:SendEmail
             - ses:SendRawEmail
           Resource: "*"
+        # Evidencia: se escribe y se lee, pero NO se borra. El permiso de borrado
+        # no está por omisión y no por olvido: el bloqueo de objetos lo impediría
+        # igual, y así el intento falla donde se entiende por qué.
         - Effect: Allow
           Action:
             - s3:PutObject
             - s3:GetObject
-            - s3:DeleteObject
           Resource:
-            - !Sub 'arn:aws:s3:::${self:custom.evidenceBucketName}/*'
+            - !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}/*'
         - Effect: Allow
           Action:
             - s3:PutObject
+            # Etiquetar al subir es lo que hace que el estampado caduque en un día:
+            # sin este permiso el objeto se sube igual, pero sin etiqueta, y se
+            # queda para siempre.
+            - s3:PutObjectTagging
             - s3:GetObject
             - s3:DeleteObject
           Resource:
-            - !Sub 'arn:aws:s3:::${self:custom.repositoryBucketName}/*'
+            - !Sub 'arn:aws:s3:::${self:custom.trabajoBucketName}/*'
+        # Sin esto, un objeto cifrado con la clave propia no se puede ni escribir
+        # ni leer: la CMK no es solo una casilla de configuración.
         - Effect: Allow
           Action:
-            - sqs:SendMessage
-            - sqs:ReceiveMessage
-            - sqs:DeleteMessage
-            - sqs:GetQueueAttributes
+            - kms:Encrypt
+            - kms:Decrypt
+            - kms:ReEncrypt*
+            - kms:GenerateDataKey*
+            - kms:DescribeKey
           Resource:
-            - !GetAtt DocumentStampQueue.Arn
+            - !GetAtt ClaveDatos.Arn
         - Effect: Allow
           Action:
             - sns:Publish
@@ -685,14 +711,6 @@ functions:
           authorizer:
             name: sesionUsuario
 
-  stampSignedDocument:
-    handler: handlers/documents/handler.stamp
-    timeout: 60
-    events:
-      - sqs:
-          arn: !GetAtt DocumentStampQueue.Arn
-          batchSize: 1
-
   # ========================================
   # SIGNATURES (Firmas Digitales)
   # ========================================
@@ -765,6 +783,58 @@ functions:
           method: PUT
           authorizer:
             name: sesionUsuario
+
+  # Preflight CORS de las rutas de módulo.
+  #
+  # Los módulos declaran su prefijo con `method: any`, y ese `any` captura también
+  # el `OPTIONS` del preflight, que pasó a responder 401 al poner el autorizador:
+  # un preflight nunca lleva `Authorization`. El navegador entonces bloquea la
+  # petición real y la aplicación ve "Failed to fetch" en vez de un 401 legible.
+  #
+  # Una ruta con método exacto gana sobre `ANY`, así que estas responden el
+  # preflight sin autorizador. No leen nada ni distinguen recursos: 204 y las
+  # cabeceras de CORS. Las rutas con método explícito (documents, signatures,
+  # activities…) no las necesitan: al no existir ruta OPTIONS, las responde API
+  # Gateway por su cuenta.
+  corsPreflight:
+    handler: handlers/cors/handler.preflight
+    events:
+      - httpApi:
+          path: /tenants
+          method: options
+      - httpApi:
+          path: /tenants/{proxy+}
+          method: options
+      - httpApi:
+          path: /estructura
+          method: options
+      - httpApi:
+          path: /estructura/{proxy+}
+          method: options
+      - httpApi:
+          path: /obras
+          method: options
+      - httpApi:
+          path: /obras/{proxy+}
+          method: options
+      - httpApi:
+          path: /personas
+          method: options
+      - httpApi:
+          path: /personas/{proxy+}
+          method: options
+      - httpApi:
+          path: /incidents
+          method: options
+      - httpApi:
+          path: /incidents/{proxy+}
+          method: options
+      - httpApi:
+          path: /inbox
+          method: options
+      - httpApi:
+          path: /inbox/{proxy+}
+          method: options
 
   # Habilita la firma sin conexión: la persona valida su PIN una vez, con red, y
   # recibe vales de un solo uso. Ver lib/services/ValeFirmaService.js.
@@ -938,36 +1008,85 @@ functions:
 resources:
   Resources:
     # ==========================================
+    # CLAVE PROPIA (KMS)
+    # ==========================================
+    # Los buckets ya cifraban con la clave que gestiona AWS. Una clave propia no
+    # agrega confidencialidad frente a un tercero —AES256 ya cifra— sino dos cosas
+    # que antes no existían: poder revocar el acceso a los datos cortando la
+    # clave, y que cada uso quede registrado en CloudTrail.
+    #
+    # `BucketKeyEnabled` en los buckets evita una llamada a KMS por objeto, que es
+    # lo que vuelve caro este cifrado cuando se hace mal.
+    ClaveDatos:
+      Type: AWS::KMS::Key
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        Description: Clave de los datos de Build & Serve (${self:provider.stage})
+        EnableKeyRotation: true
+        KeyPolicy:
+          Version: '2012-10-17'
+          Statement:
+            # Sin esta declaración la clave queda fuera del alcance de la propia
+            # cuenta y no hay forma de recuperarla.
+            - Sid: Administracion desde la cuenta
+              Effect: Allow
+              Principal:
+                AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+              Action: 'kms:*'
+              Resource: '*'
+            - Sid: Uso desde S3
+              Effect: Allow
+              Principal:
+                Service: s3.amazonaws.com
+              Action:
+                - kms:Decrypt
+                - kms:GenerateDataKey
+              Resource: '*'
+
+    ClaveDatosAlias:
+      Type: AWS::KMS::Alias
+      Properties:
+        AliasName: alias/${self:service}-datos-${self:provider.stage}
+        TargetKeyId: !Ref ClaveDatos
+
+    # ==========================================
     # S3 BUCKETS
     # ==========================================
-    # Estuvieron FUERA del stack: creados a mano durante la migración a
-    # BuildAndServe, con la idea de que un `serverless remove` no pudiera
-    # borrarlos. El efecto real era el contrario del buscado: nadie los
-    # gobernaba. Ningún despliegue podía comprobar —ni corregir— si tenían
-    # versionado, qué orígenes aceptaban por CORS o cómo estaban cifrados, y la
-    # respuesta resultó ser: sin versionado (un borrado era definitivo) y CORS
-    # abierto a cualquier origen.
-    #
-    # Ahora se declaran acá y se incorporaron al stack por IMPORT de
-    # CloudFormation, que los adopta SIN recrearlos ni tocar su contenido. La
-    # protección contra el borrado del stack no se pierde: la da
-    # `DeletionPolicy: Retain`, que es el mecanismo que corresponde, en vez de
-    # dejarlos huérfanos.
-    RepositoryBucket:
+    # `evidencia` guarda lo que se le muestra a un fiscalizador; `trabajo`, lo que
+    # se puede rehacer. La regla completa está en `lib/almacenamiento.js`.
+
+    EvidenciaBucket:
       Type: AWS::S3::Bucket
       DeletionPolicy: Retain
       UpdateReplacePolicy: Retain
       Properties:
-        BucketName: ${self:custom.repositoryBucketName}
-        # El borrado deja de ser definitivo: la versión anterior queda y se puede
-        # restaurar. Es la contraparte en S3 del PITR de las tablas, y el
-        # prerrequisito del bloqueo de objetos que exige la política de retención.
+        BucketName: ${self:custom.evidenciaBucketName}
+        # El bloqueo de objetos SOLO se puede habilitar al crear el bucket: si
+        # algún día hay que quitarlo o cambiarlo, es un bucket nuevo y una
+        # migración, no una edición de esta línea.
+        ObjectLockEnabled: true
+        ObjectLockConfiguration:
+          ObjectLockEnabled: Enabled
+          Rule:
+            DefaultRetention:
+              # GOVERNANCE y no COMPLIANCE a propósito: en modo cumplimiento no lo
+              # levanta NADIE —ni la cuenta raíz, ni ante una orden judicial de
+              # supresión, ni ante una carga masiva equivocada—. Un candado sin
+              # llave es un riesgo, no una garantía.
+              Mode: GOVERNANCE
+              # Piso de cinco años desde la carga. El plazo real se cuenta desde el
+              # término del vínculo laboral y lo calcula la aplicación sobre
+              # `Persona.fechaTerminoVinculo`: son dos relojes distintos y este es
+              # el de abajo (ver D-2 en docs/gobernanza-y-seguridad-de-datos.md).
+              Years: 5
         VersioningConfiguration:
           Status: Enabled
         BucketEncryption:
           ServerSideEncryptionConfiguration:
             - ServerSideEncryptionByDefault:
-                SSEAlgorithm: AES256
+                SSEAlgorithm: aws:kms
+                KMSMasterKeyID: !GetAtt ClaveDatos.Arn
               BucketKeyEnabled: true
         PublicAccessBlockConfiguration:
           BlockPublicAcls: true
@@ -976,33 +1095,54 @@ resources:
           RestrictPublicBuckets: true
         CorsConfiguration:
           CorsRules:
-            # Acotado a los orígenes de la aplicación: estaba en '*', o sea
-            # cualquier página de internet podía hacerle peticiones al bucket
-            # desde el navegador de quien la visitara.
             - AllowedHeaders: ['*']
               AllowedMethods: [GET, PUT, HEAD]
               AllowedOrigins: ${self:custom.corsOrigins.${self:provider.stage}, self:custom.corsOrigins.prod}
               ExposedHeaders: [ETag]
               MaxAge: 3000
 
-    EvidenceBucket:
+    TrabajoBucket:
       Type: AWS::S3::Bucket
       DeletionPolicy: Retain
       UpdateReplacePolicy: Retain
       Properties:
-        BucketName: ${self:custom.evidenceBucketName}
+        BucketName: ${self:custom.trabajoBucketName}
         VersioningConfiguration:
           Status: Enabled
         BucketEncryption:
           ServerSideEncryptionConfiguration:
             - ServerSideEncryptionByDefault:
-                SSEAlgorithm: AES256
+                SSEAlgorithm: aws:kms
+                KMSMasterKeyID: !GetAtt ClaveDatos.Arn
               BucketKeyEnabled: true
         PublicAccessBlockConfiguration:
           BlockPublicAcls: true
           BlockPublicPolicy: true
           IgnorePublicAcls: true
           RestrictPublicBuckets: true
+        LifecycleConfiguration:
+          Rules:
+            # El PDF con el anexo de firmas se rehace en 244 ms desde el original y
+            # las firmas: guardarlo más de un día es guardar basura.
+            #
+            # Se selecciona por ETIQUETA y no por prefijo. La clave del estampado es
+            # `tenants/{empresa}/estampados/…` y un prefijo de S3 no puede saltarse
+            # el tramo del medio: la primera versión de esta regla llevaba
+            # `Prefix: ''`, o sea que habría borrado TODO el bucket cada día —logos,
+            # plantillas y fotos de obra incluidos—. La etiqueta la pone el servidor
+            # al subir el estampado (ver PdfStampingService.subirEstampado).
+            - Id: estampados-efimeros
+              Status: Enabled
+              TagFilters:
+                - Key: ciclo
+                  Value: efimero
+              ExpirationInDays: 1
+              NoncurrentVersionExpirationInDays: 1
+            # El resto (logos, plantillas, fotos) se conserva, pero sus versiones
+            # viejas no tienen por qué acumularse para siempre.
+            - Id: versiones-viejas
+              Status: Enabled
+              NoncurrentVersionExpirationInDays: 90
         CorsConfiguration:
           CorsRules:
             - AllowedHeaders: ['*']
@@ -1010,6 +1150,47 @@ resources:
               AllowedOrigins: ${self:custom.corsOrigins.${self:provider.stage}, self:custom.corsOrigins.prod}
               ExposedHeaders: [ETag]
               MaxAge: 3000
+
+    # ==========================================
+    # ALARMA DE FALLOS QUE NO SE VEN DESDE AFUERA
+    # ==========================================
+    # Varias respuestas del sistema son opacas a propósito: la recuperación de
+    # contraseña contesta siempre lo mismo, la comprobación de pertenencia
+    # contesta 404 y el autorizador niega ante cualquier duda. Eso está bien y no
+    # se toca. El costo es que un fallo real se ve igual que el caso previsto —ya
+    # tuvimos la recuperación de contraseña caída devolviendo 200— así que el
+    # código deja una métrica (ver lib/degradacion.js) y esto la vigila.
+    AlertasOperacionTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-alertas-operacion-${self:provider.stage}
+        DisplayName: Alertas de operación de Build & Serve
+
+    FallosDependenciaAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-fallos-dependencia-${self:provider.stage}
+        AlarmDescription: >-
+          Una lectura de la que depende una decisión falló y el sistema respondió
+          con su valor neutro (404, respuesta genérica o denegación). Desde afuera
+          es indistinguible del caso normal: revisar los logs filtrando por
+          FALLO_DEPENDENCIA.
+        Namespace: BuildAndServe
+        MetricName: FallosDependencia
+        Dimensions:
+          - Name: stage
+            Value: ${self:provider.stage}
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        # Uno solo ya importa: estos fallos no son ruido esperable, son algo que
+        # se rompió y que nadie va a reportar porque no se ve.
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        # Sin datos es lo normal (no hubo fallos), no una alarma.
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - !Ref AlertasOperacionTopic
 
     # ==========================================
     # SNS
@@ -1020,32 +1201,15 @@ resources:
         TopicName: ${self:provider.environment.INCIDENT_NOTIFICATION_TOPIC}
         DisplayName: Notificaciones de Incidentes y Accidentes
 
-    # ==========================================
-    # SQS - Estampado de PDF firmado (serializado por documento)
-    # ==========================================
-    # Cola FIFO: el estampado se dispara "bajo demanda" (al pedir la descarga
-    # del PDF firmado) pero varios triggers casi simultáneos sobre el MISMO
-    # documento (varias descargas pedidas a la vez, o varias firmas llegando
-    # justo cuando el documento se completa) deben serializarse para no
-    # regenerar el PDF en paralelo y pisarse entre sí. MessageGroupId =
-    # documentId garantiza que SQS FIFO procese de a un job por documento.
-    DocumentStampDLQ:
-      Type: AWS::SQS::Queue
-      Properties:
-        QueueName: ${self:service}-document-stamp-dlq-${self:provider.stage}.fifo
-        FifoQueue: true
-        MessageRetentionPeriod: 1209600 # 14 días
-
-    DocumentStampQueue:
-      Type: AWS::SQS::Queue
-      Properties:
-        QueueName: ${self:service}-document-stamp-${self:provider.stage}.fifo
-        FifoQueue: true
-        ContentBasedDeduplication: false
-        VisibilityTimeout: 120
-        RedrivePolicy:
-          deadLetterTargetArn: !GetAtt DocumentStampDLQ.Arn
-          maxReceiveCount: 3
+    # El estampado del PDF de firmas ya NO usa cola.
+    #
+    # Existía una cola FIFO con su cola de mensajes fallidos para serializar la
+    # regeneración por documento. Resolvía una latencia que no existe: armar el
+    # anexo toma 244 ms en un PDF de 750 KB y 1,3 s en uno de 5 MB, así que cabe
+    # de sobra en la propia petición. Lo que sí traía era un caché en clave fija
+    # que había que invalidar a mano en tres lugares distintos. Ahora la clave del
+    # estampado se deriva del archivo y de las firmas (`lib/almacenamiento.js`),
+    # y el archivo temporal vive en el bucket de trabajo con expiración de un día.
 
     # ==========================================
     # MULTI-TENANT CORE TABLES
@@ -1153,19 +1317,28 @@ resources:
             KeyType: HASH
           - AttributeName: SK
             KeyType: RANGE
+        # Los tres índices estaban con `ProjectionType: ALL`, o sea que cada uno
+        # era una COPIA COMPLETA de la ficha: hash del PIN, hash de la contraseña,
+        # RUT y campos de salud incluidos. Tres copias más de los datos sensibles,
+        # con la misma superficie de exposición que la tabla.
+        #
+        # Con `KEYS_ONLY` el índice guarda solo lo necesario para llegar a la
+        # ficha, y la ficha se lee de la tabla. Cuesta una lectura más por
+        # búsqueda; a cambio, el dato sensible vive en un solo lugar. El paso
+        # extra está en `PersonaService`, que resuelve índice → clave → ficha.
         GlobalSecondaryIndexes:
           - IndexName: personaId-index
             KeySchema:
               - AttributeName: personaId
                 KeyType: HASH
             Projection:
-              ProjectionType: ALL
+              ProjectionType: KEYS_ONLY
           - IndexName: email-index
             KeySchema:
               - AttributeName: email
                 KeyType: HASH
             Projection:
-              ProjectionType: ALL
+              ProjectionType: KEYS_ONLY
           - IndexName: tenantRut-index
             KeySchema:
               - AttributeName: tenantId
@@ -1173,7 +1346,7 @@ resources:
               - AttributeName: rut
                 KeyType: RANGE
             Projection:
-              ProjectionType: ALL
+              ProjectionType: KEYS_ONLY
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
         # bastante más probable que un atacante. Sin esto no hay ninguna vía

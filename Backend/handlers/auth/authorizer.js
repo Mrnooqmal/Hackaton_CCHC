@@ -19,6 +19,7 @@ const { tokenDelEvento, sesionDesdeToken } = require('../../lib/auth/sesion');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { resolvePersonaPermisos } = require('../../lib/permissions');
+const { registrarFallo } = require('../../lib/degradacion');
 
 const personaService = new PersonaService();
 const tenantService = new TenantService();
@@ -45,6 +46,7 @@ module.exports.autorizar = async (event) => {
             // Sin la definición de roles del tenant se sigue adelante con los
             // permisos base: negar el acceso entero por una lectura fallida
             // convertiría un problema de disponibilidad en uno de autenticación.
+            registrarFallo('autorizador.permisos', permErr);
             console.error('Autorizador: no se pudieron resolver permisos:', permErr.message);
             permisos = resolvePersonaPermisos(persona, null);
         }
@@ -65,6 +67,11 @@ module.exports.autorizar = async (event) => {
     } catch (err) {
         // Cualquier fallo inesperado deniega. Un autorizador que deja pasar
         // cuando falla no sirve de nada.
+        //
+        // Pero desde afuera esto se ve idéntico a un token inválido: una caída de
+        // la tabla de sesiones aparece como "tu sesión no vale" para todo el mundo
+        // a la vez. La denegación no cambia; el fallo queda medible.
+        registrarFallo('autorizador.error', err);
         console.error('Autorizador: error inesperado:', err.message);
         return DENEGAR;
     }

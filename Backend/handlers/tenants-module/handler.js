@@ -13,16 +13,19 @@ const { PutObjectCommand } = require('@aws-sdk/client-s3');
 const { s3Client } = require('../../lib/clients/s3');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
-const BUCKET_NAME = process.env.DOCUMENTS_BUCKET;
+const almacenamiento = require('../../lib/almacenamiento');
 
 const uploadTenantLogo = async (dataUrl, tenantId) => {
     const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
     const contentType = match ? match[1] : 'image/png';
     const base64Data = match ? match[2] : dataUrl;
     const buffer = Buffer.from(base64Data, 'base64');
-    const key = `tenants/${tenantId}/logos/logo.png`;
+    // El logo se reemplaza cuando la empresa quiere: es material de trabajo, no
+    // evidencia. En el bucket con bloqueo cada cambio habría dejado una versión
+    // inmovilizada por cinco años.
+    const key = `tenants/${tenantId}/${almacenamiento.CATEGORIAS.logos.carpeta}/logo.png`;
     await s3Client.send(new PutObjectCommand({
-        Bucket: BUCKET_NAME,
+        Bucket: almacenamiento.bucketDeClave(key),
         Key: key,
         Body: buffer,
         ContentType: contentType,
@@ -159,7 +162,7 @@ module.exports.tenantsHandler = async (event) => {
                 delete incoming.logoBase64;
 
                 const merged = { ...(existing.preferencias || {}), ...incoming };
-                if (logoBase64 && BUCKET_NAME) {
+                if (logoBase64) {
                     try {
                         merged.logoKey = await uploadTenantLogo(logoBase64, tenantId);
                     } catch (logoErr) {

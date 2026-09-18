@@ -10,6 +10,7 @@ const { TenantService } = require('../../lib/services/TenantService');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { conNeutro } = require('../../lib/degradacion');
 
 const obraService = new ObraService();
 const registroService = new RegistroService();
@@ -53,7 +54,7 @@ module.exports.obrasHandler = async (event) => {
     // empresa propia. 404, no 403: la existencia tampoco se informa.
     const obraDelTenant = async (id) => {
         if (!id || !tenantId) return null;
-        const obra = await obraService.getById(id).catch(() => null);
+        const obra = await conNeutro('obra.pertenencia', () => obraService.getById(id), null);
         return obra && obra.tenantId === tenantId ? obra : null;
     };
 

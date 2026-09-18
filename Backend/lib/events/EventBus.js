@@ -6,6 +6,7 @@ const EP = require('../estructura-preventiva');
 const { normalizeRol } = require('../utils/validation');
 const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
+const { registrarFallo } = require('../degradacion');
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 
@@ -129,9 +130,19 @@ class EventBus {
 
         console.log(`Emitting event: ${event}`, { listenersCount: callbacks.length });
 
-        // Execute all callbacks in parallel
+        // Los suscriptores corren en paralelo y sus fallos NO tumban la operación
+        // que emitió el evento: subir un documento no puede fallar porque el aviso
+        // a la línea de mando no se escribió.
+        //
+        // Pero tampoco puede desaparecer sin dejar rastro. Notificar que se informó
+        // a la línea de mando es parte de acreditar el cumplimiento (Art. 7 inc. 9,
+        // Art. 57 inc. 2), y hasta acá un fallo de escritura se tragaba entero: sin
+        // reintento, sin aviso y sin forma de saber que había pasado. El marcador es
+        // lo mínimo mientras las notificaciones sigan corriendo dentro de la
+        // petición; cuando pasen a una cola, la durabilidad la dará la cola.
         const promises = callbacks.map(callback =>
             callback(data).catch(err => {
+                registrarFallo('evento.suscriptor', err, { evento: event });
                 console.error(`Error in event listener for ${event}:`, err);
             })
         );

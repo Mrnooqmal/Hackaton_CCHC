@@ -125,6 +125,39 @@ class PersonaService {
     }
 
     /**
+     * Ficha completa a partir de la clave que devuelve un índice.
+     *
+     * Los tres índices de personas están proyectados con `KEYS_ONLY`: guardan solo
+     * lo justo para llegar a la ficha, y no una copia entera con el hash del PIN,
+     * el de la contraseña y los campos de salud. El precio es este paso: el índice
+     * dice dónde está, la tabla dice qué es.
+     *
+     * Es PÚBLICA a propósito. Quien consulte un índice directamente tiene que
+     * pasar por acá y no deducir la ficha de lo que venga en el resultado: cada
+     * índice proyecta solo SUS claves, así que `tenantRut-index` trae `tenantId`
+     * y `rut` pero NO `personaId`. Asumir lo contrario fue exactamente el error
+     * que dejó sin funcionar la recuperación de contraseña.
+     */
+    async fichaDesdeClave(item) {
+        if (!item) return null;
+        const result = await this.dynamo.send(new GetCommand({
+            TableName: this.table,
+            Key: { PK: item.PK, SK: item.SK },
+        }));
+        return Persona.fromDynamoItem(result.Item);
+    }
+
+    /** Ítem CRUDO de la ficha (con los campos que el modelo no preserva). */
+    async itemDesdeClave(item) {
+        if (!item) return null;
+        const result = await this.dynamo.send(new GetCommand({
+            TableName: this.table,
+            Key: { PK: item.PK, SK: item.SK },
+        }));
+        return result.Item || null;
+    }
+
+    /**
      * Obtener persona por ID (via GSI personaId-index)
      */
     async getById(personaId) {
@@ -135,7 +168,20 @@ class PersonaService {
             ExpressionAttributeValues: { ':personaId': personaId }
         }));
         if (!result.Items || result.Items.length === 0) return null;
-        return Persona.fromDynamoItem(result.Items[0]);
+        return this.fichaDesdeClave(result.Items[0]);
+    }
+
+    /** Ítem crudo por personaId: lo necesita el flujo de recuperación de clave,
+     *  que usa campos (`resetTokenHash`) que el modelo no preserva. */
+    async getItemById(personaId) {
+        const result = await this.dynamo.send(new QueryCommand({
+            TableName: this.table,
+            IndexName: 'personaId-index',
+            KeyConditionExpression: 'personaId = :personaId',
+            ExpressionAttributeValues: { ':personaId': personaId }
+        }));
+        if (!result.Items || result.Items.length === 0) return null;
+        return this.itemDesdeClave(result.Items[0]);
     }
 
     /**
@@ -212,7 +258,7 @@ class PersonaService {
             }
         }));
         if (!result.Items || result.Items.length === 0) return null;
-        return Persona.fromDynamoItem(result.Items[0]);
+        return this.fichaDesdeClave(result.Items[0]);
     }
 
     /**
@@ -226,7 +272,7 @@ class PersonaService {
             ExpressionAttributeValues: { ':email': email }
         }));
         if (!result.Items || result.Items.length === 0) return null;
-        return Persona.fromDynamoItem(result.Items[0]);
+        return this.fichaDesdeClave(result.Items[0]);
     }
 
     /**
@@ -311,7 +357,11 @@ class PersonaService {
             if (termina) {
                 // Si ya había una fecha (p. ej. inactivo → desvinculado) se conserva
                 // la primera: el vínculo terminó entonces, no ahora.
-                const actual = await this.getById(personaId).catch(() => null);
+                // Sin degradar: si esta lectura falla, el `null` haría que se
+                // escribiera la fecha de HOY sobre la original, y esa fecha es
+                // desde la que se cuentan los cinco años de conservación de su
+                // evidencia. Perderla es perder el plazo.
+                const actual = await this.getById(personaId);
                 expressionValues[':fechaTerminoVinculo'] = actual?.fechaTerminoVinculo || new Date().toISOString();
             } else {
                 expressionValues[':fechaTerminoVinculo'] = null;

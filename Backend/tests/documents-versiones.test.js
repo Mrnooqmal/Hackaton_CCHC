@@ -137,14 +137,42 @@ test('la primera subida (documento sin archivo) no genera versión previa', asyn
     assert.equal(w.versiones, undefined, 'no hay nada anterior que archivar');
 });
 
-test('reemplazar el archivo invalida el PDF firmado cacheado', async () => {
-    store.doc = { documentId: 'd1', tenantId: 't1', s3Key: 'obras/v1.pdf', version: 1, documentoFirmadoS3Key: 'stamped/v1.pdf', documentoFirmadoFirmaCount: 3 };
+test('reemplazar el archivo cambia la clave del PDF estampado', async () => {
+    // Antes el estampado vivía en una clave fija y había que acordarse de
+    // anularlo acá, en `nuevaVersion` y en `nuevaVersionCorporativa`: bastaba con
+    // que un cuarto camino lo olvidara para entregar como documento firmado un
+    // PDF de otra versión. Ahora la clave se deriva del archivo y de las firmas,
+    // así que la invalidación no depende de que nadie se olvide.
+    const { claveEstampado } = require('../lib/almacenamiento');
+    const firmas = [{ token: 'tok-1' }, { token: 'tok-2' }];
 
+    const antes = claveEstampado({ tenantId: 't1', documentId: 'd1', s3KeyOriginal: 'obras/v1.pdf', firmas });
+    const despues = claveEstampado({ tenantId: 't1', documentId: 'd1', s3KeyOriginal: 'obras/v2.pdf', firmas });
+
+    assert.notEqual(antes, despues, 'otro archivo, otra clave');
+
+    // Y el update ya no escribe ningún campo de caché.
+    store.doc = { documentId: 'd1', tenantId: 't1', s3Key: 'obras/v1.pdf', version: 1 };
     await handler.update(ev('d1', { s3Key: 'obras/v2.pdf' }));
-
     const w = escrito(store.updates[0]);
-    assert.equal(w.documentoFirmadoS3Key, null, 'el estampado correspondía al archivo viejo');
-    assert.equal(w.documentoFirmadoFirmaCount, 0);
+    assert.equal('documentoFirmadoS3Key' in w, false);
+    assert.equal('documentoFirmadoFirmaCount' in w, false);
+});
+
+test('una firma nueva cambia la clave del PDF estampado', async () => {
+    const { claveEstampado } = require('../lib/almacenamiento');
+    const base = { tenantId: 't1', documentId: 'd1', s3KeyOriginal: 'obras/v1.pdf' };
+
+    const conDos = claveEstampado({ ...base, firmas: [{ token: 'a' }, { token: 'b' }] });
+    const conTres = claveEstampado({ ...base, firmas: [{ token: 'a' }, { token: 'b' }, { token: 'c' }] });
+    // Mismo conteo, firmas distintas: por eso la huella usa los tokens y no la
+    // cantidad.
+    const otrasDos = claveEstampado({ ...base, firmas: [{ token: 'a' }, { token: 'z' }] });
+
+    assert.notEqual(conDos, conTres);
+    assert.notEqual(conDos, otrasDos);
+    assert.equal(conDos, claveEstampado({ ...base, firmas: [{ token: 'a' }, { token: 'b' }] }),
+        'sin cambios, la misma clave: diez descargas simultáneas reutilizan el archivo');
 });
 
 // ── MIPER versionada (FUF ítem 6, Art. 7 inc. 9). La MIPER es un documento de la
@@ -186,7 +214,6 @@ test('publicar una versión de la MIPER obliga a re-firmar', async () => {
             { personaId: 'p-2', estado: 'firmado', fechaFirma: '2026-04-02T12:00:00.000Z' },
         ],
         firmas: [{ personaId: 'p-1', token: 'tok-1' }],
-        documentoFirmadoS3Key: 'stamped/miper-v1.pdf',
     };
 
     await handler.nuevaVersion(evVersion('d-miper', { s3Key: 'obras/miper-v2.pdf', motivo: 'Revisión anual' }));
@@ -195,7 +222,6 @@ test('publicar una versión de la MIPER obliga a re-firmar', async () => {
     assert.deepEqual(w.asignaciones.map((a) => a.estado), ['pendiente', 'pendiente']);
     assert.deepEqual(w.asignaciones.map((a) => a.fechaFirma), [null, null]);
     assert.deepEqual(w.firmas, [], 'las firmas de la v1 no valen sobre el archivo nuevo');
-    assert.equal(w.documentoFirmadoS3Key, null, 'el estampado correspondía a la v1');
     assert.deepEqual(
         w.versiones[0].firmasArchivadas,
         [{ personaId: 'p-1', token: 'tok-1' }],

@@ -26,7 +26,7 @@ const { PersonaService } = require('./PersonaService');
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 const INCIDENTS_TABLE = process.env.INCIDENTS_TABLE || 'Incidents';
 const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE || 'Activities';
-const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET || 'buildandserve-repository';
+const almacenamiento = require('../almacenamiento');
 
 class RegistroService {
     constructor() {
@@ -405,12 +405,13 @@ class RegistroService {
         // Render HTML del snapshot (con hash incluido) y persistir en S3 como
         // respaldo fidedigno imprimible. No es fatal: si S3 falla, el documento
         // firmado + hash siguen en DocumentsTable/SignaturesTable.
-        const s3Key = `tenants/${tenantId}/obras/${obraId}/registros/${documentId}.html`;
+        // Registro AT/EP firmado: es evidencia, va al bucket con bloqueo.
+        const s3Key = `tenants/${tenantId}/registros/${obraId}/${documentId}.html`;
         let s3Persistido = false;
         try {
             const html = RegistroService.renderHtml({ ...snapshot, hash }, firma);
             await s3Client.send(new PutObjectCommand({
-                Bucket: DOCUMENTS_BUCKET,
+                Bucket: almacenamiento.bucketDeClave(s3Key),
                 Key: s3Key,
                 Body: html,
                 ContentType: 'text/html; charset=utf-8'
@@ -593,12 +594,13 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
             persona
         });
 
-        const s3Key = `tenants/${tenantId}/obras/${obraId}/investigaciones/${documentId}.html`;
+        // Informe del Art. 71 firmado: evidencia.
+        const s3Key = `tenants/${tenantId}/registros/${obraId}/investigaciones/${documentId}.html`;
         let s3Persistido = false;
         try {
             const html = RegistroService.renderInvestigacionHtml({ ...snapshot, hash }, firma);
             await s3Client.send(new PutObjectCommand({
-                Bucket: DOCUMENTS_BUCKET,
+                Bucket: almacenamiento.bucketDeClave(s3Key),
                 Key: s3Key,
                 Body: html,
                 ContentType: 'text/html; charset=utf-8'

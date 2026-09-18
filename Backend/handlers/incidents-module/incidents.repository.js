@@ -14,7 +14,9 @@ class IncidentsRepository {
         this.sns = new SNSClient({});
 
         this.incidentsTable = process.env.INCIDENTS_TABLE;
-        this.incidentEvidenceBucket = process.env.INCIDENT_EVIDENCE_BUCKET;
+        // La evidencia de un incidente acredita cumplimiento (Arts. 71-72): vive en
+        // el bucket con bloqueo de objetos, igual que los documentos firmados.
+        this.incidentEvidenceBucket = process.env.EVIDENCIA_BUCKET;
         this.personasTable = process.env.PERSONAS_TABLE;
         this.inboxTable = process.env.INBOX_TABLE;
 
@@ -572,14 +574,19 @@ class IncidentsRepository {
     }
 
     // UPLOAD EVIDENCE
-    async uploadEvidence({ fileName, fileType, incidentId }) {
+    async uploadEvidence({ fileName, fileType, incidentId, tenantId }) {
         console.log('[UPLOAD_EVIDENCE] Called with:', { fileName, fileType, incidentId });
         if (!fileName || !fileType) {
             throw new Error('fileName y fileType son requeridos');
         }
+        if (!tenantId) throw new Error('tenantId es requerido');
 
+        // La clave cuelga de la empresa, como todo lo demás: `tenants/{empresa}/
+        // incidentes/…`. Antes empezaba por el incidentId, así que quedaba fuera
+        // del modelo de pertenencia —que se apoya en ese prefijo— y ningún
+        // control podía decir de quién era el archivo.
         const fileExtension = fileName.split('.').pop();
-        const s3Key = `${incidentId || 'temp'}/${uuidv4()}.${fileExtension}`;
+        const s3Key = `tenants/${tenantId}/incidentes/${incidentId || 'sin-incidente'}/${uuidv4()}.${fileExtension}`;
 
         const command = new PutObjectCommand({
             Bucket: this.incidentEvidenceBucket,
@@ -701,17 +708,18 @@ class IncidentsRepository {
     // UPLOAD DOCUMENT
     async uploadDocument(id, data) {
         if (!id) throw new Error('ID de incidente requerido');
-        const { fileName, fileType, documentType } = data;
+        const { fileName, fileType, documentType, tenantId } = data;
         if (!fileName || !fileType || !documentType) {
             throw new Error('fileName, fileType y documentType son requeridos');
         }
+        if (!tenantId) throw new Error('tenantId es requerido');
         const tiposValidos = ['diat', 'diep'];
         if (!tiposValidos.includes(documentType)) {
             throw new Error(`Tipo de documento inválido. Valores válidos: ${tiposValidos.join(', ')}`);
         }
 
         const fileExtension = fileName.split('.').pop();
-        const s3Key = `${id}/documents/${documentType}-${uuidv4()}.${fileExtension}`;
+        const s3Key = `tenants/${data.tenantId}/incidentes/${id}/${documentType}-${uuidv4()}.${fileExtension}`;
         const command = new PutObjectCommand({
             Bucket: this.incidentEvidenceBucket,
             Key: s3Key,

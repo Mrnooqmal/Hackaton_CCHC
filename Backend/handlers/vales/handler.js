@@ -13,6 +13,7 @@ const { verifyPin } = require('../../lib/utils/validation');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { ValeFirmaService } = require('../../lib/services/ValeFirmaService');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { conNeutro } = require('../../lib/degradacion');
 const { PERMISSIONS } = require('../../lib/permissions');
 
 /**
@@ -44,7 +45,7 @@ module.exports.emitir = async (event) => {
         }
 
         const personaService = new PersonaService();
-        const persona = await personaService.getById(personaId).catch(() => null);
+        const persona = await conNeutro('vale.persona', () => personaService.getById(personaId), null);
         if (!persona || persona.tenantId !== sesion.tenantId) {
             return error('Persona no encontrada', 404);
         }

@@ -49,12 +49,21 @@ class PdfStampingService {
         return Buffer.concat(chunks);
     }
 
+    /**
+     * Sube el PDF estampado.
+     *
+     * La etiqueta `ciclo=efimero` es lo que hace que el archivo caduque en un día
+     * (regla de ciclo de vida del bucket de trabajo). No es decorativa: sin ella
+     * el objeto se queda para siempre, y este PDF se rehace desde el original y
+     * las firmas en menos de un segundo. No la quites sin cambiar la regla.
+     */
     static async subirEstampado(bucket, s3Key, bytes) {
         await s3Client.send(new PutObjectCommand({
             Bucket: bucket,
             Key: s3Key,
             Body: bytes,
             ContentType: 'application/pdf',
+            Tagging: 'ciclo=efimero',
         }));
     }
 

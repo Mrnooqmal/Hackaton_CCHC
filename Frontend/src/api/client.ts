@@ -29,6 +29,25 @@ interface ApiResponse<T> {
     error?: string;
 }
 
+/**
+ * Aviso de sesión caída.
+ *
+ * El cliente no puede navegar por su cuenta (no conoce el router) ni tocar el
+ * contexto de autenticación (lo cargaría en ciclo), así que anuncia el hecho y
+ * `AuthContext` decide qué hacer. Sin esto, una sesión vencida se veía como un
+ * error genérico en medio de la pantalla: el 401 llegaba como un cuerpo que la
+ * aplicación no sabía leer.
+ */
+export const EVENTO_SESION_CAIDA = 'sesion-caida';
+
+const avisarSesionCaida = () => {
+    try {
+        window.dispatchEvent(new CustomEvent(EVENTO_SESION_CAIDA));
+    } catch {
+        /* entorno sin window (pruebas) */
+    }
+};
+
 export async function apiRequest<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -58,6 +77,15 @@ export async function apiRequest<T>(
             ...options,
             headers,
         });
+
+        // 401 = la sesión no existe o venció. Se excluyen las rutas de `/auth`,
+        // donde un 401 significa "credenciales incorrectas" y no "se te cayó la
+        // sesión": avisar ahí mandaría al usuario a la pantalla de sesión expirada
+        // por escribir mal su contraseña.
+        if (response.status === 401 && !endpoint.startsWith('/auth')) {
+            avisarSesionCaida();
+            return { success: false, error: 'Tu sesión expiró. Vuelve a iniciar sesión.' };
+        }
 
         const data = await response.json();
         return data;

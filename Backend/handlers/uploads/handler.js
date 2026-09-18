@@ -8,9 +8,10 @@ const { validateRequired } = require('../../lib/utils/validation');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { TIPOS_SALUD } = require('../../lib/documentos-salud');
+const { registrarFallo } = require('../../lib/degradacion');
+const almacenamiento = require('../../lib/almacenamiento');
 
 const isOffline = process.env.IS_OFFLINE === 'true';
-const BUCKET_NAME = process.env.DOCUMENTS_BUCKET || 'buildandserve-repository';
 
 // Configuración del cliente S3
 const { s3Client } = require("../../lib/clients/s3");
@@ -57,7 +58,7 @@ const MAX_CLAVES_POR_LOTE = 100;
 // `tenantId` de la sesión, nunca el cliente.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const prefijoDe = (tenantId) => `tenants/${tenantId}/`;
+const prefijoDe = (tenantId) => almacenamiento.prefijoDeEmpresa(tenantId);
 
 /** Todas las claves de S3 que un documento referencia. */
 const clavesDeDocumento = (doc) => [
@@ -89,8 +90,9 @@ const documentosPorClave = async (tenantId) => {
         }
     } catch (err) {
         // Si la consulta falla se deniega lo heredado, no se abre: los archivos
-        // bajo el prefijo de la empresa siguen sirviéndose igual.
-        console.error('[uploads] no se pudieron leer los documentos del tenant:', err.message);
+        // bajo el prefijo de la empresa siguen sirviéndose igual. Desde afuera eso
+        // se ve como "ese archivo no existe", así que el fallo queda medible.
+        registrarFallo('uploads.documentos-referencia', err);
     }
     return mapa;
 };
@@ -150,10 +152,21 @@ module.exports.getUploadUrl = async (event) => {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
 
-        const { fileName, fileType, fileSize, categoria } = body;
+        const { fileName, fileType, fileSize } = body;
         // La empresa del prefijo sale de la sesión: con `tenantId` en el cuerpo se
         // podían dejar archivos dentro del espacio de otra empresa.
         const tenantId = sesion.tenantId;
+
+        // La categoría decide en qué bucket cae el archivo, y eso decide si se va a
+        // poder borrar alguna vez (ver lib/almacenamiento.js). Una categoría que
+        // nadie declaró no se adivina: se rechaza.
+        const clase = almacenamiento.categoria(body.categoria);
+        if (!clase) {
+            return error(
+                `Categoría de archivo no reconocida. Válidas: ${Object.keys(almacenamiento.CATEGORIAS).join(', ')}`,
+                400,
+            );
+        }
 
         // Validar tipo MIME
         if (!ALLOWED_MIME_TYPES.includes(fileType)) {
@@ -169,14 +182,12 @@ module.exports.getUploadUrl = async (event) => {
         const timestamp = Date.now();
         const uniqueId = uuidv4().slice(0, 8);
         const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const prefix = `tenants/${tenantId}`;
-        const folder = String(categoria || 'documentos').replace(/[^a-zA-Z0-9_-]/g, '_');
-
-        const fileKey = `${prefix}/${folder}/${timestamp}-${uniqueId}-${sanitizedFileName}`;
+        const fileKey = `${prefijoDe(tenantId)}${clase.carpeta}/${timestamp}-${uniqueId}-${sanitizedFileName}`;
+        const bucket = almacenamiento.bucketDe(clase.clase);
 
         // Crear comando de upload
         const command = new PutObjectCommand({
-            Bucket: BUCKET_NAME,
+            Bucket: bucket,
             Key: fileKey,
             ContentType: fileType,
             Metadata: {
@@ -195,7 +206,10 @@ module.exports.getUploadUrl = async (event) => {
             uploadUrl,
             fileKey,
             expiresIn,
-            bucket: BUCKET_NAME,
+            // Informativo: el cliente sube a la URL prefirmada y guarda la CLAVE,
+            // nunca el bucket. Así un cambio de bucket no obliga a migrar datos.
+            bucket,
+            clase: clase.clase,
         });
     } catch (err) {
         console.error('Error generating upload URL:', err);
@@ -231,7 +245,7 @@ module.exports.getDownloadUrl = async (event) => {
         }
 
         const command = new GetObjectCommand({
-            Bucket: BUCKET_NAME,
+            Bucket: almacenamiento.bucketDeClave(body.fileKey),
             Key: body.fileKey,
         });
 
@@ -283,9 +297,10 @@ module.exports.confirmUpload = async (event) => {
         }
 
         // Verificar que el archivo existe en S3
+        const bucket = almacenamiento.bucketDeClave(fileKey);
         try {
             const command = new GetObjectCommand({
-                Bucket: BUCKET_NAME,
+                Bucket: bucket,
                 Key: fileKey,
             });
 
@@ -300,7 +315,7 @@ module.exports.confirmUpload = async (event) => {
 
         // Generar URL de descarga
         const downloadCommand = new GetObjectCommand({
-            Bucket: BUCKET_NAME,
+            Bucket: bucket,
             Key: fileKey,
         });
         const downloadUrl = await getSignedUrl(s3Client, downloadCommand, { expiresIn: 900 });
@@ -358,8 +373,16 @@ module.exports.deleteFile = async (event) => {
             return error('Este archivo respalda un documento del sistema. Elimina el documento si corresponde.', 409);
         }
 
+        // Lo que está en el bucket de evidencia no se borra: ese es justamente el
+        // punto del bloqueo de objetos. El intento se responde con el motivo en vez
+        // de dejar que S3 falle con un error críptico.
+        const bucket = almacenamiento.bucketDeClave(fileKey);
+        if (almacenamiento.claseDeClave(fileKey) === almacenamiento.EVIDENCIA) {
+            return error('Los archivos que acreditan cumplimiento no se pueden eliminar.', 409);
+        }
+
         const command = new DeleteObjectCommand({
-            Bucket: BUCKET_NAME,
+            Bucket: bucket,
             Key: fileKey,
         });
 
@@ -414,7 +437,7 @@ module.exports.getBatchDownloadUrls = async (event) => {
                 }
                 try {
                     const command = new GetObjectCommand({
-                        Bucket: BUCKET_NAME,
+                        Bucket: almacenamiento.bucketDeClave(fileKey),
                         Key: fileKey,
                     });
                     const downloadUrl = await getSignedUrl(s3Client, command, { expiresIn });

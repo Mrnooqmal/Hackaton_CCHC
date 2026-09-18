@@ -27,6 +27,7 @@ const { construirExport, renderHtml } = require('../../lib/completitud-export');
 const { QueryCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { registrarFallo } = require('../../lib/degradacion');
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 
 /** Documentos del tenant. La completitud los necesita para los ítems 38, 46 y 47. */
@@ -52,7 +53,8 @@ const listarActividadesTenant = async (tenantId) => {
     } catch (err) {
         // Que falte el índice o la tabla no puede tumbar el panel entero: se
         // reporta y los requisitos por actividad quedan pendientes, no en verde.
-        console.error('[estructura] no se pudieron leer las actividades:', err.message);
+        // Degradar hacia "pendiente" es seguro; lo que no puede es pasar callado.
+        registrarFallo('estructura.actividades', err);
         return [];
     }
 };
@@ -67,7 +69,8 @@ const listarDocumentosTenant = async (tenantId) => {
         }));
         return res.Items || [];
     } catch (err) {
-        console.error('[estructura] no se pudieron leer los documentos:', err.message);
+        // Mismo criterio: sin documentos los requisitos quedan pendientes.
+        registrarFallo('estructura.documentos', err);
         return [];
     }
 };
@@ -88,19 +91,31 @@ const listarDocumentosTenant = async (tenantId) => {
  * esto, el resumen del panel principal repetía cuatro lecturas por obra.
  */
 const contextoDelTenant = async (tenantId) => {
-    const [personas, documentos, actividades, tenant] = await Promise.all([
-        personaService.listByTenant(tenantId).catch(() => []),
+    // El personal y la empresa NO se degradan: de ellos sale la dotación, y de la
+    // dotación sale si corresponde comité paritario o delegado. Con una lista
+    // vacía por un fallo de lectura, el sistema concluiría "no te aplica" y lo
+    // mostraría en verde en la pantalla con la que la empresa acredita. Un fallo
+    // de lectura no puede convertirse en una afirmación de cumplimiento: si no se
+    // puede leer, no se calcula.
+    const [personas, tenant] = await Promise.all([
+        personaService.listByTenant(tenantId),
+        tenantService.getById(tenantId),
+    ]);
+    // Documentos y actividades sí se degradan, y hacia el lado correcto: sin
+    // ellos los requisitos quedan PENDIENTES, nunca cumplidos (ver sus lectores).
+    const [documentos, actividades] = await Promise.all([
         listarDocumentosTenant(tenantId),
         listarActividadesTenant(tenantId),
-        tenantService.getById(tenantId).catch(() => null),
     ]);
     return { personas, documentos, actividades, tenantSafe: tenant ? tenant.toSafeFormat() : null };
 };
 
 const armarCompletitud = async (tenantId, ambito, obraId) => {
+    // La obra tampoco se degrada: de ella sale `dotacionDeclarada`, que gobierna
+    // la misma conclusión.
     const [base, obra] = await Promise.all([
         contextoDelTenant(tenantId),
-        obraId ? obraService.getById(obraId).catch(() => null) : Promise.resolve(null),
+        obraId ? obraService.getById(obraId) : Promise.resolve(null),
     ]);
     const { personas, documentos, actividades, tenantSafe } = base;
 
@@ -195,7 +210,9 @@ module.exports.estructuraHandler = async (event) => {
             const obraId = q.obraId || null;
             if (ambito === EP.AMBITO.OBRA && !obraId) return error('obraId es requerido para el ámbito obra');
 
-            const personas = await personaService.listByTenant(tenantId).catch(() => []);
+            // Misma razón que en `contextoDelTenant`: de acá sale la obligación de
+            // constituir comité o delegado. No se degrada.
+            const personas = await personaService.listByTenant(tenantId);
 
             // La dotación declarada (override manual) vive donde ya se guarda el
             // ámbito: en la obra o en la empresa. No se crea histórico aparte.
@@ -203,12 +220,12 @@ module.exports.estructuraHandler = async (event) => {
             let observacion = null;
             let fechaCreacionAmbito = null;
             if (ambito === EP.AMBITO.OBRA) {
-                const obra = await obraService.getById(obraId).catch(() => null);
+                const obra = await obraService.getById(obraId);
                 declarada = obra?.dotacionDeclarada ?? null;
                 observacion = obra?.dotacionObservacion ?? null;
                 fechaCreacionAmbito = obra?.createdAt ?? null;
             } else {
-                const tenant = await tenantService.getById(tenantId).catch(() => null);
+                const tenant = await tenantService.getById(tenantId);
                 const safe = tenant ? tenant.toSafeFormat() : null;
                 declarada = safe?.cantidadTrabajadores || null;
                 fechaCreacionAmbito = safe?.createdAt ?? null;
@@ -245,7 +262,9 @@ module.exports.estructuraHandler = async (event) => {
         // lecturas del tenant por cada faena.
         if (method === 'GET' && recurso === 'completitud' && organoId === 'resumen') {
             const base = await contextoDelTenant(tenantId);
-            const obras = await obraService.listByTenant(tenantId).catch(() => []);
+            // El resumen del panel evalúa TODAS las obras: si la lista falla, el
+            // avance saldría calculado sobre las obras que sí se leyeron.
+            const obras = await obraService.listByTenant(tenantId);
 
             const evaluar = (ambito, obra) => estructuraService.completitudAmbito({
                 tenantId, ambito,
@@ -372,17 +391,19 @@ module.exports.estructuraHandler = async (event) => {
             // voluntario, y ese dato no puede depender de lo que mande el navegador.
             const ambito = body.ambito === EP.AMBITO.OBRA ? EP.AMBITO.OBRA : EP.AMBITO.EMPRESA;
             const obraId = body.obraId || null;
-            const personas = await personaService.listByTenant(tenantId).catch(() => []);
+            // La dotación decide si el órgano nace obligatorio o voluntario: no se
+            // calcula con datos degradados.
+            const personas = await personaService.listByTenant(tenantId);
             const organosAmbito = await estructuraService.listarOrganos(tenantId, { ambito, obraId });
 
             let declarada = null;
             let fechaCreacionAmbito = null;
             if (ambito === EP.AMBITO.OBRA) {
-                const obra = await obraService.getById(obraId).catch(() => null);
+                const obra = await obraService.getById(obraId);
                 declarada = obra?.dotacionDeclarada ?? null;
                 fechaCreacionAmbito = obra?.createdAt ?? null;
             } else {
-                const tenant = await tenantService.getById(tenantId).catch(() => null);
+                const tenant = await tenantService.getById(tenantId);
                 const safe = tenant ? tenant.toSafeFormat() : null;
                 declarada = safe?.cantidadTrabajadores || null;
                 fechaCreacionAmbito = safe?.createdAt ?? null;

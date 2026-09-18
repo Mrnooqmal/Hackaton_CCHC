@@ -11,7 +11,13 @@
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 
+// Los nombres de bucket se definen antes de cargar el handler: el módulo de
+// almacenamiento los lee al importarse, igual que en Lambda.
+process.env.EVIDENCIA_BUCKET = 'bucket-evidencia-prueba';
+process.env.TRABAJO_BUCKET = 'bucket-trabajo-prueba';
+
 const { docClient } = require('../lib/clients/dynamodb');
+const { s3Client } = require('../lib/clients/s3');
 const uploads = require('../handlers/uploads/handler');
 
 const EMPRESA_A = 't-empresa-a';
@@ -35,9 +41,15 @@ const ev = (tenantId, body, extra) => ({ ...sesionDe(tenantId, extra), body: JSO
 
 let store;
 let originalSend;
+let originalS3;
 
 beforeEach(() => {
     store = { documentos: [], borrados: [] };
+    originalS3 = s3Client.send;
+    s3Client.send = async (cmd) => {
+        if (cmd.constructor.name === 'DeleteObjectCommand') { store.borrados.push(cmd.input); return {}; }
+        return {};
+    };
     originalSend = docClient.send;
     docClient.send = async (cmd) => {
         const nombre = cmd.constructor.name;
@@ -48,7 +60,7 @@ beforeEach(() => {
     };
 });
 
-afterEach(() => { docClient.send = originalSend; });
+afterEach(() => { docClient.send = originalSend; s3Client.send = originalS3; });
 
 const datos = (res) => JSON.parse(res.body).data;
 
@@ -65,18 +77,21 @@ test('la clave de subida se arma con la empresa de la sesión, no con la del cue
     assert.ok(!datos(res).fileKey.includes(EMPRESA_B));
 });
 
-test('la categoría no puede escaparse del prefijo de la empresa', async () => {
+test('una categoría desconocida se rechaza en vez de adivinar bucket', async () => {
+    // Elegir un bucket por defecto era caro en las dos direcciones: por defecto
+    // `evidencia`, cualquier subida sin clasificar queda imborrable cinco años;
+    // por defecto `trabajo`, una evidencia real queda desprotegida.
     const res = await uploads.getUploadUrl(ev(EMPRESA_A, {
         fileName: 'x.pdf', fileType: 'application/pdf', fileSize: 10,
         categoria: '../../tenants/' + EMPRESA_B,
     }));
 
-    assert.ok(datos(res).fileKey.startsWith(`tenants/${EMPRESA_A}/`));
-    assert.ok(!datos(res).fileKey.includes('..'));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /categor/i);
 });
 
 test('sin sesión no se emite URL de subida', async () => {
-    const res = await uploads.getUploadUrl({ body: JSON.stringify({ fileName: 'x.pdf', fileType: 'application/pdf', fileSize: 10 }) });
+    const res = await uploads.getUploadUrl({ body: JSON.stringify({ fileName: 'x.pdf', fileType: 'application/pdf', fileSize: 10, categoria: 'documentos' }) });
     assert.equal(res.statusCode, 401);
 });
 
@@ -171,10 +186,25 @@ test('no se borra un archivo de otra empresa', async () => {
     assert.equal(store.borrados.length, 0);
 });
 
-test('no se borra un archivo que respalda un documento', async () => {
-    // Borrarlo dejaría al documento acreditando algo que ya no existe, y las
-    // firmas viven sobre ese archivo.
+test('lo que está en el bucket de evidencia no se borra', async () => {
+    // Es el punto del bloqueo de objetos. El intento se responde con el motivo en
+    // vez de dejar que S3 falle con un error críptico.
     const clave = `tenants/${EMPRESA_A}/documentos/reglamento.pdf`;
+
+    const res = await uploads.deleteFile({
+        ...sesionDe(EMPRESA_A),
+        pathParameters: { fileKey: encodeURIComponent(clave) },
+    });
+
+    assert.equal(res.statusCode, 409);
+    assert.match(JSON.parse(res.body).error, /no se pueden eliminar/i);
+    assert.equal(store.borrados.length, 0);
+});
+
+test('en el bucket de trabajo tampoco se borra lo que respalda un documento', async () => {
+    // Una plantilla se puede reemplazar, pero si un documento la referencia,
+    // borrarla lo dejaría acreditando algo que ya no existe.
+    const clave = `tenants/${EMPRESA_A}/plantillas/reglamento.pdf`;
     store.documentos = [{ documentId: 'd-1', tenantId: EMPRESA_A, tipo: 'REGLAMENTO_INTERNO', s3Key: clave }];
 
     const res = await uploads.deleteFile({
@@ -183,13 +213,24 @@ test('no se borra un archivo que respalda un documento', async () => {
     });
 
     assert.equal(res.statusCode, 409);
+    assert.match(JSON.parse(res.body).error, /respalda/i);
     assert.equal(store.borrados.length, 0);
+});
+
+test('un archivo de trabajo suelto sí se borra', async () => {
+    const res = await uploads.deleteFile({
+        ...sesionDe(EMPRESA_A),
+        pathParameters: { fileKey: encodeURIComponent(`tenants/${EMPRESA_A}/plantillas/suelta.pdf`) },
+    });
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(store.borrados.length, 1);
 });
 
 test('sin permiso de subida no se borra nada', async () => {
     const res = await uploads.deleteFile({
         ...sesionDe(EMPRESA_A, { rol: 'colaborador', permisos: '' }),
-        pathParameters: { fileKey: encodeURIComponent(`tenants/${EMPRESA_A}/documentos/suelto.pdf`) },
+        pathParameters: { fileKey: encodeURIComponent(`tenants/${EMPRESA_A}/plantillas/suelto.pdf`) },
     });
 
     assert.equal(res.statusCode, 403);

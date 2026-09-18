@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { authApi, type User, type SessionInfo, type LoginSuccess } from '../api/client';
+import { EVENTO_SESION_CAIDA, authApi, type User, type SessionInfo, type LoginSuccess } from '../api/client';
 
 export interface TenantOpcion { tenantId: string; tenantNombre: string; rol: string }
 
@@ -65,6 +65,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const clearSessionExpired = useCallback(() => setSessionExpired(false), []);
+
+    // Una sesión vencida la puede descubrir el reloj (scheduleAutoLogout) o el
+    // primer 401 que devuelva la API, que es lo que pasa cuando la sesión se cerró
+    // desde otro dispositivo o el token dejó de existir antes de tiempo. Los dos
+    // caminos terminan igual: se limpia el dispositivo y se muestra el aviso.
+    useEffect(() => {
+        const alCaerLaSesion = () => {
+            limpiarDatosLocales();
+            setUser(null);
+            setSession(null);
+            setSessionExpired(true);
+        };
+        window.addEventListener(EVENTO_SESION_CAIDA, alCaerLaSesion);
+        return () => window.removeEventListener(EVENTO_SESION_CAIDA, alCaerLaSesion);
+    }, []);
 
     const scheduleAutoLogout = useCallback((expiresAt: string) => {
         if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);

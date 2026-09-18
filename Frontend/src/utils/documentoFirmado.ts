@@ -1,4 +1,4 @@
-import { documentsApi, uploadsApi, waitForDocumentoFirmado } from '../api/client';
+import { documentsApi, uploadsApi } from '../api/client';
 
 interface AbrirDocumentoFirmableParams {
     documentId?: string | null;
@@ -26,18 +26,15 @@ export async function resolverDocumentoFirmable({
     onPreparando,
 }: Omit<AbrirDocumentoFirmableParams, 'onError'>): Promise<DocumentoResuelto> {
     if (documentId && firmas && firmas.length > 0) {
-        const primera = await documentsApi.downloadFirmado(documentId);
-        if (!primera.success) {
-            return { error: primera.error || 'No se pudo obtener el documento firmado' };
-        }
-        if (primera.data?.estado === 'listo' && primera.data.url) {
-            return { url: primera.data.url };
-        }
+        // El anexo se arma en la propia petición: no hay estado intermedio que
+        // esperar. `onPreparando` se avisa igual porque la petición puede tardar
+        // un segundo largo en un PDF grande.
         onPreparando?.();
-        const url = await waitForDocumentoFirmado(documentId);
-        return url
-            ? { url }
-            : { error: 'El documento firmado está tardando más de lo esperado. Intenta de nuevo en un momento.' };
+        const res = await documentsApi.downloadFirmado(documentId);
+        if (!res.success || !res.data?.url) {
+            return { error: res.error || 'No se pudo obtener el documento firmado' };
+        }
+        return { url: res.data.url };
     }
 
     if (!fileKey) return { error: null };

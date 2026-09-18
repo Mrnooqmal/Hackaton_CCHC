@@ -61,13 +61,19 @@ beforeEach(() => {
         if (name === 'GetCommand' && input.Key && input.Key.activityId !== undefined) {
             return { Item: store.activity };
         }
+        if (name === 'GetCommand' && input.Key && String(input.Key.SK || '').startsWith('PERSONA#')) {
+            // KEYS_ONLY: el índice da la clave, la ficha se lee de la tabla.
+            const pid = String(input.Key.SK).replace('PERSONA#', '');
+            return { Item: store.personas[pid] || null };
+        }
         if (name === 'GetCommand' && input.Key && String(input.Key.PK || '').startsWith('TENANT#')) {
             return { Item: store.tenant };
         }
         if (name === 'QueryCommand' && input.IndexName === 'personaId-index') {
             const pid = input.ExpressionAttributeValues[':personaId'];
             const item = store.personas[pid];
-            return { Items: item ? [item] : [] };
+            // Solo las claves, como el índice real.
+            return { Items: item ? [{ PK: `TENANT#${item.tenantId}`, SK: `PERSONA#${pid}`, personaId: pid }] : [] };
         }
         if (name === 'UpdateCommand') { store.updates.push(input); return {}; }
         if (name === 'PutCommand') { store.puts.push(input); return {}; }

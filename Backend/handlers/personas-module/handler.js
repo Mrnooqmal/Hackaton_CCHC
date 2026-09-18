@@ -21,6 +21,7 @@ const { eventBus } = require('../../lib/events/EventBus');
 const { normalizeCargoCodigo, resolveCargoKitFromCatalog, resolveKitUnion, esEvidenciaReutilizable } = require('../../lib/ds44');
 const { InboxRepository } = require('../inbox-module/inbox.repository');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { conNeutro } = require('../../lib/degradacion');
 
 const personaService = new PersonaService();
 const obraService = new ObraService();
@@ -1083,10 +1084,19 @@ const parseBulkWorkbook = (buffer) => {
 };
 
 // Contexto del tenant (obras, roles, RUTs existentes, supervisores) — se arma 1 vez.
+//
+// Nada de esto se degrada. De `personasTenant` sale la detección de RUT ya
+// registrados: con una lista vacía por un fallo de lectura, la carga masiva
+// crearía duplicados de gente que ya existe, en silencio y en lote. De
+// `obrasTenant` sale la resolución de la columna "obra", y de `tenant`, los roles
+// válidos: con ellos vacíos, las filas se rechazarían por errores inventados.
+// Si el contexto no se puede armar, la carga no corre.
 const buildBulkContext = async (tenantId) => {
-    const tenant = await tenantService.getById(tenantId).catch(() => null);
-    const obrasTenant = await obraService.listByTenant(tenantId).catch(() => []);
-    const personasTenant = await personaService.listByTenant(tenantId).catch(() => []);
+    const [tenant, obrasTenant, personasTenant] = await Promise.all([
+        tenantService.getById(tenantId),
+        obraService.listByTenant(tenantId),
+        personaService.listByTenant(tenantId),
+    ]);
 
     const obraPorCodigo = {}, obraPorUUID = {}, obraPorLabel = {};
     (obrasTenant || []).forEach((o) => {
@@ -1198,7 +1208,10 @@ module.exports.personasHandler = async (event) => {
     // que ese id exista en otra empresa tampoco corresponde contarlo.
     const personaDelTenant = async (id) => {
         if (!id || !tenantId) return null;
-        const p = await personaService.getById(id).catch(() => null);
+        // Un fallo de lectura acá se ve, desde afuera, igual que "esa persona es
+        // de otra empresa": las dos cosas responden 404. La respuesta no cambia
+        // —no queremos revelar la diferencia— pero el fallo queda medible.
+        const p = await conNeutro('persona.pertenencia', () => personaService.getById(id), null);
         return p && p.tenantId === tenantId ? p : null;
     };
 

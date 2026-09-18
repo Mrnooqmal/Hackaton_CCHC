@@ -1,8 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
-const { GetObjectCommand } = require('@aws-sdk/client-s3');
+const { GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { SQSClient, SendMessageCommand } = require('@aws-sdk/client-sqs');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { s3Client } = require('../../lib/clients/s3');
 const { success, error, created } = require('../../lib/utils/response');
@@ -15,15 +14,17 @@ const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { TIPOS_SALUD, filtrarSalud } = require('../../lib/documentos-salud');
 const { DESTINATARIO, MEDIO } = require('../../lib/distribucion');
+const almacenamiento = require('../../lib/almacenamiento');
 
 const DESTINATARIOS_VALIDOS = new Set(Object.values(DESTINATARIO));
 const MEDIOS_VALIDOS = new Set(Object.values(MEDIO));
 const { eventBus } = require('../../lib/events/EventBus');
 
 const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
-const DOCUMENTS_BUCKET = process.env.DOCUMENTS_BUCKET;
-const DOCUMENT_STAMP_QUEUE_URL = process.env.DOCUMENT_STAMP_QUEUE_URL;
-const sqsClient = new SQSClient({ region: process.env.AWS_REGION || 'us-east-1' });
+
+// Vigencia de las URL prefirmadas: son credenciales al portador y quien las pide
+// las usa de inmediato.
+const URL_VIGENCIA_SEGUNDOS = 900;
 
 // Construye las piezas de la UpdateCommand atómica de firmas — ver
 // FirmaService.buildFirmaUpdateParts (compartida con handlers/signatures).
@@ -526,12 +527,10 @@ module.exports.update = async (event) => {
                 expressionValues[':version'] = versionActual + 1;
                 expressionValues[':versiones'] = versiones;
 
-                // El PDF con el anexo de firmas estampado corresponde al archivo viejo.
-                updateExpressions.push('#docFirmadoKey = :nulo', '#docFirmadoCount = :cero');
-                expressionNames['#docFirmadoKey'] = 'documentoFirmadoS3Key';
-                expressionNames['#docFirmadoCount'] = 'documentoFirmadoFirmaCount';
-                expressionValues[':nulo'] = null;
-                expressionValues[':cero'] = 0;
+                // Antes acá había que anular a mano el PDF estampado, porque
+                // correspondía al archivo viejo. Ya no: su clave se deriva del
+                // archivo y de las firmas (ver `claveEstampado`), así que al
+                // cambiar el archivo la clave cambia sola.
 
                 // Quién publicó: de la sesión, no del cuerpo.
                 updateExpressions.push('#pubPor = :pubPor', '#pubNombre = :pubNombre');
@@ -657,7 +656,7 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                     Key: { documentId: doc.documentId },
                     UpdateExpression: 'SET #version = :v'
                         + ', s3Key = :k, archivoUrl = :k, archivoNombre = :n, firmas = :vacio,'
-                        + ' asignaciones = :asig, documentoFirmadoS3Key = :nulo,'
+                        + ' asignaciones = :asig,'
                         + ' ultimoMotivoVersion = :m, notasCambio = :nc,'
                         + ' ultimaPublicacionPor = :p, ultimaPublicacionNombre = :pn,'
                         + ' ultimosParticipantesRevision = :part,'
@@ -669,7 +668,6 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                         ':n': archivoNombre || doc.archivoNombre || null,
                         ':vacio': [],
                         ':asig': asignacionesReset,
-                        ':nulo': null,
                         ':m': String(motivo).trim(),
                         ':nc': notasCambio || null,
                         ':p': publicadaPor || null,
@@ -782,7 +780,7 @@ module.exports.nuevaVersion = async (event) => {
             TableName: TABLE_NAME,
             Key: { documentId: id },
             UpdateExpression: 'SET version = :v, versiones = :vs, s3Key = :s3, archivoUrl = :s3, archivoNombre = :an, '
-                + 'firmas = :empty, asignaciones = :asig, documentoFirmadoS3Key = :nulo, documentoFirmadoFirmaCount = :cero, '
+                + 'firmas = :empty, asignaciones = :asig, '
                 + '#um = :motivo, notasCambio = :notas, ultimaPublicacionPor = :pby, ultimaPublicacionNombre = :pbn, ultimosParticipantesRevision = :part, updatedAt = :now',
             ExpressionAttributeNames: { '#um': 'ultimoMotivoVersion' },
             ExpressionAttributeValues: {
@@ -792,8 +790,6 @@ module.exports.nuevaVersion = async (event) => {
                 ':an': body.archivoNombre || doc.archivoNombre || null,
                 ':empty': [],
                 ':asig': asignacionesReset,
-                ':nulo': null,
-                ':cero': 0,
                 ':motivo': motivo,
                 ':notas': notasCambio || null,
                 ':pby': publicadaPor || null,
@@ -1273,35 +1269,31 @@ module.exports.signBulk = async (event) => {
 };
 
 /**
- * Deriva la key S3 del PDF estampado a partir de la key del PDF original.
- * Siempre la misma key por documento (se sobreescribe en cada regeneración):
- * la prueba legal vive en las firmas (inmutables en Signatures/firmas), el
- * PDF estampado es solo su renderización más reciente.
- */
-function keyDocumentoFirmado(s3Key) {
-    return s3Key.replace(/\.[^/.]+$/, '') + '.firmado.pdf';
-}
-
-/**
- * GET /documents/{id}/download-firmado - Descarga el PDF con el anexo de
- * firmas estampado.
+ * GET /documents/{id}/download-firmado — PDF con el anexo de firmas.
  *
- * El estampado se genera "bajo demanda" (lazy), no en cada firma: si la
- * versión cacheada ya refleja todas las firmas actuales, se devuelve de
- * inmediato (200). Si no (falta generarla o hay firmas nuevas desde la
- * última vez), se encola su regeneración en una cola SQS FIFO agrupada por
- * documentId -- así, si varias personas piden la descarga a la vez (o el
- * documento se completa justo cuando llegan las últimas firmas), los jobs
- * se serializan solos sin locks manuales -- y se responde 202 para que el
- * cliente reintente en unos segundos.
+ * ── Qué cambió ───────────────────────────────────────────────────────────────
+ *
+ * Antes esto era un caché con cola: si el estampado no estaba al día se encolaba
+ * un trabajo en SQS, se respondía 202 y el navegador sondeaba hasta quince veces.
+ * Esa maquinaria resolvía una latencia que no existe —estampar un PDF de 750 KB
+ * toma 244 ms, y uno de 5 MB, 1,3 s— y a cambio traía dos problemas: el estampado
+ * vivía en una clave fija que había que invalidar a mano en los tres lugares que
+ * reemplazan el archivo o reabren las firmas (y bastaba con que alguien agregara
+ * un cuarto para servir como documento firmado un PDF de otra versión), y cada
+ * regeneración dejaba una versión más del mismo objeto.
+ *
+ * Ahora el anexo se arma en la propia petición y el resultado se guarda bajo una
+ * clave DERIVADA del estado de las firmas (ver `claveEstampado`). El caché se
+ * invalida solo: si entra una firma o se publica una versión, la clave cambia. Y
+ * si diez personas descargan el mismo documento a la vez, las diez resuelven la
+ * misma clave y se reutiliza el archivo.
+ *
+ * El resultado no viaja por la API —una respuesta de Lambda no puede pasar de
+ * 6 MB y acá hay documentos de 5 MB— sino que se devuelve una URL prefirmada,
+ * igual que antes.
  */
 module.exports.downloadFirmado = async (event) => {
     try {
-        // Estuvo cerrado a la fuerza (403) mientras la API no tenía autenticación:
-        // emitía una URL prefirmada sin comprobar sesión ni empresa, y `GET
-        // /documents` repartía los identificadores. Se reabre con las dos
-        // comprobaciones que le faltaban — sesión y pertenencia del documento a la
-        // empresa de quien pide — más el resguardo de los documentos de salud.
         const ses = conSesion(event);
         if (!ses.ok) return ses.respuesta;
         const sesion = ses.sesion;
@@ -1319,106 +1311,54 @@ module.exports.downloadFirmado = async (event) => {
         const fileKey = documentData.s3Key || documentData.archivoUrl;
         if (!fileKey) return error('El documento no tiene archivo asociado', 400);
 
-        const firmasCount = (documentData.firmas || []).length;
+        const firmas = documentData.firmas || [];
+        const bucketOriginal = almacenamiento.bucketDeClave(fileKey);
 
-        // Sin firmas todavía: no hay nada que estampar, se sirve el original.
-        if (firmasCount === 0) {
+        // Sin firmas no hay nada que estampar: se sirve el original.
+        if (firmas.length === 0) {
             const url = await getSignedUrl(s3Client, new GetObjectCommand({
-                Bucket: DOCUMENTS_BUCKET,
-                Key: fileKey
-            }), { expiresIn: 300 });
-            return success({ estado: 'listo', url, firmasCount });
+                Bucket: bucketOriginal,
+                Key: fileKey,
+            }), { expiresIn: URL_VIGENCIA_SEGUNDOS });
+            return success({ estado: 'listo', url, firmasCount: 0 });
         }
 
-        const estampadoAlDia = documentData.documentoFirmadoS3Key
-            && (documentData.documentoFirmadoFirmaCount || 0) === firmasCount;
+        const claveEstampado = almacenamiento.claveEstampado({
+            tenantId: sesion.tenantId,
+            documentId: id,
+            s3KeyOriginal: fileKey,
+            firmas,
+        });
+        const bucketEstampado = almacenamiento.bucketDeClave(claveEstampado);
 
-        if (estampadoAlDia) {
-            const url = await getSignedUrl(s3Client, new GetObjectCommand({
-                Bucket: DOCUMENTS_BUCKET,
-                Key: documentData.documentoFirmadoS3Key
-            }), { expiresIn: 300 });
-            return success({ estado: 'listo', url, firmasCount });
+        // ¿Ya está hecho para este mismo estado de firmas?
+        let existe = true;
+        try {
+            await s3Client.send(new HeadObjectCommand({ Bucket: bucketEstampado, Key: claveEstampado }));
+        } catch (err) {
+            if (err.name !== 'NotFound' && err.$metadata?.httpStatusCode !== 404) throw err;
+            existe = false;
         }
 
-        // Cache miss: encolar regeneración. MessageDeduplicationId incluye el
-        // conteo de firmas para no encolar trabajo duplicado si varias
-        // personas piden la descarga con el mismo estado de firmas.
-        await sqsClient.send(new SendMessageCommand({
-            QueueUrl: DOCUMENT_STAMP_QUEUE_URL,
-            MessageBody: JSON.stringify({ documentId: id }),
-            MessageGroupId: id,
-            MessageDeduplicationId: `${id}-${firmasCount}`
-        }));
+        if (!existe) {
+            // Se estampa SIEMPRE desde el original, nunca desde un estampado
+            // previo: de lo contrario el anexo se iría duplicando.
+            const original = await PdfStampingService.descargarOriginal(bucketOriginal, fileKey);
+            const estampado = await PdfStampingService.estamparAnexo(original, firmas, { titulo: documentData.titulo });
+            await PdfStampingService.subirEstampado(bucketEstampado, claveEstampado, estampado);
+        }
 
-        return success({ estado: 'generando', firmasCount }, 202);
+        const url = await getSignedUrl(s3Client, new GetObjectCommand({
+            Bucket: bucketEstampado,
+            Key: claveEstampado,
+        }), { expiresIn: URL_VIGENCIA_SEGUNDOS });
+
+        return success({ estado: 'listo', url, firmasCount: firmas.length, reutilizado: existe });
     } catch (err) {
         console.error('Error downloading signed document:', err);
-        return error(err.message, 500);
+        return error('No se pudo preparar el documento firmado', 500);
     }
 };
-
-/**
- * Worker SQS: regenera el PDF estampado de un documento.
- *
- * Nunca confía en el estado capturado al encolar el mensaje: vuelve a leer
- * el documento en este momento y estampa el set de firmas más reciente,
- * siempre desde el PDF ORIGINAL (nunca desde una versión ya estampada, para
- * no ir arrastrando anexos duplicados).
- */
-module.exports.stamp = async (event) => {
-    for (const record of event.Records || []) {
-        let documentId;
-        try {
-            ({ documentId } = JSON.parse(record.body));
-
-            const docResult = await docClient.send(new GetCommand({
-                TableName: TABLE_NAME,
-                Key: { documentId }
-            }));
-            if (!docResult.Item) {
-                console.error(`stamp: documento ${documentId} no encontrado, se descarta el job`);
-                continue;
-            }
-            const documentData = docResult.Item;
-            const firmas = documentData.firmas || [];
-            const fileKey = documentData.s3Key || documentData.archivoUrl;
-
-            // Si mientras el job esperaba en la cola ya se generó una versión
-            // igual o más reciente (job anterior del mismo grupo), no repetir.
-            if ((documentData.documentoFirmadoFirmaCount || 0) >= firmas.length) {
-                continue;
-            }
-            if (!fileKey) {
-                console.error(`stamp: documento ${documentId} no tiene archivo asociado, se descarta el job`);
-                continue;
-            }
-
-            const original = await PdfStampingService.descargarOriginal(DOCUMENTS_BUCKET, fileKey);
-            const estampado = await PdfStampingService.estamparAnexo(original, firmas, { titulo: documentData.titulo });
-
-            const estampadoKey = keyDocumentoFirmado(fileKey);
-            await PdfStampingService.subirEstampado(DOCUMENTS_BUCKET, estampadoKey, estampado);
-
-            await docClient.send(new UpdateCommand({
-                TableName: TABLE_NAME,
-                Key: { documentId },
-                UpdateExpression: 'SET documentoFirmadoS3Key = :key, documentoFirmadoFirmaCount = :count, documentoFirmadoAt = :now',
-                ExpressionAttributeValues: {
-                    ':key': estampadoKey,
-                    ':count': firmas.length,
-                    ':now': new Date().toISOString()
-                }
-            }));
-        } catch (err) {
-            console.error(`Error estampando documento ${documentId}:`, err);
-            // Se relanza para que SQS reintente (y, tras agotar los reintentos,
-            // el mensaje caiga al DLQ en vez de perderse silenciosamente).
-            throw err;
-        }
-    }
-};
-
 
 /**
  * POST /documents/{id}/difusion — registra un envío DECLARADO del documento a un

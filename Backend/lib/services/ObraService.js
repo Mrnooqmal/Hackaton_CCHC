@@ -34,7 +34,9 @@ class ObraService {
         // viene, no puede repetirse dentro de la empresa (comparación case-insensitive).
         if (data.codigo && String(data.codigo).trim()) {
             const codigoNorm = String(data.codigo).trim().toLowerCase();
-            const existentes = await this.listByTenant(tenantId).catch(() => []);
+            // Sin degradar: una lista vacía por un fallo de lectura significaría
+            // "el código está libre" y crearía el duplicado que esto viene a evitar.
+            const existentes = await this.listByTenant(tenantId);
             const dup = (existentes || []).find(o => String(o.codigo || '').trim().toLowerCase() === codigoNorm);
             if (dup) {
                 throw new Error(`Ya existe una obra con el código "${String(data.codigo).trim()}" en esta empresa.`);
@@ -123,7 +125,8 @@ class ObraService {
         // Código único por tenant al editar (excluyendo la propia obra). Opcional.
         if (updates.codigo !== undefined && String(updates.codigo).trim()) {
             const codigoNorm = String(updates.codigo).trim().toLowerCase();
-            const existentes = await this.listByTenant(tenantId).catch(() => []);
+            // Misma razón que al crear: acá el valor neutro afirma algo falso.
+            const existentes = await this.listByTenant(tenantId);
             const dup = (existentes || []).find(o => o.obraId !== obraId && String(o.codigo || '').trim().toLowerCase() === codigoNorm);
             if (dup) {
                 throw new Error(`Ya existe una obra con el código "${String(updates.codigo).trim()}" en esta empresa.`);

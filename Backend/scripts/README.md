@@ -4,6 +4,21 @@ Scripts que se ejecutan con credenciales de AWS, no desde la aplicacion. Los de
 migracion siguen el patron `--dry-run` (default) / `--apply` y son idempotentes
 salvo que se indique.
 
+## sembrar-ambiente.js
+
+Deja un ambiente recien desplegado listo para usar: **empresa, administrador y
+catalogo de cargos con los kits del DS 44**. Nada mas: sin obras, sin personal de
+ejemplo, sin documentos de muestra. Un ambiente con datos de demostracion es uno
+donde nadie distingue lo real de lo inventado.
+
+```
+AWS_PROFILE=<perfil> node scripts/sembrar-ambiente.js --stage prod --datos empresa.json [--confirmar]
+```
+
+Es idempotente en lo que importa: si la empresa ya existe no la duplica, y si el
+catalogo ya esta cargado no lo pisa. Usa el mismo archivo de datos que
+`crear-empresa.js`.
+
 ## crear-empresa.js
 
 Alta de una empresa y de su primer administrador. **Es la unica via**: el alta

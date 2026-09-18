@@ -51,6 +51,13 @@ beforeEach(() => {
     originalSend = docClient.send;
     docClient.send = async (cmd) => {
         const nombre = cmd.constructor.name;
+        // Los índices de personas están proyectados con KEYS_ONLY: la consulta
+        // devuelve la clave y la ficha se lee después de la tabla. El doble tiene
+        // que reproducir esos dos pasos o no se ejercita lo que corre de verdad.
+        if (nombre === 'GetCommand' && String(cmd.input?.Key?.SK || '').startsWith('PERSONA#')) {
+            const pid = String(cmd.input.Key.SK).replace('PERSONA#', '');
+            return { Item: store.personaItems.find((p) => p.personaId === pid) || null };
+        }
         if (nombre === 'GetCommand') return { Item: store.item };
         if (nombre === 'QueryCommand') return { Items: store.personaItems };
         if (nombre === 'UpdateCommand') {

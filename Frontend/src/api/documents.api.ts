@@ -226,12 +226,13 @@ export interface BulkSignResult {
 }
 
 export interface DownloadFirmadoResult {
-    // 'listo': ya hay URL descargable. 'generando': el PDF estampado se está
-    // regenerando en segundo plano (hubo firmas nuevas desde la última vez);
-    // reintentar en unos segundos.
-    estado: 'listo' | 'generando';
+    /** Siempre 'listo': el anexo se arma en la propia petición. El campo se
+     *  conserva para no romper a quien lo lea, pero ya no hay estado intermedio. */
+    estado: 'listo';
     url?: string;
     firmasCount: number;
+    /** `true` si se reutilizó el archivo ya generado para este mismo estado de firmas. */
+    reutilizado?: boolean;
 }
 
 export const documentsApi = {
@@ -346,30 +347,16 @@ export const documentsApi = {
             }
         ),
 
-    // PDF con el anexo de firmas estampado (legal). Puede responder
-    // estado:'generando' si se acaba de encolar la regeneración: usar
-    // waitForDocumentoFirmado para reintentar automáticamente.
+    // PDF con el anexo de firmas estampado (legal). Responde con la URL lista:
+    // el anexo se arma en la petición (244 ms en un PDF de 750 KB) y el resultado
+    // se reutiliza mientras no entren firmas nuevas.
     downloadFirmado: (id: string) =>
         apiRequest<DownloadFirmadoResult>(`/documents/${id}/download-firmado`),
 };
 
 /**
- * Pide la descarga del PDF firmado y reintenta mientras el backend responda
- * 'generando' (el estampado se procesa async, serializado por documento para
- * no perder firmas si varias personas firman/descargan a la vez). Devuelve
- * la URL lista o null si se agotan los intentos.
+ * Se eliminó `waitForDocumentoFirmado`.
+ *
+ * Existía para sondear mientras el estampado se generaba en una cola. Ya no hay
+ * cola ni estado 'generando': `downloadFirmado` devuelve la URL lista.
  */
-export async function waitForDocumentoFirmado(
-    id: string,
-    { maxAttempts = 15, intervalMs = 2000 }: { maxAttempts?: number; intervalMs?: number } = {}
-): Promise<string | null> {
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const res = await documentsApi.downloadFirmado(id);
-        if (res.success && res.data?.estado === 'listo' && res.data.url) {
-            return res.data.url;
-        }
-        if (!res.success) return null;
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    }
-    return null;
-}

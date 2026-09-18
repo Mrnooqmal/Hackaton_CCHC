@@ -32,17 +32,25 @@ const PUBLICAS = {
     'GET /signatures/verify/{token}': 'Verificación pública de una firma. El token del enlace es la credencial.',
 };
 
-/** Extrae cada ruta de `serverless.yml` y si declara autorizador. */
+/**
+ * Extrae cada ruta de `serverless.yml`: método, path, si declara autorizador y
+ * qué handler la atiende (para poder exigir que los preflight no lleguen a un
+ * handler de datos).
+ */
 function rutasDeclaradas() {
     const lineas = fs.readFileSync(YML, 'utf8').split('\n');
     const rutas = [];
+    let handlerActual = null;
 
     for (let i = 0; i < lineas.length; i++) {
-        if (lineas[i].trim() !== '- httpApi:') continue;
+        const crudo = lineas[i];
+        if (crudo.trim().startsWith('handler:')) handlerActual = crudo.trim().slice(8).trim();
+        if (crudo.trim() !== '- httpApi:') continue;
 
         let metodo = null;
         let ruta = null;
         let tieneAutorizador = false;
+        const handler = handlerActual;
 
         // El bloque del evento son las líneas indentadas que siguen.
         for (let j = i + 1; j < lineas.length; j++) {
@@ -54,7 +62,7 @@ function rutasDeclaradas() {
             if (t.startsWith('authorizer:')) tieneAutorizador = true;
         }
 
-        if (ruta) rutas.push({ id: `${metodo} ${ruta}`, ruta, metodo, tieneAutorizador });
+        if (ruta) rutas.push({ id: `${metodo} ${ruta}`, ruta, metodo, tieneAutorizador, handler });
     }
     return rutas;
 }
@@ -64,10 +72,20 @@ test('el archivo de configuración se puede leer y tiene rutas', () => {
     assert.ok(rutas.length > 50, `se esperaban más de 50 rutas, se encontraron ${rutas.length}`);
 });
 
+/**
+ * Handler que responde los preflight CORS. Un `OPTIONS` no puede llevar
+ * credenciales —el navegador manda la cabecera `Authorization` recién en la
+ * petición real—, así que exigirle sesión solo consigue que el navegador bloquee
+ * la petición de verdad. Por eso van sin autorizador; la contrapartida es la
+ * prueba de más abajo: no pueden apuntar a un handler que toque datos.
+ */
+const HANDLER_PREFLIGHT = 'handlers/cors/handler.preflight';
+
 test('ninguna ruta queda sin autorizador fuera de la lista blanca', () => {
     const abiertas = rutasDeclaradas()
         .filter((r) => !r.tieneAutorizador)
         .filter((r) => !PUBLICAS[r.id])
+        .filter((r) => !(r.metodo === 'OPTIONS' && r.handler === HANDLER_PREFLIGHT))
         .map((r) => r.id);
 
     assert.deepEqual(
@@ -92,6 +110,32 @@ test('las rutas públicas son pocas y conocidas', () => {
         Object.keys(PUBLICAS).length <= 10,
         `La superficie pública creció a ${Object.keys(PUBLICAS).length} rutas. Revísala antes de subir el tope.`
     );
+});
+
+test('todo preflight sin autorizador lo responde el handler de preflight', () => {
+    // La excepción de la prueba anterior vale SOLO para una función que devuelve
+    // 204 y cabeceras. Un `OPTIONS` sin autorizador apuntando a un handler de
+    // módulo sería una ruta abierta hacia datos con otro nombre.
+    const sospechosas = rutasDeclaradas()
+        .filter((r) => r.metodo === 'OPTIONS' && !r.tieneAutorizador)
+        .filter((r) => r.handler !== HANDLER_PREFLIGHT)
+        .map((r) => `${r.id} -> ${r.handler}`);
+
+    assert.deepEqual(sospechosas, [], 'Preflight sin autorizador atendido por un handler que no es el de preflight:\n  '
+        + sospechosas.join('\n  '));
+});
+
+test('las rutas de módulo con `any` tienen su preflight declarado', () => {
+    // Si un módulo declara su prefijo con `any` y nadie declara el `OPTIONS`, ese
+    // `any` captura el preflight, el autorizador lo rechaza con 401 y el
+    // navegador bloquea la petición real: la aplicación ve "Failed to fetch" y no
+    // hay forma de deducir desde ahí que el problema era la sesión.
+    const rutas = rutasDeclaradas();
+    const conAny = rutas.filter((r) => r.metodo === 'ANY').map((r) => r.ruta);
+    const conOptions = new Set(rutas.filter((r) => r.metodo === 'OPTIONS').map((r) => r.ruta));
+    const sinPreflight = conAny.filter((ruta) => !conOptions.has(ruta));
+
+    assert.deepEqual(sinPreflight, [], 'Rutas `any` sin preflight declarado:\n  ' + sinPreflight.join('\n  '));
 });
 
 test('el endpoint de prueba de correo no vuelve a aparecer', () => {

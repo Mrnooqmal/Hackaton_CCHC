@@ -2,6 +2,7 @@ const { Router } = require('itty-router');
 const { IncidentsRepository } = require('./incidents.repository');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { conNeutro } = require('../../lib/degradacion');
 
 const incidentsRepo = new IncidentsRepository();
 const router = Router();
@@ -31,7 +32,7 @@ const sesionDe = (request) => conSesion(request.event);
  * cualquier empresa. Son datos de salud de una persona identificable. 404.
  */
 const incidenteDelTenant = async (incidentId, sesion) => {
-    const item = await incidentsRepo.getItem(incidentId).catch(() => null);
+    const item = await conNeutro('incidente.pertenencia', () => incidentsRepo.getItem(incidentId), null);
     return item && item.tenantId === sesion.tenantId ? item : null;
 };
 
@@ -294,7 +295,8 @@ async function uploadEvidence(request) {
         // La evidencia se adjunta a un incidente de la propia empresa; sin id se
         // sube al prefijo temporal, que no expone nada de nadie.
         if (body.incidentId && !await incidenteDelTenant(body.incidentId, ses.sesion)) return noEncontrado();
-        const result = await incidentsRepo.uploadEvidence(body);
+        // La empresa sale de la sesión: es la que arma el prefijo de la clave.
+        const result = await incidentsRepo.uploadEvidence({ ...body, tenantId: ses.sesion.tenantId });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
@@ -396,7 +398,7 @@ async function uploadDocument(request) {
         if (!ses.ok) return ses.respuesta;
         if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
         const body = parseBody(request.event);
-        const result = await incidentsRepo.uploadDocument(request.params.id, body);
+        const result = await incidentsRepo.uploadDocument(request.params.id, { ...body, tenantId: ses.sesion.tenantId });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
