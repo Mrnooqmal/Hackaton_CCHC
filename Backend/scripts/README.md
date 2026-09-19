@@ -55,6 +55,49 @@ La contrasena temporal viaja por correo (SES) y se cambia en el primer ingreso;
 solo se imprime en pantalla si el envio falla. Roles, cargos y preferencias
 quedan en sus valores por defecto y se configuran despues desde Mi Empresa.
 
+## La pimienta de las credenciales (no es un script, pero se opera a mano)
+
+El PIN y la contrasena se hashean con scrypt mas una **pimienta**: una llave de
+256 bits que vive en SSM, no en la tabla, y sin la cual un volcado de DynamoDB no
+sirve para probar ni un intento. No la crea CloudFormation porque CloudFormation
+no sabe crear parametros `SecureString`.
+
+Ya existe una por ambiente, version 1:
+
+```
+/BuildAndServe/dev/credencial-pepper
+/BuildAndServe/prod/credencial-pepper
+```
+
+Crearla donde no exista (cifrada con la CMK del stack, `ClaveDatos`):
+
+```
+AWS_PROFILE=<perfil> aws ssm put-parameter \
+  --name /BuildAndServe/<stage>/credencial-pepper \
+  --type SecureString --key-id <id de la CMK del stack> \
+  --value "$(openssl rand -base64 32)"
+```
+
+El valor **no se imprime nunca**: se genera dentro del comando y no pasa por la
+pantalla ni por el historial.
+
+**Si se pierde**, nadie queda bloqueado para siempre pero sí para entrar: las
+contrasenas se recuperan con el flujo de "olvide mi contrasena" y los PIN los
+reconfigura la persona o un administrador. Es recuperable, no es indoloro.
+
+**Rotarla** es crear la version nueva y dejar la anterior declarada mientras
+queden hashes hechos con ella:
+
+1. `CREDENCIAL_PEPPER_V: 2` en `serverless.yml` y el parametro nuevo en SSM.
+2. `CREDENCIAL_PEPPER_ANTERIORES: "1:<valor anterior>"` mientras dure la
+   transicion. Cada credencial se actualiza sola la proxima vez que su dueno
+   entra, porque el hash guarda con que version se hizo.
+3. Cuando ya no queden hashes con `pv=1`, se quita esa variable.
+
+Sin el paso 2, un hash hecho con la version anterior **falla** en vez de
+responder "credencial incorrecta". Es deliberado: decir que no coincide seria
+mentir sobre algo que no se puede juzgar.
+
 ## migrate-to-personas.js
 Migracion historica: une `Users` + `Workers` legacy en `Personas`.
 ```

@@ -91,7 +91,7 @@ module.exports.create = async (event) => {
             return error('Persona no tiene PIN configurado', 400);
         }
 
-        const pinValido = verifyPin(pin, persona._pinHash, inputPersonaId);
+        const pinValido = await verifyPin(pin, persona._pinHash, inputPersonaId);
         if (!pinValido) {
             return error('PIN incorrecto', 401);
         }

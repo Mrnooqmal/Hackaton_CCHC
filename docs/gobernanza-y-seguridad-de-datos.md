@@ -59,13 +59,13 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 
 | # | Punto | Estado | Evidencia o brecha |
 |---|---|---|---|
-| 2.1 | El PIN nunca se almacena en texto plano | **Implementado** | Solo se guarda el hash. `Backend/lib/utils/validation.js` |
-| 2.2 | El hash incorpora identificador personal y secreto de servidor | **Implementado** | `hashPin(pin, personaId)` con `PIN_SALT` desde variable de entorno. Dos personas con el mismo PIN obtienen hashes distintos. |
+| 2.1 | El PIN nunca se almacena en texto plano | **Implementado** | Solo se guarda el hash. `Backend/lib/credenciales.js` |
+| 2.2 | El hash incorpora identificador personal y secreto de servidor | **Implementado** | Sal aleatoria por hash, `personaId` dentro de la sal y pimienta de servidor leída de SSM en ejecución. El `PIN_SALT` anterior **nunca estuvo declarado** y en AWS valía `undefined`: el secreto de servidor no existía. Ver D-7. |
 | 2.3 | Verificación resistente a ataques de temporización | **Implementado** | `crypto.timingSafeEqual`. |
 | 2.4 | El hash nunca se expone en la API | **Implementado** | Campo interno; la respuesta solo informa si hay PIN configurado. `Backend/lib/models/Persona.js` |
 | 2.5 | Mensajes de error genéricos ante credencial inválida | **Implementado** | No revelan si falló el PIN, el estado de la persona u otro. |
-| 2.6 | **Función de derivación con costo para el PIN** | **Pendiente** | Usa SHA-256 simple. Ver hallazgo crítico H-1. |
-| 2.7 | **Límite de intentos de PIN** | **Pendiente** | No existe bloqueo por intentos fallidos. Ver hallazgo crítico H-2. |
+| 2.6 | **Función de derivación con costo para el PIN** | **Implementado** | scrypt `N=2^15, r=8, p=1`; ~112 ms por verificación, medidos en la Lambda. Cada hash guarda su algoritmo y sus parámetros, y se actualiza solo al usarse. Ver D-7. |
+| 2.7 | **Límite de intentos de PIN** | **Pendiente** | No existe bloqueo por intentos fallidos. Con 2.6 implementado, es la defensa que falta. Ver hallazgo crítico H-2. |
 | 2.8 | **Throttling a nivel de API** | **Pendiente** | Sin plan de uso ni límite de tasa configurado en `Backend/serverless.yml`. |
 | 2.9 | El token de sesión se almacena hasheado | **Implementado** | Se guarda `sha256(token)` y se resuelve por índice. Antes se guardaba el token en claro: un volcado de la tabla de sesiones era suplantación inmediata de cualquier usuario. `Backend/lib/auth/sesion.js` |
 | 2.10 | El PIN ya no se guarda en el dispositivo (modo sin conexión) | **Implementado** | Las firmas sin red se acreditan con un **vale de un solo uso** que la persona desbloquea con su PIN al inicio del turno, con red; el dispositivo guarda vales, no el PIN, y el servidor solo guarda el hash del vale. `Backend/lib/services/ValeFirmaService.js`, `Backend/tests/vale-firma.test.js`. Ver D-3 para las dos decisiones de diseño (vale vencido y equipo que pierde su identificador). |
@@ -327,28 +327,100 @@ código, con datos reales de por medio. **Con las bases vacías, ambos desaparec
 no hay relleno que esperar ni sesión que interrumpir, y el cambio de código se
 prueba sin riesgo de dejar a alguien fuera del sistema.
 
+### D-7. Hasheo de credenciales: scrypt, con el algoritmo guardado junto al hash
+**Estado: implementado el 18 de septiembre de 2026, en dev y prod**
+
+**Función y costo.** scrypt con `N=2^15, r=8, p=1`: 32 MB de memoria por intento,
+que es el mínimo que recomienda OWASP para scrypt. Se eligió por encima de un
+costo mayor porque el PIN se verifica en cada firma, y por encima de uno menor
+porque bajar de ahí deja el sistema por debajo de la recomendación pública que un
+tercero evaluador va a mirar.
+
+**Medición, no estimación** (Lambda `authLogin`, x86_64, us-east-1; mediana de
+cinco llamadas en caliente, tomadas del `REPORT` de CloudWatch):
+
+| Escenario | 1024 MB | 1769 MB |
+|---|---|---|
+| Ingreso sin verificación (RUT inexistente) | 11–36 ms | — |
+| Ingreso con una verificación (contraseña incorrecta) | 204–230 ms | 124–144 ms |
+| **La verificación sola (scrypt)** | **~195 ms** | **~112 ms** |
+| Emisión de vale, que verifica el PIN | — | 137–144 ms |
+| Ingreso exitoso completo (con sesión y escrituras) | — | 160–215 ms |
+| Memoria máxima usada por la función | 105 → 142 MB | 142 MB |
+
+**Por qué 1769 MB en las funciones que verifican credenciales.** Ahí es donde
+Lambda entrega un vCPU completo, y scrypt es de un solo hilo: el límite no es la
+memoria asignada sino la fracción de CPU. Como se factura por GB-ms, el cambio
+cuesta casi lo mismo —214 GB-ms contra 225, un 5% más— y devuelve un 40% menos de
+espera. Se aplicó a `authLogin`, `authChangePassword`, `authResetPassword`,
+`valesEmitir`, `createSignature` y `processOfflineBatch`.
+
+**El algoritmo viaja con el hash.** Formato `$scrypt$ln=15,r=8,p=1,pv=1$sal$derivada`.
+Hoy no hay migración que hacer, pero la próxima vez que haya que subir el costo sí
+la va a haber, y sin esta marca no habría forma de distinguir un hash de otro sin
+adivinar por el largo. Con ella, `verificar` devuelve `obsoleto: true` y el hash se
+reemplaza en el ingreso, que es el único momento en que el secreto en claro está
+disponible. Lo guardado con SHA-256 se sigue verificando y se reemplaza igual: la
+migración termina sola, sin pedirle nada a nadie.
+
+**La pimienta.** Ninguna función de costo salva a un PIN de cuatro dígitos: a
+112 ms por intento, las 10.000 combinaciones contra un hash robado toman menos de
+veinte minutos. Lo que sí lo salva es que el atacante no tenga todo lo necesario.
+La pimienta es una llave de 256 bits que vive en SSM como `SecureString` cifrado
+con la CMK del sistema, **no en la tabla**, y se lee en ejecución, no al desplegar:
+resolverla en `serverless.yml` la dejaría escrita en claro dentro de la plantilla
+de CloudFormation, que queda guardada y la puede leer cualquiera con permiso sobre
+el stack. Un secreto que viaja en la plantilla no es un secreto.
+
+Se versiona (`pv`) para que rotarla no invalide lo anterior. Y si un despliegue se
+encuentra con una versión de pimienta que no conoce, **falla**: no responde
+"credencial incorrecta", que sería exactamente la degradación insegura que se
+acaba de sacar del sistema, aplicada al peor lugar posible.
+
+**Lo que NO cambió, a propósito.** Los tokens de sesión, los de recuperación de
+contraseña y los vales se siguen guardando con SHA-256 de una pasada. Ahí es lo
+correcto: son valores aleatorios de 32 bytes generados por el servidor, sin espacio
+de búsqueda que recorrer. Una función de costo sobre ellos solo agregaría latencia
+a cada request.
+
+**Pendiente asociado:** H-2 (límite de intentos) es ahora la defensa que falta.
+
 ---
 
 ## 4. Hallazgos priorizados
 
-### H-1. El PIN usa SHA-256 sin función de derivación con costo
-**Severidad: alta**
+### H-1. El PIN usaba SHA-256 sin función de derivación con costo
+**Severidad: alta — RESUELTO el 18 de septiembre de 2026 (ver D-7)**
 
 El PIN es de cuatro dígitos: 10.000 combinaciones posibles. SHA-256 está diseñado para ser
 rápido, de modo que quien obtuviera la base de datos **y** el secreto del servidor podría
 recorrer el espacio completo en segundos y recuperar el PIN de todas las personas.
 
-**Corrección:** migrar a `scrypt`, `bcrypt` o PBKDF2 con costo configurado. Es migrable de
-forma progresiva: se re-hashea en el siguiente ingreso exitoso de cada persona, sin pedirle
-nada al usuario ni invalidar los PIN existentes.
+Al implementar la corrección apareció algo peor que lo descrito: **el secreto del
+servidor no existía**. `PIN_SALT` se leía del entorno pero nunca estuvo declarada
+en `serverless.yml`, así que en AWS valía `undefined` y el hash era SHA-256 de un
+texto enteramente predecible. La condición "quien obtuviera la base de datos **y**
+el secreto" era en realidad "quien obtuviera la base de datos".
 
-**Ubicación:** `Backend/lib/utils/validation.js`
+**Corregido:** scrypt con sal por hash y pimienta de servidor en SSM
+(`Backend/lib/credenciales.js`). La migración de lo ya guardado es progresiva: se
+re-hashea en el siguiente ingreso exitoso de cada persona, sin pedirle nada a
+nadie y sin invalidar ninguna credencial existente.
+
+**Ubicación:** `Backend/lib/credenciales.js`, `Backend/lib/utils/validation.js`
 
 ### H-2. No hay límite de intentos de PIN
 **Severidad: alta**
 
-Nada impide probar las 10.000 combinaciones contra el endpoint de firma. Combinado con H-1,
-convierte al PIN en una credencial débil frente a un atacante con acceso a la API.
+Nada impide probar las 10.000 combinaciones contra el endpoint de firma.
+
+Con H-1 resuelto este hallazgo **cambia de forma pero no se cierra, y pasa a ser el
+que manda**: la función de costo encarece cada intento (unos 112 ms de CPU del
+servidor, no del atacante) y la pimienta hace inútil un volcado de la tabla, pero
+contra la API en línea siguen sin existir ni contador de intentos ni bloqueo. A
+112 ms por intento y con concurrencia, las 10.000 combinaciones de un PIN conocido
+siguen siendo alcanzables; lo que antes costaba segundos ahora cuesta horas de
+tráfico visible, que es mejor, pero no es un límite.
 
 **Corrección:** contador de intentos fallidos por persona con bloqueo temporal progresivo, y
 plan de uso con límite de tasa en API Gateway.

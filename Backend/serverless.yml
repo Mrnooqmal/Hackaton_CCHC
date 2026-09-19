@@ -22,6 +22,11 @@ custom:
     prod: 90
     dev: 14
 
+  # A dónde llegan las alarmas de operación. Es una casilla personal mientras el
+  # equipo no tenga una de grupo; cambiarla acá y desplegar basta, pero la nueva
+  # dirección debe confirmar la suscripción por correo antes de recibir nada.
+  destinatarioAlertas: ${env:ALERTAS_EMAIL, 'atorres@thecodecookers.cl'}
+
   corsOrigins:
     prod:
       - https://d30jksx91fodea.cloudfront.net
@@ -77,6 +82,19 @@ provider:
     # No es secreto (URL pública), así que el default apunta a la demo en CloudFront
     # para que funcione aunque no se cargue el .env. Overridable por env var.
     FRONTEND_URL: ${env:FRONTEND_URL, 'https://d30jksx91fodea.cloudfront.net'}
+    # --- Credenciales (PIN y contraseña) ---
+    # El PIN y la contraseña se guardan con scrypt. `ln` es log2 del costo: 15
+    # son 32 MB y ~180 ms por verificación en esta Lambda (medido, ver
+    # docs/gobernanza-y-seguridad-de-datos.md, D-7). Subirlo es cambiar este
+    # número y desplegar: cada hash guarda con qué costo se hizo y se actualiza
+    # solo la próxima vez que su dueño entra.
+    CREDENCIAL_SCRYPT_LN: ${env:CREDENCIAL_SCRYPT_LN, '15'}
+    # Acá va el NOMBRE del parámetro, nunca el valor: la pimienta se lee en
+    # ejecución desde SSM (SecureString cifrado con la CMK). Resolverla al
+    # desplegar la dejaría escrita en claro dentro de la plantilla de
+    # CloudFormation, que es justo de donde se la quiere sacar.
+    CREDENCIAL_PEPPER_PARAM: /${self:service}/${self:provider.stage}/credencial-pepper
+    CREDENCIAL_PEPPER_V: ${env:CREDENCIAL_PEPPER_V, '1'}
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
     # --- Gating de alta de empresas (Fase 1: PIN estático) ---
@@ -210,6 +228,13 @@ provider:
             - kms:DescribeKey
           Resource:
             - !GetAtt ClaveDatos.Arn
+        # Solo la pimienta, solo lectura. El descifrado lo cubre el permiso de
+        # KMS de más arriba, porque el parámetro está cifrado con la misma CMK.
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+          Resource:
+            - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${self:service}/${self:provider.stage}/credencial-pepper'
         - Effect: Allow
           Action:
             - sns:Publish
@@ -336,6 +361,12 @@ functions:
   # Auth (Autenticación)
   authLogin:
     handler: handlers/auth/handler.login
+    # 1769 MB es donde Lambda entrega un vCPU completo. Acá no es por memoria sino
+    # por CPU: scrypt es de un solo hilo, así que la verificación pasa de ~195 ms
+    # a ~112 ms (medido en dev). Y como se factura por GB-ms, cuesta casi lo
+    # mismo: 214 GB-ms contra 225. Se paga un 5% más por un 40% menos de espera
+    # en la pantalla de quien está firmando en terreno.
+    memorySize: 1769
     events:
       - httpApi:
           path: /auth/login
@@ -350,6 +381,7 @@ functions:
 
   authChangePassword:
     handler: handlers/auth/handler.changePassword
+    memorySize: 1769   # ver authLogin
     events:
       - httpApi:
           path: /auth/change-password
@@ -366,6 +398,7 @@ functions:
 
   authResetPassword:
     handler: handlers/auth/handler.resetPassword
+    memorySize: 1769   # ver authLogin
     events:
       - httpApi:
           path: /auth/reset-password
@@ -465,6 +498,7 @@ functions:
 
   processOfflineBatch:
     handler: handlers/signature-requests/handler.processOfflineBatch
+    memorySize: 1769   # ver authLogin
     events:
       - httpApi:
           path: /signature-requests/offline-batch
@@ -716,6 +750,7 @@ functions:
   # ========================================
   createSignature:
     handler: handlers/signatures/handler.create
+    memorySize: 1769   # ver authLogin
     events:
       - httpApi:
           path: /signatures
@@ -840,6 +875,7 @@ functions:
   # recibe vales de un solo uso. Ver lib/services/ValeFirmaService.js.
   valesEmitir:
     handler: handlers/vales/handler.emitir
+    memorySize: 1769   # ver authLogin
     events:
       - httpApi:
           path: /firmas/vales
@@ -1165,6 +1201,16 @@ resources:
       Properties:
         TopicName: ${self:service}-alertas-operacion-${self:provider.stage}
         DisplayName: Alertas de operación de Build & Serve
+
+    # Una alarma sin destinatario es una alarma que nadie ve. SNS exige que la
+    # dirección confirme por correo: hasta que lo haga, la suscripción queda
+    # pendiente y la alarma cambia de estado sin avisarle a nadie.
+    AlertasOperacionSuscripcion:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: !Ref AlertasOperacionTopic
+        Protocol: email
+        Endpoint: ${self:custom.destinatarioAlertas}
 
     FallosDependenciaAlarm:
       Type: AWS::CloudWatch::Alarm

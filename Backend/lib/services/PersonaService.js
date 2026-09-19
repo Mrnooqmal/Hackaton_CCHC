@@ -30,7 +30,7 @@ class PersonaService {
      * transferirEntreTenants() (persona existente que cambia de tenant, donde se
      * reutiliza el personaId de origen en vez de generar uno nuevo).
      */
-    _datosBaseAlta(tenantId, data, { personaId } = {}) {
+    async _datosBaseAlta(tenantId, data, { personaId } = {}) {
         const rutValidation = validateRut(data.rut);
         if (!rutValidation.valid) throw new Error('RUT invalido');
 
@@ -90,7 +90,7 @@ class PersonaService {
             const rutDigits = rutValidation.formatted.replace(/[^0-9]/g, '').slice(0, -1); // quita DV
             const first4 = rutDigits.slice(0, 4);
             passwordTemporal = first4.length === 4 ? first4 : generateTempPassword(10);
-            personaData.passwordHash = hashPassword(passwordTemporal, resolvedPersonaId);
+            personaData.passwordHash = await hashPassword(passwordTemporal, resolvedPersonaId);
             personaData.passwordTemporal = true;
         }
 
@@ -113,7 +113,7 @@ class PersonaService {
         const existente = await this.getByRut(tenantId, rutValidation.formatted);
         if (existente) throw new Error('Ya existe una persona con este RUT en este tenant');
 
-        const { personaData, passwordTemporal } = this._datosBaseAlta(tenantId, data);
+        const { personaData, passwordTemporal } = await this._datosBaseAlta(tenantId, data);
         const persona = new Persona(personaData);
 
         await this.dynamo.send(new PutCommand({
@@ -229,12 +229,19 @@ class PersonaService {
         const hermanas = todas.filter((p) => p.personaId !== personaOrigen.personaId && p.tieneAccesoWeb);
         const now = new Date().toISOString();
 
-        await Promise.all(hermanas.map((h) => this.dynamo.send(new UpdateCommand({
+        // Los hashes se calculan en fila, no en paralelo: scrypt reserva 32 MB
+        // por cálculo y la Lambda tiene 1 GB. Con una persona en muchas empresas,
+        // hacerlos todos a la vez es la forma de quedarse sin memoria justo
+        // mientras alguien cambia su contraseña.
+        const hashes = [];
+        for (const h of hermanas) hashes.push(await hashPassword(passwordPlano, h.personaId));
+
+        await Promise.all(hermanas.map((h, i) => this.dynamo.send(new UpdateCommand({
             TableName: this.table,
             Key: { PK: `TENANT#${h.tenantId}`, SK: `PERSONA#${h.personaId}` },
             UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt',
             ExpressionAttributeValues: {
-                ':passwordHash': hashPassword(passwordPlano, h.personaId),
+                ':passwordHash': hashes[i],
                 ':passwordTemporal': passwordTemporal,
                 ':updatedAt': now
             }
@@ -488,17 +495,17 @@ class PersonaService {
         // Verificacion opcional del PIN actual: si el cliente lo envia, se valida.
         // No es obligatorio, lo que permite la actualizacion directa del PIN.
         if (yaTienePin && pinActual) {
-            const pinValido = verifyPin(pinActual, persona._pinHash, personaId);
+            const pinValido = await verifyPin(pinActual, persona._pinHash, personaId);
             if (!pinValido) throw new Error('PIN actual incorrecto');
         }
 
         // Validacion de duplicados: el nuevo PIN no puede ser identico al registrado.
-        if (yaTienePin && verifyPin(pin, persona._pinHash, personaId)) {
+        if (yaTienePin && await verifyPin(pin, persona._pinHash, personaId)) {
             throw new Error('El nuevo PIN no puede ser igual al PIN actual');
         }
 
         const now = new Date().toISOString();
-        const newPinHash = hashPin(pin, personaId);
+        const newPinHash = await hashPin(pin, personaId);
 
         await this.dynamo.send(new UpdateCommand({
             TableName: this.table,
@@ -529,7 +536,7 @@ class PersonaService {
         if (persona.estaEnrolado()) throw new Error('La persona ya esta enrolada');
 
         // Verificar PIN
-        const pinValido = verifyPin(pin, persona._pinHash, personaId);
+        const pinValido = await verifyPin(pin, persona._pinHash, personaId);
         if (!pinValido) throw new Error('PIN incorrecto');
 
         const now = new Date();
@@ -580,7 +587,7 @@ class PersonaService {
         if (!persona) throw new Error('Persona no encontrada');
 
         const passwordTemporal = generateTempPassword(10);
-        const passwordHash = hashPassword(passwordTemporal, personaId);
+        const passwordHash = await hashPassword(passwordTemporal, personaId);
         const now = new Date().toISOString();
 
         await this.dynamo.send(new UpdateCommand({

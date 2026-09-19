@@ -14,7 +14,9 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { s3Client } = require('../../lib/clients/s3');
 const { success, error } = require('../../lib/utils/response');
-const { validateRut, validateRequired, hashPassword, verifyPassword } = require('../../lib/utils/validation');
+const { validateRut, validateRequired, hashPassword } = require('../../lib/utils/validation');
+const credenciales = require('../../lib/credenciales');
+const { registrarFallo } = require('../../lib/degradacion');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { resolvePersonaPermisos } = require('../../lib/permissions');
@@ -140,6 +142,28 @@ const crearSesionParaPersona = async (persona, event) => {
 };
 
 /**
+ * Reemplaza un hash de contraseña vigente pero anticuado, con la contraseña que
+ * la persona acaba de escribir.
+ *
+ * No puede tumbar el ingreso: si la escritura falla, la persona entra igual y el
+ * hash queda viejo hasta el próximo intento. Eso sí, queda constancia medible,
+ * porque un rehasheo que falla siempre no se nota por ningún otro lado.
+ */
+const rehashearPassword = async (persona, passwordPlano) => {
+    try {
+        const nuevo = await hashPassword(passwordPlano, persona.personaId);
+        await docClient.send(new UpdateCommand({
+            TableName: process.env.PERSONAS_TABLE || 'Personas',
+            Key: { PK: `TENANT#${persona.tenantId}`, SK: `PERSONA#${persona.personaId}` },
+            UpdateExpression: 'SET passwordHash = :ph, updatedAt = :u',
+            ExpressionAttributeValues: { ':ph': nuevo, ':u': new Date().toISOString() }
+        }));
+    } catch (err) {
+        registrarFallo('credencial.rehasheo', err, { personaId: persona.personaId });
+    }
+};
+
+/**
  * POST /auth/login - Iniciar sesión
  *
  * Body: { rut, password }
@@ -171,8 +195,26 @@ module.exports.login = async (event) => {
         // acceso web (cualquier estado — incluso desvinculada, para poder
         // distinguir "contraseña incorrecta" de "sin empresas activas").
         const candidatas = todas.filter((p) => p.tieneAccesoWeb && p._passwordHash);
-        const autenticado = candidatas.some((p) => verifyPassword(password, p._passwordHash, p.personaId));
-        if (!autenticado) {
+
+        // Secuencial y con corte al primer acierto: cada verificación es scrypt,
+        // que cuesta unos 100 ms y 32 MB a propósito. Una persona pertenece a una
+        // o dos empresas, así que el caso normal es una sola. Hacerlas en paralelo
+        // multiplicaría la memoria del proceso por la cantidad de fichas.
+        let ficha = null;
+        for (const p of candidatas) {
+            const { valido, obsoleto } = await credenciales.verificar(password, p._passwordHash, p.personaId);
+            if (valido) {
+                ficha = p;
+                // El ingreso es el único momento en que la contraseña en claro
+                // está a mano. Si el hash venía del esquema viejo —o de un costo
+                // que ya subimos—, se reemplaza acá y la migración termina sola,
+                // sin pedirle nada a nadie. Las fichas hermanas se actualizan
+                // cuando esa persona entre por ellas.
+                if (obsoleto) await rehashearPassword(p, password);
+                break;
+            }
+        }
+        if (!ficha) {
             return error('Credenciales inválidas', 401);
         }
 
@@ -306,12 +348,12 @@ module.exports.changePassword = async (event) => {
         // En cambios posteriores sí se exige y verifica la contraseña vigente.
         if (!persona.passwordTemporal) {
             if (!passwordActual) return error('Campos requeridos faltantes: passwordActual');
-            const passValido = verifyPassword(passwordActual, persona._passwordHash, personaId);
+            const { valido: passValido } = await credenciales.verificar(passwordActual, persona._passwordHash, personaId);
             if (!passValido) return error('Contraseña actual incorrecta', 401);
         }
 
         const now = new Date().toISOString();
-        const newPasswordHash = hashPassword(passwordNuevo, personaId);
+        const newPasswordHash = await hashPassword(passwordNuevo, personaId);
 
         await docClient.send(new UpdateCommand({
             TableName: process.env.PERSONAS_TABLE || 'Personas',
@@ -463,7 +505,7 @@ module.exports.resetPassword = async (event) => {
         }
 
         const now = new Date().toISOString();
-        const newPasswordHash = hashPassword(passwordNuevo, personaId);
+        const newPasswordHash = await hashPassword(passwordNuevo, personaId);
 
         await docClient.send(new UpdateCommand({
             TableName: process.env.PERSONAS_TABLE || 'Personas',

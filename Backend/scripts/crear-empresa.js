@@ -88,6 +88,13 @@ process.env.TENANTS_TABLE = `${SERVICIO}-tenants-${stage}`;
 process.env.PERSONAS_TABLE = `${SERVICIO}-personas-${stage}`;
 process.env.DOCUMENTS_TABLE = `${SERVICIO}-documents-${stage}`;
 process.env.SES_SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'thecodecookers@gmail.com';
+// La contraseña del administrador se hashea acá, en el equipo del operador, y
+// debe quedar igual que si la hubiera hecho la Lambda: misma pimienta y misma
+// versión. Sin esto el alta produce un hash sin pimienta, que funciona —el hash
+// dice que no la lleva— pero nace obsoleto y anda con menos protección hasta que
+// esa persona entra por primera vez.
+process.env.CREDENCIAL_PEPPER_PARAM = process.env.CREDENCIAL_PEPPER_PARAM || `/${SERVICIO}/${stage}/credencial-pepper`;
+process.env.CREDENCIAL_PEPPER_V = process.env.CREDENCIAL_PEPPER_V || '1';
 
 const { TenantService } = require('../lib/services/TenantService');
 const { PersonaService } = require('../lib/services/PersonaService');

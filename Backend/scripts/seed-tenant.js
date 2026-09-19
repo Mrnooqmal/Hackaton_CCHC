@@ -1,4 +1,25 @@
 /**
+ * FUERA DE SERVICIO. Este script escribe credenciales con el esquema viejo.
+ *
+ * Quedó de la época en que la contraseña era SHA-256 de una pasada, y encima con
+ * un formato (`sha256(pass + salt)`) que ni siquiera coincide con el que el
+ * login sabía leer: los usuarios que sembraba no podían entrar. Ahora el sistema
+ * guarda credenciales con scrypt (`lib/credenciales.js`) y esto volvería a
+ * meter hashes que no sirven.
+ *
+ * Lo reemplazan:
+ *   - `scripts/crear-empresa.js`    empresa + administrador, autorizado por IAM
+ *   - `scripts/sembrar-ambiente.js` lo anterior + catálogo de cargos del DS 44
+ *
+ * Y a propósito ninguno de los dos siembra datos de demostración, que es lo que
+ * hacía este. Se conserva el archivo solo como registro; para borrarlo de veras
+ * hace falta la decisión de quien mantiene el repositorio.
+ */
+
+console.error('\n  seed-tenant.js está fuera de servicio: usa scripts/sembrar-ambiente.js\n');
+process.exit(1);
+
+/**
  * Script de Seed: Crear tenant de prueba con obra y personas
  * 
  * Ejecutar: node scripts/seed-tenant.js --stage dev

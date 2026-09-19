@@ -1,7 +1,9 @@
 const { validate, format, clean } = require('rut.js');
 const crypto = require('crypto');
+const credenciales = require('../credenciales');
 
-// Salt fijo para hasheo de PIN (en producción usar variable de entorno)
+// Sal del token de firma. El hasheo de credenciales ya NO pasa por acá: usa
+// scrypt con sal por hash y pimienta de servidor (`lib/credenciales.js`).
 const PIN_SALT = process.env.PIN_SALT;
 
 /**
@@ -77,41 +79,32 @@ const generateSignatureToken = () => {
 };
 
 /**
- * Hashea un PIN de 4 dígitos
+ * Hashea un PIN de 4 dígitos.
+ *
+ * La función de costo y su formato viven en `lib/credenciales.js`; acá queda
+ * solo la regla de negocio de qué es un PIN válido.
+ *
  * @param {string} pin - PIN de 4 dígitos
- * @param {string} workerId - ID del trabajador (usado como salt adicional)
- * @returns {string} Hash del PIN
+ * @param {string} personaId - ID de la persona, al que queda atada la credencial
+ * @returns {Promise<string>} Hash del PIN, con su algoritmo y parámetros adentro
  */
-const hashPin = (pin, workerId) => {
+const hashPin = async (pin, personaId) => {
     if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
         throw new Error('PIN debe ser de 4 dígitos numéricos');
     }
 
-    return crypto
-        .createHash('sha256')
-        .update(`${pin}-${workerId}-${PIN_SALT}`)
-        .digest('hex');
+    return credenciales.hashear(pin, personaId);
 };
 
 /**
- * Verifica si un PIN coincide con el hash almacenado
- * @param {string} pin - PIN ingresado por el usuario
- * @param {string} storedHash - Hash almacenado del PIN
- * @param {string} workerId - ID del trabajador
- * @returns {boolean}
+ * Verifica si un PIN coincide con el hash almacenado.
+ *
+ * @returns {Promise<boolean>}
  */
-const verifyPin = (pin, storedHash, workerId) => {
-    if (!pin || !storedHash || !workerId) return false;
-
-    try {
-        const inputHash = hashPin(pin, workerId);
-        return crypto.timingSafeEqual(
-            Buffer.from(inputHash, 'hex'),
-            Buffer.from(storedHash, 'hex')
-        );
-    } catch {
-        return false;
-    }
+const verifyPin = async (pin, storedHash, personaId) => {
+    if (!pin || !storedHash || !personaId) return false;
+    const { valido } = await credenciales.verificar(pin, storedHash, personaId);
+    return valido;
 };
 
 /**
@@ -133,41 +126,33 @@ const validatePin = (pin) => {
 };
 
 /**
- * Hashea una contraseña alfanumérica
+ * Hashea una contraseña alfanumérica.
+ *
  * @param {string} password - Contraseña
- * @param {string} userId - ID del usuario
- * @returns {string} Hash de la contraseña
+ * @param {string} personaId - ID de la persona
+ * @returns {Promise<string>} Hash con su algoritmo y parámetros adentro
  */
-const hashPassword = (password, userId) => {
+const hashPassword = async (password, personaId) => {
     if (!password || password.length < 4) {
         throw new Error('La contraseña debe tener al menos 4 caracteres');
     }
 
-    return crypto
-        .createHash('sha256')
-        .update(`${password}-${userId}-${PIN_SALT}`)
-        .digest('hex');
+    return credenciales.hashear(password, personaId);
 };
 
 /**
- * Verifica si una contraseña coincide con el hash almacenado
- * @param {string} password - Contraseña ingresada
- * @param {string} storedHash - Hash almacenado
- * @param {string} userId - ID del usuario
- * @returns {boolean}
+ * Verifica si una contraseña coincide con el hash almacenado.
+ *
+ * Quien además pueda ESCRIBIR debería usar `credenciales.verificar` directo y
+ * mirar `obsoleto`: el ingreso es el único momento en que la contraseña en claro
+ * está disponible para reemplazar un hash viejo por uno al costo vigente.
+ *
+ * @returns {Promise<boolean>}
  */
-const verifyPassword = (password, storedHash, userId) => {
-    if (!password || !storedHash || !userId) return false;
-
-    try {
-        const inputHash = hashPassword(password, userId);
-        return crypto.timingSafeEqual(
-            Buffer.from(inputHash, 'hex'),
-            Buffer.from(storedHash, 'hex')
-        );
-    } catch {
-        return false;
-    }
+const verifyPassword = async (password, storedHash, personaId) => {
+    if (!password || !storedHash || !personaId) return false;
+    const { valido } = await credenciales.verificar(password, storedHash, personaId);
+    return valido;
 };
 
 /**

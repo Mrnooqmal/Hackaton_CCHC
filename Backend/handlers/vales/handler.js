@@ -56,7 +56,7 @@ module.exports.emitir = async (event) => {
             return error('La persona no tiene PIN configurado', 400);
         }
 
-        if (!verifyPin(body.pin, persona._pinHash, persona.personaId)) {
+        if (!await verifyPin(body.pin, persona._pinHash, persona.personaId)) {
             return error('PIN incorrecto', 401);
         }
 

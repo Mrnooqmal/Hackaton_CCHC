@@ -594,6 +594,10 @@ module.exports.updateOnSignature = async (requestId, workerId, signatureId) => {
  *   fechaCreacionOffline: string
  * }
  */
+// Con la función de costo, 20 firmas son ~2,2 s de CPU: cabe con holgura en los
+// 6 s de la Lambda y deja margen para las lecturas y escrituras de cada una.
+const MAX_FIRMAS_POR_LOTE = 20;
+
 module.exports.processOfflineBatch = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
@@ -605,6 +609,15 @@ module.exports.processOfflineBatch = async (event) => {
 
         if (!Array.isArray(body.firmasOffline) || body.firmasOffline.length === 0) {
             return error('Se requiere al menos una firma offline');
+        }
+
+        // Tope del lote, y no es arbitrario: cada firma de este lote verifica un
+        // PIN, y verificar un PIN ahora cuesta ~112 ms de CPU a propósito
+        // (scrypt). Sin tope, un lote grande agota el tiempo de la función a
+        // mitad de camino, con parte de las firmas ya escritas y sin respuesta
+        // para quien sincroniza. Es preferible rechazarlo entero y a tiempo.
+        if (body.firmasOffline.length > MAX_FIRMAS_POR_LOTE) {
+            return error(`Un lote no puede traer más de ${MAX_FIRMAS_POR_LOTE} firmas. Sincroniza en tandas.`, 400);
         }
 
         // Obtener informacion del solicitante
@@ -644,7 +657,7 @@ module.exports.processOfflineBatch = async (event) => {
             }
 
             const { verifyPin, generateSignatureToken } = require('../../lib/utils/validation');
-            const pinValido = verifyPin(pin, persona._pinHash, persona.personaId);
+            const pinValido = await verifyPin(pin, persona._pinHash, persona.personaId);
 
             if (!pinValido) {
                 resultadosFirmas.push({ rut, success: false, error: 'PIN incorrecto' });
