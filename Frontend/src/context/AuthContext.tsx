@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { purgarAlmacenOfflineAntiguo } from '../services/purgaOffline';
 import { EVENTO_SESION_CAIDA, authApi, type User, type SessionInfo, type LoginSuccess } from '../api/client';
 
 export interface TenantOpcion { tenantId: string; tenantNombre: string; rol: string }
@@ -32,15 +33,15 @@ interface AuthContextType {
 /**
  * Borra del dispositivo todo rastro de la sesión.
  *
- * Incluye las firmas sin conexión pendientes, que guardan el PIN EN CLARO de
- * quien firmó (ver services/offlineStore.ts). En un dispositivo compartido de
- * terreno —que es el caso normal— esos PIN quedaban ahí después de cerrar
- * sesión, al alcance del siguiente que lo tomara.
+ * En un equipo compartido de terreno —que es el caso normal— lo que queda en el
+ * navegador después de cerrar sesión queda al alcance del siguiente que lo tome.
+ * Por eso además de la sesión se borran los vales de firma, que son credenciales
+ * de un solo uso a nombre de quien los desbloqueó, y la base del modo sin
+ * conexión anterior, que guardaba PIN en claro.
  *
- * Tiene una consecuencia que conviene tener presente: si quedaban firmas sin
- * sincronizar, se pierden al cerrar sesión. Es deliberado mientras el PIN siga
- * viajando en claro; se revisa cuando el modo sin conexión use un token de un
- * solo uso en vez del PIN.
+ * Tiene una consecuencia deliberada: lo que hubiera quedado sin sincronizar se
+ * pierde. Vale más eso que dejar credenciales de otra persona en un dispositivo
+ * que va a usar alguien más.
  */
 const limpiarDatosLocales = () => {
     localStorage.removeItem('auth_token');
@@ -52,6 +53,7 @@ const limpiarDatosLocales = () => {
     // quienes los desbloquearon: no sobreviven al cierre de sesión en un equipo
     // compartido.
     localStorage.removeItem('offlineVales');
+    purgarAlmacenOfflineAntiguo();
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);

@@ -496,16 +496,6 @@ functions:
           authorizer:
             name: sesionUsuario
 
-  processOfflineBatch:
-    handler: handlers/signature-requests/handler.processOfflineBatch
-    memorySize: 1769   # ver authLogin
-    events:
-      - httpApi:
-          path: /signature-requests/offline-batch
-          method: POST
-          authorizer:
-            name: sesionUsuario
-
   # Activities (Actividades)
   listActivities:
     handler: handlers/activities/handler.list

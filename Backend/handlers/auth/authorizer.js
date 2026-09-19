@@ -62,6 +62,10 @@ module.exports.autorizar = async (event) => {
                 tenantId: sesion.tenantId,
                 rol: persona.rol || '',
                 permisos: permisos.join(','),
+                // Con la contraseña inicial sin cambiar, la sesión existe pero no
+                // habilita nada más que cambiarla. Quien decide es `conSesion`,
+                // porque esta respuesta se cachea por token y sin mirar la ruta.
+                credencialProvisional: String(Boolean(persona.passwordTemporal)),
             },
         };
     } catch (err) {

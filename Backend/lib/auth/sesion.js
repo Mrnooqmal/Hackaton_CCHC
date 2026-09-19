@@ -65,6 +65,40 @@ async function sesionDesdeToken(token) {
 }
 
 /**
+ * Lo único que se puede hacer con una credencial provisional.
+ *
+ * La contraseña inicial son los primeros cuatro dígitos del RUT, y eso es una
+ * decisión tomada a conciencia: en terreno mucha gente no tiene correo, y una
+ * contraseña aleatoria enviada por mail deja a media obra sin poder entrar. Lo
+ * que sostiene la decisión es que esa credencial no sirva para NADA salvo
+ * reemplazarse.
+ *
+ * La restricción vivía solo en el router del frontend, o sea que no existía:
+ * una llamada directa con el token del primer ingreso podía listar el personal,
+ * leer documentos y hasta pedir vales para firmar sin conexión. Comprobado
+ * contra el ambiente de desarrollo antes de escribir esto.
+ *
+ * Va acá y no en el autorizador a propósito: el autorizador cachea su respuesta
+ * 60 segundos **por token**, y la clave de ese caché no incluye la ruta. Una
+ * decisión por ruta tomada allá se aplicaría a la ruta equivocada.
+ */
+const RUTAS_CON_CREDENCIAL_PROVISIONAL = new Set([
+    'POST /auth/change-password',
+    // `me` y `logout` resuelven el token por su cuenta y hoy no pasan por acá.
+    // Quedan declarados igual para que la política esté escrita en un solo lugar:
+    // si alguna vez migran a `conSesion`, no dejan de funcionar en el primer
+    // ingreso sin que nadie entienda por qué.
+    'GET /auth/me',
+    'POST /auth/logout',
+]);
+
+const rutaDe = (event) => {
+    const metodo = event?.requestContext?.http?.method || event?.httpMethod || '';
+    const ruta = (event?.rawPath || event?.path || event?.requestContext?.http?.path || '').split('?')[0];
+    return `${metodo} ${ruta}`;
+};
+
+/**
  * Contexto autenticado de la request.
  *
  * Lo puebla el autorizador de API Gateway. Si no está, esta función corta con
@@ -88,6 +122,16 @@ function conSesion(event) {
         return { ok: false, respuesta: error('No autenticado', 401) };
     }
 
+    // Cierre por omisión: con la contraseña sin cambiar, todo está cerrado salvo
+    // la lista de arriba. Una ruta nueva no queda accesible por olvido.
+    const provisional = String(ctx.credencialProvisional) === 'true';
+    if (provisional && !RUTAS_CON_CREDENCIAL_PROVISIONAL.has(rutaDe(event))) {
+        return {
+            ok: false,
+            respuesta: error('Debes cambiar tu contraseña inicial antes de usar el sistema', 403),
+        };
+    }
+
     return {
         ok: true,
         sesion: {
@@ -95,6 +139,7 @@ function conSesion(event) {
             personaId: ctx.personaId,
             tenantId: ctx.tenantId,
             rol: ctx.rol || null,
+            credencialProvisional: provisional,
             // El autorizador serializa el arreglo porque el contexto de API
             // Gateway solo admite valores escalares.
             permisos: ctx.permisos ? String(ctx.permisos).split(',').filter(Boolean) : [],
@@ -140,6 +185,7 @@ function esDeLaEmpresa(entidad, sesion) {
 }
 
 module.exports = {
+    RUTAS_CON_CREDENCIAL_PROVISIONAL,
     SESSIONS_TABLE,
     TOKEN_INDEX,
     hashToken,

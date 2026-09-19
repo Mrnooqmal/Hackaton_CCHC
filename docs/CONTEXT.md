@@ -42,8 +42,10 @@ documentos firmables con trazabilidad.
 - **axios** para llamadas API (`src/api/*.api.ts`, cliente en `src/api/client.ts`)
 - Estado global vía Context API: `AuthContext`, `BrandContext` (theming por
   tenant), `LayoutContext`, `ObraContext` (obra activa), `ToastContext`
-- Firma **offline**: IndexedDB vía `src/services/offlineStore.ts`, PWA/banner
-  offline (`OfflineBanner.tsx`)
+- Firma **offline**: vales de un solo uso emitidos con red al inicio del turno
+  (`src/hooks/useOfflineSignature.ts`, `localStorage.offlineVales`). El flujo
+  anterior —IndexedDB con el PIN en claro y sincronización en lote— se eliminó;
+  `src/services/purgaOffline.ts` borra esa base en los equipos que la tengan.
 - CSS modular con variables (no framework de UI pesado)
 - Manual de usuario embebido: VitePress en `Frontend/manual-src/`, build a
   `Frontend/public/manual/` (se sirve desde `/manual/` en producción)
@@ -527,7 +529,7 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
 | `auth/` | por-endpoint | login, change/forgot/reset-password, logout, me, validate-token |
 | `documents/` | por-endpoint | CRUD, **nueva-version** (versionado de procedimientos + notificación a la línea de mando, §4.6.1), **corporativo/nueva-version** (versiona las N copias del Reglamento/Política, §4.6.6), assign, sign, sign-bulk, sign-assisted, download-firmado, stamp |
 | `signatures/` | por-endpoint | crear firma, enrolamiento, verify por token, disputas/resolución |
-| `signature-requests/` | por-endpoint | solicitudes de firma, pendientes/historial por worker, offline-batch, stats |
+| `signature-requests/` | por-endpoint | solicitudes de firma, pendientes/historial por worker, stats |
 | `activities/` | por-endpoint | charlas, capacitaciones; planificación mensual (`plan`), edición/cierre/**reasignación de relator** (`patch`), registro de asistencia, respaldo de **evaluaciones** (vía `patch`), stats (ver §4.9) |
 | `ausencias/` | por-endpoint | permisos/ausencias del día por obra/fecha (control de asistencia §6): `POST/GET/DELETE /ausencias` |
 | `scheduler/` | schedule (EventBridge) | Lambda programada (cada 30 min) de alertas de asistencia al inbox: charla vencida sin cerrar y pendientes de firmar a mediodía (ver §4.9) |
@@ -580,15 +582,17 @@ Rutas protegidas (con `ProtectedRoute` + `requiredPermission`):
 - `/cargos-onboarding` (CargosOnboarding — editor de kits DS44 por cargo)
 - `/documents`, `/documents-repository`
 - `/surveys`, `/incidents`, `/activities`
-- `/signature-requests`, `/my-signatures`, `/offline-signatures`
+- `/signature-requests`, `/my-signatures`
+  — `/offline-signatures` se eliminó el 19 de septiembre de 2026 junto con
+    `POST /signature-requests/offline-batch`: recolectaba PIN en claro en el
+    dispositivo y los mandaba en lote. Lo reemplaza el vale de un solo uso.
 - `/inbox`
 - `/mi-empresa` (config empresa: roles, cargos, identidad/branding)
 - `/enroll-me` (auto-enrolamiento), `/crear`, `/settings`, `/change-password`
 
 Componentes de dominio destacados: `SignaturePad`, `PinInput`, `SignatureModal`,
 `FirmaAsistidaModal`, `RiskMatrixVisual`, `MIPERVisual`, `ObraProgressCard`,
-`ObraAplicabilidadKit`, `ObraPlantillasOnboarding`, `OfflineBanner`,
-`WorkerEvidencias`.
+`ObraAplicabilidadKit`, `ObraPlantillasOnboarding`, `WorkerEvidencias`.
 
 > `ObraAplicabilidadKit` y `ObraPlantillasOnboarding` estuvieron **huérfanos** entre
 > los commits `370f20d` y `38894d3`: el backend seguía leyendo

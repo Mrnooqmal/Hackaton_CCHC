@@ -23,7 +23,6 @@ import Unauthorized from './pages/Unauthorized';
 import RegisterAdmin from './pages/RegisterAdmin';
 import SignatureRequests from './pages/SignatureRequests';
 import MySignatures from './pages/MySignatures';
-import OfflineSignatures from './pages/OfflineSignatures';
 import Obras from './pages/Obras';
 import SeleccionObra from './pages/SeleccionObra';
 import ObraNueva from './pages/ObraNueva';
@@ -38,7 +37,6 @@ import CatalogosActividad from './pages/CatalogosActividad';
 import MiEmpresa from './pages/MiEmpresa';
 import Equipo from './pages/Equipo';
 import About from './pages/About';
-import OfflineBanner from './components/OfflineBanner';
 import SuggestionsWidget from './components/SuggestionsWidget';
 import Footer from './components/Footer';
 import { useEffect, lazy, Suspense } from 'react';
@@ -181,7 +179,6 @@ function AppContent() {
       <Route path="/activities" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_VER}><Activities /></ProtectedRoute>} />
       <Route path="/signature-requests" element={<ProtectedRoute><SignatureRequests /></ProtectedRoute>} />
       <Route path="/my-signatures" element={<ProtectedRoute><MySignatures /></ProtectedRoute>} />
-      <Route path="/offline-signatures" element={<ProtectedRoute requiredPermission={PERMISSIONS.FIRMAS_CREAR}><OfflineSignatures /></ProtectedRoute>} />
       <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
       <Route path="/mi-empresa" element={<ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}><MiEmpresa /></ProtectedRoute>} />
@@ -244,7 +241,6 @@ function AppContent() {
       {user && <Sidebar isOpen={isMobileMenuOpen} onClose={closeMobileMenu} />}
       <main className={user ? 'main-content' : 'auth-content'}>
         {user && <Header />}
-        {user && <OfflineBanner />}
         <div className="route-outlet">
           {routes}
         </div>
