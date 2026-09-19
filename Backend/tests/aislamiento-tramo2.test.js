@@ -55,7 +55,14 @@ beforeEach(() => {
     originalSend = docClient.send;
     docClient.send = async (cmd) => {
         const nombre = cmd.constructor.name;
-        if (nombre === 'GetCommand') return { Item: store.item };
+        if (nombre === 'GetCommand') {
+            // Como DynamoDB: la lectura por clave resuelve contra lo que hay en
+            // la tabla. Importa porque los índices ya no proyectan la ficha
+            // entera y `getById` lee el índice y después la tabla.
+            const k = cmd.input?.Key || {};
+            const enTabla = (store.items || []).find((i) => i.PK === k.PK && i.SK === k.SK);
+            return { Item: enTabla || store.item || undefined };
+        }
         if (nombre === 'QueryCommand') return { Items: store.items };
         if (nombre === 'ScanCommand') return { Items: store.items };
         if (nombre === 'UpdateCommand') { store.escrituras.push(cmd.input); return { Attributes: store.item || store.items[0] }; }

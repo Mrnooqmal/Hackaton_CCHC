@@ -85,14 +85,26 @@ class TenantService {
      * Obtener tenant por slug (via GSI)
      */
     async getBySlug(slug) {
+        // El índice proyecta solo sus claves: devuelve dónde está la empresa, no
+        // la empresa. Sus tres usos son comprobaciones de unicidad al dar de alta
+        // —"¿ya existe una empresa con este nombre?"—, así que la lectura de la
+        // ficha ocurre pocas veces al año.
         const result = await this.dynamo.send(new QueryCommand({
             TableName: this.table,
             IndexName: 'slug-index',
             KeyConditionExpression: 'slug = :slug',
-            ExpressionAttributeValues: { ':slug': slug }
+            ExpressionAttributeValues: { ':slug': slug },
+            Limit: 1
         }));
-        if (!result.Items || result.Items.length === 0) return null;
-        return Tenant.fromDynamoItem(result.Items[0]);
+        const clave = (result.Items || [])[0];
+        if (!clave?.PK || !clave?.SK) return null;
+
+        const { GetCommand } = require('@aws-sdk/lib-dynamodb');
+        const res = await this.dynamo.send(new GetCommand({
+            TableName: this.table,
+            Key: { PK: clave.PK, SK: clave.SK }
+        }));
+        return res.Item ? Tenant.fromDynamoItem(res.Item) : null;
     }
 
     /**
@@ -222,17 +234,14 @@ class TenantService {
     }
 
     /**
-     * Listar todos los tenants activos (solo superadmin)
+     * `listByEstado` se eliminó el 19 de septiembre de 2026, junto con el índice
+     * `status-index` en que se apoyaba.
+     *
+     * No tenía un solo llamador. Era el resto de cuando `GET /tenants` listaba la
+     * plataforma entera, que ya se cerró: mantener el índice era conservar una
+     * copia completa de todas las empresas —con sus roles, su configuración y su
+     * identificación tributaria— para una consulta que nadie hace.
      */
-    async listByEstado(estado) {
-        const result = await this.dynamo.send(new QueryCommand({
-            TableName: this.table,
-            IndexName: 'status-index',
-            KeyConditionExpression: 'estado = :estado',
-            ExpressionAttributeValues: { ':estado': estado }
-        }));
-        return (result.Items || []).map(item => Tenant.fromDynamoItem(item));
-    }
 
     /**
      * Buscar tenant por RUT de empresa (scan con filtro)

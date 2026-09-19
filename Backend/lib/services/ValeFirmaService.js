@@ -48,11 +48,10 @@
  */
 
 const crypto = require('crypto');
-const { PutCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 
 const VALES_TABLE = process.env.VALES_TABLE || 'ValesFirma';
-const HASH_INDEX = 'valeHash-index';
 
 /** Vigencia de un vale: un turno. */
 const VIGENCIA_HORAS = 12;
@@ -126,15 +125,22 @@ class ValeFirmaService {
     static async consumir({ vale, personaId, deviceId = null }) {
         if (!vale) return { ok: false, motivo: MOTIVOS.NO_EXISTE };
 
-        const res = await docClient.send(new QueryCommand({
+        // Lectura directa por clave primaria, y consistente.
+        //
+        // Antes esto consultaba un índice `valeHash-index` que yo mismo agregué al
+        // diseñar los vales y que era una copia completa de la tabla con la MISMA
+        // clave: `valeHash` ya es la partición. Además de duplicar hashes de
+        // credenciales sin motivo, tenía una consecuencia real: los índices son de
+        // consistencia eventual, así que un vale recién emitido podía no estar
+        // visible todavía y devolverse como "no existe" a alguien que acababa de
+        // pedirlo.
+        const res = await docClient.send(new GetCommand({
             TableName: VALES_TABLE,
-            IndexName: HASH_INDEX,
-            KeyConditionExpression: 'valeHash = :h',
-            ExpressionAttributeValues: { ':h': hashVale(vale) },
-            Limit: 1,
+            Key: { valeHash: hashVale(vale) },
+            ConsistentRead: true,
         }));
 
-        const registro = (res.Items || [])[0];
+        const registro = res.Item;
         if (!registro) return { ok: false, motivo: MOTIVOS.NO_EXISTE };
         if (registro.personaId !== personaId) return { ok: false, motivo: MOTIVOS.OTRA_PERSONA };
         if (registro.usedAt) return { ok: false, motivo: MOTIVOS.YA_USADO };

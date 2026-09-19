@@ -36,9 +36,11 @@ beforeEach(() => {
         }
         if (nombre === 'PutCommand') { store.firmas.push(input.Item); return {}; }
 
-        if (nombre === 'QueryCommand' && input.IndexName === 'valeHash-index') {
-            const h = input.ExpressionAttributeValues[':h'];
-            return { Items: store.vales.filter((v) => v.valeHash === h) };
+        // El vale se resuelve por clave primaria, no por índice: `valeHash` ES la
+        // partición de la tabla. Este doble falla si alguien vuelve a introducir
+        // un índice sobre la misma clave.
+        if (nombre === 'GetCommand' && input.TableName?.includes('ales')) {
+            return { Item: store.vales.find((v) => v.valeHash === input.Key.valeHash) || undefined };
         }
         if (nombre === 'QueryCommand' && input.IndexName === 'personaId-index') {
             // Idempotencia de FirmaService: sin firmas previas.

@@ -93,14 +93,41 @@ class ObraService {
      * Obtener obra por ID (via GSI directo)
      */
     async getById(obraId) {
+        // Dos pasos, y el índice solo aporta la clave.
+        //
+        // `obraId-index` proyecta únicamente sus claves: no hay una segunda copia
+        // de cada obra viviendo en el índice. Lo que se paga es una lectura extra;
+        // lo que se evita es que cada atributo nuevo de una obra aparezca
+        // duplicado sin que nadie lo decida. Mismo patrón que en personas, y por
+        // la misma razón: **cada índice proyecta sus propias claves, no las de
+        // los demás**, así que de acá sale `PK`/`SK` y la ficha se lee de la tabla.
         const result = await this.dynamo.send(new QueryCommand({
             TableName: this.table,
             IndexName: 'obraId-index',
             KeyConditionExpression: 'obraId = :obraId',
-            ExpressionAttributeValues: { ':obraId': obraId }
+            ExpressionAttributeValues: { ':obraId': obraId },
+            Limit: 1
         }));
-        if (!result.Items || result.Items.length === 0) return null;
-        return Obra.fromDynamoItem(result.Items[0]);
+        const clave = (result.Items || [])[0];
+        if (!clave) return null;
+
+        const item = await this.itemDesdeClave(clave);
+        return item ? Obra.fromDynamoItem(item) : null;
+    }
+
+    /**
+     * Resuelve el elemento completo de la tabla a partir de lo que devuelve un
+     * índice. Público porque hay llamadores que necesitan el elemento crudo y no
+     * el modelo.
+     */
+    async itemDesdeClave(clave) {
+        if (!clave?.PK || !clave?.SK) return null;
+        const { GetCommand } = require('@aws-sdk/lib-dynamodb');
+        const res = await this.dynamo.send(new GetCommand({
+            TableName: this.table,
+            Key: { PK: clave.PK, SK: clave.SK }
+        }));
+        return res.Item || null;
     }
 
     /**

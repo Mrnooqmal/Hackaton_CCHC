@@ -168,3 +168,91 @@ test('la recuperación de contraseña encuentra a la persona por su RUT', async 
     // hubiera fallado, no habría UpdateCommand.
     assert.ok(consultas.includes('UpdateCommand'), 'se registró el token de recuperación');
 });
+
+// ─── Obras y empresas: el mismo criterio, los mismos dos pasos ───────────────
+//
+// `obraId-index` y `slug-index` pasaron a `KEYS_ONLY` por la misma razón que los
+// de personas. Estas pruebas usan un doble que, igual que DynamoDB, devuelve
+// desde el índice SOLO sus claves: si alguien vuelve a leer del índice un
+// atributo que el índice ya no tiene, falla acá.
+
+const { ObraService } = require('../lib/services/ObraService');
+const { TenantService } = require('../lib/services/TenantService');
+
+const obraEnTabla = {
+    PK: 'TENANT#t-empresa-a', SK: 'OBRA#o-1',
+    obraId: 'o-1', tenantId: 't-empresa-a',
+    nombre: 'Edificio Costanera', estado: 'activa', codigo: 'OBRA-001',
+};
+
+const empresaEnTabla = {
+    PK: 'TENANT#t-empresa-a', SK: 'METADATA',
+    tenantId: 't-empresa-a', slug: 'constructora-norte',
+    nombre: 'Constructora Norte', rutEmpresa: '76.111.999-0',
+};
+
+/** Doble que proyecta como el índice real: sus claves y nada más. */
+const soloClaves = (item, propias) => {
+    const proyectado = { PK: item.PK, SK: item.SK };
+    for (const k of propias) proyectado[k] = item[k];
+    return proyectado;
+};
+
+test('una obra se busca por el índice y se lee de la tabla', async () => {
+    const servicio = new ObraService();
+    const original = servicio.dynamo.send;
+    servicio.dynamo.send = async (cmd) => {
+        const nombre = cmd.constructor.name;
+        if (nombre === 'QueryCommand' && cmd.input.IndexName === 'obraId-index') {
+            return { Items: [soloClaves(obraEnTabla, ['obraId'])] };
+        }
+        if (nombre === 'GetCommand') {
+            const k = cmd.input.Key;
+            return { Item: k.PK === obraEnTabla.PK && k.SK === obraEnTabla.SK ? obraEnTabla : undefined };
+        }
+        return {};
+    };
+
+    const obra = await servicio.getById('o-1');
+    servicio.dynamo.send = original;
+
+    assert.equal(obra.obraId, 'o-1');
+    // El nombre NO viaja en el índice: si esto vuelve a estar vacío, alguien
+    // volvió a confiar en la proyección.
+    assert.equal(obra.nombre, 'Edificio Costanera');
+    assert.equal(obra.tenantId, 't-empresa-a', 'la pertenencia se comprueba con esto');
+});
+
+test('una obra que no existe sigue siendo null, no un error', async () => {
+    const servicio = new ObraService();
+    const original = servicio.dynamo.send;
+    servicio.dynamo.send = async () => ({ Items: [] });
+
+    assert.equal(await servicio.getById('no-existe'), null);
+    servicio.dynamo.send = original;
+});
+
+test('la empresa se busca por slug y se lee de la tabla', async () => {
+    const servicio = new TenantService();
+    const original = servicio.dynamo.send;
+    servicio.dynamo.send = async (cmd) => {
+        const nombre = cmd.constructor.name;
+        if (nombre === 'QueryCommand' && cmd.input.IndexName === 'slug-index') {
+            return { Items: [soloClaves(empresaEnTabla, ['slug'])] };
+        }
+        if (nombre === 'GetCommand') return { Item: empresaEnTabla };
+        return {};
+    };
+
+    const tenant = await servicio.getBySlug('constructora-norte');
+    servicio.dynamo.send = original;
+
+    assert.equal(tenant.tenantId, 't-empresa-a');
+    assert.equal(tenant.nombre, 'Constructora Norte');
+});
+
+test('ya no existe listByEstado: su índice se eliminó', () => {
+    // Si alguien lo reintroduce sin recrear el índice, la llamada fallaría en
+    // producción con "index not found" y acá queda dicho por qué no está.
+    assert.equal(typeof new TenantService().listByEstado, 'undefined');
+});

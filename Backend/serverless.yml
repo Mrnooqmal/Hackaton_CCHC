@@ -1266,8 +1266,6 @@ resources:
             AttributeType: S
           - AttributeName: slug
             AttributeType: S
-          - AttributeName: estado
-            AttributeType: S
         KeySchema:
           - AttributeName: PK
             KeyType: HASH
@@ -1279,13 +1277,14 @@ resources:
               - AttributeName: slug
                 KeyType: HASH
             Projection:
-              ProjectionType: ALL
-          - IndexName: status-index
-            KeySchema:
-              - AttributeName: estado
-                KeyType: HASH
-            Projection:
-              ProjectionType: ALL
+              # Ver la nota de obraId-index: solo claves, y la ficha se lee de la
+              # tabla. Sus tres usos son comprobaciones de unicidad al dar de alta.
+              ProjectionType: KEYS_ONLY
+          # `status-index` se eliminó el 19 de septiembre de 2026. Su único
+          # llamador era `TenantService.listByEstado`, que a su vez no tenía
+          # ninguno: quedó de cuando `GET /tenants` listaba la plataforma entera.
+          # Era una copia completa de todas las empresas para una consulta que
+          # nadie hacía.
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
         # bastante más probable que un atacante. Sin esto no hay ninguna vía
@@ -1319,7 +1318,15 @@ resources:
               - AttributeName: obraId
                 KeyType: HASH
             Projection:
-              ProjectionType: ALL
+              # Solo las claves. `ObraService.getById` resuelve la clave acá y lee
+              # la obra de la tabla: un atributo nuevo de una obra no aparece
+              # duplicado en el índice por el solo hecho de agregarlo.
+              #
+              # Cambiar la proyección de un índice NO es una actualización: hay
+              # que borrarlo y crearlo, y DynamoDB admite una sola operación de
+              # índice por tabla y por despliegue. Se hizo en dos pasos, primero
+              # el borrado y después el alta.
+              ProjectionType: KEYS_ONLY
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
         # bastante más probable que un atacante. Sin esto no hay ninguna vía
@@ -1770,13 +1777,12 @@ resources:
           - AttributeName: valeHash
             KeyType: HASH
         GlobalSecondaryIndexes:
-          # Resolución vale -> registro al sincronizar.
-          - IndexName: valeHash-index
-            KeySchema:
-              - AttributeName: valeHash
-                KeyType: HASH
-            Projection:
-              ProjectionType: ALL
+          # No hay índice por `valeHash`: es la clave primaria de la tabla. Hubo
+          # uno —`valeHash-index`, con la misma clave y proyección ALL—, o sea una
+          # copia entera de los hashes de vales, y encima de consistencia
+          # eventual sobre una credencial de un solo uso. Se eliminó el 19 de
+          # septiembre de 2026; la resolución es un `GetCommand` consistente.
+          #
           # Revocación de los vales sin usar de una persona (desvinculación).
           - IndexName: personaId-index
             KeySchema:
