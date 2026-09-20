@@ -4,6 +4,7 @@ const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/clien
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
+const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
 
 class IncidentsRepository {
     constructor() {
@@ -183,14 +184,12 @@ class IncidentsRepository {
             clasificacion: data.clasificacion
                 || (['condicion_subestandar', 'accion_subestandar'].includes(data.tipo) ? 'hallazgo' : 'incidente'),
             gobernanza: data.gobernanza || null,
-            reporteFlash: data.reporteFlash || null,
+            // `reporteFlash` lleva `afectados[]` con nombre y RUT: va aparte.
             centroTrabajo: data.centroTrabajo || '',
-            trabajador: {
-                nombre: data.trabajador?.nombre || '',
-                rut: data.trabajador?.rut || '',
-                genero: data.trabajador?.genero || '',
-                cargo: data.trabajador?.cargo || ''
-            },
+            // El nombre queda en el elemento listado porque la tabla en pantalla
+            // lo muestra; el RUT, el género y el cargo se guardan aparte (ver
+            // `lib/traza-sensible.js`) para que ningún índice los contenga.
+            trabajadorNombre: data.trabajador?.nombre || '',
             fecha: data.fecha || now.split('T')[0],
             hora: data.hora || now.split('T')[1].split('.')[0],
             descripcion: data.descripcion,
@@ -229,6 +228,16 @@ class IncidentsRepository {
             createdAt: now,
             updatedAt: now
         };
+
+        await guardarTraza(this.incidentsTable, 'incidentId', incident.incidentId, {
+            trabajador: {
+                nombre: data.trabajador?.nombre || '',
+                rut: data.trabajador?.rut || '',
+                genero: data.trabajador?.genero || '',
+                cargo: data.trabajador?.cargo || '',
+            },
+            reporteFlash: data.reporteFlash || null,
+        });
 
         await this.dynamo.send(new PutCommand({
             TableName: this.incidentsTable,
@@ -292,7 +301,9 @@ class IncidentsRepository {
             const result = await this.dynamo.send(new ScanCommand({
                 TableName: this.incidentsTable
             }));
-            items = result.Items || [];
+            // Un `Scan` recorre la tabla entera y ve también los elementos con la
+            // parte sensible, que no son incidentes.
+            items = (result.Items || []).filter((i) => !esTraza(i, 'incidentId'));
         }
 
         if (obraId) items = items.filter(item => item.obraId === obraId);
@@ -481,7 +492,8 @@ class IncidentsRepository {
             TableName: this.incidentsTable,
             Key: { incidentId }
         }));
-        return result.Item || null;
+        if (!result.Item) return null;
+        return conTraza(this.incidentsTable, 'incidentId', result.Item);
     }
 
     async get(id) {
@@ -496,7 +508,7 @@ class IncidentsRepository {
             throw new Error('Incidente no encontrado');
         }
 
-        const incident = result.Item;
+        const incident = await conTraza(this.incidentsTable, 'incidentId', result.Item);
         console.log('[GET] Building evidence previews for', (incident.evidencias || []).length, 'items');
         const evidencePreviews = await this.buildEvidencePreviews(incident.evidencias || []);
         console.log('[GET] Evidence previews built:', evidencePreviews.length);
@@ -620,7 +632,9 @@ class IncidentsRepository {
             const result = await this.dynamo.send(new ScanCommand({
                 TableName: this.incidentsTable
             }));
-            items = result.Items || [];
+            // Un `Scan` recorre la tabla entera y ve también los elementos con la
+            // parte sensible, que no son incidentes.
+            items = (result.Items || []).filter((i) => !esTraza(i, 'incidentId'));
         }
         if (obraId) items = items.filter(item => item.obraId === obraId);
         items = items.filter(item => item.fecha && item.fecha.startsWith(mes));
@@ -783,7 +797,9 @@ class IncidentsRepository {
             const result = await this.dynamo.send(new ScanCommand({
                 TableName: this.incidentsTable
             }));
-            items = result.Items || [];
+            // Un `Scan` recorre la tabla entera y ve también los elementos con la
+            // parte sensible, que no son incidentes.
+            items = (result.Items || []).filter((i) => !esTraza(i, 'incidentId'));
         }
 
         if (obraId) items = items.filter(item => item.obraId === obraId);

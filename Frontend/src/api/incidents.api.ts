@@ -48,7 +48,13 @@ export interface Incident {
     reporteFlash?: ReporteFlash | null;
     centroTrabajo: string;
     etapaConstructiva?: string;
-    trabajador: {
+    // Nombre para la tabla en pantalla. Viaja siempre, también en el listado.
+    trabajadorNombre?: string;
+    // Datos personales del accidentado: RUT, género y cargo. **Solo vienen en el
+    // detalle** (`GET /incidents/{id}`), porque en el servidor viven en un
+    // elemento aparte que ningún índice contiene. En el listado es `undefined`:
+    // usa `trabajadorNombre`.
+    trabajador?: {
         nombre: string;
         rut: string;
         genero: string;

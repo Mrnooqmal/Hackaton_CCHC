@@ -802,7 +802,7 @@ export default function Incidents() {
                 inc.fecha,
                 getTipoLabel(inc.tipo),
                 inc.centroTrabajo,
-                inc.trabajador.nombre,
+                (inc.trabajadorNombre || inc.trabajador?.nombre || ''),
                 inc.gravedad,
                 inc.estado,
                 inc.diasPerdidos || 0
@@ -882,7 +882,7 @@ export default function Incidents() {
                                     <td>${inc.fecha}</td>
                                     <td>${getTipoLabel(inc.tipo)}</td>
                                     <td>${inc.centroTrabajo}</td>
-                                    <td>${inc.trabajador.nombre}</td>
+                                    <td>${(inc.trabajadorNombre || inc.trabajador?.nombre || '')}</td>
                                     <td>${inc.gravedad}</td>
                                     <td>${inc.estado.replace('_', ' ')}</td>
                                 </tr>
@@ -2047,19 +2047,19 @@ export default function Incidents() {
                             </div>
 
                             {/* Trabajador afectado */}
-                            {selectedIncident.trabajador.nombre && (
+                            {(selectedIncident.trabajadorNombre || selectedIncident.trabajador?.nombre) && (
                                 <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>Trabajador afectado</div>
                                     <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
                                         <div>
-                                            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{selectedIncident.trabajador.nombre}</div>
-                                            {selectedIncident.trabajador.rut && (
-                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{selectedIncident.trabajador.rut}</div>
+                                            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{selectedIncident.trabajadorNombre || selectedIncident.trabajador?.nombre}</div>
+                                            {selectedIncident.trabajador?.rut && (
+                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{selectedIncident.trabajador?.rut}</div>
                                             )}
                                         </div>
-                                        {selectedIncident.trabajador.cargo && (
+                                        {selectedIncident.trabajador?.cargo && (
                                             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', padding: '3px 8px', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-sm)' }}>
-                                                {selectedIncident.trabajador.cargo}
+                                                {selectedIncident.trabajador?.cargo}
                                             </span>
                                         )}
                                     </div>

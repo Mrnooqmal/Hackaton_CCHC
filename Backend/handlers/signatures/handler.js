@@ -4,6 +4,7 @@ const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { validateRequired, generateSignatureToken, verifyPin, enmascararRut } = require('../../lib/utils/validation');
+const { guardarTraza, conTraza } = require('../../lib/traza-sensible');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const signatureRequests = require('../signature-requests/handler');
 
@@ -150,7 +151,9 @@ module.exports.create = async (event) => {
 
             // Información del firmante
             personaId: inputPersonaId,
-            workerRut: persona.rut,
+            // El RUT no va acá: vive en el elemento aparte, fuera de todo índice
+            // (ver `lib/traza-sensible.js`). El nombre y el cargo sí, porque los
+            // listados y el anexo de firmas los muestran.
             workerNombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
             workerCargo: persona.cargo,
 
@@ -162,10 +165,8 @@ module.exports.create = async (event) => {
             ...fechaHoraChile(now),
             timestamp: now.toISOString(),
 
-            // Metadata
-            ipAddress: event.requestContext?.http?.sourceIp ||
-                event.requestContext?.identity?.sourceIp || 'unknown',
-            userAgent: event.headers?.['user-agent'] || 'unknown',
+            // La IP y el agente de usuario tampoco: son traza de auditoría, no
+            // dato de listado, y ningún flujo los lee de vuelta desde esta tabla.
             metodoValidacion: 'PIN',
             metadata: metadata || null,
 
@@ -180,7 +181,17 @@ module.exports.create = async (event) => {
             createdAt: now.toISOString(),
         };
 
-        // Guardar firma en SignaturesTable
+        const trazaAuditoria = {
+            workerRut: persona.rut,
+            ipAddress: event.requestContext?.http?.sourceIp
+                || event.requestContext?.identity?.sourceIp || 'unknown',
+            userAgent: event.headers?.['user-agent'] || 'unknown',
+        };
+
+        // La traza primero: si falla, no queda una firma sin su respaldo de
+        // auditoría. Al revés sí puede pasar y sería peor.
+        await guardarTraza(SIGNATURES_TABLE, 'signatureId', signatureId, trazaAuditoria);
+
         await docClient.send(
             new PutCommand({
                 TableName: SIGNATURES_TABLE,
@@ -212,12 +223,12 @@ module.exports.create = async (event) => {
                         token: signature.token,
                         personaId: signature.personaId,
                         nombre: signature.workerNombre,
-                        rut: signature.workerRut,
+                        rut: trazaAuditoria.workerRut,
                         tipoFirma: 'trabajador',
                         fecha: signature.fecha,
                         horario: signature.horario,
                         timestamp: signature.timestamp,
-                        ip: signature.ipAddress
+                        ip: trazaAuditoria.ipAddress
                     };
                     const parts = FirmaService.buildFirmaUpdateParts({
                         documentData,
@@ -246,7 +257,7 @@ module.exports.create = async (event) => {
                 signatureId: signature.signatureId,
                 token: signature.token,
                 workerNombre: signature.workerNombre,
-                workerRut: signature.workerRut,
+                workerRut: trazaAuditoria.workerRut,
                 fecha: signature.fecha,
                 horario: signature.horario,
                 requestTitulo: signature.requestTitulo,
@@ -498,6 +509,9 @@ module.exports.verifyByToken = async (event) => {
         const result = await docClient.send(
             new ScanCommand({
                 TableName: SIGNATURES_TABLE,
+                // El filtro por token ya deja fuera los elementos con la traza
+                // (no tienen token), pero se es explícito porque este `Scan`
+                // recorre la tabla entera.
                 FilterExpression: '#token = :token',
                 ExpressionAttributeNames: {
                     '#token': 'token',
@@ -512,14 +526,17 @@ module.exports.verifyByToken = async (event) => {
             return error('Firma no encontrada', 404);
         }
 
-        const signature = result.Items[0];
+        const signature = await conTraza(SIGNATURES_TABLE, 'signatureId', result.Items[0]);
 
         return success({
             verificada: true,
             firma: {
                 signatureId: signature.signatureId,
                 token: signature.token,
-                workerNombre: signature.workerNombre,
+                // `personaNombre` lo escribe FirmaService y `workerNombre` este
+                // handler: sin el alias, la verificación pública mostraba el nombre
+                // vacío en toda firma hecha desde un documento o una actividad.
+                workerNombre: signature.workerNombre || signature.personaNombre,
                 // RUT parcial: ver el comentario del handler.
                 workerRut: enmascararRut(signature.workerRut || signature.personaRut),
                 fecha: signature.fecha,

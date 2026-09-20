@@ -12,6 +12,7 @@ const { GetCommand, PutCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb'
 const { docClient } = require('../clients/dynamodb');
 const { fechaHoraChile } = require('../utils/fechaChile');
 const { generateSignatureToken, verifyPin } = require('../utils/validation');
+const { guardarTraza, conTraza } = require('../traza-sensible');
 
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 
@@ -186,7 +187,9 @@ class FirmaService {
 
             // Identificación (unificada)
             personaId: persona.personaId,
-            personaRut: persona.rut,
+            // El RUT no va en el elemento listado: vive aparte, fuera de todo
+            // índice (ver `lib/traza-sensible.js`). El nombre sí, porque el anexo
+            // de firmas y los listados lo muestran.
             personaNombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
             personaCargo: persona.cargo || '',
             tenantId: tenantId || persona.tenantId,
@@ -203,9 +206,8 @@ class FirmaService {
             ...fechaHoraChile(now),
             timestamp: now.toISOString(),
 
-            // Metadata de auditoría
-            ipAddress: contexto.ipAddress || 'unknown',
-            userAgent: contexto.userAgent || 'unknown',
+            // La IP y el agente de usuario son traza de auditoría y van con el
+            // RUT en el elemento aparte.
             metodoValidacion: estrategia.nombre,
             metadata: metadata || null,
 
@@ -223,13 +225,25 @@ class FirmaService {
             createdAt: now.toISOString()
         };
 
+        const traza = {
+            personaRut: persona.rut,
+            ipAddress: contexto.ipAddress || 'unknown',
+            userAgent: contexto.userAgent || 'unknown',
+        };
+
+        // La traza primero: una firma sin su respaldo de auditoría es peor que
+        // una traza sin su firma.
+        await guardarTraza(SIGNATURES_TABLE, 'signatureId', signatureId, traza);
+
         // Guardar en tabla Signatures (registro inmutable)
         await docClient.send(new PutCommand({
             TableName: SIGNATURES_TABLE,
             Item: firma
         }));
 
-        return firma;
+        // Quien llama recibe la firma COMPLETA: la copia que se embebe en el
+        // documento lleva el RUT y la IP, y se arma en este mismo momento.
+        return { ...firma, ...traza };
     }
 
     /**
