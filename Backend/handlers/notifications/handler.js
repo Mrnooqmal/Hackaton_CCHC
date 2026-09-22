@@ -344,6 +344,92 @@ Este es un mensaje automático. Por favor no respondas a este correo.
 };
 
 /**
+ * Envía el enlace de activación de una empresa (licencia de un solo uso).
+ *
+ * El enlace ES la credencial: quien lo tenga puede dar de alta la empresa. Por
+ * eso el correo dice cuándo vence y que sirve una sola vez, y por eso el enlace
+ * no se guarda en ninguna parte salvo en este mensaje.
+ *
+ * @param {string} email - destinatario, el futuro administrador
+ * @param {string} enlace - URL completa con el token
+ * @param {number} dias - vigencia, para decirla en el cuerpo
+ * @param {string|null} nombreEmpresa - si se prellenó, para personalizar
+ */
+const sendOnboardingLicenseEmail = async (email, enlace, dias, nombreEmpresa = null) => {
+    if (!email) return { sent: false, reason: 'no_email' };
+
+    const para = nombreEmpresa ? ` de <strong>${nombreEmpresa}</strong>` : '';
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;padding:32px;">
+    <tr><td>
+      <div style="font-size:20px;font-weight:700;color:#002855;margin-bottom:4px;">Build &amp; Serve</div>
+      <div style="font-size:13px;color:#6b7280;margin-bottom:24px;">Plataforma de gestión preventiva — DS 44/2024</div>
+
+      <h1 style="font-size:18px;margin:0 0 12px;">Activa la cuenta${para}</h1>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 20px;">
+        Te invitamos a crear la cuenta de tu empresa. Con el botón de abajo vas a
+        completar los datos de la empresa y los tuyos como administrador, y a
+        elegir tu contraseña.
+      </p>
+
+      <p style="margin:0 0 24px;">
+        <a href="${enlace}" style="display:inline-block;background:#002855;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-size:14px;font-weight:600;">Activar mi empresa</a>
+      </p>
+
+      <p style="font-size:13px;line-height:1.6;color:#6b7280;margin:0 0 8px;">
+        El enlace <strong>sirve una sola vez</strong> y vence en ${dias} días.
+        No lo reenvíes: quien lo tenga puede completar el alta.
+      </p>
+      <p style="font-size:12px;color:#9ca3af;word-break:break-all;margin:16px 0 0;">
+        Si el botón no funciona, copia esta dirección en tu navegador:<br>${enlace}
+      </p>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+    const textBody = `
+Build & Serve — Activa la cuenta${nombreEmpresa ? ` de ${nombreEmpresa}` : ''}
+
+Completa los datos de tu empresa y elige tu contraseña en este enlace:
+
+${enlace}
+
+El enlace sirve una sola vez y vence en ${dias} días. No lo reenvíes: quien lo
+tenga puede completar el alta.
+
+---
+Build & Serve — Plataforma de Gestión de Obras
+Este es un mensaje automático. Por favor no respondas a este correo.
+`.trim();
+
+    try {
+        await sesClient.send(new SendEmailCommand({
+            Source: SENDER_EMAIL,
+            Destination: { ToAddresses: [email] },
+            Message: {
+                Subject: { Data: 'Build & Serve — Activa la cuenta de tu empresa', Charset: 'UTF-8' },
+                Body: {
+                    Html: { Data: htmlBody, Charset: 'UTF-8' },
+                    Text: { Data: textBody, Charset: 'UTF-8' },
+                },
+            },
+        }));
+        return { sent: true, email };
+    } catch (err) {
+        console.error('Error enviando la licencia de alta:', err);
+        if (err.name === 'MessageRejected') {
+            return { sent: false, error: 'Email no verificado en SES sandbox', code: 'SANDBOX_RESTRICTION' };
+        }
+        return { sent: false, error: err.message };
+    }
+};
+
+/**
  * POST /notifications/welcome - Enviar email de bienvenida manualmente
  */
 module.exports.sendWelcome = async (event) => {
@@ -383,3 +469,4 @@ module.exports.sendWelcome = async (event) => {
 
 module.exports.sendWelcomeEmail = sendWelcomeEmail;
 module.exports.sendPasswordResetEmail = sendPasswordResetEmail;
+module.exports.sendOnboardingLicenseEmail = sendOnboardingLicenseEmail;

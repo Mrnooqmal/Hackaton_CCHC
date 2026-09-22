@@ -59,6 +59,7 @@ provider:
     SIGNATURES_TABLE: ${self:service}-signatures-${self:provider.stage}
     SESSIONS_TABLE: ${self:service}-sessions-${self:provider.stage}
     VALES_TABLE: ${self:service}-vales-firma-${self:provider.stage}
+    LICENCIAS_TABLE: ${self:service}-licencias-${self:provider.stage}
     SURVEYS_TABLE: ${self:service}-surveys-${self:provider.stage}
     INCIDENTS_TABLE: ${self:service}-incidents-${self:provider.stage}
     DOCUMENTS_TABLE: ${self:service}-documents-${self:provider.stage}
@@ -175,6 +176,8 @@ provider:
             - !Sub ${SessionsTable.Arn}/index/*
             - !GetAtt ValesFirmaTable.Arn
             - !Sub ${ValesFirmaTable.Arn}/index/*
+            # Licencias de alta. Sin `/index/*`: la tabla no tiene índices.
+            - !GetAtt LicenciasTable.Arn
             - !GetAtt SurveysTable.Arn
             - !Sub ${SurveysTable.Arn}/index/*
             - !GetAtt IncidentsTable.Arn
@@ -821,9 +824,39 @@ functions:
   # cabeceras de CORS. Las rutas con método explícito (documents, signatures,
   # activities…) no las necesitan: al no existir ruta OPTIONS, las responde API
   # Gateway por su cuenta.
+  # ── Onboarding con licencia de un solo uso ─────────────────────────────────
+  # Las dos rutas son públicas porque quien las usa todavía no tiene sesión: su
+  # empresa no existe. La credencial es el token del enlace. Están declaradas en
+  # la lista blanca de `tests/rutas-autenticadas.test.js` con su razón, y con
+  # límite de tasa propio (ver RouteSettings más abajo).
+  onboardingValidarLicencia:
+    handler: handlers/onboarding/handler.validarLicencia
+    events:
+      - httpApi:
+          path: /onboarding/licencia/{token}
+          method: GET
+
+  onboardingCompletar:
+    handler: handlers/onboarding/handler.completar
+    # El alta hashea la contraseña del administrador con scrypt: mismo criterio
+    # que el resto de las funciones que verifican credenciales.
+    memorySize: 1769   # ver authLogin
+    events:
+      - httpApi:
+          path: /onboarding/completar
+          method: POST
+
   corsPreflight:
     handler: handlers/cors/handler.preflight
     events:
+      # Onboarding: sin estas dos, el navegador recibe 401 en el preflight y el
+      # formulario falla con "failed to fetch" sin decir por qué. Ya pasó una vez.
+      - httpApi:
+          path: /onboarding/licencia/{token}
+          method: options
+      - httpApi:
+          path: /onboarding/completar
+          method: options
       - httpApi:
           path: /tenants
           method: options
@@ -1032,6 +1065,34 @@ functions:
             name: sesionUsuario
 
 resources:
+  # Límite de tasa. El de la API entera es generoso; el del onboarding no, porque
+  # sus dos rutas son públicas y la de completar crea una empresa. Con esto, un
+  # enlace filtrado no habilita a martillar el alta, y probar tokens al azar deja
+  # de ser gratis.
+  #
+  # Los límites son por ruta y por ambiente, no por origen: API Gateway no
+  # distingue quién llama en una ruta sin autenticar. Lo que se protege es el
+  # sistema, no a un llamante de otro.
+  extensions:
+    HttpApiStage:
+      # Sin esto, CloudFormation actualiza el stage ANTES de crear las rutas y
+      # falla con "Unable to find Route by key POST /onboarding/completar": un
+      # límite de tasa no se puede declarar sobre una ruta que todavía no existe.
+      DependsOn:
+        - HttpApiRouteGetOnboardingLicenciaTokenVar
+        - HttpApiRoutePostOnboardingCompletar
+      Properties:
+        DefaultRouteSettings:
+          ThrottlingBurstLimit: 200
+          ThrottlingRateLimit: 100
+        RouteSettings:
+          'GET /onboarding/licencia/{token}':
+            ThrottlingBurstLimit: 5
+            ThrottlingRateLimit: 2
+          'POST /onboarding/completar':
+            ThrottlingBurstLimit: 3
+            ThrottlingRateLimit: 1
+
   Resources:
     # ==========================================
     # CLAVE PROPIA (KMS)
@@ -1423,6 +1484,9 @@ resources:
               - AttributeName: tenantId
                 KeyType: HASH
             Projection:
+              # PENDIENTE (D-8): el listado de esta tabla dibuja el elemento
+              # entero y no cabe en INCLUDE, que admite 20 atributos como
+              # maximo. Se resuelve con KEYS_ONLY mas lectura en lote.
               ProjectionType: ALL
           # NOTE: obraId-index will be added in a follow-up deploy
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
@@ -1458,7 +1522,13 @@ resources:
               - AttributeName: createdAt
                 KeyType: RANGE
             Projection:
-              ProjectionType: ALL
+              # Lista de PERMITIDOS: lo que se agregue a esta tabla NO entra
+              # al indice salvo que alguien lo decida. Ver decision D-8.
+              ProjectionType: INCLUDE
+              NonKeyAttributes:
+                - userId
+                - userName
+                - source
           # (DynamoDB only allows 1 new GSI per CloudFormation update)
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
@@ -1489,6 +1559,9 @@ resources:
               - AttributeName: tenantId
                 KeyType: HASH
             Projection:
+              # PENDIENTE (D-8): el listado de esta tabla dibuja el elemento
+              # entero y no cabe en INCLUDE, que admite 20 atributos como
+              # maximo. Se resuelve con KEYS_ONLY mas lectura en lote.
               ProjectionType: ALL
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
@@ -1604,6 +1677,9 @@ resources:
               - AttributeName: fecha
                 KeyType: RANGE
             Projection:
+              # PENDIENTE (D-8): el listado de esta tabla dibuja el elemento
+              # entero y no cabe en INCLUDE, que admite 20 atributos como
+              # maximo. Se resuelve con KEYS_ONLY mas lectura en lote.
               ProjectionType: ALL
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
@@ -1633,15 +1709,18 @@ resources:
           - AttributeName: signatureId
             KeyType: HASH
         GlobalSecondaryIndexes:
-          - IndexName: requestId-index
-            KeySchema:
-              - AttributeName: requestId
-                KeyType: HASH
-            Projection:
-              ProjectionType: ALL
           - IndexName: tenantId-index
             KeySchema:
               - AttributeName: tenantId
+                KeyType: HASH
+            Projection:
+              # PENDIENTE (D-8): el listado de esta tabla dibuja el elemento
+              # entero y no cabe en INCLUDE, que admite 20 atributos como
+              # maximo. Se resuelve con KEYS_ONLY mas lectura en lote.
+              ProjectionType: ALL
+          - IndexName: requestId-index
+            KeySchema:
+              - AttributeName: requestId
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
@@ -1680,6 +1759,9 @@ resources:
               - AttributeName: tenantId
                 KeyType: HASH
             Projection:
+              # PENDIENTE (D-8): el listado de esta tabla dibuja el elemento
+              # entero y no cabe en INCLUDE, que admite 20 atributos como
+              # maximo. Se resuelve con KEYS_ONLY mas lectura en lote.
               ProjectionType: ALL
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
@@ -1710,7 +1792,23 @@ resources:
               - AttributeName: tenantId
                 KeyType: HASH
             Projection:
-              ProjectionType: ALL
+              # Lista de PERMITIDOS: lo que se agregue a esta tabla NO entra
+              # al indice salvo que alguien lo decida. Ver decision D-8.
+              ProjectionType: INCLUDE
+              NonKeyAttributes:
+                - titulo
+                - descripcion
+                - obraId
+                - estado
+                - createdBy
+                - audience
+                - tipo
+                - cargo
+                - kitItemKey
+                - stats
+                - recipients
+                - createdAt
+                - updatedAt
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
         # bastante más probable que un atacante. Sin esto no hay ninguna vía
@@ -1748,7 +1846,23 @@ resources:
               - AttributeName: createdAt
                 KeyType: RANGE
             Projection:
-              ProjectionType: ALL
+              # Lista de PERMITIDOS: lo que se agregue a esta tabla NO entra
+              # al indice salvo que alguien lo decida. Ver decision D-8.
+              ProjectionType: INCLUDE
+              NonKeyAttributes:
+                - messageId
+                - senderName
+                - senderRol
+                - type
+                - priority
+                - subject
+                - read
+                - readAt
+                - archivedByRecipient
+                - archivedBySender
+                - linkedEntity
+                - estado
+                - updatedAt
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
         # bastante más probable que un atacante. Sin esto no hay ninguna vía
@@ -1761,6 +1875,36 @@ resources:
     # Reemplaza al PIN guardado en claro en el dispositivo: la persona desbloquea
     # con su PIN, con red, y el dispositivo se queda con vales de un solo uso. Acá
     # solo vive el HASH del vale, igual que con el token de sesión.
+    # Licencias de alta: la invitación de un solo uso con la que una empresa hace
+    # su propio onboarding. Mismo patrón que la recuperación de contraseña y los
+    # vales de firma: el enlace existe en el correo de quien lo recibe, acá vive
+    # solo su hash.
+    #
+    # Sin índices a propósito. El consumo resuelve por clave primaria —que es el
+    # hash del token— y el listado del operador recorre la tabla entera, que va a
+    # tener decenas de elementos. Un índice acá sería una segunda copia de datos
+    # de contacto para ahorrar una operación que nadie hace en caliente.
+    LicenciasTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.LICENCIAS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: licenciaHash
+            AttributeType: S
+        KeySchema:
+          - AttributeName: licenciaHash
+            KeyType: HASH
+        TimeToLiveSpecification:
+          # Bastante después de vencer: una licencia vencida tiene que poder
+          # explicarse ("este enlace venció el día tal"), no desaparecer.
+          AttributeName: ttl
+          Enabled: true
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
     ValesFirmaTable:
       Type: AWS::DynamoDB::Table
       DeletionPolicy: ${self:custom.deletionPolicy}
@@ -1777,19 +1921,16 @@ resources:
           - AttributeName: valeHash
             KeyType: HASH
         GlobalSecondaryIndexes:
-          # No hay índice por `valeHash`: es la clave primaria de la tabla. Hubo
-          # uno —`valeHash-index`, con la misma clave y proyección ALL—, o sea una
-          # copia entera de los hashes de vales, y encima de consistencia
-          # eventual sobre una credencial de un solo uso. Se eliminó el 19 de
-          # septiembre de 2026; la resolución es un `GetCommand` consistente.
-          #
-          # Revocación de los vales sin usar de una persona (desvinculación).
           - IndexName: personaId-index
             KeySchema:
               - AttributeName: personaId
                 KeyType: HASH
             Projection:
-              ProjectionType: ALL
+              # Lista de PERMITIDOS: lo que se agregue a esta tabla NO entra
+              # al indice salvo que alguien lo decida. Ver decision D-8.
+              ProjectionType: INCLUDE
+              NonKeyAttributes:
+                - usedAt
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true

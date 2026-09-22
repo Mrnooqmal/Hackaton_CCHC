@@ -30,6 +30,8 @@ const PUBLICAS = {
     'POST /auth/reset-password': 'Se autentica con el token de un solo uso del correo.',
     'POST /auth/validate-token': 'Comprueba un token; el token es la credencial.',
     'GET /signatures/verify/{token}': 'Verificación pública de una firma. El token del enlace es la credencial.',
+    'GET /onboarding/licencia/{token}': 'Alta de una empresa: quien la usa todavía no tiene sesión porque su empresa no existe. El token de la licencia es la credencial, y la respuesta trae solo el correo fijado y el prellenado.',
+    'POST /onboarding/completar': 'Cierra el alta consumiendo la licencia de un solo uso. Misma razón: no puede exigir una sesión que no existe todavía. Con límite de tasa propio en RouteSettings.',
 };
 
 /**
