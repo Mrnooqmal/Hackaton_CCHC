@@ -65,7 +65,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 2.4 | El hash nunca se expone en la API | **Implementado** | Campo interno; la respuesta solo informa si hay PIN configurado. `Backend/lib/models/Persona.js` |
 | 2.5 | Mensajes de error genéricos ante credencial inválida | **Implementado** | No revelan si falló el PIN, el estado de la persona u otro. |
 | 2.6 | **Función de derivación con costo para el PIN** | **Implementado** | scrypt `N=2^15, r=8, p=1`; ~112 ms por verificación, medidos en la Lambda. Cada hash guarda su algoritmo y sus parámetros, y se actualiza solo al usarse. Ver D-7. |
-| 2.7 | **Límite de intentos de PIN** | **Pendiente** | No existe bloqueo por intentos fallidos. Con 2.6 implementado, es la defensa que falta. Ver hallazgo crítico H-2. |
+| 2.7 | **Límite de intentos de PIN** | **Implementado** | Contador por persona, bloqueo progresivo (1/5/15/60 min), reseteo en el primer acierto. Ver D-9. |
 | 2.8 | **Throttling a nivel de API** | **Pendiente** | Sin plan de uso ni límite de tasa configurado en `Backend/serverless.yml`. |
 | 2.9 | El token de sesión se almacena hasheado | **Implementado** | Se guarda `sha256(token)` y se resuelve por índice. Antes se guardaba el token en claro: un volcado de la tabla de sesiones era suplantación inmediata de cualquier usuario. `Backend/lib/auth/sesion.js` |
 | 2.10 | El PIN ya no se guarda en el dispositivo (modo sin conexión) | **Implementado** | Las firmas sin red se acreditan con un **vale de un solo uso** que la persona desbloquea con su PIN al inicio del turno, con red; el dispositivo guarda vales, no el PIN, y el servidor solo guarda el hash del vale. `Backend/lib/services/ValeFirmaService.js`, `Backend/tests/vale-firma.test.js`. Ver D-3 para las dos decisiones de diseño (vale vencido y equipo que pierde su identificador). |
@@ -385,6 +385,106 @@ a cada request.
 
 **Pendiente asociado:** H-2 (límite de intentos) es ahora la defensa que falta.
 
+### D-8. Dato sensible fuera del elemento que copian los índices
+**Estado: implementado el 19 de septiembre de 2026, en dev y prod**
+
+Al reproyectar los índices de listado apareció un límite que no tiene vuelta:
+`INCLUDE` en DynamoDB admite 20 atributos como máximo, y además solo proyecta
+atributos de PRIMER NIVEL — no se puede incluir `trabajador.nombre` y dejar
+fuera `trabajador.rut`, el mapa va entero o no va. En incidentes y firmas el
+dato sensible vive dentro de esos mapas, así que `INCLUDE` no era una opción
+para sacarlo del índice: o se proyectaba el RUT igual, o no cabía la tabla.
+
+**La solución:** el dato sensible se guarda en un elemento APARTE de la misma
+tabla, con clave derivada (`<id>#traza`) y **sin `tenantId` ni ningún otro
+atributo de clave de índice**. Un índice global de DynamoDB solo indexa los
+elementos que tienen su atributo de clave, así que ese elemento aparte no
+aparece en NINGÚN índice — propiedad de "índice disperso" usada a propósito, no
+un efecto colateral.
+
+En **incidentes**, `trabajador` (nombre, RUT, género, cargo) y `reporteFlash`
+(que lleva `afectados[]` con RUT) salieron del elemento listado; queda
+`trabajadorNombre` de primer nivel para la tabla en pantalla. En **firmas**,
+salieron el RUT, la IP y el agente de usuario; queda el nombre para el anexo.
+
+**El costo, medido y no estimado:** prod tenía cero incidentes y cero firmas
+fuera del enrolamiento de prueba del administrador. La migración fue un script
+que no tenía nada que migrar — la última vez que ese cambio de modelo sale
+gratis, porque los dos son registros con valor probatorio y en unos meses
+migrar filas ya escritas es una conversación distinta.
+
+**Lo que cuesta en cada lectura:** una escritura más al crear, una lectura más
+al abrir el detalle (`lib/traza-sensible.js`, función `conTraza`). Si esa
+lectura falla, el detalle se abre igual y sin la parte sensible, con marcador
+medible (`lib/degradacion.js`) — un incidente que no se puede abrir es peor que
+uno incompleto. Quien lee para LISTAR nunca une las dos partes; ahí está la
+ganancia: ningún listado paga ese costo y ningún índice contiene el dato.
+
+**Pendiente asociado:** documentos y solicitudes de firma también llevan RUT en
+el elemento listado (`asignaciones[]`, `solicitanteRut`, `trabajadores[]`) y
+siguen en `ProjectionType: ALL` sin resolver — están en la lista de las cinco
+tablas que tampoco caben en `INCLUDE` por volumen de atributos, no por mapas
+anidados. Se retoma junto con el cifrado de campo del RUT, porque en ese
+momento de todas formas se toca cómo se guarda y se busca el RUT.
+
+**Ubicación:** `Backend/lib/traza-sensible.js`, `Backend/handlers/incidents-module/incidents.repository.js`, `Backend/handlers/signatures/handler.js`, `Backend/lib/services/FirmaService.js`
+
+### D-9. Límite de intentos de PIN: contador por persona, bloqueo progresivo
+**Estado: implementado el 22 de septiembre de 2026, en dev y prod**
+
+Con D-7 (scrypt) cada intento de PIN ya cuesta ~112 ms de CPU del servidor, pero
+eso solo hace lenta la fuerza bruta, no la impide: recorrer los 10.000 PIN de
+cuatro dígitos seguía siendo cuestión de minutos de tráfico visible, y nadie
+está mirando ese tráfico todavía. Faltaba un tope real.
+
+**Por qué el contador es por persona, y no por sesión ni por IP.** Los cuatro
+lugares donde se verifica un PIN (vales, firma directa, cambio de PIN,
+enrolamiento) exigen sesión, y actuar sobre el PIN de OTRA persona exige además
+el permiso de firma asistida. El atacante más probable no es un desconocido
+—eso ya lo detiene el autorizador— sino alguien con sesión válida probando el
+PIN de una persona puntual de su cuadrilla, o una sesión robada. La persona
+atacada es siempre la misma aunque la sesión cambie, y en terreno la IP no
+discrimina nada: sale toda por la misma NAT de la obra.
+
+**La progresión**, deliberadamente generosa antes del primer bloqueo — es un
+teclado numérico usado con guantes o bajo lluvia:
+
+| Fallo consecutivo | Bloqueo |
+|---|---|
+| 1–4 | nada, solo cuenta |
+| 5 | 1 minuto |
+| 10 | 5 minutos |
+| 15 | 15 minutos |
+| 20 y cada 5 en adelante | 60 minutos (tope) |
+
+El contador se resetea a cero en el primer PIN correcto. Agotar el espacio
+completo bajo esta progresión —2.000 ciclos de 5 intentos, casi todos pagando
+el tope de 60 min— toma semanas, no minutos.
+
+**Mientras está bloqueada:** un intento se rechaza sin correr scrypt y sin
+tocar el contador ni el bloqueo. Incrementar durante el bloqueo dejaría que
+alguien alargue el castigo de otra persona a pura fuerza de peticiones vacías.
+
+**Hacia afuera, el bloqueo SÍ se comunica** — distinto del login o la
+recuperación de contraseña. Ahí la ambigüedad protege contra enumerar cuentas
+que no se sabe si existen; acá quien prueba el PIN ya sabe que la persona
+existe (la eligió de su propia cuadrilla, o es la suya), así que decir
+"inténtalo de nuevo en N minutos" no filtra nada nuevo y sí es información
+operativa legítima para quien solo se equivocó.
+
+**El marcador es una métrica separada de `FallosDependencia`, a propósito:**
+esa alarma dispara con un solo evento porque un fallo de dependencia nunca es
+esperable; un bloqueo de PIN sí lo es (alguien se equivoca un mal día), así que
+comparten el mecanismo (EMF, sin filtro por log group) pero no la alarma. La de
+bloqueos (`BuildAndServe/PinBloqueado`) dispara a partir de 5 bloqueos en 5
+minutos, agregado a nivel de empresa/stage — verificado end-to-end en dev con
+seis intentos reales contra el endpoint (4 fallos sin castigo, bloqueo al 5º
+con el mensaje correcto, rechazo sin gastar scrypt durante la ventana, PIN
+correcto aceptado y contador en cero al vencer, métrica materializada en
+CloudWatch).
+
+**Ubicación:** `Backend/lib/limitePin.js`, enganchado en `handlers/vales/handler.js`, `handlers/signatures/handler.js` y `lib/services/PersonaService.js` (`setPin`, `completarEnrolamiento`)
+
 ---
 
 ## 4. Hallazgos priorizados
@@ -410,7 +510,7 @@ nadie y sin invalidar ninguna credencial existente.
 **Ubicación:** `Backend/lib/credenciales.js`, `Backend/lib/utils/validation.js`
 
 ### H-2. No hay límite de intentos de PIN
-**Severidad: alta**
+**Severidad: alta — RESUELTO el 22 de septiembre de 2026 (ver D-9)**
 
 Nada impide probar las 10.000 combinaciones contra el endpoint de firma.
 
@@ -422,8 +522,19 @@ contra la API en línea siguen sin existir ni contador de intentos ni bloqueo. A
 siguen siendo alcanzables; lo que antes costaba segundos ahora cuesta horas de
 tráfico visible, que es mejor, pero no es un límite.
 
-**Corrección:** contador de intentos fallidos por persona con bloqueo temporal progresivo, y
-plan de uso con límite de tasa en API Gateway.
+**Corregido:** contador de intentos fallidos por persona (no por sesión ni por
+IP: la sesión que ataca puede cambiar, la persona atacada es siempre la misma, y
+en terreno la IP no discrimina nada porque sale toda por la misma NAT de la
+obra). Bloqueo progresivo — 1, 5, 15 y 60 minutos, tope en el cuarto nivel — con
+reseteo en el primer PIN correcto. Cubre los cuatro lugares donde se verifica un
+PIN: vales, firma directa, cambio de PIN y enrolamiento.
+
+A diferencia del login o la recuperación de contraseña, el bloqueo **sí se
+comunica** hacia afuera: quien lo prueba ya sabe que la persona existe, así que
+la ambigüedad no protege nada acá y sí es información operativa legítima para
+quien solo se equivocó.
+
+**Ubicación:** `Backend/lib/limitePin.js`
 
 ### H-3. Sin recuperación a un punto en el tiempo
 **Severidad: media**

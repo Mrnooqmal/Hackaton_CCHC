@@ -9,6 +9,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
+const { verificarConLimiteOLanzar } = require('../limitePin');
 const { fechaHoraChile } = require('../utils/fechaChile');
 const { Persona, ROLES } = require('../models/Persona');
 const {
@@ -500,8 +501,8 @@ class PersonaService {
         // Verificacion opcional del PIN actual: si el cliente lo envia, se valida.
         // No es obligatorio, lo que permite la actualizacion directa del PIN.
         if (yaTienePin && pinActual) {
-            const pinValido = await verifyPin(pinActual, persona._pinHash, personaId);
-            if (!pinValido) throw new Error('PIN actual incorrecto');
+            const ok = await verificarConLimiteOLanzar(persona, pinActual, verifyPin);
+            if (!ok) throw new Error('PIN actual incorrecto');
         }
 
         // Validacion de duplicados: el nuevo PIN no puede ser identico al registrado.
@@ -541,7 +542,7 @@ class PersonaService {
         if (persona.estaEnrolado()) throw new Error('La persona ya esta enrolada');
 
         // Verificar PIN
-        const pinValido = await verifyPin(pin, persona._pinHash, personaId);
+        const pinValido = await verificarConLimiteOLanzar(persona, pin, verifyPin);
         if (!pinValido) throw new Error('PIN incorrecto');
 
         const now = new Date();

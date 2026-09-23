@@ -5,6 +5,7 @@ const { success, error, created } = require('../../lib/utils/response');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { validateRequired, generateSignatureToken, verifyPin, enmascararRut } = require('../../lib/utils/validation');
 const { guardarTraza, conTraza } = require('../../lib/traza-sensible');
+const { verificarConLimite } = require('../../lib/limitePin');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const signatureRequests = require('../signature-requests/handler');
 
@@ -92,9 +93,9 @@ module.exports.create = async (event) => {
             return error('Persona no tiene PIN configurado', 400);
         }
 
-        const pinValido = await verifyPin(pin, persona._pinHash, inputPersonaId);
-        if (!pinValido) {
-            return error('PIN incorrecto', 401);
+        const chequeo = await verificarConLimite(persona, pin, verifyPin);
+        if (!chequeo.ok) {
+            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : 401);
         }
 
         // Verificar que la solicitud existe y el trabajador está incluido

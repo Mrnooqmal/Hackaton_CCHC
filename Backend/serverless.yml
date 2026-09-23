@@ -1289,6 +1289,35 @@ resources:
         AlarmActions:
           - !Ref AlertasOperacionTopic
 
+    # Separada de FallosDependenciaAlarm a propósito (H-2, lib/limitePin.js): un
+    # bloqueo de PIN es esperable —alguien se equivoca un mal día— mientras que
+    # un fallo de dependencia nunca lo es. Comparten el mecanismo (EMF, sin
+    # filtro por log group) pero no el umbral: acá dispara con un volumen que ya
+    # no se explica por errores de tecleo sueltos, agregado a nivel de empresa
+    # (la métrica no lleva dimensión por persona).
+    PinBloqueadoAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-pin-bloqueado-${self:provider.stage}
+        AlarmDescription: >-
+          Varias cuentas —o una varias veces— alcanzaron el bloqueo por intentos
+          fallidos de PIN en poco tiempo. Revisar los logs filtrando por
+          PIN_BLOQUEADO: puede ser alguien recorriendo PIN ajenos con una sesión
+          válida, o un dispositivo compartido con un problema real de teclado.
+        Namespace: BuildAndServe
+        MetricName: PinBloqueado
+        Dimensions:
+          - Name: stage
+            Value: ${self:provider.stage}
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 5
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - !Ref AlertasOperacionTopic
+
     # ==========================================
     # SNS
     # ==========================================

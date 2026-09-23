@@ -14,6 +14,7 @@ const { PersonaService } = require('../../lib/services/PersonaService');
 const { ValeFirmaService } = require('../../lib/services/ValeFirmaService');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
+const { verificarConLimite } = require('../../lib/limitePin');
 const { PERMISSIONS } = require('../../lib/permissions');
 
 /**
@@ -56,8 +57,9 @@ module.exports.emitir = async (event) => {
             return error('La persona no tiene PIN configurado', 400);
         }
 
-        if (!await verifyPin(body.pin, persona._pinHash, persona.personaId)) {
-            return error('PIN incorrecto', 401);
+        const chequeo = await verificarConLimite(persona, body.pin, verifyPin);
+        if (!chequeo.ok) {
+            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : 401);
         }
 
         const { vales, expiraEn, vigenciaHoras } = await ValeFirmaService.emitir({

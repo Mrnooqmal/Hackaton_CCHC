@@ -2250,8 +2250,15 @@ module.exports.personasHandler = async (event) => {
                 return error('No tienes permiso para configurar el PIN de otra persona', 403);
             }
 
-            const result = await personaService.setPin(tenantId, personaId, body.pin, body.pinActual);
-            return success(result);
+            try {
+                const result = await personaService.setPin(tenantId, personaId, body.pin, body.pinActual);
+                return success(result);
+            } catch (err) {
+                // El límite de intentos (H-2) responde 423, no el 500 genérico
+                // del catch de más abajo: es un rechazo esperado, no una falla.
+                if (err.codigo === 'PIN_BLOQUEADO') return error(err.message, 423);
+                throw err;
+            }
         }
 
         // POST /personas/{id}/enrolamiento — Completar enrolamiento.
@@ -2265,10 +2272,15 @@ module.exports.personasHandler = async (event) => {
             if (objetivoEnrol.personaId !== sesion.personaId && !puede(PERMISSIONS.PERSONAS_CREAR)) {
                 return error('No tienes permiso para completar el enrolamiento de otra persona', 403);
             }
-            const result = await personaService.completarEnrolamiento(
-                tenantId, personaId, body.pin, event
-            );
-            return success(result);
+            try {
+                const result = await personaService.completarEnrolamiento(
+                    tenantId, personaId, body.pin, event
+                );
+                return success(result);
+            } catch (err) {
+                if (err.codigo === 'PIN_BLOQUEADO') return error(err.message, 423);
+                throw err;
+            }
         }
 
         // POST /personas/{id}/reset-password — Resetear contraseña.

@@ -100,6 +100,13 @@ class Persona {
         this._passwordHash = data.passwordHash || null;
         this._pinHash = data.pinHash || null;
         this.pinCreatedAt = data.pinCreatedAt || null;
+        // Límite de intentos de PIN (H-2). No es un dato de negocio de la
+        // persona: es el estado del contador de `lib/limitePin.js`. Se guarda
+        // acá y no en tabla aparte porque el bloqueo tiene que leerse en el
+        // mismo `getById` que ya carga `_pinHash` para verificar — una tabla
+        // aparte sería una lectura más en cada intento de firma.
+        this.pinIntentosFallidos = data.pinIntentosFallidos || 0;
+        this.pinBloqueadaHasta = data.pinBloqueadaHasta || null;
         this.passwordTemporal = data.passwordTemporal || false;
 
         // Enrolamiento
@@ -264,6 +271,8 @@ class Persona {
             passwordHash: this._passwordHash,
             pinHash: this._pinHash,
             pinCreatedAt: this.pinCreatedAt,
+            pinIntentosFallidos: this.pinIntentosFallidos,
+            pinBloqueadaHasta: this.pinBloqueadaHasta,
             passwordTemporal: this.passwordTemporal,
             habilitado: this.habilitado,
             firmaEnrolamiento: this.firmaEnrolamiento,
