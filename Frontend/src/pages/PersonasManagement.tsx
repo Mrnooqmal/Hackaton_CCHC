@@ -12,6 +12,7 @@ import { getCargoLabel } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { Select } from '../components/ui';
 import ConfirmModal from '../components/ConfirmModal';
+import ObraEquipoPanel from '../components/ObraEquipoPanel';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,21 +39,22 @@ function PersonaAvatar({ p, size = 40 }: { p: PersonaResponse; size?: number }) 
 
 export default function PersonasManagement() {
     const { user, hasPermission } = useAuth();
-    const { selectedObraId, selectedObra } = useObraContext();
+    const { selectedObraId, selectedObra, puedeGestionarEmpresa } = useObraContext();
     const { options: cargoOptions } = useCargoCatalog();
     const navigate = useNavigate();
 
     const tenantId = user?.tenantId || user?.empresaId || localStorage.getItem('tenant_id') || '';
-    const isAdmin = user?.rol === 'admin';
     // Con una obra activa la página es el equipo de esa obra, sea cual sea el rol:
-    // al entrar se eligió trabajar en ella. El directorio completo de la empresa
-    // solo existe en la vista de empresa, y solo para el admin.
+    // al entrar se eligió trabajar en ella, y el equipo se organiza por cuadrillas.
+    // El directorio completo de la empresa —donde se da de alta gente nueva— vive
+    // en la vista de empresa: sumar a alguien a una obra es elegirlo de ahí.
     const isObraScoped = Boolean(user && selectedObraId);
-    const isMissingObra = !selectedObraId && !isAdmin;
+    // Sin obra y sin poder administrar la empresa no hay nada que listar: esa
+    // persona entró a operar, y su plantel es el de una obra que aún no eligió.
+    const isMissingObra = !selectedObraId && !puedeGestionarEmpresa;
     const canCreatePersonas = hasPermission(PERMISSIONS.PERSONAS_CREAR);
     const canBulkUpload = hasPermission(PERMISSIONS.PERSONAS_CREAR);
     const canVerDetalle = hasPermission(PERMISSIONS.PERSONAS_DETALLE);
-    const canManageObra = hasPermission(PERMISSIONS.OBRAS_DETALLE);
 
     const [personas, setPersonas] = useState<PersonaResponse[]>([]);
     const [loading, setLoading] = useState(true);
@@ -68,20 +70,24 @@ export default function PersonasManagement() {
     const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string }>({ isOpen: false, title: '', message: '' });
     const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
+    // Los roles solo se usan en el filtro y la columna del directorio de empresa;
+    // el panel de obra trae los suyos.
     useEffect(() => {
-        if (!tenantId) return;
+        if (!tenantId || isObraScoped) return;
         tenantsApi.get(tenantId).then(res => {
             if (res.success && res.data?.roles?.length) setTenantRoles(res.data.roles);
         }).catch(() => {});
-    }, [tenantId]);
+    }, [tenantId, isObraScoped]);
 
     const fetchPersonas = async () => {
-        if (!tenantId || isMissingObra) { setPersonas([]); setLoading(false); return; }
+        // En ámbito obra el listado lo trae ObraEquipoPanel (necesita asignaciones
+        // y cuadrillas, no solo el plantel): pedirlo aquí sería la misma llamada
+        // por duplicado.
+        if (!tenantId || isMissingObra || isObraScoped) { setPersonas([]); setLoading(false); return; }
         setLoading(true);
         try {
             const filters: any = {};
             if (filterRol) filters.rol = filterRol;
-            if (isObraScoped && selectedObraId) filters.obraId = selectedObraId;
             const res = await personasApi.list(tenantId, filters);
             if (res.success && res.data) setPersonas(res.data.personas || []);
             else setError(res.error || 'Error al cargar personas');
@@ -100,9 +106,10 @@ export default function PersonasManagement() {
         return matchesSearch && matchesCargo;
     });
 
-    const pageTitle = isObraScoped ? 'Equipo de Obra' : 'Personas';
+    const obraNombre = selectedObra?.nombre || selectedObra?.codigo || 'la obra activa';
+    const pageTitle = isObraScoped ? 'Equipo de obra' : 'Personas';
     const pageDescription = isObraScoped
-        ? selectedObra ? `Personas asignadas a ${selectedObra.nombre}.` : 'Personas asignadas a la obra activa.'
+        ? `Cuadrillas, roles, cargos y onboarding del equipo de ${obraNombre}.`
         : 'Directorio de personas, roles y accesos de la empresa.';
 
     // DataTable columns
@@ -229,6 +236,15 @@ export default function PersonasManagement() {
         />
     );
 
+    if (isObraScoped && selectedObraId) {
+        return (
+            <div className="page-content">
+                <PageHeader banner title={pageTitle} description={pageDescription} />
+                <ObraEquipoPanel obraId={selectedObraId} />
+            </div>
+        );
+    }
+
     return (
         <>
             <div className="page-content">
@@ -257,16 +273,6 @@ export default function PersonasManagement() {
 
                 {isMissingObra && (
                     <AlertBanner variant="warning" message="No hay una obra activa. Para ver y gestionar el equipo asignado, usa «Cambiar de obra», en el botón de sesión al final del menú lateral." />
-                )}
-
-                {selectedObraId && (
-                    <AlertBanner variant="info" message="Las nuevas personas se crean a nivel empresa. Para sumar personas a esta obra, asígnalas desde la ficha de la obra.">
-                        {canManageObra && (
-                            <Link to={`/obras/${selectedObraId}`} className="btn btn-secondary btn-sm" style={{ marginTop: 'var(--space-2)' }}>
-                                Ir a Gestionar Obra
-                            </Link>
-                        )}
-                    </AlertBanner>
                 )}
 
                 {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}

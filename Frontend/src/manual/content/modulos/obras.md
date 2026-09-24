@@ -111,16 +111,17 @@ verás *"Creando…"*). Si prefieres descartar, usa **Cancelar**.
 ## Abrir la ficha de una obra
 
 Haz clic sobre cualquier obra del listado para abrir su **ficha de detalle**. Dentro
-encontrarás tres pestañas en la parte superior:
+encontrarás dos pestañas en la parte superior:
 
-![Ficha de detalle de una obra mostrando las pestañas Resumen, DS44 — Cumplimiento y Equipo](/img/obras/ficha-detalle.png)
+![Ficha de detalle de una obra mostrando las pestañas Resumen y DS44 — Cumplimiento](/img/obras/ficha-detalle.png)
 
 - **Resumen** — una vista rápida del estado de la obra: firmas pendientes, documentos
   DS44 pendientes, actividades del mes e incidentes abiertos.
 - **DS44 — Cumplimiento** — el corazón de la obra. Aquí gestionas todo el cumplimiento
   normativo paso a paso (ver más abajo).
-- **Equipo (N)** — las personas asignadas a la obra. El número entre paréntesis indica
-  cuántas hay activas. Desde aquí asignas o quitas trabajadores y revisas su onboarding.
+
+El equipo de la obra no vive en esta ficha: está en el módulo **Personas**, que al entrar
+con una obra elegida muestra exactamente su equipo (ver más abajo).
 
 > Junto al nombre de la obra hay un pequeño botón para **copiar su identificador**.
 > Solo lo necesitarás si algún día el soporte te lo pide; en el uso diario puedes ignorarlo.
@@ -150,13 +151,20 @@ pendientes obligatorios**, para que no queden vacíos de cumplimiento.
 
 ## Asignar personas a la obra
 
-1. Abre la ficha de la obra y entra a la pestaña **Equipo**.
-2. Usa la opción de **asignar trabajadores** para sumar personas de tu empresa a la obra.
-3. Al asignar a alguien, podrás indicar su **cargo** dentro de esta obra. El cargo define
-   qué documentos y capacitaciones de onboarding necesitará esa persona.
+1. Con la obra elegida, entra a **Personas** desde el menú lateral. Verás el equipo de la
+   obra agrupado por **equipos**: el de gestión, la cuadrilla de cada supervisor y quienes
+   todavía no tienen cuadrilla.
+2. En **Agregar personas** aparecen quienes ya están registradas en la empresa y aún no
+   están en esta obra. Elígelas ahí (o arrástralas al equipo que corresponda). Para dar de
+   alta a alguien que no existe todavía, entra en la vista de empresa: el alta es un acto
+   de empresa, no de obra.
+3. Al sumar a alguien podrás indicar su **cargo** dentro de esta obra. El cargo define qué
+   documentos y capacitaciones de onboarding necesitará esa persona.
 
-Cada trabajador asignado muestra su **avance de onboarding** y si ya está **apto para
-ingresar a terreno** (es decir, si completó todos sus requisitos obligatorios).
+Cada trabajador muestra su **avance de onboarding** y si ya está **apto para ingresar a
+terreno** (es decir, si completó todos sus requisitos obligatorios). Al abrir su ficha
+tienes el checklist completo, con los atajos para subir el documento, firmar de forma
+asistida o agendar la capacitación pendiente.
 
 ## Editar, pausar o finalizar una obra
 

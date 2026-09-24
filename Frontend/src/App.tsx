@@ -31,7 +31,6 @@ import ObraDetalle from './pages/ObraDetalle';
 import EstructuraConstituir from './pages/EstructuraConstituir';
 import EstructuraOrgano from './pages/EstructuraOrgano';
 import Prescripciones from './pages/Prescripciones';
-import ObraEquipoPage from './pages/ObraEquipoPage';
 import Crear from './pages/Crear';
 import CargosOnboarding from './pages/CargosOnboarding';
 import CatalogosActividad from './pages/CatalogosActividad';
@@ -161,7 +160,6 @@ function AppContent() {
       <Route path="/obras" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_VER}><Obras /></ProtectedRoute>} />
       <Route path="/obras/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_CREAR}><ObraNueva /></ProtectedRoute>} />
       <Route path="/obras/:obraId" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><ObraDetalle /></ProtectedRoute>} />
-      <Route path="/obras/:obraId/equipo" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES}><ObraEquipoPage /></ProtectedRoute>} />
 
       {/* Estructura preventiva (DS 44): órganos de empresa y de obra. Requiere el
           mismo permiso que administrar obras: constituir un órgano es un acto de

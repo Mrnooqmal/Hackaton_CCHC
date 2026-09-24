@@ -785,7 +785,7 @@ Generado por PrevencionApp
                                             )}
                                         </div>
                                     </div>
-                                    <Link to={`/obras/${currentObraId}/equipo`} className="btn btn-ghost btn-sm" style={{ flexShrink: 0, fontSize: '0.78rem' }}>
+                                    <Link to="/personas" className="btn btn-ghost btn-sm" style={{ flexShrink: 0, fontSize: '0.78rem' }}>
                                         Ver equipo
                                     </Link>
                                 </div>

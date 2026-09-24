@@ -9,9 +9,14 @@ documentos, las firmas, el onboarding de cada obra y las capacitaciones.
 
 ## Entrar al módulo
 
-En el menú lateral, haz clic en **Personas** (o **Equipo**, según tu rol). Verás el listado
-de las personas de tu empresa, con un buscador **"Buscar por nombre o RUT…"** para
-encontrarlas rápido.
+En el menú lateral, haz clic en **Personas**. Lo que veas depende del ámbito con el que
+entraste tras iniciar sesión:
+
+- **Vista de empresa** — el **directorio completo** de la empresa, con un buscador
+  **"Buscar por nombre o RUT…"**. Aquí das de alta a gente nueva.
+- **Dentro de una obra** — el **equipo de esa obra**, agrupado por equipos (gestión,
+  cuadrilla de cada supervisor y sin cuadrilla), con el avance de onboarding de cada
+  persona. Desde aquí solo se suman personas **que ya existen en la empresa**.
 
 ![Listado de personas con los botones Nueva persona y Carga masiva](/img/personas/listado.png)
 
@@ -40,7 +45,7 @@ encontrarlas rápido.
 ### Asignación a obras
 
 Marca las **obras** a las que se asignará la persona desde el inicio. Puedes cambiarlo
-después desde su perfil o desde la pestaña Equipo de cada obra.
+después desde su perfil o desde **Personas** con esa obra elegida.
 
 ### Contacto de emergencia (opcional)
 

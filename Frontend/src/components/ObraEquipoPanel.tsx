@@ -1,20 +1,23 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { obrasApi, workersApi } from '../api/client';
+import { documentsApi, obrasApi, workersApi } from '../api/client';
 import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
-import { AlertBanner, PageHeader, Modal } from '../components/ui';
-import type { CollectionMode } from '../components/ui';
+import { useObraOnboarding } from '../hooks/useObraOnboarding';
+import type { OnboardingItem, OnboardingWorker } from '../utils/onboardingObra';
+import { useObraContext } from '../context/ObraContext';
+import { AlertBanner, Modal } from './ui';
+import type { CollectionMode } from './ui';
 import { PERMISSIONS } from '../permissions';
-import FirmaAsistidaModal from '../components/FirmaAsistidaModal';
+import FirmaAsistidaModal from './FirmaAsistidaModal';
 import {
     FiSearch, FiUserPlus, FiCheck, FiX, FiChevronDown,
     FiAlertTriangle, FiUsers, FiEdit2, FiList, FiGrid,
-    FiUser, FiPenTool, FiArrowRight,
+    FiUser, FiPenTool, FiArrowRight, FiClipboard,
 } from 'react-icons/fi';
-import { LuCircleCheck } from 'react-icons/lu';
+import { LuCircleCheck, LuClock, LuShieldAlert } from 'react-icons/lu';
 
 const GESTION_CONTAINER = '__gestion__';
 const SIN_CUADRILLA_CONTAINER = '__sin_cuadrilla__';
@@ -229,15 +232,24 @@ function GestionConfirmModal({
     );
 }
 
-// ── Página principal ─────────────────────────────────────────────────────────
-export default function ObraEquipoPage() {
+// ── Panel principal ──────────────────────────────────────────────────────────
+/**
+ * Equipo de una obra: cuadrillas, roles, cargos y seguimiento de onboarding.
+ *
+ * Es la vista de Personas cuando se entró a trabajar en una obra. Agrupa por
+ * equipo (gestión, cuadrilla de cada supervisor, sin cuadrilla) y solo deja
+ * sumar gente que ya existe a nivel empresa: dar de alta una persona nueva es
+ * un acto de empresa, no de obra.
+ */
+export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
     const { user, hasPermission } = useAuth();
-    const { obraId } = useParams<{ obraId: string }>();
     const navigate = useNavigate();
     const { options: cargoOptions } = useCargoCatalog();
+    const { setSelectedObraId } = useObraContext();
 
     const canAsignar = hasPermission(PERMISSIONS.OBRA_ASIGNAR_TRABAJADORES);
     const canFirmaAsistida = hasPermission(PERMISSIONS.OBRA_FIRMA_ASISTIDA);
+    const canSubirDocumentos = hasPermission(PERMISSIONS.OBRA_SUBIR_DOCUMENTOS);
 
     const [obra, setObra] = useState<any | null>(null);
     const [workers, setWorkers] = useState<any[]>([]);
@@ -270,6 +282,15 @@ export default function ObraEquipoPage() {
     const [poolCardAction, setPoolCardAction] = useState<{ worker: any; rect: DOMRect } | null>(null);
     const [addToObraModal, setAddToObraModal] = useState<{ worker: any } | null>(null);
     const [editModal, setEditModal] = useState<{ worker: any } | null>(null);
+    // Checklist de onboarding DS 44 de una persona (vista de cuadrícula y popover).
+    const [onboardingModal, setOnboardingModal] = useState<{ worker: any } | null>(null);
+    const [firmaTipo, setFirmaTipo] = useState<string | undefined>(undefined);
+    // Firma cruzada de relator (CAPACITACION_SST): el relator firma con su PIN.
+    const [relatorSign, setRelatorSign] = useState<{ documentId: string; titulo: string } | null>(null);
+    const [relatorPin, setRelatorPin] = useState('');
+    const [relatorModalidad, setRelatorModalidad] = useState('');
+    const [relatorSaving, setRelatorSaving] = useState(false);
+    const [relatorError, setRelatorError] = useState<string | null>(null);
 
     const tenantId = (user as any)?.tenantId as string | undefined;
 
@@ -412,6 +433,15 @@ export default function ObraEquipoPage() {
         () => workers.filter((w) => !(Array.isArray(w.obraIds) && w.obraIds.includes(obraId))),
         [workers, obraId]
     );
+
+    // Onboarding DS 44 de quienes están en la obra: el mismo read-model que
+    // alimenta el porcentaje del detalle de obra, aquí en forma de checklist.
+    const {
+        byWorkerId: onboardingPorPersona,
+        reload: reloadOnboarding,
+        subirDocumento,
+        uploadingDoc,
+    } = useObraOnboarding(obraId, assigned, obra);
 
     const filteredUnassigned = useMemo(() => {
         const s = search.toLowerCase();
@@ -587,7 +617,6 @@ export default function ObraEquipoPage() {
     // Prevencionista a cargo de un supervisor (define el scope de sus charlas).
     const prevencionistaDe = (w: any): string | null => asignacionDe(w)?.prevencionistaPersonaId || null;
     const prevencionistaSelectOptions = prevencionistas.map((p) => ({ value: p.personaId, label: `${p.nombre} ${p.apellido || ''}`.trim() }));
-    const obraName = obra?.nombre || obra?.codigo || obraId || '…';
 
     // ── Drag and drop ─────────────────────────────────────────────────────────
     const handleDragStart = (e: React.DragEvent, w: any) => {
@@ -695,6 +724,160 @@ export default function ObraEquipoPage() {
         showToast(`${w.nombre} removido de su cuadrilla. Para asignarlo al equipo de gestión, edita su rol en el perfil.`);
     };
 
+    // ── Onboarding DS 44 ──────────────────────────────────────────────────────
+    // Atajo: agendar/asignar un ítem precargado para una persona. Fija la obra
+    // activa y abre el flujo correspondiente con prefill.
+    const agendarItem = (ob: OnboardingWorker, item: OnboardingItem) => {
+        setSelectedObraId(obraId);
+        if (item.accion === 'ENCUESTA') {
+            navigate('/surveys', { state: { prefill: { rut: ob.rut, nombre: ob.nombre, titulo: item.label, kitItemKey: item.key } } });
+        } else {
+            navigate('/activities', { state: { prefill: { obraId, personaId: ob.workerId, nombre: ob.nombre, subtipo: item.subtipo || 'OTRA', titulo: item.label, kitItemKey: item.key } } });
+        }
+    };
+
+    const handleFirmaRelator = async () => {
+        if (!relatorSign || !user?.personaId) return;
+        if (!relatorPin || relatorPin.length < 4) { setRelatorError('Ingresa tu PIN para firmar.'); return; }
+        setRelatorSaving(true);
+        setRelatorError(null);
+        try {
+            const res = await documentsApi.sign(relatorSign.documentId, {
+                personaId: user.personaId,
+                tipoFirma: 'relator',
+                pin: relatorPin,
+                modalidad: relatorModalidad || undefined,
+            });
+            if (!res.success) {
+                setRelatorError(res.error || 'No se pudo registrar la firma. Verifica tu PIN.');
+                return;
+            }
+            setRelatorSign(null);
+            setRelatorPin('');
+            showToast('Firma de relator registrada.');
+            reloadOnboarding();
+        } catch {
+            setRelatorError('Error de conexión.');
+        } finally {
+            setRelatorSaving(false);
+        }
+    };
+
+    /** Píldora de progreso del onboarding; null para quien no tiene kit (gestión). */
+    const renderOnboardingBadge = (w: any, compact = false) => {
+        const ob = onboardingPorPersona.get(w.personaId);
+        if (!ob || ob.total === 0) return null;
+        const pct = Math.round((ob.completed / ob.total) * 100);
+        return (
+            <span className="eq-ob-badge" title={`Onboarding DS 44: ${ob.completed} de ${ob.total} ítems`}>
+                <span className="eq-ob-bar"><span className="eq-ob-bar-fill" style={{ width: `${pct}%`, background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }} /></span>
+                <span className="eq-ob-count">{ob.completed}/{ob.total}</span>
+                {!compact && (ob.aptoTerreno
+                    ? <span className="eq-ob-apto"><LuCircleCheck size={11} /> Apto</span>
+                    : <span className="eq-ob-bloq"><LuShieldAlert size={11} /> {ob.bloqueantesPendientes} bloq.</span>
+                )}
+            </span>
+        );
+    };
+
+    /** Checklist accionable del kit de cargo de una persona en esta obra. */
+    const renderOnboardingChecklist = (w: any) => {
+        const ob = onboardingPorPersona.get(w.personaId);
+        if (!ob) {
+            return (
+                <div className="eq-ob-empty">
+                    Sin kit de onboarding: el rol de gestión y las personas sin cargo en la obra no entran al onboarding de terreno.
+                </div>
+            );
+        }
+        return (
+            <div className="eq-ob-list">
+                {ob.itemDetail.map((item) => {
+                    const soloFaltaRelator = item.estado === 'pendiente_firma' && item.firmaRelatorPendiente && item.trabajadorFirmo;
+                    const estadoLabel = item.estado === 'completo' ? 'Completo'
+                        : soloFaltaRelator ? 'Pendiente firma relator'
+                        : item.estado === 'pendiente_firma' ? 'Pendiente de firma'
+                        : 'Pendiente de asignar';
+                    const estadoColor = item.estado === 'completo' ? '#10b981' : item.estado === 'pendiente_firma' ? '#f59e0b' : 'var(--text-muted)';
+                    const uploadId = `eqob-${w.personaId}-${item.key}`;
+                    return (
+                        <div key={item.key} className="eq-ob-item">
+                            <div className="eq-ob-item-main">
+                                {item.estado === 'completo'
+                                    ? <LuCircleCheck size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                                    : <LuClock size={14} style={{ color: estadoColor, flexShrink: 0 }} />
+                                }
+                                <div style={{ minWidth: 0 }}>
+                                    <div className="eq-ob-item-label" style={{ color: item.estado === 'completo' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                        {item.label}
+                                    </div>
+                                    <div className="eq-ob-item-meta" style={{ color: estadoColor }}>
+                                        {item.articulo}{item.articulo ? ' · ' : ''}{estadoLabel}
+                                        {item.bloqueante && item.estado !== 'completo' ? ' · bloqueante' : ''}
+                                    </div>
+                                </div>
+                            </div>
+                            {item.estado !== 'completo' && (
+                                <div className="eq-ob-item-actions">
+                                    {item.accion === 'ENCUESTA' && canAsignar && (
+                                        <button className="btn btn-primary" style={{ padding: '2px 10px', fontSize: '0.75rem' }} onClick={() => agendarItem(ob, item)}>
+                                            Asignar encuesta
+                                        </button>
+                                    )}
+                                    {item.accion === 'CAPACITACION_EVALUACION' && item.estado === 'pendiente_asignar' && canAsignar && (
+                                        <button
+                                            className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                            onClick={() => agendarItem(ob, item)}
+                                            title="Agendar la capacitación de este ítem para esta persona"
+                                        >
+                                            Agendar
+                                        </button>
+                                    )}
+                                    {item.accion !== 'ENCUESTA' && item.estado === 'pendiente_asignar' && canSubirDocumentos && (
+                                        <>
+                                            <input
+                                                type="file" id={uploadId} style={{ display: 'none' }}
+                                                accept="application/pdf,image/*"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) subirDocumento(w.personaId, item.tipo, file);
+                                                    e.target.value = '';
+                                                }}
+                                            />
+                                            <button
+                                                className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                                disabled={uploadingDoc === `${w.personaId}:${item.tipo}`}
+                                                onClick={() => document.getElementById(uploadId)?.click()}
+                                            >
+                                                {uploadingDoc === `${w.personaId}:${item.tipo}` ? '…' : 'Subir'}
+                                            </button>
+                                        </>
+                                    )}
+                                    {item.estado === 'pendiente_firma' && !item.trabajadorFirmo && canFirmaAsistida && (
+                                        <button
+                                            className="btn btn-primary" style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                            onClick={() => { setFirmaWorkerId(w.personaId); setFirmaTipo(item.tipo); setFirmaOpen(true); }}
+                                        >
+                                            Firma asistida
+                                        </button>
+                                    )}
+                                    {item.estado === 'pendiente_firma' && item.firmaRelatorPendiente && item.documentId && user?.permisos?.includes('firmar_relator') && (
+                                        <button
+                                            className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                            onClick={() => { setRelatorSign({ documentId: item.documentId!, titulo: item.label }); setRelatorPin(''); setRelatorModalidad(''); setRelatorError(null); }}
+                                        >
+                                            Firmar como relator
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
     // ── Grid card ─────────────────────────────────────────────────────────────
     const renderCard = (w: any, opts: { isSup?: boolean; isDraggable?: boolean } = {}) => {
         const { isSup = false, isDraggable = false } = opts;
@@ -728,6 +911,7 @@ export default function ObraEquipoPage() {
                 <span className="eq2-card-cargo">
                     {cargoLabels.length > 0 ? cargoLabels.join(' · ') : (w.rolNombre || w.rol || '—')}
                 </span>
+                {renderOnboardingBadge(w, true)}
             </div>
         );
     };
@@ -855,6 +1039,8 @@ export default function ObraEquipoPage() {
 
                     {isSup && <div style={{ flex: 1 }} />}
 
+                    {renderOnboardingBadge(w)}
+
                     <div className="eq2-row-actions" onClick={(e) => e.stopPropagation()}>
                         {canFirmaAsistida && (
                             <button
@@ -945,6 +1131,13 @@ export default function ObraEquipoPage() {
                                 <FiX size={13} /> Dar de baja
                             </button>
                         </div>
+
+                        <div className="eq-ob-block">
+                            <div className="eq-ob-block-title">
+                                <FiClipboard size={13} /> Onboarding DS 44
+                            </div>
+                            {renderOnboardingChecklist(w)}
+                        </div>
                     </div>
                 )}
             </div>
@@ -1033,20 +1226,13 @@ export default function ObraEquipoPage() {
 
     // ── Loading ───────────────────────────────────────────────────────────────
     if (loading) return (
-        <div className="page-content" style={{ display: 'flex', justifyContent: 'center', paddingTop: 64 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 64 }}>
             <div className="spinner" />
         </div>
     );
 
     return (
-        <div className="page-content">
-            <PageHeader
-                banner
-                title="Gestionar equipo"
-                description={`Organiza cuadrillas, roles y cargos del equipo de ${obraName}.`}
-
-            />
-
+        <>
             {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}
 
             {/* ── Sección: equipo en obra ── */}
@@ -1218,11 +1404,13 @@ export default function ObraEquipoPage() {
             {/* Firma asistida */}
             <FirmaAsistidaModal
                 isOpen={firmaOpen}
-                onClose={() => { setFirmaOpen(false); setFirmaWorkerId(undefined); }}
-                obraId={obraId ?? ''}
+                onClose={() => { setFirmaOpen(false); setFirmaWorkerId(undefined); setFirmaTipo(undefined); }}
+                obraId={obraId}
                 workers={assigned}
                 asistidoPor={user?.personaId || user?.userId || ''}
                 initialWorkerId={firmaWorkerId}
+                initialTipo={firmaTipo}
+                onSigned={reloadOnboarding}
             />
 
             {/* Modal: transferir a otra obra */}
@@ -1322,6 +1510,16 @@ export default function ObraEquipoPage() {
                             }}
                         >
                             <FiEdit2 size={13} /> Editar
+                        </button>
+                        <button
+                            className="eq2-card-popover-btn"
+                            onClick={() => {
+                                const w = cardAction.worker;
+                                setCardAction(null);
+                                setOnboardingModal({ worker: w });
+                            }}
+                        >
+                            <FiClipboard size={13} /> Onboarding
                         </button>
                         {canFirmaAsistida && (
                             <button
@@ -1574,6 +1772,69 @@ export default function ObraEquipoPage() {
                     <LuCircleCheck size={16} /> {toast}
                 </div>
             )}
+
+            {/* Checklist de onboarding (atajo desde la vista de cuadrícula) */}
+            <Modal
+                isOpen={!!onboardingModal}
+                onClose={() => setOnboardingModal(null)}
+                title="Onboarding DS 44"
+                subtitle={onboardingModal ? `${onboardingModal.worker.nombre} ${onboardingModal.worker.apellido || ''}`.trim() : ''}
+                size="md"
+            >
+                {onboardingModal && renderOnboardingChecklist(onboardingModal.worker)}
+            </Modal>
+
+            {/* Firma de relator (firma cruzada CAPACITACION_SST) */}
+            <Modal
+                isOpen={!!relatorSign}
+                onClose={() => { setRelatorSign(null); setRelatorPin(''); setRelatorError(null); }}
+                title="Firma de relator"
+                subtitle={relatorSign ? `${relatorSign.titulo} — Art. 16 DS44, firma cruzada` : ''}
+                size="sm"
+                footer={
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
+                        <button className="btn btn-secondary" onClick={() => { setRelatorSign(null); setRelatorPin(''); setRelatorError(null); }}>Cancelar</button>
+                        <button className="btn btn-primary" onClick={handleFirmaRelator} disabled={relatorSaving}>
+                            {relatorSaving ? 'Firmando…' : 'Firmar como relator'}
+                        </button>
+                    </div>
+                }
+            >
+                <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    <p style={{ fontSize: '0.87rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                        Firmas como relator de la capacitación. El documento queda completo
+                        cuando existen ambas firmas: la tuya y la del trabajador.
+                    </p>
+                    <div className="form-group">
+                        <label className="form-label">Modalidad (informativo)</label>
+                        <select className="form-input form-select" value={relatorModalidad} onChange={(e) => setRelatorModalidad(e.target.value)}>
+                            <option value="">Sin especificar</option>
+                            <option value="presencial">Presencial</option>
+                            <option value="e-learning">E-learning</option>
+                            <option value="mutualidad">Mutualidad</option>
+                            <option value="streaming">Streaming</option>
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Tu PIN de firma</label>
+                        <input
+                            type="password"
+                            inputMode="numeric"
+                            className="form-input"
+                            value={relatorPin}
+                            onChange={(e) => { setRelatorPin(e.target.value.replace(/\D/g, '')); setRelatorError(null); }}
+                            placeholder="••••"
+                            maxLength={8}
+                            autoComplete="off"
+                        />
+                    </div>
+                    {relatorError && (
+                        <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', fontSize: '0.82rem', color: '#b91c1c' }}>
+                            {relatorError}
+                        </div>
+                    )}
+                </div>
+            </Modal>
 
             <style>{`
                 /* ── Spinner ─────────────────────────────────────────────── */
@@ -2115,7 +2376,50 @@ export default function ObraEquipoPage() {
                 .eq-baja-summary::-webkit-details-marker { display: none; }
                 .eq-baja-summary::before { content: '▶  '; font-size: 9px; }
                 details[open] .eq-baja-summary::before { content: '▼  '; }
+
+                /* ── Onboarding DS 44 ────────────────────────────────────── */
+                .eq-ob-badge {
+                    display: inline-flex; align-items: center; gap: 6px;
+                    flex-shrink: 0; font-size: 0.72rem; color: var(--text-muted);
+                    white-space: nowrap;
+                }
+                .eq2-card .eq-ob-badge { margin-top: 8px; }
+                .eq-ob-bar {
+                    display: block; width: 52px; height: 4px; border-radius: 999px;
+                    background: var(--surface-elevated); overflow: hidden;
+                }
+                .eq-ob-bar-fill { display: block; height: 100%; transition: width 300ms ease; }
+                .eq-ob-count { font-variant-numeric: tabular-nums; }
+                .eq-ob-apto { display: inline-flex; align-items: center; gap: 3px; color: #10b981; }
+                .eq-ob-bloq { display: inline-flex; align-items: center; gap: 3px; color: #ef4444; }
+
+                /* El panel de la fila es flex con wrap: el bloque ocupa una línea entera. */
+                .eq-ob-block {
+                    flex: 1 0 100%; width: 100%;
+                    margin-top: var(--space-2); padding-top: var(--space-3);
+                    border-top: 1px solid var(--surface-border);
+                }
+                .eq-ob-block-title {
+                    display: flex; align-items: center; gap: 6px;
+                    font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em;
+                    text-transform: uppercase; color: var(--text-muted);
+                    margin-bottom: var(--space-2);
+                }
+                .eq-ob-list { display: flex; flex-direction: column; }
+                .eq-ob-empty { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+                .eq-ob-item {
+                    display: flex; align-items: center; justify-content: space-between;
+                    gap: var(--space-2); padding: 6px 0;
+                    border-bottom: 1px solid var(--surface-border);
+                }
+                .eq-ob-item:last-child { border-bottom: none; }
+                .eq-ob-item-main { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+                .eq-ob-item-label {
+                    font-size: 0.84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                }
+                .eq-ob-item-meta { font-size: 0.72rem; }
+                .eq-ob-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
             `}</style>
-        </div>
+        </>
     );
 }

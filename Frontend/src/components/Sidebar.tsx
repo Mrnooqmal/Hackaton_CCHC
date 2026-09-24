@@ -64,6 +64,10 @@ const NAV_EMPRESA: NavSection[] = [
         section: 'Gestión',
         items: [
             { path: '/obras', icon: FiMapPin, label: 'Obras', permission: PERMISSIONS.OBRAS_VER },
+            // El alta de personas es un acto de empresa: aquí está el plantel
+            // completo. Dentro de una obra el mismo módulo muestra solo su equipo
+            // y solo deja sumar gente que ya existe a este nivel.
+            { path: '/personas', icon: FiUsers, label: 'Personas', permission: PERMISSIONS.PERSONAS_VER },
         ]
     },
     {

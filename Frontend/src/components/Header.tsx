@@ -74,12 +74,6 @@ const ACTION_LEAF: Record<string, string> = {
     'obras/nueva': 'Nueva obra',
 };
 
-// Etiqueta de la hoja para sub-rutas que cuelgan de una página de detalle,
-// por `sección/sub-acción` (la sub-acción es el segmento posterior al id).
-const SUBDETAIL_LEAF: Record<string, string> = {
-    'obras/equipo': 'Equipo de obra',
-};
-
 function buildCrumbs(pathname: string, obraActiva = false): Crumb[] {
     const segments = pathname.split('/').filter(Boolean);
     const crumbs: Crumb[] = [{ label: 'Inicio', to: '/', home: true }];
@@ -107,7 +101,8 @@ function buildCrumbs(pathname: string, obraActiva = false): Crumb[] {
         const actionLabel = ACTION_LEAF[`${first}/${segments[1]}`];
         const detailLabel = actionLabel ?? DETAIL_LEAF[first] ?? 'Detalle';
         const hasSubRoute = segments.length > 2;
-        // Con una sub-ruta (ej. /obras/:id/equipo) el detalle pasa a ser enlace
+        // Con una sub-ruta el detalle pasa a ser enlace y la hoja es el segmento
+        // posterior al id.
         crumbs.push({
             label: detailLabel,
             to: hasSubRoute ? `/${first}/${segments[1]}` : undefined,
@@ -115,8 +110,7 @@ function buildCrumbs(pathname: string, obraActiva = false): Crumb[] {
 
         if (hasSubRoute) {
             const sub = segments[2];
-            const subLabel = SUBDETAIL_LEAF[`${first}/${sub}`];
-            crumbs.push({ label: subLabel ?? sub.charAt(0).toUpperCase() + sub.slice(1) });
+            crumbs.push({ label: sub.charAt(0).toUpperCase() + sub.slice(1) });
         }
     }
 
@@ -154,8 +148,10 @@ export default function Header() {
 
     // La obra se elige al entrar (y se cambia desde el menú de sesión), así que
     // acá solo se recuerda en qué ámbito se está trabajando.
+    // El código es un identificador interno: quien opera la obra la reconoce por
+    // su nombre, y anteponerlo solo robaba ancho a la franja.
     const scopeLabel = selectedObra
-        ? [selectedObra.codigo, selectedObra.nombre].filter(Boolean).join(' · ')
+        ? (selectedObra.nombre || selectedObra.codigo || null)
         : (modoEmpresa && puedeGestionarEmpresa ? 'Vista empresa' : null);
 
     // El botón hamburguesa colapsa el sidebar en escritorio y abre el overlay en móvil
