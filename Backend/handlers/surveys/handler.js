@@ -372,6 +372,7 @@ module.exports.updateResponseStatus = async (event) => {
 
                 console.log(`✅ Firma digital creada para encuesta ${id}, trabajador ${workerId}`);
             } catch (firmaError) {
+                if (firmaError.codigo === 'PIN_BLOQUEADO') return error(firmaError.message, 423);
                 console.error('Error validando firma:', firmaError);
                 return error(firmaError.message || 'Error al validar PIN', 401);
             }

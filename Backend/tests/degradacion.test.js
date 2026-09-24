@@ -13,6 +13,8 @@
 //     código está libre", "ese RUT no está repetido"—, el error se propaga y la
 //     operación falla. Es preferible no poder calcular a calcular mal.
 
+process.env.CAMPO_HMAC_KEY = 'clave-de-prueba-hmac';
+process.env.CAMPO_CIFRADO_LOCAL_KEY = require('crypto').randomBytes(32).toString('base64');
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 

@@ -7,6 +7,8 @@
 // 5, escalando cada 5, reseteo en el primer acierto, y que un intento mientras
 // está bloqueada no cueste ni un cálculo de scrypt.
 
+process.env.CAMPO_HMAC_KEY = 'clave-de-prueba-hmac';
+process.env.CAMPO_CIFRADO_LOCAL_KEY = require('crypto').randomBytes(32).toString('base64');
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -340,4 +342,44 @@ test('POST /personas/{id}/set-pin: el 5º pinActual incorrecto responde 423, no 
     // No 500: el catch específico de PIN_BLOQUEADO tiene que ganarle al catch
     // genérico del handler, que convertiría esto en un error de servidor.
     assert.equal(ultimo.statusCode, 423);
+});
+
+// ─── El hueco encontrado tarde: FirmaService.crear también verifica PIN ──────
+//
+// Cuatro puntos (vales, /signatures directo, setPin, enrolamiento) se
+// engancharon primero. Quedó afuera el quinto —en realidad SEIS caminos
+// distintos: documentos, documentos con firma asistida, actividades,
+// encuestas, y los dos registros del Art. 71/AT-EP— porque todos firman a
+// través de `FirmaService.crear`, que tenía su PROPIA verificación de PIN sin
+// pasar por el límite. Esta prueba existe para que si alguien vuelve a separar
+// el camino, se note acá y no en producción.
+
+const { FirmaService } = require('../lib/services/FirmaService');
+
+test('FirmaService.crear también respeta el límite de intentos', async () => {
+    const { restaurar } = montarDobleIntegracion();
+
+    const personaFirma = {
+        personaId: PERSONA_INT, tenantId: TENANT_INT,
+        rut: '12.345.678-5', nombre: 'Juan', apellido: 'Pérez', cargo: 'Maestro',
+        habilitado: true, _pinHash: 'hash-invalido-a-propósito',
+        pinIntentosFallidos: 0, pinBloqueadaHasta: null,
+    };
+
+    let ultimoError;
+    for (let i = 0; i < 5; i++) {
+        try {
+            await FirmaService.crear({
+                personaId: PERSONA_INT, tenantId: TENANT_INT, metodo: 'PIN',
+                credencial: '0000', tipoFirma: 'actividad',
+                persona: { ...personaFirma }, // simula la ficha recargada en cada intento
+            });
+        } catch (err) {
+            ultimoError = err;
+        }
+    }
+    restaurar();
+
+    assert.equal(ultimoError.codigo, 'PIN_BLOQUEADO');
+    assert.equal(ultimoError.statusCode, 423);
 });

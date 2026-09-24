@@ -12,6 +12,8 @@ const { docClient } = require('../clients/dynamodb');
 const { verificarConLimiteOLanzar } = require('../limitePin');
 const { fechaHoraChile } = require('../utils/fechaChile');
 const { Persona, ROLES } = require('../models/Persona');
+const cifradoCampo = require('../cifradoCampo');
+const { llaveDeTenant, PROPOSITOS } = require('../llaveTenant');
 const {
     validateRut, validateRequired, hashPin, verifyPin,
     validatePin, generateSignatureToken, hashPassword, generateTempPassword, normalizeRol
@@ -23,6 +25,85 @@ class PersonaService {
     constructor() {
         this.dynamo = docClient;
         this.table = PERSONAS_TABLE;
+    }
+
+    /**
+     * Cifra RUT y salud de un `personaData` en construcción, con las llaves
+     * COMPARTIDAS de este tenant (D-10, `lib/llaveTenant.js`): una llave para
+     * el RUT, otra para salud, cada una generada una sola vez por empresa y
+     * reutilizada para cada persona — así listar el plantel o contar cuántos
+     * están en vigilancia de salud cuesta 1 llamada a KMS por invocación, no
+     * una por persona.
+     *
+     * Muta `personaData` en el lugar: agrega `rutCifrado`/`rutHmac` y
+     * `vigilanciaSaludCifrada`/`restriccionLaboralCifrada`, dejando además el
+     * RUT y la salud EN CLARO en los mismos campos de siempre (`rut`,
+     * `vigilanciaSalud`, `restriccionLaboral`) para que el constructor de
+     * `Persona` los deje disponibles de inmediato en memoria.
+     */
+    async _cifrarCamposSensibles(tenantId, personaData) {
+        const [llaveRut, llaveSalud] = await Promise.all([
+            llaveDeTenant(tenantId, PROPOSITOS.RUT_PERSONAS),
+            llaveDeTenant(tenantId, PROPOSITOS.SALUD),
+        ]);
+
+        const vigilancia = personaData.vigilanciaSalud !== undefined ? personaData.vigilanciaSalud : {
+            enVigilancia: false, protocolos: [], fechaUltimoExamen: null, aptitudLaboral: null, restricciones: [],
+        };
+        const restriccion = personaData.restriccionLaboral !== undefined ? personaData.restriccionLaboral : null;
+
+        personaData.rutHmac = await cifradoCampo.hmacRut(personaData.rut);
+        personaData.rutCifrado = cifradoCampo.cifrarConLlaveDatos(personaData.rut, llaveRut);
+        personaData.vigilanciaSalud = vigilancia;
+        personaData.vigilanciaSaludCifrada = cifradoCampo.cifrarConLlaveDatos(vigilancia, llaveSalud);
+        personaData.restriccionLaboral = restriccion;
+        // `cifrarConLlaveDatosSiempre`, no `cifrarConLlaveDatos`: restriccionLaboral
+        // suele ser `null` ("sin restricción") y eso SIGUE siendo un dato que se
+        // cifra, no "nada que cifrar" — condicionar al contenido es el mismo
+        // patrón de falla silenciosa que se evitó en las respuestas de encuesta.
+        personaData.restriccionLaboralCifrada = cifradoCampo.cifrarConLlaveDatosSiempre(restriccion, llaveSalud);
+
+        return personaData;
+    }
+
+    /**
+     * Descifra RUT y salud de una o más `Persona` ya construidas, agrupando
+     * por tenant para pedir la llave de cada empresa UNA sola vez sin importar
+     * cuántas personas de esa empresa haya en el lote (`listByTenant` con 200
+     * personas: 2 llamadas a KMS —RUT y salud del tenant—, no 400).
+     *
+     * Las fichas legadas (RUT o salud todavía en claro, sin migrar) no tienen
+     * nada que descifrar y se dejan pasar tal cual: es el lado de LECTURA del
+     * "leer y reparar" — la escritura las migra al formato nuevo la próxima
+     * vez que se guarden.
+     */
+    async _hidratar(personas) {
+        const lista = Array.isArray(personas) ? personas : [personas];
+        const porTenant = new Map();
+        for (const p of lista) {
+            if (!p) continue;
+            if (!p.rutSinDescifrar && !p.saludSinDescifrar) continue;
+            if (!porTenant.has(p.tenantId)) porTenant.set(p.tenantId, []);
+            porTenant.get(p.tenantId).push(p);
+        }
+
+        await Promise.all([...porTenant.entries()].map(async ([tenantId, del]) => {
+            const necesitaRut = del.some((p) => p.rutSinDescifrar);
+            const necesitaSalud = del.some((p) => p.saludSinDescifrar);
+            const [llaveRut, llaveSalud] = await Promise.all([
+                necesitaRut ? llaveDeTenant(tenantId, PROPOSITOS.RUT_PERSONAS) : null,
+                necesitaSalud ? llaveDeTenant(tenantId, PROPOSITOS.SALUD) : null,
+            ]);
+            for (const p of del) {
+                if (p.rutSinDescifrar) p.rut = cifradoCampo.descifrarConLlaveDatos(p._rutCifrado, llaveRut);
+                if (p.saludSinDescifrar) {
+                    p.vigilanciaSalud = cifradoCampo.descifrarConLlaveDatos(p._vigilanciaSaludCifrada, llaveSalud);
+                    p.restriccionLaboral = cifradoCampo.descifrarConLlaveDatosSiempre(p._restriccionLaboralCifrada, llaveSalud);
+                }
+            }
+        }));
+
+        return Array.isArray(personas) ? lista : lista[0] || null;
     }
 
     /**
@@ -100,6 +181,8 @@ class PersonaService {
             personaData.passwordTemporal = true;
         }
 
+        await this._cifrarCamposSensibles(tenantId, personaData);
+
         return { personaData, passwordTemporal };
     }
 
@@ -140,9 +223,12 @@ class PersonaService {
      *
      * Es PÚBLICA a propósito. Quien consulte un índice directamente tiene que
      * pasar por acá y no deducir la ficha de lo que venga en el resultado: cada
-     * índice proyecta solo SUS claves, así que `tenantRut-index` trae `tenantId`
-     * y `rut` pero NO `personaId`. Asumir lo contrario fue exactamente el error
-     * que dejó sin funcionar la recuperación de contraseña.
+     * índice proyecta solo SUS claves, así que `tenantRutHmac-index` trae
+     * `tenantId` y `rutHmac` pero NO `personaId`. Asumir lo contrario fue
+     * exactamente el error que dejó sin funcionar la recuperación de contraseña.
+     *
+     * Descifra RUT y salud (D-10) antes de devolver la ficha: de acá en más el
+     * resto del sistema sigue leyendo `persona.rut` en claro como siempre.
      */
     async fichaDesdeClave(item) {
         if (!item) return null;
@@ -150,7 +236,7 @@ class PersonaService {
             TableName: this.table,
             Key: { PK: item.PK, SK: item.SK },
         }));
-        return Persona.fromDynamoItem(result.Item);
+        return this._hidratar(Persona.fromDynamoItem(result.Item));
     }
 
     /** Ítem CRUDO de la ficha (con los campos que el modelo no preserva). */
@@ -194,33 +280,33 @@ class PersonaService {
      * Buscar si un RUT ya existe en cualquier tenant (scan global)
      */
     async getByRutGlobal(rut) {
-        const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
-        const rutValidation = validateRut(rut);
-        const rutFormatted = rutValidation.valid ? rutValidation.formatted : rut;
-        const result = await this.dynamo.send(new ScanCommand({
-            TableName: this.table,
-            FilterExpression: 'rut = :rut AND begins_with(SK, :prefix)',
-            ExpressionAttributeValues: { ':rut': rutFormatted, ':prefix': 'PERSONA#' }
-        }));
-        if (!result.Items || result.Items.length === 0) return null;
-        return Persona.fromDynamoItem(result.Items[0]);
+        const todas = await this.getAllByRutGlobal(rut);
+        return todas[0] || null;
     }
 
     /**
      * Busca TODAS las fichas (en cualquier tenant, cualquier estado) que
      * coinciden con un RUT. Base para el login multi-tenant: una persona puede
      * pertenecer a varias empresas a la vez.
+     *
+     * El filtro compara por `rutHmac` (D-10) O por `rut` en claro: las fichas
+     * ya migradas solo tienen HMAC, las que todavía no se migraron solo tienen
+     * el RUT en claro (leer-y-reparar). El día que no quede ninguna ficha
+     * legada, la segunda rama del filtro deja de encontrar algo y se puede
+     * quitar — no antes, porque hasta entonces sigue siendo el único camino
+     * para encontrarlas.
      */
     async getAllByRutGlobal(rut) {
         const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
         const rutValidation = validateRut(rut);
         const rutFormatted = rutValidation.valid ? rutValidation.formatted : rut;
+        const rutHmac = await cifradoCampo.hmacRut(rutFormatted);
         const result = await this.dynamo.send(new ScanCommand({
             TableName: this.table,
-            FilterExpression: 'rut = :rut AND begins_with(SK, :prefix)',
-            ExpressionAttributeValues: { ':rut': rutFormatted, ':prefix': 'PERSONA#' }
+            FilterExpression: '(rutHmac = :h OR rut = :rut) AND begins_with(SK, :prefix)',
+            ExpressionAttributeValues: { ':h': rutHmac, ':rut': rutFormatted, ':prefix': 'PERSONA#' }
         }));
-        return (result.Items || []).map((item) => Persona.fromDynamoItem(item));
+        return this._hidratar((result.Items || []).map((item) => Persona.fromDynamoItem(item)));
     }
 
     /**
@@ -260,14 +346,15 @@ class PersonaService {
     async getByRut(tenantId, rut) {
         const rutValidation = validateRut(rut);
         const rutFormatted = rutValidation.valid ? rutValidation.formatted : rut;
+        const rutHmac = await cifradoCampo.hmacRut(rutFormatted);
 
         const result = await this.dynamo.send(new QueryCommand({
             TableName: this.table,
-            IndexName: 'tenantRut-index',
-            KeyConditionExpression: 'tenantId = :tenantId AND rut = :rut',
+            IndexName: 'tenantRutHmac-index',
+            KeyConditionExpression: 'tenantId = :tenantId AND rutHmac = :h',
             ExpressionAttributeValues: {
                 ':tenantId': tenantId,
-                ':rut': rutFormatted
+                ':h': rutHmac
             }
         }));
         if (!result.Items || result.Items.length === 0) return null;
@@ -332,7 +419,9 @@ class PersonaService {
         }
 
         const result = await this.dynamo.send(new QueryCommand(params));
-        return (result.Items || []).map(item => Persona.fromDynamoItem(item));
+        // Descifra RUT y salud del plantel completo con 2 llamadas a KMS —una
+        // por tenant, no una por persona— gracias a la llave compartida (D-10).
+        return this._hidratar((result.Items || []).map(item => Persona.fromDynamoItem(item)));
     }
 
     /**
@@ -342,8 +431,7 @@ class PersonaService {
         const allowedFields = ['nombre', 'apellido', 'apellidoPaterno', 'apellidoMaterno', 'email', 'telefono',
             'fechaNacimiento', 'fotoPerfil', 'notificacionesSms',
             'rol', 'cargo', 'estado', 'preferencias', 'obraIds', 'asignaciones', 'historialAsignaciones', 'evidencias',
-            'vigilanciaSalud', 'restriccionLaboral', 'onboardingDS44',
-            'contactoEmergencia', 'nivelEscolar', 'cursos'];
+            'onboardingDS44', 'contactoEmergencia', 'nivelEscolar', 'cursos'];
 
         const updateExpressions = [];
         const expressionNames = {};
@@ -356,6 +444,24 @@ class PersonaService {
                 expressionValues[`:${field}`] = updates[field];
             }
         });
+
+        // vigilanciaSalud/restriccionLaboral (D-10): salen del bucle genérico
+        // porque el atributo de la tabla no es el mismo que el campo del
+        // `updates` — se guardan cifradas, con la llave compartida de este
+        // tenant, nunca en claro.
+        if (updates.vigilanciaSalud !== undefined || updates.restriccionLaboral !== undefined) {
+            const llaveSalud = await llaveDeTenant(tenantId, PROPOSITOS.SALUD);
+            if (updates.vigilanciaSalud !== undefined) {
+                updateExpressions.push('#vigilanciaSaludCifrada = :vigilanciaSaludCifrada');
+                expressionNames['#vigilanciaSaludCifrada'] = 'vigilanciaSaludCifrada';
+                expressionValues[':vigilanciaSaludCifrada'] = cifradoCampo.cifrarConLlaveDatos(updates.vigilanciaSalud, llaveSalud);
+            }
+            if (updates.restriccionLaboral !== undefined) {
+                updateExpressions.push('#restriccionLaboralCifrada = :restriccionLaboralCifrada');
+                expressionNames['#restriccionLaboralCifrada'] = 'restriccionLaboralCifrada';
+                expressionValues[':restriccionLaboralCifrada'] = cifradoCampo.cifrarConLlaveDatosSiempre(updates.restriccionLaboral, llaveSalud);
+            }
+        }
 
         if (updateExpressions.length === 0) throw new Error('No hay campos para actualizar');
 
@@ -397,7 +503,7 @@ class PersonaService {
             ReturnValues: 'ALL_NEW'
         }));
 
-        return Persona.fromDynamoItem(result.Attributes);
+        return this._hidratar(Persona.fromDynamoItem(result.Attributes));
     }
 
     /**

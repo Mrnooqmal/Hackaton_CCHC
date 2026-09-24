@@ -16,6 +16,7 @@ const { s3Client } = require('../../lib/clients/s3');
 const { success, error } = require('../../lib/utils/response');
 const { validateRut, validateRequired, hashPassword } = require('../../lib/utils/validation');
 const credenciales = require('../../lib/credenciales');
+const cifradoCampo = require('../../lib/cifradoCampo');
 const { registrarFallo } = require('../../lib/degradacion');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
@@ -387,17 +388,18 @@ const hashResetToken = (token) => crypto.createHash('sha256').update(token).dige
 // El índice está proyectado con `KEYS_ONLY` —no guarda una copia de la ficha con
 // los hashes dentro—, así que devuelve la clave y la ficha se lee de la tabla.
 const findPersonaByRut = async (rutFormatted) => {
+    const rutHmac = await cifradoCampo.hmacRut(rutFormatted);
     const scanResult = await docClient.send(new ScanCommand({
         TableName: process.env.PERSONAS_TABLE || 'Personas',
-        IndexName: 'tenantRut-index',
-        FilterExpression: 'rut = :rut',
-        ExpressionAttributeValues: { ':rut': rutFormatted }
+        IndexName: 'tenantRutHmac-index',
+        FilterExpression: 'rutHmac = :h',
+        ExpressionAttributeValues: { ':h': rutHmac }
     }));
     const clave = (scanResult.Items || [])[0];
     if (!clave) return null;
     // Se resuelve por la CLAVE DE TABLA que trae el índice (`PK`/`SK`), no por
-    // `personaId`: `tenantRut-index` proyecta sus propias claves —`tenantId` y
-    // `rut`— y no ese campo.
+    // `personaId`: `tenantRutHmac-index` proyecta sus propias claves —`tenantId`
+    // y `rutHmac` (D-10)— y no ese campo.
     return personaService.fichaDesdeClave(clave);
 };
 

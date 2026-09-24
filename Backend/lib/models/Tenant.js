@@ -25,7 +25,13 @@ class Tenant {
         this.tenantId = data.tenantId;
         this.slug = data.slug || '';
         this.nombre = data.nombre;
+        // El RUT de empresa se guarda cifrado (D-10): `rutEmpresaCifrado` +
+        // `rutEmpresaHmac` para buscar. Mismo criterio que Persona: `this.rutEmpresa`
+        // queda en claro en memoria una vez que `TenantService` lo descifra; si el
+        // ítem trae `rutEmpresa` en claro (ficha vieja, sin migrar) se usa directo.
         this.rutEmpresa = data.rutEmpresa || '';
+        this._rutEmpresaCifrado = data.rutEmpresaCifrado || null;
+        this._rutEmpresaHmac = data.rutEmpresaHmac || null;
 
         this.tamano = data.tamano || Tenant.calcularTamano(data.cantidadTrabajadores || 0);
         this.cantidadTrabajadores = data.cantidadTrabajadores || 0;
@@ -51,7 +57,12 @@ class Tenant {
             // Representante legal de la empresa (DS 44 Art. 8 inc. 1): es quien
             // aprueba el Programa de Trabajo Preventivo y firma la Política SST.
             // Vive a nivel empresa, no de obra: la representación es una sola.
-            // { personaId, nombre, rut } o null mientras no se designe.
+            // { personaId, nombre, rutCifrado } o null mientras no se designe.
+            // El RUT va cifrado (D-10, sobre propio, sin HMAC: nunca se busca por
+            // el RUT del representante). Sin escritor todavía —nada en el sistema
+            // designa un representante legal hoy— así que en la práctica esto
+            // sigue siendo `null` en todo tenant real; queda documentada la forma
+            // para cuando exista esa función.
             representanteLegal: data.reglas?.representanteLegal || null,
             // Organizaciones sindicales de la empresa (Art. 57 inc. 2): destinatarias
             // del Reglamento Interno. Registro MÍNIMO —nombre y contacto—, no un
@@ -203,12 +214,16 @@ class Tenant {
      * Convierte a item de DynamoDB
      */
     toDynamoItem() {
+        if (!this._rutEmpresaCifrado || !this._rutEmpresaHmac) {
+            throw new Error('toDynamoItem: falta rutEmpresaCifrado/rutEmpresaHmac — el RUT nunca se escribe en claro');
+        }
         return {
             ...this.toDynamoKeys(),
             tenantId: this.tenantId,
             slug: this.slug,
             nombre: this.nombre,
-            rutEmpresa: this.rutEmpresa,
+            rutEmpresaCifrado: this._rutEmpresaCifrado,
+            rutEmpresaHmac: this._rutEmpresaHmac,
             tamano: this.tamano,
             cantidadTrabajadores: this.cantidadTrabajadores,
             estado: this.estado,

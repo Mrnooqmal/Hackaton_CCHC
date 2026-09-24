@@ -155,15 +155,23 @@ module.exports.obrasHandler = async (event) => {
                 ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
                 userAgent: event.headers?.['user-agent'] || event.headers?.['User-Agent'] || 'unknown'
             };
-            const resultado = await registroService.generarRegistroATEP({
-                tenantId,
-                obraId,
-                periodo: body.periodo || {},
-                firmante,
-                metodo: 'PIN',
-                masaLaboral: body.masaLaboral,
-                contexto
-            });
+            let resultado;
+            try {
+                resultado = await registroService.generarRegistroATEP({
+                    tenantId,
+                    obraId,
+                    periodo: body.periodo || {},
+                    firmante,
+                    metodo: 'PIN',
+                    masaLaboral: body.masaLaboral,
+                    contexto
+                });
+            } catch (firmaErr) {
+                // El límite de intentos (H-2) responde 423, no el 500 genérico
+                // del catch de más abajo.
+                if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+                throw firmaErr;
+            }
             return created({
                 message: 'Registro AT/EP generado y firmado',
                 ...resultado
@@ -249,14 +257,20 @@ module.exports.obrasHandler = async (event) => {
                 ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
                 userAgent: event.headers?.['user-agent'] || event.headers?.['User-Agent'] || 'unknown'
             };
-            const resultado = await registroService.generarInformeInvestigacion({
-                tenantId,
-                obraId,
-                incident,
-                firmante,
-                metodo: 'PIN',
-                contexto
-            });
+            let resultado;
+            try {
+                resultado = await registroService.generarInformeInvestigacion({
+                    tenantId,
+                    obraId,
+                    incident,
+                    firmante,
+                    metodo: 'PIN',
+                    contexto
+                });
+            } catch (firmaErr) {
+                if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+                throw firmaErr;
+            }
 
             // Cerrar la investigacion y enlazar el informe generado.
             await incidentsRepo.update(subAction, {

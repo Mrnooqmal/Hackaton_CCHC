@@ -109,8 +109,8 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 5.4 | Falla cerrada ante solicitante no identificado | **Implementado** | Sin identificación se ocultan: el error es que falten documentos, nunca que se filtren datos de salud. Cubierto por pruebas. |
 | 5.5 | Archivos servidos por URL prefirmada temporal | **Implementado** | No hay URL pública permanente sobre el almacenamiento. |
 | 5.6 | **Registro de auditoría de accesos a datos sensibles** | **Pendiente** | Se audita quién firma, no quién consulta una ficha de vigilancia. Ver hallazgo H-5. |
-| 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Pendiente** | Quien acceda a la tabla los lee en claro. |
-| 5.8 | **Los índices de personas proyectan todos los atributos** | **Pendiente** | `personaId-index`, `email-index` y `tenantRut-index` están declarados con `ProjectionType: ALL` (`Backend/serverless.yml`): cada índice es una **copia completa** de la ficha —hash del PIN, hash de la contraseña, RUT y campos de salud incluidos—, o sea tres copias más de los datos sensibles con la misma superficie de exposición que la tabla. Ver D-6 para el costo de corregirlo ahora frente a esperar. |
+| 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Parcial** | Personas (`rut`, `vigilanciaSalud`, `restriccionLaboral`) y Tenants (`rutEmpresa`) implementados, en dev y prod. Pendiente en los sidecars de firmas/incidentes, en los arreglos de documentos/actividades/solicitudes, y en las respuestas de encuesta. Ver D-10. |
+| 5.8 | Los índices de personas proyectan todos los atributos | **Implementado** | `personaId-index`, `email-index` y `tenantRutHmac-index` pasaron a `KEYS_ONLY`: el índice da la clave, la ficha se lee de la tabla. Ver D-6. |
 | 5.9 | El RUT no viaja completo en la verificación pública de firmas | **Implementado** | `GET /signatures/verify/{token}` es público por diseño (un fiscalizador comprueba una firma sin cuenta), y devolvía nombre y **RUT completo**: el token se convertía en una consulta abierta de identidad. Ahora el RUT va parcial (`···.678-5`), que cumple igual la función de cotejo. |
 
 ### 2.6 Infraestructura y cifrado
@@ -301,7 +301,7 @@ con bloqueo llevando objetos de prueba que después no se podrán borrar con
 facilidad.
 
 ### D-6. Reproyección de los índices de personas
-**Estado: pendiente de decisión, ligado al vaciado**
+**Estado: implementado.** Nota tardía: esta decisión quedó marcada "pendiente" en el documento mucho después de haberse hecho — se corrige acá al escribir D-10, que retoma exactamente esta reproyección para el RUT.
 
 Los tres índices de `PersonasTable` se declararon con `ProjectionType: ALL`. La
 proyección de un índice **no se puede modificar**: hay que borrarlo y recrearlo.
@@ -483,7 +483,120 @@ con el mensaje correcto, rechazo sin gastar scrypt durante la ventana, PIN
 correcto aceptado y contador en cero al vencer, métrica materializada en
 CloudWatch).
 
-**Ubicación:** `Backend/lib/limitePin.js`, enganchado en `handlers/vales/handler.js`, `handlers/signatures/handler.js` y `lib/services/PersonaService.js` (`setPin`, `completarEnrolamiento`)
+**Ubicación:** `Backend/lib/limitePin.js`, enganchado en `handlers/vales/handler.js`, `handlers/signatures/handler.js`, `lib/services/PersonaService.js` (`setPin`, `completarEnrolamiento`) y `lib/services/FirmaService.js`.
+
+**Corrección al cierre original:** el primer despliegue (22 de septiembre) cubrió
+cuatro puntos y se dio por cerrado. Al armar el inventario para el cifrado de
+campo apareció un quinto camino: `FirmaService.crear`, con su propia validación
+de PIN sin pasar por el límite, usado por documentos (firma individual y
+asistida), actividades, encuestas y los registros AT/EP e informe del Art. 71 —
+más tráfico real de firma que los cuatro puntos ya cubiertos juntos. Se corrigió
+en el punto de encuentro (`crear()` mismo, no en cada llamador) el mismo día,
+desplegado y verificado con una prueba que ejercita `FirmaService.crear`
+directamente.
+
+### D-10. Cifrado de campo: RUT buscable por HMAC, sobre de cifrado para el resto
+**Estado: implementado el 23 de septiembre de 2026 en Personas y Tenants, en dev y prod. Pendiente en firmas, incidentes, documentos, actividades, solicitudes y encuestas — ver el cierre de cada uno más abajo.**
+
+**El principio que ordena todo el diseño:** solo dos entidades se BUSCAN por
+RUT —personas (dentro de su empresa, y global para el login multi-empresa) y
+empresas (unicidad al dar de alta)—. En todos los demás lugares el RUT es una
+copia de referencia que se muestra, nunca se filtra por ella. Eso decide dónde
+va HMAC (dos tablas) y dónde va cifrado de sobre puro (todo lo demás).
+
+**Los dos mecanismos** (`Backend/lib/cifradoCampo.js`):
+
+- `hmacRut()` — HMAC-SHA256 determinista, con una llave propia en SSM
+  (`SecureString` cifrada con la CMK del sistema, separada de
+  `CREDENCIAL_PEPPER`: son secretos de propósito distinto y no se rotan
+  juntos). El RUT se normaliza antes de calcular el HMAC para que el formato de
+  entrada no cambie el resultado.
+- `cifrarSobre()`/`cifrarConLlaveDatos()` — cifrado de sobre real:
+  `kms:GenerateDataKey` contra la CMK del sistema, AES-256-GCM local con la
+  llave de datos, que viaja envuelta (nunca en claro). Aleatorio a propósito:
+  dos cifrados del mismo valor dan resultados distintos, porque ahí no hace
+  falta buscar.
+
+**La llave de datos es por EMPRESA, no por persona ni por valor**
+(`Backend/lib/llaveTenant.js`), y esta es la pieza que casi se decide mal.
+El diseño natural —una llave nueva por cada RUT— tiene el radio de exposición
+más chico posible, pero rompe cualquier operación que toque a MUCHA gente a la
+vez: listar el plantel de una empresa, o que el expediente de cumplimiento
+cuente cuántas personas están en vigilancia de salud, pasan por cada persona
+del tenant en una sola llamada. Con una llave por valor eso son N llamadas a
+KMS por pantalla. La solución —ya usada para las respuestas de encuesta— es una
+llave de datos por empresa, generada una vez (escritura condicionada para que
+dos altas simultáneas en un tenant nuevo no generen dos llaves) y reutilizada:
+listar 200 personas pasa a costar 2 llamadas a KMS por invocación —una para el
+RUT, una para salud, llaves independientes—, no 400. El radio de exposición si
+una llave se compromete es una empresa entera, que es el mismo radio que ya
+existe hoy si alguien lee esa partición de la tabla sin cifrado: no es peor que
+el statu quo, es mejor.
+
+**Personas — `rut`.** Reemplazado por `rutCifrado` (sobre, llave del tenant) +
+`rutHmac` (determinista). El índice `tenantRut-index` pasó a
+`tenantRutHmac-index`, sigue `KEYS_ONLY`: la búsqueda resuelve la clave por
+HMAC y lee la ficha completa de la tabla, mismo patrón de dos pasos que ya
+usaba `fichaDesdeClave`. `getByRutGlobal`/`getAllByRutGlobal` (la búsqueda
+cruzada de empresas que usa el login) filtran por `rutHmac = :h OR rut = :rut`
+a propósito: encuentran tanto las fichas ya migradas como las que aún no,
+porque el login no puede depender de que la migración ya haya corrido.
+
+**Personas — `vigilanciaSalud`/`restriccionLaboral`.** Mismo mecanismo, llave
+de tenant separada de la del RUT (secretos de radio de exposición distinto).
+`restriccionLaboral` se cifra con `cifrarConLlaveDatosSiempre`, no con la
+variante que trata `null` como "nada que cifrar": `null` ("sin restricción") es
+un valor legítimo del negocio, y condicionar el cifrado al contenido sería el
+mismo patrón de falla silenciosa que ya se cerró en las respuestas de encuesta
+(ver más abajo).
+
+**Tenants — `rutEmpresa`.** `rutEmpresaCifrado` + `rutEmpresaHmac`, sobre
+propio (sin llave compartida: no hay un "listar todas las empresas" en un
+camino caliente — `TenantService.listAll()` la usa un job programado, no una
+pantalla). De paso, `getByRutEmpresa` dejó de ser un `Scan` de la tabla entera
+comparando en memoria y pasó a `rutEmpresaHmac-index`, una consulta indexada.
+
+**Tenants — `reglas.representanteLegal.rut`.** Documentado como
+`rutCifrado` en el modelo, sin escritor todavía: nada en el sistema designa un
+representante legal hoy, así que en la práctica sigue siendo `null` en todo
+tenant real. Se deja la forma correcta escrita para cuando exista esa función,
+en vez de retrofitear otra vez.
+
+**"Leer y reparar", sin script de migración batch** (aprobado explícitamente:
+con una sola fila real en cada tabla, es más simple). El código lee las dos
+formas —RUT en claro si la ficha no se migró, cifrado si sí— y solo ESCRIBE el
+formato nuevo. Las pocas filas de prueba que ya existían en dev y prod se
+repararon a mano con `Backend/scripts/reparar-cifrado-legado.js`, que no es un
+script de migración de producción: es la reparación puntual de esos datos de
+prueba, para no dejarlos en un formato que el sistema ya no escribe.
+
+**Un hallazgo aparte, encontrado al trazar cada lectura de RUT:**
+`handlers/auth/handler.js` tenía su PROPIO `Scan` sobre `tenantRut-index`
+(`findPersonaByRut`, usado por la recuperación de contraseña) por fuera de
+`PersonaService` — un tercer camino independiente, después del de
+`PersonaService` y el que ya se había corregido en `FirmaService`. Se corrigió
+en el mismo cambio. Lo atrapó la prueba de proyección de índices, no una
+revisión manual: es exactamente para lo que esa prueba existe.
+
+**Verificado en producción**, no solo en dev: login por RUT contra el registro
+real ya migrado, listado de personal con el RUT correctamente descifrado, alta
+de una persona nueva contra KMS real con verificación directa en la tabla (sin
+`rut` en claro, `rutCifrado` y `rutHmac` presentes, `vigilanciaSalud` en null
+con su sobre cifrado al lado). 553 pruebas en verde, incluidas 22 nuevas
+específicas de este cambio.
+
+**Pendiente, en el orden acordado:** los sidecars de D-8 (firmas, incidentes)
+hoy guardan el RUT y la traza de auditoría en claro dentro del elemento
+aparte — cifrarlos ahí es la próxima pieza, sobre un lugar que ya existe. Después,
+los arreglos embebidos en documentos, actividades y solicitudes de firma
+(`firmas[].rut`, `asignaciones[].rut`, `asistentes[].rut`, `trabajadores[].rut`,
+y `firmas[].ip` en documentos, que D-8 no había visto porque trabajó sobre
+`SignaturesTable` y no sobre la copia que vive embebida en `DocumentsTable`).
+Por último, `recipients[].responses[]` de encuestas, cifrado siempre —
+decisión ya tomada, no condicionada a si la encuesta es de salud, por la misma
+razón que `restriccionLaboral` no se condiciona a si tiene contenido.
+
+**Ubicación:** `Backend/lib/cifradoCampo.js`, `Backend/lib/llaveTenant.js`, `Backend/lib/models/Persona.js`, `Backend/lib/models/Tenant.js`, `Backend/lib/services/PersonaService.js`, `Backend/lib/services/TenantService.js`, `Backend/handlers/auth/handler.js`, `Backend/scripts/reparar-cifrado-legado.js`
 
 ---
 

@@ -107,8 +107,21 @@ class FirmaService {
             throw new Error('Persona no está habilitada. Debe completar el enrolamiento primero.');
         }
 
-        // Validar credencial con la estrategia correspondiente
-        const valido = await estrategia.validar(persona, credencial);
+        // Validar credencial con la estrategia correspondiente.
+        //
+        // El PIN pasa por el límite de intentos (H-2, lib/limitePin.js) desde
+        // ACÁ, no en cada llamador. `crear()` es el único choque de todos los
+        // caminos que firman con PIN además de /signatures directo: documentos
+        // (individual y masiva), actividades, encuestas y los registros AT/EP e
+        // Art. 71. Parcharlos uno por uno habría dejado abierto el que se
+        // olvidara; parchar el punto de encuentro los cierra todos a la vez.
+        let valido;
+        if (metodo === 'PIN') {
+            const { verificarConLimiteOLanzar } = require('../limitePin');
+            valido = await verificarConLimiteOLanzar(persona, credencial, verifyPin);
+        } else {
+            valido = await estrategia.validar(persona, credencial);
+        }
         if (!valido) {
             throw new Error(`Validación de ${metodo} fallida`);
         }

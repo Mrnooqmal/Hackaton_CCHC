@@ -6,7 +6,7 @@
 //
 // El cambio tiene una consecuencia que no es obvia y que ya nos mordió en
 // producción: **cada índice proyecta sus propias claves, no las de los demás**.
-// `tenantRut-index` devuelve `tenantId`, `rut`, `PK` y `SK`; NO devuelve
+// `tenantRutHmac-index` devuelve `tenantId`, `rutHmac`, `PK` y `SK`; NO devuelve
 // `personaId`. Un código que asumía lo contrario dejó la recuperación de
 // contraseña respondiendo 200 con su mensaje genérico mientras por detrás
 // fallaba con "ExpressionAttributeValues must not be empty".
@@ -15,22 +15,28 @@
 // a leer del índice un campo que el índice no tiene, fallan acá y no en
 // producción.
 
-const { test, beforeEach, afterEach } = require('node:test');
+process.env.CAMPO_HMAC_KEY = 'clave-de-prueba-hmac';
+process.env.CAMPO_CIFRADO_LOCAL_KEY = require('crypto').randomBytes(32).toString('base64');
+const { test, before, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { docClient } = require('../lib/clients/dynamodb');
 const { PersonaService } = require('../lib/services/PersonaService');
+const cifradoCampo = require('../lib/cifradoCampo');
 
 const EMPRESA = 't-empresa-a';
 const PERSONA = 'p-1';
+const RUT = '12.345.678-5';
 
-// La ficha completa, tal como vive en la TABLA.
+// La ficha completa, tal como vive en la TABLA. En formato legado (RUT en
+// claro, sin `rutHmac` calculado todavía) a propósito: es el caso que más
+// importa cubrir, porque es el que hay hoy en dev y en prod.
 const fichaCompleta = {
     PK: `TENANT#${EMPRESA}`,
     SK: `PERSONA#${PERSONA}`,
     personaId: PERSONA,
     tenantId: EMPRESA,
-    rut: '12.345.678-5',
+    rut: RUT,
     email: 'persona@ejemplo.cl',
     nombre: 'Juan',
     apellido: 'Pérez',
@@ -45,11 +51,12 @@ const fichaCompleta = {
     vigilanciaSalud: { enVigilancia: true },
 };
 
-/** Claves que proyecta cada índice: las suyas, más las de la tabla. */
+/** Claves que proyecta cada índice: las suyas, más las de la tabla.
+ *  `tenantRutHmac-index` (D-10) proyecta el HMAC, nunca el RUT en claro. */
 const PROYECCION = {
     'personaId-index': ['PK', 'SK', 'personaId'],
     'email-index': ['PK', 'SK', 'email'],
-    'tenantRut-index': ['PK', 'SK', 'tenantId', 'rut'],
+    'tenantRutHmac-index': ['PK', 'SK', 'tenantId', 'rutHmac'],
 };
 
 const soloProyectado = (indice) =>
@@ -57,6 +64,12 @@ const soloProyectado = (indice) =>
 
 let originalSend;
 let consultas;
+
+// El HMAC se calcula UNA vez, con la misma función que usa el servicio, para
+// que el doble encuentre exactamente lo que `getByRut` va a pedir.
+before(async () => {
+    fichaCompleta.rutHmac = await cifradoCampo.hmacRut(RUT);
+});
 
 beforeEach(() => {
     consultas = [];
@@ -130,9 +143,9 @@ test('el ítem crudo trae los campos que el modelo no preserva', async () => {
 test('el índice por RUT no trae personaId: resolver por él falla', async () => {
     // Esto documenta el error, no lo permite: quien consulta un índice tiene que
     // resolver la ficha con `fichaDesdeClave`, no deducirla del resultado.
-    const claveDelIndice = soloProyectado('tenantRut-index');
+    const claveDelIndice = soloProyectado('tenantRutHmac-index');
 
-    assert.equal(claveDelIndice.personaId, undefined, 'tenantRut-index NO proyecta personaId');
+    assert.equal(claveDelIndice.personaId, undefined, 'tenantRutHmac-index NO proyecta personaId');
     await assert.rejects(
         () => new PersonaService().getById(claveDelIndice.personaId),
         /ExpressionAttributeValues/,
@@ -152,7 +165,7 @@ test('resolver desde la clave del índice sí funciona, venga del índice que ve
 // ─── El camino completo de recuperación de contraseña ────────────────────────
 
 test('la recuperación de contraseña encuentra a la persona por su RUT', async () => {
-    // Es el flujo que se cayó: `Scan` sobre tenantRut-index y, con lo que
+    // Es el flujo que se cayó: `Scan` sobre tenantRutHmac-index y, con lo que
     // devuelve, resolver la ficha.
     const auth = require('../handlers/auth/handler');
 

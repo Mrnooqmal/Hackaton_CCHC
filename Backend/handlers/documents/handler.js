@@ -1019,6 +1019,7 @@ module.exports.sign = async (event) => {
                 persona
             });
         } catch (firmaErr) {
+            if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
             return error(firmaErr.message, 400);
         }
 
@@ -1156,6 +1157,7 @@ module.exports.signAssisted = async (event) => {
                 persona: firmante
             });
         } catch (firmaErr) {
+            if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
             return error(firmaErr.message, 400);
         }
 

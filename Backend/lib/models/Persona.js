@@ -48,7 +48,20 @@ class Persona {
         this.tenantId = data.tenantId;
 
         // Datos personales
-        this.rut = data.rut;
+        //
+        // El RUT se guarda cifrado (D-10): `rutCifrado` + `rutHmac` para
+        // buscar. `this.rut` queda en claro en MEMORIA una vez que
+        // `PersonaService` lo descifra — el resto del sistema (~60 lugares)
+        // sigue leyendo `persona.rut` exactamente igual que siempre, el
+        // límite async queda encerrado en PersonaService.
+        //
+        // Lee las dos formas: si el ítem trae `rut` en claro (ficha vieja, sin
+        // migrar) se usa directo; si trae `rutCifrado`, `this.rut` queda `null`
+        // hasta que `PersonaService._hidratar` lo complete. Nunca se vuelve a
+        // ESCRIBIR en claro: `toDynamoItem` solo emite el formato nuevo.
+        this.rut = data.rut || null;
+        this._rutCifrado = data.rutCifrado || null;
+        this._rutHmac = data.rutHmac || null;
         this.nombre = data.nombre;
         this.apellidoPaterno = data.apellidoPaterno || '';
         this.apellidoMaterno = data.apellidoMaterno || '';
@@ -119,16 +132,26 @@ class Persona {
         // Estado
         this.estado = data.estado || 'pendiente';
 
-        // Vigilancia de salud ocupacional (DS44)
-        this.vigilanciaSalud = data.vigilanciaSalud || {
+        // Vigilancia de salud ocupacional (DS44) y restricción/traslado por EP.
+        // Igual criterio que el RUT: cifradas en la tabla (D-10), en claro en
+        // memoria una vez que `PersonaService._hidratar` las descifra. Si el
+        // ítem trae el objeto en claro (ficha vieja, sin migrar) se usa directo
+        // — con eso `this.vigilanciaSalud` NUNCA queda con el default "sin
+        // vigilancia" por error: o viene en claro, o llega cifrada y
+        // `_saludSinDescifrar` avisa que falta el paso async.
+        const trailSalud = data.vigilanciaSaludCifrada || data.restriccionLaboralCifrada;
+        this._vigilanciaSaludCifrada = data.vigilanciaSaludCifrada || null;
+        this._restriccionLaboralCifrada = data.restriccionLaboralCifrada || null;
+        this.vigilanciaSalud = data.vigilanciaSalud || (trailSalud ? null : {
             enVigilancia: false,
             protocolos: [],
             fechaUltimoExamen: null,
             aptitudLaboral: null,
             restricciones: []
-        };
-
-        // Restriccion o traslado por EP (DS44)
+        });
+        // El default de restriccionLaboral ya es `null` en ambos casos (en
+        // claro sin dato, o cifrada sin descifrar todavía): no hace falta
+        // distinguir acá, `_restriccionLaboralCifrada` es la señal.
         this.restriccionLaboral = data.restriccionLaboral || null;
 
         // Preferencias
@@ -217,6 +240,17 @@ class Persona {
         );
     }
 
+    /** ¿Falta descifrar el RUT? Cifrada y sin descifrar todavía = true. */
+    get rutSinDescifrar() {
+        return !!(this._rutCifrado && !this.rut);
+    }
+
+    /** ¿Falta descifrar la salud? Mismo criterio, para las dos juntas: se
+     *  cifran con la misma llave del tenant, se descifran en el mismo paso. */
+    get saludSinDescifrar() {
+        return !!((this._vigilanciaSaludCifrada || this._restriccionLaboralCifrada) && this.vigilanciaSalud === null);
+    }
+
     tienePinConfigurado() {
         return !!this._pinHash;
     }
@@ -242,12 +276,42 @@ class Persona {
     /**
      * Convierte a item de DynamoDB
      */
+    /**
+     * Convierte a item de DynamoDB.
+     *
+     * Requiere `this._rutCifrado`/`this._rutHmac` (y, si hay salud, sus
+     * versiones cifradas) YA calculados — este método no cifra nada, porque
+     * cifrar es async y `toDynamoItem` no lo es. Quien construye la instancia
+     * antes de guardarla (`PersonaService.crear`) tiene que haber llamado a
+     * `cifradoCampo`/`llaveTenant` antes y pasado `rutCifrado`/`rutHmac` en el
+     * `data` del constructor. Si faltan, se lanza acá y no en producción con un
+     * `rutCifrado: undefined` silencioso.
+     */
     toDynamoItem() {
+        if (!this._rutCifrado || !this._rutHmac) {
+            throw new Error('toDynamoItem: falta rutCifrado/rutHmac — el RUT nunca se escribe en claro');
+        }
+        // La salud siempre tiene un valor (al menos el default "sin vigilancia"
+        // que pone el constructor), así que siempre hay algo que cifrar. Si no
+        // está cifrado a esta altura, quien construyó la instancia se saltó el
+        // paso — mejor que reviente acá y no que escriba un `undefined`.
+        if (!this._vigilanciaSaludCifrada) {
+            throw new Error('toDynamoItem: falta vigilanciaSaludCifrada — la salud nunca se escribe en claro');
+        }
+        // A diferencia de vigilanciaSalud, restriccionLaboral SÍ puede ser
+        // legítimamente `null` (sin restricción). Se cifra igual —incluido el
+        // `null`— para no repetir el error de condicionar el cifrado al
+        // contenido, que es justo el patrón de falla silenciosa que se evitó
+        // en las respuestas de encuesta.
+        if (!this._restriccionLaboralCifrada) {
+            throw new Error('toDynamoItem: falta restriccionLaboralCifrada — la salud nunca se escribe en claro');
+        }
         return {
             ...this.toDynamoKeys(),
             personaId: this.personaId,
             tenantId: this.tenantId,
-            rut: this.rut,
+            rutCifrado: this._rutCifrado,
+            rutHmac: this._rutHmac,
             nombre: this.nombre,
             apellidoPaterno: this.apellidoPaterno,
             apellidoMaterno: this.apellidoMaterno,
@@ -278,8 +342,8 @@ class Persona {
             firmaEnrolamiento: this.firmaEnrolamiento,
             onboardingDS44: this.onboardingDS44,
             estado: this.estado,
-            vigilanciaSalud: this.vigilanciaSalud,
-            restriccionLaboral: this.restriccionLaboral,
+            vigilanciaSaludCifrada: this._vigilanciaSaludCifrada,
+            restriccionLaboralCifrada: this._restriccionLaboralCifrada,
             preferencias: this.preferencias,
             creadoPor: this.creadoPor,
             desvinculacion: this.desvinculacion,

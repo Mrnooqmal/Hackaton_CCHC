@@ -10,6 +10,7 @@ const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sd
 const { docClient } = require('../clients/dynamodb');
 const { Tenant } = require('../models/Tenant');
 const { validateRequired } = require('../utils/validation');
+const cifradoCampo = require('../cifradoCampo');
 
 const TENANTS_TABLE = process.env.TENANTS_TABLE || 'Tenants';
 
@@ -47,11 +48,23 @@ class TenantService {
         }
 
         const tenantId = uuidv4();
+
+        // Cifrado de sobre por-registro (D-10): a diferencia del RUT de
+        // personas, no hay un "listar todas las empresas" en un camino
+        // caliente que justifique una llave compartida — `listAll()` la usa
+        // un job programado, no una pantalla.
+        const [rutEmpresaHmac, rutEmpresaCifrado] = await Promise.all([
+            cifradoCampo.hmacRut(data.rutEmpresa),
+            cifradoCampo.cifrarSobre(data.rutEmpresa),
+        ]);
+
         const tenant = new Tenant({
             tenantId,
             slug,
             nombre: data.nombre,
             rutEmpresa: data.rutEmpresa,
+            rutEmpresaHmac,
+            rutEmpresaCifrado,
             cantidadTrabajadores,
             settings: data.settings,
             reglas: data.reglas,
@@ -68,6 +81,16 @@ class TenantService {
     }
 
     /**
+     * Descifra el RUT de empresa de un `Tenant` ya construido, o lo deja tal
+     * cual si es una ficha vieja sin migrar (todavía en claro).
+     */
+    async _hidratar(tenant) {
+        if (!tenant || !tenant._rutEmpresaCifrado || tenant.rutEmpresa) return tenant;
+        tenant.rutEmpresa = await cifradoCampo.descifrarSobre(tenant._rutEmpresaCifrado);
+        return tenant;
+    }
+
+    /**
      * Obtener tenant por ID
      */
     async getById(tenantId) {
@@ -78,7 +101,7 @@ class TenantService {
                 SK: `METADATA#${tenantId}`
             }
         }));
-        return Tenant.fromDynamoItem(result.Item);
+        return this._hidratar(Tenant.fromDynamoItem(result.Item));
     }
 
     /**
@@ -104,7 +127,7 @@ class TenantService {
             TableName: this.table,
             Key: { PK: clave.PK, SK: clave.SK }
         }));
-        return res.Item ? Tenant.fromDynamoItem(res.Item) : null;
+        return this._hidratar(res.Item ? Tenant.fromDynamoItem(res.Item) : null);
     }
 
     /**
@@ -158,7 +181,7 @@ class TenantService {
             ReturnValues: 'ALL_NEW'
         }));
 
-        return Tenant.fromDynamoItem(result.Attributes);
+        return this._hidratar(Tenant.fromDynamoItem(result.Attributes));
     }
 
     /**
@@ -230,7 +253,7 @@ class TenantService {
                 ':sk': 'METADATA#'
             }
         }));
-        return (result.Items || []).map(item => Tenant.fromDynamoItem(item));
+        return Promise.all((result.Items || []).map(item => this._hidratar(Tenant.fromDynamoItem(item))));
     }
 
     /**
@@ -244,23 +267,33 @@ class TenantService {
      */
 
     /**
-     * Buscar tenant por RUT de empresa (scan con filtro)
+     * Buscar tenant por RUT de empresa.
+     *
+     * Antes era un `Scan` de la tabla entera comparando en memoria — cada alta
+     * de empresa recorría TODAS las empresas del sistema para comprobar que el
+     * RUT no estuviera repetido. Con D-10 el RUT queda buscable por HMAC
+     * (`rutEmpresaHmac-index`), así que esto pasa a ser una consulta indexada:
+     * más barato, y de paso dejó de haber una razón para leer cada empresa
+     * completa —roles, configuración, RUT de las demás— solo para dar de alta
+     * una nueva.
      */
     async getByRutEmpresa(rutEmpresa) {
-        const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
-        const rutNormalizado = rutEmpresa.replace(/\./g, '').toLowerCase();
-        const result = await this.dynamo.send(new ScanCommand({
+        const rutHmac = await cifradoCampo.hmacRut(rutEmpresa);
+        const result = await this.dynamo.send(new QueryCommand({
             TableName: this.table,
-            FilterExpression: 'begins_with(PK, :pk) AND begins_with(SK, :sk)',
-            ExpressionAttributeValues: {
-                ':pk': 'TENANT#',
-                ':sk': 'METADATA#'
-            }
+            IndexName: 'rutEmpresaHmac-index',
+            KeyConditionExpression: 'rutEmpresaHmac = :h',
+            ExpressionAttributeValues: { ':h': rutHmac },
+            Limit: 1
         }));
-        const items = (result.Items || []).map(item => Tenant.fromDynamoItem(item));
-        return items.find(t => t && t.rutEmpresa &&
-            t.rutEmpresa.replace(/\./g, '').toLowerCase() === rutNormalizado
-        ) || null;
+        const clave = (result.Items || [])[0];
+        if (!clave?.PK || !clave?.SK) return null;
+
+        const res = await this.dynamo.send(new GetCommand({
+            TableName: this.table,
+            Key: { PK: clave.PK, SK: clave.SK }
+        }));
+        return this._hidratar(res.Item ? Tenant.fromDynamoItem(res.Item) : null);
     }
 
     /**

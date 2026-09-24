@@ -96,6 +96,16 @@ provider:
     # CloudFormation, que es justo de donde se la quiere sacar.
     CREDENCIAL_PEPPER_PARAM: /${self:service}/${self:provider.stage}/credencial-pepper
     CREDENCIAL_PEPPER_V: ${env:CREDENCIAL_PEPPER_V, '1'}
+    # --- Cifrado de campo (D-10: RUT y salud) ---
+    # Igual criterio que la pimienta de credenciales: el NOMBRE del parámetro,
+    # nunca el valor, y se lee en ejecución para que no quede escrito en claro
+    # en la plantilla de CloudFormation. Llave separada de CREDENCIAL_PEPPER:
+    # protege el HMAC del RUT, no las credenciales, y no se rota junto con ella.
+    CAMPO_HMAC_KEY_PARAM: /${self:service}/${self:provider.stage}/campo-hmac-key
+    CAMPO_HMAC_KEY_V: ${env:CAMPO_HMAC_KEY_V, '1'}
+    # La CMK del sistema (`ClaveDatos`), para el cifrado de sobre. Es un id, no
+    # un secreto: puede ir resuelto en la plantilla sin problema.
+    CAMPO_CIFRADO_KMS_KEY_ID: !Ref ClaveDatos
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
     # --- Gating de alta de empresas (Fase 1: PIN estático) ---
@@ -238,6 +248,7 @@ provider:
             - ssm:GetParameter
           Resource:
             - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${self:service}/${self:provider.stage}/credencial-pepper'
+            - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${self:service}/${self:provider.stage}/campo-hmac-key'
         - Effect: Allow
           Action:
             - sns:Publish
@@ -1356,6 +1367,8 @@ resources:
             AttributeType: S
           - AttributeName: slug
             AttributeType: S
+          - AttributeName: rutEmpresaHmac
+            AttributeType: S
         KeySchema:
           - AttributeName: PK
             KeyType: HASH
@@ -1375,6 +1388,16 @@ resources:
           # ninguno: quedó de cuando `GET /tenants` listaba la plataforma entera.
           # Era una copia completa de todas las empresas para una consulta que
           # nadie hacía.
+          #
+          # rutEmpresaHmac-index (D-10): reemplaza el `Scan` de tabla completa
+          # que hacía `getByRutEmpresa` para comprobar unicidad al dar de alta.
+          # El RUT de empresa se busca por su HMAC, nunca en claro.
+          - IndexName: rutEmpresaHmac-index
+            KeySchema:
+              - AttributeName: rutEmpresaHmac
+                KeyType: HASH
+            Projection:
+              ProjectionType: KEYS_ONLY
         # Recuperación a un punto en el tiempo (35 días). Protege contra el
         # error propio —un borrado o una escritura masiva equivocada—, que es
         # bastante más probable que un atacante. Sin esto no hay ninguna vía
@@ -1443,7 +1466,7 @@ resources:
             AttributeType: S
           - AttributeName: tenantId
             AttributeType: S
-          - AttributeName: rut
+          - AttributeName: rutHmac
             AttributeType: S
         KeySchema:
           - AttributeName: PK
@@ -1459,6 +1482,11 @@ resources:
         # ficha, y la ficha se lee de la tabla. Cuesta una lectura más por
         # búsqueda; a cambio, el dato sensible vive en un solo lugar. El paso
         # extra está en `PersonaService`, que resuelve índice → clave → ficha.
+        #
+        # `tenantRut-index` pasó a `tenantRutHmac-index` (D-10): el RUT se busca
+        # por su HMAC determinista, nunca en claro — ni siquiera como clave de
+        # un índice `KEYS_ONLY`, que de todas formas seguiría siendo una copia
+        # buscable del RUT de cada persona.
         GlobalSecondaryIndexes:
           - IndexName: personaId-index
             KeySchema:
@@ -1472,11 +1500,11 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: KEYS_ONLY
-          - IndexName: tenantRut-index
+          - IndexName: tenantRutHmac-index
             KeySchema:
               - AttributeName: tenantId
                 KeyType: HASH
-              - AttributeName: rut
+              - AttributeName: rutHmac
                 KeyType: RANGE
             Projection:
               ProjectionType: KEYS_ONLY
@@ -1821,8 +1849,14 @@ resources:
               - AttributeName: tenantId
                 KeyType: HASH
             Projection:
-              # Lista de PERMITIDOS: lo que se agregue a esta tabla NO entra
-              # al indice salvo que alguien lo decida. Ver decision D-8.
+              # Lista de PERMITIDOS: lo que se agregue a esta tabla NO entra al
+              # indice salvo que alguien lo decida (D-8). `recipients` quedó
+              # adentro por error el 19 de septiembre —el comentario decía
+              # "ruts", que no es el nombre real del campo— y llevaba el RUT de
+              # cada destinatario de cada encuesta al índice. Corregido el 23.
+              # `recipients` va a volver a proyectarse cuando se implemente el
+              # diseño de cifrado (D-10): cifrado, en un elemento aparte según
+              # corresponda, nunca en claro.
               ProjectionType: INCLUDE
               NonKeyAttributes:
                 - titulo
@@ -1835,7 +1869,6 @@ resources:
                 - cargo
                 - kitItemKey
                 - stats
-                - recipients
                 - createdAt
                 - updatedAt
         # Recuperación a un punto en el tiempo (35 días). Protege contra el

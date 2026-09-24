@@ -803,20 +803,27 @@ module.exports.registerAttendance = async (event) => {
 
             // Crear firma en SignaturesTable (PIN del trabajador, o su vale).
             const metodo = vale ? 'VALE' : 'PIN';
-            const firma = await FirmaService.crear({
-                personaId: pid,
-                tenantId: activity.tenantId,
-                obraId: activity.obraId || null,
-                metodo,
-                credencial: vale
-                    ? { vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
-                    : pin,
-                tipoFirma: 'actividad',
-                referenciaId: id,
-                referenciaTipo: 'activity',
-                contexto,
-                persona
-            });
+            let firma;
+            try {
+                firma = await FirmaService.crear({
+                    personaId: pid,
+                    tenantId: activity.tenantId,
+                    obraId: activity.obraId || null,
+                    metodo,
+                    credencial: vale
+                        ? { vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
+                        : pin,
+                    tipoFirma: 'actividad',
+                    referenciaId: id,
+                    referenciaTipo: 'activity',
+                    contexto,
+                    persona
+                });
+            } catch (firmaErr) {
+                // El límite de intentos (H-2) responde 423, no el 500 genérico.
+                if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+                throw firmaErr;
+            }
 
             // Etiqueta de atraso: se firmó después de la hora programada de la
             // charla. No bloquea; solo queda registrado para el reporte.
