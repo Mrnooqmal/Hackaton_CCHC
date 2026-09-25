@@ -19,6 +19,7 @@ process.env.CREDENCIAL_SCRYPT_LN = '10';
 
 const { describe, test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const { crearTablaTenants } = require('./doble-tabla-tenants');
 
 const { docClient } = require('../lib/clients/dynamodb');
 const cifradoCampo = require('../lib/cifradoCampo');
@@ -82,36 +83,18 @@ describe('cifradoCampo', () => {
 // ─── La llave compartida por tenant ──────────────────────────────────────────
 
 describe('llaveTenant', () => {
-    let tenantsAlmacen;
-    let escriturasTenant;
+    let tabla;
     let originalSend;
 
     const claveDeMetadata = (tenantId) => `TENANT#${tenantId}#METADATA#${tenantId}`;
 
     beforeEach(() => {
         llaveTenant._olvidarCache();
-        tenantsAlmacen = new Map();
-        escriturasTenant = [];
+        // Las empresas que estas pruebas usan ya existen: una llave se pide para
+        // una empresa dada de alta, nunca para una que no está.
+        tabla = crearTablaTenants(['t-1', 't-2', 't-nuevo']);
         originalSend = docClient.send;
-        docClient.send = async (cmd) => {
-            const nombre = cmd.constructor.name;
-            const input = cmd.input || {};
-            if (!(input.TableName || '').includes('tenants-prueba-cifrado')) return {};
-
-            const clave = `${input.Key?.PK}#${input.Key?.SK}`;
-            if (nombre === 'GetCommand') return { Item: tenantsAlmacen.get(clave) };
-            if (nombre === 'UpdateCommand') {
-                escriturasTenant.push(input);
-                const actual = tenantsAlmacen.get(clave);
-                const [, atributo] = input.UpdateExpression.match(/SET (\w+) = :envuelta/) || [];
-                if (input.ConditionExpression?.includes('attribute_not_exists') && actual?.[atributo]) {
-                    throw Object.assign(new Error('condición'), { name: 'ConditionalCheckFailedException' });
-                }
-                tenantsAlmacen.set(clave, { ...(actual || {}), [atributo]: input.ExpressionAttributeValues[':envuelta'] });
-                return {};
-            }
-            return {};
-        };
+        docClient.send = async (cmd) => tabla.responder(cmd) ?? {};
     });
 
     afterEach(() => { docClient.send = originalSend; });
@@ -119,7 +102,7 @@ describe('llaveTenant', () => {
     test('la primera vez que un tenant necesita la llave, se crea y se guarda', async () => {
         const llave = await llaveTenant.llaveDeTenant('t-1', llaveTenant.PROPOSITOS.RUT_PERSONAS);
         assert.ok(Buffer.isBuffer(llave));
-        assert.equal(escriturasTenant.length, 1, 'una escritura: la creación');
+        assert.equal(tabla.escrituras.length, 1, 'una escritura: la creación');
     });
 
     test('la segunda vez, se reutiliza la que ya existe (sin nueva escritura)', async () => {
@@ -128,7 +111,7 @@ describe('llaveTenant', () => {
         const b = await llaveTenant.llaveDeTenant('t-1', llaveTenant.PROPOSITOS.RUT_PERSONAS);
 
         assert.deepEqual(a, b, 'misma llave');
-        assert.equal(escriturasTenant.length, 1, 'no se crea una segunda vez');
+        assert.equal(tabla.escrituras.length, 1, 'no se crea una segunda vez');
     });
 
     test('tenants distintos pasan por su propia escritura, no comparten fila', async () => {
@@ -142,19 +125,19 @@ describe('llaveTenant', () => {
         llaveTenant._olvidarCache();
         await llaveTenant.llaveDeTenant('t-2', llaveTenant.PROPOSITOS.RUT_PERSONAS);
 
-        assert.equal(escriturasTenant.length, 2, 'una creación por tenant, no una compartida');
-        assert.ok(tenantsAlmacen.get(claveDeMetadata('t-1'))?.rutPersonasDataKey);
-        assert.ok(tenantsAlmacen.get(claveDeMetadata('t-2'))?.rutPersonasDataKey);
+        assert.equal(tabla.escrituras.length, 2, 'una creación por tenant, no una compartida');
+        assert.ok(tabla.filas.get(claveDeMetadata('t-1'))?.rutPersonasDataKey);
+        assert.ok(tabla.filas.get(claveDeMetadata('t-2'))?.rutPersonasDataKey);
     });
 
     test('RUT y salud son atributos distintos en la fila del tenant', async () => {
         await llaveTenant.llaveDeTenant('t-1', llaveTenant.PROPOSITOS.RUT_PERSONAS);
         await llaveTenant.llaveDeTenant('t-1', llaveTenant.PROPOSITOS.SALUD);
 
-        const fila = tenantsAlmacen.get(claveDeMetadata('t-1'));
+        const fila = tabla.filas.get(claveDeMetadata('t-1'));
         assert.ok(fila.rutPersonasDataKey);
         assert.ok(fila.saludDataKey);
-        assert.equal(escriturasTenant.length, 2, 'dos llaves, dos escrituras');
+        assert.equal(tabla.escrituras.length, 2, 'dos llaves, dos escrituras');
     });
 
     test('dos altas simultáneas en un tenant nuevo no crean dos llaves', async () => {
@@ -168,6 +151,40 @@ describe('llaveTenant', () => {
         assert.deepEqual(a, b);
     });
 
+    test('pedir la llave de una empresa que NO existe falla, y no escribe nada', async () => {
+        // Antes seguía de largo y el UpdateCommand —un upsert— fabricaba un
+        // `TENANT#<id>` fantasma con solo las llaves adentro. Así apareció
+        // `TENANT#default` en dev, que `TenantService.listAll()` levanta como
+        // si fuera una empresa.
+        await assert.rejects(
+            () => llaveTenant.llaveDeTenant('no-existe', llaveTenant.PROPOSITOS.RUT_PERSONAS),
+            (err) => err.codigo === 'TENANT_INEXISTENTE'
+        );
+        assert.equal(tabla.escrituras.length, 0, 'ninguna escritura: no se crea una empresa por la puerta de atrás');
+        assert.equal(tabla.filas.get(claveDeMetadata('no-existe')), undefined);
+    });
+
+    test('si la empresa se borra entre la lectura y la creación, tampoco resucita', async () => {
+        // La carrera que cubre `attribute_exists(PK)`: la lectura la ve, pero
+        // cuando llega la escritura ya no está.
+        const original = tabla.responder;
+        let lecturas = 0;
+        docClient.send = async (cmd) => {
+            if (cmd.constructor.name === 'GetCommand' && ++lecturas === 1) {
+                const r = original(cmd);
+                tabla.filas.delete(claveDeMetadata('t-1')); // se borra justo después
+                return r;
+            }
+            return original(cmd) ?? {};
+        };
+
+        await assert.rejects(
+            () => llaveTenant.llaveDeTenant('t-1', llaveTenant.PROPOSITOS.RUT_PERSONAS),
+            (err) => err.codigo === 'TENANT_INEXISTENTE'
+        );
+        assert.equal(tabla.filas.get(claveDeMetadata('t-1')), undefined, 'la empresa borrada no reaparece');
+    });
+
     test('un propósito que no es RUT_PERSONAS ni SALUD, se rechaza', async () => {
         await assert.rejects(() => llaveTenant.llaveDeTenant('t-1', 'rutPersonasDataKey_mal_escrito'));
     });
@@ -176,13 +193,13 @@ describe('llaveTenant', () => {
 // ─── PersonaService: nunca en claro, buscable por HMAC, legado sigue leyendo ─
 
 describe('PersonaService con cifrado de campo', () => {
-    let tenantsAlmacen;
+    let tablaTenants;
     let personasAlmacen;
     let originalSend;
 
     beforeEach(() => {
         llaveTenant._olvidarCache();
-        tenantsAlmacen = new Map();
+        tablaTenants = crearTablaTenants(['t-1', 't-2', 't-lote']);
         personasAlmacen = [];
         originalSend = docClient.send;
         docClient.send = async (cmd) => {
@@ -191,17 +208,7 @@ describe('PersonaService con cifrado de campo', () => {
             const tabla = input.TableName || '';
 
             if (tabla.includes('tenants-prueba-cifrado')) {
-                const clave = `${input.Key?.PK}#${input.Key?.SK}`;
-                if (nombre === 'GetCommand') return { Item: tenantsAlmacen.get(clave) };
-                if (nombre === 'UpdateCommand') {
-                    const actual = tenantsAlmacen.get(clave);
-                    const [, atributo] = input.UpdateExpression.match(/SET (\w+) = :envuelta/) || [];
-                    if (input.ConditionExpression?.includes('attribute_not_exists') && actual?.[atributo]) {
-                        throw Object.assign(new Error('condición'), { name: 'ConditionalCheckFailedException' });
-                    }
-                    tenantsAlmacen.set(clave, { ...(actual || {}), [atributo]: input.ExpressionAttributeValues[':envuelta'] });
-                    return {};
-                }
+                return tablaTenants.responder(cmd) ?? {};
             }
             if (tabla.includes('personas-prueba-cifrado')) {
                 if (nombre === 'PutCommand') { personasAlmacen.push(input.Item); return {}; }

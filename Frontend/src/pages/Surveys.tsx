@@ -517,7 +517,7 @@ export default function Surveys() {
             return `Cargo: ${survey.audience.cargo}`;
         }
         if (survey.audience?.tipo === 'personalizado') {
-            return `${survey.audience.ruts?.length || 0} trabajador(es)`;
+            return `${survey.audience.totalRuts ?? 0} trabajador(es)`;
         }
         return 'Todos los trabajadores';
     };

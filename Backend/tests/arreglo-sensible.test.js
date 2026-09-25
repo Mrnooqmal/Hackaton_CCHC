@@ -21,6 +21,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { docClient } = require('../lib/clients/dynamodb');
+const { crearTablaTenants } = require('./doble-tabla-tenants');
 const {
     construirAsignacion,
     descifrarDocumento,
@@ -33,35 +34,21 @@ const { FirmaService } = require('../lib/services/FirmaService');
 
 const RUT = '12.345.678-5';
 
-/** Doble de la tabla: guarda la llave de datos del tenant como lo haría Dynamo,
- *  y cuenta cuántas veces se fue a buscar (el costo que el diseño acota). */
+/** Las empresas que existen en estas pruebas. Una llave se pide para una
+ *  empresa dada de alta, nunca para una que no está. */
+const EMPRESAS = ['t-1', 't1', 't-a', 't-b', 't-nueva'];
+
+/** La tabla de empresas compartida, más un contador de lecturas: el costo que
+ *  el diseño acota es cuántas veces se va a buscar la llave. */
 const conTablaDeLlaves = () => {
-    const llaves = new Map();
+    const tabla = crearTablaTenants(EMPRESAS);
     const conteo = { lecturas: 0 };
     const original = docClient.send;
     docClient.send = async (cmd) => {
-        const nombre = cmd.constructor.name;
-        const input = cmd.input || {};
-        if (nombre === 'GetCommand') {
-            conteo.lecturas += 1;
-            return { Item: llaves.get(`${input.Key.PK}|${input.Key.SK}`) };
-        }
-        if (nombre === 'UpdateCommand') {
-            const clave = `${input.Key.PK}|${input.Key.SK}`;
-            const previo = llaves.get(clave) || { PK: input.Key.PK, SK: input.Key.SK };
-            const valores = input.ExpressionAttributeValues || {};
-            const nombres = input.ExpressionAttributeNames || {};
-            const item = { ...previo };
-            for (const [ph, campo] of Object.entries(nombres)) {
-                const vh = `:${ph.slice(1)}`;
-                if (valores[vh] !== undefined) item[campo] = valores[vh];
-            }
-            llaves.set(clave, item);
-            return { Attributes: item };
-        }
-        return {};
+        if (cmd.constructor.name === 'GetCommand') conteo.lecturas += 1;
+        return tabla.responder(cmd) ?? {};
     };
-    return { conteo, restaurar: () => { docClient.send = original; } };
+    return { conteo, tabla, restaurar: () => { docClient.send = original; } };
 };
 
 describe('cifrado de los arreglos embebidos', () => {
@@ -123,11 +110,13 @@ describe('cifrado de los arreglos embebidos', () => {
         // verdad. Lo que sí se comprueba, y es lo que se rompería al programar,
         // es que la llave se pide y se guarda contra la partición de CADA
         // empresa: si alguien la volviera global, estas claves serían una sola.
+        require('../lib/llaveTenant')._olvidarCache();
         const claves = [];
+        const propia = crearTablaTenants(['t-a', 't-b']);
         const original = docClient.send;
         docClient.send = async (cmd) => {
             if (cmd.constructor.name === 'GetCommand') claves.push(cmd.input.Key.PK);
-            return {};
+            return propia.responder(cmd) ?? {};
         };
         try {
             await llaveDe('t-a');
@@ -264,6 +253,7 @@ describe('respuestas de encuesta: cifradas siempre', () => {
         // llaves distintas de la empresa, no una sola para todo.
         require('../lib/llaveTenant')._olvidarCache();
         const pedidos = [];
+        const propia = crearTablaTenants(['t-nueva']);
         const original = docClient.send;
         docClient.send = async (cmd) => {
             if (cmd.constructor.name === 'UpdateCommand') {
@@ -271,7 +261,7 @@ describe('respuestas de encuesta: cifradas siempre', () => {
                 const m = /SET\s+(\w+)\s*=/.exec(cmd.input.UpdateExpression || '');
                 if (m) pedidos.push(m[1]);
             }
-            return {};
+            return propia.responder(cmd) ?? {};
         };
         try {
             await llaveDe('t-nueva');
@@ -300,6 +290,92 @@ describe('respuestas de encuesta: cifradas siempre', () => {
     });
 });
 
+// ─── Ficha de salud por defecto: una por empresa ─────────────────────────────
+//
+// Era un registro único y global, compartido entre empresas, en el módulo que
+// guarda datos médicos. Estas pruebas fijan que no vuelva a serlo.
+
+describe('la ficha de salud por defecto es por empresa', () => {
+    let tabla;
+    let encuestas;
+    let originalSend;
+    let originalListar;
+
+    const PLANTEL = {
+        't-a': [{ personaId: 'pa-1', tenantId: 't-a', nombre: 'Ana', rut: '11.111.111-1', cargo: 'Maestro' }],
+        't-b': [{ personaId: 'pb-1', tenantId: 't-b', nombre: 'Beto', rut: '22.222.222-2', cargo: 'Jornal' }],
+    };
+
+    beforeEach(() => {
+        require('../lib/llaveTenant')._olvidarCache();
+        tabla = crearTablaTenants(['t-a', 't-b']);
+        encuestas = new Map();
+        originalSend = docClient.send;
+        docClient.send = async (cmd) => {
+            const deTenants = tabla.responder(cmd);
+            if (deTenants !== undefined) return deTenants;
+            const nombre = cmd.constructor.name;
+            const input = cmd.input || {};
+            if (nombre === 'GetCommand') return { Item: encuestas.get(input.Key.surveyId) };
+            if (nombre === 'PutCommand') { encuestas.set(input.Item.surveyId, input.Item); return {}; }
+            return {};
+        };
+        const { PersonaService } = require('../lib/services/PersonaService');
+        originalListar = PersonaService.prototype.listByTenant;
+        PersonaService.prototype.listByTenant = async (tenantId) => PLANTEL[tenantId] || [];
+    });
+
+    afterEach(() => {
+        docClient.send = originalSend;
+        require('../lib/services/PersonaService').PersonaService.prototype.listByTenant = originalListar;
+    });
+
+    const { ensureDefaultHealthSurvey, idEncuestaSalud } = require('../lib/health/healthSurvey');
+
+    test('sin empresa, falla — no cae en un registro compartido', async () => {
+        // El valor por defecto 'default' era el origen del registro global:
+        // quien se olvidaba del tenant escribía donde escribían todos.
+        await assert.rejects(() => ensureDefaultHealthSurvey(), /requiere tenantId/);
+        await assert.rejects(() => ensureDefaultHealthSurvey(undefined), /requiere tenantId/);
+        assert.equal(encuestas.size, 0, 'no se creó nada');
+    });
+
+    test('dos empresas tienen dos fichas distintas, cada una con su tenantId', async () => {
+        const a = await ensureDefaultHealthSurvey('t-a');
+        const b = await ensureDefaultHealthSurvey('t-b');
+
+        assert.notEqual(a.surveyId, b.surveyId, 'no comparten registro');
+        assert.equal(a.tenantId, 't-a');
+        assert.equal(b.tenantId, 't-b');
+        assert.equal(a.surveyId, idEncuestaSalud('t-a'));
+        assert.equal(encuestas.size, 2);
+    });
+
+    test('el personal de una empresa no aparece en la ficha de la otra', async () => {
+        await ensureDefaultHealthSurvey('t-a');
+        await ensureDefaultHealthSurvey('t-b');
+
+        const idsA = encuestas.get(idEncuestaSalud('t-a')).recipients.map((r) => r.personaId);
+        const idsB = encuestas.get(idEncuestaSalud('t-b')).recipients.map((r) => r.personaId);
+
+        assert.deepEqual(idsA, ['pa-1']);
+        assert.deepEqual(idsB, ['pb-1']);
+    });
+
+    test('la ficha de cada empresa queda cifrada con SU llave, no con una común', async () => {
+        await ensureDefaultHealthSurvey('t-a');
+
+        const guardada = encuestas.get(idEncuestaSalud('t-a'));
+        const crudo = JSON.stringify(guardada);
+        assert.ok(!crudo.includes('11.111.111-1'), 'el RUT no queda en claro');
+        // Las llaves se crearon en la fila de t-a, y en ninguna otra.
+        const filaA = tabla.filas.get('TENANT#t-a#METADATA#t-a');
+        assert.ok(filaA.rutPersonasDataKey && filaA.saludDataKey);
+        assert.equal(tabla.filas.get('TENANT#default#METADATA#default'), undefined,
+            'nunca se crea la empresa fantasma "default"');
+    });
+});
+
 // ─── Lo que sale por la API ──────────────────────────────────────────────────
 //
 // Estas pruebas existen porque las de arriba NO bastaron. Con el cifrado ya
@@ -325,31 +401,15 @@ describe('ninguna respuesta devuelve el sobre en vez del RUT', () => {
     });
 
     beforeEach(() => {
-        store = { doc: null, llaves: new Map() };
+        require('../lib/llaveTenant')._olvidarCache();
+        store = { doc: null, tenants: crearTablaTenants(['t1']) };
         originalSend = docClient.send;
         docClient.send = async (cmd) => {
+            const deTenants = store.tenants.responder(cmd);
+            if (deTenants !== undefined) return deTenants;
             const nombre = cmd.constructor.name;
-            const input = cmd.input || {};
-            if (nombre === 'GetCommand') {
-                if (String(input.Key?.PK || '').startsWith('TENANT#')) {
-                    return { Item: store.llaves.get(input.Key.PK) };
-                }
-                return { Item: store.doc };
-            }
-            if (nombre === 'UpdateCommand') {
-                if (String(input.Key?.PK || '').startsWith('TENANT#')) {
-                    const item = { PK: input.Key.PK, SK: input.Key.SK };
-                    const nombres = input.ExpressionAttributeNames || {};
-                    const valores = input.ExpressionAttributeValues || {};
-                    for (const [ph, campo] of Object.entries(nombres)) {
-                        const vh = `:${ph.slice(1)}`;
-                        if (valores[vh] !== undefined) item[campo] = valores[vh];
-                    }
-                    store.llaves.set(input.Key.PK, item);
-                    return { Attributes: item };
-                }
-                return { Attributes: store.doc };
-            }
+            if (nombre === 'GetCommand') return { Item: store.doc };
+            if (nombre === 'UpdateCommand') return { Attributes: store.doc };
             return {};
         };
     });

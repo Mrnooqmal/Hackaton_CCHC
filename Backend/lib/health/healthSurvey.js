@@ -10,13 +10,25 @@ const {
     construirDestinatario,
     descifrarEncuesta,
 } = require('../arregloSensible');
-const DEFAULT_SURVEY_ID = 'default-health-survey';
+/**
+ * La Ficha Básica de Salud es UNA POR EMPRESA.
+ *
+ * Hasta el 24 de septiembre de 2026 era un registro único y global
+ * (`surveyId: 'default-health-survey'`, `tenantId: 'default'`): la única
+ * excepción a la partición por empresa en todo el sistema, y justo en el módulo
+ * que guarda datos médicos. En la práctica estaba muerta —ningún tenant se
+ * llama 'default', así que ni el listado ni el detalle la alcanzaban— pero
+ * `ensureDefaultHealthSurvey` la mantenía, y cualquier escritor que le pasara
+ * una persona real habría cruzado fichas de salud entre empresas.
+ *
+ * Se arregló estando vacía, que es cuando cuesta cero. Con fichas dentro habría
+ * sido una migración de datos médicos cruzados.
+ */
+const idEncuestaSalud = (tenantId) => `default-health-survey#${tenantId}`;
 
 const HEALTH_SURVEY_TEMPLATE = {
-    surveyId: DEFAULT_SURVEY_ID,
     titulo: 'Ficha Básica de Salud',
     descripcion: 'Cuestionario inicial para conocer antecedentes de salud relevantes de cada colaborador.',
-    tenantId: 'default',
     estado: 'activa',
     audience: { tipo: 'todos' },
     preguntas: [
@@ -79,7 +91,7 @@ const calculateStats = (recipients = []) => {
     };
 };
 
-const fetchAllPersonas = async (tenantId = 'default') => {
+const fetchAllPersonas = async (tenantId) => {
     const personaService = new PersonaService();
     return personaService.listByTenant(tenantId);
 };
@@ -145,10 +157,10 @@ const mergeRecipients = (currentRecipients = [], items = [], llave, llaveSalud) 
     };
 };
 
-const getDefaultSurvey = async () => {
+const getDefaultSurvey = async (tenantId) => {
     const response = await docClient.send(new GetCommand({
         TableName: SURVEYS_TABLE,
-        Key: { surveyId: DEFAULT_SURVEY_ID },
+        Key: { surveyId: idEncuestaSalud(tenantId) },
     }));
 
     return response.Item || null;
@@ -185,17 +197,19 @@ const updateSurveyRecipients = async (surveyId, recipients) => {
     };
 };
 
-const ensureDefaultHealthSurvey = async (tenantId = 'default') => {
+const ensureDefaultHealthSurvey = async (tenantId) => {
+    // Sin empresa no hay encuesta. El valor por defecto que había acá
+    // ('default') era el origen del registro global: cualquier llamador que se
+    // olvidara del tenant terminaba escribiendo en el mismo sitio que todos los
+    // demás, sin que nada fallara.
+    if (!tenantId) throw new Error('ensureDefaultHealthSurvey requiere tenantId');
+
     const personas = await fetchAllPersonas(tenantId);
-    const existingSurvey = await getDefaultSurvey();
+    const existingSurvey = await getDefaultSurvey(tenantId);
     const now = new Date().toISOString();
 
-    // La encuesta por defecto vive bajo `tenantId: 'default'`, así que esa es la
-    // empresa cuya llave la cifra — igual que cualquier otra encuesta usa la de
-    // la suya. Ver la nota sobre este registro global en la cabecera.
-    const empresaDeLaEncuesta = HEALTH_SURVEY_TEMPLATE.tenantId;
     const [llave, llaveSalud] = await Promise.all([
-        llaveDeArreglos(empresaDeLaEncuesta), llaveSaludDe(empresaDeLaEncuesta),
+        llaveDeArreglos(tenantId), llaveSaludDe(tenantId),
     ]);
 
     if (!existingSurvey) {
@@ -203,6 +217,8 @@ const ensureDefaultHealthSurvey = async (tenantId = 'default') => {
         const stats = calculateStats(recipients);
         const survey = {
             ...HEALTH_SURVEY_TEMPLATE,
+            surveyId: idEncuestaSalud(tenantId),
+            tenantId,
             recipients,
             stats,
             createdAt: now,
@@ -237,7 +253,7 @@ const ensureDefaultHealthSurvey = async (tenantId = 'default') => {
  */
 
 module.exports = {
-    DEFAULT_SURVEY_ID,
+    idEncuestaSalud,
     HEALTH_SURVEY_TEMPLATE,
     ensureDefaultHealthSurvey,
 };

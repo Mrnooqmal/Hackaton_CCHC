@@ -9,7 +9,6 @@ const { eventBus } = require('../../lib/events/EventBus');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { PERMISSIONS } = require('../../lib/permissions');
-const { cifrarConLlaveDatos } = require('../../lib/cifradoCampo');
 const {
     llaveDe: llaveDeArreglos,
     llaveSaludDe,
@@ -196,13 +195,12 @@ module.exports.create = async (event) => {
             audience: {
                 tipo: audienceType,
                 cargo: body.cargoDestino || null,
-                // Los RUT de la audiencia van cifrados uno a uno: la pantalla solo
-                // usa `ruts.length` —nunca los valores— así que el conteo se
-                // conserva y el contenido no queda en claro. Es una copia
-                // redundante de lo que ya está en `recipients[]`; se cifra en vez
-                // de borrarse para no cambiarle la forma al cliente en este mismo
-                // cambio.
-                ruts: (body.ruts || []).map((r) => cifrarConLlaveDatos(r, llaveArreglos)),
+                // Solo el número. Los RUT se usan para resolver la audiencia y
+                // ahí terminan: quién quedó dentro ya está en `recipients`, y la
+                // pantalla solo muestra "N trabajador(es)". Un dato cifrado que
+                // nadie descifra nunca no se protege, solo se conserva — y además
+                // `audience` va proyectado en `tenantId-index`.
+                totalRuts: (body.ruts || []).length,
             },
             // Vínculo con el ítem del kit de onboarding (trazabilidad): al responder,
             // se cierra ese ítem para la persona.
@@ -253,7 +251,9 @@ module.exports.list = async (event) => {
         if (!ses.ok) return ses.respuesta;
         const tenantId = ses.sesion.tenantId;
 
-        await ensureDefaultHealthSurvey();
+        // La ficha de salud de ESTA empresa; antes se llamaba sin tenant y
+        // mantenía un registro global que ningún tenant alcanzaba.
+        await ensureDefaultHealthSurvey(tenantId);
 
         const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,

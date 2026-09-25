@@ -56,7 +56,9 @@ export interface Survey {
     audience: {
         tipo: SurveyAudienceType;
         cargo?: string | null;
-        ruts?: string[];
+        // Cuántas personas se eligieron a mano. Los RUT en sí no se guardan: la
+        // audiencia ya está resuelta en `recipients`.
+        totalRuts?: number;
     };
     preguntas: SurveyQuestion[];
     recipients: SurveyRecipient[];

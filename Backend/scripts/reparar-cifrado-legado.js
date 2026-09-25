@@ -50,7 +50,7 @@ process.env.CAMPO_CIFRADO_KMS_KEY_ID = stage === 'prod'
     : '06c59eb0-40d9-4328-a07c-c17fbfbf2e89';
 
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, UpdateCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const cifradoCampo = require('../lib/cifradoCampo');
 const { llaveDeTenant, PROPOSITOS } = require('../lib/llaveTenant');
 
@@ -68,6 +68,12 @@ const doc = DynamoDBDocumentClient.from(client);
     }));
 
     for (const t of tenants.Items || []) {
+        // Una fila sin `tenantId` no es una empresa: es el fantasma que fabricaba
+        // el upsert de las llaves de datos (solo PK, SK y las llaves adentro).
+        if (!t.tenantId) {
+            console.log(`  FANTASMA ${t.PK} — fila de empresa sin tenantId. No se toca.`);
+            continue;
+        }
         if (t.rutEmpresaCifrado) continue; // ya migrada
         console.log(`  Empresa ${t.tenantId} — RUT ${t.rutEmpresa}`);
         if (!confirmar) continue;
@@ -293,14 +299,12 @@ const doc = DynamoDBDocumentClient.from(client);
                 return nuevo;
             }) : item.recipients;
 
-            // `audience.ruts` es una copia redundante de la audiencia.
+            // `audience.ruts` se reemplaza por su conteo, en claro o cifrado: la
+            // pantalla solo usa el número y la audiencia ya vive en recipients.
             let audience = item.audience;
-            if (Array.isArray(item.audience?.ruts) && item.audience.ruts.some((r) => typeof r === 'string')) {
-                audience = {
-                    ...item.audience,
-                    ruts: item.audience.ruts.map((r) => (typeof r === 'string'
-                        ? cifradoCampo.cifrarConLlaveDatos(r, llave) : r)),
-                };
+            if (Array.isArray(item.audience?.ruts)) {
+                const { ruts, ...resto } = item.audience;
+                audience = { ...resto, totalRuts: ruts.length };
                 cambios += 1;
             }
 
@@ -315,13 +319,45 @@ const doc = DynamoDBDocumentClient.from(client);
         },
     });
 
+    // En ENSAYO no se piden llaves reales: pedirlas CREA la llave de una empresa
+    // que todavía no la tiene, y un ensayo que escribe no es un ensayo. Para
+    // contar qué hay que reparar alcanza con una llave desechable; el sobre que
+    // produce se descarta.
+    const llaveDeEnsayo = require('crypto').randomBytes(32);
+
+    // Solo lectura, así que vale en los dos modos: el ensayo tiene que mostrar
+    // los mismos huérfanos que después va a saltarse la corrida real.
+    const empresasVistas = new Map();
+    const existeEmpresa = async (tenantId) => {
+        if (!empresasVistas.has(tenantId)) {
+            const r = await doc.send(new GetCommand({
+                TableName: process.env.TENANTS_TABLE,
+                Key: { PK: `TENANT#${tenantId}`, SK: `METADATA#${tenantId}` },
+            }));
+            // Una fila que solo tiene llaves y no `tenantId` es justo el
+            // fantasma que fabricaba el upsert: no cuenta como empresa.
+            empresasVistas.set(tenantId, Boolean(r.Item?.tenantId));
+        }
+        return empresasVistas.get(tenantId);
+    };
+
     for (const { tabla, clave, nombre, reparar } of TABLAS_EMBEBIDAS) {
         const items = await doc.send(new ScanCommand({ TableName: tabla }));
 
         for (const item of items.Items || []) {
-            const llave = await conLlaveDe(item.tenantId);
-            if (!llave) continue; // sin empresa no hay llave: no es un registro reparable
-            const llaveSalud = await llaveDeTenant(item.tenantId, PROPOSITOS.SALUD);
+            if (!item.tenantId) continue; // sin empresa no hay llave: no es un registro reparable
+
+            // Un registro de una empresa que no existe es una anomalía para
+            // revisar, no algo que reparar: cifrarlo exigiría una llave para una
+            // empresa fantasma.
+            if (!(await existeEmpresa(item.tenantId))) {
+                console.log(`  ${nombre} ${item[clave]} — HUÉRFANO: su empresa (${item.tenantId}) no existe. No se toca.`);
+                continue;
+            }
+
+            const llave = confirmar ? await conLlaveDe(item.tenantId) : llaveDeEnsayo;
+            const llaveSalud = confirmar ? await llaveDeTenant(item.tenantId, PROPOSITOS.SALUD) : llaveDeEnsayo;
+
             const plan = reparar(item, llave, llaveSalud);
             if (!plan) continue;
 

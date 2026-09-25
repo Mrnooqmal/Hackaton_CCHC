@@ -109,7 +109,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 5.4 | Falla cerrada ante solicitante no identificado | **Implementado** | Sin identificación se ocultan: el error es que falten documentos, nunca que se filtren datos de salud. Cubierto por pruebas. |
 | 5.5 | Archivos servidos por URL prefirmada temporal | **Implementado** | No hay URL pública permanente sobre el almacenamiento. |
 | 5.6 | **Registro de auditoría de accesos a datos sensibles** | **Pendiente** | Se audita quién firma, no quién consulta una ficha de vigilancia. Ver hallazgo H-5. |
-| 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Sí** | Completo en dev y prod: Personas (`rut`, `vigilanciaSalud`, `restriccionLaboral`), Tenants (`rutEmpresa`), los sidecars de firmas/incidentes, los arreglos embebidos de documentos/actividades/solicitudes, y las respuestas de encuesta (siempre, con la llave de salud). Ver D-10. |
+| 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Parcial** | Cifrado en dev y prod: Personas (`rut`, `vigilanciaSalud`, `restriccionLaboral`), Tenants (`rutEmpresa`), los sidecars de firmas/incidentes, los arreglos embebidos de documentos/actividades/solicitudes, y las respuestas de encuesta. **Pendiente:** dos copias en claro que genera `RegistroService` en `DocumentsTable` — el RUT del accidentado y de los entrevistados (informe Art. 71) y la aptitud laboral y protocolos de vigilancia por persona (registro AT/EP). Se resuelven junto con la huella de integridad, porque son justo los snapshots que se firman. Ver D-10. |
 | 5.8 | Los índices de personas proyectan todos los atributos | **Implementado** | `personaId-index`, `email-index` y `tenantRutHmac-index` pasaron a `KEYS_ONLY`: el índice da la clave, la ficha se lee de la tabla. Ver D-6. |
 | 5.9 | El RUT no viaja completo en la verificación pública de firmas | **Implementado** | `GET /signatures/verify/{token}` es público por diseño (un fiscalizador comprueba una firma sin cuenta), y devolvía nombre y **RUT completo**: el token se convertía en una consulta abierta de identidad. Ahora el RUT va parcial (`···.678-5`), que cumple igual la función de cotejo. |
 
@@ -496,7 +496,7 @@ desplegado y verificado con una prueba que ejercita `FirmaService.crear`
 directamente.
 
 ### D-10. Cifrado de campo: RUT buscable por HMAC, sobre de cifrado para el resto
-**Estado: completo. Implementado el 23 de septiembre de 2026 en Personas y Tenants, y el 24 de septiembre de 2026 en los sidecars de firmas e incidentes, en los arreglos embebidos de documentos, actividades y solicitudes, y en encuestas. En dev y prod.**
+**Estado: casi completo. Implementado el 23 y 24 de septiembre de 2026 en Personas y Tenants, en los sidecars de firmas e incidentes, en los arreglos embebidos de documentos, actividades y solicitudes, y en encuestas, en dev y prod. Pendiente: las dos copias en claro que arma `RegistroService` (ver "Lo que D-10 todavía no cubre", al final de esta decisión).**
 
 **El principio que ordena todo el diseño:** solo dos entidades se BUSCAN por
 RUT —personas (dentro de su empresa, y global para el login multi-empresa) y
@@ -679,23 +679,55 @@ de salud (`SALUD`, la misma de `vigilanciaSalud`). Son secretos de radio de
 exposición distinto y ya estaban separados para las personas; no había razón
 para juntarlos acá. Hay una prueba que comprueba que se piden las dos.
 
-**`audience.ruts`** guardaba en claro los RUT usados para definir la audiencia
-—una copia redundante de lo que ya está en `recipients[]`—. Se cifran uno a
-uno en vez de borrarse porque la pantalla usa `ruts.length` para decir "N
-trabajador(es)": así el conteo se conserva y el contrato con el cliente no
-cambia en este mismo cambio. Son buenos candidatos a desaparecer del todo más
-adelante: nadie descifra esos valores nunca.
+**`audience.ruts` se reemplazó por el conteo (`audience.totalRuts`).** Guardaba en
+claro los RUT usados para definir la audiencia, una copia redundante de lo que
+ya está en `recipients[]`. Una primera versión los cifró uno a uno para no
+cambiarle la forma al cliente; se descartó, porque un dato cifrado que nadie
+descifra nunca no se protege, solo se conserva. La pantalla solo usaba el largo
+(`ruts.length` → "N trabajador(es)"), así que ahora se guarda el número y se
+borra la lista. De paso sale del índice: `audience` está en el `INCLUDE` de
+`tenantId-index`, así que esos RUT viajaban también ahí.
 
-**Otra función muerta, y esta era la peor.** `assignWorkerToHealthSurvey` no
-tenía ningún llamador, y era la vía por la que una persona de CUALQUIER empresa
-terminaba dentro de `default-health-survey`, que es un registro **único y
-global** (`surveyId` fijo, `tenantId: 'default'`). Con su `rut: persona.rut` en
-claro, además. Se eliminó. **Queda anotado como riesgo latente, no resuelto:**
-esa encuesta por defecto sigue siendo un registro compartido entre empresas por
-diseño; hoy es inofensiva porque solo la alimenta `ensureDefaultHealthSurvey()`
-con el tenant `'default'` (vacío en dev, inexistente en prod), pero la forma
-correcta sería una encuesta por empresa. No se cambió acá porque es una
-decisión de diseño del módulo de salud, no del cifrado.
+**La Ficha Básica de Salud pasó a ser una por empresa.** Era un registro único y
+global (`surveyId: 'default-health-survey'`, `tenantId: 'default'`): la única
+excepción a la partición por empresa en todo el sistema, y en el módulo de
+salud. Al revisarla apareció que además **estaba muerta**: ningún tenant se
+llama `'default'`, así que ni el listado (que consulta `tenantId-index` con la
+empresa de la sesión) ni el detalle (que exige `encuesta.tenantId ===
+sesion.tenantId`) la alcanzaban nunca. `ensureDefaultHealthSurvey` mantenía un
+registro que nadie podía ver. Ahora el id es `default-health-survey#<tenantId>`,
+cada empresa tiene la suya, y la función exige el tenant: el `= 'default'` por
+defecto del parámetro era el origen del problema, porque cualquier llamador que
+lo olvidara escribía donde escribían todos. **Efecto visible:** la ficha aparece
+por primera vez en el listado de encuestas de cada empresa, con todo el
+plantel. La migración costó cero porque estaba vacía — con fichas reales habría
+sido mover datos médicos cruzados entre empresas. Se eliminó además
+`assignWorkerToHealthSurvey`, sin llamadores, que era la vía por la que una
+persona de cualquier empresa habría terminado en ese registro compartido.
+
+**Un bug propio, encontrado al hacer esto: pedir una llave fabricaba empresas.**
+`llaveDeTenant` creaba la llave de datos con un `UpdateCommand`, que en DynamoDB
+es un *upsert*: si la empresa no existía, la creaba con solo las llaves
+adentro. La versión anterior de `ensureDefaultHealthSurvey` pedía las llaves
+del tenant `'default'`, y así apareció `TENANT#default` en dev — una fila sin
+`tenantId` que `TenantService.listAll()` (usado por un job programado) levanta
+como si fuera una empresa, y que el propio script de reparación intentó
+"reparar". Se corrigió en la causa, no en los llamadores: `llaveDeTenant` falla
+con `TENANT_INEXISTENTE` si la empresa no existe, y la escritura va condicionada
+a `attribute_exists(PK)` para cubrir la carrera en que la empresa se borra entre
+la lectura y la creación. Hay pruebas de los dos casos. En prod la fila nunca
+llegó a existir; en dev hubo que borrarla dos veces, porque dev tiene uso real
+continuo y el código viejo la volvió a crear antes de que llegara el
+despliegue. Los cuatro dobles de la tabla de empresas que había en las pruebas
+—todos modelaban el caso imposible— se reemplazaron por uno solo, fiel a la
+tabla (`tests/doble-tabla-tenants.js`).
+
+**El script de reparación ya no escribe en ensayo.** Pedía las llaves antes de
+mirar `--confirmar`, y pedir una llave la crea si la empresa todavía no tiene
+una. Ahora el ensayo cuenta con una llave desechable, detecta los registros
+huérfanos (de empresas que no existen) con una lectura, y los informa sin
+tocarlos en los dos modos. Verificado en dev comparando la tabla de empresas
+antes y después del ensayo: idéntica.
 
 **Lo que el listado NO paga.** `surveys.list()` se sirve desde
 `tenantId-index`, que a propósito ya no proyecta `recipients` (corrección
@@ -704,7 +736,32 @@ el listado no descifra nada ni va a buscar llaves — se comprueba en tiempo de
 ejecución en vez de asumirlo, para que si la proyección cambiara algún día el
 código descifre en lugar de devolverle sobres a la pantalla.
 
-**Ubicación:** `Backend/lib/cifradoCampo.js`, `Backend/lib/llaveTenant.js`, `Backend/lib/arregloSensible.js`, `Backend/lib/traza-sensible.js`, `Backend/lib/models/Persona.js`, `Backend/lib/models/Tenant.js`, `Backend/lib/services/PersonaService.js`, `Backend/lib/services/TenantService.js`, `Backend/lib/services/FirmaService.js`, `Backend/lib/services/EppService.js`, `Backend/handlers/auth/handler.js`, `Backend/handlers/documents/handler.js`, `Backend/handlers/activities/handler.js`, `Backend/handlers/signature-requests/handler.js`, `Backend/handlers/personas-module/handler.js`, `Backend/handlers/surveys/handler.js`, `Backend/lib/health/healthSurvey.js`, `Backend/scripts/reparar-cifrado-legado.js`
+**Lo que D-10 todavía no cubre: las copias que arma `RegistroService`.** Al
+evaluar si documentos podía quedarse con el índice en `ALL` apareció que la
+exposición no estaba resuelta ahí. Dos registros que genera
+`RegistroService` guardan en `DocumentsTable`, en claro y dos veces cada uno (el
+objeto `snapshot` y el texto `contenido`), datos que D-10 sí cifró en su
+origen:
+
+- **Informe de investigación (Art. 71):** `afectado.rut` y `entrevistados[].rut`,
+  junto con el nombre, el relato del accidente, la gravedad, si fue fatal y los
+  días perdidos. Es el RUT que D-8 sacó de `IncidentsTable` y D-10 cifró en su
+  elemento aparte, copiado otra vez en claro al generar el informe —
+  probablemente el RUT más sensible del sistema, porque va atado a una lesión.
+- **Registro AT/EP:** `vigilanciaSalud.personas[]` con nombre, protocolos de
+  vigilancia y aptitud laboral de cada persona. Es `vigilanciaSalud` de Personas,
+  cifrado con la llave de salud, descifrado por `PersonaService` y vuelto a
+  escribir en claro.
+
+Es el patrón de los dos escritores otra vez, ahora entre tablas: el dato se
+protege donde nace y se re-materializa en claro donde se consume. Las dos
+copias están en el índice `tenantId-index` de documentos, que proyecta `ALL`.
+No se corrigieron acá a propósito: esos `snapshot` son exactamente lo que se
+firma con `hashSnapshot`, así que cifrarlos cambia cómo se verifica la
+integridad (descifrar y volver a calcular) y corresponde hacerlo junto con la
+huella de integridad del archivo, no antes y por separado.
+
+**Ubicación:** `Backend/lib/cifradoCampo.js`, `Backend/lib/llaveTenant.js`, `Backend/lib/arregloSensible.js`, `Backend/lib/traza-sensible.js`, `Backend/lib/models/Persona.js`, `Backend/lib/models/Tenant.js`, `Backend/lib/services/PersonaService.js`, `Backend/lib/services/TenantService.js`, `Backend/lib/services/FirmaService.js`, `Backend/lib/services/EppService.js`, `Backend/handlers/auth/handler.js`, `Backend/handlers/documents/handler.js`, `Backend/handlers/activities/handler.js`, `Backend/handlers/signature-requests/handler.js`, `Backend/handlers/personas-module/handler.js`, `Backend/handlers/surveys/handler.js`, `Backend/lib/health/healthSurvey.js`, `Backend/scripts/reparar-cifrado-legado.js`, `Frontend/src/pages/Surveys.tsx`, `Frontend/src/api/surveys.api.ts`
 
 ---
 

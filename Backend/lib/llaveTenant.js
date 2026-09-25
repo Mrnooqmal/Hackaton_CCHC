@@ -81,7 +81,15 @@ async function llaveDeTenant(tenantId, atributo) {
 
     const key = { PK: `TENANT#${tenantId}`, SK: `METADATA#${tenantId}` };
     const res = await docClient.send(new GetCommand({ TableName: TENANTS_TABLE, Key: key }));
-    let envuelta = res.Item?.[atributo];
+
+    // Pedir la llave de una empresa que no existe es un error del llamador, no
+    // una empresa nueva. Antes esto seguía de largo, y como la creación de la
+    // llave es un UpdateCommand —un upsert—, fabricaba un `TENANT#<id>` fantasma
+    // con solo las llaves adentro. Así nació `TENANT#default` en dev, que
+    // `TenantService.listAll()` después levanta como si fuera una empresa.
+    if (!res.Item) throw tenantInexistente(tenantId);
+
+    let envuelta = res.Item[atributo];
 
     if (!envuelta) {
         envuelta = await crearLlaveDeTenant(tenantId, atributo, key);
@@ -107,17 +115,28 @@ async function crearLlaveDeTenant(tenantId, atributo, key) {
             TableName: TENANTS_TABLE,
             Key: key,
             UpdateExpression: `SET ${atributo} = :envuelta`,
-            ConditionExpression: `attribute_not_exists(${atributo})`,
+            // `attribute_exists(PK)`: la empresa pudo borrarse entre la lectura
+            // y esta escritura, y un upsert la resucitaría como fantasma.
+            ConditionExpression: `attribute_exists(PK) AND attribute_not_exists(${atributo})`,
             ExpressionAttributeValues: { ':envuelta': envuelta },
         }));
         return envuelta;
     } catch (err) {
         if (err.name !== 'ConditionalCheckFailedException') throw err;
-        // Alguien más la creó primero: usar la que quedó.
+        // O alguien más la creó primero —usar la que quedó—, o la empresa ya no
+        // existe. Hay que distinguir: devolver `undefined` rompería más adelante
+        // con un error que no dice nada.
         const res = await docClient.send(new GetCommand({ TableName: TENANTS_TABLE, Key: key }));
+        if (!res.Item) throw tenantInexistente(tenantId);
         return res.Item[atributo];
     }
 }
+
+const tenantInexistente = (tenantId) => {
+    const err = new Error(`No existe la empresa ${tenantId}: no se crea una llave para una empresa inexistente`);
+    err.codigo = 'TENANT_INEXISTENTE';
+    return err;
+};
 
 module.exports = {
     llaveDeTenant,
