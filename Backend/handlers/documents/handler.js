@@ -31,6 +31,24 @@ const firmaParaCliente = async (firma, tenantId) =>
 const DESTINATARIOS_VALIDOS = new Set(Object.values(DESTINATARIO));
 const MEDIOS_VALIDOS = new Set(Object.values(MEDIO));
 const { eventBus } = require('../../lib/events/EventBus');
+const { FirmaRepresentanteService, requiereFirmaRepresentante, ROL_REPRESENTANTE } = require('../../lib/services/FirmaRepresentanteService');
+
+/**
+ * Si el documento lo firma el representante legal (el Programa de Trabajo
+ * Preventivo), se le asigna en cuanto el documento tiene archivo. Sin esto, un
+ * programa subido quedaba "Incompleto" sin que nadie le pidiera la firma.
+ * Un fallo acá no tumba la carga: el documento ya quedó guardado, y designar de
+ * nuevo al representante vuelve a sincronizar.
+ */
+const asignarRepresentanteSiCorresponde = async (doc) => {
+    if (!doc || !requiereFirmaRepresentante(doc.tipo)) return;
+    try {
+        const tenant = await new TenantService().getById(doc.tenantId);
+        await new FirmaRepresentanteService().alCrearDocumento(doc, tenant?.reglas?.representanteLegal || null);
+    } catch (err) {
+        console.error('[documents] no se pudo asignar la firma del representante legal:', err.message);
+    }
+};
 
 const TABLE_NAME = process.env.DOCUMENTS_TABLE || 'Documents';
 
@@ -277,6 +295,7 @@ module.exports.create = async (event) => {
         };
 
         await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: document }));
+        await asignarRepresentanteSiCorresponde(document);
 
         // Notificar asignados (usa personaId, no workerId)
         try {
@@ -565,6 +584,8 @@ module.exports.update = async (event) => {
             ExpressionAttributeValues: expressionValues,
             ReturnValues: 'ALL_NEW'
         }));
+        // El programa precreado de una obra recibe su archivo por acá.
+        await asignarRepresentanteSiCorresponde(result.Attributes);
 
         return success(await descifrarDocumentoDeTenant(result.Attributes, sesion.tenantId));
     } catch (err) {
@@ -875,20 +896,35 @@ module.exports.assign = async (event) => {
         const documentTenantId = docResult.Item.tenantId || null;
 
         const llaveArreglos = await llaveDeArreglos(documentTenantId || sesion.tenantId);
+        // Si el documento lo firma el representante legal y se le asigna a él, la
+        // asignación lleva la misma marca que pone la sincronización: así, al
+        // cambiar de representante, se le quita la pendiente al anterior.
+        const repLegalId = requiereFirmaRepresentante(docResult.Item.tipo)
+            ? ((await new TenantService().getById(documentTenantId || sesion.tenantId).catch(() => null))?.reglas?.representanteLegal?.personaId || null)
+            : null;
+        // Asignar dos veces a quien ya tiene la firma pendiente duplicaba la fila
+        // (y el "Recordar" del ítem 9 lo hacía en cada clic). Se le vuelve a
+        // avisar, pero no se agrega otra asignación.
+        // Con `replace` la lista se rehace entera: ahí nadie se salta.
+        const yaPendientes = new Set(replace ? [] : (docResult.Item.asignaciones || [])
+            .filter((a) => a.estado === 'pendiente').map((a) => a.personaId));
+        const soloAvisar = [];
         for (const pid of personaIds) {
+            if (yaPendientes.has(pid)) { soloAvisar.push(pid); continue; }
             const persona = await personaService.getById(pid);
             if (documentTenantId && persona?.tenantId && persona.tenantId !== documentTenantId) {
                 console.warn(`[Documents] Persona ${pid} pertenece a otro tenant (${persona.tenantId} != ${documentTenantId}), omitida de la asignación`);
                 continue;
             }
-            nuevasAsignaciones.push(construirAsignacion(persona, {
+            const asignacion = construirAsignacion(persona, {
                 fechaLimite: fechaLimite || null,
                 notificado: notificar || false,
                 nombreFallback: pid,
-            }, llaveArreglos));
+            }, llaveArreglos);
+            nuevasAsignaciones.push(repLegalId && pid === repLegalId ? { ...asignacion, rol: ROL_REPRESENTANTE } : asignacion);
         }
 
-        if (nuevasAsignaciones.length === 0) {
+        if (nuevasAsignaciones.length === 0 && soloAvisar.length === 0) {
             return error('Las personas especificadas no pertenecen a la organización del documento', 400);
         }
 
@@ -912,8 +948,8 @@ module.exports.assign = async (event) => {
             ExpressionAttributeValues: expressionAttributeValues
         }));
 
-        // Notificar asignados (solo los que quedaron efectivamente asignados)
-        const assignedIds = nuevasAsignaciones.map(a => a.personaId);
+        // Notificar asignados, y volver a avisar a quien ya la tenía pendiente.
+        const assignedIds = [...nuevasAsignaciones.map(a => a.personaId), ...soloAvisar];
         try {
             await eventBus.emit('document.assigned', {
                 documentId: id,

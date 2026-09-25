@@ -91,11 +91,11 @@ export function useObraOnboarding(obraId: string | null | undefined, trabajadore
         setUploadingDoc(`${workerId}:${tipo}`);
         try {
             const uploadRes = await uploadsApi.getUploadUrl({
-                fileName: file.name, fileType: file.type, fileSize: file.size,
+                archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
                 categoria: 'obras', empresaId: tenantId,
             });
             if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
-            await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+            await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });
             const fileKey = uploadRes.data.fileKey;
             await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
 

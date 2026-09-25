@@ -430,11 +430,11 @@ export default function Surveys() {
             return;
         }
         if (form.audienceType === 'cargo' && !form.cargoDestino) {
-            setError('Seleccione un cargo destino');
+            setError('Selecciona un cargo destino');
             return;
         }
         if (form.audienceType === 'personalizado' && form.selectedRuts.length === 0) {
-            setError('Agregue al menos un RUT para la audiencia personalizada');
+            setError('Agrega al menos un RUT para la audiencia personalizada');
             return;
         }
 
@@ -1426,7 +1426,7 @@ export default function Surveys() {
                                                 <label className="form-label">Cargo destino *</label>
                                                 <Select
                                                     ariaLabel="Cargo destino"
-                                                    placeholder="Seleccione un cargo"
+                                                    placeholder="Selecciona un cargo"
                                                     searchable
                                                     value={form.cargoDestino}
                                                     onChange={(v) => setForm({ ...form, cargoDestino: v })}

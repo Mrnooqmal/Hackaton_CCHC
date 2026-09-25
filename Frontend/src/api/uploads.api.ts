@@ -1,5 +1,6 @@
 import { apiRequest } from './client';
 import type { DocumentoAdjunto } from './signatureRequests.api';
+import { huellaSha256, headersDeSubida } from '../utils/huellaArchivo';
 
 interface ApiResponse<T> {
     success: boolean;
@@ -12,6 +13,9 @@ export interface UploadUrlResponse {
     fileKey: string;
     expiresIn: number;
     bucket: string;
+    /** Headers que el PUT a `uploadUrl` TIENE que llevar, tal cual. Incluyen la
+     *  huella SHA-256 firmada dentro de la URL: sin ella S3 rechaza la subida. */
+    uploadHeaders: Record<string, string>;
 }
 
 export interface ConfirmUploadResponse {
@@ -21,12 +25,23 @@ export interface ConfirmUploadResponse {
 }
 
 export const uploadsApi = {
-    getUploadUrl: (data: { fileName: string; fileType: string; fileSize: number; categoria?: string; empresaId?: string; tenantId?: string }) => {
-        const tenantId = data.tenantId || data.empresaId;
-        return apiRequest<UploadUrlResponse>('/uploads/presigned-url', {
+    /**
+     * URL prefirmada para subir `archivo` directo a S3.
+     *
+     * El archivo es obligatorio: de él sale la huella SHA-256 que S3 exige en el
+     * bucket de evidencia (Object Lock) y que el servidor firma dentro de la URL.
+     * El PUT posterior no necesita headers extra.
+     */
+    getUploadUrl: async (data: { archivo: Blob; fileName: string; fileType: string; fileSize: number; categoria?: string; empresaId?: string; tenantId?: string }) => {
+        const { archivo, ...resto } = data;
+        const tenantId = resto.tenantId || resto.empresaId;
+        const checksumSha256 = await huellaSha256(archivo);
+        const res = await apiRequest<Omit<UploadUrlResponse, 'uploadHeaders'>>('/uploads/presigned-url', {
             method: 'POST',
-            body: JSON.stringify({ ...data, tenantId }),
+            body: JSON.stringify({ ...resto, tenantId, checksumSha256 }),
         });
+        if (!res.success || !res.data) return res as { success: boolean; data?: UploadUrlResponse; error?: string };
+        return { ...res, data: { ...res.data, uploadHeaders: headersDeSubida(resto.fileType, checksumSha256) } };
     },
 
     getDownloadUrl: (fileKey: string) =>
@@ -58,6 +73,7 @@ export const uploadsApi = {
     uploadFile: async (file: File, categoria?: string, empresaId?: string, tenantId?: string): Promise<ApiResponse<DocumentoAdjunto>> => {
         try {
             const urlResponse = await uploadsApi.getUploadUrl({
+                archivo: file,
                 fileName: file.name,
                 fileType: file.type,
                 fileSize: file.size,
@@ -67,16 +83,19 @@ export const uploadsApi = {
             });
 
             if (!urlResponse.success || !urlResponse.data) {
-                return { success: false, error: 'Error al obtener URL presigned' };
+                return { success: false, error: urlResponse.error || 'Error al obtener URL presigned' };
             }
 
-            await fetch(urlResponse.data.uploadUrl, {
+            const put = await fetch(urlResponse.data.uploadUrl, {
                 method: 'PUT',
                 body: file,
-                headers: {
-                    'Content-Type': file.type,
-                },
+                headers: urlResponse.data.uploadHeaders,
             });
+            // Sin esto un rechazo de S3 seguía de largo y el error que veía el
+            // usuario era el de la confirmación, no el de la subida.
+            if (!put.ok) {
+                return { success: false, error: `S3 rechazó el archivo (${put.status}).` };
+            }
 
             const confirmResponse = await uploadsApi.confirmUpload({
                 fileKey: urlResponse.data.fileKey,

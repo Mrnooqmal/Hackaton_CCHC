@@ -107,7 +107,7 @@ export default function Prescripciones() {
     const subirEvidencia = useCallback(
         (file: File, titulo: string) => subirComoDocumento({
             file, tipo: 'ACTA_REGISTRO', titulo,
-            tenantId: tenantId || '', obraId: selectedObraId, categoria: 'prescripciones',
+            tenantId: tenantId || '', obraId: selectedObraId,
         }),
         [tenantId, selectedObraId]
     );

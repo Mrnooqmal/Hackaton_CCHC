@@ -59,11 +59,19 @@ const docToPendingItem = (doc: any): PendingItem => {
         updatedAt: doc.updatedAt || '',
         __kind: 'document',
         __documentId: doc.documentId,
-        __tipoLabel: doc.articulo ? `Onboarding · ${doc.articulo}` : 'Onboarding',
+        __tipoLabel: esDelRepresentante(doc)
+            ? 'Aprobación como representante legal'
+            : doc.articulo ? `Onboarding · ${doc.articulo}` : 'Onboarding',
     };
 };
+
+/** La asignación la puso el backend porque la persona es el representante legal. */
+const esDelRepresentante = (doc: { tipo?: string; asignaciones?: Array<{ rol?: string }> }) =>
+    requiereFirmaRepresentante(doc.tipo)
+    && (doc.asignaciones || []).some((a) => a.rol === ROL_REPRESENTANTE);
 import { useAuth } from '../context/AuthContext';
 import { Modal, PageHeader } from '../components/ui';
+import { requiereFirmaRepresentante, ROL_REPRESENTANTE } from '../utils/firmaRepresentante';
 
 type TabType = 'pendientes' | 'historial';
 
@@ -122,14 +130,23 @@ export default function MySignatures() {
             const [pendingRes, historyRes, onboardingDocsRes] = await Promise.all([
                 signatureRequestsApi.getPendingByWorker(user.personaId),
                 signatureRequestsApi.getHistoryByWorker(user.personaId),
-                documentsApi.list({ clasificacion: 'diario', pendienteDe: user.personaId }),
+                // TODO lo que la persona tiene pendiente de firmar, no solo lo
+                // 'diario': el Programa de Trabajo Preventivo es de obra, y el
+                // representante legal no lo veía en ninguna pantalla aunque se lo
+                // asignaran.
+                documentsApi.list({ pendienteDe: user.personaId }),
             ]);
 
             const requests: PendingItem[] = (pendingRes.success && pendingRes.data)
                 ? pendingRes.data.pendientes
                 : [];
+            // Un documento que ya llega por una solicitud de firma (la re-firma de
+            // un procedimiento versionado) no se lista dos veces.
+            const yaSolicitados = new Set(requests.map((r) => r.referenciaId).filter(Boolean));
             const onboardingDocs: PendingItem[] = (onboardingDocsRes.success && onboardingDocsRes.data?.documents)
-                ? onboardingDocsRes.data.documents.map(docToPendingItem)
+                ? onboardingDocsRes.data.documents
+                    .filter((d) => !yaSolicitados.has(d.documentId))
+                    .map(docToPendingItem)
                 : [];
             setPendingRequests([...onboardingDocs, ...requests]);
 

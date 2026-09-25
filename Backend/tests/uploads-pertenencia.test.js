@@ -66,15 +66,26 @@ const datos = (res) => JSON.parse(res.body).data;
 
 // ─── Subida ──────────────────────────────────────────────────────────────────
 
+/** SHA-256 en base64 de un archivo cualquiera: lo que manda el navegador. */
+const HUELLA = require('node:crypto').createHash('sha256').update('acta').digest('base64');
+
 test('la clave de subida se arma con la empresa de la sesión, no con la del cuerpo', async () => {
     const res = await uploads.getUploadUrl(ev(EMPRESA_A, {
         fileName: 'acta.pdf', fileType: 'application/pdf', fileSize: 1024,
-        tenantId: EMPRESA_B, categoria: 'documentos',
+        tenantId: EMPRESA_B, categoria: 'documentos', checksumSha256: HUELLA,
     }));
 
     assert.equal(res.statusCode, 200);
     assert.ok(datos(res).fileKey.startsWith(`tenants/${EMPRESA_A}/`));
     assert.ok(!datos(res).fileKey.includes(EMPRESA_B));
+});
+
+test('la evidencia sin huella SHA-256 se rechaza: el bucket con Object Lock la exige', async () => {
+    const res = await uploads.getUploadUrl(ev(EMPRESA_A, {
+        fileName: 'acta.pdf', fileType: 'application/pdf', fileSize: 1024, categoria: 'documentos',
+    }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /huella/i);
 });
 
 test('una categoría desconocida se rechaza en vez de adivinar bucket', async () => {

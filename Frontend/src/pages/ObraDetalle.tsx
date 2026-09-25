@@ -9,20 +9,21 @@ import ObraAplicabilidadKit from '../components/ObraAplicabilidadKit';
 import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
 import { estadoPtp, aprobadoPorRepresentanteLegal } from '../utils/ptp';
 import { incidenteAbierto, incidenteCerrado } from '../utils/incidentes';
-import { LuFileText, LuShieldAlert, LuPencil, LuClock, LuCircleCheck, LuDownload, LuHistory, LuBuilding2 } from 'react-icons/lu';
-import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
-import { Modal, Select, SegmentedControl, IdentityPanel } from '../components/ui';
-import { DS44_ACT_ACTUALIZACIONES, DS44_DO_PROCEDIMIENTOS, DS44_DO_REGISTROS_GESTION, esRegistroEjecucion, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, type Ds44DoContext } from '../utils/ds44';
+import { LuFileText, LuShieldAlert, LuClock, LuCircleCheck, LuDownload, LuHistory } from 'react-icons/lu';
+import { FiUploadCloud, FiEye } from 'react-icons/fi';
+import { Modal, Select, SegmentedControl } from '../components/ui';
+import { DS44_ACT_ACTUALIZACIONES, DS44_DO_PROCEDIMIENTOS, DS44_DO_REGISTROS_GESTION, esRegistroEjecucion, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, type Ds44DoContext } from '../utils/ds44';
 import { computeOnboardingSummary } from '../utils/onboardingObra';
 
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
-import { useObraContext } from '../context/ObraContext';
 import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
-import CompletitudFufPanel from '../components/CompletitudFufPanel';
-import FufPorFase, { requisitosDeFase, resumenDeFase } from '../components/FufPorFase';
+import { requisitosDeFase, resumenDeFase, type FaseDeming } from '../components/FufPorFase';
+import ObraCabecera from '../components/obra/ObraCabecera';
+import ObraResumen from '../components/obra/ObraResumen';
+import Ds44Fases, { type ModuloFase } from '../components/obra/Ds44Fases';
+import '../css/obra.css';
 import { estructuraApi } from '../api/estructura.api';
 import type { CompletitudAmbito } from '../utils/completitud';
-import { colorProgreso } from '../utils/completitud';
 import { AMBITO as AMBITO_ESTRUCTURA } from '../utils/estructuraPreventiva';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import type { SignatureRequest, DocumentVersion, Document as DocumentoApi, EntidadRevision } from '../api/client';
@@ -159,7 +160,6 @@ export default function ObraDetalle() {
   const canSubirDocumentos = hasPermission(PERMISSIONS.OBRA_SUBIR_DOCUMENTOS);
   const navigate = useNavigate();
   const { obraId } = useParams();
-  const { setSelectedObraId } = useObraContext();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -280,13 +280,6 @@ export default function ObraDetalle() {
   const [obraImagenUrl, setObraImagenUrl] = useState<string | null>(null);
   const [imagenSaving, setImagenSaving] = useState(false);
   const [imagenSuccess, setImagenSuccess] = useState(false);
-  const [copiedId, setCopiedId] = useState(false);
-  const handleCopyId = () => {
-    // Copia el código que puso el creador; si la obra no tiene código, el ID interno.
-    navigator.clipboard.writeText(obra?.codigo || obraId || '');
-    setCopiedId(true);
-    setTimeout(() => setCopiedId(false), 1500);
-  };
 
   // El porcentaje de onboarding alimenta el resumen y el estado de fase. El
   // checklist accionable vive en Personas (ámbito obra), que calcula lo mismo
@@ -313,11 +306,11 @@ export default function ObraDetalle() {
     try {
       const tenantId = obra.tenantId || localStorage.getItem('tenant_id') || '';
       const up = await uploadsApi.getUploadUrl({
-        fileName: file.name, fileType: file.type, fileSize: file.size,
+        archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
         categoria: 'obras', tenantId,
       });
       if (!up.success || !up.data) throw new Error('Sin URL de subida');
-      const put = await fetch(up.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const put = await fetch(up.data.uploadUrl, { method: 'PUT', body: file, headers: up.data.uploadHeaders });
       if (!put.ok) throw new Error('No se pudo subir la imagen');
       await uploadsApi.confirmUpload({ fileKey: up.data.fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
       const res = await obrasApi.update(obraId, { imagenKey: up.data.fileKey });
@@ -375,25 +368,6 @@ export default function ObraDetalle() {
 
 
 
-  const indicadores = useMemo(() => {
-    const pendientesFirma = obraSignatureRequests
-      .filter((r) => ['pendiente', 'en_proceso'].includes(r.estado))
-      .reduce((total, r) => total + (r.totalRequeridos - r.totalFirmados), 0);
-    const ds44Pendientes = faseDeming === 'hacer'
-      ? Math.max(onboardingSummary.total - onboardingSummary.completed, 0)
-      : requisitosDeFase(completitudObra, 'plan').filter((r) => r.estado === 'Pendiente').length;
-    const mesActual = new Date().toISOString().slice(0, 7);
-    const actividadesMes = actividades.filter((act) => act.fecha?.startsWith(mesActual)).length;
-    const incidentesAbiertos = incidentes.filter(incidenteAbierto).length;
-    const ds44Label = faseDeming === 'hacer' ? 'Onboarding DS44 pendiente' : 'Documentos DS44 pendientes';
-
-    return [
-      { label: 'Firmas pendientes', value: String(pendientesFirma) },
-      { label: ds44Label, value: String(ds44Pendientes) },
-      { label: 'Actividades del mes', value: String(actividadesMes) },
-      { label: 'Incidentes abiertos', value: String(incidentesAbiertos) }
-    ];
-  }, [obraSignatureRequests, completitudObra, actividades, incidentes, faseDeming, onboardingSummary]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -725,11 +699,11 @@ export default function ObraDetalle() {
         let archivoNombre: string | undefined;
         if (doCreateForm.file) {
           const up = await uploadsApi.getUploadUrl({
-            fileName: doCreateForm.file.name, fileType: doCreateForm.file.type,
+            archivo: doCreateForm.file, fileName: doCreateForm.file.name, fileType: doCreateForm.file.type,
             fileSize: doCreateForm.file.size, categoria: 'obras', empresaId: obra.tenantId,
           });
           if (up.success && up.data) {
-            await fetch(up.data.uploadUrl, { method: 'PUT', body: doCreateForm.file, headers: { 'Content-Type': doCreateForm.file.type } });
+            await fetch(up.data.uploadUrl, { method: 'PUT', body: doCreateForm.file, headers: up.data.uploadHeaders });
             await uploadsApi.confirmUpload({ fileKey: up.data.fileKey, fileName: doCreateForm.file.name, fileType: doCreateForm.file.type, fileSize: doCreateForm.file.size });
             s3Key = up.data.fileKey;
             archivoNombre = doCreateForm.file.name;
@@ -872,7 +846,7 @@ export default function ObraDetalle() {
 
       if (pendingDoFile) {
         const uploadUrlRes = await uploadsApi.getUploadUrl({
-          fileName: pendingDoFile.name,
+          archivo: pendingDoFile, fileName: pendingDoFile.name,
           fileType: pendingDoFile.type,
           fileSize: pendingDoFile.size,
           categoria: 'obras',
@@ -882,7 +856,7 @@ export default function ObraDetalle() {
         const uploadResult = await fetch(uploadUrlRes.data.uploadUrl, {
           method: 'PUT',
           body: pendingDoFile,
-          headers: { 'Content-Type': pendingDoFile.type }
+          headers: uploadUrlRes.data.uploadHeaders
         });
         if (!uploadResult.ok) throw new Error('Error al subir archivo');
         fileKey = uploadUrlRes.data.fileKey;
@@ -963,11 +937,11 @@ export default function ObraDetalle() {
     setBulkUploadingTipo(tipo);
     try {
       const uploadRes = await uploadsApi.getUploadUrl({
-        fileName: file.name, fileType: file.type, fileSize: file.size,
+        archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
         categoria: 'obras', empresaId: obra.tenantId
       });
       if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
-      await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });
       const fileKey = uploadRes.data.fileKey;
       await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
 
@@ -1222,7 +1196,7 @@ export default function ObraDetalle() {
 
       if (pendingDs44File) {
         const uploadUrlRes = await uploadsApi.getUploadUrl({
-          fileName: pendingDs44File.name,
+          archivo: pendingDs44File, fileName: pendingDs44File.name,
           fileType: pendingDs44File.type,
           fileSize: pendingDs44File.size,
           categoria: 'obras',
@@ -1236,7 +1210,7 @@ export default function ObraDetalle() {
         const uploadResult = await fetch(uploadUrlRes.data.uploadUrl, {
           method: 'PUT',
           body: pendingDs44File,
-          headers: { 'Content-Type': pendingDs44File.type }
+          headers: uploadUrlRes.data.uploadHeaders
         });
 
         if (!uploadResult.ok) {
@@ -1450,6 +1424,8 @@ export default function ObraDetalle() {
     const destinos: Record<string, string> = {
       prescripciones: '/prescripciones',
       actividades: '/activities',
+      // El representante legal se designa en Mi Empresa → Identidad.
+      representante: '/mi-empresa',
     };
     const destino = destinos[modulo];
     if (destino) navigate(destino);
@@ -1523,22 +1499,6 @@ export default function ObraDetalle() {
   };
 
 
-  // Avisos de la fase activa, derivados de la MISMA evaluación que el resto de la
-  // pantalla. Antes se contaban los documentos base de PLAN aunque la fase activa
-  // fuera otra: el aviso hablaba de algo distinto de lo que mostraba debajo.
-  const requisitosDeLaFase = useMemo(
-    () => requisitosDeFase(completitudObra, selectedDemingPhase as 'plan' | 'hacer' | 'verificar' | 'actuar'),
-    [completitudObra, selectedDemingPhase]
-  );
-  const faseCompletitud = useMemo(() => {
-    const requisitos = requisitosDeFase(completitudObra, selectedDemingPhase as 'plan' | 'hacer' | 'verificar' | 'actuar');
-    return { resumen: resumenDeFase(requisitos), unidad: 'requisitos' };
-  }, [completitudObra, selectedDemingPhase]);
-
-  const documentosPendientes = requisitosDeLaFase.filter((r) => r.estado === 'Pendiente');
-  const documentosPendientesFirma = requisitosDeLaFase.filter((r) => r.estado === 'Parcial');
-  const documentosVencidos = requisitosDeLaFase.filter((r) => r.estado === 'Vencido');
-  const documentosPendientesTitulos = documentosPendientes.map((r) => r.titulo);
   const activeWorkers = trabajadores.filter((worker) => worker.estado !== 'inactivo');
 
 
@@ -1565,27 +1525,6 @@ export default function ObraDetalle() {
   const doUploaded = doTotal - doPendientes.length;
   void doUploaded; // reservado para indicador de fase DO
 
-  // Cumplimiento DE LA FASE SELECCIONADA, con las reglas del motor de completitud.
-  //
-  // Antes se mostraba siempre el conteo de los documentos base de PLAN bajo el
-  // encabezado de la fase activa: en HACER o VERIFICAR el número describía otra
-  // cosa que su etiqueta. Ahora cada fase mide su propio universo, y lo que no
-  // aplica a la obra sale del denominador con su motivo en vez de penalizar.
-
-
-  const faseLabel = DS44_PHASE_LABELS[selectedDemingPhase] || selectedDemingPhase.toUpperCase();
-  const isPlanPhase = selectedDemingPhase === 'plan';
-  const isDoPhase = selectedDemingPhase === 'hacer';
-  const isCheckPhase = selectedDemingPhase === 'verificar';
-  const isActPhase = selectedDemingPhase === 'actuar';
-
-  const FASES_DEMING = [
-    { key: 'plan', label: 'PLANIFICAR', short: 'PLAN' },
-    { key: 'hacer', label: 'HACER', short: 'DO' },
-    { key: 'verificar', label: 'VERIFICAR', short: 'CHECK' },
-    { key: 'actuar', label: 'ACTUAR', short: 'ACT' },
-  ];
-  const idxFaseDeming = FASES_DEMING.findIndex(f => f.key === faseDeming);
 
   // Auto-avance del ciclo Deming: en cuanto una fase queda completa, pasa sola a
   // la siguiente (PLAN→HACER→VERIFICAR→ACTUAR). Se dispara una sola vez por fase
@@ -1799,729 +1738,495 @@ export default function ObraDetalle() {
     }
   };
 
-  return (
-    <>
-      <div className="page-content">
-        {/* ── Credencial de la obra ──
-            El referente es el letrero de la entrada: imagen del sitio, nombre,
-            estado y los datos que la identifican. Misma pieza que la ficha de
-            una persona, con el sujeto cambiado. */}
-        <IdentityPanel
-          eyebrow="Obra"
-          title={obra.nombre}
-          image={obraImagenUrl}
-          fallback={<LuBuilding2 size={56} strokeWidth={1.5} />}
-          media="landscape"
-          status={{
-            label: ESTADO_OBRA_LABEL[obra.estado] ?? obra.estado ?? 'Sin estado',
-            tone: obra.estado === 'activa' ? 'ok' : obra.estado === 'pausada' ? 'pending' : 'neutral',
-          }}
-          meta={[
-            { label: obra.codigo ? 'Código' : 'ID interno', value: obra.codigo || obraId, mono: true },
-            { label: 'Mandante', value: obra.mandante || '—' },
-            { label: 'Ubicación', value: [obra.comuna, obra.region].filter(Boolean).join(', ') || '—' },
-          ]}
-          photo={{
-            onSelect: handleImagenObra,
-            saving: imagenSaving,
-            success: imagenSuccess,
-            changeLabel: 'Cambiar imagen',
-          }}
-          actions={
-            <button className="btn btn-secondary btn-sm" onClick={handleEditToggle}>
-              <LuPencil size={13} /> Editar
-            </button>
-          }
-        />
-
-        <div style={{ display: 'grid', gap: 'var(--space-3)', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: 'var(--space-5)' }}>
-          {indicadores.map((item) => (
-            <div key={item.label} className="card stat-card" style={{ padding: 'var(--space-3)' }}>
-              <div className="stat-value">{item.value}</div>
-              <div className="stat-label">{item.label}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="od-tab-nav">
-          <button className={activeTab === 'resumen' ? 'od-tab od-tab--active' : 'od-tab'} onClick={() => setActiveTab('resumen')}>Resumen</button>
-          <button className={activeTab === 'ds44' ? 'od-tab od-tab--active' : 'od-tab'} onClick={() => setActiveTab('ds44')}>DS44 — Cumplimiento</button>
-        </div>
-
-        {/* ── TAB: RESUMEN ────────────────────────────────────────────────────── */}
-        {activeTab === 'resumen' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 'var(--space-4)' }}>
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title">Información de la Obra</div>
-                <button className="btn btn-ghost btn-sm" onClick={handleEditToggle}>
-                  <LuPencil /> Editar
-                </button>
+  // ── Módulos de trabajo de cada fase ─────────────────────────────────────
+  //
+  // No son requisitos: son las herramientas donde se registra el día a día que
+  // después acredita los requisitos. Antes vivían apilados debajo de la lista de
+  // la fase, entre subtítulos, y quedaban ocultos al final. Ahora se listan al
+  // lado, con una línea que dice para qué sirven, y se abren en un panel.
+  const investigacionesPendientes = incidentes.filter((i: any) => (['grave', 'fatal'].includes(i.gravedad) || i.esFatal) && i.estado !== 'cerrado');
+  const eventosRegistrados = obraDocs.filter((d: any) => DS44_DO_EVENTOS.some((ev) => ev.tipo === d.tipo)).length;
+  const moduloEstructura: ModuloFase | null = obra?.tenantId && obraId ? {
+    key: 'estructura',
+    nombre: 'Estructura preventiva',
+    que: 'Comité paritario o delegado de la obra: constitución, integrantes, reuniones y actas.',
+    contenido: (
+      <EstructuraPreventivaPanel
+        tenantId={obra.tenantId}
+        ambito={AMBITO_ESTRUCTURA.OBRA}
+        obraId={obraId}
+        onConstituir={(tipo) => navigate(`/estructura/constituir?ambito=obra&obraId=${obraId}&tipo=${tipo}`)}
+        onVerOrgano={(id) => navigate(`/estructura/organos/${id}`)}
+      />
+    ),
+  } : null;
+  const modulosDs44: Record<FaseDeming, ModuloFase[]> = {
+    plan: moduloEstructura ? [moduloEstructura] : [],
+    hacer: [
+      {
+        key: 'registro-72',
+        nombre: 'Registro de actividad preventiva',
+        que: 'Consolida capacitaciones, EPP, inducciones e incidentes del período (Art. 72).',
+        estado: `${actividades.length} actividades · ${incidentes.length} incidentes`,
+        contenido: (
+          <div className="ds44-activity-block">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
+              {/* Info */}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '4px' }}>
+                  <LuShieldAlert size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                  <div className="font-medium">Registro de Actividad Preventiva (Art. 72)</div>
+                </div>
+                <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 'var(--space-2)' }}>
+                  Arts. 71-72 DS44 &middot; Documento formal del DO. Consolida toda la actividad preventiva
+                  del periodo (capacitaciones, EPP, inducciones, vigilancia) más incidentes e indicadores,
+                  firmado con hash verificable. No se reduce a incidentes.
+                </div>
+                <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.82rem' }}>
+                    <span style={{ fontWeight: 600 }}>{actividades.length}</span>
+                    <span className="text-muted"> actividad{actividades.length !== 1 ? 'es' : ''} preventiva{actividades.length !== 1 ? 's' : ''}</span>
+                  </span>
+                  <span style={{ fontSize: '0.82rem' }}>
+                    <span style={{ fontWeight: 600 }}>{incidentes.length}</span>
+                    <span className="text-muted"> incidente{incidentes.length !== 1 ? 's' : ''}</span>
+                  </span>
+                  {incidentes.filter(incidenteAbierto).length > 0 && (
+                    <span style={{ fontSize: '0.82rem', color: '#f59e0b', fontWeight: 500 }}>
+                      {incidentes.filter(incidenteAbierto).length} abierto{incidentes.filter(incidenteAbierto).length !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="text-muted" style={{ fontSize: '0.8rem' }}>{obra.codigo ? 'Código de Obra' : 'ID de Obra'}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 'var(--space-3)' }}>
-                <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-secondary)' }}>{obra.codigo || obraId}</span>
+              {/* Acciones */}
+              <div style={{ display: 'flex', gap: 'var(--space-2)', flexShrink: 0, alignItems: 'center' }}>
                 <button
-                  type="button"
-                  title={obra.codigo ? 'Copiar código de obra' : 'Copiar ID interno (esta obra no tiene código)'}
-                  onClick={handleCopyId}
-                  style={{
-                    flexShrink: 0,
-                    background: copiedId ? 'rgba(16,185,129,0.1)' : 'var(--surface-elevated)',
-                    border: `1px solid ${copiedId ? 'rgba(16,185,129,0.4)' : 'var(--surface-border)'}`,
-                    borderRadius: 6,
-                    padding: '2px 8px',
-                    cursor: 'pointer',
-                    color: copiedId ? '#059669' : 'var(--text-muted)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    fontSize: '0.72rem',
-                    fontWeight: 500,
-                    transition: 'all 0.2s',
+                  className="btn btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => navigate(`/incidents?obraId=${obraId}`)}
+                >
+                  <LuFileText size={14} /> Ver incidentes
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  title="Expediente consolidado para fiscalizadores y Organismo Administrador (Art. 72 inc. 1)"
+                  disabled={expedienteLoading || !obra?.tenantId}
+                  onClick={async () => {
+                    if (!obra?.tenantId || !obraId) return;
+                    setExpedienteLoading(true);
+                    const res = await obrasApi.abrirExpediente(obraId, obra.tenantId);
+                    setExpedienteLoading(false);
+                    if (!res.ok) alert(res.error || 'No se pudo generar el expediente.');
                   }}
                 >
-                  {copiedId ? <FiCheck size={11} /> : <FiCopy size={11} />}
-                  {copiedId ? 'Copiado' : 'Copiar'}
+                  <LuFileText size={14} /> {expedienteLoading ? 'Generando…' : 'Descargar expediente'}
                 </button>
-              </div>
-              <div className="text-muted" style={{ fontSize: '0.8rem' }}>Mandante</div>
-              <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>{obra.mandante || '-'}</div>
-              <div className="text-muted" style={{ fontSize: '0.8rem' }}>Dirección</div>
-              <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>{obra.direccion || '-'}</div>
-              <div className="text-muted" style={{ fontSize: '0.8rem' }}>Región / Comuna</div>
-              <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>{obra.region || '-'} · {obra.comuna || '-'}</div>
-              <div className="text-muted" style={{ fontSize: '0.8rem' }}>Estado</div>
-              <div style={{ display: 'inline-flex', marginBottom: 'var(--space-3)' }}>
-                <span className="badge badge-success">{obra.estado || '-'}</span>
-              </div>
-              {(obra.faenaCompartida || obra.tieneMaquinaria || obra.agentesFQB) && (
-                <div style={{ marginTop: 'var(--space-2)', display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                  {obra.faenaCompartida && <span style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '999px', background: 'rgba(0,110,220,0.10)', color: '#004a8f', border: '1px solid rgba(0,110,220,0.25)' }}>Faena compartida</span>}
-                  {obra.tieneMaquinaria && <span style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '999px', background: 'rgba(0,110,220,0.10)', color: '#004a8f', border: '1px solid rgba(0,110,220,0.25)' }}>Maquinaria DS44</span>}
-                  {obra.agentesFQB && <span style={{ fontSize: '0.78rem', padding: '3px 10px', borderRadius: '999px', background: 'rgba(245,158,11,0.10)', color: '#92400e', border: '1px solid rgba(245,158,11,0.25)' }}>Agentes FQB/Físicos</span>}
-                </div>
-              )}
-            </div>
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title">Cumplimiento DS44</div>
-              </div>
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                  <span className="text-muted" style={{ fontSize: '0.85rem' }}>Fase {faseLabel}</span>
-                  <span style={{ fontWeight: 700, fontSize: '1.2rem', color: colorProgreso(faseCompletitud.resumen.progreso) }}>{faseCompletitud.resumen.progreso}%</span>
-                </div>
-                <div style={{ height: '10px', borderRadius: '999px', overflow: 'hidden', background: 'var(--surface-elevated)' }}>
-                  <div style={{ width: `${faseCompletitud.resumen.progreso}%`, height: '100%', background: colorProgreso(faseCompletitud.resumen.progreso), transition: 'width 300ms' }} />
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                <button className="btn btn-secondary" onClick={() => setActiveTab('ds44')} style={{ justifyContent: 'flex-start' }}>Ver DS44 completo →</button>
-                <button className="btn btn-secondary" onClick={() => navigate(`/incidents?obraId=${obraId}`)} style={{ justifyContent: 'flex-start' }}>Incidentes · {incidentes.length}</button>
-                <button className="btn btn-secondary" onClick={() => navigate(`/documents?obraId=${obraId}`)} style={{ justifyContent: 'flex-start' }}>Documentos de obra</button>
-                <button className="btn btn-secondary" onClick={() => { setSelectedObraId(obraId || null); navigate('/personas'); }} style={{ justifyContent: 'flex-start' }}>Equipo · {activeWorkers.length} activos</button>
+                <button
+                  className="btn btn-primary"
+                  style={{ padding: '6px 14px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => setRegistroSignModal(true)}
+                  disabled={exportingRegistro}
+                >
+                  <LuDownload size={14} /> Exportar y Firmar
+                </button>
               </div>
             </div>
           </div>
-        )}
-
-        {/* ── TAB: DS44 ───────────────────────────────────────────────────────── */}
-        {activeTab === 'ds44' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-
-
-          <div className="ds44-panel">
-            <div className="ds44-stepper">
-              {FASES_DEMING.map((fase, idx) => {
-                const isActive = fase.key === faseDeming;
-                const isDone = idx < idxFaseDeming;
-                const isSelected = fase.key === selectedDemingPhase;
-                const circleColor = isDone ? '#10b981' : isActive ? '#006edc' : 'var(--surface-border)';
-                const textColor = isDone ? '#10b981' : isActive ? '#006edc' : isSelected ? 'var(--text-primary)' : 'var(--text-muted)';
-                return (
-                  <React.Fragment key={fase.key}>
-                    <button
-                      type="button"
-                      className={`ds44-phase-btn${isSelected ? ' ds44-phase-btn--selected' : ''}`}
-                      onClick={() => setSelectedDemingPhase(fase.key)}
-                    >
-                      <div className="ds44-phase-circle" style={{
-                        background: isDone ? '#10b981' : isActive ? '#006edc' : 'var(--surface-card)',
-                        borderColor: circleColor,
-                        color: isDone || isActive ? 'white' : textColor,
-                        boxShadow: isSelected ? `0 0 0 3px ${isDone ? 'rgba(16,185,129,0.2)' : isActive ? 'rgba(0,110,220,0.2)' : 'rgba(0,0,0,0.08)'}` : 'none',
-                      }}>
-                        {isDone ? '✓' : idx + 1}
-                      </div>
-                      <span className="ds44-phase-label" style={{ color: textColor, fontWeight: isSelected ? 700 : isActive ? 600 : 400 }}>
-                        {fase.label}
-                      </span>
-                    </button>
-                    {idx < FASES_DEMING.length - 1 && (
-                      <div className="ds44-phase-connector" style={{ background: isDone ? '#10b981' : 'var(--surface-border)' }} />
+        ),
+      },
+      {
+        key: 'onboarding',
+        nombre: 'Onboarding de la obra',
+        que: 'Qué documentos recibe cada cargo al ingresar a esta obra.',
+        estado: onboardingSummary.total > 0 ? `Onboarding al ${onboardingSummary.progress}%` : null,
+        contenido: (
+          <>
+            <ObraPlantillasOnboarding
+              obraId={obraId || ''}
+              tenantId={obra?.tenantId}
+              cargos={cargoCatalog}
+              initial={obra?.plantillasOnboarding}
+              canEdit={canSubirDocumentos}
+              onSaved={(map) => setObra((prev: any) => (prev ? { ...prev, plantillasOnboarding: map } : prev))}
+            />
+            <ObraAplicabilidadKit
+              obraId={obraId || ''}
+              cargos={cargoCatalog}
+              initial={obra?.aplicabilidadKit}
+              canEdit={canSubirDocumentos}
+              onSaved={(map) => setObra((prev: any) => (prev ? { ...prev, aplicabilidadKit: map } : prev))}
+            />
+          </>
+        ),
+      },
+      ...(moduloEstructura ? [moduloEstructura] : []),
+      {
+        key: 'registros-gestion',
+        nombre: 'Registros de gestión',
+        que: 'Se nutren de los datos del sistema: incidentes, investigaciones, simulacros y vigilancia.',
+        estado: `${doRegistros.length} registros`,
+        contenido: (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+            {doRegistros.map(({ el }) => {
+              // Conteo/estado real segun la naturaleza del registro.
+              const incCount = incidentes.length;
+              const invPend = incidentes.filter((i: any) => ['grave', 'fatal'].includes(i.gravedad) && i.estado !== 'cerrado').length;
+              // Art. 19: el ensayo vale "al menos una vez al año". Preguntar solo si existe
+              // alguno daba por cumplido un simulacro de hace tres años.
+              const hasSimulacro = actividades.some((a: any) => a.tipo === 'SIMULACRO'
+                && !revisionVencida(a.fecha || a.createdAt, 12));
+              const enVigilancia = trabajadores.filter((w: any) => w.vigilanciaSalud?.enVigilancia).length;
+              return (
+                <div key={el.key} className="ds44-doc-row">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                      {el.articulo}
+                      {el.accion === 'incidentes' && ` · ${incCount} incidente(s)`}
+                      {el.accion === 'investigaciones' && ` · ${invPend} investigación(es) pendiente(s)`}
+                      {el.accion === 'simulacro' && ` · ${hasSimulacro ? 'Ensayo registrado' : 'Sin ensayo en el periodo'}`}
+                      {el.key === 'REG_VIGILANCIA' && ` · ${enVigilancia} en vigilancia`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
+                    {el.moduloPendiente && <span className="badge badge-warning">Módulo pendiente</span>}
+                    {el.accion === 'incidentes' && (
+                      <>
+                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver incidentes</button>
+                        <button className="btn btn-primary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}&nuevo=1`)}>Reportar</button>
+                      </>
                     )}
-                  </React.Fragment>
-                );
-              })}
-            </div>
-            <div className="ds44-progress-bar">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, color: 'var(--text-secondary)' }}>Fase {faseLabel}</span>
-                <span style={{ fontWeight: 700, fontSize: '1rem', color: colorProgreso(faseCompletitud.resumen.progreso) }}>{faseCompletitud.resumen.progreso}%</span>
-              </div>
-              <div className="ds44-progress-track">
-                <div className="ds44-progress-fill" style={{
-                  width: `${faseCompletitud.resumen.progreso}%`,
-                  background: colorProgreso(faseCompletitud.resumen.progreso),
-                }} />
-              </div>
-              {/* El denominador se declara: sin esto el porcentaje es un número
-                  sin procedencia y nadie sabe qué quedó fuera ni por qué. */}
-              <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 5 }}>
-                {faseCompletitud.resumen.cumplidos}/{faseCompletitud.resumen.exigibles} {faseCompletitud.unidad} de esta fase
-                {faseCompletitud.resumen.excluidos > 0 && ` · ${faseCompletitud.resumen.excluidos} no aplican`}
-              </div>
-            </div>
-            <div className="ds44-content-section">
-              <div className="ds44-content-header">
-                <div className="ds44-content-title">
-                  {isPlanPhase ? 'Documentos base de la obra · etapa actual' : isDoPhase ? 'Onboarding por trabajador' : isCheckPhase ? 'Evaluación anual de evidencias' : 'Seguimiento de mejora continua'}
+                    {el.accion === 'investigaciones' && (
+                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}&tab=investigaciones`)}>Ver investigaciones</button>
+                    )}
+                    {el.accion === 'simulacro' && (
+                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => openDoCreate('actividad', { titulo: 'Ensayo anual del plan de emergencias', activityTipo: 'SIMULACRO', tipo: 'SIMULACRO' })}>
+                        Programar simulacro
+                      </button>
+                    )}
+                    {el.accion === 'consulta' && (
+                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => el.modulo && navigate(el.modulo)}>Ver</button>
+                    )}
+                  </div>
                 </div>
-              </div>
-
-            {isPlanPhase && (
+              );
+            })}
+          </div>
+        ),
+      },
+      {
+        key: 'eventos',
+        nombre: 'Eventos sobrevinientes',
+        que: 'Registros que solo se crean cuando ocurre el hecho. No cuentan como faltante.',
+        estado: eventosRegistrados > 0 ? `${eventosRegistrados} registro(s)` : 'Sin eventos en el período',
+        contenido: (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+            {DS44_DO_EVENTOS.map((ev) => {
+              const ocurrencias = obraDocs.filter((d: any) => d.tipo === ev.tipo).length;
+              return (
+                <div key={ev.key} className="ds44-doc-row">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="font-medium" style={{ fontSize: '0.9rem' }}>{ev.titulo}</div>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>{ev.articulo} · {ocurrencias > 0 ? `${ocurrencias} registro(s)` : 'Sin eventos'}</div>
+                  </div>
+                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => openDoCreate('documento', ev)}>
+                    Registrar
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ),
+      },
+    ],
+    verificar: [
+      {
+        key: 'consolidado',
+        nombre: 'Consolidado del período',
+        que: 'Siniestralidad, investigaciones, medidas y vigilancia del período (Arts. 14 y 22).',
+        estado: checkConsolidado ? 'Período consolidado' : 'Sin consolidar',
+        contenido: (
+          <div className="card" style={{ padding: 'var(--space-4)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
+              <div className="font-medium">Consolidado del periodo (Arts. 14, 22.4)</div>
+              <button className="btn btn-secondary btn-sm" type="button" onClick={loadCheckConsolidado} disabled={loadingCheck}>
+                {loadingCheck ? 'Cargando…' : checkConsolidado ? 'Actualizar' :'Consolidar periodo'}
+              </button>
+            </div>
+            {checkConsolidado ? (
               <>
-                {(documentosPendientes.length > 0 || documentosPendientesFirma.length > 0 || documentosVencidos.length > 0) && (
-                  <div className="ds44-alerts">
-                    {documentosPendientesFirma.length > 0 && (
-                      <div className="ds44-alert ds44-alert-warning">
-                        <span className="ds44-alert-icon"><LuClock size={14} /></span>
-                        <span>Pendientes de firma: {documentosPendientesFirma.map((d) => d.titulo).join(', ')}.</span>
-                      </div>
-                    )}
-                    {documentosPendientes.length > 0 && (
-                      <div className="ds44-alert ds44-alert-danger">
-                        <span className="ds44-alert-icon"><FiAlertTriangle size={14} /></span>
-                        <span>Faltantes: {documentosPendientesTitulos.join(', ')}.</span>
-                      </div>
-                    )}
-                    {documentosVencidos.length > 0 && (
-                      <div className="ds44-alert ds44-alert-warning">
-                        <span className="ds44-alert-icon"><LuClock size={14} /></span>
-                        <span>{documentosVencidos.length} documento{documentosVencidos.length === 1 ? '' : 's'} vencido{documentosVencidos.length === 1 ? '' : 's'}.</span>
-                      </div>
-                    )}
+                <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '120px' }}>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>Accidentes</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.indicadores?.numeroAccidentes ?? 0}</div>
                   </div>
-                )}
-                {/* Estructura preventiva de la FAENA (DS 44 Art. 23): el conteo de
-                    personas es por lugar de trabajo, así que un comité constituido en
-                    la empresa no exime a esta obra del suyo. Informativo por ahora: las
-                    acciones abren el asistente de constitución. */}
-                {obra?.tenantId && obraId && (
-                  <div style={{ marginBottom: 'var(--space-3)' }}>
-                    <div className="ds44-section-label">Estructura preventiva de la obra</div>
-                    <EstructuraPreventivaPanel
-                      tenantId={obra.tenantId}
-                      ambito={AMBITO_ESTRUCTURA.OBRA}
-                      obraId={obraId}
-                      onConstituir={(tipo) => navigate(`/estructura/constituir?ambito=obra&obraId=${obraId}&tipo=${tipo}`)}
-                      onVerOrgano={(id) => navigate(`/estructura/organos/${id}`)}
-                    />
-                    <div style={{ marginTop: 'var(--space-3)' }}>
-                      <CompletitudFufPanel
-                        tenantId={obra.tenantId}
-                        ambito={AMBITO_ESTRUCTURA.OBRA}
-                        obraId={obraId}
-                      />
+                  <div style={{ flex: 1, minWidth: '120px' }}>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>Tasa frecuencia</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.indicadores?.tasaFrecuencia ?? 0}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: '120px' }}>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>Investigaciones (pend./cerr.)</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>
+                      <span style={{ color: (checkConsolidado.investigacionesATEP?.pendientes ?? 0) > 0 ? '#f59e0b' : undefined }}>{checkConsolidado.investigacionesATEP?.pendientes ?? 0}</span>
+                      {' / '}{checkConsolidado.investigacionesATEP?.cerradas ?? 0}
                     </div>
                   </div>
-                )}
-                <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                {/* ── Requisitos del DS 44 de esta fase ──
-                    Salen del motor de completitud, la MISMA evaluación que alimenta
-                    el repositorio, el panel y el export. La fase la trae el catálogo
-                    del formulario. */}
-                {obra?.tenantId && obraId && (
-                  <div style={{ marginBottom: 'var(--space-4)' }}>
-                    <div className="ds44-section-label">Requisitos del DS 44</div>
-                    <FufPorFase
-                      tenantId={obra.tenantId}
-                      obraId={obraId}
-                      fase="plan"
-                      onVerDocumento={(d) => handlePreviewDoc(d as any)}
-                      onAgendarActividad={(criterio) => abrirAgendaDesdeFuf(criterio)}
-                      onIrAModulo={(modulo) => irAModuloDs44(modulo)}
-                      onDeclarar={handleSetObraFlag}
-                      completitud={completitudObra}
-                      documentos={obraDocs as any}
-                      onRecargar={recargarCompletitud}
-                    />
+                  <div style={{ flex: 1, minWidth: '120px' }}>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>Medidas vencidas</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: (checkConsolidado.medidasCorrectivas?.vencidas ?? 0) > 0 ? '#ef4444' : undefined }}>{checkConsolidado.medidasCorrectivas?.vencidas ?? 0}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: '120px' }}>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>En vigilancia salud</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.vigilancia?.enVigilancia ?? 0}</div>
+                  </div>
+                </div>
+                {(checkConsolidado.medidasCorrectivas?.total ?? 0) > 0 && (
+                  <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: 'var(--space-2)' }}>
+                    Medidas correctivas: {checkConsolidado.medidasCorrectivas.implementadas}/{checkConsolidado.medidasCorrectivas.total} implementadas · {checkConsolidado.medidasCorrectivas.verificadas} verificadas
                   </div>
                 )}
-                </div>
-                </div>
-
-                {/* El IRL y los documentos del cargo se definen UNA vez a nivel empresa
-                    (Onboarding por cargo), no por obra. Aquí no se suben plantillas de cargo:
-                    la obra solo lleva sus documentos base (arriba) y el cumplimiento por
-                    persona se revisa en la fase HACER / sección de onboarding por trabajador. */}
+                {(checkConsolidado.causasRecurrentes?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: 'var(--space-2)', padding: '8px 12px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', fontSize: '0.8rem', color: '#92400e' }}>
+                    <strong>Causas raíz recurrentes (desviación sistémica):</strong>
+                    <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
+                      {checkConsolidado.causasRecurrentes.map((c: any, i: number) => (
+                        <li key={i}>{c.descripcion} <span className="text-muted">({c.incidentes} incidentes)</span></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </>
-            )}
-
-            {isDoPhase && (
-              <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
-                {/* Configuración del onboarding de ESTA obra. Ambos bloques alimentan
-                    `runOnboardingForObra` (personas-module): el backend los lee al
-                    vincular un trabajador, así que sin esta UI quedan inalcanzables
-                    y toda obra nueva arranca con la configuración vacía. */}
-                <ObraPlantillasOnboarding
-                  obraId={obraId || ''}
-                  tenantId={obra?.tenantId}
-                  cargos={cargoCatalog}
-                  initial={obra?.plantillasOnboarding}
-                  canEdit={canSubirDocumentos}
-                  onSaved={(map) => setObra((prev: any) => (prev ? { ...prev, plantillasOnboarding: map } : prev))}
-                />
-                <ObraAplicabilidadKit
-                  obraId={obraId || ''}
-                  cargos={cargoCatalog}
-                  initial={obra?.aplicabilidadKit}
-                  canEdit={canSubirDocumentos}
-                  onSaved={(map) => setObra((prev: any) => (prev ? { ...prev, aplicabilidadKit: map } : prev))}
-                />
-
-                {/* ── Sección A: Registro AT/EP/Incidentes Peligrosos (Arts. 72-73) ── */}
-                <div className="ds44-activity-block">
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
-                    {/* Info */}
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '4px' }}>
-                        <LuShieldAlert size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                        <div className="font-medium">Registro de Actividad Preventiva (Art. 72)</div>
-                      </div>
-                      <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 'var(--space-2)' }}>
-                        Arts. 71-72 DS44 &middot; Documento formal del DO. Consolida toda la actividad preventiva
-                        del periodo (capacitaciones, EPP, inducciones, vigilancia) más incidentes e indicadores,
-                        firmado con hash verificable. No se reduce a incidentes.
-                      </div>
-                      <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.82rem' }}>
-                          <span style={{ fontWeight: 600 }}>{actividades.length}</span>
-                          <span className="text-muted"> actividad{actividades.length !== 1 ? 'es' : ''} preventiva{actividades.length !== 1 ? 's' : ''}</span>
-                        </span>
-                        <span style={{ fontSize: '0.82rem' }}>
-                          <span style={{ fontWeight: 600 }}>{incidentes.length}</span>
-                          <span className="text-muted"> incidente{incidentes.length !== 1 ? 's' : ''}</span>
-                        </span>
-                        {incidentes.filter(incidenteAbierto).length > 0 && (
-                          <span style={{ fontSize: '0.82rem', color: '#f59e0b', fontWeight: 500 }}>
-                            {incidentes.filter(incidenteAbierto).length} abierto{incidentes.filter(incidenteAbierto).length !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {/* Acciones */}
-                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexShrink: 0, alignItems: 'center' }}>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ padding: '6px 14px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        onClick={() => navigate(`/incidents?obraId=${obraId}`)}
-                      >
-                        <LuFileText size={14} /> Ver incidentes
-                      </button>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ padding: '6px 14px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        title="Expediente consolidado para fiscalizadores y Organismo Administrador (Art. 72 inc. 1)"
-                        disabled={expedienteLoading || !obra?.tenantId}
-                        onClick={async () => {
-                          if (!obra?.tenantId || !obraId) return;
-                          setExpedienteLoading(true);
-                          const res = await obrasApi.abrirExpediente(obraId, obra.tenantId);
-                          setExpedienteLoading(false);
-                          if (!res.ok) alert(res.error || 'No se pudo generar el expediente.');
-                        }}
-                      >
-                        <LuFileText size={14} /> {expedienteLoading ? 'Generando…' : 'Descargar expediente'}
-                      </button>
-                      <button
-                        className="btn btn-primary"
-                        style={{ padding: '6px 14px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        onClick={() => setRegistroSignModal(true)}
-                        disabled={exportingRegistro}
-                      >
-                        <LuDownload size={14} /> Exportar y Firmar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-
-                {/* ── Requisitos del DS 44 de esta fase ──
-                    Salen del motor de completitud, la MISMA evaluación que alimenta
-                    el repositorio, el panel y el export. La fase la trae el catálogo
-                    del formulario. Antes esta pantalla tenía sus propias listas, con
-                    sus propias reglas, y podía decir cosas distintas del mismo
-                    requisito. */}
-                {obra?.tenantId && obraId && (
-                  <div style={{ marginBottom: 'var(--space-4)' }}>
-                    <div className="ds44-section-label">Requisitos del DS 44</div>
-                    <FufPorFase
-                      tenantId={obra.tenantId}
-                      obraId={obraId}
-                      fase="hacer"
-                      onVerDocumento={(d) => handlePreviewDoc(d as any)}
-                      onAgendarActividad={(criterio) => abrirAgendaDesdeFuf(criterio)}
-                      onIrAModulo={(modulo) => irAModuloDs44(modulo)}
-                      onDeclarar={handleSetObraFlag}
-                      completitud={completitudObra}
-                      documentos={obraDocs as any}
-                      onRecargar={recargarCompletitud}
-                    />
-                  </div>
-                )}
-
-                {/* ── Sección: Registros de gestión (read-models, datos del sistema) ── */}
-                <div className="ds44-section-label">Registros de gestión</div>
-                <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: 'var(--space-2)' }}>
-                  Se nutren de los datos del sistema; no son documentos a subir y no afectan el %.
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-                  {doRegistros.map(({ el }) => {
-                    // Conteo/estado real segun la naturaleza del registro.
-                    const incCount = incidentes.length;
-                    const invPend = incidentes.filter((i: any) => ['grave', 'fatal'].includes(i.gravedad) && i.estado !== 'cerrado').length;
-                    // Art. 19: el ensayo vale "al menos una vez al año". Preguntar solo si existe
-                    // alguno daba por cumplido un simulacro de hace tres años.
-                    const hasSimulacro = actividades.some((a: any) => a.tipo === 'SIMULACRO'
-                      && !revisionVencida(a.fecha || a.createdAt, 12));
-                    const enVigilancia = trabajadores.filter((w: any) => w.vigilanciaSalud?.enVigilancia).length;
-                    return (
-                      <div key={el.key} className="ds44-doc-row">
-                        <div style={{ minWidth: 0 }}>
-                          <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                            {el.articulo}
-                            {el.accion === 'incidentes' && ` · ${incCount} incidente(s)`}
-                            {el.accion === 'investigaciones' && ` · ${invPend} investigación(es) pendiente(s)`}
-                            {el.accion === 'simulacro' && ` · ${hasSimulacro ? 'Ensayo registrado' : 'Sin ensayo en el periodo'}`}
-                            {el.key === 'REG_VIGILANCIA' && ` · ${enVigilancia} en vigilancia`}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
-                          {el.moduloPendiente && <span className="badge badge-warning">Módulo pendiente</span>}
-                          {el.accion === 'incidentes' && (
-                            <>
-                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver incidentes</button>
-                              <button className="btn btn-primary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}&nuevo=1`)}>Reportar</button>
-                            </>
-                          )}
-                          {el.accion === 'investigaciones' && (
-                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}&tab=investigaciones`)}>Ver investigaciones</button>
-                          )}
-                          {el.accion === 'simulacro' && (
-                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => openDoCreate('actividad', { titulo: 'Ensayo anual del plan de emergencias', activityTipo: 'SIMULACRO', tipo: 'SIMULACRO' })}>
-                              Programar simulacro
-                            </button>
-                          )}
-                          {el.accion === 'consulta' && (
-                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => el.modulo && navigate(el.modulo)}>Ver</button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* ── Sección: Eventos sobrevinientes ── */}
-                <div className="ds44-section-label">Eventos sobrevinientes</div>
-                <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: 'var(--space-2)' }}>
-                  Se generan solo ante el hecho. No cuentan como faltante en el cumplimiento.
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-                  {DS44_DO_EVENTOS.map((ev) => {
-                    const ocurrencias = obraDocs.filter((d: any) => d.tipo === ev.tipo).length;
-                    return (
-                      <div key={ev.key} className="ds44-doc-row">
-                        <div style={{ minWidth: 0 }}>
-                          <div className="font-medium" style={{ fontSize: '0.9rem' }}>{ev.titulo}</div>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>{ev.articulo} · {ocurrencias > 0 ? `${ocurrencias} registro(s)` : 'Sin eventos'}</div>
-                        </div>
-                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => openDoCreate('documento', ev)}>
-                          Registrar
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+            ) : (
+              <div className="text-muted" style={{ fontSize: '0.85rem' }}>
+                Consolida los indicadores de siniestralidad, investigaciones y vigilancia del periodo.
               </div>
             )}
-
-
-            {isCheckPhase && (
-              <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {/* Consolidado del periodo */}
+          </div>
+        ),
+      },
+      {
+        key: 'investigaciones',
+        nombre: 'Investigaciones AT/EP',
+        que: 'Informes obligatorios de incidentes graves y fatales, con árbol de causas (Art. 71).',
+        estado: investigacionesPendientes.length > 0 ? `${investigacionesPendientes.length} pendiente(s)` : 'Sin investigaciones pendientes',
+        contenido: investigacionesPendientes.length === 0
+          ? <p className="text-muted" style={{ margin: 0, fontSize: '0.875rem' }}>No hay investigaciones AT/EP pendientes en esta obra.</p>
+          : (
+            <>
+            {(() => {
+              const pendientes = incidentes.filter((i: any) => (['grave', 'fatal'].includes(i.gravedad) || i.esFatal) && i.estado !== 'cerrado');
+              if (pendientes.length === 0) return null;
+              return (
                 <div className="card" style={{ padding: 'var(--space-4)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-2)' }}>
-                    <div className="font-medium">Consolidado del periodo (Arts. 14, 22.4)</div>
-                    <button className="btn btn-secondary btn-sm" type="button" onClick={loadCheckConsolidado} disabled={loadingCheck}>
-                      {loadingCheck ? 'Cargando…' : checkConsolidado ? 'Actualizar' :'Consolidar periodo'}
-                    </button>
+                  <div className="font-medium" style={{ marginBottom: 'var(--space-1)' }}>Investigaciones AT/EP pendientes (Art. 71)</div>
+                  <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 'var(--space-2)' }}>
+                    Obligatorias para incidentes graves/fatales. Cerrar genera el informe firmado (árbol de causas) como respaldo del Registro Art. 72.
                   </div>
-                  {checkConsolidado ? (
-                    <>
-                      <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                        <div style={{ flex: 1, minWidth: '120px' }}>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>Accidentes</div>
-                          <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.indicadores?.numeroAccidentes ?? 0}</div>
-                        </div>
-                        <div style={{ flex: 1, minWidth: '120px' }}>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>Tasa frecuencia</div>
-                          <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.indicadores?.tasaFrecuencia ?? 0}</div>
-                        </div>
-                        <div style={{ flex: 1, minWidth: '120px' }}>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>Investigaciones (pend./cerr.)</div>
-                          <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>
-                            <span style={{ color: (checkConsolidado.investigacionesATEP?.pendientes ?? 0) > 0 ? '#f59e0b' : undefined }}>{checkConsolidado.investigacionesATEP?.pendientes ?? 0}</span>
-                            {' / '}{checkConsolidado.investigacionesATEP?.cerradas ?? 0}
-                          </div>
-                        </div>
-                        <div style={{ flex: 1, minWidth: '120px' }}>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>Medidas vencidas</div>
-                          <div style={{ fontSize: '1.3rem', fontWeight: 700, color: (checkConsolidado.medidasCorrectivas?.vencidas ?? 0) > 0 ? '#ef4444' : undefined }}>{checkConsolidado.medidasCorrectivas?.vencidas ?? 0}</div>
-                        </div>
-                        <div style={{ flex: 1, minWidth: '120px' }}>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>En vigilancia salud</div>
-                          <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{checkConsolidado.vigilancia?.enVigilancia ?? 0}</div>
-                        </div>
-                      </div>
-                      {(checkConsolidado.medidasCorrectivas?.total ?? 0) > 0 && (
-                        <div className="text-muted" style={{ fontSize: '0.8rem', marginTop: 'var(--space-2)' }}>
-                          Medidas correctivas: {checkConsolidado.medidasCorrectivas.implementadas}/{checkConsolidado.medidasCorrectivas.total} implementadas · {checkConsolidado.medidasCorrectivas.verificadas} verificadas
-                        </div>
-                      )}
-                      {(checkConsolidado.causasRecurrentes?.length ?? 0) > 0 && (
-                        <div style={{ marginTop: 'var(--space-2)', padding: '8px 12px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', fontSize: '0.8rem', color: '#92400e' }}>
-                          <strong>Causas raíz recurrentes (desviación sistémica):</strong>
-                          <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
-                            {checkConsolidado.causasRecurrentes.map((c: any, i: number) => (
-                              <li key={i}>{c.descripcion} <span className="text-muted">({c.incidentes} incidentes)</span></li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="text-muted" style={{ fontSize: '0.85rem' }}>
-                      Consolida los indicadores de siniestralidad, investigaciones y vigilancia del periodo.
-                    </div>
-                  )}
-                </div>
-
-                {/* ── Investigaciones AT/EP pendientes (Art. 71) — cerrar + firmar informe ── */}
-                {(() => {
-                  const pendientes = incidentes.filter((i: any) => (['grave', 'fatal'].includes(i.gravedad) || i.esFatal) && i.estado !== 'cerrado');
-                  if (pendientes.length === 0) return null;
-                  return (
-                    <div className="card" style={{ padding: 'var(--space-4)' }}>
-                      <div className="font-medium" style={{ marginBottom: 'var(--space-1)' }}>Investigaciones AT/EP pendientes (Art. 71)</div>
-                      <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 'var(--space-2)' }}>
-                        Obligatorias para incidentes graves/fatales. Cerrar genera el informe firmado (árbol de causas) como respaldo del Registro Art. 72.
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                        {pendientes.map((inc: any) => (
-                          <div key={inc.incidentId} className="card" style={{ padding: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                            <div style={{ minWidth: 0 }}>
-                              <div className="font-medium" style={{ fontSize: '0.9rem' }}>{inc.descripcion || inc.incidentId}</div>
-                              <div className="text-muted" style={{ fontSize: '0.78rem' }}>{inc.fecha || ''} · {inc.gravedad}{inc.esFatal ? ' (fatal)' : ''} · {(inc.medidasCorrectivas || []).length} medida(s)</div>
-                            </div>
-                            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
-                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver / investigar</button>
-                              <button className="btn btn-primary btn-sm" type="button" onClick={() => { setCerrarInvModal({ incidentId: inc.incidentId, descripcion: inc.descripcion || inc.incidentId }); setCerrarInvPin(''); setCerrarInvError(null); setCerrarInvResult(null); }}>
-                                Cerrar y firmar informe
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Documentos de la Fase CHECK */}
-                {/* ── Requisitos del DS 44 de esta fase ──
-                    Salen del motor de completitud, la MISMA evaluación que alimenta
-                    el repositorio, el panel y el export. La fase la trae el catálogo
-                    del formulario. */}
-                {obra?.tenantId && obraId && (
-                  <div style={{ marginBottom: 'var(--space-4)' }}>
-                    <div className="ds44-section-label">Requisitos del DS 44</div>
-                    <FufPorFase
-                      tenantId={obra.tenantId}
-                      obraId={obraId}
-                      fase="verificar"
-                      onVerDocumento={(d) => handlePreviewDoc(d as any)}
-                      onAgendarActividad={(criterio) => abrirAgendaDesdeFuf(criterio)}
-                      onIrAModulo={(modulo) => irAModuloDs44(modulo)}
-                      onDeclarar={handleSetObraFlag}
-                      completitud={completitudObra}
-                      documentos={obraDocs as any}
-                      onRecargar={recargarCompletitud}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {isActPhase && (
-              <div style={{ maxHeight: '520px', overflowY: 'auto', paddingRight: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-
-                {/* Medidas correctivas — solo visible cuando hay datos o está cargando */}
-                {(loadingMedidas || (medidas?.medidas?.length ?? 0) > 0) && (
-                  <div className="card" style={{ padding: 'var(--space-4)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: loadingMedidas ? 0 : 'var(--space-3)' }}>
-                      <div>
-                        <div className="font-medium">Medidas correctivas</div>
-                        <div className="text-muted" style={{ fontSize: '0.78rem' }}>De investigaciones AT/EP · Art. 71</div>
-                      </div>
-                      {medidas?.resumen && (
-                        <div className="text-muted" style={{ fontSize: '0.8rem', flexShrink: 0 }}>
-                          {medidas.resumen.verificadas}/{medidas.resumen.total} verificadas
-                          {medidas.resumen.vencidas > 0 && ` · ${medidas.resumen.vencidas} vencida(s)`}
-                        </div>
-                      )}
-                    </div>
-                    {loadingMedidas ? (
-                      <div className="text-muted" style={{ fontSize: '0.85rem' }}>Cargando medidas…</div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        {medidas!.medidas.map((m: any, idx: number) => {
-                          const nextEstado: Record<string, 'en_proceso' | 'completada' | 'verificada'> = { pendiente: 'en_proceso', en_proceso: 'completada', completada: 'verificada' };
-                          const next = nextEstado[m.estado as string];
-                          const nextLabel: Record<string, string> = { en_proceso: 'Marcar en proceso', completada: 'Marcar implementada', verificada: 'Marcar verificada' };
-                          const estadoLabel: Record<string, string> = { pendiente: 'Pendiente', en_proceso: 'En proceso', completada: 'Implementada', verificada: 'Verificada' };
-                          const estadoClass = m.estado === 'verificada' ? 'badge-success' : m.vencida ? 'badge-danger' : m.estado === 'completada' ? 'badge-info' : 'badge-warning';
-                          const key = `${m.incidentId}:${m.numero}`;
-                          return (
-                            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-2) 0', borderBottom: idx < medidas!.medidas.length - 1 ? '1px solid var(--surface-border)' : 'none', flexWrap: 'wrap' }}>
-                              <div style={{ minWidth: 0, flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '2px', flexWrap: 'wrap' }}>
-                                  <span className={`badge ${estadoClass}`}>{m.vencida && m.estado !== 'verificada' ? 'Vencida' : estadoLabel[m.estado]}</span>
-                                  <div className="font-medium" style={{ fontSize: '0.9rem' }}>{m.medida || '(sin descripción)'}</div>
-                                </div>
-                                <div className="text-muted" style={{ fontSize: '0.78rem' }}>
-                                  Causa raíz: {m.causaRaiz || '—'}
-                                  {m.responsableNombre && ` · Responsable: ${m.responsableNombre}`}
-                                  {m.fechaMaxEjecucion && ` · Plazo: ${m.fechaMaxEjecucion}`}
-                                </div>
-                              </div>
-                              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver origen</button>
-                                {next && (
-                                  <button className="btn btn-primary btn-sm" type="button" disabled={savingMedida === key} onClick={() => avanzarMedida(m.incidentId, m.numero, next)}>
-                                    {savingMedida === key ? '...' : nextLabel[next]}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Documentos de la Fase ACT */}
-                {/* ── Requisitos del DS 44 de esta fase ──
-                    Salen del motor de completitud, la MISMA evaluación que alimenta
-                    el repositorio, el panel y el export. La fase la trae el catálogo
-                    del formulario. */}
-                {obra?.tenantId && obraId && (
-                  <div style={{ marginBottom: 'var(--space-4)' }}>
-                    <div className="ds44-section-label">Requisitos del DS 44</div>
-                    <FufPorFase
-                      tenantId={obra.tenantId}
-                      obraId={obraId}
-                      fase="actuar"
-                      onVerDocumento={(d) => handlePreviewDoc(d as any)}
-                      onAgendarActividad={(criterio) => abrirAgendaDesdeFuf(criterio)}
-                      onIrAModulo={(modulo) => irAModuloDs44(modulo)}
-                      onDeclarar={handleSetObraFlag}
-                      completitud={completitudObra}
-                      documentos={obraDocs as any}
-                      onRecargar={recargarCompletitud}
-                    />
-                  </div>
-                )}
-
-                {/* Actualizaciones condicionales que cierran el ciclo Deming */}
-                <div className="card" style={{ padding: 'var(--space-4)' }}>
-                  <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>Actualizaciones (cierre de ciclo hacia PLAN)</div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {actActualizaciones.map(({ act, estado, actualizadoEn, aprobacionPendiente, detalle }, idx) => (
-                      <div key={act.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-2) 0', borderBottom: idx < actActualizaciones.length - 1 ? '1px solid var(--surface-border)' : 'none', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                    {pendientes.map((inc: any) => (
+                      <div key={inc.incidentId} className="card" style={{ padding: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                         <div style={{ minWidth: 0 }}>
-                          <div className="font-medium" style={{ fontSize: '0.88rem' }}>{act.titulo}</div>
-                          <div className="text-muted ds44-doc-meta" style={{ fontSize: '0.78rem' }}>
-                            <span>{act.articulo}</span>
-                            {estado === 'sin_documento'
-                              ? <span>Sin documento cargado</span>
-                              : actualizadoEn && tiempoRelativo(actualizadoEn) && (
-                                <span title={`Última actualización: ${formatDate(actualizadoEn)}`}>
-                                  Revisado {tiempoRelativo(actualizadoEn)}
-                                </span>
-                              )}
-                            {detalle && <span title={detalle}>{detalle}</span>}
-                            {aprobacionPendiente && (
-                              <span style={{ color: 'var(--danger-500, #dc2626)' }}>
-                                Falta la firma del representante legal
-                              </span>
-                            )}
-                          </div>
+                          <div className="font-medium" style={{ fontSize: '0.9rem' }}>{inc.descripcion || inc.incidentId}</div>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>{inc.fecha || ''} · {inc.gravedad}{inc.esFatal ? ' (fatal)' : ''} · {(inc.medidasCorrectivas || []).length} medida(s)</div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0, flexWrap: 'wrap' }}>
-                          {estado === 'sin_documento' && <span className="badge badge-danger">Sin documento</span>}
-                          {estado === 'vencida' && <span className="badge badge-danger">Vencida</span>}
-                          {estado === 'al_dia' && !aprobacionPendiente && <span className="badge badge-success">Al día</span>}
-                          {/* La ruta /documents no existe (solo /documents-repository),
-                              así que este botón caía en el catch-all y devolvía al
-                              dashboard. Estos documentos son de ESTA obra y ya están
-                              en pantalla: lo correcto es llevar a su fase, no salir. */}
-                          <button className="btn btn-secondary btn-sm" type="button" onClick={() => setSelectedDemingPhase('plan')}>
-                            Revisar documento
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
+                          <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver / investigar</button>
+                          <button className="btn btn-primary btn-sm" type="button" onClick={() => { setCerrarInvModal({ incidentId: inc.incidentId, descripcion: inc.descripcion || inc.incidentId }); setCerrarInvPin(''); setCerrarInvError(null); setCerrarInvResult(null); }}>
+                            Cerrar y firmar informe
                           </button>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <div style={{ marginTop: 'var(--space-3)', padding: '8px 12px', borderRadius: '6px', background: 'var(--surface-base)', border: '1px solid var(--surface-border)', fontSize: '0.78rem' }} className="text-muted">
-                    Nota: la evaluación OAL de cotización adicional (DS67/1999) es un proceso externo al SGSST; no se modela como documento obligatorio del sistema.
+                </div>
+              );
+            })()}
+            </>
+          ),
+      },
+    ],
+    actuar: [
+      {
+        key: 'medidas',
+        nombre: 'Medidas correctivas',
+        que: 'Las medidas que salen de las investigaciones de accidentes (Art. 71).',
+        estado: medidas?.resumen?.total ? `${medidas.resumen.verificadas} de ${medidas.resumen.total} verificadas` : 'Sin medidas registradas',
+        contenido: !loadingMedidas && (medidas?.medidas?.length ?? 0) === 0
+          ? <p className="text-muted" style={{ margin: 0, fontSize: '0.875rem' }}>No hay medidas correctivas registradas en esta obra.</p>
+          : (
+            <>
+              {(loadingMedidas || (medidas?.medidas?.length ?? 0) > 0) && (
+                <div className="card" style={{ padding: 'var(--space-4)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: loadingMedidas ? 0 : 'var(--space-3)' }}>
+                    <div>
+                      <div className="font-medium">Medidas correctivas</div>
+                      <div className="text-muted" style={{ fontSize: '0.78rem' }}>De investigaciones AT/EP · Art. 71</div>
+                    </div>
+                    {medidas?.resumen && (
+                      <div className="text-muted" style={{ fontSize: '0.8rem', flexShrink: 0 }}>
+                        {medidas.resumen.verificadas}/{medidas.resumen.total} verificadas
+                        {medidas.resumen.vencidas > 0 && ` · ${medidas.resumen.vencidas} vencida(s)`}
+                      </div>
+                    )}
+                  </div>
+                  {loadingMedidas ? (
+                    <div className="text-muted" style={{ fontSize: '0.85rem' }}>Cargando medidas…</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {medidas!.medidas.map((m: any, idx: number) => {
+                        const nextEstado: Record<string, 'en_proceso' | 'completada' | 'verificada'> = { pendiente: 'en_proceso', en_proceso: 'completada', completada: 'verificada' };
+                        const next = nextEstado[m.estado as string];
+                        const nextLabel: Record<string, string> = { en_proceso: 'Marcar en proceso', completada: 'Marcar implementada', verificada: 'Marcar verificada' };
+                        const estadoLabel: Record<string, string> = { pendiente: 'Pendiente', en_proceso: 'En proceso', completada: 'Implementada', verificada: 'Verificada' };
+                        const estadoClass = m.estado === 'verificada' ? 'badge-success' : m.vencida ? 'badge-danger' : m.estado === 'completada' ? 'badge-info' : 'badge-warning';
+                        const key = `${m.incidentId}:${m.numero}`;
+                        return (
+                          <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-2) 0', borderBottom: idx < medidas!.medidas.length - 1 ? '1px solid var(--surface-border)' : 'none', flexWrap: 'wrap' }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '2px', flexWrap: 'wrap' }}>
+                                <span className={`badge ${estadoClass}`}>{m.vencida && m.estado !== 'verificada' ? 'Vencida' : estadoLabel[m.estado]}</span>
+                                <div className="font-medium" style={{ fontSize: '0.9rem' }}>{m.medida || '(sin descripción)'}</div>
+                              </div>
+                              <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                                Causa raíz: {m.causaRaiz || '—'}
+                                {m.responsableNombre && ` · Responsable: ${m.responsableNombre}`}
+                                {m.fechaMaxEjecucion && ` · Plazo: ${m.fechaMaxEjecucion}`}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
+                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver origen</button>
+                              {next && (
+                                <button className="btn btn-primary btn-sm" type="button" disabled={savingMedida === key} onClick={() => avanzarMedida(m.incidentId, m.numero, next)}>
+                                  {savingMedida === key ? '...' : nextLabel[next]}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ),
+      },
+      {
+        key: 'actualizaciones',
+        nombre: 'Actualizaciones hacia Planificar',
+        que: 'Documentos base que se revisan para cerrar el ciclo: MIPER, programa, reglamento.',
+        estado: `${actActualizaciones.filter((a) => a.estado !== 'al_dia').length} por revisar`,
+        contenido: (
+          <div className="card" style={{ padding: 'var(--space-4)' }}>
+            <div className="font-medium" style={{ marginBottom: 'var(--space-3)' }}>Actualizaciones (cierre de ciclo hacia PLAN)</div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {actActualizaciones.map(({ act, estado, actualizadoEn, aprobacionPendiente, detalle }, idx) => (
+                <div key={act.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-2) 0', borderBottom: idx < actActualizaciones.length - 1 ? '1px solid var(--surface-border)' : 'none', flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="font-medium" style={{ fontSize: '0.88rem' }}>{act.titulo}</div>
+                    <div className="text-muted ds44-doc-meta" style={{ fontSize: '0.78rem' }}>
+                      <span>{act.articulo}</span>
+                      {estado === 'sin_documento'
+                        ? <span>Sin documento cargado</span>
+                        : actualizadoEn && tiempoRelativo(actualizadoEn) && (
+                          <span title={`Última actualización: ${formatDate(actualizadoEn)}`}>
+                            Revisado {tiempoRelativo(actualizadoEn)}
+                          </span>
+                        )}
+                      {detalle && <span title={detalle}>{detalle}</span>}
+                      {aprobacionPendiente && (
+                        <span style={{ color: 'var(--danger-500, #dc2626)' }}>
+                          Falta la firma del representante legal
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0, flexWrap: 'wrap' }}>
+                    {estado === 'sin_documento' && <span className="badge badge-danger">Sin documento</span>}
+                    {estado === 'vencida' && <span className="badge badge-danger">Vencida</span>}
+                    {estado === 'al_dia' && !aprobacionPendiente && <span className="badge badge-success">Al día</span>}
+                    {/* La ruta /documents no existe (solo /documents-repository),
+                        así que este botón caía en el catch-all y devolvía al
+                        dashboard. Estos documentos son de ESTA obra y ya están
+                        en pantalla: lo correcto es llevar a su fase, no salir. */}
+                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => setSelectedDemingPhase('plan')}>
+                      Revisar documento
+                    </button>
                   </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
+            <div style={{ marginTop: 'var(--space-3)', padding: '8px 12px', borderRadius: '6px', background: 'var(--surface-base)', border: '1px solid var(--surface-border)', fontSize: '0.78rem' }} className="text-muted">
+              Nota: la evaluación OAL de cotización adicional (DS67/1999) es un proceso externo al SGSST; no se modela como documento obligatorio del sistema.
             </div>
           </div>
-          {faseDeming === 'plan' && planCompleto && (
-            <div className="card" style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '1.1rem', marginBottom: 'var(--space-1)' }}>
-                    <LuCircleCheck size={18} /> Fase PLANIFICAR completada
-                  </div>
-                  <div style={{ opacity: 0.9, fontSize: '0.9rem' }}>
-                    Todos los documentos de la Fase PLAN han sido subidos. La Fase HACER (DO) se activará automáticamente.
-                  </div>
-                </div>
-                <div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                  {activatingFaseDeming ? 'Activando Fase HACER...' : 'Activación en curso'}
-                </div>
-              </div>
-            </div>
-          )}
-          </div>
+        ),
+      },
+      {
+        key: 'prescripciones',
+        nombre: 'Prescripciones',
+        que: 'Lo que ordenan la DT, el organismo administrador o el comité (Art. 70).',
+        onAbrir: () => navigate('/prescripciones'),
+      },
+    ],
+  };
+
+  return (
+    <>
+      <div className="page-content">
+        <ObraCabecera
+          nombre={obra.nombre}
+          estado={obra.estado}
+          estadoLabel={ESTADO_OBRA_LABEL[obra.estado] ?? obra.estado ?? 'Sin estado'}
+          imagenUrl={obraImagenUrl}
+          pestana={activeTab}
+          onPestana={setActiveTab}
+          onVolver={() => navigate('/obras')}
+          onEditar={handleEditToggle}
+          onCambiarFoto={handleImagenObra}
+          guardandoFoto={imagenSaving}
+          fotoGuardada={imagenSuccess}
+          onExportarFuf={obra?.tenantId && obraId ? () => estructuraApi.abrirExport(obra.tenantId, AMBITO_ESTRUCTURA.OBRA, obraId) : null}
+        />
+
+        {activeTab === 'resumen' && (
+          <ObraResumen
+            codigo={obra.codigo || obraId || ''}
+            esIdInterno={!obra.codigo}
+            mandante={obra.mandante}
+            registradaEn={obra.createdAt}
+            direccion={obra.direccion}
+            comuna={obra.comuna}
+            region={obra.region}
+            personasAsignadas={activeWorkers.length}
+            dotacionDeclarada={obra.dotacionDeclarada}
+            dotacionObservacion={obra.dotacionObservacion}
+            faenaCompartida={obra.faenaCompartida}
+            tieneMaquinaria={obra.tieneMaquinaria}
+            agentesFQB={obra.agentesFQB}
+            onDeclarar={handleSetObraFlag}
+          />
+        )}
+
+        {/* Una sola evaluación —la del motor de completitud— alimenta el avance,
+            las fases y la lista, igual que el repositorio y el export. */}
+        {activeTab === 'ds44' && obra?.tenantId && obraId && (
+          <Ds44Fases
+            tenantId={obra.tenantId}
+            obraId={obraId}
+            completitud={completitudObra}
+            documentos={obraDocs as any}
+            fase={selectedDemingPhase as FaseDeming}
+            onFase={setSelectedDemingPhase}
+            modulos={modulosDs44}
+            personas={activeWorkers}
+            onRecargar={recargarCompletitud}
+            onVerDocumento={(d) => handlePreviewDoc(d as any)}
+            onAgendarActividad={abrirAgendaDesdeFuf}
+            onIrAModulo={irAModuloDs44}
+            onDeclarar={handleSetObraFlag}
+          />
         )}
 
         {obraToast && (
@@ -2846,7 +2551,7 @@ export default function ObraDetalle() {
                 <label className="form-label">Relator</label>
                 <Select
                   ariaLabel="Relator"
-                  placeholder="Seleccione un relator"
+                  placeholder="Selecciona un relator"
                   searchable
                   value={doCreateForm.relatorId}
                   onChange={(v) => setDoCreateForm((p) => ({ ...p, relatorId: v }))}
@@ -2858,7 +2563,7 @@ export default function ObraDetalle() {
                 />
               </div>
               <div className="text-muted" style={{ fontSize: '0.8rem' }}>
-                La actividad queda "Programada" hasta que los asistentes firmen su asistencia. Recién ahí cuenta como ejecutada.
+                La actividad queda "Programada" hasta que los asistentes firmen su asistencia. Solo entonces cuenta como ejecutada.
               </div>
             </>
           ) : (() => {

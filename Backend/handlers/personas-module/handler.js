@@ -1250,7 +1250,7 @@ module.exports.personasHandler = async (event) => {
             try {
                 workbook = XLSX.read(buffer, { type: 'buffer' });
             } catch (xlsxErr) {
-                return error('No se pudo leer el archivo Excel. Verifique que sea un archivo .xlsx válido.');
+                return error('No se pudo leer el archivo Excel. Verifica que sea un archivo .xlsx válido.');
             }
             if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
                 return error('El archivo Excel no contiene hojas de trabajo.');
@@ -1484,7 +1484,7 @@ module.exports.personasHandler = async (event) => {
                 workbook = XLSX.read(buffer, { type: 'buffer' });
             } catch (xlsxErr) {
                 console.error('Error parsing Excel workbook:', xlsxErr.message);
-                return error('No se pudo leer el archivo Excel. Verifique que sea un archivo .xlsx valido y no este protegido con contrasena.');
+                return error('No se pudo leer el archivo Excel. Verifica que sea un archivo .xlsx válido y que no esté protegido con contraseña.');
             }
             if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
                 return error('El archivo Excel no contiene hojas de trabajo.');

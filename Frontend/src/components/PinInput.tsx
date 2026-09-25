@@ -117,7 +117,7 @@ export default function PinInput({
                 return 'Confirmar PIN';
             case 'verify':
             default:
-                return 'Ingrese su PIN';
+                return 'Ingresa tu PIN';
         }
     };
 
@@ -127,10 +127,10 @@ export default function PinInput({
             case 'create':
                 return 'Este PIN será usado para firmar documentos';
             case 'confirm':
-                return 'Ingrese nuevamente el PIN para confirmar';
+                return 'Ingresa nuevamente el PIN para confirmar';
             case 'verify':
             default:
-                return 'Ingrese su PIN de 4 dígitos para continuar';
+                return 'Ingresa tu PIN de 4 dígitos para continuar';
         }
     };
 

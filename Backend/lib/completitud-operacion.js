@@ -24,7 +24,11 @@ const { ESTADO_REQUISITO: E } = C;
 const docsDeTipo = (ctx, tipo) => (ctx.documentos || []).filter((d) => d.tipo === tipo);
 const conArchivo = (d) => Boolean(d && (d.s3Key || d.archivoUrl));
 const vigenteDeTipo = (ctx, tipo) =>
-    docsDeTipo(ctx, tipo).filter(conArchivo).sort((a, b) => (b.version || 0) - (a.version || 0))[0] || null;
+    docsDeTipo(ctx, tipo).filter(conArchivo).sort((a, b) => ((b.version || 0) - (a.version || 0))
+        // A igual versión, el más reciente: una acta de ensayo nueva se sube como
+        // documento nuevo (v1, igual que la anterior) y sin esto el motor podía
+        // quedarse con la vieja y dar por vencido lo que ya se renovó.
+        || String(b.fecha || b.updatedAt || b.createdAt || '').localeCompare(String(a.fecha || a.updatedAt || a.createdAt || '')))[0] || null;
 const primeroDe = (ctx, tipos) => tipos.map((t) => vigenteDeTipo(ctx, t)).find(Boolean) || null;
 
 /** Fecha del HECHO que el documento acredita, no la de subida. */
@@ -94,10 +98,10 @@ function evaluarItem6(ctx) {
     if (meses === null) {
         // El Art. 7 pide que la matriz esté FECHADA. Sin fecha no falta el
         // documento: falta el dato que la vuelve medible.
-        return { estado: E.PARCIAL, detalle: 'La MIPER no tiene fecha: sin ella no se puede acreditar la revisión anual.' };
+        return { estado: E.PARCIAL, detalle: 'La MIPER no tiene fecha: sin ella no se puede acreditar la revisión anual.', cargar: null };
     }
     return meses > MESES_REVISION_MIPER
-        ? { estado: E.VENCIDO, detalle: `La última revisión de la MIPER tiene ${Math.floor(meses)} meses; el Art. 7 exige al menos una al año.` }
+        ? { estado: E.VENCIDO, detalle: `La última revisión de la MIPER tiene ${Math.floor(meses)} meses; el Art. 7 exige al menos una al año. Se renueva publicando una versión nueva de la MIPER.`, cargar: null }
         : { estado: E.CUMPLIDO, detalle: `MIPER fechada, revisada hace ${Math.floor(meses)} mes(es).` };
 }
 
@@ -143,6 +147,16 @@ const bloqueAcreditacion = (r, criterio, tipos) => ({
     documentos: (r.documentos || []).map((d) => d.documentId),
 });
 
+/**
+ * La evidencia de una capacitación es el REGISTRO del hecho —la lista de
+ * asistencia o el certificado—, subido como documento con quienes asistieron
+ * como firmantes. Agendarla en la plataforma sigue siendo válido, pero es la vía
+ * alternativa: la mayoría de las capacitaciones las dicta el Organismo
+ * Administrador o un relator externo y lo que llega es el registro.
+ */
+const QUE_REGISTRO_EPP = 'el registro de la capacitación en uso y mantención de EPP (lista de asistencia o certificado)';
+const cargaRegistroEpp = { tipo: 'CAPACITACION_EPP', que: QUE_REGISTRO_EPP };
+
 function evaluarItem18(ctx) {
     // Dos vías: la actividad agendada en la plataforma, o el certificado de una
     // capacitación dictada fuera. Cualquiera acredita.
@@ -156,19 +170,19 @@ function evaluarItem18(ctx) {
         return {
             estado: E.CUMPLIDO, acreditacion,
             detalle: r.via === 'actividad'
-                ? 'Capacitación en EPP ejecutada con asistentes firmados.'
-                : 'Capacitación en EPP acreditada con el certificado cargado.',
+                ? 'Capacitación en EPP ejecutada en la plataforma con asistentes firmados.'
+                : 'Capacitación en EPP acreditada con su registro.',
         };
     }
     if (r.parcial) {
         return {
-            estado: E.PARCIAL, acreditacion,
+            estado: E.PARCIAL, acreditacion, cargar: cargaRegistroEpp,
             detalle: `Capacitación en EPP agendada: ${ACT.motivoIncompleto(r.actividades[0])}.`,
         };
     }
     return {
-        estado: E.PENDIENTE, acreditacion,
-        detalle: 'Sin capacitación en uso y mantención de EPP: agéndala o carga el certificado.',
+        estado: E.PENDIENTE, acreditacion, cargar: cargaRegistroEpp,
+        detalle: 'Sin registro de la capacitación en uso y mantención de EPP.',
     };
 }
 
@@ -198,17 +212,31 @@ function evaluarItem19(ctx) {
         const doc = r.documentos[0];
         const asignaciones = doc.asignaciones || [];
         if (asignaciones.length === 0) {
-            // El inciso 4 pide constancia de QUIÉNES se capacitaron. Un certificado
-            // sin asistentes asignados no la deja.
-            return { estado: E.PARCIAL, acreditacion, detalle: 'Certificado cargado sin asistentes asignados: no consta quién se capacitó.' };
+            // El inciso 4 pide constancia de QUIÉNES se capacitaron. Un registro sin
+            // asistentes asignados no la deja: lo que falta es indicarlos para que
+            // firmen, no subir otro archivo.
+            return {
+                estado: E.PARCIAL, acreditacion, cargar: null,
+                detalle: 'Registro cargado sin asistentes asignados: no consta quién se capacitó.',
+                accion: {
+                    tipo: 'asignar_firmantes', documentId: doc.documentId,
+                    falta: 'indicar quiénes asistieron, para que firmen el registro',
+                },
+            };
         }
         const firmadas = asignaciones.filter((a) => a.estado === 'firmado' || a.fechaFirma).length;
         return firmadas === asignaciones.length
             ? { estado: E.CUMPLIDO, acreditacion, detalle: `${firmadas} asistente(s) con constancia firmada.` }
-            : { estado: E.PARCIAL, acreditacion, detalle: `${firmadas} de ${asignaciones.length} asistente(s) con constancia firmada.` };
+            : {
+                estado: E.PARCIAL, acreditacion, cargar: null,
+                detalle: `${firmadas} de ${asignaciones.length} asistente(s) con constancia firmada.`,
+            };
     }
 
-    return { estado: E.PENDIENTE, acreditacion, detalle: 'Sin registro de capacitaciones en EPP (ítem 18).' };
+    return {
+        estado: E.PENDIENTE, acreditacion, cargar: cargaRegistroEpp,
+        detalle: 'Sin registro de las capacitaciones en EPP.',
+    };
 }
 
 // ─── Ítem 23: capacitación en prevención de riesgos ──────────────────────────
@@ -232,9 +260,10 @@ function evaluarItem23(ctx) {
     const acreditacion = bloqueAcreditacion(r, CRITERIO_CAP_PRL, ['CAPACITACION_SST']);
 
     if (!r.completo) {
+        const carga = { tipo: 'CAPACITACION_SST', que: 'el registro o certificado de la capacitación de 8 horas en prevención de riesgos' };
         return r.parcial
-            ? { estado: E.PARCIAL, acreditacion, detalle: `Capacitación agendada: ${ACT.motivoIncompleto(r.actividades[0])}.` }
-            : { estado: E.PENDIENTE, acreditacion, detalle: 'Sin capacitación en prevención de riesgos: agéndala o carga el certificado.' };
+            ? { estado: E.PARCIAL, acreditacion, cargar: carga, detalle: `Capacitación agendada: ${ACT.motivoIncompleto(r.actividades[0])}.` }
+            : { estado: E.PENDIENTE, acreditacion, cargar: carga, detalle: 'Sin registro de la capacitación en prevención de riesgos.' };
     }
 
     // La fecha del HECHO, sea de la actividad o del documento: es contra ésa que
@@ -285,7 +314,10 @@ function evaluarItem53(ctx) {
 
     return vigenteDeTipo(ctx, 'PUBLICACION_MAPA_RIESGOS')
         ? { estado: E.CUMPLIDO, detalle: 'Mapa cargado y con evidencia de publicación en las dependencias.' }
-        : { estado: E.PARCIAL, detalle: 'Mapa cargado, falta la evidencia de que está publicado en las dependencias.' };
+        : {
+            estado: E.PARCIAL, detalle: 'Mapa cargado, falta la evidencia de que está publicado en las dependencias.',
+            cargar: { tipo: 'PUBLICACION_MAPA_RIESGOS', que: 'una foto o constancia de que el mapa está publicado en la obra' },
+        };
 }
 
 // ─── Definiciones ────────────────────────────────────────────────────────────

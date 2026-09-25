@@ -2,6 +2,9 @@ import { apiRequest } from './client';
 
 export interface DocumentSignature {
     token: string;
+    /** El backend guarda la firma con `personaId` (FirmaService.toDocumentFirmaFormat);
+     *  `workerId` es del modelo anterior y solo lo traen documentos antiguos. */
+    personaId?: string;
     workerId: string;
     nombre: string;
     rut: string;
@@ -12,6 +15,8 @@ export interface DocumentSignature {
 }
 
 export interface DocumentAssignment {
+    /** Igual que en las firmas: el backend asigna por `personaId`. */
+    personaId?: string;
     workerId: string;
     nombre?: string;
     rut?: string;
@@ -154,7 +159,10 @@ export interface CreateDocumentData {
     archivoNombre?: string;
     periodo?: string;
     fecha?: string;
+    fechaCaducidad?: string;
     obraId?: string;
+    /** Sin ella el backend guarda 'diario' (documento asignado a personas). */
+    clasificacion?: 'obra' | 'empresa' | 'diario';
     createdBy?: string;
     creatorName?: string;
 }

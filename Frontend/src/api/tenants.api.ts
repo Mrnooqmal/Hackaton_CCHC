@@ -125,7 +125,7 @@ export const tenantsApi = {
     // Designa al representante legal (Mi Empresa › Identidad). El backend mergea
     // `reglas` con las existentes, así que enviar solo este campo no pisa el resto.
     updateRepresentanteLegal: (id: string, representanteLegal: RepresentanteLegal | null) =>
-        apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
+        apiRequest<{ message: string; tenant: Tenant; firmasRepresentante?: { documentos: number; asignados: number } | null }>(`/tenants/${id}`, {
             method: 'PUT',
             body: JSON.stringify({ reglas: { representanteLegal } }),
         }),

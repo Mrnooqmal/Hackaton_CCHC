@@ -60,7 +60,7 @@ export default function PermisosTrabajoForm({ value, onChange, permisosDef, work
                                         <label className="form-label">Responsable del permiso *</label>
                                         <Select
                                             ariaLabel={`Responsable ${def.label}`}
-                                            placeholder="Seleccione responsable"
+                                            placeholder="Selecciona responsable"
                                             searchable
                                             value={permiso.responsableId}
                                             onChange={(v) => actualizar(tipo, { responsableId: v })}

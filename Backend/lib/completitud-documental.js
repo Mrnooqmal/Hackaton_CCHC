@@ -21,7 +21,11 @@ const docsDeTipo = (ctx, tipo) => (ctx.documentos || []).filter((d) => d.tipo ==
 const conArchivo = (d) => Boolean(d && (d.s3Key || d.archivoUrl));
 /** Documento vigente de un tipo: el de mayor versión con archivo. */
 const vigenteDeTipo = (ctx, tipo) =>
-    docsDeTipo(ctx, tipo).filter(conArchivo).sort((a, b) => (b.version || 0) - (a.version || 0))[0] || null;
+    docsDeTipo(ctx, tipo).filter(conArchivo).sort((a, b) => ((b.version || 0) - (a.version || 0))
+        // A igual versión, el más reciente: una acta de ensayo nueva se sube como
+        // documento nuevo (v1, igual que la anterior) y sin esto el motor podía
+        // quedarse con la vieja y dar por vencido lo que ya se renovó.
+        || String(b.fecha || b.updatedAt || b.createdAt || '').localeCompare(String(a.fecha || a.updatedAt || a.createdAt || '')))[0] || null;
 
 // ─── Ítem 50: remisión previa del Reglamento Interno ─────────────────────────
 
@@ -273,10 +277,14 @@ function evaluarItem1(ctx) {
     if (cumplidos === comps.length) {
         return { estado: E.CUMPLIDO, detalle: 'Los cinco componentes del Art. 22 están cubiertos.', subrequisitos };
     }
+    // Lo que se puede cargar acá son los literales propios (a, d, e); los otros se
+    // resuelven en su módulo.
+    const falta = comps.find((c) => c.propio && c.estado !== E.CUMPLIDO);
     return {
         estado: cumplidos > 0 ? E.PARCIAL : E.PENDIENTE,
         detalle: `${cumplidos} de ${comps.length} componentes del Art. 22 cubiertos.`,
         subrequisitos,
+        cargar: falta ? { tipo: falta.tipo, que: falta.literal.replace(/^[a-e]\) /, '').toLowerCase() } : null,
     };
 }
 
@@ -323,7 +331,9 @@ function evaluarItem8(ctx) {
 
     // Sin MIPER el plazo no ha empezado a correr: no es incumplimiento del ítem 8,
     // es que todavía no es exigible. Lo que falta lo reclama el ítem 2.
-    if (r.estado === 'sin_miper') return { estado: E.PENDIENTE, detalle: r.detalle };
+    if (r.estado === 'sin_miper') {
+        return { estado: E.PENDIENTE, detalle: r.detalle, cargar: { tipo: 'MIPER', que: 'la MIPER de la obra: el plazo del programa corre desde ella' } };
+    }
     if (r.estado === 'vigente') return { estado: E.CUMPLIDO, detalle: r.detalle };
     if (r.vencido) {
         return { estado: E.VENCIDO, detalle: `${r.detalle} Pasaron ${r.dias} días de los ${PTP.PLAZO_PTP_DIAS} que da el Art. 8.` };
@@ -345,15 +355,36 @@ function evaluarItem9(ctx) {
     if (!ptp) return { estado: E.PENDIENTE, detalle: 'No hay Programa de Trabajo Preventivo cargado.' };
 
     const repre = ctx.representanteLegal || null;
+    // La aprobación no se resuelve subiendo un archivo: sin representante hay que
+    // designarlo, y con él hay que pedirle que firme. La acción viaja con el
+    // requisito para que la pantalla la ofrezca; sin ella el ítem quedaba
+    // "Incompleto" sin ningún botón.
     if (!repre?.personaId) {
         return {
             estado: E.PARCIAL,
             detalle: 'Programa cargado, pero no hay representante legal designado contra quien verificar la aprobación.',
+            cargar: null,
+            accion: { tipo: 'designar_representante', falta: 'designar al representante legal de la empresa, que es quien aprueba el programa' },
         };
     }
-    return PTP.aprobadoPorRepresentanteLegal(ptp, repre)
-        ? { estado: E.CUMPLIDO, detalle: `Programa firmado por ${repre.nombre || 'el representante legal'}.` }
-        : { estado: E.PARCIAL, detalle: 'Programa cargado, falta la firma del representante legal.' };
+    if (PTP.aprobadoPorRepresentanteLegal(ptp, repre)) {
+        return { estado: E.CUMPLIDO, detalle: `Programa firmado por ${repre.nombre || 'el representante legal'}.` };
+    }
+    const asignacion = (ptp.asignaciones || []).find((a) => a.personaId === repre.personaId);
+    return {
+        estado: E.PARCIAL,
+        detalle: asignacion
+            ? `Firma solicitada a ${repre.nombre || 'el representante legal'}; todavía no firma.`
+            : 'Programa cargado, falta la firma del representante legal.',
+        cargar: null,
+        accion: {
+            tipo: 'solicitar_firma',
+            documentId: ptp.documentId,
+            personaId: repre.personaId,
+            solicitada: Boolean(asignacion),
+            falta: `la firma de ${repre.nombre || 'el representante legal'} sobre el programa`,
+        },
+    };
 }
 
 // ─── Ítem 16: certificación de los EPP ───────────────────────────────────────
@@ -387,7 +418,10 @@ function evaluarItem49(ctx) {
     const ingreso = vigenteDeTipo(ctx, 'INGRESO_RIOHS_DT');
     return ingreso
         ? { estado: E.CUMPLIDO, detalle: 'Reglamento cargado y con comprobante de ingreso en la Dirección del Trabajo.' }
-        : { estado: E.PARCIAL, detalle: 'Reglamento cargado, falta el comprobante de ingreso en la Dirección del Trabajo.' };
+        : {
+            estado: E.PARCIAL, detalle: 'Reglamento cargado, falta el comprobante de ingreso en la Dirección del Trabajo.',
+            cargar: { tipo: 'INGRESO_RIOHS_DT', que: 'el comprobante de ingreso del Reglamento en la Dirección del Trabajo' },
+        };
 }
 
 // ─── Ítem 37: entrega de documentación preventiva al comité ──────────────────
@@ -411,7 +445,9 @@ function evaluarItem37(ctx) {
         // Sin destinatario no hay entrega posible. Si además no era obligatorio,
         // no aplica; si lo era, lo reclama el ítem 30, no éste.
         return obligatorio
-            ? { estado: E.PENDIENTE, detalle: 'No hay comité constituido a quien entregar la documentación (ítem 30).' }
+            // Sin comité no hay a quién entregar: subir una constancia no resuelve
+            // nada, lo que falta es constituirlo (ítem 30).
+            ? { estado: E.PENDIENTE, detalle: 'No hay comité constituido a quien entregar la documentación (ítem 30).', cargar: null }
             : { estado: E.NO_APLICA, detalle: 'No hay comité paritario ni delegado de SST en este ámbito.' };
     }
 
@@ -451,7 +487,7 @@ function evaluarItem51(ctx) {
         return { estado: E.PARCIAL, detalle: 'No hay fecha con la que medir la última revisión.' };
     }
     if (meses > MESES_REVISION_RIOHS) {
-        return { estado: E.VENCIDO, detalle: `La última revisión tiene ${Math.floor(meses)} meses; el Art. 57 exige al menos una al año.` };
+        return { estado: E.VENCIDO, detalle: `La última revisión tiene ${Math.floor(meses)} meses; el Art. 57 exige al menos una al año. Se renueva publicando una versión nueva del Reglamento.`, cargar: null };
     }
     // Revisar dentro del año pero sin nadie convocado no cumple el inciso: la
     // norma pide participación, no solo una versión nueva.

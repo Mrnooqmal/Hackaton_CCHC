@@ -76,7 +76,7 @@ export default function PlanificacionDiariaForm({ value, onChange, catalogos, ti
                         <label className="form-label">Tema tratado *</label>
                         <Select
                             ariaLabel="Tema tratado"
-                            placeholder="Seleccione el tema"
+                            placeholder="Selecciona el tema"
                             searchable
                             value={temaValor}
                             onChange={(v) => set({ tema: v === OTRO ? { otro: '' } : { codigo: v } })}
@@ -126,7 +126,7 @@ export default function PlanificacionDiariaForm({ value, onChange, catalogos, ti
                             <label className="form-label">Condición climática</label>
                             <Select
                                 ariaLabel="Condición climática"
-                                placeholder="Seleccione"
+                                placeholder="Selecciona"
                                 value={value.condicionClimatica || ''}
                                 onChange={(v) => set({ condicionClimatica: (v || null) as PlanificacionActividad['condicionClimatica'] })}
                                 options={[

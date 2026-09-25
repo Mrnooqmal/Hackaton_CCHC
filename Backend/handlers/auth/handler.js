@@ -87,7 +87,7 @@ const crearSesionParaPersona = async (persona, event) => {
         return error('Este usuario no tiene acceso web. Use la app móvil.', 403);
     }
     if (['suspendido', 'inactivo', 'desvinculado'].includes(persona.estado)) {
-        return error('Usuario suspendido o desvinculado. Contacte al administrador.', 403);
+        return error('Usuario suspendido o desvinculado. Contacta al administrador.', 403);
     }
 
     const now = new Date();

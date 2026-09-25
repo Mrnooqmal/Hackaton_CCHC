@@ -149,7 +149,7 @@ class Tenant {
             { id: 'admin', tipo: 'admin', nombre: 'Administrador', descripcion: 'Acceso completo a la gestión de la empresa.', permisos: DEFAULT_ROLE_PRESETS.admin },
             { id: 'jefe_obra', tipo: 'jefe_obra', nombre: 'Jefe de Obra', descripcion: 'Responsable de la dirección y supervisión de la obra.', permisos: DEFAULT_ROLE_PRESETS.jefe_obra },
             { id: 'prevencionista', tipo: 'prevencionista', nombre: 'Prevencionista', descripcion: 'Encargado de la prevención de riesgos y la seguridad en obra.', permisos: DEFAULT_ROLE_PRESETS.prevencionista },
-            { id: 'supervisor', tipo: 'supervisor', nombre: 'Supervisor', descripcion: 'Lidera una cuadrilla de personas trabajadoras y coordina el equipo en terreno.', permisos: DEFAULT_ROLE_PRESETS.supervisor },
+            { id: 'supervisor', tipo: 'supervisor', nombre: 'Supervisor', descripcion: 'Lidera una cuadrilla de personas trabajadoras y coordina el equipo en la obra.', permisos: DEFAULT_ROLE_PRESETS.supervisor },
             { id: 'trabajador', tipo: 'trabajador', nombre: 'Persona trabajadora', descripcion: 'Ejecuta las actividades diarias en obra dentro de la cuadrilla de un supervisor.', permisos: DEFAULT_ROLE_PRESETS.trabajador }
         ];
     }

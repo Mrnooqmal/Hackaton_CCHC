@@ -127,7 +127,7 @@ export default function RepositorioFuf({ tenantId, ambito, obraId = null, onVerD
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
             <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: 'var(--space-1)' }}>
-                Los documentos se gestionan en su módulo: acá se muestran agrupados por sección
+                Los documentos se gestionan en su módulo: aquí se muestran agrupados por sección
                 del formulario, con el estado que calcula el panel de cumplimiento.
             </div>
 

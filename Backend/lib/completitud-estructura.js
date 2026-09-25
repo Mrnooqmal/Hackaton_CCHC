@@ -68,14 +68,14 @@ const sinOrgano = (ctx, tipo, obligatorio) => {
  */
 const DEFINICIONES_ESTRUCTURA = [
     {
-        id: 'FUF-30', item: 30, ambito: 'ambos', tipos: ['ACTA_CONSTITUCION_CPHS', 'ACTA_ELECCION_REPRESENTANTES', 'DESIGNACION_REPRESENTANTES_EMPLEADOR'],
+        id: 'FUF-30', item: 30, ambito: 'ambos', modulo: 'estructura', tipos: ['ACTA_CONSTITUCION_CPHS', 'ACTA_ELECCION_REPRESENTANTES', 'DESIGNACION_REPRESENTANTES_EMPLEADOR'],
         titulo: 'Comité Paritario constituido cuando corresponde',
         evaluar: (ctx) => estadoOrganoRequisito(ctx, EP.TIPO_ORGANO.COMITE_PARITARIO, {
             obligatorio: ctx.obligaciones?.[EP.TIPO_ORGANO.COMITE_PARITARIO]?.obligatorio,
         }),
     },
     {
-        id: 'FUF-31', item: 31, ambito: 'ambos', tipos: ['CERTIFICADO_CURSO_OPR'],
+        id: 'FUF-31', item: 31, ambito: 'ambos', modulo: 'estructura', tipos: ['CERTIFICADO_CURSO_OPR'],
         titulo: 'Curso de orientación en prevención de los integrantes electos',
         evaluar: (ctx) => {
             const obligatorio = ctx.obligaciones?.[EP.TIPO_ORGANO.COMITE_PARITARIO]?.obligatorio;
@@ -101,7 +101,7 @@ const DEFINICIONES_ESTRUCTURA = [
         },
     },
     {
-        id: 'FUF-32', item: 32, ambito: 'ambos', tipos: ['COMPROBANTE_REGISTRO_DT'],
+        id: 'FUF-32', item: 32, ambito: 'ambos', modulo: 'estructura', tipos: ['COMPROBANTE_REGISTRO_DT'],
         titulo: 'Acta de constitución registrada en la Dirección del Trabajo',
         evaluar: (ctx) => {
             const obligatorio = ctx.obligaciones?.[EP.TIPO_ORGANO.COMITE_PARITARIO]?.obligatorio;
@@ -125,7 +125,7 @@ const DEFINICIONES_ESTRUCTURA = [
         },
     },
     {
-        id: 'FUF-33', item: 33, ambito: 'ambos',
+        id: 'FUF-33', item: 33, ambito: 'ambos', modulo: 'estructura',
         titulo: 'Facilidades para el funcionamiento del comité',
         evaluar: () => ({
             estado: E.FUERA_DE_ALCANCE,
@@ -133,7 +133,7 @@ const DEFINICIONES_ESTRUCTURA = [
         }),
     },
     {
-        id: 'FUF-34', item: 34, ambito: 'ambos', tipos: ['ACTA_REUNION_CPHS'],
+        id: 'FUF-34', item: 34, ambito: 'ambos', modulo: 'estructura', tipos: ['ACTA_REUNION_CPHS'],
         titulo: 'Reuniones ordinarias mensuales y extraordinarias',
         evaluar: (ctx) => {
             const obligatorio = ctx.obligaciones?.[EP.TIPO_ORGANO.COMITE_PARITARIO]?.obligatorio;
@@ -160,7 +160,7 @@ const DEFINICIONES_ESTRUCTURA = [
         },
     },
     {
-        id: 'FUF-35', item: 35, ambito: 'ambos', tipos: ['ACTA_REUNION_CPHS'],
+        id: 'FUF-35', item: 35, ambito: 'ambos', modulo: 'estructura', tipos: ['ACTA_REUNION_CPHS'],
         titulo: 'Actas de reunión con materias, acuerdos y plazos',
         evaluar: (ctx) => {
             const obligatorio = ctx.obligaciones?.[EP.TIPO_ORGANO.COMITE_PARITARIO]?.obligatorio;
@@ -186,7 +186,7 @@ const DEFINICIONES_ESTRUCTURA = [
     // constancia de entrega al comité, no con la existencia del órgano. Antes
     // estaba acá y podía marcar cumplimiento sin que se hubiera entregado nada.
     {
-        id: 'FUF-36', item: 36, ambito: 'ambos', tipos: ['COMUNICACION_ACUERDOS_CPHS'],
+        id: 'FUF-36', item: 36, ambito: 'ambos', modulo: 'estructura', tipos: ['COMUNICACION_ACUERDOS_CPHS'],
         titulo: 'Acuerdos comunicados por escrito a la entidad empleadora',
         evaluar: (ctx) => {
             const obligatorio = ctx.obligaciones?.[EP.TIPO_ORGANO.COMITE_PARITARIO]?.obligatorio;
@@ -208,7 +208,7 @@ const DEFINICIONES_ESTRUCTURA = [
         },
     },
     {
-        id: 'FUF-38', item: 38, ambito: 'ambos', tipos: ['PROGRAMA_TRABAJO_CPHS'],
+        id: 'FUF-38', item: 38, ambito: 'ambos', modulo: 'estructura', tipos: ['PROGRAMA_TRABAJO_CPHS'],
         titulo: 'Programa de trabajo del comité vigente',
         evaluar: (ctx) => {
             const obligatorio = ctx.obligaciones?.[EP.TIPO_ORGANO.COMITE_PARITARIO]?.obligatorio;
@@ -225,14 +225,14 @@ const DEFINICIONES_ESTRUCTURA = [
         },
     },
     {
-        id: 'FUF-39', item: 39, ambito: 'ambos',
+        id: 'FUF-39', item: 39, ambito: 'ambos', modulo: 'estructura',
         titulo: 'Delegado de Seguridad y Salud en el Trabajo',
         evaluar: (ctx) => estadoOrganoRequisito(ctx, EP.TIPO_ORGANO.DELEGADO_SST, {
             obligatorio: ctx.obligaciones?.[EP.TIPO_ORGANO.DELEGADO_SST]?.obligatorio,
         }),
     },
     {
-        id: 'FUF-40', item: 40, ambito: 'ambos', tipos: ['ACTA_ASAMBLEA_DELEGADO'],
+        id: 'FUF-40', item: 40, ambito: 'ambos', modulo: 'estructura', tipos: ['ACTA_ASAMBLEA_DELEGADO'],
         titulo: 'Elección del delegado cada 2 años con acta de asamblea',
         evaluar: (ctx) => {
             const obligatorio = ctx.obligaciones?.[EP.TIPO_ORGANO.DELEGADO_SST]?.obligatorio;
@@ -245,7 +245,7 @@ const DEFINICIONES_ESTRUCTURA = [
         },
     },
     {
-        id: 'FUF-41', item: 41, ambito: 'empresa', tipos: ['REGISTRO_SEREMI_EXPERTO'],
+        id: 'FUF-41', item: 41, ambito: 'empresa', modulo: 'estructura', tipos: ['REGISTRO_SEREMI_EXPERTO'],
         titulo: 'Departamento de Prevención dirigido por experto inscrito',
         evaluar: (ctx) => {
             const obligatorio = ctx.obligaciones?.[EP.TIPO_ORGANO.DEPARTAMENTO_PREVENCION]?.obligatorio;
@@ -263,17 +263,17 @@ const DEFINICIONES_ESTRUCTURA = [
         evaluar: () => ({ estado: E.FUERA_DE_ALCANCE, detalle: 'Fuera del alcance de este módulo.' }),
     })),
     {
-        id: 'FUF-46', item: 46, ambito: 'empresa', tipos: ['REGISTROS_INDICADORES_SST'],
+        id: 'FUF-46', item: 46, ambito: 'empresa', modulo: 'estructura', tipos: ['REGISTROS_INDICADORES_SST'],
         titulo: 'Registros e indicadores del Departamento de Prevención',
         evaluar: (ctx) => evaluarRegistros(ctx, 'extendido'),
     },
     {
-        id: 'FUF-47', item: 47, ambito: 'empresa', tipos: ['REGISTROS_INDICADORES_SST'],
+        id: 'FUF-47', item: 47, ambito: 'empresa', modulo: 'estructura', tipos: ['REGISTROS_INDICADORES_SST'],
         titulo: 'Registros mínimos sin obligación de Departamento de Prevención',
         evaluar: (ctx) => evaluarRegistros(ctx, 'minimo'),
     },
     {
-        id: 'FUF-48', item: 48, ambito: 'empresa', tipos: ['DESIGNACION_ENCARGADO_RIESGO', 'CERTIFICADO_CAPACITACION_ENCARGADO'],
+        id: 'FUF-48', item: 48, ambito: 'empresa', modulo: 'estructura', tipos: ['DESIGNACION_ENCARGADO_RIESGO', 'CERTIFICADO_CAPACITACION_ENCARGADO'],
         titulo: 'Encargado de gestión del riesgo capacitado por el Organismo Administrador',
         evaluar: (ctx) => {
             const ob = ctx.obligaciones?.[EP.TIPO_ORGANO.ENCARGADO_GESTION_RIESGO];

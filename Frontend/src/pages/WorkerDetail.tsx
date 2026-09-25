@@ -735,11 +735,11 @@ Generado por PrevencionApp
         setUploadingDocType(tipo);
         try {
             const uploadRes = await uploadsApi.getUploadUrl({
-                fileName: file.name, fileType: file.type, fileSize: file.size,
+                archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
                 categoria: 'trabajadores', empresaId: (worker as any).tenantId || (worker as any).empresaId || 'default'
             });
             if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
-            await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+            await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });
             const fileKey = uploadRes.data.fileKey;
             await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
             await documentsApi.update(docRecord.documentId, { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: file.name } as any);
@@ -1819,7 +1819,7 @@ Generado por PrevencionApp
                         </div>
                     )}
                     <p className="desv-text">
-                        Por favor, escriba <strong>“{fraseAutorizacion}”</strong> para confirmar.
+                        Escribe <strong>“{fraseAutorizacion}”</strong> para confirmar.
                     </p>
                     <input
                         className="form-input"

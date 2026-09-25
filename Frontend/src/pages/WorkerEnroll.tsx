@@ -116,7 +116,7 @@ export default function WorkerEnroll() {
 
     const handleConfirmPin = async (pin: string) => {
         if (pin !== newPin) {
-            setPinError('Los PINs no coinciden. Intente nuevamente.');
+            setPinError('Los PIN no coinciden. Intenta nuevamente.');
             return;
         }
 
@@ -312,7 +312,7 @@ export default function WorkerEnroll() {
                                     />
                                 </div>
                                 {errors.rut && <div className="form-error">{errors.rut}</div>}
-                                <div className="form-hint">Ingrese el RUT con puntos y guión</div>
+                                <div className="form-hint">Ingresa el RUT con puntos y guion</div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
@@ -349,7 +349,7 @@ export default function WorkerEnroll() {
                                 </label>
                                 <Select
                                     ariaLabel="Cargo"
-                                    placeholder="Seleccione un cargo"
+                                    placeholder="Selecciona un cargo"
                                     searchable
                                     className={errors.cargo ? 'error' : ''}
                                     value={formData.cargo}
@@ -515,16 +515,16 @@ export default function WorkerEnroll() {
                             fontSize: 'var(--text-sm)',
                             color: 'var(--warning-600)'
                         }}>
-                            Al ingresar su PIN, usted acepta que sus datos han sido verificados
-                            y autoriza el uso de firma digital para documentos laborales según
+                            Al ingresar tu PIN, aceptas que tus datos fueron verificados
+                            y autorizas el uso de firma digital para documentos laborales según
                             la normativa vigente (DS 44).
                         </div>
 
                         <PinInput
                             onComplete={handleSign}
                             mode="verify"
-                            title="Ingrese su PIN para firmar"
-                            subtitle="Confirme su identidad con el PIN creado"
+                            title="Ingresa tu PIN para firmar"
+                            subtitle="Confirma tu identidad con el PIN creado"
                             error={pinError}
                             disabled={loading}
                         />

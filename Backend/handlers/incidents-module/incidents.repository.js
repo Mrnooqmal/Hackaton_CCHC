@@ -2,6 +2,7 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, ScanCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { HUELLA_SHA256, urlDeSubida } = require('../../lib/clients/s3');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
 const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
@@ -11,6 +12,8 @@ class IncidentsRepository {
         // Inicialización simple como en incidents.js
         const dynamoClient = new DynamoDBClient({});
         this.dynamo = DynamoDBDocumentClient.from(dynamoClient);
+        // Las subidas desde el navegador se prefirman con `urlDeSubida`: la huella
+        // la calcula quien tiene el archivo (ver lib/clients/s3.js).
         this.s3 = new S3Client({});
         this.sns = new SNSClient({});
 
@@ -586,10 +589,14 @@ class IncidentsRepository {
     }
 
     // UPLOAD EVIDENCE
-    async uploadEvidence({ fileName, fileType, incidentId, tenantId }) {
+    async uploadEvidence({ fileName, fileType, incidentId, tenantId, checksumSha256 }) {
         console.log('[UPLOAD_EVIDENCE] Called with:', { fileName, fileType, incidentId });
         if (!fileName || !fileType) {
             throw new Error('fileName y fileType son requeridos');
+        }
+        // El bucket de evidencia tiene Object Lock: sin huella, S3 rechaza la subida.
+        if (!HUELLA_SHA256.test(String(checksumSha256 || ''))) {
+            throw new Error('Falta la huella SHA-256 del archivo. Recarga la página e intenta de nuevo.');
         }
         if (!tenantId) throw new Error('tenantId es requerido');
 
@@ -603,9 +610,10 @@ class IncidentsRepository {
         const command = new PutObjectCommand({
             Bucket: this.incidentEvidenceBucket,
             Key: s3Key,
-            ContentType: fileType
+            ContentType: fileType,
+            ChecksumSHA256: checksumSha256,
         });
-        const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn: 3600 });
+        const uploadUrl = await urlDeSubida(command, 3600);
 
         return {
             uploadUrl,
@@ -722,9 +730,12 @@ class IncidentsRepository {
     // UPLOAD DOCUMENT
     async uploadDocument(id, data) {
         if (!id) throw new Error('ID de incidente requerido');
-        const { fileName, fileType, documentType, tenantId } = data;
+        const { fileName, fileType, documentType, tenantId, checksumSha256 } = data;
         if (!fileName || !fileType || !documentType) {
             throw new Error('fileName, fileType y documentType son requeridos');
+        }
+        if (!HUELLA_SHA256.test(String(checksumSha256 || ''))) {
+            throw new Error('Falta la huella SHA-256 del archivo. Recarga la página e intenta de nuevo.');
         }
         if (!tenantId) throw new Error('tenantId es requerido');
         const tiposValidos = ['diat', 'diep'];
@@ -737,9 +748,10 @@ class IncidentsRepository {
         const command = new PutObjectCommand({
             Bucket: this.incidentEvidenceBucket,
             Key: s3Key,
-            ContentType: fileType
+            ContentType: fileType,
+            ChecksumSHA256: checksumSha256,
         });
-        const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn: 3600 });
+        const uploadUrl = await urlDeSubida(command, 3600);
         const now = new Date().toISOString();
 
         await this.dynamo.send(new UpdateCommand({

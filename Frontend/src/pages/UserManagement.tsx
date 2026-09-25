@@ -360,7 +360,7 @@ export default function UserManagement() {
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
                 title="Nuevo Usuario"
-                subtitle="Complete los datos para crear un nuevo usuario en el sistema"
+                subtitle="Completa los datos para crear un nuevo usuario en el sistema"
                 size="lg"
                 footer={
                     <>

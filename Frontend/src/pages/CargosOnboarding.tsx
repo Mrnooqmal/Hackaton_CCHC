@@ -424,7 +424,7 @@ export default function CargosOnboarding() {
                                                                     }}>{it.codigoEbco}</span>
                                                                 )}
                                                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.titulo}</span>
-                                                                {it.bloqueante && <FiLock size={13} style={{ color: 'var(--danger-500)', flexShrink: 0 }} title="Bloqueante para ingresar a terreno" />}
+                                                                {it.bloqueante && <FiLock size={13} style={{ color: 'var(--danger-500)', flexShrink: 0 }} title="Bloqueante para ingresar a la obra" />}
                                                             </div>
                                                             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
                                                                 {ACCION_LABEL[it.accion]}
@@ -730,7 +730,7 @@ function ItemEditor({ draft, onChange }: { draft: Ds44KitItem; onChange: (d: Ds4
             <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', fontSize: 'var(--text-sm)' }}>
                 <input type="checkbox" checked={!!draft.bloqueante} onChange={(e) => set({ bloqueante: e.target.checked })} />
                 <FiAlertTriangle size={14} style={{ color: 'var(--warning-500)' }} />
-                Bloqueante para ingresar a terreno (no bloquea el registro)
+                Bloqueante para ingresar a la obra (no bloquea el registro)
             </label>
 
             {isEpp && <EppMatrixEditor matriz={draft.matrizEpp || []} onChange={(matrizEpp) => set({ matrizEpp })} />}

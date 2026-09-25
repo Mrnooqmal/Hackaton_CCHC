@@ -191,6 +191,42 @@ export const estructuraApi = {
     urlExport: (tenantId: string, ambito: Ambito, obraId?: string | null) =>
         `${apiBaseUrl}/estructura/completitud/export${qs({ tenantId, ambito, obraId, formato: 'html' })}`,
 
+    /**
+     * Abre el reporte imprimible del FUF en una pestaña nueva.
+     *
+     * No sirve un enlace directo a `urlExport`: la ruta pasa por el autorizador y
+     * una navegación no lleva el token, así que respondía 401. Se pide con el
+     * token y se abre el HTML recibido.
+     *
+     * La pestaña se abre ANTES de la petición, mientras el clic todavía cuenta
+     * como gesto del usuario: abrirla después del `await` la bloquea el
+     * navegador como ventana emergente.
+     */
+    abrirExport: async (tenantId: string, ambito: Ambito, obraId?: string | null): Promise<{ ok: boolean; error?: string }> => {
+        const win = window.open('', '_blank');
+        if (!win) return { ok: false, error: 'El navegador bloqueó la ventana. Habilita las ventanas emergentes.' };
+        win.document.title = 'Generando reporte FUF…';
+        const token = localStorage.getItem('auth_token');
+        try {
+            const res = await fetch(`${apiBaseUrl}/estructura/completitud/export${qs({ tenantId, ambito, obraId, formato: 'html' })}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (!res.ok) {
+                win.close();
+                return { ok: false, error: 'No se pudo generar el reporte del FUF.' };
+            }
+            const blob = new Blob([await res.text()], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            win.location.href = url;
+            // Se libera después para no cortar la carga de la pestaña.
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            return { ok: true };
+        } catch {
+            win.close();
+            return { ok: false, error: 'Error de conexión al generar el reporte del FUF.' };
+        }
+    },
+
     /** Prescripciones del ámbito, con su estado ya derivado del plazo. */
     listarPrescripciones: (tenantId: string, obraId?: string | null) =>
         apiRequest<{ total: number; prescripciones: Prescripcion[] }>(

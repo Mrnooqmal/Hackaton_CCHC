@@ -14,7 +14,7 @@ const almacenamiento = require('../../lib/almacenamiento');
 const isOffline = process.env.IS_OFFLINE === 'true';
 
 // Configuración del cliente S3
-const { s3Client } = require("../../lib/clients/s3");
+const { s3Client, HUELLA_SHA256, urlDeSubida } = require("../../lib/clients/s3");
 
 // Tipos MIME permitidos
 const ALLOWED_MIME_TYPES = [
@@ -178,6 +178,21 @@ module.exports.getUploadUrl = async (event) => {
             return error(`El archivo excede el tamaño máximo permitido (10 MB)`);
         }
 
+        // Huella SHA-256 del archivo, calculada en el navegador.
+        //
+        // El bucket de evidencia tiene Object Lock, y S3 rechaza con 400 toda
+        // subida a un bucket con bloqueo que no traiga una huella de integridad.
+        // En una URL prefirmada el SDK no puede calcularla (no tiene el archivo),
+        // así que la calcula quien sí lo tiene y acá se firma con ella: S3 la
+        // compara con lo que llega y rechaza un archivo alterado en el camino.
+        const checksum = typeof body.checksumSha256 === 'string' ? body.checksumSha256.trim() : null;
+        if (checksum && !HUELLA_SHA256.test(checksum)) {
+            return error('La huella SHA-256 del archivo no es válida.', 400);
+        }
+        if (!checksum && clase.clase === almacenamiento.EVIDENCIA) {
+            return error('Falta la huella SHA-256 del archivo. Recarga la página e intenta de nuevo.', 400);
+        }
+
         // Generar key único para el archivo
         const timestamp = Date.now();
         const uniqueId = uuidv4().slice(0, 8);
@@ -190,6 +205,7 @@ module.exports.getUploadUrl = async (event) => {
             Bucket: bucket,
             Key: fileKey,
             ContentType: fileType,
+            ...(checksum ? { ChecksumSHA256: checksum } : {}),
             Metadata: {
                 'original-name': fileName,
                 'uploaded-at': new Date().toISOString(),
@@ -200,7 +216,7 @@ module.exports.getUploadUrl = async (event) => {
 
         // Generar URL prefirmada (válida por 5 minutos)
         const expiresIn = 300;
-        const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn });
+        const uploadUrl = await urlDeSubida(command, expiresIn);
 
         return success({
             uploadUrl,

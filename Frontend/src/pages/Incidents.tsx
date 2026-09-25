@@ -389,7 +389,7 @@ export default function Incidents() {
             setCameraActive(true);
         } catch (err) {
             console.error('Error accessing camera:', err);
-            setFormError('No se pudo acceder a la cámara. Por favor asegúrese de dar los permisos necesarios.');
+            setFormError('No se pudo acceder a la cámara. Asegúrate de dar los permisos necesarios.');
         }
     };
 
@@ -488,6 +488,7 @@ export default function Incidents() {
         for (const file of uploadedFiles) {
             try {
                 const urlResponse = await incidentsApi.uploadEvidence({
+                    archivo: file,
                     fileName: file.name,
                     fileType: file.type,
                     incidentId
@@ -497,9 +498,7 @@ export default function Incidents() {
                     await fetch(urlResponse.data.uploadUrl, {
                         method: 'PUT',
                         body: file,
-                        headers: {
-                            'Content-Type': file.type
-                        }
+                        headers: urlResponse.data.uploadHeaders
                     });
 
                     s3Keys.push(urlResponse.data.s3Key);
@@ -1373,8 +1372,8 @@ export default function Incidents() {
                     subtitle={showSuccess
                         ? 'El incidente ha sido registrado y notificado correctamente'
                         : formData.clasificacion === 'hallazgo'
-                            ? 'Complete la información del hallazgo observado'
-                            : 'Complete la información del incidente ocurrido'
+                            ? 'Completa la información del hallazgo observado'
+                            : 'Completa la información del incidente ocurrido'
                     }
                     icon={<FiAlertTriangle size={24} />}
                     size="xl"
@@ -1902,7 +1901,7 @@ export default function Incidents() {
                                                     <div>
                                                         <p style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)', margin: 0 }}>
                                                             {formData.clasificacion === 'hallazgo'
-                                                                ? 'Declaro que el hallazgo reportado ha sido observado directamente y es comprobable en terreno.'
+                                                                ? 'Declaro que el hallazgo reportado ha sido observado directamente y es comprobable en el lugar.'
                                                                 : 'Declaro que la información proporcionada corresponde fielmente a los hechos ocurridos.'}
                                                         </p>
                                                         <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-1)' }}>
@@ -3012,7 +3011,7 @@ export default function Incidents() {
                     <div className="form-group">
                         <label className="form-label">Responsable de cierre</label>
                         <select className="form-input form-select" value={gobForm.responsableId} onChange={(e) => setGobForm({ ...gobForm, responsableId: e.target.value })}>
-                            <option value="">Seleccione…</option>
+                            <option value="">Selecciona…</option>
                             {personasTenant.map((p: any) => (
                                 <option key={p.personaId} value={p.personaId}>{p.nombre} {p.apellido || ''} {p.cargo ? `- ${p.cargo}` : ''}</option>
                             ))}

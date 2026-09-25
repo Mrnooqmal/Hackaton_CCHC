@@ -20,7 +20,7 @@ import { documentsApi, uploadsApi, tenantsApi, type Document } from '../api/clie
 import { abrirDocumentoFirmable } from '../utils/documentoFirmado';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
-import RepositorioFuf from '../components/RepositorioFuf';
+import RepositorioDs44 from '../components/obra/RepositorioDs44';
 import { AMBITO as AMBITO_FUF } from '../utils/estructuraPreventiva';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
@@ -242,7 +242,7 @@ export default function DocumentsRepository() {
         setUploading(true);
         try {
             const urlRes = await uploadsApi.getUploadUrl({
-                fileName: selectedFile.name,
+                archivo: selectedFile, fileName: selectedFile.name,
                 fileType: selectedFile.type,
                 fileSize: selectedFile.size,
                 categoria: 'documentos'
@@ -255,9 +255,7 @@ export default function DocumentsRepository() {
             const uploadRes = await fetch(urlRes.data.uploadUrl, {
                 method: 'PUT',
                 body: selectedFile,
-                headers: {
-                    'Content-Type': selectedFile.type
-                }
+                headers: urlRes.data.uploadHeaders
             });
 
             if (!uploadRes.ok) {
@@ -596,7 +594,7 @@ export default function DocumentsRepository() {
                                     onChange={(v) => setAmbitoFuf(v as 'empresa' | 'obra')}
                                     options={[
                                         { value: 'obra', label: 'Esta obra' },
-                                        { value: 'empresa', label: 'Entidad empleadora' },
+                                        { value: 'empresa', label: 'Empresa' },
                                     ]}
                                 />
                             </div>
@@ -604,12 +602,13 @@ export default function DocumentsRepository() {
                         {/* `key` fuerza el remontaje al cambiar de ámbito: son dos
                             evaluaciones distintas, y reusar el estado dejaría abiertas
                             las secciones del ámbito anterior. */}
-                        <RepositorioFuf
+                        <RepositorioDs44
                             key={ambitoEfectivo}
                             tenantId={user?.tenantId || localStorage.getItem('tenant_id') || ''}
                             ambito={ambitoEfectivo === 'obra' ? AMBITO_FUF.OBRA : AMBITO_FUF.EMPRESA}
                             obraId={ambitoEfectivo === 'obra' ? selectedObraId : null}
-                            onVerDocumento={(doc) => handlePreview(doc as any)}
+                            onVerDocumento={(doc) => handlePreview(doc as RepoDocument)}
+                            onDescargarDocumento={(doc) => handleDownload(doc as RepoDocument)}
                         />
                     </>
                 )}

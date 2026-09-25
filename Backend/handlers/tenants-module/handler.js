@@ -14,6 +14,7 @@ const { s3Client } = require('../../lib/clients/s3');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
 const almacenamiento = require('../../lib/almacenamiento');
+const { FirmaRepresentanteService } = require('../../lib/services/FirmaRepresentanteService');
 
 const uploadTenantLogo = async (dataUrl, tenantId) => {
     const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
@@ -175,6 +176,26 @@ module.exports.tenantsHandler = async (event) => {
             // `reglas` se mergea por el mismo motivo que `preferencias`: updateConfig
             // reemplaza el objeto entero, así que guardar solo el representante legal
             // borraría fasesObligatorias, limiteObras y requiereFirmaPin.
+            // Si llega el representante legal, se valida que sea de la empresa ANTES
+            // de guardarlo, y después se sincronizan sus firmas pendientes.
+            const tocaRepresentante = Boolean(body.reglas && typeof body.reglas === 'object'
+                && Object.prototype.hasOwnProperty.call(body.reglas, 'representanteLegal'));
+            const firmasRep = new FirmaRepresentanteService();
+            const nuevoRepId = tocaRepresentante ? (body.reglas.representanteLegal?.personaId || null) : null;
+            const personaRep = nuevoRepId ? await firmasRep.personaDelTenant(tenantId, nuevoRepId) : null;
+            if (nuevoRepId && !personaRep) {
+                return error('El representante legal debe ser una persona de la empresa.', 400);
+            }
+            // Del representante se guarda quién es, no su RUT: nada lo usa y el
+            // navegador lo mandaba en claro, contra el cifrado de campo (D-10). El
+            // RUT sigue en la ficha de la persona, cifrado. El nombre sale de esa
+            // ficha y no de lo que diga el cliente.
+            if (tocaRepresentante) {
+                body.reglas.representanteLegal = personaRep
+                    ? { personaId: personaRep.personaId, nombre: `${personaRep.nombre} ${personaRep.apellido || ''}`.trim() }
+                    : null;
+            }
+
             if (body.reglas && typeof body.reglas === 'object') {
                 const existing = await tenantService.getById(tenantId);
                 if (!existing) return error('Tenant no encontrado', 404);
@@ -182,9 +203,23 @@ module.exports.tenantsHandler = async (event) => {
             }
 
             const tenant = await tenantService.updateConfig(tenantId, body);
+
+            // Designar (o volver a designar) al representante le asigna los
+            // documentos que tiene que firmar y le quita la pendiente al anterior.
+            // Antes no pasaba nada: el programa quedaba "Incompleto" y el
+            // representante no lo veía en ninguna pantalla.
+            let firmasRepresentante = null;
+            if (tocaRepresentante) {
+                try {
+                    firmasRepresentante = await firmasRep.sincronizarTenant(tenantId, nuevoRepId);
+                } catch (syncErr) {
+                    console.error('[tenants] no se pudieron sincronizar las firmas del representante:', syncErr.message);
+                }
+            }
             return success({
                 message: 'Tenant actualizado',
-                tenant: tenant.toSafeFormat()
+                tenant: tenant.toSafeFormat(),
+                firmasRepresentante,
             });
         }
 

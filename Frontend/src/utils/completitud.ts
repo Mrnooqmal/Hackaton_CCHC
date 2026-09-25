@@ -69,7 +69,23 @@ export interface RequisitoFuf {
     /** Declaración de la obra que decide si el requisito corresponde. */
     condicion?: CondicionObra | null;
     aplicabilidad?: 'aplica' | 'no_aplica' | 'verificar' | null;
+    /** Qué documento subir para que avance, o null si subir un archivo no lo
+     *  resuelve (falta una firma, una fecha, un envío, o vive en otro módulo).
+     *  Lo decide el motor, que es quien sabe qué falta: no se deduce de `tipos`. */
+    cargar?: { tipo: string; que: string | null } | null;
+    /** Lo que resuelve el requisito cuando no es un archivo. `falta` lo dice en palabras. */
+    accion?: AccionRequisito | null;
 }
+
+export type AccionRequisito =
+    | { tipo: 'designar_representante'; falta: string }
+    | { tipo: 'solicitar_firma'; documentId: string; personaId: string; solicitada: boolean; falta: string }
+    /** El documento está cargado pero nadie lo tiene que firmar (el registro de una
+     *  capacitación sin sus asistentes): se indican quiénes firman. */
+    | { tipo: 'asignar_firmantes'; documentId: string; falta: string }
+    /** Cualquier otro documento con firmantes asignados que todavía no firman:
+     *  se les vuelve a enviar el aviso. */
+    | { tipo: 'recordar_firmas'; documentId: string; personaIds: string[]; pendientes: number; total: number; falta: string };
 
 /** Lo que la obra declara sobre sí misma y que decide qué se le exige. */
 export type CondicionObra = 'siempre' | 'faena_compartida' | 'tiene_maquinaria' | 'agentes_fqb';

@@ -165,6 +165,17 @@ mergea `reglas` con las existentes (igual que `preferencias`), porque
 `updateConfig` reemplaza el objeto entero y guardar solo este campo borraría
 `fasesObligatorias` y `limiteObras`.
 
+**La firma del representante se sincroniza sola** (`lib/services/FirmaRepresentanteService.js`,
+espejo de la lista en `Frontend/src/utils/firmaRepresentante.ts`). El único documento
+que el DS 44 le exige firmar es el **Programa de Trabajo Preventivo** (ítem 9); la
+Política SST quedó con firma opcional (D5). La asignación con `rol: 'representante_legal'`
+se crea o se mueve en tres momentos: al **designar o cambiar** al representante (todos
+los programas del tenant; al anterior se le quita la pendiente, lo firmado no se toca),
+al **crear** un programa con archivo y al **cargarle el archivo** a uno precreado. Le llega
+aviso al inbox y lo ve en "Mis firmas", que lista TODO lo pendiente de la persona y no
+solo lo `diario`. `documents.assign` no duplica a quien ya tiene la firma pendiente (solo
+vuelve a avisar) y marca el rol si se asigna al representante a mano.
+
 ### 4.4 DS 44: cargos, kits y alcances (`lib/ds44.js` — núcleo)
 Este es el corazón del dominio. Conceptos:
 

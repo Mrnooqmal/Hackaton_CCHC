@@ -250,13 +250,20 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                     ? {
                         personaId,
                         nombre: persona ? `${persona.nombre} ${persona.apellido || ''}`.trim() : null,
-                        rut: persona?.rut || null,
                     }
                     : null,
             );
             if (res.success && res.data) {
                 onSaved(res.data.tenant);
-                toast.success(personaId ? 'Representante legal designado.' : 'Representante legal quitado.');
+                // Designarlo le asigna lo que tiene que firmar (el Programa de
+                // Trabajo Preventivo de cada obra). Se dice, para que no parezca
+                // que no pasó nada.
+                const asignados = res.data.firmasRepresentante?.asignados || 0;
+                toast.success(!personaId
+                    ? 'Representante legal quitado.'
+                    : asignados > 0
+                        ? `Representante legal designado. Se le pidió firmar ${asignados} documento(s); los verá en "Mis firmas".`
+                        : 'Representante legal designado.');
             } else {
                 setRepLegalId(anterior);
                 toast.error(res.error || 'No se pudo guardar el representante legal.');
@@ -404,7 +411,7 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                         <p className="me-section-hint">
                             Los cinco componentes que el Art. 22 exige como contenido mínimo.
                             Tres se acreditan con un documento propio; los otros dos se
-                            acreditan en su módulo y acá solo se enlazan.
+                            acreditan en su módulo y aquí solo se enlazan.
                         </p>
                     </div>
                     {tenant?.tenantId ? (

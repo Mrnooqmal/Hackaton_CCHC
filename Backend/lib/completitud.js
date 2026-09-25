@@ -35,6 +35,34 @@ const ESTADO_REQUISITO = {
     FUERA_DE_ALCANCE: 'FueraDeAlcance',
 };
 
+/**
+ * Qué documento subir para que un requisito avance, o null si subir un archivo
+ * no lo resuelve.
+ *
+ * Antes la interfaz subía siempre el PRIMER tipo del requisito, y en varios eso
+ * es lo que ya está: en el mapa de riesgos (ítem 53) falta la evidencia de que
+ * está publicado y se volvía a subir el mapa; en el Reglamento (49), el
+ * comprobante de la DT y se subía otro reglamento. El estado no cambiaba nunca.
+ * Solo quien evalúa sabe qué falta, así que la respuesta sale de acá.
+ *
+ * Una definición la da explícita en su resultado (`cargar`). Si no, se deduce:
+ * solo cuando no hay nada cargado (Pendiente o Vencido) y el requisito se
+ * acredita subiendo un archivo de su tipo. Un Parcial casi nunca se resuelve
+ * subiendo otro archivo —falta una firma, una fecha, un envío—, y los que viven
+ * en otro módulo o se informan a destinatarios se resuelven allá.
+ */
+function cargaPara(def, resultado) {
+    if (resultado && resultado.cargar !== undefined) return resultado.cargar;
+    const estado = resultado?.estado;
+    const tipos = def.tipos || [];
+    if (tipos.length === 0 || def.modulo || def.agregado || resultado?.distribucion) return null;
+    // Las capacitaciones admiten el certificado de una dictada fuera aunque la
+    // actividad agendada esté a medias.
+    if (resultado?.acreditacion) return estado === ESTADO_REQUISITO.CUMPLIDO ? null : { tipo: tipos[0], que: null };
+    if (estado === ESTADO_REQUISITO.PENDIENTE || estado === ESTADO_REQUISITO.VENCIDO) return { tipo: tipos[0], que: null };
+    return null;
+}
+
 /** Estados que no entran al denominador del porcentaje. */
 const ESTADOS_NO_PENALIZAN = new Set([ESTADO_REQUISITO.NO_APLICA, ESTADO_REQUISITO.FUERA_DE_ALCANCE]);
 
@@ -76,6 +104,54 @@ function firmasPendientes(doc) {
     const asignaciones = Array.isArray(doc?.asignaciones) ? doc.asignaciones : [];
     if (asignaciones.length === 0) return 0;
     return asignaciones.filter((a) => a?.estado !== 'firmado' && !a?.fechaFirma).length;
+}
+
+const firmoAsignacion = (a) => a?.estado === 'firmado' || Boolean(a?.fechaFirma);
+
+/** "Ana Rojas", "Ana Rojas y Juan Pérez", "Ana Rojas, Juan Pérez y 3 personas más". */
+function listarNombres(nombres) {
+    const n = nombres.map((x) => x || 'una persona sin nombre');
+    if (n.length <= 1) return n[0] || '';
+    if (n.length === 2) return `${n[0]} y ${n[1]}`;
+    if (n.length === 3) return `${n[0]}, ${n[1]} y ${n[2]}`;
+    return `${n[0]}, ${n[1]} y ${n.length - 2} personas más`;
+}
+
+/**
+ * Firmas que faltan en la evidencia de un requisito, como acción.
+ *
+ * Los ítems 9 y 19 dicen por sí mismos qué firma falta. El resto de los
+ * documentos con firmantes asignados quedaba con "Firmas pendientes" en el
+ * repositorio y nada más: no decía de quién ni ofrecía cómo pedirlas. Esto lo
+ * resuelve una vez para todos, mirando el documento vigente de cada tipo del
+ * requisito. No cambia el estado: eso lo decide cada definición.
+ *
+ * No aplica a lo que se resuelve de otra forma: un envío (distribución) o un
+ * agregado. Sí a los requisitos de un módulo: el registro de una capacitación
+ * (ítem 19) vive en Actividades, pero quienes no firman se nombran igual.
+ */
+function accionFirmasPendientes(def, resultado, ctx) {
+    const estado = resultado?.estado;
+    if (estado !== ESTADO_REQUISITO.PARCIAL && estado !== ESTADO_REQUISITO.CUMPLIDO) return null;
+    if (!def.tipos?.length || def.agregado || resultado?.distribucion) return null;
+    const docs = (ctx.documentos || []).filter((d) => tieneArchivo(d) && d.estado !== 'archivado');
+    for (const tipo of def.tipos) {
+        const doc = docs.filter((d) => d.tipo === tipo).sort((a, b) => ((b.version || 0) - (a.version || 0))
+            || String(b.fecha || b.updatedAt || b.createdAt || '').localeCompare(String(a.fecha || a.updatedAt || a.createdAt || '')))[0];
+        if (!doc) continue;
+        const asignaciones = Array.isArray(doc.asignaciones) ? doc.asignaciones : [];
+        const pendientes = asignaciones.filter((a) => !firmoAsignacion(a));
+        if (pendientes.length === 0) continue;
+        return {
+            tipo: 'recordar_firmas',
+            documentId: doc.documentId,
+            personaIds: pendientes.map((a) => a.personaId).filter(Boolean),
+            pendientes: pendientes.length,
+            total: asignaciones.length,
+            falta: `la firma de ${listarNombres(pendientes.map((a) => a.nombre))}`,
+        };
+    }
+    return null;
 }
 
 /**
@@ -213,6 +289,11 @@ function evaluarCompletitud(definiciones, ctx = {}) {
             // actividad en la plataforma o cargar el certificado de una dictada
             // fuera. Viaja para que la pantalla ofrezca ambas sin deducir nada.
             acreditacion: resultado?.acreditacion || null,
+            // Qué subir para avanzar (`{ tipo, que }`) o null. Ver `cargaPara`.
+            cargar: cargaPara(def, resultado),
+            // Cuando lo que resuelve el requisito no es un archivo (designar a
+            // alguien, pedir una firma), la definición dice cuál acción es.
+            accion: resultado?.accion || accionFirmasPendientes(def, resultado, ctx),
             // Qué declaración de la obra decide si este requisito corresponde, y
             // cómo quedó esa decisión. Viaja para que la pantalla pueda PEDIR el
             // dato cuando falta: sin esto, un requisito en `verificar` se quedaría
@@ -301,6 +382,6 @@ function agruparPorBloque(requisitos) {
 
 module.exports = {
     ESTADO_REQUISITO, ESTADOS_NO_PENALIZAN, BLOQUE_FUF, bloqueDeItem,
-    tieneArchivo, firmasPendientes, estadoPorDocumento, documentosDelAmbito,
+    tieneArchivo, firmasPendientes, accionFirmasPendientes, estadoPorDocumento, documentosDelAmbito,
     evaluarCompletitud, resumirCompletitud, agruparPorBloque,
 };

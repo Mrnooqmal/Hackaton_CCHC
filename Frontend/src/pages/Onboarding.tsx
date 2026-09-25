@@ -265,7 +265,7 @@ export default function Onboarding() {
                                 />
                             </div>
                             <span className="auth-simple-hint">
-                                Es el correo al que llegó la invitación y no se puede cambiar acá.
+                                Es el correo al que llegó la invitación y no se puede cambiar aquí.
                             </span>
                         </div>
 

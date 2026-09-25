@@ -295,7 +295,7 @@ export default function EstructuraConstituir() {
                                             <label className="form-label">Persona</label>
                                             <Select
                                                 ariaLabel="Persona"
-                                                placeholder="Seleccione"
+                                                placeholder="Selecciona"
                                                 searchable
                                                 value={m.personaId}
                                                 onChange={(v) => actualizarMiembro(i, { personaId: v, nombre: nombreDe(v) })}

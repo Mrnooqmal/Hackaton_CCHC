@@ -135,7 +135,7 @@ export default function ObraNueva() {
       const tenantId = user?.tenantId || localStorage.getItem('tenant_id') || '';
       if (obraImageFile) {
         const uploadUrlRes = await uploadsApi.getUploadUrl({
-          fileName: obraImageFile.name,
+          archivo: obraImageFile, fileName: obraImageFile.name,
           fileType: obraImageFile.type,
           fileSize: obraImageFile.size,
           categoria: 'obras',
@@ -145,7 +145,7 @@ export default function ObraNueva() {
         const uploadResult = await fetch(uploadUrlRes.data.uploadUrl, {
           method: 'PUT',
           body: obraImageFile,
-          headers: { 'Content-Type': obraImageFile.type }
+          headers: uploadUrlRes.data.uploadHeaders
         });
         if (!uploadResult.ok) throw new Error('Error al subir imagen');
         imagenKey = uploadUrlRes.data.fileKey;

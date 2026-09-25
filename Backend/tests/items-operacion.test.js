@@ -74,11 +74,23 @@ test('ítem 18: el certificado de una capacitación externa también acredita', 
     assert.equal(r.acreditacion.via, 'documento');
 });
 
-test('ítem 18: sin ninguna de las dos vías, el detalle ofrece las dos', () => {
+test('ítem 18: sin ninguna de las dos vías, pide el registro y conserva la opción de agendar', () => {
+    // La evidencia es el registro del hecho (lista de asistencia o certificado);
+    // agendarla en la plataforma sigue disponible por el bloque de acreditación.
     const r = evaluarItem18(ctx());
     assert.equal(r.estado, E.PENDIENTE);
     assert.equal(r.acreditacion.via, null);
-    assert.match(r.detalle, /agéndala o carga el certificado/);
+    assert.equal(r.cargar.tipo, 'CAPACITACION_EPP');
+    assert.ok(r.acreditacion.criterio, 'la vía de agendar sigue disponible');
+});
+
+test('ítem 19: un registro sin asistentes pide indicarlos, no otro archivo', () => {
+    const { evaluarItem19 } = require('../lib/completitud-operacion');
+    const r = evaluarItem19(ctx({ documentos: [doc('CAPACITACION_EPP', { documentId: 'reg-1' })] }));
+    assert.equal(r.estado, E.PARCIAL);
+    assert.equal(r.cargar, null);
+    assert.equal(r.accion.tipo, 'asignar_firmantes');
+    assert.equal(r.accion.documentId, 'reg-1');
 });
 
 test('ítem 18: el bloque de acreditación lleva el criterio para agendar', () => {

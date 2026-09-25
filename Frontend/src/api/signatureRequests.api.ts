@@ -28,6 +28,8 @@ export interface TrabajadorEnSolicitud {
 
 export interface SignatureRequest {
     requestId: string;
+    /** Documento al que se refiere la solicitud (la re-firma de una versión). */
+    referenciaId?: string | null;
     tipo: string;
     tipoInfo: SignatureRequestType;
     titulo: string;

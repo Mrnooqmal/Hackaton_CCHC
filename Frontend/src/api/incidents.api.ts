@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { huellaSha256, headersDeSubida } from '../utils/huellaArchivo';
 
 export interface IncidentLocation {
     lat: number;
@@ -154,6 +155,8 @@ export interface AddInvestigationData {
 }
 
 export interface UploadDocumentData {
+    /** De él sale la huella SHA-256 que exige el bucket de evidencia. */
+    archivo: Blob;
     fileName: string;
     fileType: string;
     documentType: 'diat' | 'diep';
@@ -227,12 +230,16 @@ export interface IncidentListParams {
 }
 
 export interface UploadEvidenceData {
+    /** De él sale la huella SHA-256 que exige el bucket de evidencia. */
+    archivo: Blob;
     fileName: string;
     fileType: string;
     incidentId?: string;
 }
 
 export interface UploadEvidenceResponse {
+    /** Headers que el PUT a `uploadUrl` tiene que llevar tal cual (incluye la huella). */
+    uploadHeaders: Record<string, string>;
     uploadUrl: string;
     s3Key: string;
     fileUrl: string;
@@ -287,11 +294,15 @@ export const incidentsApi = {
             body: JSON.stringify(data),
         }),
 
-    uploadEvidence: (data: UploadEvidenceData) =>
-        apiRequest<UploadEvidenceResponse>('/incidents/upload-evidence', {
+    uploadEvidence: async ({ archivo, ...data }: UploadEvidenceData) => {
+        const checksumSha256 = await huellaSha256(archivo);
+        const res = await apiRequest<Omit<UploadEvidenceResponse, 'uploadHeaders'>>('/incidents/upload-evidence', {
             method: 'POST',
-            body: JSON.stringify(data),
-        }),
+            body: JSON.stringify({ ...data, checksumSha256 }),
+        });
+        if (!res.success || !res.data) return res as { success: boolean; data?: UploadEvidenceResponse; error?: string };
+        return { ...res, data: { ...res.data, uploadHeaders: headersDeSubida(data.fileType, checksumSha256) } };
+    },
 
     getStats: (params?: IncidentStatsParams) => {
         const query = params ? new URLSearchParams(params as any).toString() : '';
@@ -304,11 +315,15 @@ export const incidentsApi = {
             body: JSON.stringify(data),
         }),
 
-    uploadDocument: (incidentId: string, data: UploadDocumentData) =>
-        apiRequest<{ uploadUrl: string; s3Key: string }>(`/incidents/${incidentId}/documents`, {
+    uploadDocument: async (incidentId: string, { archivo, ...data }: UploadDocumentData) => {
+        const checksumSha256 = await huellaSha256(archivo);
+        const res = await apiRequest<{ uploadUrl: string; s3Key: string }>(`/incidents/${incidentId}/documents`, {
             method: 'POST',
-            body: JSON.stringify(data),
-        }),
+            body: JSON.stringify({ ...data, checksumSha256 }),
+        });
+        if (!res.success || !res.data) return res as { success: boolean; data?: { uploadUrl: string; s3Key: string; uploadHeaders: Record<string, string> }; error?: string };
+        return { ...res, data: { ...res.data, uploadHeaders: headersDeSubida(data.fileType, checksumSha256) } };
+    },
 
     getDocuments: (incidentId: string) =>
         apiRequest<{ documents: DocumentReference[] }>(`/incidents/${incidentId}/documents`),

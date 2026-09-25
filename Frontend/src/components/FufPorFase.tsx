@@ -113,7 +113,7 @@ export default function FufPorFase({
         setSubiendo(r.id);
         setError(null);
         try {
-            await subirComoDocumento({ file, tipo, titulo: r.titulo, tenantId, obraId, categoria: 'ds44' });
+            await subirComoDocumento({ file, tipo, titulo: r.titulo, tenantId, obraId });
             await cargar();
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Error al cargar el documento.');

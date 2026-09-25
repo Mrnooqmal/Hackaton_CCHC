@@ -799,7 +799,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         if (!ob) {
             return (
                 <div className="eq-ob-empty">
-                    Sin kit de onboarding: el rol de gestión y las personas sin cargo en la obra no entran al onboarding de terreno.
+                    Sin kit de onboarding: el rol de gestión y las personas sin cargo en la obra no entran al onboarding de la obra.
                 </div>
             );
         }

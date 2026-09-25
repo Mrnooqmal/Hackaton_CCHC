@@ -60,7 +60,7 @@ export default function SgsstPanel({ tenantId, onIrA }: SgsstPanelProps) {
         setError(null);
         try {
             await subirComoDocumento({
-                file, tipo: comp.tipo, tenantId, categoria: 'sgsst',
+                file, tipo: comp.tipo, tenantId,
                 titulo: TITULO_SUBIDA[comp.tipo] || comp.literal,
             });
             await cargar(true);

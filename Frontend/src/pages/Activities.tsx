@@ -319,7 +319,7 @@ export default function Activities() {
         e.preventDefault();
         if (submitting) return;
         if (!selectedObraId) {
-            toast.error('Seleccione una obra antes de crear una actividad');
+            toast.error('Selecciona una obra antes de crear una actividad');
             return;
         }
         if (['CHARLA_5MIN', 'ART'].includes(newActivity.tipo) && !catalogos) {
@@ -1243,7 +1243,7 @@ export default function Activities() {
                             <p className="act-empty-text">
                                 {canCrearActividad
                                     ? 'Parte por la charla de 5 minutos: queda registrada con la firma de cada asistente.'
-                                    : 'Cuando el prevencionista agende una actividad, la verás acá para firmar tu asistencia.'}
+                                    : 'Cuando el prevencionista agende una actividad, la verás aquí para firmar tu asistencia.'}
                             </p>
                             {canCrearActividad && (
                                 <div className="act-empty-actions">
@@ -1424,7 +1424,7 @@ export default function Activities() {
                             <p className="act-empty-text">
                                 {histFiltrado
                                     ? 'Prueba con otras palabras o amplía el rango de fechas.'
-                                    : 'Las actividades aparecen acá al día siguiente de realizarse.'}
+                                    : 'Las actividades aparecen aquí al día siguiente de realizarse.'}
                             </p>
                             {histFiltrado && (
                                 <div className="act-empty-actions">
@@ -1678,7 +1678,7 @@ export default function Activities() {
                                 <label className="form-label">Tipo de capacitación (DS44) *</label>
                                 <Select
                                     ariaLabel="Tipo de capacitación DS44"
-                                    placeholder="Seleccione el tipo de capacitación"
+                                    placeholder="Selecciona el tipo de capacitación"
                                     searchable
                                     value={newActivity.subtipo}
                                     onChange={(v) => setNewActivity({ ...newActivity, subtipo: v })}
@@ -1747,7 +1747,7 @@ export default function Activities() {
                             <label className="form-label">Relator *</label>
                             <Select
                                 ariaLabel="Relator"
-                                placeholder="Seleccione un relator"
+                                placeholder="Selecciona un relator"
                                 searchable
                                 value={newActivity.relatorId}
                                 onChange={(v) => setNewActivity({ ...newActivity, relatorId: v })}
@@ -2666,7 +2666,7 @@ export default function Activities() {
                             <label className="form-label">Relator *</label>
                             <Select
                                 ariaLabel="Relator"
-                                placeholder="Seleccione un relator"
+                                placeholder="Selecciona un relator"
                                 searchable
                                 value={completeForm.relatorId}
                                 onChange={(v) => setCompleteForm({ ...completeForm, relatorId: v })}
