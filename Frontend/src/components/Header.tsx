@@ -233,7 +233,7 @@ export default function Header() {
                     {/* Ayuda contextual: abre el manual en la página del módulo actual */}
                     <Link
                         to={manualUrlFor(location.pathname)}
-                        className="header-action"
+                        className="header-action header-action--help"
                         aria-label="Abrir el manual de uso de esta sección"
                         title="Ayuda de esta sección"
                     >

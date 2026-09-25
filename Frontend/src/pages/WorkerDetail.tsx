@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
-    LuChevronLeft,
     LuUser,
     LuFileText,
     LuActivity,
@@ -38,7 +37,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 import { useObraContext } from '../context/ObraContext';
-import { Modal, Select } from '../components/ui';
+import { Modal, Select, IdentityPanel } from '../components/ui';
 import WorkerEvidencias from '../components/WorkerEvidencias';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { eppApi, faltantesLabel, type EppElemento } from '../api/epp.api';
@@ -104,6 +103,8 @@ export default function WorkerDetail() {
     const { options: cargoOptions } = useCargoCatalog();
 
     const [worker, setWorker] = useState<WorkerWithRole | null>(null);
+    const [fotoSaving, setFotoSaving] = useState(false);
+    const [fotoSuccess, setFotoSuccess] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [editForm, setEditForm] = useState({
         nombre: '', apellidoPaterno: '', apellidoMaterno: '', email: '', telefono: '',
@@ -217,6 +218,61 @@ export default function WorkerDetail() {
             restricciones: Array.isArray(v.restricciones) ? v.restricciones.join(', ') : (v.restricciones || ''),
         });
     }, [worker]);
+
+    // El retrato se cambia desde la propia ficha, como en la cuenta propia. Se
+    // reescala en el navegador antes de subir: la foto se guarda en el registro
+    // de la persona, no en un bucket, así que un JPEG de cámara no cabe.
+    const resizeToBase64 = (file: File, maxSize = 320): Promise<string> =>
+        new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+                    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    resolve(canvas.toDataURL('image/jpeg', 0.85));
+                };
+                img.onerror = reject;
+                img.src = e.target!.result as string;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+
+    const handleFotoSelect = async (file: File) => {
+        if (!worker) return;
+        setFotoSaving(true);
+        setFotoSuccess(false);
+        try {
+            const base64 = await resizeToBase64(file);
+            const res = await workersApi.update(worker.personaId, { fotoPerfil: base64 } as any);
+            if (res.success) {
+                setWorker((prev) => (prev ? { ...prev, fotoPerfil: base64 } : prev));
+                setFotoSuccess(true);
+                setTimeout(() => setFotoSuccess(false), 2500);
+            }
+        } catch (err) {
+            console.error('Error subiendo la foto:', err);
+        } finally {
+            setFotoSaving(false);
+        }
+    };
+
+    const handleFotoRemove = async () => {
+        if (!worker) return;
+        setFotoSaving(true);
+        try {
+            const res = await workersApi.update(worker.personaId, { fotoPerfil: null } as any);
+            if (res.success) setWorker((prev) => (prev ? { ...prev, fotoPerfil: undefined } : prev));
+        } catch (err) {
+            console.error('Error quitando la foto:', err);
+        } finally {
+            setFotoSaving(false);
+        }
+    };
 
     const handleSaveVigilancia = async () => {
         if (!worker) return;
@@ -721,38 +777,42 @@ Generado por PrevencionApp
         <>
 
             <div className="page-content">
-                {/* ── Hero ── */}
-                <div className="wd-hero">
-                    <button className="wd-back" onClick={() => navigate('/personas')}>
-                        <LuChevronLeft size={14} /> Personas
-                    </button>
-                    <div className="wd-hero-main">
-                        <div className="wd-avatar">
-                            {(worker as any).fotoPerfil
-                                ? <img src={(worker as any).fotoPerfil} alt={worker.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                                : `${worker.nombre.charAt(0)}${worker.apellido?.charAt(0) ?? ''}`
-                            }
-                        </div>
-                        <div className="wd-hero-info">
-                            <div className="wd-hero-name">{worker.nombre} {worker.apellido}</div>
-                            <div className="wd-hero-meta">
-                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{worker.rut}</span>
-                                <span style={{ color: 'var(--surface-border)' }}>·</span>
-                                <span>{getCargoLabel(worker.cargo) || worker.cargo || 'Sin cargo'}</span>
-                                <span className={`badge badge-sm badge-${worker.habilitado ? 'success' : 'warning'}`} style={{ marginLeft: 4 }}>
-                                    {worker.habilitado ? 'Habilitado' : 'Pendiente enrolamiento'}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="wd-hero-actions">
-                        {canExportar && (
-                            <button className="btn btn-secondary btn-sm" onClick={downloadReport}>
-                                <LuDownload size={14} /> Exportar
-                            </button>
-                        )}
-                    </div>
-                </div>
+                {/* ── Credencial ── */}
+                {(() => {
+                    const obraActualId = selectedObraId || worker.obraIds?.[0] || null;
+                    const obraActual = obraActualId ? obrasInfo[obraActualId] : null;
+                    return (
+                        <IdentityPanel
+                            eyebrow="Ficha de persona"
+                            title={`${worker.nombre} ${worker.apellido || ''}`.trim()}
+                            image={(worker as any).fotoPerfil}
+                            fallback={`${worker.nombre[0] ?? ''}${worker.apellido?.[0] ?? ''}`.toUpperCase() || '?'}
+                            status={{
+                                label: worker.habilitado ? 'Habilitado' : 'Pendiente de enrolamiento',
+                                tone: worker.habilitado ? 'ok' : 'pending',
+                            }}
+                            meta={[
+                                { label: 'RUT', value: worker.rut, mono: true },
+                                { label: 'Cargo', value: getCargoLabel(worker.cargo) || worker.cargo || 'Sin cargo' },
+                                {
+                                    label: 'Obra actual',
+                                    value: obraActual?.nombre || obraActual?.codigo || 'Sin obra asignada',
+                                },
+                            ]}
+                            photo={canEditarDatos ? {
+                                onSelect: handleFotoSelect,
+                                onRemove: handleFotoRemove,
+                                saving: fotoSaving,
+                                success: fotoSuccess,
+                            } : undefined}
+                            actions={canExportar && (
+                                <button className="btn btn-secondary btn-sm" onClick={downloadReport}>
+                                    <LuDownload size={14} /> Exportar ficha
+                                </button>
+                            )}
+                        />
+                    );
+                })()}
 
                 {/* ── Tab nav ── */}
                 <div className="wd-tab-nav">
@@ -766,136 +826,118 @@ Generado por PrevencionApp
 
                 {/* ── TAB: ASIGNACIONES ── */}
                 {activeTab === 'asignaciones' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
 
-                        {/* Obra actual — banner contextual */}
-                        {(() => {
-                            const currentObraId = selectedObraId || worker.obraIds?.[0] || null;
-                            const currentObra = currentObraId ? obrasInfo[currentObraId] : null;
-                            if (!currentObraId) return null;
-                            return (
-                                <div className="wd-obra-banner">
-                                    <LuBuild size={15} style={{ color: '#006edc', flexShrink: 0 }} />
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Obra actual</span>
-                                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginTop: 1 }}>
-                                            {currentObra?.nombre || currentObra?.codigo || currentObraId}
-                                            {currentObra?.codigo && currentObra?.nombre && (
-                                                <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', marginLeft: 8 }}>{currentObra.codigo}</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <Link to="/personas" className="btn btn-ghost btn-sm" style={{ flexShrink: 0, fontSize: '0.78rem' }}>
-                                        Ver equipo
-                                    </Link>
-                                </div>
-                            );
-                        })()}
-
-                        {/* DS44 Onboarding checklist */}
+                        {/* Onboarding DS 44 */}
                         {ds44Checklist && (() => {
                             const pct = ds44Checklist.total > 0 ? Math.round((ds44Checklist.completed / ds44Checklist.total) * 100) : 0;
+                            const tono = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
                             return (
-                                <div className="wd-ds44-panel">
-                                    <div className="wd-ds44-header">
+                                <section className="idp-section">
+                                    <div className="idp-section-head">
                                         <div>
-                                            <div style={{ fontWeight: 700, fontSize: 'var(--text-base)', color: 'var(--text-primary)' }}>Onboarding DS44</div>
-                                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                                            <h2 className="idp-section-title">Onboarding DS 44</h2>
+                                            <div className="idp-section-sub">
                                                 {ds44Checklist.completed} de {ds44Checklist.total} ítems completados
                                             </div>
                                         </div>
-                                        <span className={`badge ${pct >= 80 ? 'badge-success' : pct >= 50 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.85rem', padding: '4px 12px' }}>
-                                            {pct}%
-                                        </span>
+                                        {/* El color de la barra ya dice el estado; el número solo lo precisa. */}
+                                        <span style={{ fontSize: 'var(--text-lg)', fontWeight: 700, color: tono }}>{pct}%</span>
                                     </div>
-                                    <div style={{ height: 6, borderRadius: 999, background: 'var(--surface-elevated)', overflow: 'hidden', margin: '0 var(--space-4)' }}>
-                                        <div style={{ width: `${pct}%`, height: '100%', background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444', transition: 'width 300ms' }} />
+
+                                    <div style={{ height: 6, borderRadius: 999, background: 'var(--surface-elevated)', overflow: 'hidden', marginBottom: 'var(--space-2)' }}>
+                                        <div style={{ width: `${pct}%`, height: '100%', background: tono, transition: 'width 300ms' }} />
                                     </div>
-                                    <div style={{ padding: 'var(--space-2) var(--space-4) var(--space-4)' }}>
-                                        {ds44Checklist.items.map((item) => (
-                                            <div key={item.key} className="wd-ds44-item">
-                                                <span style={{ flexShrink: 0 }}>
-                                                    {item.status === 'ok'
-                                                        ? <LuCircleCheck size={16} style={{ color: '#10b981' }} />
-                                                        : item.status === 'na'
-                                                        ? <LuCircleMinus size={16} style={{ color: 'var(--text-muted)' }} />
-                                                        : <LuClock size={16} style={{ color: item.status === 'subido' ? '#f59e0b' : 'var(--surface-border)' }} />
-                                                    }
-                                                </span>
-                                                <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{ fontSize: '0.85rem', fontWeight: item.status === 'ok' ? 400 : 500, color: item.status === 'ok' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                                                        {item.label}
+
+                                    {ds44Checklist.items.map((item) => (
+                                        <div key={item.key} className="wd-ds44-item">
+                                            <span style={{ flexShrink: 0 }}>
+                                                {item.status === 'ok'
+                                                    ? <LuCircleCheck size={16} style={{ color: '#10b981' }} />
+                                                    : item.status === 'na'
+                                                    ? <LuCircleMinus size={16} style={{ color: 'var(--text-muted)' }} />
+                                                    : <LuClock size={16} style={{ color: item.status === 'subido' ? '#f59e0b' : 'var(--surface-border)' }} />
+                                                }
+                                            </span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: '0.85rem', fontWeight: item.status === 'ok' ? 400 : 500, color: item.status === 'ok' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                                    {item.label}
+                                                </div>
+                                                {(item as any).articulo && (
+                                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                                        {(item as any).articulo}
+                                                        {(item as any).firmaInfo && <span style={{ color: '#f59e0b' }}> · {(item as any).firmaInfo}</span>}
                                                     </div>
-                                                    {(item as any).articulo && (
-                                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                                            {(item as any).articulo}
-                                                            {(item as any).firmaInfo && <span style={{ color: '#f59e0b' }}> · {(item as any).firmaInfo}</span>}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                    {item.status === 'pending' && item.kind === 'document' && (
-                                                        <>
-                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de subir</span>
-                                                            {canOnboarding && (
-                                                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)' }}>
-                                                                    {uploadingDocType === item.tipo ? <><LuClock size={11} /> Subiendo...</> : <><LuDownload size={11} /> Subir</>}
-                                                                    <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }} disabled={!!uploadingDocType}
-                                                                        onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }} />
-                                                                </label>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                    {item.status === 'subido' && (
-                                                        <>
-                                                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de firma</span>
-                                                            {canOnboarding && (
-                                                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '6px', border: '1px solid var(--surface-border)', fontSize: '0.75rem', cursor: 'pointer', background: 'var(--surface-elevated)', color: 'var(--text-primary)' }}>
-                                                                    {uploadingDocType === item.tipo ? <><LuClock size={11} /> Subiendo...</> : <><LuDownload size={11} /> Reemplazar</>}
-                                                                    <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }} disabled={!!uploadingDocType}
-                                                                        onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }} />
-                                                                </label>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                    {item.status === 'pending' && item.kind !== 'document' && (
-                                                        <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de firma</span>
-                                                    )}
-                                                    {item.status === 'ok' && <LuCircleCheck size={14} style={{ color: '#10b981' }} />}
-                                                </div>
+                                                )}
                                             </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                {item.status === 'pending' && item.kind === 'document' && (
+                                                    <>
+                                                        <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de subir</span>
+                                                        {canOnboarding && (
+                                                            <label className="wd-upload-chip">
+                                                                {uploadingDocType === item.tipo ? <><LuClock size={11} /> Subiendo…</> : <><LuDownload size={11} /> Subir</>}
+                                                                <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }} disabled={!!uploadingDocType}
+                                                                    onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }} />
+                                                            </label>
+                                                        )}
+                                                    </>
+                                                )}
+                                                {item.status === 'subido' && (
+                                                    <>
+                                                        <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de firma</span>
+                                                        {canOnboarding && (
+                                                            <label className="wd-upload-chip">
+                                                                {uploadingDocType === item.tipo ? <><LuClock size={11} /> Subiendo…</> : <><LuDownload size={11} /> Reemplazar</>}
+                                                                <input type="file" accept=".pdf,.doc,.docx" style={{ display: 'none' }} disabled={!!uploadingDocType}
+                                                                    onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); if (e.target) e.target.value = ''; }} />
+                                                            </label>
+                                                        )}
+                                                    </>
+                                                )}
+                                                {item.status === 'pending' && item.kind !== 'document' && (
+                                                    <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Pendiente de firma</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </section>
                             );
                         })()}
 
-                        {/* Asignar contenido — acceso rápido */}
-                        <div>
-                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 'var(--space-2)' }}>
-                                Asignar contenido
-                            </div>
-                            <div className="grid-collapse-mobile" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)' }}>
-                                {[
-                                    { icon: <LuFileText size={18} style={{ color: '#006edc' }} />, titulo: 'Documento', href: `/documents?workerRut=${encodeURIComponent(worker.rut)}`, color: '#006edc' },
-                                    { icon: <LuActivity size={18} style={{ color: '#10b981' }} />, titulo: 'Actividad', href: `/activities?workerRut=${encodeURIComponent(worker.rut)}`, color: '#10b981' },
-                                    { icon: <LuShieldCheck size={18} style={{ color: '#f59e0b' }} />, titulo: 'Encuesta', href: `/surveys?workerRut=${encodeURIComponent(worker.rut)}`, color: '#f59e0b' },
-                                ].map((item) => (
-                                    <Link key={item.titulo} to={item.href} className="wd-quick-card" style={{ '--qcard-color': item.color } as React.CSSProperties}>
-                                        {item.icon}
-                                        <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{item.titulo}</span>
-                                    </Link>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Obras asignadas — sección secundaria */}
-                        {worker.obraIds && worker.obraIds.length > 0 && (
-                            <div>
-                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 'var(--space-2)' }}>
-                                    Obras asignadas ({worker.obraIds.length})
+                        {/* Asignar contenido */}
+                        <section className="idp-section">
+                            <div className="idp-section-head">
+                                <div>
+                                    <h2 className="idp-section-title">Asignar contenido</h2>
+                                    <div className="idp-section-sub">Crea un documento, una actividad o una encuesta ya dirigida a esta persona.</div>
                                 </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            </div>
+                            <div className="wd-assign-row">
+                                <Link to={`/documents?workerRut=${encodeURIComponent(worker.rut)}`} className="btn btn-secondary btn-sm">
+                                    <LuFileText size={14} /> Documento
+                                </Link>
+                                <Link to={`/activities?workerRut=${encodeURIComponent(worker.rut)}`} className="btn btn-secondary btn-sm">
+                                    <LuActivity size={14} /> Actividad
+                                </Link>
+                                <Link to={`/surveys?workerRut=${encodeURIComponent(worker.rut)}`} className="btn btn-secondary btn-sm">
+                                    <LuShieldCheck size={14} /> Encuesta
+                                </Link>
+                            </div>
+                        </section>
+
+                        {/* Obras asignadas */}
+                        {worker.obraIds && worker.obraIds.length > 0 && (
+                            <section className="idp-section">
+                                <div className="idp-section-head">
+                                    <div>
+                                        <h2 className="idp-section-title">Obras asignadas</h2>
+                                        <div className="idp-section-sub">
+                                            {worker.obraIds.length} {worker.obraIds.length === 1 ? 'obra' : 'obras'} · avance de onboarding en cada una
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
                                     {(worker.obraIds as string[]).map((obraId) => {
                                         const info = obrasInfo[obraId];
                                         const onboardingEntry = (worker as any).onboardingDS44?.[obraId];
@@ -903,12 +945,11 @@ Generado por PrevencionApp
                                         const completed = items.filter((it: any) => it.doneAt).length;
                                         const total = items.length;
                                         const pct = total > 0 ? Math.round((completed / total) * 100) : null;
-                                        const isCurrent = obraId === (selectedObraId || worker.obraIds?.[0]);
                                         return (
-                                            <div key={obraId} className={`wd-obra-row${isCurrent ? ' wd-obra-row--current' : ''}`}>
+                                            <div key={obraId} className="wd-list-row">
                                                 <LuBuild size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>{info?.nombre || info?.codigo || obraId}</span>
+                                                    <span style={{ fontSize: '0.88rem', fontWeight: 500 }}>{info?.nombre || info?.codigo || obraId}</span>
                                                     {info?.codigo && info?.nombre && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 6 }}>{info.codigo}</span>}
                                                 </div>
                                                 {pct !== null && (
@@ -924,24 +965,25 @@ Generado por PrevencionApp
                                         );
                                     })}
                                 </div>
-                            </div>
+                            </section>
                         )}
 
                         {/* Historial de cumplimiento */}
-                        <div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                    Historial de cumplimiento
+                        <section className="idp-section">
+                            <div className="idp-section-head">
+                                <div>
+                                    <h2 className="idp-section-title">Historial de cumplimiento</h2>
+                                    <div className="idp-section-sub">
+                                        {signatures.length} {signatures.length === 1 ? 'firma registrada' : 'firmas registradas'}
+                                    </div>
                                 </div>
-                                <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>{signatures.length} registros</span>
                             </div>
                             {signatures.length === 0 ? (
-                                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                    <LuClock size={24} style={{ opacity: 0.2, margin: '0 auto var(--space-2)' }} />
-                                    <p style={{ margin: 0 }}>Sin actividad registrada aún.</p>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    Aún no hay firmas. Asigna un documento o una actividad para empezar el registro.
                                 </div>
                             ) : (
-                                <div className="table-container" style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                                <div className="table-container">
                                     <table className="table">
                                         <thead>
                                             <tr><th>Tipo</th><th>Documento / Actividad</th><th>Fecha</th><th>Estado</th></tr>
@@ -963,21 +1005,26 @@ Generado por PrevencionApp
                                     </table>
                                 </div>
                             )}
-                        </div>
+                        </section>
 
-                        {/* ── Historial de obras (auditoría) ── */}
+                        {/* Historial de obras (auditoría) */}
                         {Array.isArray(worker.historialAsignaciones) && worker.historialAsignaciones.length > 0 && (
-                            <div className="wd-side-card">
-                                <div className="wd-side-title">Historial de obras</div>
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <section className="idp-section">
+                                <div className="idp-section-head">
+                                    <div>
+                                        <h2 className="idp-section-title">Obras anteriores</h2>
+                                        <div className="idp-section-sub">Asignaciones cerradas, con su motivo de egreso</div>
+                                    </div>
+                                </div>
+                                <div>
                                     {worker.historialAsignaciones.slice().reverse().map((h, i) => {
                                         const oi = obrasInfo[h.obraId];
                                         const fmt = (d?: string | null) => d ? new Date(d).toLocaleDateString('es-CL') : '—';
                                         return (
-                                            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 'var(--space-3) 0', borderTop: i > 0 ? '1px solid var(--surface-border)' : 'none' }}>
+                                            <div key={i} className="wd-list-row">
                                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{oi?.nombre || oi?.codigo || h.obraId}</div>
-                                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                                                    <div style={{ fontWeight: 500, fontSize: '0.88rem' }}>{oi?.nombre || oi?.codigo || h.obraId}</div>
+                                                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 2 }}>
                                                         {(h.cargos || []).join(', ') || 'sin cargo'} · {fmt(h.fechaIngreso)} → {fmt(h.fechaEgreso)}
                                                     </div>
                                                 </div>
@@ -986,44 +1033,49 @@ Generado por PrevencionApp
                                         );
                                     })}
                                 </div>
-                            </div>
+                            </section>
                         )}
 
-                        {/* ── Currículum: cursos, evidencias y capacitaciones (para recapacitación) ── */}
-                        <div className="wd-side-card">
-                            <div className="wd-side-title">Currículum</div>
+                        {/* Currículum */}
+                        <section className="idp-section">
+                            <div className="idp-section-head">
+                                <div>
+                                    <h2 className="idp-section-title">Currículum</h2>
+                                    <div className="idp-section-sub">Lo que la persona acredita, más allá de la obra en la que esté</div>
+                                </div>
+                            </div>
 
-                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '4px 0 6px' }}>Cursos y certificaciones</div>
+                            <div className="idp-subhead">Cursos y certificaciones</div>
                             {Array.isArray(worker.cursos) && worker.cursos.length > 0 ? (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 'var(--space-3)' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                     {worker.cursos.map((c, i) => <span key={i} className="badge badge-sm badge-neutral">{c.nombre}</span>)}
                                 </div>
-                            ) : <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>Sin cursos registrados.</div>}
+                            ) : <div className="wd-empty-line">Sin cursos registrados.</div>}
 
-                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '4px 0 6px' }}>Evidencias vigentes</div>
+                            <div className="idp-subhead">Evidencias vigentes</div>
                             {Array.isArray(worker.evidencias) && worker.evidencias.length > 0 ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 'var(--space-3)' }}>
+                                <div>
                                     {worker.evidencias.map((e, i) => {
                                         const vencida = e.venceEn ? new Date(e.venceEn).getTime() < Date.now() : false;
                                         return (
-                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem' }}>
-                                                <span style={{ flex: 1, minWidth: 0 }}>{e.nombre || e.tipo}</span>
+                                            <div key={i} className="wd-list-row">
+                                                <span style={{ flex: 1, minWidth: 0, fontSize: '0.88rem' }}>{e.nombre || e.tipo}</span>
                                                 {e.venceEn && <span className={`badge badge-sm ${vencida ? 'badge-danger' : 'badge-success'}`}>{vencida ? 'Vencida' : 'Vigente'} · {new Date(e.venceEn).toLocaleDateString('es-CL')}</span>}
                                             </div>
                                         );
                                     })}
                                 </div>
-                            ) : <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>Sin evidencias registradas.</div>}
+                            ) : <div className="wd-empty-line">Sin evidencias registradas.</div>}
 
-                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '4px 0 6px' }}>Capacitaciones y actividades</div>
+                            <div className="idp-subhead">Capacitaciones y actividades</div>
                             {capacitaciones.length > 0 ? (
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div>
                                     {capacitaciones.map((c) => {
                                         const oi = c.obraId ? obrasInfo[c.obraId] : null;
                                         return (
-                                            <div key={c.activityId} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', borderTop: '1px solid var(--surface-border)' }}>
+                                            <div key={c.activityId} className="wd-list-row">
                                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                                    <div style={{ fontSize: '0.86rem', fontWeight: 500 }}>{c.subtipoDescripcion || c.tipoDescripcion || c.titulo}</div>
+                                                    <div style={{ fontSize: '0.88rem', fontWeight: 500 }}>{c.subtipoDescripcion || c.tipoDescripcion || c.titulo}</div>
                                                     <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 1 }}>
                                                         {c.fecha ? new Date(c.fecha).toLocaleDateString('es-CL') : '—'}
                                                         {oi && <> · {oi.nombre || oi.codigo}</>}
@@ -1034,14 +1086,14 @@ Generado por PrevencionApp
                                         );
                                     })}
                                 </div>
-                            ) : <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Sin capacitaciones registradas.</div>}
-                        </div>
+                            ) : <div className="wd-empty-line">Sin capacitaciones registradas.</div>}
+                        </section>
                     </div>
                 )}
 
                 {/* ── TAB: DATOS ── */}
                 {activeTab === 'datos' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
 
                     {/* Stats — fila inline sin cajas */}
                     {stats && (
@@ -1065,11 +1117,12 @@ Generado por PrevencionApp
                         </div>
                     )}
 
-                    {/* Info personal — grid 2 columnas sin card */}
-                    <div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
-                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                Información
+                    {/* Información personal */}
+                    <section className="idp-section">
+                        <div className="idp-section-head">
+                            <div>
+                                <h2 className="idp-section-title">Información</h2>
+                                <div className="idp-section-sub">Datos personales y de contacto</div>
                             </div>
                             {canEditarDatos && (
                                 <button className="btn btn-ghost btn-sm" type="button" onClick={openEditModal}>
@@ -1077,38 +1130,30 @@ Generado por PrevencionApp
                                 </button>
                             )}
                         </div>
-                        <div className="wd-info-grid">
-                            <div className="wd-info-field">
-                                <div className="wd-info-label">RUT</div>
-                                <div className="wd-info-value" style={{ fontFamily: 'var(--font-mono)' }}>{worker.rut}</div>
+                        <div className="idp-fields">
+                            <div className="idp-field">
+                                <div className="idp-field-label">Correo</div>
+                                <div className="idp-field-value">{worker.email || <span className="idp-field-value--empty">Sin correo</span>}</div>
                             </div>
-                            <div className="wd-info-field">
-                                <div className="wd-info-label">Correo</div>
-                                <div className="wd-info-value">{worker.email || <span style={{ color: 'var(--text-muted)' }}>Sin correo</span>}</div>
+                            <div className="idp-field">
+                                <div className="idp-field-label">Rol de sistema</div>
+                                <div className="idp-field-value">{rolLabel(worker.rol)}</div>
                             </div>
-                            <div className="wd-info-field">
-                                <div className="wd-info-label">Cargo</div>
-                                <div className="wd-info-value">{getCargoLabel(worker.cargo) || <span style={{ color: 'var(--text-muted)' }}>No asignado</span>}</div>
+                            <div className="idp-field">
+                                <div className="idp-field-label">Teléfono</div>
+                                <div className="idp-field-value">{(worker as any).telefono || <span className="idp-field-value--empty">Sin teléfono</span>}</div>
                             </div>
-                            <div className="wd-info-field">
-                                <div className="wd-info-label">Rol de sistema</div>
-                                <div className="wd-info-value">{rolLabel(worker.rol)}</div>
+                            <div className="idp-field">
+                                <div className="idp-field-label">Fecha de nacimiento</div>
+                                <div className="idp-field-value">{(worker as any).fechaNacimiento || <span className="idp-field-value--empty">—</span>}</div>
                             </div>
-                            <div className="wd-info-field">
-                                <div className="wd-info-label">Teléfono</div>
-                                <div className="wd-info-value">{(worker as any).telefono || <span style={{ color: 'var(--text-muted)' }}>Sin teléfono</span>}</div>
+                            <div className="idp-field">
+                                <div className="idp-field-label">Nivel escolar</div>
+                                <div className="idp-field-value">{(worker as any).nivelEscolar || <span className="idp-field-value--empty">—</span>}</div>
                             </div>
-                            <div className="wd-info-field">
-                                <div className="wd-info-label">Fecha de nacimiento</div>
-                                <div className="wd-info-value">{(worker as any).fechaNacimiento || <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
-                            </div>
-                            <div className="wd-info-field">
-                                <div className="wd-info-label">Nivel escolar</div>
-                                <div className="wd-info-value">{(worker as any).nivelEscolar || <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
-                            </div>
-                            <div className="wd-info-field">
-                                <div className="wd-info-label">Cursos</div>
-                                <div className="wd-info-value">
+                            <div className="idp-field">
+                                <div className="idp-field-label">Cursos</div>
+                                <div className="idp-field-value">
                                     {(() => {
                                         const cursos = (worker as any).cursos;
                                         const list = Array.isArray(cursos)
@@ -1116,33 +1161,42 @@ Generado por PrevencionApp
                                             : [];
                                         return list.length > 0
                                             ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{list.map((c: string, i: number) => <span key={i} className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>{c}</span>)}</div>
-                                            : <span style={{ color: 'var(--text-muted)' }}>Sin cursos registrados</span>;
+                                            : <span className="idp-field-value--empty">Sin cursos registrados</span>;
                                     })()}
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </section>
 
                     {/* Contacto de emergencia */}
                     {(() => {
                         const ce = (worker as any).contactoEmergencia || {};
                         const hasContacto = ce.nombre || ce.telefono || ce.relacion;
                         return (
-                            <div className="wd-section-card">
-                                <div className="wd-section-head">
+                            <div className="idp-section">
+                                <div className="idp-section-head">
                                     <div>
-                                        <div style={{ fontWeight: 700 }}>Contacto de emergencia</div>
-                                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>A quién avisar ante una emergencia</div>
+                                        <h2 className="idp-section-title">Contacto de emergencia</h2>
+                                        <div className="idp-section-sub">A quién avisar ante una emergencia</div>
                                     </div>
                                 </div>
                                 {hasContacto ? (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '6px 12px', fontSize: '0.88rem', padding: 'var(--space-4)' }}>
-                                        <div style={{ color: 'var(--text-muted)' }}>Nombre</div><div>{ce.nombre || '—'}</div>
-                                        <div style={{ color: 'var(--text-muted)' }}>Teléfono</div><div>{ce.telefono || '—'}</div>
-                                        <div style={{ color: 'var(--text-muted)' }}>Relación</div><div>{ce.relacion || '—'}</div>
+                                    <div className="idp-fields">
+                                        {[
+                                            { label: 'Nombre', value: ce.nombre },
+                                            { label: 'Teléfono', value: ce.telefono },
+                                            { label: 'Relación', value: ce.relacion },
+                                        ].map(({ label, value }) => (
+                                            <div key={label} className="idp-field">
+                                                <div className="idp-field-label">{label}</div>
+                                                <div className="idp-field-value">
+                                                    {value || <span className="idp-field-value--empty">—</span>}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 ) : (
-                                    <div style={{ padding: 'var(--space-4)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                                         Sin contacto de emergencia registrado.
                                     </div>
                                 )}
@@ -1151,11 +1205,11 @@ Generado por PrevencionApp
                     })()}
 
                     {/* Vigilancia de Salud */}
-                    <div className="wd-section-card">
-                        <div className="wd-section-head">
+                    <div className="idp-section">
+                        <div className="idp-section-head">
                             <div>
-                                <div style={{ fontWeight: 700 }}>Vigilancia de Salud</div>
-                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Art. 67/73</div>
+                                <h2 className="idp-section-title">Vigilancia de salud</h2>
+                                <div className="idp-section-sub">Art. 67/73</div>
                             </div>
                             {canVigilancia && (!vigEditing ? (
                                 <button className="btn btn-ghost btn-sm" type="button" onClick={() => setVigEditing(true)}>Editar</button>
@@ -1170,16 +1224,31 @@ Generado por PrevencionApp
                             ))}
                         </div>
                         {!vigEditing ? (
-                            <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '6px 12px', fontSize: '0.88rem', padding: 'var(--space-4)' }}>
-                                <div style={{ color: 'var(--text-muted)' }}>En vigilancia</div>
-                                <div><span className={`badge ${vigForm.enVigilancia ? 'badge-warning' : 'badge-secondary'}`}>{vigForm.enVigilancia ? 'Sí' : 'No'}</span></div>
-                                <div style={{ color: 'var(--text-muted)' }}>Protocolos</div><div>{vigForm.protocolos || '—'}</div>
-                                <div style={{ color: 'var(--text-muted)' }}>Último examen</div><div>{vigForm.fechaUltimoExamen || '—'}</div>
-                                <div style={{ color: 'var(--text-muted)' }}>Aptitud laboral</div><div>{vigForm.aptitudLaboral || '—'}</div>
-                                <div style={{ color: 'var(--text-muted)' }}>Restricciones</div><div>{vigForm.restricciones || '—'}</div>
+                            <div className="idp-fields">
+                                <div className="idp-field">
+                                    <div className="idp-field-label">En vigilancia</div>
+                                    <div className="idp-field-value">
+                                        <span className={`badge ${vigForm.enVigilancia ? 'badge-warning' : 'badge-secondary'}`}>
+                                            {vigForm.enVigilancia ? 'Sí' : 'No'}
+                                        </span>
+                                    </div>
+                                </div>
+                                {[
+                                    { label: 'Protocolos', value: vigForm.protocolos },
+                                    { label: 'Último examen', value: vigForm.fechaUltimoExamen },
+                                    { label: 'Aptitud laboral', value: vigForm.aptitudLaboral },
+                                    { label: 'Restricciones', value: vigForm.restricciones },
+                                ].map(({ label, value }) => (
+                                    <div key={label} className="idp-field">
+                                        <div className="idp-field-label">{label}</div>
+                                        <div className="idp-field-value">
+                                            {value || <span className="idp-field-value--empty">—</span>}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-4)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <input type="checkbox" checked={vigForm.enVigilancia} onChange={(e) => setVigForm({ ...vigForm, enVigilancia: e.target.checked })} />
                                     <span>En programa de vigilancia de la salud</span>
@@ -1195,11 +1264,11 @@ Generado por PrevencionApp
                     </div>
 
                     {/* EPP historial */}
-                    <div className="wd-section-card">
-                        <div className="wd-section-head">
+                    <div className="idp-section">
+                        <div className="idp-section-head">
                             <div>
-                                <div style={{ fontWeight: 700 }}>Historial de EPP</div>
-                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Art. 13 — entregas y reposiciones</div>
+                                <h2 className="idp-section-title">Historial de EPP</h2>
+                                <div className="idp-section-sub">Art. 13 — entregas y reposiciones</div>
                             </div>
                             {canValidarEpp && (
                                 <button className="btn btn-sm" type="button" onClick={() => { resetEppForm(); setEppModalOpen(true); }}
@@ -1208,7 +1277,7 @@ Generado por PrevencionApp
                                 </button>
                             )}
                         </div>
-                        <div style={{ padding: '0 var(--space-4) var(--space-4)' }}>
+                        <div>
                             {eppHistorial.length === 0 ? (
                                 <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Sin entregas de EPP registradas.</div>
                             ) : (
@@ -1283,42 +1352,6 @@ Generado por PrevencionApp
             <style>{`
                 .page-content { padding-bottom: var(--space-8); }
 
-                /* ── Hero ── */
-                .wd-hero {
-                    position: relative;
-                    padding: var(--space-5) 0 var(--space-4);
-                    border-bottom: 1px solid var(--surface-border);
-                    margin-bottom: var(--space-1);
-                }
-                /* Línea de acento estilo PageHeader (azul → naranja de marca) */
-                .wd-hero::after {
-                    content: '';
-                    position: absolute;
-                    bottom: -1px; left: 0;
-                    width: 72px; height: 3px;
-                    border-radius: 3px;
-                    background: linear-gradient(90deg, #006edc 0%, #df3601 100%);
-                }
-                .wd-back {
-                    display: inline-flex; align-items: center; gap: 4px;
-                    font-size: 0.78rem; color: var(--text-muted);
-                    background: none; border: none; cursor: pointer; padding: 0 0 var(--space-3) 0;
-                    transition: color var(--transition-fast);
-                }
-                .wd-back:hover { color: var(--text-primary); }
-                .wd-hero-main { display: flex; align-items: center; gap: var(--space-4); }
-                .wd-avatar {
-                    width: 56px; height: 56px; border-radius: 50%;
-                    background: rgba(0,41,82,0.1); color: #002952;
-                    font-size: 1.3rem; font-weight: 800;
-                    display: flex; align-items: center; justify-content: center;
-                    flex-shrink: 0; overflow: hidden; letter-spacing: -0.5px;
-                }
-                .wd-hero-info { flex: 1; min-width: 0; }
-                .wd-hero-name { font-size: var(--text-xl); font-weight: 800; color: var(--text-primary); line-height: 1.2; }
-                .wd-hero-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; font-size: 0.85rem; color: var(--text-muted); }
-                .wd-hero-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
-
                 /* ── Tabs ── */
                 .wd-tab-nav {
                     display: flex; gap: 0;
@@ -1339,75 +1372,36 @@ Generado por PrevencionApp
                 .wd-tab:hover { color: var(--text-primary); }
                 .wd-tab--active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
-                /* ── Datos: stats row ── */
+                /* ── Datos: cifras ── */
                 .wd-stats-row {
                     display: flex; gap: 0;
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-lg);
-                    overflow: hidden;
+                    border-top: 1px solid var(--surface-border);
+                    border-bottom: 1px solid var(--surface-border);
                 }
                 .wd-stat {
-                    flex: 1; padding: var(--space-4) var(--space-3);
-                    text-align: center;
-                    border-right: 1px solid var(--surface-border);
+                    flex: 1; padding: var(--space-4) var(--space-5) var(--space-4) 0;
                 }
-                .wd-stat:last-child { border-right: none; }
-                .wd-stat-val { font-size: var(--text-xl); font-weight: 800; color: #002952; line-height: 1; }
+                .wd-stat + .wd-stat {
+                    padding-left: var(--space-5);
+                    border-left: 1px solid var(--surface-border);
+                }
+                .wd-stat-val {
+                    font-size: var(--text-2xl); font-weight: 700;
+                    color: var(--text-primary); line-height: 1;
+                    letter-spacing: -0.02em;
+                }
                 .wd-stat-lab { font-size: 0.7rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
 
-                /* ── Datos: info grid ── */
-                .wd-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
-                .wd-info-field { padding: var(--space-3) 0; border-bottom: 1px solid var(--surface-border); }
-                .wd-info-field:nth-child(odd) { padding-right: var(--space-4); }
-                .wd-info-field:nth-child(even) { padding-left: var(--space-4); border-left: 1px solid var(--surface-border); }
-                .wd-info-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 3px; }
-                .wd-info-value { font-size: 0.88rem; color: var(--text-primary); font-weight: 500; }
-
-                /* ── Section card (vigilancia, EPP) ── */
-                .wd-section-card { border: 1px solid var(--surface-border); border-radius: var(--radius-lg); overflow: hidden; }
-                .wd-section-head {
-                    display: flex; align-items: center; justify-content: space-between;
-                    padding: var(--space-4);
-                    border-bottom: 1px solid var(--surface-border);
-                    background: var(--surface-elevated);
-                }
-
-                /* ── Asignaciones: obra banner ── */
-                .wd-obra-banner {
+                /* ── Asignaciones: filas de lista ──
+                   Mismo recurso que la rejilla de campos: el filete separa, no la
+                   caja. Sirve igual para obras, evidencias y capacitaciones. */
+                .wd-list-row {
                     display: flex; align-items: center; gap: var(--space-3);
-                    padding: var(--space-3) var(--space-4);
-                    border-left: 3px solid #006edc;
-                    background: rgba(0,110,220,0.04);
-                    border-radius: 0 var(--radius-md) var(--radius-md) 0;
-                }
-
-                /* ── Tarjetas laterales (historial de obras, currículum) ── */
-                .wd-side-card {
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-lg);
-                    background: var(--surface-card);
-                    padding: var(--space-4) var(--space-5);
-                }
-                .wd-side-title {
-                    font-weight: 700;
-                    font-size: var(--text-base);
-                    color: var(--text-primary);
-                    margin-bottom: var(--space-3);
-                }
-
-                /* ── DS44 panel ── */
-                .wd-ds44-panel {
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-lg);
-                    overflow: hidden;
-                }
-                .wd-ds44-header {
-                    display: flex; align-items: center; justify-content: space-between;
-                    padding: var(--space-4);
+                    padding: 10px 0;
                     border-bottom: 1px solid var(--surface-border);
-                    background: var(--surface-elevated);
-                    margin-bottom: var(--space-3);
                 }
+                .wd-list-row:last-child { border-bottom: none; }
+
                 .wd-ds44-item {
                     display: flex; align-items: center; gap: var(--space-2);
                     padding: 8px 0;
@@ -1415,29 +1409,20 @@ Generado por PrevencionApp
                 }
                 .wd-ds44-item:last-child { border-bottom: none; }
 
-                /* ── Quick assign cards ── */
-                .wd-quick-card {
-                    display: flex; align-items: center; gap: var(--space-2);
-                    padding: var(--space-3) var(--space-4);
-                    border: 1.5px solid var(--surface-border);
-                    border-radius: var(--radius-md);
-                    background: var(--surface); color: var(--text-primary);
-                    text-decoration: none; font-size: 0.85rem; font-weight: 600;
-                    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+                /* Subir archivo dentro de un ítem: control pequeño, no botón pleno. */
+                .wd-upload-chip {
+                    display: inline-flex; align-items: center; gap: 4px;
+                    padding: 2px 8px; border-radius: var(--radius-sm);
+                    border: 1px solid var(--surface-border);
+                    background: var(--surface-elevated); color: var(--text-primary);
+                    font-size: 0.75rem; cursor: pointer;
+                    transition: border-color var(--transition-fast);
                 }
-                .wd-quick-card:hover {
-                    border-color: var(--qcard-color, var(--accent));
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-                }
+                .wd-upload-chip:hover { border-color: var(--accent); }
 
-                /* ── Obras asignadas (secondary) ── */
-                .wd-obra-row {
-                    display: flex; align-items: center; gap: var(--space-2);
-                    padding: 7px var(--space-2); border-radius: var(--radius-sm);
-                    transition: background var(--transition-fast);
-                }
-                .wd-obra-row:hover { background: var(--surface-elevated); }
-                .wd-obra-row--current { background: rgba(0,110,220,0.05); }
+                .wd-assign-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+
+                .wd-empty-line { font-size: 0.85rem; color: var(--text-muted); }
 
                 /* ── Tables ── */
                 .table-container { overflow-x: auto; }
@@ -1471,8 +1456,6 @@ Generado por PrevencionApp
                 @media (max-width: 600px) {
                     .wd-stats-row { flex-wrap: wrap; }
                     .wd-stat { flex: 1 1 45%; border-right: 1px solid var(--surface-border); }
-                    .wd-info-grid { grid-template-columns: 1fr; }
-                    .wd-info-field:nth-child(even) { border-left: none; padding-left: 0; }
                 }
             `}</style>
 

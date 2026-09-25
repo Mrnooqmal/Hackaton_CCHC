@@ -763,3 +763,318 @@
     display: inline-flex;
     align-items: center;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Ficha de persona — cabecera de identidad + rejilla de datos        */
+/*                                                                     */
+/*  Lenguaje común de /personas/:rut y /settings: las dos describen a   */
+/*  una persona, así que las dos abren con la misma credencial y usan   */
+/*  la misma rejilla de campos y las mismas secciones debajo.           */
+/* ------------------------------------------------------------------ */
+
+/* ── Credencial ────────────────────────────────────────────────────── */
+/* Sangrado idéntico al de .ui-page-header--banner: la credencial ocupa
+   el lugar del encabezado, así que tiene que alinear con él al píxel. */
+.idp {
+    --banner-bleed: calc(var(--space-6) + var(--space-6));
+    position: relative;
+    margin: calc(-1 * var(--space-6)) calc(-1 * var(--banner-bleed)) var(--space-6);
+    padding: var(--space-6) var(--banner-bleed) calc(var(--space-6) + 3px);
+    background: var(--surface-card);
+}
+.idp::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--cchc-accent-line);
+}
+
+
+.idp-main {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-6);
+}
+
+/* ── Retrato de documento ──────────────────────────────────────────── */
+/* Rectángulo 4:5 con passepartout, no un círculo: el referente es la foto
+   de una credencial de obra, no un avatar de perfil. */
+.idp-portrait {
+    flex-shrink: 0;
+    width: 132px;
+    padding: 4px;
+    border: 1px solid var(--surface-border);
+    border-radius: 14px;
+    background: var(--surface-elevated);
+    transition: border-color var(--transition-fast);
+}
+.idp-portrait--landscape { width: 215px; }
+.idp-portrait--landscape .idp-portrait-inner { aspect-ratio: 4 / 3; }
+.idp-portrait--editable { cursor: pointer; }
+.idp-portrait--editable:hover,
+.idp-portrait--editable:focus-visible { border-color: var(--accent); }
+.idp-portrait-inner {
+    position: relative;
+    aspect-ratio: 4 / 5;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--accent-tint);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.idp-portrait-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.idp-portrait-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.4rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+}
+.idp-portrait-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    background: rgba(0, 20, 41, 0.62);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    pointer-events: none;
+}
+.idp-portrait-overlay.is-visible { opacity: 1; }
+
+/* ── Identidad ─────────────────────────────────────────────────────── */
+.idp-body {
+    flex: 1;
+    min-width: 0;
+    padding-top: var(--space-1);
+}
+.idp-eyebrow {
+    display: block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: var(--space-2);
+}
+/* El nombre ancla la credencial por tamaño y peso, no por cambiar de familia.
+   Roboto sólo carga 400/500/700: un 600 se sintetizaría. */
+.idp-name {
+    font-size: clamp(1.45rem, 1.1rem + 1.5vw, 1.9rem);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin: 0;
+}
+.idp-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: var(--space-3);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.idp-status::before {
+    content: '';
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+.idp-status--ok { color: var(--success-500); }
+.idp-status--pending { color: var(--warning-500); }
+.idp-status--neutral { color: var(--text-muted); }
+
+/* ── Tira de datos ─────────────────────────────────────────────────── */
+/* Los filetes verticales separan campos de un documento; no hay orden ni
+   jerarquía entre ellos, así que no van numerados ni jerarquizados. */
+.idp-strip {
+    display: flex;
+    flex-wrap: wrap;
+    margin: var(--space-4) 0 0;
+    border-top: 1px solid var(--surface-border);
+    padding-top: var(--space-3);
+}
+.idp-strip-item { padding-right: var(--space-5); }
+.idp-strip-item + .idp-strip-item {
+    padding-left: var(--space-5);
+    border-left: 1px solid var(--surface-border);
+}
+.idp-strip-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.idp-strip-value {
+    margin: 3px 0 0;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+}
+.idp-strip-value--mono {
+    font-family: var(--font-mono);
+    letter-spacing: 0.01em;
+}
+
+.idp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+}
+.idp-remove { color: var(--text-muted); }
+
+.idp-spinner {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    animation: idpSpin 0.7s linear infinite;
+}
+@keyframes idpSpin { to { transform: rotate(360deg); } }
+
+/* ── Rejilla de campos ─────────────────────────────────────────────── */
+/* Dos columnas separadas por filete, una en móvil. Es la rejilla densa que
+   pide un expediente largo, y sirve igual para los seis campos de la cuenta
+   propia. */
+.idp-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--space-6);
+}
+.idp-field {
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--surface-border);
+    min-width: 0;
+}
+.idp-field--wide { grid-column: 1 / -1; }
+.idp-field-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+.idp-field-value {
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+.idp-field-value--mono { font-family: var(--font-mono); font-size: 0.88rem; }
+.idp-field-value--empty { color: var(--text-muted); font-weight: 400; }
+.idp-field-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+/* La acción de editar aparece al apuntar el campo; con teclado, al enfocarla. */
+.idp-field-action {
+    opacity: 0;
+    flex-shrink: 0;
+    gap: 5px;
+    color: var(--text-muted);
+    transition: opacity var(--transition-fast);
+}
+.idp-field:hover .idp-field-action,
+.idp-field-action:focus-visible { opacity: 1; }
+
+/* ── Secciones ─────────────────────────────────────────────────────── */
+/* Sin caja: el título lleva la marca de acento que el sistema ya usa para
+   encabezar secciones (.dash-panel-title), y el contenido va directo sobre el
+   lienzo. Encajonar cada sección metía dos costuras horizontales por bloque y
+   competía con los filetes de la rejilla, que son los que estructuran de
+   verdad. Lo que separa una sección de la siguiente es el aire. */
+.idp-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-4);
+}
+.idp-section-title {
+    position: relative;
+    padding-left: 13px;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+.idp-section-title::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
+    background: var(--accent);
+}
+/* Agrupa dentro de una sección sin abrir otro nivel de encabezado. */
+.idp-subhead {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: var(--space-5) 0 var(--space-2);
+}
+.idp-subhead:first-of-type { margin-top: 0; }
+
+.idp-section-sub {
+    padding-left: 13px;
+    margin-top: 3px;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+/* ── Responsive ────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+    .idp { --banner-bleed: calc(var(--space-4) + var(--space-6)); }
+}
+@media (max-width: 768px) {
+    .idp { --banner-bleed: calc(var(--space-4) + var(--space-2)); }
+    .idp-fields { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+    .idp {
+        margin-top: calc(-1 * var(--space-4));
+        margin-bottom: var(--space-4);
+        padding-top: var(--space-5);
+    }
+    .idp-main { gap: var(--space-4); }
+    .idp-portrait { width: 96px; }
+    .idp-portrait--landscape { width: 132px; }
+    .idp-portrait-fallback { font-size: 1.9rem; }
+    /* Los filetes verticales no sobreviven al salto de línea. */
+    .idp-strip { gap: var(--space-3) 0; }
+    .idp-strip-item { flex: 1 0 45%; padding-right: var(--space-3); }
+    .idp-strip-item + .idp-strip-item { padding-left: 0; border-left: none; }
+    /* Al apuntar con el dedo no hay hover que revele la acción. */
+    .idp-field-action { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .idp-spinner { animation-duration: 1.4s; }
+}

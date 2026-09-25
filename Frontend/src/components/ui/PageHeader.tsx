@@ -160,12 +160,14 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           flex-shrink: 0;
         }
         /* Sangrado por breakpoint (main-content + page-content):
-           24+24 → 16+24 (≤1024) → 16+16 (≤768) → 12+8 (≤480). */
+           24+24 → 16+24 (≤1024) → 16+8 (≤768). Bajo 768 el padding lateral de
+           .page-content baja a --space-2, no a --space-4: calcularlo con el
+           valor equivocado desbordaba el banner 8px en teléfono. */
         @media (max-width: 1024px) {
           .ui-page-header--banner { --banner-bleed: calc(var(--space-4) + var(--space-6)); }
         }
         @media (max-width: 768px) {
-          .ui-page-header--banner { --banner-bleed: calc(var(--space-4) + var(--space-4)); }
+          .ui-page-header--banner { --banner-bleed: calc(var(--space-4) + var(--space-2)); }
         }
         @media (max-width: 640px) {
           /* Sólo espaciado vertical: el horizontal lo controla --banner-bleed */
@@ -177,9 +179,7 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           }
           .ui-page-header-actions { width: 100%; justify-content: flex-start; }
         }
-        @media (max-width: 480px) {
-          .ui-page-header--banner { --banner-bleed: calc(var(--space-3) + var(--space-2)); }
-        }
+
       `}</style>
     </div>
   );

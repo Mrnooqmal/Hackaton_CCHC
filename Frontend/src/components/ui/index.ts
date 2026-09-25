@@ -33,6 +33,9 @@ export type { CredentialCardProps } from './CredentialCard';
 export { default as PageHeader } from './PageHeader';
 export type { PageHeaderProps } from './PageHeader';
 
+export { default as IdentityPanel } from './IdentityPanel';
+export type { IdentityPanelProps, IdentityMetaItem, IdentityPhotoControl } from './IdentityPanel';
+
 export { default as Stepper } from './Stepper';
 export type { StepperProps, StepperStep } from './Stepper';
 

@@ -25,6 +25,19 @@ const SIN_CUADRILLA_CONTAINER = '__sin_cuadrilla__';
 const initials = (nombre: string, apellido?: string) =>
     `${nombre[0] ?? ''}${apellido?.[0] ?? nombre[1] ?? ''}`.toUpperCase();
 
+/** Retrato de la persona; las iniciales son el respaldo cuando no hay foto. */
+function PersonaAvatar({ w, className, onClick, title }: {
+    w: any; className: string; onClick?: () => void; title?: string;
+}) {
+    return (
+        <div className={className} onClick={onClick} title={title}>
+            {w.fotoPerfil
+                ? <img src={w.fotoPerfil} alt="" className="eq-avatar-img" />
+                : initials(w.nombre, w.apellido)}
+        </div>
+    );
+}
+
 const norm = (s: string) =>
     String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
@@ -902,9 +915,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 onDragEnd={isDraggable ? handleDragEnd : undefined}
                 onClick={handleCardClick}
             >
-                <div className="eq2-card-avatar">
-                    {initials(w.nombre, w.apellido)}
-                </div>
+                <PersonaAvatar w={w} className="eq2-card-avatar" />
                 <span className="eq2-card-name">{w.nombre} {w.apellido || ''}</span>
                 {isSup && <span className="eq2-sup-badge">Supervisor</span>}
                 <span className="eq2-card-rut">{w.rut}</span>
@@ -935,7 +946,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 onDragEnd={handleDragEnd}
                 onClick={handleClick}
             >
-                <div className="eq2-card-avatar">{initials(w.nombre, w.apellido)}</div>
+                <PersonaAvatar w={w} className="eq2-card-avatar" />
                 <span className="eq2-card-name">{w.nombre} {w.apellido || ''}</span>
                 <span className="eq2-card-rut">{w.rut}</span>
                 <span className="eq2-card-cargo">{w.rolNombre || w.rol || '—'}</span>
@@ -963,7 +974,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 onClick={handleClick}
             >
                 <span className="eq2-row-drag" title="Arrastra a un equipo">⠿</span>
-                <div className="eq-worker-avatar">{initials(w.nombre, w.apellido)}</div>
+                <PersonaAvatar w={w} className="eq-worker-avatar" />
                 <div className="eq-prow-info">
                     <span className="eq-worker-name">{w.nombre} {w.apellido || ''}</span>
                     <span className="eq-worker-rut">{w.rut} · {w.rolNombre || w.rol}</span>
@@ -1013,12 +1024,11 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         </div>
                     )}
 
-                    <div
+                    <PersonaAvatar
+                        w={w}
                         className={`eq2-row-avatar${isSup ? ' eq2-row-avatar--sup' : ''}`}
                         onClick={() => navigate(`/personas/${encodeURIComponent(w.rut)}`)}
-                    >
-                        {initials(w.nombre, w.apellido)}
-                    </div>
+                    />
 
                     <div className="eq2-row-info" onClick={() => navigate(`/personas/${encodeURIComponent(w.rut)}`)}>
                         <span className="eq2-row-name">
@@ -1327,9 +1337,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                                     {inactiveAssigned.map((w) => (
                                         <div key={w.personaId} className="eq2-row eq2-row--inactive">
                                             <div className="eq2-row-bar">
-                                                <div className="eq2-row-avatar eq2-row-avatar--inactive">
-                                                    {initials(w.nombre, w.apellido)}
-                                                </div>
+                                                <PersonaAvatar w={w} className="eq2-row-avatar eq2-row-avatar--inactive" />
                                                 <div className="eq2-row-info">
                                                     <span className="eq2-row-name">{w.nombre} {w.apellido || ''}</span>
                                                     <span className="eq2-row-rut">{w.rut}</span>
@@ -1623,9 +1631,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                                     await handleAddToContainer(w, sup.personaId);
                                 }}
                             >
-                                <div className="eq-team-icon eq-team-icon--avatar">
-                                    {initials(sup.nombre, sup.apellido)}
-                                </div>
+                                <PersonaAvatar w={sup} className="eq-team-icon eq-team-icon--avatar" />
                                 <div className="eq-team-info">
                                     <span className="eq-team-name">{sup.nombre} {sup.apellido || ''}</span>
                                     <span className="eq-team-meta">Cuadrilla · {cuadrillaDe(sup.personaId).length} persona{cuadrillaDe(sup.personaId).length !== 1 ? 's' : ''}</span>
@@ -1926,11 +1932,14 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 /* ── Grid layout ─────────────────────────────────────────── */
                 .eq2-crew-grid {
                     display: grid;
-                    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                    grid-template-columns: repeat(4, 1fr);
                     gap: 12px;
                     padding: var(--space-4);
                 }
-                @media (max-width: 640px) {
+                @media (max-width: 900px) {
+                    .eq2-crew-grid { grid-template-columns: repeat(3, 1fr); }
+                }
+                @media (max-width: 580px) {
                     .eq2-crew-grid { grid-template-columns: repeat(2, 1fr); }
                 }
 
@@ -1938,7 +1947,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 .eq2-card {
                     position: relative;
                     display: flex; flex-direction: column; align-items: center; text-align: center;
-                    padding: 20px 14px 14px;
+                    padding: 24px 16px 16px;
                     border-radius: 12px; border: 1px solid var(--surface-border);
                     background: var(--surface-card);
                     cursor: pointer; user-select: none;
@@ -1965,25 +1974,32 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
                 /* Card avatar */
                 .eq2-card-avatar {
-                    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+                    width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
                     display: flex; align-items: center; justify-content: center;
-                    font-weight: 700; font-size: 18px; text-transform: uppercase;
+                    font-weight: 700; font-size: 21px; text-transform: uppercase;
                     background: rgba(0,110,220,0.12); color: var(--accent-text, #4d9fff);
                     border: 1.5px solid rgba(0,110,220,0.2);
+                    overflow: hidden;
                 }
+
+                /* La foto cubre el círculo; el borde del avatar la enmarca. */
+                .eq-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
                 /* Card text */
                 .eq2-card-name {
-                    font-size: 13px; font-weight: 600; color: var(--text-primary);
-                    line-height: 1.35; word-break: break-word; margin: 10px 0 4px; width: 100%;
+                    font-size: 13.5px; font-weight: 600; color: var(--text-primary);
+                    line-height: 1.35; word-break: break-word; margin: 12px 0 4px; width: 100%;
                 }
                 .eq2-card-rut {
-                    font-family: var(--font-mono, monospace); font-size: 10px;
+                    font-family: var(--font-mono, monospace); font-size: 10.5px;
                     color: var(--text-muted); letter-spacing: 0.04em;
                 }
                 .eq2-card-cargo {
                     font-size: 11px; color: var(--text-secondary);
-                    margin-top: 10px; padding-top: 9px;
+                    /* Al pie de la tarjeta: la del supervisor lleva una línea más
+                       (su distintivo) y sin esto el cargo quedaba desalineado del
+                       resto de la fila. */
+                    margin-top: auto; padding-top: 10px;
                     border-top: 1px solid var(--surface-border);
                     width: 100%; word-break: break-word; line-height: 1.4;
                 }
@@ -2030,6 +2046,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                     font-weight: 700; font-size: var(--text-xs); text-transform: uppercase;
                     background: rgba(0,110,220,0.12); color: var(--accent-text, #4d9fff);
                     border: 1.5px solid rgba(0,110,220,0.2); cursor: pointer;
+                    overflow: hidden;
                 }
                 .eq2-row-avatar--sup {
                     width: 38px; height: 38px; font-size: var(--text-sm);
@@ -2286,6 +2303,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                     font-weight: 700; font-size: var(--text-xs); text-transform: uppercase;
                     background: rgba(0,110,220,0.12); color: var(--accent-text, #4d9fff);
                     border: 1.5px solid rgba(0,110,220,0.2);
+                    overflow: hidden;
                 }
                 .eq-worker-name { font-weight: 500; font-size: var(--text-sm); color: var(--text-primary); display: block; }
                 .eq-worker-rut { font-size: var(--text-xs); color: var(--text-muted); display: block; margin-top: 1px; }
@@ -2356,6 +2374,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                     background: rgba(0,110,220,0.12); color: var(--accent-text, #4d9fff);
                     border: 1.5px solid rgba(0,110,220,0.2);
                     border-radius: 50%;
+                    overflow: hidden;
                 }
                 .eq-team-info { display: flex; flex-direction: column; min-width: 0; }
                 .eq-team-name {

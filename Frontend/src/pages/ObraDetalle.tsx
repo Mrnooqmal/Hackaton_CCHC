@@ -9,9 +9,9 @@ import ObraAplicabilidadKit from '../components/ObraAplicabilidadKit';
 import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
 import { estadoPtp, aprobadoPorRepresentanteLegal } from '../utils/ptp';
 import { incidenteAbierto, incidenteCerrado } from '../utils/incidentes';
-import { LuFileText, LuShieldAlert, LuPencil, LuClock, LuCircleCheck, LuDownload, LuHistory } from 'react-icons/lu';
+import { LuFileText, LuShieldAlert, LuPencil, LuClock, LuCircleCheck, LuDownload, LuHistory, LuBuilding2 } from 'react-icons/lu';
 import { FiUploadCloud, FiEye, FiAlertTriangle, FiCopy, FiCheck } from 'react-icons/fi';
-import { Modal, Select, SegmentedControl, PageHeader } from '../components/ui';
+import { Modal, Select, SegmentedControl, IdentityPanel } from '../components/ui';
 import { DS44_ACT_ACTUALIZACIONES, DS44_DO_PROCEDIMIENTOS, DS44_DO_REGISTROS_GESTION, esRegistroEjecucion, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, DS44_PHASE_LABELS, type Ds44DoContext } from '../utils/ds44';
 import { computeOnboardingSummary } from '../utils/onboardingObra';
 
@@ -42,6 +42,12 @@ const ENTIDADES_REVISION: { id: EntidadRevision; label: string }[] = [
 ];
 const labelEntidadRevision = (id: string) =>
   ENTIDADES_REVISION.find((e) => e.id === id)?.label || id;
+
+const ESTADO_OBRA_LABEL: Record<string, string> = {
+  activa: 'Activa',
+  pausada: 'Pausada',
+  finalizada: 'Finalizada',
+};
 
 interface Ds44Item {
   key: string;
@@ -153,7 +159,7 @@ export default function ObraDetalle() {
   const canSubirDocumentos = hasPermission(PERMISSIONS.OBRA_SUBIR_DOCUMENTOS);
   const navigate = useNavigate();
   const { obraId } = useParams();
-  const { setSelectedObraId, modoEmpresa } = useObraContext();
+  const { setSelectedObraId } = useObraContext();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -271,6 +277,9 @@ export default function ObraDetalle() {
   const faseDeming = obra?.faseDeming || 'plan';
   const [selectedDemingPhase, setSelectedDemingPhase] = useState(faseDeming);
   const [activeTab, setActiveTab] = useState<'resumen' | 'ds44'>('ds44');
+  const [obraImagenUrl, setObraImagenUrl] = useState<string | null>(null);
+  const [imagenSaving, setImagenSaving] = useState(false);
+  const [imagenSuccess, setImagenSuccess] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const handleCopyId = () => {
     // Copia el código que puso el creador; si la obra no tiene código, el ID interno.
@@ -282,6 +291,48 @@ export default function ObraDetalle() {
   // El porcentaje de onboarding alimenta el resumen y el estado de fase. El
   // checklist accionable vive en Personas (ámbito obra), que calcula lo mismo
   // con la misma función.
+  // `imagenKey` es una llave de S3, no una URL: hay que pedir el enlace firmado.
+  useEffect(() => {
+    const key = obra?.imagenKey;
+    if (!key) { setObraImagenUrl(null); return; }
+    let alive = true;
+    uploadsApi.getBatchDownloadUrls([key])
+      .then((res) => {
+        if (!alive) return;
+        const hit = res?.data?.urls?.find((u: any) => u.fileKey === key);
+        if (hit?.downloadUrl) setObraImagenUrl(hit.downloadUrl);
+      })
+      .catch(() => { /* sin imagen: queda el icono de respaldo */ });
+    return () => { alive = false; };
+  }, [obra?.imagenKey]);
+
+  const handleImagenObra = async (file: File) => {
+    if (!obraId || !obra) return;
+    setImagenSaving(true);
+    setImagenSuccess(false);
+    try {
+      const tenantId = obra.tenantId || localStorage.getItem('tenant_id') || '';
+      const up = await uploadsApi.getUploadUrl({
+        fileName: file.name, fileType: file.type, fileSize: file.size,
+        categoria: 'obras', tenantId,
+      });
+      if (!up.success || !up.data) throw new Error('Sin URL de subida');
+      const put = await fetch(up.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      if (!put.ok) throw new Error('No se pudo subir la imagen');
+      await uploadsApi.confirmUpload({ fileKey: up.data.fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
+      const res = await obrasApi.update(obraId, { imagenKey: up.data.fileKey });
+      if (res.success) {
+        setImagenSuccess(true);
+        setTimeout(() => setImagenSuccess(false), 2500);
+        reloadObraData();
+      }
+    } catch (err) {
+      console.error('Error actualizando la imagen de la obra:', err);
+    } finally {
+      setImagenSaving(false);
+    }
+  };
+
   const onboardingSummary = useMemo(() => computeOnboardingSummary({
     trabajadores,
     documentosPrevencion,
@@ -1751,44 +1802,34 @@ export default function ObraDetalle() {
   return (
     <>
       <div className="page-content">
-        <PageHeader
-          banner
+        {/* ── Credencial de la obra ──
+            El referente es el letrero de la entrada: imagen del sitio, nombre,
+            estado y los datos que la identifican. Misma pieza que la ficha de
+            una persona, con el sujeto cambiado. */}
+        <IdentityPanel
+          eyebrow="Obra"
           title={obra.nombre}
-          description={
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span>{obra.codigo ? `${obra.codigo} · ` : ''}{obra.comuna || '-'}, {obra.region || '-'}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontFamily: 'monospace', fontSize: '0.72rem', opacity: 0.65 }}>{obra.codigo || obraId}</span>
-                <button
-                  type="button"
-                  title={obra.codigo ? 'Copiar código de obra' : 'Copiar ID interno (esta obra no tiene código)'}
-                  onClick={handleCopyId}
-                  style={{
-                    background: copiedId ? 'rgba(16,185,129,0.22)' : 'rgba(255,255,255,0.1)',
-                    border: `1px solid ${copiedId ? 'rgba(16,185,129,0.5)' : 'rgba(255,255,255,0.22)'}`,
-                    borderRadius: 6,
-                    padding: '2px 9px',
-                    cursor: 'pointer',
-                    color: copiedId ? '#6ee7b7' : 'rgba(255,255,255,0.75)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    fontSize: '0.72rem',
-                    fontWeight: 500,
-                    transition: 'all 0.2s',
-                    flexShrink: 0,
-                  }}
-                >
-                  {copiedId ? <FiCheck size={11} /> : <FiCopy size={11} />}
-                  {copiedId ? 'Copiado' : 'Copiar ID'}
-                </button>
-              </div>
-            </div>
-          }
-          backTo={modoEmpresa ? '/obras' : '/'}
+          image={obraImagenUrl}
+          fallback={<LuBuilding2 size={56} strokeWidth={1.5} />}
+          media="landscape"
+          status={{
+            label: ESTADO_OBRA_LABEL[obra.estado] ?? obra.estado ?? 'Sin estado',
+            tone: obra.estado === 'activa' ? 'ok' : obra.estado === 'pausada' ? 'pending' : 'neutral',
+          }}
+          meta={[
+            { label: obra.codigo ? 'Código' : 'ID interno', value: obra.codigo || obraId, mono: true },
+            { label: 'Mandante', value: obra.mandante || '—' },
+            { label: 'Ubicación', value: [obra.comuna, obra.region].filter(Boolean).join(', ') || '—' },
+          ]}
+          photo={{
+            onSelect: handleImagenObra,
+            saving: imagenSaving,
+            success: imagenSuccess,
+            changeLabel: 'Cambiar imagen',
+          }}
           actions={
-            <button className="btn btn-secondary" onClick={handleEditToggle}>
-              <LuPencil /> Editar
+            <button className="btn btn-secondary btn-sm" onClick={handleEditToggle}>
+              <LuPencil size={13} /> Editar
             </button>
           }
         />

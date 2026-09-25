@@ -770,22 +770,34 @@
   }
 }
 
-/* En pantallas estrechas las migas se reducen a la página actual
-   y la marca se oculta para mantener el header despejado */
+/* ── Móvil: el header se reduce a lo esencial ──
+   Hamburguesa a la izquierda, marca al centro y las dos acciones de uso diario
+   a la derecha. Las migas, el ámbito y la ayuda competían por el ancho con eso;
+   en un teléfono la navegación ya está en el menú lateral y el manual a un paso
+   de distancia desde dentro de la página. */
+@media (max-width: 768px) {
+  .header-mainbar {
+    position: relative;
+  }
+
+  .breadcrumbs,
+  .header-divider,
+  .header-obra-label,
+  .header-action--help {
+    display: none;
+  }
+
+  /* Centrada respecto a la barra, no al hueco entre hamburguesa y acciones:
+     así no se desplaza cuando cambia el contenido de los lados. */
+  .header-brand {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+  }
+}
+
 @media (max-width: 640px) {
-  .breadcrumb-node:not(:last-child) {
-    display: none;
-  }
-
-  .header-brand,
-  .header-divider {
-    display: none;
-  }
-
-  .header-obra-label {
-    max-width: 84px;
-  }
-
   .header-mainbar-right {
     gap: var(--space-1);
   }
