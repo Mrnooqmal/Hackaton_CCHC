@@ -22,6 +22,7 @@ const { normalizeCargoCodigo, resolveCargoKitFromCatalog, resolveKitUnion, esEvi
 const { InboxRepository } = require('../inbox-module/inbox.repository');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
+const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
 
 const personaService = new PersonaService();
 const obraService = new ObraService();
@@ -100,7 +101,6 @@ const TEMPLATE_INSTRUCTIONS = [
 ];
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
-const SIGNATURE_REQUESTS_TABLE = process.env.SIGNATURE_REQUESTS_TABLE || 'SignatureRequests';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 
 // Roles de gestión/staff que NO pasan por el onboarding de terreno del trabajador.
@@ -156,19 +156,6 @@ const ONBOARDING_SIGNATURE_REQUESTS = [
     }
 ];
 
-const REQUEST_TYPES = {
-    CHARLA_5MIN: { label: 'Charla de 5 Minutos', icon: '💬', requiresDoc: false },
-    CAPACITACION: { label: 'Capacitación', icon: '📚', requiresDoc: true },
-    INDUCCION: { label: 'Inducción', icon: '🎓', requiresDoc: true },
-    ENTREGA_EPP: { label: 'Entrega de EPP', icon: '🦺', requiresDoc: true },
-    ART: { label: 'Análisis de Riesgos en Terreno', icon: '⚠️', requiresDoc: true },
-    PROCEDIMIENTO: { label: 'Procedimiento de Trabajo', icon: '📋', requiresDoc: true },
-    INSPECCION: { label: 'Inspección de Seguridad', icon: '🔍', requiresDoc: false },
-    REGLAMENTO: { label: 'Reglamento Interno', icon: '📖', requiresDoc: true },
-    DOCUMENTO: { label: 'Documento DS44', icon: '📄', requiresDoc: true },
-    OTRO: { label: 'Otro', icon: '📝', requiresDoc: false }
-};
-
 const normalizeHeader = (value) =>
     String(value || '')
         .trim()
@@ -216,23 +203,21 @@ const resolveApellidos = (paterno, materno, apellidoUnico) => {
     return { apellidoPaterno: parts[0] || '', apellidoMaterno: parts.slice(1).join(' ') };
 };
 
-const buildAssignment = (persona, fechaLimite = null) => {
-    const now = new Date().toISOString();
-    return {
-        personaId: persona.personaId,
-        nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
-        rut: persona.rut,
-        fechaAsignacion: now,
-        fechaLimite,
-        estado: 'pendiente',
-        notificado: true
-    };
-};
+/**
+ * Una asignación de documento, con el RUT cifrado con la llave de la empresa.
+ * Delega en el constructor compartido (`lib/arregloSensible.js`): este módulo
+ * tenía su propia copia del objeto, con su propio `rut: persona.rut` en claro.
+ */
+const buildAssignment = async (persona, fechaLimite = null) => construirAsignacion(
+    persona,
+    { fechaLimite, notificado: true },
+    await llaveDeArreglos(persona.tenantId)
+);
 
 const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante, docConfig }) => {
     const now = new Date().toISOString();
     const documentId = uuidv4();
-    const asignacion = buildAssignment(persona);
+    const asignacion = await buildAssignment(persona);
 
     // Evidencia persona-level reutilizada (examen altura/vigilancia vigente): el
     // ítem nace COMPLETO porque la evidencia ya es válida y vigente en la persona.
@@ -326,70 +311,13 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
     return documentId;
 };
 
-const createSignatureRequest = async ({ tenantId, obraId, persona, solicitante, requestConfig }) => {
-    const now = new Date().toISOString();
-    const requestId = uuidv4();
-    const solicitanteId = solicitante?.personaId || persona.personaId;
-    const solicitanteNombre = solicitante
-        ? `${solicitante.nombre} ${solicitante.apellido || ''}`.trim()
-        : `${persona.nombre} ${persona.apellido || ''}`.trim();
-    const solicitanteRut = solicitante?.rut || persona.rut;
-
-    const signatureRequest = {
-        requestId,
-        tipo: requestConfig.tipo,
-        tipoInfo: REQUEST_TYPES[requestConfig.tipo],
-        titulo: requestConfig.titulo,
-        descripcion: requestConfig.descripcion || '',
-        referenciaId: null,
-        referenciaTipo: null,
-        documentId: null,
-        documentos: [],
-        tieneDocumentos: false,
-        solicitanteId,
-        solicitanteNombre,
-        solicitanteRut,
-        trabajadores: [
-            {
-                personaId: persona.personaId,
-                workerId: persona.personaId,
-                nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
-                rut: persona.rut,
-                cargo: persona.cargo,
-                firmado: false,
-                signatureId: null,
-                fechaFirma: null
-            }
-        ],
-        totalRequeridos: 1,
-        totalFirmados: 0,
-        fechaCreacion: now,
-        fechaLimite: null,
-        fechaCompletado: null,
-        ubicacion: null,
-        obraId,
-        tenantId,
-        estado: 'pendiente',
-        createdAt: now,
-        updatedAt: now
-    };
-
-    await docClient.send(new PutCommand({ TableName: SIGNATURE_REQUESTS_TABLE, Item: signatureRequest }));
-
-    try {
-        await eventBus.emit('signature.requested', {
-            requestId,
-            personaIds: [persona.personaId],
-            requestedBy: solicitanteId,
-            documentName: signatureRequest.titulo,
-            priority: 'normal'
-        });
-    } catch (eventError) {
-        console.error('Error emitting signature.requested event (onboarding):', eventError);
-    }
-
-    return requestId;
-};
+/**
+ * `createSignatureRequest` se eliminó el 24 de septiembre de 2026, al cifrar los
+ * arreglos embebidos. No tenía un solo llamador y era una copia paralela de
+ * `signature-requests/handler.js create()`, con su propio `solicitanteRut` y su
+ * propio `trabajadores[].rut` en claro: exactamente el patrón de "varios
+ * escritores del mismo campo" que este cambio viene a cerrar.
+ */
 
 // Aviso best-effort al solicitante: faltan plantillas para el cargo. No bloquea.
 const avisarFaltaPlantilla = async ({ solicitante, persona, obraId, faltantes }) => {

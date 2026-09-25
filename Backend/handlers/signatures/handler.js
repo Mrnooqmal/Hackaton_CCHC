@@ -220,17 +220,22 @@ module.exports.create = async (event) => {
 
                 if (docResult.Item) {
                     const documentData = docResult.Item;
-                    const firmaEmbebida = {
+                    // Mismo constructor que documents.sign/signAssisted/signBulk.
+                    // Antes este camino armaba la entrada a mano, con los mismos
+                    // campos: dos escritores del mismo arreglo, y solo uno se
+                    // acordaba de cada cambio (ya pasó con `workerNombre`).
+                    const firmaEmbebida = await FirmaService.toDocumentFirmaFormat({
                         token: signature.token,
                         personaId: signature.personaId,
-                        nombre: signature.workerNombre,
-                        rut: trazaAuditoria.workerRut,
+                        personaNombre: signature.workerNombre,
+                        personaRut: trazaAuditoria.workerRut,
                         tipoFirma: 'trabajador',
                         fecha: signature.fecha,
                         horario: signature.horario,
                         timestamp: signature.timestamp,
-                        ip: trazaAuditoria.ipAddress
-                    };
+                        ipAddress: trazaAuditoria.ipAddress,
+                        tenantId: signature.tenantId
+                    });
                     const parts = FirmaService.buildFirmaUpdateParts({
                         documentData,
                         nuevasFirmas: [firmaEmbebida],

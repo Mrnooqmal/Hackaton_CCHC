@@ -12,6 +12,12 @@ const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { cifrarConLlaveDatos } = require('../../lib/cifradoCampo');
+const {
+    llaveDe: llaveDeArreglos,
+    descifrarSolicitudDeTenant,
+    descifrarSolicitudesDeTenant,
+} = require('../../lib/arregloSensible');
 
 // Tipos de solicitudes de firma
 const REQUEST_TYPES = {
@@ -90,6 +96,7 @@ module.exports.create = async (event) => {
         const requestTenantId = solicitante.tenantId || body.tenantId || body.empresaId || 'default';
 
         // Obtener informacion de las personas asignadas (solo del mismo tenant)
+        const llaveArreglos = await llaveDeArreglos(requestTenantId);
         const trabajadoresInfo = [];
         const trabajadoresOmitidos = [];
         for (const pid of body.trabajadoresIds) {
@@ -104,7 +111,9 @@ module.exports.create = async (event) => {
                     personaId: persona.personaId,
                     workerId: persona.personaId, // backward compat
                     nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
-                    rut: persona.rut,
+                    // Cifrado con la llave de la empresa (D-10): la solicitud
+                    // entera viaja en cada listado, con todos sus trabajadores.
+                    rutCifrado: cifrarConLlaveDatos(persona.rut ?? null, llaveArreglos),
                     cargo: persona.cargo,
                     firmado: false,
                     signatureId: null,
@@ -144,7 +153,7 @@ module.exports.create = async (event) => {
             // Información del solicitante
             solicitanteId: body.solicitanteId,
             solicitanteNombre: `${solicitante.nombre} ${solicitante.apellido || ''}`.trim(),
-            solicitanteRut: solicitante.rut,
+            solicitanteRutCifrado: cifrarConLlaveDatos(solicitante.rut ?? null, llaveArreglos),
 
             // Trabajadores y progreso
             trabajadores: trabajadoresInfo,
@@ -194,7 +203,8 @@ module.exports.create = async (event) => {
             // Continue even if notification fails
         }
 
-        return created(signatureRequest);
+        // Al cliente va el RUT, no el sobre.
+        return created(await descifrarSolicitudDeTenant(signatureRequest, requestTenantId));
     } catch (err) {
         console.error('Error creating signature request:', err);
         return error(err.message, 500);
@@ -238,7 +248,11 @@ module.exports.list = async (event) => {
             new Date(b.createdAt) - new Date(a.createdAt)
         );
 
-        return success({ requests, total: requests.length, types: REQUEST_TYPES });
+        return success({
+            requests: await descifrarSolicitudesDeTenant(requests, tenantId),
+            total: requests.length,
+            types: REQUEST_TYPES,
+        });
     } catch (err) {
         console.error('Error listing signature requests:', err);
         return error(err.message, 500);
@@ -286,7 +300,7 @@ module.exports.get = async (event) => {
         );
 
         return success({
-            ...result.Item,
+            ...(await descifrarSolicitudDeTenant(result.Item, result.Item?.tenantId)),
             firmasDetalle: signaturesResult.Items || [],
         });
     } catch (err) {
@@ -348,7 +362,7 @@ module.exports.getPendingByWorker = async (event) => {
         }));
 
         return success({
-            pendientes,
+            pendientes: await descifrarSolicitudesDeTenant(pendientes, pendientes[0]?.tenantId),
             total: pendientes.length,
         });
     } catch (err) {

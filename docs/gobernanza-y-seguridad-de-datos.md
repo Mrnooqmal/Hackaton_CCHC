@@ -109,7 +109,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 5.4 | Falla cerrada ante solicitante no identificado | **Implementado** | Sin identificación se ocultan: el error es que falten documentos, nunca que se filtren datos de salud. Cubierto por pruebas. |
 | 5.5 | Archivos servidos por URL prefirmada temporal | **Implementado** | No hay URL pública permanente sobre el almacenamiento. |
 | 5.6 | **Registro de auditoría de accesos a datos sensibles** | **Pendiente** | Se audita quién firma, no quién consulta una ficha de vigilancia. Ver hallazgo H-5. |
-| 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Parcial** | Personas (`rut`, `vigilanciaSalud`, `restriccionLaboral`) y Tenants (`rutEmpresa`) implementados, en dev y prod. Pendiente en los sidecars de firmas/incidentes, en los arreglos de documentos/actividades/solicitudes, y en las respuestas de encuesta. Ver D-10. |
+| 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Sí** | Completo en dev y prod: Personas (`rut`, `vigilanciaSalud`, `restriccionLaboral`), Tenants (`rutEmpresa`), los sidecars de firmas/incidentes, los arreglos embebidos de documentos/actividades/solicitudes, y las respuestas de encuesta (siempre, con la llave de salud). Ver D-10. |
 | 5.8 | Los índices de personas proyectan todos los atributos | **Implementado** | `personaId-index`, `email-index` y `tenantRutHmac-index` pasaron a `KEYS_ONLY`: el índice da la clave, la ficha se lee de la tabla. Ver D-6. |
 | 5.9 | El RUT no viaja completo en la verificación pública de firmas | **Implementado** | `GET /signatures/verify/{token}` es público por diseño (un fiscalizador comprueba una firma sin cuenta), y devolvía nombre y **RUT completo**: el token se convertía en una consulta abierta de identidad. Ahora el RUT va parcial (`···.678-5`), que cumple igual la función de cotejo. |
 
@@ -496,7 +496,7 @@ desplegado y verificado con una prueba que ejercita `FirmaService.crear`
 directamente.
 
 ### D-10. Cifrado de campo: RUT buscable por HMAC, sobre de cifrado para el resto
-**Estado: implementado el 23 de septiembre de 2026 en Personas y Tenants, en dev y prod. Pendiente en firmas, incidentes, documentos, actividades, solicitudes y encuestas — ver el cierre de cada uno más abajo.**
+**Estado: completo. Implementado el 23 de septiembre de 2026 en Personas y Tenants, y el 24 de septiembre de 2026 en los sidecars de firmas e incidentes, en los arreglos embebidos de documentos, actividades y solicitudes, y en encuestas. En dev y prod.**
 
 **El principio que ordena todo el diseño:** solo dos entidades se BUSCAN por
 RUT —personas (dentro de su empresa, y global para el login multi-empresa) y
@@ -585,18 +585,126 @@ de una persona nueva contra KMS real con verificación directa en la tabla (sin
 con su sobre cifrado al lado). 553 pruebas en verde, incluidas 22 nuevas
 específicas de este cambio.
 
-**Pendiente, en el orden acordado:** los sidecars de D-8 (firmas, incidentes)
-hoy guardan el RUT y la traza de auditoría en claro dentro del elemento
-aparte — cifrarlos ahí es la próxima pieza, sobre un lugar que ya existe. Después,
-los arreglos embebidos en documentos, actividades y solicitudes de firma
-(`firmas[].rut`, `asignaciones[].rut`, `asistentes[].rut`, `trabajadores[].rut`,
-y `firmas[].ip` en documentos, que D-8 no había visto porque trabajó sobre
-`SignaturesTable` y no sobre la copia que vive embebida en `DocumentsTable`).
-Por último, `recipients[].responses[]` de encuestas, cifrado siempre —
-decisión ya tomada, no condicionada a si la encuesta es de salud, por la misma
-razón que `restriccionLaboral` no se condiciona a si tiene contenido.
+El 401 de login se verificó además como rechazo de contraseña real, no solo
+como "no dio 500": la ficha real de prueba pasa el filtro de candidatas
+(`tieneAccesoWeb` + `passwordHash` presente) antes de que `credenciales.verificar`
+corra, así que el 401 corresponde a una verificación de contraseña efectiva
+—comprobado por lectura directa de la ficha, no por diferencia de tiempos, que
+resultó contaminada por el caché de la pimienta por contenedor de
+`lib/credenciales.js`—.
 
-**Ubicación:** `Backend/lib/cifradoCampo.js`, `Backend/lib/llaveTenant.js`, `Backend/lib/models/Persona.js`, `Backend/lib/models/Tenant.js`, `Backend/lib/services/PersonaService.js`, `Backend/lib/services/TenantService.js`, `Backend/handlers/auth/handler.js`, `Backend/scripts/reparar-cifrado-legado.js`
+**Sidecars de firmas e incidentes (D-8), cerrado el 24 de septiembre de
+2026.** El elemento aparte se guarda como un solo sobre (`cifrado`, vía
+`cifrarSobre`) en vez de campo por campo: el RUT, la IP y el agente de usuario
+de una traza siempre se leen juntos al abrir el detalle, nunca por separado,
+así que un sobre por elemento cuesta la misma llamada a KMS que cifrar cada
+campo aparte, pero es más simple. Sin llave de tenant compartida —a diferencia
+del RUT de personas— porque no hay un "listar todas las trazas" en ningún
+camino caliente: cada detalle abre exactamente una traza. `conTraza` lee y
+repara: una traza vieja sin `cifrado` se sigue leyendo en claro, porque a
+diferencia de una ficha de persona una traza no tiene un "próximo guardado"
+natural que la migre sola —se escribe una sola vez—, así que la reparación de
+las pocas filas de prueba existentes se hizo a mano con el mismo script.
+Verificado en vivo en dev y prod: escritura y lectura de una traza de prueba
+contra KMS real, sin el RUT en claro en ningún punto de la tabla. Prod no
+tenía ninguna traza legada que reparar (dev sí: una firma y dos incidentes de
+prueba, reparados).
+
+**Arreglos embebidos en documentos, actividades y solicitudes, cerrado el 24 de
+septiembre de 2026.** `asignaciones[].rut`, `firmas[].rut`, `firmas[].ip`,
+`asistentes[].rut`, `firmaRelator.rut`, `trabajadores[].rut` y
+`solicitanteRut`.
+
+A diferencia de los sidecars, acá el dato NO se puede mover a un elemento
+aparte: no es traza de auditoría, es el contenido que las pantallas dibujan, y
+unir dos elementos en cada listado sería justo lo que D-8 evita. Se queda donde
+está, cifrado. Y a diferencia de los sidecars, la llave **sí** es la compartida
+del tenant (`PROPOSITOS.RUT_PERSONAS`, la misma del RUT de personas: mismo tipo
+de dato, mismo radio de exposición): `documents.list()`, `activities.list()` y
+`signature-requests.list()` devuelven el elemento COMPLETO de cada registro de
+la empresa —decenas de documentos con decenas de asignaciones cada uno—, así
+que un sobre por valor habría costado cientos de llamadas a KMS por pantalla.
+Con la llave del tenant es una por invocación, y está cubierta por una prueba
+que la mide (25 documentos, una sola búsqueda de llave).
+
+**Lo que el inventario encontró, y es el verdadero hallazgo de esta pieza.**
+Antes de tocar nada se rastreó cada escritor y cada lector de esos campos en
+todo el backend, no solo en los archivos obvios. `asignaciones[].rut` no tenía
+un escritor: tenía **cuatro** (`documents.assign`, `EppService.crearEntrega`,
+`personas-module.buildAssignment` y la reescritura de
+`syncPlantillasToWorkers`), cada uno con su propia copia de `rut: persona.rut`.
+`firmas[]` tenía **tres**. Es el mismo patrón que ya había mordido con
+`workerNombre` y con `firmas[].ip`, y la causa es siempre la misma: nada falla
+cuando un escritor queda atrás, solo deja de cifrarse en silencio. Por eso el
+cambio no fue solo cifrar: cada campo quedó con **una sola puerta de entrada**
+(`construirAsignacion` y `toDocumentFirmaFormat` en
+`Backend/lib/arregloSensible.js`), y hay una prueba estructural que falla si
+aparece un escritor nuevo que no pase por ahí. De paso se borraron dos
+funciones muertas que eran copias paralelas listas para volver a divergir
+(`FirmaService.toAsistenteFormat` y `personas-module.createSignatureRequest`),
+y el segundo escritor manual de `firmas[]` en `signatures/handler.js` pasó a
+usar el constructor compartido.
+
+**Una falla propia, que vale anotar porque la suite no la vio.** Con el cifrado
+puesto y las pruebas de biblioteca en verde, SEIS respuestas de la API seguían
+devolviendo el sobre `{c, iv, tag}` donde la pantalla esperaba un RUT: al
+cifrar se revisó dónde se GUARDA el dato y no dónde se DEVUELVE. No lo detectó
+ninguna prueba sino una llamada real contra dev. Se corrigieron las seis y se
+agregó la prueba de respuesta que faltaba — cifrar un campo tiene dos fallas
+simétricas, el escritor que no cifra y el lector que no descifra, y ninguna de
+las dos levanta un error.
+
+**La reparación del legado es obligatoria acá, no opcional.** En Personas
+"leer y reparar" alcanzaba porque toda ficha se vuelve a guardar. Un documento
+que nadie toca puede quedarse años con el RUT en claro, y los snapshots de
+`versiones[]` (`firmasArchivadas`, `asignacionesArchivadas`) no se reescriben
+NUNCA: arrastrarían el RUT viejo para siempre. Por eso
+`reparar-cifrado-legado.js` los recorre explícitamente, snapshots incluidos.
+`scripts/migrate-workerId-to-personaId.js` no necesitó cambios: normaliza con
+spread, así que el sobre pasa intacto.
+
+**Encuestas, cerrado el 24 de septiembre de 2026.** `recipients[].rut`,
+`recipients[].responses[]` y `audience.ruts`.
+
+Las respuestas se cifran **siempre**, con `cifrarConLlaveDatosSiempre`: incluso
+`[]` produce un sobre. Condicionarlo a que haya contenido —o a que la encuesta
+esté marcada como "de salud"— sería el mismo patrón de falla silenciosa de
+`restriccionLaboral`. El argumento concreto: el día que alguien conteste una
+pregunta abierta de una encuesta de clima con un diagnóstico médico, nadie va a
+volver a revisar si esa encuesta tenía la categoría correcta.
+
+**Dos llaves, no una.** El RUT usa la llave de identificación de la empresa
+(`RUT_PERSONAS`, la misma de los demás arreglos embebidos) y las respuestas la
+de salud (`SALUD`, la misma de `vigilanciaSalud`). Son secretos de radio de
+exposición distinto y ya estaban separados para las personas; no había razón
+para juntarlos acá. Hay una prueba que comprueba que se piden las dos.
+
+**`audience.ruts`** guardaba en claro los RUT usados para definir la audiencia
+—una copia redundante de lo que ya está en `recipients[]`—. Se cifran uno a
+uno en vez de borrarse porque la pantalla usa `ruts.length` para decir "N
+trabajador(es)": así el conteo se conserva y el contrato con el cliente no
+cambia en este mismo cambio. Son buenos candidatos a desaparecer del todo más
+adelante: nadie descifra esos valores nunca.
+
+**Otra función muerta, y esta era la peor.** `assignWorkerToHealthSurvey` no
+tenía ningún llamador, y era la vía por la que una persona de CUALQUIER empresa
+terminaba dentro de `default-health-survey`, que es un registro **único y
+global** (`surveyId` fijo, `tenantId: 'default'`). Con su `rut: persona.rut` en
+claro, además. Se eliminó. **Queda anotado como riesgo latente, no resuelto:**
+esa encuesta por defecto sigue siendo un registro compartido entre empresas por
+diseño; hoy es inofensiva porque solo la alimenta `ensureDefaultHealthSurvey()`
+con el tenant `'default'` (vacío en dev, inexistente en prod), pero la forma
+correcta sería una encuesta por empresa. No se cambió acá porque es una
+decisión de diseño del módulo de salud, no del cifrado.
+
+**Lo que el listado NO paga.** `surveys.list()` se sirve desde
+`tenantId-index`, que a propósito ya no proyecta `recipients` (corrección
+anterior de esta misma serie). Como ahí no viaja ni el RUT ni las respuestas,
+el listado no descifra nada ni va a buscar llaves — se comprueba en tiempo de
+ejecución en vez de asumirlo, para que si la proyección cambiara algún día el
+código descifre en lugar de devolverle sobres a la pantalla.
+
+**Ubicación:** `Backend/lib/cifradoCampo.js`, `Backend/lib/llaveTenant.js`, `Backend/lib/arregloSensible.js`, `Backend/lib/traza-sensible.js`, `Backend/lib/models/Persona.js`, `Backend/lib/models/Tenant.js`, `Backend/lib/services/PersonaService.js`, `Backend/lib/services/TenantService.js`, `Backend/lib/services/FirmaService.js`, `Backend/lib/services/EppService.js`, `Backend/handlers/auth/handler.js`, `Backend/handlers/documents/handler.js`, `Backend/handlers/activities/handler.js`, `Backend/handlers/signature-requests/handler.js`, `Backend/handlers/personas-module/handler.js`, `Backend/handlers/surveys/handler.js`, `Backend/lib/health/healthSurvey.js`, `Backend/scripts/reparar-cifrado-legado.js`
 
 ---
 

@@ -11,6 +11,13 @@ const { PERMISSIONS } = require('../../lib/permissions');
 const { resolveCatalogos, validatePlanificacion, validatePermisosTrabajo } = require('../../lib/catalogos-actividad');
 const { eventBus } = require('../../lib/events/EventBus');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { cifrarConLlaveDatos } = require('../../lib/cifradoCampo');
+const {
+    llaveDe: llaveDeArreglos,
+    descifrarActividad,
+    descifrarActividadDeTenant,
+    descifrarActividadesDeTenant,
+} = require('../../lib/arregloSensible');
 
 const TABLE_NAME = process.env.ACTIVITIES_TABLE || 'Activities';
 
@@ -699,7 +706,11 @@ module.exports.list = async (event) => {
             new Date(b.createdAt) - new Date(a.createdAt)
         );
 
-        return success({ activities, types: ACTIVITY_TYPES, capacitacionSubtipos: CAPACITACION_SUBTIPOS });
+        return success({
+            activities: await descifrarActividadesDeTenant(activities, tenantId),
+            types: ACTIVITY_TYPES,
+            capacitacionSubtipos: CAPACITACION_SUBTIPOS,
+        });
     } catch (err) {
         console.error('Error listing activities:', err);
         return error(err.message, 500);
@@ -725,7 +736,7 @@ module.exports.get = async (event) => {
             return error('Actividad no encontrada', 404);
         }
 
-        return success(actividad);
+        return success(await descifrarActividadDeTenant(actividad, ses.sesion.tenantId));
     } catch (err) {
         console.error('Error getting activity:', err);
         return error(err.message, 500);
@@ -788,6 +799,7 @@ module.exports.registerAttendance = async (event) => {
         const personaService = new PersonaService();
         const now = new Date();
         const nuevosAsistentes = [];
+        const llaveArreglos = await llaveDeArreglos(activity.tenantId || sesion.tenantId);
         const contexto = {
             ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
             userAgent: event.headers?.['user-agent'] || 'unknown'
@@ -838,7 +850,9 @@ module.exports.registerAttendance = async (event) => {
             nuevosAsistentes.push({
                 personaId: pid,
                 nombre: persona.nombre,
-                rut: persona.rut,
+                // El RUT va cifrado con la llave de la empresa (D-10): este
+                // arreglo viaja entero en cada listado de actividades.
+                rutCifrado: cifrarConLlaveDatos(persona.rut ?? null, llaveArreglos),
                 cargo: persona.cargo || '',
                 atraso,
                 minutosAtraso,
@@ -862,7 +876,7 @@ module.exports.registerAttendance = async (event) => {
                     token: generateSignatureToken(),
                     personaId: activity.relatorId,
                     nombre: relator.nombre,
-                    rut: relator.rut,
+                    rutCifrado: cifrarConLlaveDatos(relator.rut ?? null, llaveArreglos),
                     ...fechaHoraChile(now),
                     timestamp: now.toISOString()
                 };
@@ -883,11 +897,14 @@ module.exports.registerAttendance = async (event) => {
             }
         }));
 
+        // Al cliente van el RUT y no el sobre: esta respuesta alimenta la misma
+        // lista de asistentes que dibuja el listado.
+        const visible = descifrarActividad({ asistentes: nuevosAsistentes, firmaRelator }, llaveArreglos);
         return success({
             message: `${nuevosAsistentes.length} asistente(s) registrado(s)`,
             totalAsistentes: asistentes.length,
-            nuevosAsistentes,
-            firmaRelator: incluirFirmaRelator ? firmaRelator : undefined
+            nuevosAsistentes: visible.asistentes,
+            firmaRelator: incluirFirmaRelator ? visible.firmaRelator : undefined
         });
     } catch (err) {
         console.error('Error registering attendance:', err);

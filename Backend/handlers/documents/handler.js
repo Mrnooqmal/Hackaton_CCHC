@@ -15,6 +15,18 @@ const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { TIPOS_SALUD, filtrarSalud } = require('../../lib/documentos-salud');
 const { DESTINATARIO, MEDIO } = require('../../lib/distribucion');
 const almacenamiento = require('../../lib/almacenamiento');
+const {
+    llaveDe: llaveDeArreglos,
+    construirAsignacion,
+    descifrarDocumento,
+    descifrarDocumentosDeTenant,
+    descifrarDocumentoDeTenant,
+} = require('../../lib/arregloSensible');
+
+/** Una firma recién escrita, lista para el cliente: lo que se guarda lleva el
+ *  RUT y la IP en sobre, y lo que se devuelve los lleva en claro. */
+const firmaParaCliente = async (firma, tenantId) =>
+    (await descifrarDocumentoDeTenant({ firmas: [firma] }, tenantId)).firmas[0];
 
 const DESTINATARIOS_VALIDOS = new Set(Object.values(DESTINATARIO));
 const MEDIOS_VALIDOS = new Set(Object.values(MEDIO));
@@ -381,7 +393,7 @@ module.exports.list = async (event) => {
         }
 
         return success({
-            documents,
+            documents: await descifrarDocumentosDeTenant(documents, tenantId),
             types: DOCUMENT_TYPES,
         });
     } catch (err) {
@@ -412,7 +424,7 @@ module.exports.get = async (event) => {
             return error('Documento no encontrado', 404);
         }
 
-        return success(doc);
+        return success(await descifrarDocumentoDeTenant(doc, sesion.tenantId));
     } catch (err) {
         console.error('Error getting document:', err);
         return error(err.message, 500);
@@ -554,7 +566,7 @@ module.exports.update = async (event) => {
             ReturnValues: 'ALL_NEW'
         }));
 
-        return success(result.Attributes);
+        return success(await descifrarDocumentoDeTenant(result.Attributes, sesion.tenantId));
     } catch (err) {
         console.error('Error updating document:', err);
         return error(err.message, 500);
@@ -862,21 +874,18 @@ module.exports.assign = async (event) => {
         const nuevasAsignaciones = [];
         const documentTenantId = docResult.Item.tenantId || null;
 
+        const llaveArreglos = await llaveDeArreglos(documentTenantId || sesion.tenantId);
         for (const pid of personaIds) {
             const persona = await personaService.getById(pid);
             if (documentTenantId && persona?.tenantId && persona.tenantId !== documentTenantId) {
                 console.warn(`[Documents] Persona ${pid} pertenece a otro tenant (${persona.tenantId} != ${documentTenantId}), omitida de la asignación`);
                 continue;
             }
-            nuevasAsignaciones.push({
-                personaId: pid,
-                nombre: persona ? `${persona.nombre} ${persona.apellido || ''}`.trim() : pid,
-                rut: persona?.rut || null,
-                fechaAsignacion: now,
+            nuevasAsignaciones.push(construirAsignacion(persona, {
                 fechaLimite: fechaLimite || null,
-                estado: 'pendiente',
-                notificado: notificar || false
-            });
+                notificado: notificar || false,
+                nombreFallback: pid,
+            }, llaveArreglos));
         }
 
         if (nuevasAsignaciones.length === 0) {
@@ -920,7 +929,9 @@ module.exports.assign = async (event) => {
 
         return success({
             message: `Documento asignado a ${nuevasAsignaciones.length} persona(s)`,
-            asignaciones: nuevasAsignaciones
+            // Lo que va al cliente es el RUT, no el sobre: esta respuesta la
+            // dibuja la pantalla igual que un listado.
+            asignaciones: descifrarDocumento({ asignaciones: nuevasAsignaciones }, llaveArreglos).asignaciones
         });
     } catch (err) {
         console.error('Error assigning document:', err);
@@ -1023,7 +1034,7 @@ module.exports.sign = async (event) => {
             return error(firmaErr.message, 400);
         }
 
-        const firmaEmbebida = FirmaService.toDocumentFirmaFormat(firmaResult);
+        const firmaEmbebida = await FirmaService.toDocumentFirmaFormat(firmaResult);
         const parts = buildFirmaUpdateParts({
             documentData,
             nuevasFirmas: [firmaEmbebida],
@@ -1055,7 +1066,7 @@ module.exports.sign = async (event) => {
 
         return success({
             message: esFirmaRelator ? 'Firma de relator registrada' : 'Documento firmado exitosamente',
-            firma: firmaEmbebida,
+            firma: await firmaParaCliente(firmaEmbebida, documentData.tenantId),
             signatureId: firmaResult.signatureId,
             token: firmaResult.token
         });
@@ -1161,7 +1172,7 @@ module.exports.signAssisted = async (event) => {
             return error(firmaErr.message, 400);
         }
 
-        const firmaEmbebida = FirmaService.toDocumentFirmaFormat(firmaResult);
+        const firmaEmbebida = await FirmaService.toDocumentFirmaFormat(firmaResult);
         const parts = buildFirmaUpdateParts({
             documentData,
             nuevasFirmas: [firmaEmbebida],
@@ -1178,7 +1189,7 @@ module.exports.signAssisted = async (event) => {
 
         return success({
             message: 'Documento firmado (firma asistida)',
-            firma: firmaEmbebida,
+            firma: await firmaParaCliente(firmaEmbebida, documentData.tenantId),
             signatureId: firmaResult.signatureId,
             token: firmaResult.token
         });
@@ -1239,7 +1250,8 @@ module.exports.signBulk = async (event) => {
             contexto
         });
 
-        const nuevasFirmas = resultado.exitosas.map(f => FirmaService.toDocumentFirmaFormat(f));
+        const nuevasFirmas = await Promise.all(
+            resultado.exitosas.map((f) => FirmaService.toDocumentFirmaFormat(f)));
 
         if (nuevasFirmas.length > 0) {
             const parts = buildFirmaUpdateParts({
@@ -1261,7 +1273,7 @@ module.exports.signBulk = async (event) => {
 
         return success({
             message: `${resultado.exitosas.length} firmas registradas exitosamente`,
-            firmas: nuevasFirmas,
+            firmas: (await descifrarDocumentoDeTenant({ firmas: nuevasFirmas }, documentData.tenantId)).firmas,
             errores: resultado.fallidas.length > 0 ? resultado.fallidas : undefined
         });
     } catch (err) {
@@ -1313,7 +1325,9 @@ module.exports.downloadFirmado = async (event) => {
         const fileKey = documentData.s3Key || documentData.archivoUrl;
         if (!fileKey) return error('El documento no tiene archivo asociado', 400);
 
-        const firmas = documentData.firmas || [];
+        // El anexo de firmas estampa el RUT en el PDF: acá sí hace falta en
+        // claro. Es el único lugar donde este dato tiene que salir del sobre.
+        const firmas = (await descifrarDocumentoDeTenant(documentData, sesion.tenantId)).firmas || [];
         const bucketOriginal = almacenamiento.bucketDeClave(fileKey);
 
         // Sin firmas no hay nada que estampar: se sirve el original.

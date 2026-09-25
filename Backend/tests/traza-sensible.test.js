@@ -6,8 +6,13 @@
 // atributo de clave de índice, ese elemento no aparece en ningún índice.
 //
 // Lo que estas pruebas protegen es justamente lo que se rompería en silencio:
-// que alguien vuelva a escribir el RUT en el elemento listado, o que agregue
-// `tenantId` al elemento aparte y lo devuelva a los índices sin que nada falle.
+// que alguien vuelva a escribir el RUT en el elemento listado, que agregue
+// `tenantId` al elemento aparte y lo devuelva a los índices sin que nada falle,
+// o que el elemento aparte guarde el RUT en claro (D-10: va cifrado como un
+// solo sobre, no solo fuera del índice).
+
+process.env.CAMPO_HMAC_KEY = 'clave-de-prueba-hmac';
+process.env.CAMPO_CIFRADO_LOCAL_KEY = require('crypto').randomBytes(32).toString('base64');
 
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -50,13 +55,23 @@ test('el elemento aparte no lleva ningún atributo de clave de índice', async (
 
     const guardado = escrituras[0];
     assert.equal(guardado.signatureId, 'firma-1#traza');
-    assert.equal(guardado.personaRut, '12.345.678-5');
 
     // Estos cuatro son claves de los índices de las tablas involucradas. Si
     // alguno aparece acá, el elemento vuelve a los índices y el RUT con él.
     for (const clave of ['tenantId', 'personaId', 'requestId', 'referenciaId']) {
         assert.equal(guardado[clave], undefined, `${clave} devolvería este elemento a un índice`);
     }
+});
+
+test('el RUT y la IP van cifrados, no en claro, dentro del elemento aparte', async () => {
+    await guardarTraza(TABLA, 'signatureId', 'firma-1', { personaRut: '12.345.678-5', ipAddress: '1.2.3.4' });
+
+    const guardado = escrituras[0];
+    assert.equal(guardado.personaRut, undefined, 'el RUT no debe quedar en claro ni fuera del índice');
+    assert.equal(guardado.ipAddress, undefined);
+    assert.ok(guardado.cifrado, 'el contenido sensible viaja en un sobre');
+    assert.ok(guardado.cifrado.c && guardado.cifrado.iv && guardado.cifrado.tag, 'sobre completo (c/iv/tag)');
+    assert.ok(!JSON.stringify(guardado.cifrado).includes('12.345.678-5'), 'el RUT no debe aparecer en claro en el sobre');
 });
 
 test('unir las dos partes devuelve el registro completo', async () => {
@@ -99,6 +114,38 @@ test('un fallo al leer la traza no impide abrir el registro, pero queda medido',
     assert.ok(registrado.some((l) => l.includes('FALLO_DEPENDENCIA')), 'y el fallo no es invisible');
 });
 
+test('un sobre que no se puede descifrar tampoco impide abrir el registro, y queda medido', async () => {
+    almacen.set('firma-1#traza', {
+        signatureId: 'firma-1#traza',
+        cifrado: { c: 'basura', iv: 'basura', tag: 'basura', kid: 'local', v: 1 },
+        creadoEn: new Date().toISOString(),
+    });
+    const registrado = [];
+    const consolaOriginal = console.error;
+    console.error = (...a) => registrado.push(a.join(' '));
+
+    const completo = await conTraza(TABLA, 'signatureId', { signatureId: 'firma-1', personaNombre: 'Ana' });
+
+    console.error = consolaOriginal;
+    assert.equal(completo.personaNombre, 'Ana', 'un detalle incompleto es mejor que no poder abrirlo');
+    assert.equal(completo.personaRut, undefined);
+    assert.ok(registrado.some((l) => l.includes('FALLO_DEPENDENCIA')), 'un KMS caído tampoco es invisible');
+});
+
+test('una traza vieja sin migrar (sin `cifrado`, campos en claro) se sigue leyendo igual', async () => {
+    almacen.set('firma-1#traza', {
+        signatureId: 'firma-1#traza',
+        personaRut: '12.345.678-5',
+        ipAddress: '1.2.3.4',
+        creadoEn: new Date().toISOString(),
+    });
+
+    const completo = await conTraza(TABLA, 'signatureId', { signatureId: 'firma-1', personaNombre: 'Ana' });
+
+    assert.equal(completo.personaRut, '12.345.678-5', 'leer y reparar: el legado sin migrar sigue funcionando');
+    assert.equal(completo.ipAddress, '1.2.3.4');
+});
+
 test('los recorridos completos de tabla distinguen la traza del registro', () => {
     assert.equal(esTraza({ incidentId: 'inc-1#traza' }, 'incidentId'), true);
     assert.equal(esTraza({ incidentId: 'inc-1' }, 'incidentId'), false);
@@ -139,6 +186,7 @@ test('la firma guardada no lleva RUT ni IP, y la copia del documento sí', async
 
     assert.equal(enTabla.personaRut, undefined, 'el elemento que los índices copian no tiene RUT');
     assert.equal(enTabla.ipAddress, undefined);
-    assert.equal(traza.personaRut, '12.345.678-5');
+    assert.equal(traza.personaRut, undefined, 'ni siquiera el elemento aparte lo tiene en claro');
+    assert.ok(traza.cifrado, 'va cifrado dentro del elemento aparte');
     assert.equal(firma.personaRut, '12.345.678-5', 'quien llama recibe la firma completa para el documento');
 });

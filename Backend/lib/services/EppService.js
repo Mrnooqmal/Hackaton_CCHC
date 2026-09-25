@@ -20,6 +20,7 @@ const { PutCommand, GetCommand, UpdateCommand, QueryCommand, ScanCommand } = req
 const { docClient } = require('../clients/dynamodb');
 const { eventBus } = require('../events/EventBus');
 const { PERMISSIONS, personaPuede } = require('../permissions');
+const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../arregloSensible');
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
 
@@ -63,15 +64,11 @@ class EppService {
             createdBy: creador?.personaId || 'system',
             creatorName: creador ? `${creador.nombre} ${creador.apellido || ''}`.trim() : 'Sistema DS44',
             firmas: [],
-            asignaciones: [{
-                personaId: persona.personaId,
-                nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
-                rut: persona.rut,
-                fechaAsignacion: now,
-                fechaLimite: null,
-                estado: 'pendiente',
-                notificado: true
-            }],
+            asignaciones: [construirAsignacion(
+                persona,
+                { fechaLimite: null, notificado: true },
+                await llaveDeArreglos(tenantId)
+            )],
             estado: 'activo',
             version: 1,
 

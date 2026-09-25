@@ -13,6 +13,8 @@ const { docClient } = require('../clients/dynamodb');
 const { fechaHoraChile } = require('../utils/fechaChile');
 const { generateSignatureToken, verifyPin } = require('../utils/validation');
 const { guardarTraza, conTraza } = require('../traza-sensible');
+const { cifrarConLlaveDatos } = require('../cifradoCampo');
+const { llaveDe: llaveDeArreglos } = require('../arregloSensible');
 
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 
@@ -331,37 +333,33 @@ class FirmaService {
     }
 
     /**
-     * Convierte firma al formato embebido para asistentes de actividades
+     * `toAsistenteFormat` se eliminó el 24 de septiembre de 2026, al cifrar los
+     * arreglos embebidos. No tenía un solo llamador —actividades arma sus
+     * asistentes por su cuenta— y era justo la forma de escribir un RUT en claro
+     * que este cambio viene a cerrar: dejarla habría sido dejar puesta la pala
+     * para volver a cavar el mismo hoyo.
      */
-    static toAsistenteFormat(firma, persona) {
-        return {
-            personaId: persona.personaId,
-            nombre: persona.nombre,
-            rut: persona.rut,
-            cargo: persona.cargo || '',
-            firma: {
-                token: firma.token,
-                fecha: firma.fecha,
-                horario: firma.horario,
-                timestamp: firma.timestamp
-            }
-        };
-    }
 
     /**
-     * Convierte firma al formato embebido para documentos
+     * Convierte firma al formato embebido para documentos, con el RUT y la IP
+     * ya cifrados con la llave de la empresa (D-10).
+     *
+     * Es el ÚNICO constructor de entradas de `firmas[]`. El camino de firma por
+     * solicitud armaba su propia copia a mano, con los mismos campos y sin
+     * cifrar; ahora pasa por acá como todos los demás.
      */
-    static toDocumentFirmaFormat(firma) {
+    static async toDocumentFirmaFormat(firma) {
+        const llave = await llaveDeArreglos(firma.tenantId);
         return {
             token: firma.token,
             personaId: firma.personaId,
             nombre: firma.personaNombre,
-            rut: firma.personaRut,
+            rutCifrado: cifrarConLlaveDatos(firma.personaRut ?? null, llave),
             tipoFirma: firma.tipoFirma,
             fecha: firma.fecha,
             horario: firma.horario,
             timestamp: firma.timestamp,
-            ip: firma.ipAddress
+            ipCifrado: cifrarConLlaveDatos(firma.ipAddress ?? null, llave)
         };
     }
 

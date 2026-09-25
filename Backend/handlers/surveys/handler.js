@@ -9,6 +9,15 @@ const { eventBus } = require('../../lib/events/EventBus');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { PERMISSIONS } = require('../../lib/permissions');
+const { cifrarConLlaveDatos } = require('../../lib/cifradoCampo');
+const {
+    llaveDe: llaveDeArreglos,
+    llaveSaludDe,
+    construirDestinatario,
+    cifrarRespuestas,
+    descifrarEncuestaDeTenant,
+    descifrarEncuestasDeTenant,
+} = require('../../lib/arregloSensible');
 
 /** Encuesta de la empresa de la sesión, o null. La tabla se indexa por surveyId. */
 const encuestaDelTenant = async (surveyId, sesion) => {
@@ -50,7 +59,7 @@ const scanAllWorkers = async (tenantId) => {
     }));
 };
 
-const buildRecipients = (workers, audience) => {
+const buildRecipients = (workers, audience, llave, llaveSalud) => {
     let targetWorkers = workers;
 
     if (audience.tipo === 'cargo') {
@@ -69,17 +78,8 @@ const buildRecipients = (workers, audience) => {
         }
     });
 
-    return Array.from(uniqueWorkers.values()).map((worker) => ({
-        workerId: worker.workerId || worker.personaId,
-        personaId: worker.personaId || worker.workerId,
-        nombre: worker.nombre,
-        apellido: worker.apellido || '',
-        rut: worker.rut,
-        cargo: worker.cargo,
-        estado: 'pendiente',
-        respondedAt: null,
-        responses: [],
-    }));
+    return Array.from(uniqueWorkers.values())
+        .map((worker) => construirDestinatario(worker, {}, llave, llaveSalud));
 };
 
 const calculateStats = (recipients = []) => {
@@ -169,12 +169,15 @@ module.exports.create = async (event) => {
         // se creaba una encuesta dentro de otra empresa, dirigida a su personal
         // (y la audiencia se resuelve leyendo su nómina completa).
         const tenantId = sesion.tenantId;
+        const [llaveArreglos, llaveSalud] = await Promise.all([
+            llaveDeArreglos(tenantId), llaveSaludDe(tenantId),
+        ]);
         const workers = await scanAllWorkers(tenantId);
         const recipients = buildRecipients(workers, {
             tipo: audienceType,
             cargo: body.cargoDestino,
             ruts: body.ruts,
-        });
+        }, llaveArreglos, llaveSalud);
 
         if (recipients.length === 0) {
             return error('No se encontraron trabajadores para la audiencia seleccionada');
@@ -193,7 +196,13 @@ module.exports.create = async (event) => {
             audience: {
                 tipo: audienceType,
                 cargo: body.cargoDestino || null,
-                ruts: body.ruts || [],
+                // Los RUT de la audiencia van cifrados uno a uno: la pantalla solo
+                // usa `ruts.length` —nunca los valores— así que el conteo se
+                // conserva y el contenido no queda en claro. Es una copia
+                // redundante de lo que ya está en `recipients[]`; se cifra en vez
+                // de borrarse para no cambiarle la forma al cliente en este mismo
+                // cambio.
+                ruts: (body.ruts || []).map((r) => cifrarConLlaveDatos(r, llaveArreglos)),
             },
             // Vínculo con el ítem del kit de onboarding (trazabilidad): al responder,
             // se cierra ese ítem para la persona.
@@ -255,7 +264,10 @@ module.exports.list = async (event) => {
 
         const items = (result.Items || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-        return success({ total: items.length, surveys: items });
+        return success({
+            total: items.length,
+            surveys: await descifrarEncuestasDeTenant(items, tenantId),
+        });
     } catch (err) {
         console.error('Error listing surveys:', err);
         return error(err.message || 'Error interno al listar encuestas', 500);
@@ -283,7 +295,7 @@ module.exports.get = async (event) => {
             return error('Encuesta no encontrada', 404);
         }
 
-        return success(encuesta);
+        return success(await descifrarEncuestaDeTenant(encuesta, ses.sesion.tenantId));
     } catch (err) {
         console.error('Error getting survey:', err);
         return error(err.message || 'Error interno al obtener encuesta', 500);
@@ -338,6 +350,7 @@ module.exports.updateResponseStatus = async (event) => {
         }
 
         const now = new Date().toISOString();
+        const llaveSalud = await llaveSaludDe(survey.tenantId);
         let signatureData = null;
 
         // NUEVO: Validar PIN y crear firma digital
@@ -378,11 +391,18 @@ module.exports.updateResponseStatus = async (event) => {
             }
         }
 
+        // Las respuestas se guardan cifradas SIEMPRE, con la llave de salud de la
+        // empresa. `recipients[index]` viene tal cual de la tabla (sin descifrar),
+        // así que lo que se conserva al no responder ya es el sobre.
+        const respuestasNuevas = Array.isArray(body.responses) ? body.responses : null;
         const recipient = {
             ...recipients[index],
             estado: status,
             respondedAt: status === 'respondida' ? now : null,
-            responses: Array.isArray(body.responses) ? body.responses : recipients[index].responses || [],
+            responsesCifradas: respuestasNuevas !== null
+                ? cifrarRespuestas(respuestasNuevas, llaveSalud)
+                : recipients[index].responsesCifradas
+                    ?? cifrarRespuestas(recipients[index].responses || [], llaveSalud),
             // NUEVO: Incluir datos de la firma digital
             firma: signatureData ? {
                 signatureId: signatureData.signatureId,
@@ -393,6 +413,9 @@ module.exports.updateResponseStatus = async (event) => {
             } : null
         };
 
+        // Una ficha vieja traía `responses` en claro: el spread lo habría dejado
+        // al lado del sobre nuevo, que es la peor de las dos opciones.
+        delete recipient.responses;
         recipients[index] = recipient;
 
         const stats = calculateStats(recipients);
@@ -416,10 +439,11 @@ module.exports.updateResponseStatus = async (event) => {
             },
         }));
 
+        const visible = await descifrarEncuestaDeTenant(updatedSurvey, survey.tenantId);
         return success({
             message: 'Encuesta respondida y firmada exitosamente',
-            recipient,
-            survey: updatedSurvey,
+            recipient: visible.recipients[index],
+            survey: visible,
             firma: signatureData ? {
                 signatureId: signatureData.signatureId,
                 token: signatureData.token,

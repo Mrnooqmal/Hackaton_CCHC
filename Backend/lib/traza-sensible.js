@@ -36,11 +36,25 @@
  * que hay que respetar: **quien lea el elemento para mostrarlo entero tiene que
  * unir las dos partes** (`conTraza`). Un listado NO lo hace, y ahí está la
  * ganancia.
+ *
+ * ── El cifrado (D-10) ────────────────────────────────────────────────────────
+ *
+ * Sacar el RUT del índice y dejarlo en claro en este elemento aparte era la
+ * mitad del trabajo: alguien con acceso de lectura a la tabla —sin pasar por
+ * ningún índice— lo seguía viendo. `datos` se guarda como un solo sobre
+ * (`cifrarSobre`, D-10), no campo por campo: el RUT, la IP y el agente de
+ * usuario de una traza nunca se buscan por separado, siempre se leen juntos al
+ * abrir el detalle, así que un sobre por elemento cuesta una llamada a KMS por
+ * lectura igual que cifrar cada campo aparte, pero es más simple. Sin llave de
+ * tenant compartida —a diferencia del RUT de personas— porque no hay un
+ * "listar todas las trazas" en ningún camino caliente: cada detalle abre
+ * exactamente una.
  */
 
 const { GetCommand, PutCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('./clients/dynamodb');
 const { conNeutro } = require('./degradacion');
+const { cifrarSobre, descifrarSobre } = require('./cifradoCampo');
 
 /** Sufijo de la clave del elemento aparte. */
 const SUFIJO = '#traza';
@@ -52,7 +66,10 @@ const claveTraza = (id) => `${id}${SUFIJO}`;
 const esTraza = (item, campoClave) => String(item?.[campoClave] || '').endsWith(SUFIJO);
 
 /**
- * Guarda la parte sensible aparte.
+ * Guarda la parte sensible aparte, cifrada como un solo sobre (D-10): el RUT,
+ * la IP y el agente de usuario no se escriben en claro ni siquiera en el
+ * elemento que ya está fuera de todo índice — esa era la protección de D-8,
+ * esta es la de D-10, capas distintas.
  *
  * @param {string} tabla
  * @param {string} campoClave - nombre del atributo de clave (`incidentId`, `signatureId`)
@@ -68,33 +85,43 @@ const guardarTraza = async (tabla, campoClave, id, datos) => {
             // este elemento fuera de todos los índices. Si alguien agrega acá un
             // atributo que sea clave de un índice, la protección desaparece en
             // silencio y sin error.
-            ...datos,
+            cifrado: await cifrarSobre(datos),
             creadoEn: new Date().toISOString(),
         },
     }));
 };
 
 /**
- * Une el registro con su parte sensible. Si la traza no está —o su lectura
- * falla— devuelve el registro tal cual, con constancia medible: es preferible un
- * detalle incompleto a no poder abrir un incidente.
+ * Une el registro con su parte sensible. Si la traza no está, si su lectura
+ * falla o si el sobre no se puede descifrar (KMS caído), devuelve el registro
+ * tal cual, con constancia medible: es preferible un detalle incompleto a no
+ * poder abrir un incidente.
+ *
+ * Lee y repara: una traza vieja sin migrar (`cifrado` ausente, campos todavía
+ * en claro desde antes de D-10) se usa tal cual — no hay un "próximo guardado"
+ * natural para una traza, que se escribe una sola vez, así que la migración de
+ * las pocas filas existentes se hizo a mano, igual que en Personas y Tenants.
  */
 const conTraza = async (tabla, campoClave, item) => {
     if (!item) return item;
     const id = item[campoClave];
     if (!id) return item;
 
-    const traza = await conNeutro('traza.lectura', async () => {
+    const sensibles = await conNeutro('traza.lectura', async () => {
         const res = await docClient.send(new GetCommand({
             TableName: tabla,
             Key: { [campoClave]: claveTraza(id) },
         }));
-        return res.Item || null;
+        const traza = res.Item || null;
+        if (!traza) return null;
+
+        if (traza.cifrado) return descifrarSobre(traza.cifrado);
+
+        const { [campoClave]: _clave, creadoEn: _creado, ...resto } = traza;
+        return resto;
     }, null, { tabla, id });
 
-    if (!traza) return item;
-
-    const { [campoClave]: _clave, creadoEn: _creado, ...sensibles } = traza;
+    if (!sensibles) return item;
     return { ...item, ...sensibles };
 };
 
