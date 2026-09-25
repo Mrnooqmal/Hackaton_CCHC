@@ -3,9 +3,10 @@ import { FiAlertTriangle, FiChevronDown, FiChevronRight, FiPrinter } from 'react
 import { Badge } from './ui';
 import { estructuraApi } from '../api/estructura.api';
 import {
-    ESTADO_LABEL, ESTADO_VARIANTE, colorProgreso,
+    ESTADO_VARIANTE, colorProgreso,
     type CompletitudAmbito,
 } from '../utils/completitud';
+import { etiquetaRequisito } from '../utils/etiquetaEstado';
 import type { Ambito } from '../utils/estructuraPreventiva';
 
 /**
@@ -151,7 +152,7 @@ export default function CompletitudFufPanel({ tenantId, ambito, obraId = null }:
                                             </div>
                                         </div>
                                         <Badge variant={ESTADO_VARIANTE[r.estado]}>
-                                            {ESTADO_LABEL[r.estado]}
+                                            {etiquetaRequisito(r)}
                                         </Badge>
                                     </div>
                                 ))}

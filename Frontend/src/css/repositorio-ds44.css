@@ -17,6 +17,9 @@
 /* Los paneles tienen alto propio: la página no crece hacia abajo. */
 .rd-marco {
   display: grid; grid-template-columns: 280px minmax(0, 1fr);
+  /* Sin fila explícita, la fila implícita crece con el contenido y el marco
+     (overflow: hidden) la recorta en vez de dejar que cada panel haga scroll. */
+  grid-template-rows: minmax(0, 1fr);
   height: calc(100vh - 240px); min-height: 560px;
   background: var(--surface-card); border: 1px solid var(--surface-border);
   border-radius: var(--radius-lg); overflow: hidden;
@@ -56,6 +59,9 @@
 
 /* 2. Requisitos y documentos */
 .rd-lista-panel { min-height: 0; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 14px; }
+/* Los hijos de un panel flex de alto fijo se encogen para caber: la lista (que
+   tiene overflow: hidden) recortaba los ítems en vez de hacer scroll el panel. */
+.rd-lista-panel > *, .rd-ficha > *, .rd-secciones > * { flex-shrink: 0; }
 .rd-encabezado { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
 
 .rd-item + .rd-item { border-top: 1px solid var(--surface-border); }

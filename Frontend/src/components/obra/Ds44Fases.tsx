@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-    LuArrowRight, LuCalendar, LuChevronRight, LuEye, LuSend, LuSignature, LuUpload, LuUserCheck, LuUsers,
+    LuArrowRight, LuCalendar, LuChevronRight, LuEye, LuFilePen, LuSend, LuSignature, LuUpload, LuUserCheck, LuUsers,
 } from 'react-icons/lu';
 import { Drawer } from '../ui';
 import DistribucionPanel from '../DistribucionPanel';
@@ -8,8 +8,10 @@ import { requisitosDeFase, resumenDeFase, type FaseDeming } from '../FufPorFase'
 import { itemFuf } from '../../utils/fuf';
 import { PREGUNTA_CONDICION, type CompletitudAmbito, type RequisitoFuf, type EstadoRequisito } from '../../utils/completitud';
 import CargaEvidencia, { type PersonaFirmante } from './CargaEvidencia';
+import NuevaVersion from './NuevaVersion';
+import { esVersionable } from '../../utils/versionarDocumento';
 import { documentsApi } from '../../api/documents.api';
-import { ETIQUETA_ESTADO as ETIQUETA } from '../../utils/etiquetaEstado';
+import { etiquetaRequisito, coincideFiltro, FILTROS_ESTADO, type FiltroEstado } from '../../utils/etiquetaEstado';
 import IconoEstado from './IconoEstado';
 import type { Document } from '../../api/documents.api';
 
@@ -31,6 +33,9 @@ export interface Ds44FasesProps {
     completitud: CompletitudAmbito | null;
     documentos: Document[];
     fase: FaseDeming;
+    /** Fase en curso de la obra (`obra.faseDeming`): avanza sola cuando la
+     *  anterior queda completa. Se marca en su pestaña. */
+    faseActual: FaseDeming;
     onFase: (f: FaseDeming) => void;
     modulos: Record<FaseDeming, ModuloFase[]>;
     /** Personas de la obra, para elegir quiénes firman lo que se carga. */
@@ -39,6 +44,7 @@ export interface Ds44FasesProps {
     onVerDocumento: (doc: Document) => void;
     onAgendarActividad: (criterio: { subtipo?: string; titulo?: string; tipos?: string[] }) => void;
     onIrAModulo: (modulo: string) => void;
+    /** Guarda la condición y recalcula el cumplimiento. */
     onDeclarar: (campo: 'faenaCompartida' | 'tieneMaquinaria' | 'agentesFQB', valor: boolean) => Promise<void> | void;
 }
 
@@ -50,14 +56,8 @@ const FASES: Array<{ key: FaseDeming; nombre: string }> = [
 ];
 
 
-type Filtro = 'todos' | 'Vencido' | 'Pendiente' | 'Parcial' | 'Cumplido';
-const FILTROS: Array<{ key: Filtro; label: string }> = [
-    { key: 'todos', label: 'Todos' },
-    { key: 'Vencido', label: 'Vencido' },
-    { key: 'Pendiente', label: 'Pendiente' },
-    { key: 'Parcial', label: 'Incompleto' },
-    { key: 'Cumplido', label: 'Completado' },
-];
+type Filtro = FiltroEstado;
+const FILTROS = FILTROS_ESTADO;
 
 /** Lo urgente primero; lo que no aplica, al final. */
 const ORDEN: Record<EstadoRequisito, number> = { Vencido: 0, Pendiente: 1, Parcial: 2, Cumplido: 3, NoAplica: 4, FueraDeAlcance: 5 };
@@ -103,13 +103,15 @@ const esEstadoExigible = (e: EstadoRequisito) => e !== 'NoAplica' && e !== 'Fuer
 /**
  * Cumplimiento DS 44 de la obra, fase por fase.
  *
- * Las fases son una forma de ordenar, no una secuencia: se pueden trabajar en
- * paralelo, así que ninguna se marca como "la actual". Todo sale del motor de
+ * La obra tiene una fase en curso (`faseDeming`), que avanza sola cuando la
+ * anterior queda completa y es la que se ve en el Dashboard: su pestaña lo dice.
+ * Las demás siguen abiertas, porque los requisitos de otra fase se pueden ir
+ * resolviendo antes de llegar a ella. Todo sale del motor de
  * completitud —la misma evaluación del repositorio y del export—; este
  * componente solo decide cómo mostrarlo.
  */
 export default function Ds44Fases({
-    tenantId, obraId, completitud, documentos, fase, onFase, modulos, personas,
+    tenantId, obraId, completitud, documentos, fase, faseActual, onFase, modulos, personas,
     onRecargar, onVerDocumento, onAgendarActividad, onIrAModulo, onDeclarar,
 }: Ds44FasesProps) {
     const [filtro, setFiltro] = useState<Filtro>('todos');
@@ -123,6 +125,8 @@ export default function Ds44Fases({
     // de un documento ya cargado.
     const [carga, setCarga] = useState<{ modo: 'cargar' | 'firmantes'; r: RequisitoFuf; documentId?: string } | null>(null);
     const [declarando, setDeclarando] = useState<string | null>(null);
+    // Documento del que se publica una versión nueva (revisión de la MIPER, etc.).
+    const [versionDe, setVersionDe] = useState<Document | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const cambiarFase = (f: FaseDeming) => {
@@ -141,7 +145,7 @@ export default function Ds44Fases({
     const requisitos = useMemo(() => porFase[fase] || [], [porFase, fase]);
     const visibles = useMemo(
         () => requisitos
-            .filter((r) => filtro === 'todos' || r.estado === filtro)
+            .filter((r) => coincideFiltro(r, filtro))
             .slice()
             .sort((a, b) => (ORDEN[a.estado] - ORDEN[b.estado]) || ((a.item || 0) - (b.item || 0))),
         [requisitos, filtro]
@@ -176,14 +180,25 @@ export default function Ds44Fases({
         return documentos.filter((d) => tipos.has(d.tipo) && (d.s3Key || d.archivoUrl));
     }, [documentos]);
 
+    /**
+     * El documento vigente del requisito si se renueva publicando una versión
+     * (MIPER, Reglamento, procedimientos), o null. Mismo criterio que el motor:
+     * mayor versión y, a igual versión, el más reciente.
+     */
+    const versionableDe = useCallback((r: RequisitoFuf): Document | null => {
+        const vigente = evidenciaDe(r).slice().sort((a, b) => ((b.version || 0) - (a.version || 0))
+            || String(b.fecha || b.updatedAt || b.createdAt || '').localeCompare(String(a.fecha || a.updatedAt || a.createdAt || '')))[0];
+        return vigente && esVersionable(vigente.tipo) ? vigente : null;
+    }, [evidenciaDe]);
+
 
     const declarar = async (r: RequisitoFuf, valor: boolean) => {
         const campo = r.condicion ? PREGUNTA_CONDICION[r.condicion]?.campo : null;
         if (!campo) return;
         setDeclarando(r.id);
         try {
+            // Quien declara recalcula el cumplimiento: lo hace igual desde el Resumen.
             await onDeclarar(campo, valor);
-            await onRecargar();
         } finally {
             setDeclarando(null);
         }
@@ -231,6 +246,16 @@ export default function Ds44Fases({
         }
         if (r.estado === 'Cumplido' && evidencia.length > 0) {
             return <button type="button" className="ob-btn ob-btn--fila" onClick={() => onVerDocumento(evidencia[0])}><LuEye size={14} /> Ver</button>;
+        }
+        // Una revisión vencida (ítems 6 y 51) se renueva publicando una versión
+        // del mismo documento: subir otro archivo suelto no la renueva.
+        const versionable = versionableDe(r);
+        if (r.estado === 'Vencido' && versionable) {
+            return (
+                <button type="button" className="ob-btn ob-btn--fila" onClick={() => setVersionDe(versionable)}>
+                    <LuFilePen size={14} /> Nueva versión
+                </button>
+            );
         }
         if (r.accion?.tipo === 'designar_representante') {
             return (
@@ -311,14 +336,13 @@ export default function Ds44Fases({
         // Vía alternativa de las capacitaciones: agendarla en la plataforma. La
         // principal es cargar el registro del hecho (lista de asistencia o
         // certificado), que es lo que llega cuando la dicta un externo.
-        const puedeAgendar = Boolean(r.acreditacion && r.estado !== 'Cumplido');
+        // Con el registro cargado y solo firmas por recoger, agendar otra no aplica.
+        const puedeAgendar = Boolean(r.acreditacion && r.estado !== 'Cumplido' && !r.pendienteFirma);
         // Qué falta, dicho en palabras: sin esto "Incompleto" no explicaba nada.
         const queFalta = r.accion?.falta || r.cargar?.que;
-        // Un requisito cumplido puede tener firmas pendientes que la norma no exige
-        // para darlo por cumplido: se informa sin llamarlo "falta".
-        const recordar = r.accion?.tipo === 'recordar_firmas' ? r.accion : null;
-        const falta = r.estado !== 'Cumplido' && queFalta ? `Falta ${queFalta}.`
-            : recordar ? `Queda pendiente ${recordar.falta} (${recordar.total - recordar.pendientes} de ${recordar.total} firmaron).` : null;
+        // Un requisito con firmas por recoger ya no figura como completado (el motor
+        // lo deja en "Pendiente de firma"): la línea dice de quién falta.
+        const falta = r.estado !== 'Cumplido' && queFalta ? `Falta ${queFalta}.` : null;
         return (
             <div key={r.id} className="ob-fila">
                 <span className="ob-fila__icono"><IconoEstado estado={r.estado} /></span>
@@ -331,10 +355,9 @@ export default function Ds44Fases({
                             <LuCalendar size={12} /> o agéndala en la plataforma
                         </button>
                     )}
-                    {r.estado === 'Cumplido' && recordar && recordar.personaIds.length > 0 && (
-                        <button type="button" className="ob-fila__alterna" disabled={solicitando !== null}
-                            onClick={() => solicitarFirma(r, recordar.documentId, recordar.personaIds)}>
-                            <LuSignature size={12} /> {solicitando === r.id ? 'Enviando…' : 'Recordar a quienes no han firmado'}
+                    {versionableDe(r) && r.estado !== 'Vencido' && (
+                        <button type="button" className="ob-fila__alterna" onClick={() => setVersionDe(versionableDe(r))}>
+                            <LuFilePen size={12} /> Publicar nueva versión
                         </button>
                     )}
                     {r.estado !== 'Cumplido' && evidencia.length > 0 && (
@@ -343,14 +366,14 @@ export default function Ds44Fases({
                         </button>
                     )}
                 </div>
-                <span className={`ob-etiqueta ob-etiqueta--${r.estado}`}>{ETIQUETA[r.estado]}</span>
+                <span className={`ob-etiqueta ob-etiqueta--${r.estado}`}>{etiquetaRequisito(r)}</span>
                 <div className="ob-fila__acciones">{accionDe(r)}</div>
             </div>
         );
     };
 
     const resumenTotal = completitud?.resumen;
-    const conteo = (k: Filtro) => (k === 'todos' ? requisitos.length : requisitos.filter((r) => r.estado === k).length);
+    const conteo = (k: Filtro) => requisitos.filter((r) => coincideFiltro(r, k)).length;
     const nombreFase = FASES.find((f) => f.key === fase)?.nombre || '';
     const modulosFase = modulos[fase] || [];
     // Se lee de la lista vigente y no de una copia: así el panel refleja lo que
@@ -373,7 +396,13 @@ export default function Ds44Fases({
                         return (
                             <button key={f.key} type="button" role="tab" className="ob-fase"
                                 aria-selected={f.key === fase} onClick={() => cambiarFase(f.key)}>
-                                <span className="ob-fase__cabeza"><span>{f.nombre}</span><span className="ob-fase__pct">{r.progreso}%</span></span>
+                                <span className="ob-fase__cabeza">
+                                    <span className="ob-fase__nombre">
+                                        {f.nombre}
+                                        {f.key === faseActual && <span className="ob-fase__actual">En curso</span>}
+                                    </span>
+                                    <span className="ob-fase__pct">{r.progreso}%</span>
+                                </span>
                                 <span className={`ob-barra${completa ? ' ob-barra--completa' : ''}`}><span style={{ width: `${r.progreso}%` }} /></span>
                                 <span className="ob-fase__cuenta">{r.cumplidos} de {r.exigibles} completados</span>
                             </button>
@@ -466,6 +495,16 @@ export default function Ds44Fases({
                     documentId={carga.documentId}
                     personas={personas}
                     onCerrar={() => setCarga(null)}
+                    onListo={onRecargar}
+                />
+            )}
+
+            {versionDe && (
+                <NuevaVersion
+                    tenantId={tenantId}
+                    obraId={obraId}
+                    documento={versionDe}
+                    onCerrar={() => setVersionDe(null)}
                     onListo={onRecargar}
                 />
             )}

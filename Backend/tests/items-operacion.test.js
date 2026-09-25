@@ -288,3 +288,12 @@ test('cada ítem tiene UNA sola definición en todo el catálogo', () => {
         assert.deepEqual(duplicados, [], `${ambito}: ítems duplicados ${duplicados}`);
     }
 });
+
+test('ítem 18 acreditado por la actividad: un certificado aparte sin firmar no lo baja a pendiente de firma', () => {
+    const cert = doc('CAPACITACION_EPP', { asignaciones: [{ personaId: 'p9', nombre: 'Ana', estado: 'pendiente' }] });
+    const reqs = C.evaluarCompletitud(definicionesOperacionPara('obra'), ctx({ actividades: [actividad()], documentos: [cert] })).requisitos;
+    const r = reqs.find((x) => x.item === 18);
+    assert.equal(r.acreditacion.via, 'actividad');
+    assert.equal(r.estado, E.CUMPLIDO);
+    assert.equal(r.pendienteFirma, false);
+});

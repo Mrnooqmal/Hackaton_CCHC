@@ -132,6 +132,12 @@
 .ob-fase__cabeza { display: flex; justify-content: space-between; font-size: 0.9375rem; font-weight: 500; }
 .ob-fase__pct { font-size: 0.8125rem; }
 .ob-fase__cuenta { font-size: 0.8125rem; color: var(--text-secondary); }
+.ob-accesos { display: flex; flex-wrap: wrap; gap: 8px; }
+.ob-fase__nombre { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ob-fase__actual {
+  font-size: 0.6875rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  color: var(--accent-text); background: var(--surface-hover);
+}
 
 .ob-barra { display: block; height: 6px; border-radius: 999px; background: var(--surface-hover); overflow: hidden; }
 .ob-barra > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width 300ms; }
@@ -373,6 +379,9 @@
 .ce-firmantes__cabeza { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 /* Sin scroll propio: la lista fluye y el que desplaza es el panel. */
 .ce-firmantes { border: 1px solid var(--surface-border); border-radius: 10px; overflow: hidden; }
+/* La lista para agregar puede ser toda la empresa: con tope, para que el resto
+   del formulario (y el resumen de firmantes) no quede decenas de filas abajo. */
+.ce-firmantes--acotada { max-height: 264px; overflow-y: auto; }
 .ce-firmante {
   display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 14px;
   cursor: pointer; font-size: 0.8125rem; color: var(--text-primary);

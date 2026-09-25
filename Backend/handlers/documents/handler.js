@@ -756,7 +756,7 @@ module.exports.nuevaVersion = async (event) => {
         if (!id) return error('ID de documento requerido');
 
         const body = JSON.parse(event.body || '{}');
-        const { s3Key, motivo, notasCambio, versionEsperada, participantesRevision } = body;
+        const { s3Key, motivo, notasCambio, versionEsperada, participantesRevision, firmantes } = body;
         // Quién publica sale de la sesión (el cuerpo podía nombrar a cualquiera).
         const publicadaPor = sesion.personaId;
 
@@ -789,7 +789,9 @@ module.exports.nuevaVersion = async (event) => {
         // permanecen además en SignaturesTable (no se toca — restricción legal PIN).
         const snapshot = {
             version: versionActual,
-            s3Key: doc.s3Key || null,
+            // Lo cargado desde el FUF guarda la clave solo en `archivoUrl`: sin esto
+            // la versión archivada quedaba sin archivo que descargar.
+            s3Key: doc.s3Key || doc.archivoUrl || null,
             archivoNombre: doc.archivoNombre || null,
             publicadaPor: doc.ultimaPublicacionPor || doc.createdBy || null,
             publicadaPorNombre: doc.ultimaPublicacionNombre || doc.creatorName || null,
@@ -803,11 +805,39 @@ module.exports.nuevaVersion = async (event) => {
         };
         const versiones = Array.isArray(doc.versiones) ? [...doc.versiones, snapshot] : [snapshot];
 
-        // Re-firma: se conservan las mismas personas asignadas, en estado 'pendiente'.
-        const asignacionesReset = (doc.asignaciones || []).map(a => ({
+        // Quiénes firman la versión nueva. Sin `firmantes`, las mismas personas de
+        // la anterior. Con `firmantes` (lista de personaId), esa lista manda: quien
+        // sigue re-firma, quien se quita deja de tener la firma pendiente (lo que
+        // ya firmó queda en el snapshot) y quien se agrega recibe su asignación.
+        if (firmantes !== undefined && !Array.isArray(firmantes)) {
+            return error('firmantes debe ser una lista de personas', 400);
+        }
+        const elegidos = Array.isArray(firmantes) ? new Set(firmantes.filter(Boolean)) : null;
+        const previas = (doc.asignaciones || []).filter((a) => !elegidos || elegidos.has(a.personaId));
+
+        // Re-firma: las personas que siguen quedan en estado 'pendiente'.
+        const asignacionesReset = previas.map(a => ({
             ...a, estado: 'pendiente', fechaFirma: null, notificado: true,
         }));
-        const firmantesPrevios = [...new Set((doc.asignaciones || []).map(a => a.personaId).filter(Boolean))];
+        const firmantesPrevios = [...new Set(previas.map(a => a.personaId).filter(Boolean))];
+
+        // Las agregadas se construyen igual que en `assign`: solo personas de la
+        // misma empresa del documento, con el RUT cifrado.
+        const nuevosIds = elegidos
+            ? [...elegidos].filter((pid) => !(doc.asignaciones || []).some((a) => a.personaId === pid))
+            : [];
+        const asignacionesNuevas = [];
+        if (nuevosIds.length > 0) {
+            const personaService = new PersonaService();
+            const llave = await llaveDeArreglos(tenantId);
+            for (const pid of nuevosIds) {
+                const persona = await personaService.getById(pid).catch(() => null);
+                if (!persona || persona.tenantId !== tenantId) {
+                    return error('Uno de los firmantes no pertenece a la empresa del documento.', 400);
+                }
+                asignacionesNuevas.push(construirAsignacion(persona, { notificado: true }, llave));
+            }
+        }
 
         await docClient.send(new UpdateCommand({
             TableName: TABLE_NAME,
@@ -822,7 +852,7 @@ module.exports.nuevaVersion = async (event) => {
                 ':s3': s3Key,
                 ':an': body.archivoNombre || doc.archivoNombre || null,
                 ':empty': [],
-                ':asig': asignacionesReset,
+                ':asig': [...asignacionesReset, ...asignacionesNuevas],
                 ':motivo': motivo,
                 ':notas': notasCambio || null,
                 ':pby': publicadaPor || null,
@@ -849,6 +879,23 @@ module.exports.nuevaVersion = async (event) => {
             });
         } catch (eventErr) {
             console.error('Error emitting document.version.updated event:', eventErr);
+        }
+
+        // A quien se agregó no le corresponde el aviso de re-firma (no firmó la
+        // anterior): recibe el de documento asignado, como en `assign`.
+        if (asignacionesNuevas.length > 0) {
+            try {
+                await eventBus.emit('document.assigned', {
+                    documentId: id,
+                    userIds: asignacionesNuevas.map((a) => a.personaId),
+                    assignedBy: publicadaPor,
+                    creatorName: body.publicadaPorNombre || 'Gestor SST',
+                    documentName: doc.titulo,
+                    dueDate: null,
+                });
+            } catch (eventErr) {
+                console.error('Error emitting document.assigned event (nueva versión):', eventErr);
+            }
         }
 
         const updated = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));

@@ -373,6 +373,9 @@ function evaluarItem9(ctx) {
     const asignacion = (ptp.asignaciones || []).find((a) => a.personaId === repre.personaId);
     return {
         estado: E.PARCIAL,
+        // Ya se le pidió: lo único que falta es que firme. Sin pedirla todavía,
+        // falta una acción de quien gestiona, y queda como incompleto.
+        pendienteFirma: Boolean(asignacion),
         detalle: asignacion
             ? `Firma solicitada a ${repre.nombre || 'el representante legal'}; todavía no firma.`
             : 'Programa cargado, falta la firma del representante legal.',

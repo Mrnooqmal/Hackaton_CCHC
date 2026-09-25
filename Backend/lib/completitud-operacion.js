@@ -228,7 +228,7 @@ function evaluarItem19(ctx) {
         return firmadas === asignaciones.length
             ? { estado: E.CUMPLIDO, acreditacion, detalle: `${firmadas} asistente(s) con constancia firmada.` }
             : {
-                estado: E.PARCIAL, acreditacion, cargar: null,
+                estado: E.PARCIAL, acreditacion, cargar: null, pendienteFirma: true,
                 detalle: `${firmadas} de ${asignaciones.length} asistente(s) con constancia firmada.`,
             };
     }

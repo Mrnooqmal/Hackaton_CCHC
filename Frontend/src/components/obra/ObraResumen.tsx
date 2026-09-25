@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LuCheck, LuCog, LuCopy, LuFactory, LuFlaskConical, LuMapPin } from 'react-icons/lu';
+import { LuCheck, LuCog, LuCopy, LuFactory, LuFileText, LuFlaskConical, LuMapPin, LuShieldAlert, LuUsers } from 'react-icons/lu';
 import { UMBRAL_CPHS, UMBRAL_DELEGADO_MIN } from '../../utils/estructuraPreventiva';
 
 type CampoCondicion = 'faenaCompartida' | 'tieneMaquinaria' | 'agentesFQB';
@@ -20,6 +20,12 @@ export interface ObraResumenProps {
     tieneMaquinaria?: boolean | null;
     agentesFQB?: boolean | null;
     onDeclarar: (campo: CampoCondicion, valor: boolean) => Promise<void> | void;
+    incidentesAbiertos: number;
+    /** Personas de la obra, por cuadrillas (fija la obra activa antes de ir). */
+    onVerEquipo: () => void;
+    onVerIncidentes: () => void;
+    /** Repositorio de documentos de esta obra. */
+    onVerDocumentos: () => void;
 }
 
 const fechaCorta = (iso?: string | null) =>
@@ -56,6 +62,7 @@ export default function ObraResumen(props: ObraResumenProps) {
     const {
         codigo, esIdInterno, mandante, registradaEn, direccion, comuna, region,
         personasAsignadas, dotacionDeclarada, dotacionObservacion, onDeclarar,
+        incidentesAbiertos, onVerEquipo, onVerIncidentes, onVerDocumentos,
     } = props;
     const [copiado, setCopiado] = useState(false);
     const [guardando, setGuardando] = useState<CampoCondicion | null>(null);
@@ -169,6 +176,17 @@ export default function ObraResumen(props: ObraResumenProps) {
                     ) : (
                         <><strong>Dotación declarada:</strong> no declarada. Se usa la de personas asignadas.</>
                     )}
+                </div>
+                <div className="ob-accesos">
+                    <button type="button" className="ob-btn" onClick={onVerEquipo}>
+                        <LuUsers size={15} /> Equipo · {personasAsignadas} activos
+                    </button>
+                    <button type="button" className="ob-btn" onClick={onVerIncidentes}>
+                        <LuShieldAlert size={15} /> Incidentes{incidentesAbiertos > 0 ? ` · ${incidentesAbiertos} abiertos` : ''}
+                    </button>
+                    <button type="button" className="ob-btn" onClick={onVerDocumentos}>
+                        <LuFileText size={15} /> Documentos de la obra
+                    </button>
                 </div>
             </section>
 

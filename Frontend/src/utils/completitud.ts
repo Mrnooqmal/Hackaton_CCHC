@@ -25,9 +25,16 @@ export const ESTADOS_NO_PENALIZAN: EstadoRequisito[] = [
     ESTADO_REQUISITO.NO_APLICA, ESTADO_REQUISITO.FUERA_DE_ALCANCE,
 ];
 
+/**
+ * Las palabras de estado que ve el usuario, en TODAS las pantallas del FUF y en
+ * el reporte exportado (ESPEJO de ETIQUETA_ESTADO en
+ * Backend/lib/completitud-export.js). Son los estados del motor con otro nombre.
+ * "Fuera de alcance" no se funde con "No aplica": uno es que la norma no lo exige
+ * a esta obra, el otro que la plataforma no lo acredita.
+ */
 export const ESTADO_LABEL: Record<EstadoRequisito, string> = {
-    Cumplido: 'Cumplido',
-    Parcial: 'Parcial',
+    Cumplido: 'Completado',
+    Parcial: 'Incompleto',
     Pendiente: 'Pendiente',
     Vencido: 'Vencido',
     NoAplica: 'No aplica',
@@ -75,6 +82,9 @@ export interface RequisitoFuf {
     cargar?: { tipo: string; que: string | null } | null;
     /** Lo que resuelve el requisito cuando no es un archivo. `falta` lo dice en palabras. */
     accion?: AccionRequisito | null;
+    /** Parcial que solo espera firmas de los firmantes asignados: se muestra como
+     *  "Pendiente de firma". Pesa igual que cualquier Parcial en el porcentaje. */
+    pendienteFirma?: boolean;
 }
 
 export type AccionRequisito =

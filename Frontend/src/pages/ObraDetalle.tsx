@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
 import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido, resolverDocumentoFirmable } from '../utils/documentoFirmado';
-import { publicarNuevaVersion } from '../utils/versionarDocumento';
+import { publicarNuevaVersion, esVersionable, ENTIDADES_REVISION } from '../utils/versionarDocumento';
 import { caducidadPorDefecto, tiempoRelativo, revisionVencida, MESES_VIGENCIA_DEFECTO } from '../utils/vigenciaDocumento';
 import ObraAplicabilidadKit from '../components/ObraAplicabilidadKit';
 import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
@@ -12,10 +12,11 @@ import { incidenteAbierto, incidenteCerrado } from '../utils/incidentes';
 import { LuFileText, LuShieldAlert, LuClock, LuCircleCheck, LuDownload, LuHistory } from 'react-icons/lu';
 import { FiUploadCloud, FiEye } from 'react-icons/fi';
 import { Modal, Select, SegmentedControl } from '../components/ui';
-import { DS44_ACT_ACTUALIZACIONES, DS44_DO_PROCEDIMIENTOS, DS44_DO_REGISTROS_GESTION, esRegistroEjecucion, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, type Ds44DoContext } from '../utils/ds44';
+import { DS44_ACT_ACTUALIZACIONES, DS44_DO_REGISTROS_GESTION, esRegistroEjecucion, DS44_DO_EVENTOS, evalAplicabilidad, DS44_ONBOARDING_ITEMS, type Ds44DoContext } from '../utils/ds44';
 import { computeOnboardingSummary } from '../utils/onboardingObra';
 
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
+import { useObraContext } from '../context/ObraContext';
 import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
 import { requisitosDeFase, resumenDeFase, type FaseDeming } from '../components/FufPorFase';
 import ObraCabecera from '../components/obra/ObraCabecera';
@@ -32,15 +33,6 @@ import type { SignatureRequest, DocumentVersion, Document as DocumentoApi, Entid
 type VersionHistorial = DocumentVersion & { actual: boolean };
 import { PERMISSIONS } from '../permissions';
 
-// FUF 51 / Art. 57 inc. 5: órganos que pueden participar en la revisión de un
-// documento (Reglamento Interno, MIPER, procedimientos). Se registran al publicar
-// una nueva versión y quedan en el historial de cambios.
-const ENTIDADES_REVISION: { id: EntidadRevision; label: string }[] = [
-  { id: 'DEPTO_PREVENCION', label: 'Departamento de Prevención de Riesgos' },
-  { id: 'COMITE_PARITARIO', label: 'Comité Paritario de Higiene y Seguridad' },
-  { id: 'DELEGADO_SST', label: 'Delegado de Seguridad y Salud en el Trabajo' },
-  { id: 'SINDICATO', label: 'Organización sindical' },
-];
 const labelEntidadRevision = (id: string) =>
   ENTIDADES_REVISION.find((e) => e.id === id)?.label || id;
 
@@ -87,23 +79,9 @@ const extractEmpresaDocs = (cargos: any[]): Record<string, { fileKey: string; no
   return out;
 };
 
-// Tipos de documento que son procedimientos de obra (DS 44): actualizar su
-// archivo publica una NUEVA VERSIÓN (notifica a la línea de mando + re-firma).
-// Espejo de TIPOS_PROCEDIMIENTO en Backend/handlers/documents/handler.js.
-// Los tipos que NO salen de DS44_DO_PROCEDIMIENTOS van listados a mano: la MIPER
-// es un documento de la fase PLAN, pero el Art. 7 inc. 9 le exige el mismo ciclo
-// de revisión (re-informar y re-firmar), así que se versiona igual que un
-// procedimiento. 'MATRIZ_MIPPER' es su alias histórico.
-const TIPOS_PROCEDIMIENTO = new Set<string>([
-  ...DS44_DO_PROCEDIMIENTOS.map((el) => el.tipo),
-  'PROCEDIMIENTO_TRABAJO',
-  'MIPER',
-  'MATRIZ_MIPPER',
-  // Art. 57 inc. 5: revisión anual con participación del comité o del delegado.
-  // El FUF 51 pide el control de cambios, que es exactamente el versionado.
-  'REGLAMENTO_INTERNO',
-]);
-const esProcedimiento = (tipo?: string): boolean => !!tipo && TIPOS_PROCEDIMIENTO.has(tipo);
+// Tipos cuyo archivo, al reemplazarse, publica una nueva versión (ver
+// TIPOS_VERSIONABLES en utils/versionarDocumento.ts, espejo del backend).
+const esProcedimiento = esVersionable;
 
 /**
  * ¿Reemplazar el archivo de este documento de la fase PLAN publica una versión?
@@ -160,6 +138,9 @@ export default function ObraDetalle() {
   const canSubirDocumentos = hasPermission(PERMISSIONS.OBRA_SUBIR_DOCUMENTOS);
   const navigate = useNavigate();
   const { obraId } = useParams();
+  // Personas y el repositorio leen la obra activa del contexto: se fija antes de
+  // ir, o abren sin obra (Personas muestra todo el tenant en vez de las cuadrillas).
+  const { setSelectedObraId } = useObraContext();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -623,9 +604,11 @@ export default function ObraDetalle() {
       const res = await obrasApi.update(obraId, { [flag]: value } as any);
       const updated = res.success ? (res.data?.obra || res.data) : null;
       setObra((prev: any) => ({ ...(prev || {}), ...(updated || {}), [flag]: value }));
+      // La condición decide qué requisitos aplican: sin recalcular, la pestaña
+      // DS 44 seguía mostrando el estado de antes de declararla.
+      await recargarCompletitud();
     } catch (err) {
       console.error('Error guardando flag de obra:', err);
-    } finally {
     }
   };
 
@@ -800,8 +783,8 @@ export default function ObraDetalle() {
     }
   }, [obraId, reloadDocs]);
 
-  // Avance manual de fase del ciclo Deming (HACER→VERIFICAR, VERIFICAR→ACTUAR).
-  // A diferencia de PLAN (auto), estas fases las cierra explícitamente el gestor.
+  // Avance de HACER→VERIFICAR y VERIFICAR→ACTUAR. Lo dispara el mismo auto-avance
+  // que PLAN→HACER (ver más abajo), no un botón.
   const handleAvanzarFaseDeming = useCallback(async () => {
     if (!obraId) return;
     setActivatingFaseDeming(true);
@@ -810,7 +793,9 @@ export default function ObraDetalle() {
       if (res.success && res.data?.obra) {
         setObra(res.data.obra);
         await reloadDocs();
-        setObraToast('Fase completada. Avanzaste a la siguiente fase del ciclo.');
+        // La obra que responde ya trae la fase NUEVA.
+        const nombre: Record<string, string> = { hacer: 'Hacer', verificar: 'Verificar', actuar: 'Actuar' };
+        setObraToast(`Fase completada. La obra pasa a ${nombre[res.data.obra.faseDeming] || 'la siguiente fase'}.`);
       }
     } catch (err) {
       console.error('Error avanzando fase Deming:', err);
@@ -1602,6 +1587,8 @@ export default function ObraDetalle() {
       setObra(res.data);
     }
     setIsEditModalOpen(false);
+    // El modal también cambia las condiciones de la faena.
+    void recargarCompletitud();
   };
 
   // Cargos efectivos a asignar: los elegidos en el modal, o el cargo legacy del
@@ -1736,6 +1723,12 @@ export default function ObraDetalle() {
     } finally {
       setUpdatingWorkers(null);
     }
+  };
+
+  // Tras cargar, versionar o pedir firmas cambian el cumplimiento Y los documentos
+  // de la obra: la lista usa estos últimos para "Ver documento" y "Nueva versión".
+  const recargarDs44 = async () => {
+    await Promise.all([recargarCompletitud(), reloadDocs()]);
   };
 
   // ── Módulos de trabajo de cada fase ─────────────────────────────────────
@@ -2206,6 +2199,10 @@ export default function ObraDetalle() {
             tieneMaquinaria={obra.tieneMaquinaria}
             agentesFQB={obra.agentesFQB}
             onDeclarar={handleSetObraFlag}
+            incidentesAbiertos={incidentes.filter(incidenteAbierto).length}
+            onVerEquipo={() => { setSelectedObraId(obraId || null); navigate('/personas'); }}
+            onVerIncidentes={() => navigate(`/incidents?obraId=${obraId}`)}
+            onVerDocumentos={() => { setSelectedObraId(obraId || null); navigate('/documents-repository'); }}
           />
         )}
 
@@ -2218,10 +2215,11 @@ export default function ObraDetalle() {
             completitud={completitudObra}
             documentos={obraDocs as any}
             fase={selectedDemingPhase as FaseDeming}
+            faseActual={faseDeming as FaseDeming}
             onFase={setSelectedDemingPhase}
             modulos={modulosDs44}
             personas={activeWorkers}
-            onRecargar={recargarCompletitud}
+            onRecargar={recargarDs44}
             onVerDocumento={(d) => handlePreviewDoc(d as any)}
             onAgendarActividad={abrirAgendaDesdeFuf}
             onIrAModulo={irAModuloDs44}
@@ -2253,8 +2251,8 @@ export default function ObraDetalle() {
           }}>
             <LuCircleCheck size={20} style={{ flexShrink: 0 }} />
             <div>
-              <div style={{ fontWeight: 700 }}>¡Fase PLAN completada!</div>
-              <div style={{ opacity: 0.9, fontSize: '0.82rem' }}>La obra avanza automáticamente a la Fase DO.</div>
+              <div style={{ fontWeight: 700 }}>Planificar quedó completa</div>
+              <div style={{ opacity: 0.9, fontSize: '0.82rem' }}>La obra pasa a la fase Hacer.</div>
             </div>
           </div>
         )}

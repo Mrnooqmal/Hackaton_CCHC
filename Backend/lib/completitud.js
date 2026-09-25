@@ -262,6 +262,27 @@ function evaluarCompletitud(definiciones, ctx = {}) {
             // tumbar el panel entero: se reporta como pendiente con el motivo.
             resultado = { estado: ESTADO_REQUISITO.PENDIENTE, detalle: `No evaluable: ${err.message}` };
         }
+
+        // Firmas pendientes. Si alguien asignó firmantes al documento que acredita
+        // el requisito, esas firmas SON la constancia (que se informó, que se
+        // asistió): mientras falten, el documento no acredita lo que dice, aunque
+        // la definición lo diera por cumplido con el archivo cargado. Pasa a
+        // Parcial —medio punto, como cualquier incompleto— marcado como
+        // `pendienteFirma`, y lo que resuelve es recoger las firmas, no cargar.
+        // Un documento sin firmantes asignados no cambia, y tampoco un requisito que
+        // acredita OTRA evidencia: una capacitación ejecutada en la plataforma con
+        // sus asistentes firmados no depende de un certificado aparte sin firmar.
+        const accion = resultado?.accion || accionFirmasPendientes(def, resultado, ctx);
+        const acreditaElDocumento = resultado?.acreditacion?.via !== 'actividad';
+        if (resultado?.estado === ESTADO_REQUISITO.CUMPLIDO && accion?.tipo === 'recordar_firmas' && acreditaElDocumento) {
+            resultado = {
+                ...resultado,
+                estado: ESTADO_REQUISITO.PARCIAL,
+                pendienteFirma: true,
+                cargar: null,
+                detalle: `${resultado.detalle ? `${resultado.detalle} ` : ''}Firmaron ${accion.total - accion.pendientes} de ${accion.total}.`,
+            };
+        }
         return {
             id: def.id,
             item: def.item ?? null,
@@ -293,7 +314,11 @@ function evaluarCompletitud(definiciones, ctx = {}) {
             cargar: cargaPara(def, resultado),
             // Cuando lo que resuelve el requisito no es un archivo (designar a
             // alguien, pedir una firma), la definición dice cuál acción es.
-            accion: resultado?.accion || accionFirmasPendientes(def, resultado, ctx),
+            accion,
+            // El requisito solo espera firmas: la pantalla y el export lo llaman
+            // "Pendiente de firma" en vez de "Incompleto". El estado sigue siendo
+            // Parcial, así que pesa igual en el porcentaje.
+            pendienteFirma: resultado?.estado === ESTADO_REQUISITO.PARCIAL && Boolean(resultado?.pendienteFirma),
             // Qué declaración de la obra decide si este requisito corresponde, y
             // cómo quedó esa decisión. Viaja para que la pantalla pueda PEDIR el
             // dato cuando falta: sin esto, un requisito en `verificar` se quedaría

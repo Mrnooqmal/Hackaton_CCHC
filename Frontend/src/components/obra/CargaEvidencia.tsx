@@ -4,6 +4,8 @@ import { Drawer } from '../ui';
 import { documentsApi } from '../../api/documents.api';
 import { subirComoDocumento } from '../../utils/subirDocumento';
 import { caducidadPorDefecto } from '../../utils/vigenciaDocumento';
+// El día en hora de Chile: en UTC salta a mañana desde las ~20:00.
+import { hoyISO as hoy } from '../../utils/seguimientoActividad';
 
 export interface PersonaFirmante {
     personaId: string;
@@ -33,7 +35,6 @@ export interface CargaEvidenciaProps {
 
 // El mismo tope que aplica el backend (handlers/uploads): mejor avisarlo antes de subir.
 const MAX_BYTES = 10 * 1024 * 1024;
-const hoy = () => new Date().toISOString().slice(0, 10);
 const nombreDe = (p: PersonaFirmante) => `${p.nombre} ${p.apellido || ''}`.trim();
 
 /**

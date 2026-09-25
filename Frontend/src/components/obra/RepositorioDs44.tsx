@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    LuArrowRight, LuDownload, LuEye, LuFileText, LuInfo, LuSearch, LuSend, LuSignature, LuUpload, LuUserCheck, LuUsers, LuX,
+    LuArrowRight, LuDownload, LuEye, LuFilePen, LuFileText, LuInfo, LuSearch, LuSend, LuSignature, LuUpload, LuUserCheck, LuUsers, LuX,
 } from 'react-icons/lu';
 import { Drawer } from '../ui';
 import DistribucionPanel from '../DistribucionPanel';
@@ -10,9 +10,11 @@ import { estructuraApi } from '../../api/estructura.api';
 import { documentsApi, type Document, type DocumentAssignment, type DocumentSignature } from '../../api/documents.api';
 import { uploadsApi } from '../../api/uploads.api';
 import { agruparPorSeccion, itemFuf } from '../../utils/fuf';
-import { ETIQUETA_ESTADO } from '../../utils/etiquetaEstado';
+import { ETIQUETA_ESTADO, etiquetaRequisito, coincideFiltro, FILTROS_ESTADO, type FiltroEstado } from '../../utils/etiquetaEstado';
 import { workersApi } from '../../api/workers.api';
 import CargaEvidencia, { type PersonaFirmante } from './CargaEvidencia';
+import NuevaVersion from './NuevaVersion';
+import { esVersionable } from '../../utils/versionarDocumento';
 import { requiereFirmaRepresentante, ROL_REPRESENTANTE } from '../../utils/firmaRepresentante';
 import type { CompletitudAmbito, EstadoRequisito, RequisitoFuf } from '../../utils/completitud';
 import type { Ambito } from '../../utils/estructuraPreventiva';
@@ -35,14 +37,8 @@ export interface RepositorioDs44Props {
     onDescargarDocumento: (doc: Document) => void;
 }
 
-type Filtro = 'todos' | 'Vencido' | 'Pendiente' | 'Parcial' | 'Cumplido';
-const FILTROS: Array<{ key: Filtro; label: string }> = [
-    { key: 'todos', label: 'Todos' },
-    { key: 'Vencido', label: 'Vencido' },
-    { key: 'Pendiente', label: 'Pendiente' },
-    { key: 'Parcial', label: 'Incompleto' },
-    { key: 'Cumplido', label: 'Completado' },
-];
+type Filtro = FiltroEstado;
+const FILTROS = FILTROS_ESTADO;
 const ORDEN: Record<EstadoRequisito, number> = { Vencido: 0, Pendiente: 1, Parcial: 2, Cumplido: 3, NoAplica: 4, FueraDeAlcance: 5 };
 
 /** Documentos visibles por ítem antes de "Ver los N": los registros por persona son decenas. */
@@ -115,6 +111,8 @@ export default function RepositorioDs44({
     const [subiendo, setSubiendo] = useState<string | null>(null);
     const [exportando, setExportando] = useState(false);
     const [carga, setCarga] = useState<{ modo: 'cargar' | 'firmantes'; r: RequisitoFuf; documentId?: string } | null>(null);
+    // Documento del que se publica una versión nueva (revisión de la MIPER, del Reglamento…).
+    const [versionDe, setVersionDe] = useState<DocRepo | null>(null);
     // Personas del ámbito, para elegir quiénes firman lo que se carga.
     const [personas, setPersonas] = useState<PersonaFirmante[]>([]);
     useEffect(() => {
@@ -197,13 +195,13 @@ export default function RepositorioDs44({
     const requisitos = useMemo(() => {
         const base = q ? secciones.flatMap((s) => s.requisitos) : (sec?.requisitos || []);
         return base
-            .filter((r) => (filtro === 'todos' || r.estado === filtro) && coincide(r))
+            .filter((r) => coincideFiltro(r, filtro) && coincide(r))
             .slice()
             .sort((a, b) => (ORDEN[a.estado] - ORDEN[b.estado]) || ((a.item || 0) - (b.item || 0)));
     }, [q, secciones, sec, filtro, coincide]);
 
     const baseConteo = q ? secciones.flatMap((s) => s.requisitos).filter(coincide) : (sec?.requisitos || []);
-    const conteo = (k: Filtro) => (k === 'todos' ? baseConteo.length : baseConteo.filter((r) => r.estado === k).length);
+    const conteo = (k: Filtro) => baseConteo.filter((r) => coincideFiltro(r, k)).length;
 
     const docFicha = ficha ? docsDelAmbito.find((d) => d.documentId === ficha.documentId) || null : null;
     const reqFicha = ficha ? (data?.requisitos || []).find((r) => r.id === ficha.reqId) || null : null;
@@ -259,11 +257,26 @@ export default function RepositorioDs44({
         }
     };
 
+    /** Vigente del requisito si se renueva publicando una versión; mismo criterio que el motor. */
+    const versionableDe = (r: RequisitoFuf): DocRepo | null => {
+        const vigente = docsDe(r).slice().sort((a, b) => ((b.version || 0) - (a.version || 0))
+            || String(fechaDelDoc(b)).localeCompare(String(fechaDelDoc(a))))[0];
+        return vigente && esVersionable(vigente.tipo) ? vigente : null;
+    };
+
     const accionesItem = (r: RequisitoFuf) => {
         if (r.estado === 'NoAplica' || r.estado === 'FueraDeAlcance') return null;
         const accion = r.accion;
+        // Una revisión vencida (ítems 6 y 51) se renueva con una versión nueva del mismo documento.
+        const versionable = r.estado === 'Vencido' ? versionableDe(r) : null;
         return (
             <span className="rd-iconos">
+                {versionable && (
+                    <button type="button" className="rd-icono" aria-label="Publicar nueva versión" title="Publicar nueva versión"
+                        onClick={() => setVersionDe(versionable)}>
+                        <LuFilePen size={16} />
+                    </button>
+                )}
                 {accion?.tipo === 'designar_representante' && (
                     <button type="button" className="rd-icono" aria-label="Designar representante legal" title="Designar representante legal (Mi Empresa → Identidad)"
                         onClick={() => navigate('/mi-empresa')}>
@@ -361,11 +374,8 @@ export default function RepositorioDs44({
                         {r.estado !== 'Cumplido' && (r.accion?.falta || r.cargar?.que) && (
                             <span className="ob-fila__falta">Falta {r.accion?.falta || r.cargar?.que}.</span>
                         )}
-                        {r.estado === 'Cumplido' && r.accion?.tipo === 'recordar_firmas' && (
-                            <span className="ob-fila__falta">Queda pendiente {r.accion.falta}.</span>
-                        )}
                     </span>
-                    <span className={`ob-etiqueta ob-etiqueta--${r.estado}`}>{ETIQUETA_ESTADO[r.estado]}</span>
+                    <span className={`ob-etiqueta ob-etiqueta--${r.estado}`}>{etiquetaRequisito(r)}</span>
                     {accionesItem(r) || <span />}
                 </div>
                 {/* El ítem 1 es una fila del formulario pero cinco obligaciones (Art. 22). */}
@@ -526,7 +536,14 @@ export default function RepositorioDs44({
                 )}
 
                 <div className="rd-ficha__bloque">
-                    <span className="ob-rotulo">Versiones</span>
+                    <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <span className="ob-rotulo">Versiones</span>
+                        {esVersionable(d.tipo) && (
+                            <button type="button" className="ob-btn" onClick={() => setVersionDe(d)}>
+                                <LuFilePen size={15} /> Nueva versión
+                            </button>
+                        )}
+                    </span>
                     <div className="rd-version rd-version--actual">
                         <span className="rd-version__n">v{d.version || 1}</span>
                         <span className="rd-version__texto">
@@ -640,6 +657,16 @@ export default function RepositorioDs44({
                     documentId={carga.documentId}
                     personas={personas}
                     onCerrar={() => setCarga(null)}
+                    onListo={() => cargar(true)}
+                />
+            )}
+
+            {versionDe && (
+                <NuevaVersion
+                    tenantId={tenantId}
+                    obraId={ambito === 'obra' ? obraId : null}
+                    documento={versionDe}
+                    onCerrar={() => setVersionDe(null)}
                     onListo={() => cargar(true)}
                 />
             )}

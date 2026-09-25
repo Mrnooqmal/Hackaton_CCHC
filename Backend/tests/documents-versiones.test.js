@@ -288,3 +288,60 @@ test('devuelve 404 si el documento no existe', async () => {
     assert.equal(res.statusCode, 404);
     assert.equal(store.deletes.length, 0);
 });
+
+// ─── Firmantes de la versión nueva ───────────────────────────────────────────
+//
+// Al publicar una versión se puede cambiar quién la firma. Sin `firmantes` se
+// conservan las mismas personas; con la lista, esa lista manda.
+
+const { PersonaService } = require('../lib/services/PersonaService');
+const { eventBus } = require('../lib/events/EventBus');
+
+const conFirmantes = async (doc, body, personas = {}) => {
+    store.doc = doc;
+    const getById = PersonaService.prototype.getById;
+    const emit = eventBus.emit;
+    const avisos = [];
+    PersonaService.prototype.getById = async (id) => personas[id] || null;
+    eventBus.emit = async (evento, data) => { avisos.push({ evento, data }); };
+    try {
+        const res = await handler.nuevaVersion(ev(doc.documentId, { s3Key: 'obras/miper-v2.pdf', motivo: 'Revisión anual', versionEsperada: 1, ...body }));
+        return { res, avisos, w: store.updates.length ? escrito(store.updates[0]) : null };
+    } finally {
+        PersonaService.prototype.getById = getById;
+        eventBus.emit = emit;
+    }
+};
+const miper = (asignaciones) => ({
+    documentId: 'm1', tenantId: 't1', tipo: 'MIPER', titulo: 'MIPER', s3Key: 'obras/miper-v1.pdf', version: 1, asignaciones,
+});
+const asig = (personaId, estado = 'firmado') => ({ personaId, nombre: personaId, estado, fechaFirma: estado === 'firmado' ? '2026-08-01' : null });
+
+test('sin firmantes, la versión nueva la re-firman las mismas personas', async () => {
+    const { res, w } = await conFirmantes(miper([asig('ana'), asig('luis')]), {});
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(w.asignaciones.map((a) => [a.personaId, a.estado]), [['ana', 'pendiente'], ['luis', 'pendiente']]);
+});
+
+test('con firmantes, se quita a quien sale y se agrega a quien entra', async () => {
+    const { res, w, avisos } = await conFirmantes(
+        miper([asig('ana'), asig('luis')]),
+        { firmantes: ['ana', 'eva'] },
+        { eva: { personaId: 'eva', tenantId: 't1', nombre: 'Eva', apellido: 'Díaz', rut: null } },
+    );
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(w.asignaciones.map((a) => [a.personaId, a.estado]), [['ana', 'pendiente'], ['eva', 'pendiente']]);
+    // Lo que Luis firmó de la v1 queda en el historial.
+    assert.deepEqual(w.versiones[0].asignacionesArchivadas.map((a) => a.personaId), ['ana', 'luis']);
+    const reFirma = avisos.find((a) => a.evento === 'document.version.updated');
+    assert.deepEqual(reFirma.data.firmanteIds, ['ana'], 'la re-firma es solo para quien firmaba la anterior');
+    const asignado = avisos.find((a) => a.evento === 'document.assigned');
+    assert.deepEqual(asignado.data.userIds, ['eva'], 'la persona agregada recibe el aviso de asignación');
+});
+
+test('un firmante de otra empresa se rechaza y no se publica nada', async () => {
+    const { res } = await conFirmantes(miper([asig('ana')]), { firmantes: ['ajeno'] },
+        { ajeno: { personaId: 'ajeno', tenantId: 'otra', nombre: 'X' } });
+    assert.equal(res.statusCode, 400);
+    assert.equal(store.updates.length, 0);
+});

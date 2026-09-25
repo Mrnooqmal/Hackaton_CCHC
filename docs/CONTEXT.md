@@ -257,10 +257,14 @@ Los **procedimientos** de obra (tipos en `TIPOS_PROCEDIMIENTO`: `PROCEDIMIENTO_T
   y una **tarea de re-firma** (`normal`) a los firmantes previos (sin duplicar a
   quien ya es mando; excluye al que publicó). El SMS **no se usa** por ahora: se
   deja la prioridad `high` para que se enganche solo cuando se reactive el canal.
-- **Frontend** (`ObraDetalle.tsx`, sección procedimientos DO): botón "Nueva
-  versión", badge `v{n}`, aviso + `motivo` obligatorio en el modal (selector de
-  archivo con estilo de la app), y **panel de historial de versiones** con
-  descarga por versión (`uploadsApi.getDownloadUrl`).
+- **Frontend** (`components/obra/NuevaVersion.tsx`): panel "Publicar nueva
+  versión" con archivo, `motivo` obligatorio, fecha y participantes de la revisión
+  (FUF 51) y caducidad. Se abre desde la fila del requisito en la obra
+  (`Ds44Fases`: acción principal si la revisión está vencida, "Publicar nueva
+  versión" si no) y desde la ficha del documento en el repositorio
+  (`RepositorioDs44`, que muestra el historial con descarga por versión). Los
+  tipos versionables viven en `TIPOS_VERSIONABLES` (`utils/versionarDocumento.ts`),
+  espejo de `TIPOS_PROCEDIMIENTO` del backend.
   `FirmaService`/`SignaturesTable` **no se tocan** (firmas reales quedan intactas
   en su tabla inmutable; en `versiones[]` va solo un snapshot para auditoría).
 - **Re-firma visible en "Mis Firmas":** además de resetear `asignaciones` a
@@ -397,6 +401,24 @@ comunica es que cambió el Reglamento, no que cambiaron N archivos.
 ⚠️ **El endpoint no tiene punto de entrada en la UI.** El lugar natural es
 `/cargos-onboarding`, donde se sube la plantilla maestra. Hasta que se agregue, el
 ítem 51 no está cerrado.
+
+### 4.6.7 Requisitos con firmas pendientes: "Pendiente de firma"
+El motor de completitud (`lib/completitud.js`, `evaluarCompletitud`) aplica una regla
+común a todas las definiciones: si el documento vigente que acredita un requisito tiene
+firmantes asignados que no han firmado, un requisito que la definición daba por
+**Cumplido** pasa a **Parcial** con `pendienteFirma: true`, `cargar: null` y la acción
+`recordar_firmas` (de quién falta). Las firmas asignadas son la constancia (que se
+informó, que se asistió): sin ellas el documento no acredita lo que dice.
+
+- Pesa medio punto, como cualquier Parcial, y frena el auto-avance de fase.
+- Un documento **sin** firmantes asignados no cambia: sigue Cumplido con el archivo.
+- Un Parcial por **otra** causa (p. ej. ítem 53 sin evidencia de publicación) no se
+  marca `pendienteFirma` aunque el documento tenga firmas por recoger.
+- Los ítems 9 (representante ya solicitado) y 19 (asistentes que no firman) lo marcan
+  desde su propia definición.
+- La etiqueta "Pendiente de firma" es la misma en pantalla (`etiquetaRequisito`,
+  `utils/etiquetaEstado.ts`) y en el FUF exportado (`completitud-export.js`); las
+  listas tienen un filtro aparte para él, fuera de "Incompleto".
 
 ### 4.7 Firmas digitales (`lib/services/FirmaService.js`) — Strategy Pattern
 4 estrategias de validación:

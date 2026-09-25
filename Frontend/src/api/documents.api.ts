@@ -136,6 +136,8 @@ export interface NuevaVersionData {
     participantesRevision?: ParticipantesRevision | null;
     // Versión que el cliente cree vigente (control de concurrencia optimista).
     versionEsperada?: number;
+    /** Quiénes firman la versión nueva (personaId). Sin él, los mismos de la anterior. */
+    firmantes?: string[];
 }
 
 /** Constancia de envío declarada (Art. 57 inc. 2 y equivalentes). */

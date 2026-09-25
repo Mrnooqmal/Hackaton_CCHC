@@ -27,14 +27,23 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
 ));
 
+/**
+ * Las mismas palabras que la plataforma (ESPEJO de ESTADO_LABEL en
+ * Frontend/src/utils/completitud.ts): el reporte que se entrega al fiscalizador
+ * no puede decir otra cosa que la pantalla de la que sale.
+ */
 const ETIQUETA_ESTADO = {
-    [ESTADO_REQUISITO.CUMPLIDO]: 'Cumplido',
-    [ESTADO_REQUISITO.PARCIAL]: 'Parcial',
+    [ESTADO_REQUISITO.CUMPLIDO]: 'Completado',
+    [ESTADO_REQUISITO.PARCIAL]: 'Incompleto',
     [ESTADO_REQUISITO.PENDIENTE]: 'Pendiente',
     [ESTADO_REQUISITO.VENCIDO]: 'Vencido',
     [ESTADO_REQUISITO.NO_APLICA]: 'No aplica',
     [ESTADO_REQUISITO.FUERA_DE_ALCANCE]: 'Fuera de alcance',
 };
+
+/** Un Parcial que solo espera firmas se nombra así (ver `pendienteFirma` en el motor). */
+const ETIQUETA_PENDIENTE_FIRMA = 'Pendiente de firma';
+const etiquetaDe = (r) => (r.pendienteFirma ? ETIQUETA_PENDIENTE_FIRMA : (ETIQUETA_ESTADO[r.estado] || esc(r.estado)));
 
 const COLOR_ESTADO = {
     [ESTADO_REQUISITO.CUMPLIDO]: '#0f766e',
@@ -80,7 +89,7 @@ function renderHtml(exp) {
         <tr>
           <td class="item">${r.item ?? '—'}</td>
           <td>${esc(r.titulo)}</td>
-          <td><span class="estado" style="color:${COLOR_ESTADO[r.estado]}">${ETIQUETA_ESTADO[r.estado] || esc(r.estado)}</span></td>
+          <td><span class="estado" style="color:${COLOR_ESTADO[r.estado]}">${etiquetaDe(r)}</span></td>
           <td class="detalle">${esc(r.justificacion || r.detalle || '')}</td>
         </tr>`).join('');
 
@@ -152,4 +161,4 @@ ${exp.limiteRegistroDT ? `
 </body></html>`;
 }
 
-module.exports = { construirExport, renderHtml, ETIQUETA_ESTADO };
+module.exports = { construirExport, renderHtml, ETIQUETA_ESTADO, ETIQUETA_PENDIENTE_FIRMA };

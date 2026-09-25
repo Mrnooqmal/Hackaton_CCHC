@@ -143,3 +143,60 @@ test('la acción específica del requisito manda sobre la genérica (ítem 9)', 
     const ptp = doc('PROGRAMA_TRABAJO_PREVENTIVO', { asignaciones: [pendiente('otro', 'X')] });
     assert.equal(req(evaluar([ptp]), 9).accion.tipo, 'designar_representante');
 });
+
+// ─── Pendiente de firma ──────────────────────────────────────────────────────
+//
+// Un documento con firmantes asignados no acredita lo que dice hasta que firman:
+// el requisito deja de figurar como completado y pasa a "pendiente de firma".
+
+test('con firmas pendientes el requisito no queda completado: pasa a pendiente de firma', () => {
+    const acta = doc('ACTA_ENSAYO_EMERGENCIA', {
+        documentId: 'acta-1', fecha: '2026-08-20T00:00:00.000Z',
+        asignaciones: [pendiente('p1', 'Ana Rojas'), firmada('p2', 'Luis Soto')],
+    });
+    const r = req(evaluar([acta]), 28);
+    assert.equal(r.estado, C.ESTADO_REQUISITO.PARCIAL);
+    assert.equal(r.pendienteFirma, true);
+    assert.equal(r.cargar, null, 'lo que falta son firmas, no otro archivo');
+    assert.equal(r.accion.tipo, 'recordar_firmas');
+    assert.match(r.detalle, /Firmaron 1 de 2/);
+});
+
+test('cuando todos firman vuelve a completado', () => {
+    const acta = doc('ACTA_ENSAYO_EMERGENCIA', { fecha: '2026-08-20T00:00:00.000Z', asignaciones: [firmada('p1', 'Ana Rojas')] });
+    const r = req(evaluar([acta]), 28);
+    assert.equal(r.estado, C.ESTADO_REQUISITO.CUMPLIDO);
+    assert.equal(r.pendienteFirma, false);
+});
+
+test('un documento sin firmantes asignados no cambia: sigue completado', () => {
+    const acta = doc('ACTA_ENSAYO_EMERGENCIA', { fecha: '2026-08-20T00:00:00.000Z' });
+    assert.equal(req(evaluar([acta]), 28).estado, C.ESTADO_REQUISITO.CUMPLIDO);
+});
+
+test('pendiente de firma pesa como incompleto en el porcentaje', () => {
+    const acta = (asignaciones) => doc('ACTA_ENSAYO_EMERGENCIA', { fecha: '2026-08-20T00:00:00.000Z', asignaciones });
+    const reqs = evaluar([acta([pendiente('p1', 'Ana')])]);
+    const resumen = C.resumirCompletitud(reqs.filter((r) => r.item === 28));
+    assert.equal(resumen.progreso, 50);
+});
+
+test('un incompleto por otra causa no se llama pendiente de firma aunque haya firmas por recoger', () => {
+    // Ítem 53: falta la evidencia de publicación; que el mapa tenga firmas
+    // pendientes no cambia qué es lo que falta.
+    const mapa = doc('MAPA_RIESGOS', { asignaciones: [pendiente('p1', 'Ana')] });
+    const r = req(evaluar([mapa]), 53);
+    assert.equal(r.estado, C.ESTADO_REQUISITO.PARCIAL);
+    assert.equal(r.pendienteFirma, false);
+    assert.equal(r.cargar.tipo, 'PUBLICACION_MAPA_RIESGOS');
+});
+
+test('ítems 9 y 19: esperando solo la firma, se marcan pendiente de firma', () => {
+    const ptp = doc('PROGRAMA_TRABAJO_PREVENTIVO', { asignaciones: [pendiente('p-rep', 'Ana Rojas')] });
+    const r9 = req(evaluar([ptp], { representanteLegal: { personaId: 'p-rep', nombre: 'Ana Rojas' } }), 9);
+    assert.equal(r9.pendienteFirma, true);
+    const sinPedir = req(evaluar([doc('PROGRAMA_TRABAJO_PREVENTIVO')], { representanteLegal: { personaId: 'p-rep', nombre: 'Ana Rojas' } }), 9);
+    assert.equal(sinPedir.pendienteFirma, false, 'sin pedirla, falta una acción de quien gestiona');
+    const reg = doc('CAPACITACION_EPP', { asignaciones: [firmada('p1', 'A'), pendiente('p2', 'B')] });
+    assert.equal(req(evaluar([reg]), 19).pendienteFirma, true);
+});

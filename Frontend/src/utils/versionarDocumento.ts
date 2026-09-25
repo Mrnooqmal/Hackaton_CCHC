@@ -1,5 +1,37 @@
 import { documentsApi, signatureRequestsApi } from '../api/client';
-import type { ParticipantesRevision } from '../api/documents.api';
+import type { EntidadRevision, ParticipantesRevision } from '../api/documents.api';
+import { DS44_DO_PROCEDIMIENTOS } from './ds44';
+
+/**
+ * Tipos cuyo archivo, al reemplazarse, publica una NUEVA VERSIÓN (aviso a la
+ * línea de mando + re-firma) en vez de sobrescribirse.
+ *
+ * ESPEJO de TIPOS_PROCEDIMIENTO en Backend/handlers/documents/handler.js, que
+ * rechaza versionar cualquier otro tipo. Los que no salen de
+ * DS44_DO_PROCEDIMIENTOS van a mano: la MIPER es de la fase PLAN, pero el Art. 7
+ * inc. 9 le exige el mismo ciclo de revisión ('MATRIZ_MIPPER' es su alias
+ * histórico), y el Reglamento Interno se revisa cada año con participación del
+ * comité o del delegado (Art. 57 inc. 5, FUF 51).
+ */
+export const TIPOS_VERSIONABLES: ReadonlySet<string> = new Set<string>([
+    ...DS44_DO_PROCEDIMIENTOS.map((el) => el.tipo),
+    'PROCEDIMIENTO_TRABAJO',
+    'MIPER',
+    'MATRIZ_MIPPER',
+    'REGLAMENTO_INTERNO',
+]);
+export const esVersionable = (tipo?: string | null): boolean => Boolean(tipo && TIPOS_VERSIONABLES.has(tipo));
+
+/**
+ * Órganos que pueden participar en la revisión de un documento (FUF 51, Art. 57
+ * inc. 5). Se registran al publicar la versión y quedan en el control de cambios.
+ */
+export const ENTIDADES_REVISION: { id: EntidadRevision; label: string }[] = [
+    { id: 'DEPTO_PREVENCION', label: 'Departamento de Prevención de Riesgos' },
+    { id: 'COMITE_PARITARIO', label: 'Comité Paritario de Higiene y Seguridad' },
+    { id: 'DELEGADO_SST', label: 'Delegado de Seguridad y Salud en el Trabajo' },
+    { id: 'SINDICATO', label: 'Organización sindical' },
+];
 
 /**
  * Publicación de una nueva versión de un documento versionable (procedimientos
@@ -28,6 +60,9 @@ export interface PublicarVersionParams {
     titulo: string;
     /** Asignaciones de la versión saliente: son quienes deben re-firmar. */
     asignaciones?: Array<{ personaId?: string; workerId?: string }>;
+    /** Quiénes firman la versión nueva, si cambian respecto de la anterior. Manda
+     *  sobre `asignaciones`: quien no está deja de tener la firma pendiente. */
+    firmantes?: string[];
     autorId?: string;
     autorNombre?: string;
     tenantId?: string;
@@ -57,6 +92,7 @@ export async function publicarNuevaVersion(p: PublicarVersionParams): Promise<Pu
         publicadaPorNombre: p.autorNombre,
         participantesRevision: p.participantesRevision || undefined,
         versionEsperada: p.versionActual,
+        firmantes: p.firmantes,
     });
 
     if (!res.success) {
@@ -64,7 +100,7 @@ export async function publicarNuevaVersion(p: PublicarVersionParams): Promise<Pu
     }
 
     const firmanteIds = [...new Set(
-        (p.asignaciones || []).map((a) => a.personaId || a.workerId).filter(Boolean) as string[],
+        (p.firmantes ?? (p.asignaciones || []).map((a) => a.personaId || a.workerId)).filter(Boolean) as string[],
     )];
 
     // La solicitud de firma es best-effort: la versión ya quedó publicada, así que
