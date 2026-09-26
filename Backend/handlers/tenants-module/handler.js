@@ -4,6 +4,7 @@
  * Router para endpoints de gestión de tenants (empresas).
  */
 const { TenantService } = require('../../lib/services/TenantService');
+const { PersonaService } = require('../../lib/services/PersonaService');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const { buildDefaultCargoCatalog, sanitizeCargoCatalog } = require('../../lib/ds44');
 const { sanitizeCatalogosActividad, resolveCatalogos, PERMISOS_TRABAJO_DEF } = require('../../lib/catalogos-actividad');
@@ -35,6 +36,7 @@ const uploadTenantLogo = async (dataUrl, tenantId) => {
 };
 
 const tenantService = new TenantService();
+const personaService = new PersonaService();
 const eppCatalogoService = new EppCatalogoService();
 
 module.exports.tenantsHandler = async (event) => {
@@ -221,6 +223,33 @@ module.exports.tenantsHandler = async (event) => {
                 tenant: tenant.toSafeFormat(),
                 firmasRepresentante,
             });
+        }
+
+        // PUT /tenants/{id}/ficha-salud — Encender o apagar la Ficha Básica de Salud
+        //
+        // Ruta propia y no un campo del PUT genérico: quién tomó la decisión y
+        // cuándo salen de la sesión, no del cuerpo. Si fueran parte del cuerpo,
+        // cualquiera con el permiso podría escribir que la encendió otra persona.
+        if (method === 'PUT' && tenantId && action === 'ficha-salud') {
+            if (!puede(PERMISSIONS.EMPRESA_FICHA_SALUD)) {
+                return error('No tienes permiso para cambiar la Ficha Básica de Salud', 403);
+            }
+            const body = JSON.parse(event.body || '{}');
+            if (typeof body.habilitada !== 'boolean') {
+                return error('habilitada debe ser true o false');
+            }
+
+            // El nombre se guarda tal como era en ese momento: el historial es
+            // evidencia, y la persona puede cambiar de nombre o dejar la empresa.
+            const persona = await personaService.getById(sesion.personaId).catch(() => null);
+            const nombre = persona ? `${persona.nombre} ${persona.apellido || ''}`.trim() : null;
+
+            const { tenant, cambio } = await tenantService.cambiarFichaSalud(tenantId, body.habilitada, {
+                personaId: sesion.personaId,
+                nombre,
+            });
+            if (!tenant) return error('Empresa no encontrada', 404);
+            return success({ cambio, tenant: tenant.toSafeFormat() });
         }
 
         // ── Catálogo de EPP del tenant (DS44 Art. 13) ──────────────────────

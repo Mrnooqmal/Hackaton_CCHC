@@ -593,6 +593,18 @@ corra, así que el 401 corresponde a una verificación de contraseña efectiva
 resultó contaminada por el caché de la pimienta por contenedor de
 `lib/credenciales.js`—.
 
+**Y después, un login exitoso completo, sin usar ninguna contraseña real.** Se
+creó en prod una cuenta desechable (RUT libre verificado por la búsqueda global
+por HMAC, rol `trabajador`, correo en `.invalid` para que ningún mensaje pueda
+salir, contraseña aleatoria nunca impresa) y se ejercitó el camino completo por
+la API HTTP real: `POST /auth/login` → 200 con token (la búsqueda por HMAC
+encontró la ficha y el scrypt validó la contraseña), `GET /auth/me` con ese
+token → 200, misma persona y misma empresa, `POST /auth/logout` → 200. En la
+tabla, la ficha tenía `rutCifrado` y `rutHmac` y ningún `rut` en claro. Al
+final se borraron la persona y la sesión, y se verificó que el RUT ya no
+aparecía en prod. Así quedó probado el camino de éxito del login sobre el
+esquema cifrado, no solo el de rechazo.
+
 **Sidecars de firmas e incidentes (D-8), cerrado el 24 de septiembre de
 2026.** El elemento aparte se guarda como un solo sobre (`cifrado`, vía
 `cifrarSobre`) en vez de campo por campo: el RUT, la IP y el agente de usuario
@@ -698,9 +710,26 @@ sesion.tenantId`) la alcanzaban nunca. `ensureDefaultHealthSurvey` mantenía un
 registro que nadie podía ver. Ahora el id es `default-health-survey#<tenantId>`,
 cada empresa tiene la suya, y la función exige el tenant: el `= 'default'` por
 defecto del parámetro era el origen del problema, porque cualquier llamador que
-lo olvidara escribía donde escribían todos. **Efecto visible:** la ficha aparece
-por primera vez en el listado de encuestas de cada empresa, con todo el
-plantel. La migración costó cero porque estaba vacía — con fichas reales habría
+lo olvidara escribía donde escribían todos. **Y la enciende la empresa, no una pantalla.** Una
+primera versión la creaba sola la primera vez que alguien abría Encuestas —
+recolectar datos de salud de todo el plantel como efecto secundario de abrir una
+pantalla—. Ahora está apagada por defecto y se enciende en Mi Empresa → Ficha de
+salud, con un permiso propio (`empresa.ficha_salud`; por defecto solo el
+administrador, delegable): decidir que se recolectan datos de salud no es lo
+mismo que cambiar el logo ni que editar roles. La decisión queda registrada:
+`fichaSaludHistorial` guarda cada encendido y apagado con la persona, su nombre
+tal como era en ese momento y la hora, y **solo crece**. Para que ese registro
+valga como prueba: vive en atributos propios de la empresa y no dentro de
+`settings` ni `reglas` (el PUT genérico reemplaza esos objetos con lo que mande
+el cliente y habría podido borrarlo o falsificarlo); se escribe por una ruta
+propia (`PUT /tenants/{id}/ficha-salud`) que toma quién y cuándo de la sesión y
+nunca del cuerpo; y el cambio de estado y el evento van en la misma escritura
+condicionada con `list_append`, así que no hay ventana en que cambie el estado
+sin quedar registrado. Pedir el estado que ya tiene no agrega nada: el registro
+guarda decisiones, no clics. Apagarla no borra la ficha ni sus respuestas; solo
+deja de crearse y de sincronizarse. Verificado en un navegador contra dev, con
+una empresa desechable (creada y borrada para no ensuciar el registro de una
+empresa real), en escritorio y en ancho de teléfono. La migración costó cero porque estaba vacía — con fichas reales habría
 sido mover datos médicos cruzados entre empresas. Se eliminó además
 `assignWorkerToHealthSurvey`, sin llamadores, que era la vía por la que una
 persona de cualquier empresa habría terminado en ese registro compartido.
@@ -757,11 +786,69 @@ Es el patrón de los dos escritores otra vez, ahora entre tablas: el dato se
 protege donde nace y se re-materializa en claro donde se consume. Las dos
 copias están en el índice `tenantId-index` de documentos, que proyecta `ALL`.
 No se corrigieron acá a propósito: esos `snapshot` son exactamente lo que se
-firma con `hashSnapshot`, así que cifrarlos cambia cómo se verifica la
-integridad (descifrar y volver a calcular) y corresponde hacerlo junto con la
-huella de integridad del archivo, no antes y por separado.
+firma con su huella, así que cifrarlos cambia cómo se verifica la integridad
+(descifrar y volver a calcular). Al revisarlo apareció que esa huella no cubría
+el contenido (H-9, corregido en D-11), y el cifrado se hace sobre esa base.
 
 **Ubicación:** `Backend/lib/cifradoCampo.js`, `Backend/lib/llaveTenant.js`, `Backend/lib/arregloSensible.js`, `Backend/lib/traza-sensible.js`, `Backend/lib/models/Persona.js`, `Backend/lib/models/Tenant.js`, `Backend/lib/services/PersonaService.js`, `Backend/lib/services/TenantService.js`, `Backend/lib/services/FirmaService.js`, `Backend/lib/services/EppService.js`, `Backend/handlers/auth/handler.js`, `Backend/handlers/documents/handler.js`, `Backend/handlers/activities/handler.js`, `Backend/handlers/signature-requests/handler.js`, `Backend/handlers/personas-module/handler.js`, `Backend/handlers/surveys/handler.js`, `Backend/lib/health/healthSurvey.js`, `Backend/scripts/reparar-cifrado-legado.js`, `Frontend/src/pages/Surveys.tsx`, `Frontend/src/api/surveys.api.ts`
+
+### D-11. Huella de integridad del contenido firmado: canónica, versionada, sobre el claro
+**Estado: implementado el 25 de septiembre de 2026. Corrige H-9.**
+
+Los informes que genera `RegistroService` —el registro AT/EP (Arts. 71-72) y el
+informe de investigación (Art. 71)— se firman sobre un `snapshot` de su
+contenido, y la firma lleva una huella de ese snapshot. La huella anterior no
+cubría el contenido: ver H-9.
+
+**Las tres reglas** (`Backend/lib/huella.js`):
+
+1. **Se calcula sobre el contenido en claro, nunca sobre el cifrado.** Si se
+   calculara sobre el cifrado, rotar la llave —que vuelve a cifrar con otro
+   sobre— invalidaría la huella de todo documento ya firmado, y la evidencia
+   dejaría de poder probarse. Orden al firmar: armar el contenido → huella →
+   recién después cifrar para guardar. Al verificar: descifrar → huella →
+   comparar. La rotación no afecta: el sobre guarda su propia llave de datos
+   envuelta y el id de la llave, y KMS conserva el material anterior al rotar.
+2. **Forma canónica de verdad** (`json-canonico-v1`): claves ordenadas en todos
+   los niveles, sin listas de permitidos; lo que JSON perdería en silencio
+   (`NaN`, `Infinity`, instancias no planas) se rechaza en vez de ignorarse.
+   Pasar el contenido por JSON —que es lo que hace el cifrado al guardar y
+   leer— no cambia la huella.
+3. **Versionada:** se guarda `{ alg, canon, valor }`, no solo el valor.
+   `verificarHuella` usa la regla con que se firmó, y ante una regla
+   desconocida lanza en vez de devolver `false`: "no sé verificar esto" y "esto
+   fue alterado" son afirmaciones distintas.
+
+**Que la huella en claro no exponga el contenido:** el snapshot incluye campos
+de alta entropía (el id del documento y la hora de generación), así que no se
+puede recuperar su contenido probando valores. Con un RUT solo sí se podría, y
+por eso ahí se usa HMAC con llave y no un hash.
+
+**La prueba que lo impide volver a pasar** (`tests/huella-integridad.test.js`)
+no prueba "unos campos que uno recuerda": recorre el contenido y altera cada
+hoja, una por una, exigiendo que la huella cambie. Para el informe del Art. 71
+recorre la salida del constructor real (`construirSnapshotInvestigacion`, que se
+extrajo como función pura para esto), así que un campo que se agregue mañana
+queda cubierto sin tocar la prueba. Con la huella anterior, **61 de sus 85
+casos fallan**, cada uno nombrando el campo que la firma no protegía.
+
+**Barrido del mismo patrón en el resto del código.** El único `JSON.stringify`
+con un arreglo como segundo argumento era este. Las otras huellas hechas a mano
+se revisaron una por una: la de estampados (`almacenamiento.claveEstampado`) es
+una clave de caché sobre el archivo original y los tokens de las firmas, no una
+prueba de integridad, y es correcta para eso; los vales, las sesiones, las
+licencias y el restablecimiento de contraseña hashean secretos aleatorios de
+alta entropía; `hashLegado` en credenciales solo verifica el formato viejo
+para reemplazarlo. Dos notas: el "checksum" del token de firma
+(`generateSignatureToken`) no lo verifica nadie —la autenticidad viene de
+encontrar el token en la base— y usa `PIN_SALT`, que puede estar ausente; y
+`scripts/seed-tenant.js` escribe personas directamente con el RUT en claro y
+una contraseña `sha256(pass + personaId)` que el login no acepta, por fuera de
+`PersonaService`.
+
+**Sigue abierto H-7** (huella del archivo subido, no del contenido firmado).
+
+**Ubicación:** `Backend/lib/huella.js`, `Backend/lib/services/RegistroService.js`, `Backend/tests/huella-integridad.test.js`
 
 ---
 
@@ -864,6 +951,20 @@ idéntico al que se subió.
 
 **Corrección:** calcular SHA-256 del archivo al confirmar la carga y guardarlo junto al
 documento; verificarlo al descargar.
+
+### H-9. La huella de los informes firmados no cubría su contenido
+**Severidad: alta — RESUELTO el 25 de septiembre de 2026 (ver D-11)**
+
+`RegistroService.hashSnapshot` hacía `JSON.stringify(snapshot,
+Object.keys(snapshot).sort())` para "ordenar las claves". Un arreglo como
+segundo argumento de `JSON.stringify` no ordena: es una lista de propiedades
+permitidas, aplicada en todos los niveles. En el informe de investigación del
+Art. 71 lo que se firmaba era `"afectado":{}`, `"accidente":{}`,
+`"causasRaiz":[{}]`: se podía cambiar al trabajador accidentado, la gravedad,
+marcarlo como fatal, borrar los días perdidos o reescribir la causa raíz, y la
+huella quedaba idéntica. Un documento que parecía inalterable no lo era. Se
+detectó al diseñar el cifrado de esos snapshots, antes de que se firmara
+ninguno (0 informes en dev y en prod).
 
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**

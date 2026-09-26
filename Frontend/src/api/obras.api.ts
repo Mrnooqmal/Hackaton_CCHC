@@ -3,6 +3,14 @@ import { apiRequest, apiBaseUrl } from './client';
 // ========================================
 // OBRAS API
 // ========================================
+/** Huella del contenido firmado: con qué algoritmo y con qué forma canónica
+ *  se calculó, para poder verificarla con la misma regla aunque cambie. */
+export interface HuellaContenido {
+    alg: string;
+    canon: string;
+    valor: string;
+}
+
 export const obrasApi = {
     list: (tenantId?: string) => {
         const id = tenantId || localStorage.getItem('tenant_id') || '';
@@ -37,7 +45,7 @@ export const obrasApi = {
             masaLaboral?: number;
         }
     ) =>
-        apiRequest<{ documentId: string; token: string; hash: string; snapshot: any; s3Key: string | null }>(
+        apiRequest<{ documentId: string; token: string; hash: string; huella: HuellaContenido; s3Key: string | null }>(
             `/obras/${id}/registros/at-ep`,
             {
                 method: 'POST',
@@ -96,7 +104,7 @@ export const obrasApi = {
         incidentId: string,
         data: { firmante: { personaId: string; pin?: string }; metodo?: 'PIN' | 'PRESENCIAL'; firmaManuscrita?: string }
     ) =>
-        apiRequest<{ documentId: string; token: string; hash: string; s3Key: string | null }>(
+        apiRequest<{ documentId: string; token: string; hash: string; huella: HuellaContenido; s3Key: string | null }>(
             `/obras/${obraId}/investigaciones/${incidentId}/cerrar`,
             { method: 'POST', body: JSON.stringify(data) }
         ),

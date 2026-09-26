@@ -185,6 +185,79 @@ class TenantService {
     }
 
     /**
+     * Enciende o apaga la Ficha Básica de Salud, y deja constancia.
+     *
+     * Recolectar datos de salud de todo el plantel es una decisión que la
+     * empresa tiene que poder demostrar que tomó: quién, cuándo, y en qué
+     * sentido. Por eso esto no pasa por `updateConfig`:
+     *
+     *   - quién y cuándo vienen de quien llama (el handler los saca de la
+     *     sesión), nunca del cuerpo de la petición;
+     *   - el evento se AGREGA al historial con `list_append` en la misma
+     *     escritura que cambia el estado, así que no hay una ventana en que
+     *     cambie el estado sin quedar registrado, ni una carrera que pise un
+     *     evento ajeno;
+     *   - pedir el estado que ya tiene no escribe nada: el historial registra
+     *     decisiones, no clics repetidos. Apagar una ficha que nunca se
+     *     encendió tampoco (el estado inicial ya es "apagada").
+     *
+     * Apagarla no borra la encuesta ni sus respuestas: solo deja de crearse y
+     * de sincronizar el plantel. Borrar datos de salud es una decisión de
+     * retención aparte.
+     *
+     * @returns {Promise<{ tenant: Tenant|null, cambio: boolean }>}
+     */
+    async cambiarFichaSalud(tenantId, habilitada, { personaId, nombre }) {
+        if (typeof habilitada !== 'boolean') throw new Error('habilitada debe ser true o false');
+        if (!personaId) throw new Error('Se requiere la persona que toma la decisión');
+
+        const now = new Date().toISOString();
+        const key = { PK: `TENANT#${tenantId}`, SK: `METADATA#${tenantId}` };
+        const evento = { habilitada, personaId, nombre: nombre || null, en: now };
+
+        try {
+            const result = await this.dynamo.send(new UpdateCommand({
+                TableName: this.table,
+                Key: key,
+                UpdateExpression: 'SET fichaSaludHabilitada = :h, updatedAt = :u, '
+                    + 'fichaSaludHistorial = list_append(if_not_exists(fichaSaludHistorial, :vacio), :evento)',
+                ConditionExpression: habilitada
+                    ? 'attribute_exists(PK) AND (attribute_not_exists(fichaSaludHabilitada) OR fichaSaludHabilitada = :no)'
+                    : 'attribute_exists(PK) AND fichaSaludHabilitada = :si',
+                ExpressionAttributeValues: {
+                    ':h': habilitada,
+                    ':u': now,
+                    ':vacio': [],
+                    ':evento': [evento],
+                    ...(habilitada ? { ':no': false } : { ':si': true }),
+                },
+                ReturnValues: 'ALL_NEW',
+            }));
+            return { tenant: await this._hidratar(Tenant.fromDynamoItem(result.Attributes)), cambio: true };
+        } catch (err) {
+            if (err.name !== 'ConditionalCheckFailedException') throw err;
+            // O ya estaba en ese estado, o la empresa no existe: se distingue.
+            return { tenant: await this.getById(tenantId), cambio: false };
+        }
+    }
+
+    /**
+     * ¿La empresa encendió la Ficha Básica de Salud?
+     *
+     * Lectura de un solo atributo, a propósito: `getById` descifra el RUT de la
+     * empresa (una llamada a KMS), y esto se consulta cada vez que alguien abre
+     * Encuestas.
+     */
+    async fichaSaludHabilitada(tenantId) {
+        const result = await this.dynamo.send(new GetCommand({
+            TableName: this.table,
+            Key: { PK: `TENANT#${tenantId}`, SK: `METADATA#${tenantId}` },
+            ProjectionExpression: 'fichaSaludHabilitada',
+        }));
+        return result.Item?.fichaSaludHabilitada === true;
+    }
+
+    /**
      * Activar tenant (cambiar estado de setup a activo)
      */
     async activar(tenantId) {

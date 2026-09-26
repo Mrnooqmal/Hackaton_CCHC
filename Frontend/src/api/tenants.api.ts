@@ -72,6 +72,15 @@ export interface TenantRole {
     permisos?: string[];
 }
 
+/** Una decisión sobre la Ficha Básica de Salud: quién, cuándo y en qué sentido.
+ *  El backend la toma de la sesión; el cliente nunca la escribe. */
+export interface FichaSaludEvento {
+    habilitada: boolean;
+    personaId: string;
+    nombre: string | null;
+    en: string;
+}
+
 export interface Tenant {
     tenantId: string;
     slug: string;
@@ -81,6 +90,8 @@ export interface Tenant {
     cantidadTrabajadores: number;
     estado: 'setup' | 'activo' | 'suspendido';
     adminPersonaId: string | null;
+    fichaSaludHabilitada?: boolean;
+    fichaSaludHistorial?: FichaSaludEvento[];
     settings: TenantSettings;
     reglas: TenantReglas;
     preferencias: TenantPreferencias;
@@ -140,6 +151,14 @@ export const tenantsApi = {
         apiRequest<Tenant>(`/tenants/${id}`, {
             method: 'PUT',
             body: JSON.stringify({ reglas: { organizacionesSindicales, sinOrganizacionesSindicales } }),
+        }),
+
+    // Enciende o apaga la Ficha Básica de Salud (Mi Empresa › Ficha de salud).
+    // Ruta propia: quién y cuándo los registra el backend desde la sesión.
+    setFichaSalud: (id: string, habilitada: boolean) =>
+        apiRequest<{ cambio: boolean; tenant: Tenant }>(`/tenants/${id}/ficha-salud`, {
+            method: 'PUT',
+            body: JSON.stringify({ habilitada }),
         }),
 
     updateRoles: (id: string, roles: TenantRole[]) =>

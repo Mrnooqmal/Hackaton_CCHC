@@ -146,8 +146,13 @@ const cifrarDocumento = (doc, llave) => {
  */
 const descifrarDocumento = (doc, llave) => {
     if (!doc) return doc;
+    // El contenido firmado de los informes (Art. 71, AT/EP) no viaja al
+    // cliente, ni cifrado: no hay pantalla que lo lea, y se descifra solo para
+    // verificar su huella (`RegistroService.verificarIntegridad`), que lee el
+    // elemento guardado y no pasa por acá.
+    const { snapshotCifrado: _contenidoFirmado, ...sinContenidoFirmado } = doc;
     return {
-        ...doc,
+        ...sinContenidoFirmado,
         asignaciones: descifrarCamposEnArreglo(doc.asignaciones, CAMPOS.asignacion, llave),
         firmas: descifrarCamposEnArreglo(doc.firmas, CAMPOS.firma, llave),
     };

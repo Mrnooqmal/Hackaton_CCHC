@@ -5,6 +5,7 @@ const { success, error, created } = require('../../lib/utils/response');
 const { validateRequired } = require('../../lib/utils/validation');
 const { ensureDefaultHealthSurvey } = require('../../lib/health/healthSurvey');
 const { PersonaService } = require('../../lib/services/PersonaService');
+const { TenantService } = require('../../lib/services/TenantService');
 const { eventBus } = require('../../lib/events/EventBus');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
@@ -251,9 +252,14 @@ module.exports.list = async (event) => {
         if (!ses.ok) return ses.respuesta;
         const tenantId = ses.sesion.tenantId;
 
-        // La ficha de salud de ESTA empresa; antes se llamaba sin tenant y
-        // mantenía un registro global que ningún tenant alcanzaba.
-        await ensureDefaultHealthSurvey(tenantId);
+        // La ficha de salud de ESTA empresa, y solo si la empresa decidió
+        // encenderla (Mi Empresa → Ficha de salud). Antes se creaba sola la
+        // primera vez que alguien abría Encuestas: recolectar datos de salud de
+        // todo el plantel como efecto secundario de abrir una pantalla. Apagada
+        // no se borra nada; solo deja de crearse y de sincronizarse.
+        if (await new TenantService().fichaSaludHabilitada(tenantId)) {
+            await ensureDefaultHealthSurvey(tenantId);
+        }
 
         const result = await docClient.send(new QueryCommand({
             TableName: TABLE_NAME,
