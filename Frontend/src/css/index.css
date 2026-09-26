@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Roboto:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
 
 :root {
   /* ===== Identidad CChC (tokens reales de cchc.cl) ===== */
@@ -25,9 +25,13 @@
   --logo-build: #e8eefb;  /* near-white en modo oscuro */
   --logo-serve: #4d9fff;  /* azul B&S fijo */
 
-  /* Tipografía institucional CChC: Lora (display) + Roboto (texto) */
-  --font-display: 'Lora', Georgia, 'Times New Roman', serif;
+  /* Tipografía: UNA sola familia en toda la interfaz. Antes convivían Lora
+     (display, serif) y Roboto (texto): dos materiales distintos en la misma
+     página, sin que el corte entre ambos siguiera ninguna regla. --font-display
+     se conserva como alias para no tocar cada llamada, pero ya no es otra
+     familia. La jerarquía la da el tamaño y el peso, no el tipo de letra. */
   --font-ui: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: var(--font-ui);
 
   /* Colores principales - Paleta institucional CChC (azul) */
   --primary-50: #e6f1ff;
@@ -78,6 +82,12 @@
   /* Colores de advertencia */
   --warning-500: #eab308;
   --warning-600: #ca8a04;
+
+  /* Rojo de alerta y verde de "al día" legibles sobre superficie oscura. Las
+     rampas danger y success crudas se apagan contra #1a2533; estos dos son los
+     únicos tonos semánticos que la portada usa, y se invierten por tema. */
+  --danger-alerta: #ff8a63;
+  --success-apagado: #5aa885;
 
   /* Neutrales — teñidos con el hue institucional (~215°) en vez de gris zinc.
      Un neutro acromático (#1a1a1a) junto al navy CChC se lee como otro material;
@@ -207,6 +217,10 @@
   --text-primary: #0f172a;
   --text-secondary: #424b5a;
   --text-muted: #64748b;
+
+  /* Sobre blanco el naranjo aclarado no llega a 4.5:1: se usa el rojo CChC. */
+  --danger-alerta: #c12f01;
+  --success-apagado: #2f7d5b;
 
   --shadow-sm: 0 1px 2px 0 rgb(148 163 184 / 0.3);
   --shadow-md: 0 4px 6px -1px rgb(148 163 184 / 0.4), 0 2px 4px -2px rgb(148 163 184 / 0.3);

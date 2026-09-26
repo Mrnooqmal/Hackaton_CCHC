@@ -87,6 +87,11 @@ export interface Document {
     fechaEntradaVigencia?: string | null;
     firmas: DocumentSignature[];
     asignaciones: DocumentAssignment[];
+    /** Ítem del kit del cargo que cuenta para "apto para ingresar a terreno".
+     *  Lo escribe el alta de onboarding (personas-module/handler.js). NO impide
+     *  el ingreso por sí solo: alimenta el semáforo. Solo lo traen los
+     *  documentos de onboarding, por eso es opcional. */
+    bloqueante?: boolean;
     estado: string;
     /** Fecha del hecho que el documento acredita, distinta de `createdAt`: un acta
      *  de un simulacro de marzo subida en septiembre acredita marzo, y es contra

@@ -226,7 +226,7 @@ export default function SeleccionObra() {
                     display: flex;
                     align-items: baseline;
                     gap: 6px;
-                    font-family: 'Lora', Georgia, serif;
+                    font-family: var(--font-display);
                     font-size: 2rem;
                     font-weight: 600;
                     line-height: 1;

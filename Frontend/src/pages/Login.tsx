@@ -234,7 +234,7 @@ export default function Login() {
                     align-items: baseline;
                     justify-content: center;
                     gap: 6px;
-                    font-family: 'Lora', Georgia, serif;
+                    font-family: var(--font-display);
                     font-size: 2.25rem;
                     font-weight: 600;
                     line-height: 1;

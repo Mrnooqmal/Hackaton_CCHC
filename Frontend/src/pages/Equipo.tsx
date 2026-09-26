@@ -38,7 +38,7 @@ export default function Equipo() {
     return (
         <div ref={pageRef} className="eq-root">
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Roboto:wght@300;400;500&display=swap');
+                @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap');
 
                 .eq-root {
                     position: fixed;
@@ -86,7 +86,7 @@ export default function Equipo() {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(80px, 18vw, 260px);
                     font-weight: 700;
                     color: rgba(0,110,220,0.04);
@@ -137,7 +137,7 @@ export default function Equipo() {
                 }
 
                 .eq-hero-title {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(36px, 5.5vw, 78px);
                     font-weight: 700;
                     line-height: 1.0;
@@ -233,7 +233,7 @@ export default function Equipo() {
                     font-size: 12px;
                     color: rgba(232,237,248,0.7);
                     font-style: italic;
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                 }
 
                 /* ── SECTION COMMON ── */
@@ -247,7 +247,7 @@ export default function Equipo() {
                 }
 
                 .eq-chapter-num {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(80px, 12vw, 180px);
                     font-weight: 700;
                     color: rgba(0,110,220,0.07);
@@ -281,7 +281,7 @@ export default function Equipo() {
                 }
 
                 .eq-heading {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(28px, 4vw, 54px);
                     font-weight: 700;
                     line-height: 1.12;
@@ -413,7 +413,7 @@ export default function Equipo() {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: 22px;
                     font-weight: 600;
                     letter-spacing: -0.01em;
@@ -428,7 +428,7 @@ export default function Equipo() {
                 }
 
                 .eq-member-name {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: 16px;
                     font-weight: 600;
                     color: #e8edf8;
@@ -492,7 +492,7 @@ export default function Equipo() {
                     right: -40px;
                     bottom: -60px;
                     font-size: 280px;
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-weight: 700;
                     color: rgba(0,110,220,0.05);
                     line-height: 1;
@@ -501,7 +501,7 @@ export default function Equipo() {
                 }
 
                 .eq-thanks-quote {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(20px, 2.8vw, 34px);
                     font-weight: 500;
                     font-style: italic;

@@ -1,1068 +1,543 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import ObraProgressCard from '../components/ObraProgressCard';
-import MisFirmasResumen from '../components/MisFirmasResumen';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import {
-    FiFileText,
-    FiCalendar,
     FiAlertTriangle,
-    FiPlus,
     FiArrowRight,
-    FiCheckSquare,
-    FiAlertCircle,
-    FiEdit3,
-    FiBell,
-    FiUsers,
+    FiCalendar,
+    FiCheckCircle,
+    FiChevronRight,
+    FiClipboard,
     FiClock,
-    FiTrendingUp,
-    FiFolder,
+    FiEdit3,
 } from 'react-icons/fi';
-import { workersApi, activitiesApi, surveysApi, inboxApi, documentsApi, incidentsApi, signatureRequestsApi } from '../api/client';
+import { activitiesApi, documentsApi, surveysApi } from '../api/client';
+import type { Activity } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
-import type { Worker, Activity } from '../api/client';
-import { estructuraApi } from '../api/estructura.api';
-import { incidenteAbierto } from '../utils/incidentes';
-import { PageHeader } from '../components/ui';
 
-interface PendingTask {
+/**
+ * Inicio de obra.
+ *
+ * Antes eran cinco vistas por rol, cada una con su grilla de métricas
+ * (trabajadores, documentos, avance DS 44) y una tarjeta para "entrar" a la
+ * obra en la que ya estabas. Nada de eso se accionaba desde la portada.
+ *
+ * Ahora hay UNA vista para todos, la del trabajador de terreno, que responde
+ * qué tengo que hacer y por dónde entro. Los accesos son SIEMPRE los mismos
+ * cuatro: repositorio y equipo de la obra son herramientas administrativas,
+ * ya viven en la barra lateral de quien las necesita y acá solo agregaban
+ * ruido para quien está en terreno. Ver css/dashboard.css para el diseño.
+ */
+
+const MAX_PENDIENTES = 4;
+const MAX_AGENDA = 3;
+
+type Urgencia = 'atrasado' | 'hoy' | 'normal';
+
+interface Pendiente {
     id: string;
-    type: 'document' | 'activity' | 'survey' | 'signature';
-    title: string;
-    description: string;
-    dueDate?: string;
-    priority: 'high' | 'normal' | 'low';
-    urgent?: boolean;
+    titulo: string;
+    meta: string;
+    urgencia: Urgencia;
+    /** Ítem marcado `bloqueante` en el kit del cargo: cuenta para "apto para terreno". */
+    bloqueante: boolean;
+    marca: string | null;
+    icono: ReactNode;
+    to: string;
 }
 
-type MetricTint = 'primary' | 'warning' | 'danger' | 'success';
+interface AgendaItem {
+    id: string;
+    hora: string;
+    titulo: string;
+    meta: string;
+    estado: 'hecha' | 'ahora' | 'proxima';
+}
 
-const TINT_VALUE_COLOR: Record<MetricTint, string> = {
-    primary: 'var(--text-primary)',
-    warning: 'var(--warning-600)',
-    danger: 'var(--danger-600)',
-    success: 'var(--success-600)',
+const ROL_LABELS: Record<string, string> = {
+    admin: 'Administrador',
+    prevencionista: 'Prevencionista',
+    supervisor: 'Supervisor',
+    jefe_obra: 'Jefe de obra',
+    trabajador: 'Trabajador',
+    relator: 'Relator',
 };
 
-/** Tarjeta de métrica del dashboard: ícono con tinte + valor + etiqueta.
- *  Opcionalmente navegable. Pensada para verse bien aunque haya poca info. */
-function MetricCard({
-    icon,
-    value,
-    label,
-    tint = 'primary',
-    emphasize = false,
-    to,
-}: {
-    icon: ReactNode;
-    value: ReactNode;
-    label: string;
-    tint?: MetricTint;
-    emphasize?: boolean;
-    to?: string;
-}) {
-    const card = (
-        <div className="dash-stat">
-            <div className={`dash-stat-icon tint-${tint}`}>{icon}</div>
-            <div className="dash-stat-body">
-                <div className="dash-stat-value" style={emphasize ? { color: TINT_VALUE_COLOR[tint] } : undefined}>{value}</div>
-                <div className="dash-stat-label">{label}</div>
-            </div>
-        </div>
-    );
-    return to ? <Link to={to} className="dash-stat-link">{card}</Link> : card;
-}
+/** Fecha local en ISO. `toISOString()` a secas es UTC: en Chile, después de las
+ *  21:00 la portada daría por "hoy" el día siguiente y vaciaría la agenda. */
+const fechaLocalISO = (d: Date = new Date()): string => {
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().split('T')[0];
+};
 
-interface DashboardStats {
-    totalWorkers?: number;
-    pendingSignatures?: number;
-    ownPendingSignatures?: number;
-    workersPendingSignatures?: number;
-    activitiesToday?: number;
-    pendingIncidents?: number;
-    unreadMessages?: number;
-    pendingSurveys?: number;
-    totalDocuments?: number;
-}
+const horaLocalHHMM = (d: Date = new Date()): string =>
+    `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+const aDate = (iso: string): Date => {
+    const [a, m, d] = iso.split('-').map(Number);
+    return new Date(a, (m || 1) - 1, d || 1);
+};
+
+const capitalizar = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** "Viernes 25 de septiembre", sin la coma que `Intl` mete tras el día. */
+const fechaLarga = (iso: string): string => {
+    const d = aDate(iso);
+    const dia = new Intl.DateTimeFormat('es-CL', { weekday: 'long' }).format(d);
+    const resto = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'long' }).format(d);
+    return `${capitalizar(dia)} ${resto}`;
+};
+
+const fechaCorta = (iso: string): string =>
+    new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'short' }).format(aDate(iso));
+
+/** Urgencia a partir del plazo de la asignación. `fechaLimite` es opcional en
+ *  el backend: sin plazo no hay atraso que declarar. */
+const urgenciaDePlazo = (limite: string | null | undefined, hoy: string): Urgencia => {
+    if (!limite) return 'normal';
+    if (limite < hoy) return 'atrasado';
+    if (limite === hoy) return 'hoy';
+    return 'normal';
+};
+
+const textoDePlazo = (limite: string | null | undefined, hoy: string): string => {
+    if (!limite) return '';
+    if (limite < hoy) return `Venció el ${fechaCorta(limite)}`;
+    if (limite === hoy) return 'Vence hoy';
+    return `Vence el ${fechaCorta(limite)}`;
+};
+
+const marcaDeUrgencia = (u: Urgencia): string | null =>
+    u === 'atrasado' ? 'Atrasado' : u === 'hoy' ? 'Hoy' : null;
+
+const PESO_URGENCIA: Record<Urgencia, number> = { atrasado: 0, hoy: 1, normal: 2 };
+
+const valor = <T,>(r: PromiseSettledResult<T>): T | null =>
+    r.status === 'fulfilled' ? r.value : null;
 
 export default function Dashboard() {
-    const { user, hasPermission } = useAuth();
+    const { user } = useAuth();
     const { obras, selectedObraId } = useObraContext();
-    const navigate = useNavigate();
-    const [, setWorkers] = useState<Worker[]>([]);
-    const [stats, setStats] = useState<DashboardStats>({});
-    const [pendings, setPendings] = useState<PendingTask[]>([]);
-    const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [progressPercentage, setProgressPercentage] = useState(0);
-    const [obraProgress, setObraProgress] = useState<Record<string, { uploaded: number; total: number; progress: number; label?: string }>>({});
-    const selectedObra = selectedObraId ? obras.find(o => o.obraId === selectedObraId) : null;
-    const selectedObraProgress = selectedObra ? obraProgress[selectedObra.obraId] : null;
 
-    // Roles de gestión tienen su propio dashboard; cualquier otro rol no-admin
-    // (trabajador, colaborador o roles personalizados del tenant) cae a la vista
-    // personal. El resumen de firmas propias se muestra a todos los no-admin.
-    const rol = (user?.rol as string) || '';
-    const isManagementRole = ['prevencionista', 'jefe_obra', 'supervisor', 'admin'].includes(rol);
-    const isPersonalRole = !isManagementRole;
+    const [cargando, setCargando] = useState(true);
+    const [pendientes, setPendientes] = useState<Pendiente[]>([]);
+    const [agenda, setAgenda] = useState<AgendaItem[]>([]);
+    const [totalActividadesHoy, setTotalActividadesHoy] = useState(0);
+    const [proxima, setProxima] = useState<{ titulo: string; cuando: string } | null>(null);
+    const [firmasPendientes, setFirmasPendientes] = useState(0);
+    const [encuestasPendientes, setEncuestasPendientes] = useState(0);
+    const [bloqueantes, setBloqueantes] = useState(0);
+
     const personaId = user?.personaId;
+    const obraActual = selectedObraId ? obras.find((o) => o.obraId === selectedObraId) : null;
+    const hoy = fechaLocalISO();
 
     useEffect(() => {
-        const activeRef = { current: true };
-        const loadDashboardData = async () => {
-            if (!user) return;
+        if (!user) return;
+        let vivo = true;
 
-            setLoading(true);
-            try {
-                // Roles de gestión: cada uno tiene su dashboard. Cualquier otro rol
-                // (trabajador, colaborador, o roles personalizados del tenant) cae al
-                // dashboard de trabajador. Sin este fallback, un rol no contemplado
-                // dejaba el spinner colgado para siempre (no corría ningún loader).
-                const rol = (user.rol as string) || '';
-                if (rol === 'prevencionista') {
-                    await loadPrevencionistaDashboard();
-                } else if (rol === 'jefe_obra') {
-                    await loadJefeObraDashboard();
-                } else if (rol === 'supervisor') {
-                    await loadSupervisorDashboard();
-                } else if (rol === 'admin') {
-                    await loadAdminDashboard();
-                } else {
-                    await loadWorkerDashboard();
-                }
-            } catch (error) {
-                console.error('Error loading dashboard:', error);
-            } finally {
-                // Garantiza que el spinner siempre se cierre, pase lo que pase.
-                if (activeRef.current) {
-                    setLoading(false);
-                }
-            }
-        };
+        const cargar = async () => {
+            setCargando(true);
 
-        loadDashboardData();
-        return () => {
-            activeRef.current = false;
-        };
-    }, [user, selectedObraId]);
+            const [docsRes, encuestasRes, actividadesRes] = await Promise.allSettled([
+                personaId ? documentsApi.list({ asignadoA: personaId }) : Promise.resolve(null),
+                surveysApi.list(),
+                activitiesApi.list({ obraId: selectedObraId || undefined }),
+            ]);
+            if (!vivo) return;
 
+            const lista: Pendiente[] = [];
+            let bloqueantesPend = 0;
 
-
-
-    /**
-     * Avance DS 44 de cada obra.
-     *
-     * Sale del motor de completitud, el mismo que evalúa el formulario. Antes se
-     * contaban documentos contra una lista propia de la portada: dos números para
-     * la misma obra, y el de acá era el que no coincidía con el del detalle.
-     *
-     * Una sola llamada para todas las obras: el servidor comparte entre ellas las
-     * consultas pesadas, así que ya no son cuatro lecturas por faena.
-     */
-    const loadDs44Progress = async (targetObras: typeof obras) => {
-        if (targetObras.length === 0) {
-            setObraProgress({});
-            return;
-        }
-        const tenantId = targetObras[0]?.tenantId || localStorage.getItem('tenant_id') || '';
-        if (!tenantId) {
-            setObraProgress({});
-            return;
-        }
-
-        const res = await estructuraApi.resumenCompletitud(tenantId);
-        if (!res.success || !res.data) {
-            // Sin datos NO se inventa un 0%: se deja vacío y la tarjeta muestra
-            // que no se pudo calcular, en vez de un rojo que nadie provocó.
-            console.error('No se pudo cargar el avance DS44:', res.error);
-            setObraProgress({});
-            return;
-        }
-
-        const progressMap: Record<string, { uploaded: number; total: number; progress: number; label?: string }> = {};
-        for (const obra of targetObras) {
-            const avance = res.data.obras[obra.obraId];
-            if (!avance) continue;
-            progressMap[obra.obraId] = {
-                uploaded: avance.cumplidos,
-                total: avance.exigibles,
-                progress: avance.progreso,
-                label: 'requisitos del DS 44 cumplidos',
-            };
-        }
-        setObraProgress(progressMap);
-    };
-
-    const loadWorkerDashboard = async () => {
-        const pendingTasks: PendingTask[] = [];
-        let completedCount = 0;
-        // El total refleja tareas REALES del trabajador: el enrolamiento (siempre
-        // requerido) más las asignaciones que efectivamente tenga (encuestas, etc.).
-        // Antes era un 7 fijo, lo que daba un 14% (1/7) apenas se enrolaba.
-        let totalRequiredCount = 1; // Enrolamiento
-
-        // Check enrollment status (sync — no API needed)
-        if (user?.habilitado) {
-            completedCount++;
-        } else {
-            pendingTasks.push({
-                id: 'enroll',
-                type: 'signature',
-                title: 'Completar Enrolamiento',
-                description: 'Crea tu PIN de firma digital',
-                priority: 'high',
-                urgent: true
-            });
-        }
-
-        // UI visible de inmediato; el resto carga en background
-        setLoading(false);
-
-        const myId = user?.personaId || '';
-
-        const [surveysResult, inboxResult, docsResult, activitiesResult] = await Promise.allSettled([
-            surveysApi.list(),
-            (user?.personaId || user?.userId) ? inboxApi.getUnreadCount((user?.personaId || user?.userId)!) : Promise.resolve(null),
-            // Documentos asignados a mí (firmados + pendientes), en todas mis obras.
-            myId ? documentsApi.list({ asignadoA: myId } as any) : Promise.resolve(null),
-            // Actividades del tenant (luego filtro donde soy asistente requerido).
-            activitiesApi.list({}),
-        ]);
-
-        // ── Documentos asignados a mí ──────────────────────────────────────────
-        if (docsResult.status === 'fulfilled' && docsResult.value?.success && docsResult.value.data && myId) {
-            const myDocs = docsResult.value.data.documents || [];
-            myDocs.forEach((doc: any) => {
-                const asig = (doc.asignaciones || []).find((a: any) => a.personaId === myId || a.workerId === myId);
-                if (!asig) return;
-                const firmado = asig.estado === 'firmado' || Boolean(asig.fechaFirma);
-                // Solo cuentan/aparecen los documentos ACCIONABLES: con archivo cargado.
-                // Un documento de onboarding sin archivo aún no es responsabilidad del
-                // trabajador (espera que el admin suba la plantilla) → no se muestra.
-                const tieneArchivo = Boolean(doc.s3Key || doc.archivoUrl);
-                if (!firmado && !tieneArchivo) return;
-                totalRequiredCount += 1;
-                if (firmado) {
-                    completedCount += 1;
-                } else {
-                    pendingTasks.push({
-                        id: doc.documentId,
-                        type: 'document',
-                        title: `Firmar: ${doc.titulo}`,
-                        description: doc.tipoDescripcion || 'Documento pendiente de firma',
-                        priority: doc.bloqueante ? 'high' : 'normal',
-                        urgent: Boolean(doc.bloqueante),
-                    });
-                }
-            });
-        } else if (docsResult.status === 'rejected') {
-            console.error('Error loading my documents:', docsResult.reason);
-        }
-
-        // ── Actividades donde soy asistente requerido ──────────────────────────
-        if (activitiesResult.status === 'fulfilled' && activitiesResult.value?.success && activitiesResult.value.data && myId) {
-            const acts = activitiesResult.value.data.activities || [];
-            acts.forEach((act: any) => {
-                const requerido = (act.asistentesRequeridos || []).includes(myId);
-                if (!requerido) return;
-                const asistio = (act.asistentes || []).some((a: any) => a.personaId === myId);
-                totalRequiredCount += 1;
-                if (asistio) {
-                    completedCount += 1;
-                } else {
-                    pendingTasks.push({
-                        id: act.activityId,
-                        type: 'activity',
-                        title: `Asistir: ${act.titulo}`,
-                        description: `${act.tipoDescripcion || 'Actividad'}${act.fecha ? ` · ${act.fecha}` : ''}`,
-                        priority: 'normal',
-                    });
-                }
-            });
-        } else if (activitiesResult.status === 'rejected') {
-            console.error('Error loading my activities:', activitiesResult.reason);
-        }
-
-        if (surveysResult.status === 'fulfilled') {
-            const surveysRes = surveysResult.value;
-            if (surveysRes?.success && surveysRes.data?.surveys && user?.personaId) {
-                const mySurveys = surveysRes.data.surveys.filter(s =>
-                    s.recipients?.some(r => r.workerId === user.personaId && r.estado !== 'respondida')
+            // ── Documentos asignados a mí ─────────────────────────────────────
+            const docs = valor(docsRes)?.data?.documents || [];
+            docs.forEach((doc) => {
+                const asig = (doc.asignaciones || []).find(
+                    (a) => a.personaId === personaId || a.workerId === personaId,
                 );
+                if (!asig) return;
+                if (asig.estado === 'firmado' || asig.fechaFirma) return;
+                // Sin archivo cargado todavía no es responsabilidad de la persona:
+                // espera que el admin suba la plantilla.
+                if (!doc.s3Key && !doc.archivoUrl) return;
 
-                mySurveys.forEach(survey => {
-                    pendingTasks.push({
-                        id: survey.surveyId,
-                        type: 'survey',
-                        title: `Encuesta: ${survey.titulo}`,
-                        description: survey.descripcion || 'Responde esta encuesta',
-                        priority: 'normal'
+                const urgencia = urgenciaDePlazo(asig.fechaLimite, hoy);
+                const bloqueante = Boolean(doc.bloqueante);
+                if (bloqueante) bloqueantesPend += 1;
+
+                const plazo = textoDePlazo(asig.fechaLimite, hoy);
+                const contexto = bloqueante
+                    ? 'Requisito para ingresar a terreno'
+                    : doc.tipoDescripcion || 'Documento pendiente de firma';
+
+                lista.push({
+                    id: `doc:${doc.documentId}`,
+                    titulo: `Firmar ${doc.titulo}`,
+                    meta: [contexto, plazo].filter(Boolean).join(' · '),
+                    urgencia,
+                    bloqueante,
+                    marca: marcaDeUrgencia(urgencia),
+                    icono: <FiEdit3 size={17} />,
+                    to: '/my-signatures',
+                });
+            });
+
+            // ── Encuestas asignadas y sin responder ───────────────────────────
+            const encuestas = valor(encuestasRes)?.data?.surveys || [];
+            const misEncuestas = encuestas.filter((s) =>
+                s.recipients?.some((r) => r.workerId === personaId && r.estado !== 'respondida'),
+            );
+            misEncuestas.forEach((s) => {
+                lista.push({
+                    id: `enc:${s.surveyId}`,
+                    titulo: `Responder ${s.titulo}`,
+                    meta: s.descripcion || 'Encuesta interna',
+                    urgencia: 'normal',
+                    bloqueante: false,
+                    marca: null,
+                    icono: <FiClipboard size={17} />,
+                    to: '/surveys',
+                });
+            });
+
+            // ── Actividades ───────────────────────────────────────────────────
+            const actividades = valor(actividadesRes)?.data?.activities || [];
+            const soyRequerido = (a: Activity) =>
+                (a.asistentesRequeridos || []).includes(personaId || '') ||
+                a.relatorId === personaId ||
+                (a.responsables || []).includes(personaId || '');
+            const asistio = (a: Activity) =>
+                (a.asistentes || []).some((x) => x.personaId === personaId || x.workerId === personaId);
+
+            // Solo las VENCIDAS entran a pendientes. Las de hoy ya viven en la
+            // agenda: repetirlas en las dos listas es ruido, no urgencia.
+            actividades
+                .filter((a) => a.fecha < hoy && soyRequerido(a) && !asistio(a) && a.estado !== 'cancelada')
+                .forEach((a) => {
+                    lista.push({
+                        id: `act:${a.activityId}`,
+                        titulo: `Registrar asistencia: ${a.titulo}`,
+                        meta: `${a.tipoDescripcion || 'Actividad'} · Fue el ${fechaCorta(a.fecha)}`,
+                        urgencia: 'atrasado',
+                        bloqueante: false,
+                        marca: 'Atrasado',
+                        icono: <FiCalendar size={17} />,
+                        to: '/activities',
                     });
                 });
 
-                const completedSurveys = surveysRes.data.surveys.filter(s =>
-                    s.recipients?.some(r => r.workerId === user.personaId && r.estado === 'respondida')
-                ).length;
+            // Bloqueante y atrasado primero: es lo que impide trabajar.
+            lista.sort((a, b) => {
+                const porUrgencia = PESO_URGENCIA[a.urgencia] - PESO_URGENCIA[b.urgencia];
+                if (porUrgencia !== 0) return porUrgencia;
+                return Number(b.bloqueante) - Number(a.bloqueante);
+            });
 
-                // Cada encuesta asignada (pendiente o respondida) suma al total real.
-                totalRequiredCount += mySurveys.length + completedSurveys;
-                completedCount += completedSurveys;
-            }
-        } else {
-            console.error('Error loading surveys:', surveysResult.reason);
-        }
+            // "Tu día" es MI día: las actividades en las que participo o que
+            // relato, no la agenda completa de la faena.
+            const miasHoy = actividades
+                .filter((a) => a.fecha === hoy && a.estado !== 'cancelada' && soyRequerido(a))
+                .sort((a, b) => (a.horaInicio || '').localeCompare(b.horaInicio || ''));
 
-        if (inboxResult.status === 'fulfilled') {
-            const inboxRes = inboxResult.value;
-            if (inboxRes?.success && inboxRes.data) {
-                setStats(s => ({ ...s, unreadMessages: inboxRes.data?.unreadCount || 0 }));
-            }
-        } else if (inboxResult.reason) {
-            console.error('Error loading inbox:', inboxResult.reason);
-        }
+            const ahora = horaLocalHHMM();
+            const iSiguiente = miasHoy.findIndex((a) => !asistio(a) && (a.horaInicio || '23:59') >= ahora);
+            const items: AgendaItem[] = miasHoy.slice(0, MAX_AGENDA).map((a, i) => ({
+                id: a.activityId,
+                hora: a.horaInicio || '—',
+                titulo: a.titulo,
+                meta: [a.ubicacion, asistio(a) ? 'Asistencia registrada' : a.tipoDescripcion]
+                    .filter(Boolean)
+                    .join(' · '),
+                estado: asistio(a) || a.estado === 'completada' ? 'hecha' : i === iSiguiente ? 'ahora' : 'proxima',
+            }));
 
-        // Calculate progress
-        const progress = totalRequiredCount > 0 ? Math.round((completedCount / totalRequiredCount) * 100) : 0;
-        setProgressPercentage(progress);
+            // "Lo próximo" del estado vacío: la primera actividad futura que me toca.
+            const futura = actividades
+                .filter((a) => a.fecha > hoy && soyRequerido(a) && a.estado !== 'cancelada')
+                .sort((a, b) => `${a.fecha}${a.horaInicio}`.localeCompare(`${b.fecha}${b.horaInicio}`))[0];
 
-        // Sort by urgency and priority
-        pendingTasks.sort((a, b) => {
-            if (a.urgent && !b.urgent) return -1;
-            if (!a.urgent && b.urgent) return 1;
-            const priorityOrder = { high: 0, normal: 1, low: 2 };
-            return priorityOrder[a.priority] - priorityOrder[b.priority];
+            if (!vivo) return;
+            setPendientes(lista);
+            setFirmasPendientes(lista.filter((p) => p.id.startsWith('doc:')).length);
+            setEncuestasPendientes(misEncuestas.length);
+            setBloqueantes(bloqueantesPend);
+            setAgenda(items);
+            setTotalActividadesHoy(miasHoy.length);
+            setProxima(
+                futura
+                    ? {
+                          titulo: futura.titulo,
+                          cuando: `${fechaLarga(futura.fecha)} ${futura.horaInicio || ''}`.trim(),
+                      }
+                    : null,
+            );
+            setCargando(false);
+        };
+
+        cargar().catch((e) => {
+            console.error('No se pudo cargar el inicio:', e);
+            if (vivo) setCargando(false);
         });
 
-        setPendings(pendingTasks);
-        setStats(s => ({ ...s, pendingSurveys: pendingTasks.filter(p => p.type === 'survey').length }));
-    };
+        return () => {
+            vivo = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user, selectedObraId]);
 
-    const loadPrevencionistaDashboard = async () => {
-        // Fase 1 — crítico: trabajadores para mostrar el stat principal de inmediato
-        const workersRes = await workersApi.list({ obraId: selectedObraId || undefined }).catch(() => null);
-        if (workersRes?.success && workersRes.data) {
-            setWorkers(workersRes.data);
-            const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
-            setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0, pendingSignatures: unenrolled }));
-        }
-        setLoading(false);
+    /** Siempre los mismos cuatro, siempre en el mismo orden. No aparecen ni
+     *  desaparecen según los datos: solo cambia su línea de estado. */
+    const accesos = useMemo(
+        () => [
+            {
+                key: 'firmas',
+                to: '/my-signatures',
+                nombre: 'Mis firmas',
+                estado: firmasPendientes > 0 ? `${firmasPendientes} por firmar` : 'Al día',
+                activo: firmasPendientes > 0,
+                alerta: false,
+                icono: <FiEdit3 size={21} />,
+            },
+            {
+                key: 'actividades',
+                to: '/activities',
+                nombre: 'Actividades',
+                estado: totalActividadesHoy > 0 ? `${totalActividadesHoy} hoy` : 'Nada hoy',
+                activo: totalActividadesHoy > 0,
+                alerta: false,
+                icono: <FiCalendar size={21} />,
+            },
+            {
+                key: 'encuestas',
+                to: '/surveys',
+                nombre: 'Encuestas',
+                estado: encuestasPendientes > 0 ? `${encuestasPendientes} sin responder` : 'Al día',
+                activo: encuestasPendientes > 0,
+                alerta: false,
+                icono: <FiClipboard size={21} />,
+            },
+            // Acción, no contador: nunca lleva cifra. El rojo apagado del ícono
+            // es identidad para encontrarlo rápido, no una alarma.
+            {
+                key: 'incidente',
+                to: '/incidents',
+                nombre: 'Reportar incidente',
+                estado: 'Registro inmediato',
+                activo: false,
+                alerta: true,
+                icono: <FiAlertTriangle size={21} />,
+            },
+        ],
+        [firmasPendientes, totalActividadesHoy, encuestasPendientes],
+    );
 
-        // Fase 2 — background paralelo: resto de stats
-        const [ownPendingResult, sigStatsResult, docsResult, incidentsResult, activitiesResult] = await Promise.allSettled([
-            user?.personaId ? signatureRequestsApi.getPendingByWorker(user.personaId) : Promise.resolve(null),
-            signatureRequestsApi.getStats(),
-            documentsApi.list({ obraId: selectedObraId || undefined }),
-            incidentsApi.list(),
-            activitiesApi.list({ obraId: selectedObraId || undefined })
-        ]);
+    const visibles = pendientes.slice(0, MAX_PENDIENTES);
+    const restantes = pendientes.length - visibles.length;
+    const atrasados = pendientes.filter((p) => p.urgencia === 'atrasado').length;
+    const vencenHoy = pendientes.filter((p) => p.urgencia === 'hoy').length;
 
-        const nextStats: DashboardStats = {};
-
-        if (ownPendingResult.status === 'fulfilled') {
-            const ownPendingRes = ownPendingResult.value;
-            if (ownPendingRes?.success && ownPendingRes.data) {
-                nextStats.ownPendingSignatures = ownPendingRes.data?.total || 0;
-            }
-        } else if (ownPendingResult.reason) {
-            console.error('Error loading own pending signatures:', ownPendingResult.reason);
-        }
-
-        if (sigStatsResult.status === 'fulfilled') {
-            const sigStatsRes = sigStatsResult.value;
-            if (sigStatsRes.success && sigStatsRes.data) {
-                const totalPendingFirmas = sigStatsRes.data.totalFirmasRequeridas - sigStatsRes.data.totalFirmasObtenidas;
-                nextStats.workersPendingSignatures = Math.max(0, totalPendingFirmas);
-            }
-        } else {
-            console.error('Error loading workers pending signatures:', sigStatsResult.reason);
-        }
-
-        if (docsResult.status === 'fulfilled') {
-            const docsRes = docsResult.value;
-            if (docsRes.success && docsRes.data) {
-                nextStats.totalDocuments = docsRes.data?.documents.length || 0;
-            }
-        } else {
-            console.error('Error loading documents:', docsResult.reason);
-        }
-
-        if (incidentsResult.status === 'fulfilled') {
-            const incidentsRes = incidentsResult.value;
-            if (incidentsRes.success && incidentsRes.data) {
-                nextStats.pendingIncidents = incidentsRes.data.filter(incidenteAbierto).length;
-            }
-        } else {
-            console.error('Error loading incidents:', incidentsResult.reason);
-        }
-
-        if (activitiesResult.status === 'fulfilled') {
-            const activitiesRes = activitiesResult.value;
-            if (activitiesRes.success && activitiesRes.data) {
-                const recent = activitiesRes.data.activities.slice(0, 5);
-                setRecentActivities(recent);
-
-                const today = new Date().toISOString().split('T')[0];
-                nextStats.activitiesToday = activitiesRes.data.activities.filter(a => a.fecha === today).length;
-            }
-        } else {
-            console.error('Error loading activities:', activitiesResult.reason);
-        }
-
-        setStats(s => ({ ...s, ...nextStats }));
-
-        if (selectedObraId) {
-            const obra = obras.find(o => o.obraId === selectedObraId);
-            if (obra) {
-                void loadDs44Progress([obra]);
-            }
-        }
-    };
-
-    const loadJefeObraDashboard = async () => {
-        // Fase 1 — crítico: trabajadores
-        const workersRes = await workersApi.list({ obraId: selectedObraId || undefined }).catch(() => null);
-        if (workersRes?.success && workersRes.data) {
-            setWorkers(workersRes.data);
-            const unenrolled = workersRes.data.filter((w: any) => !w.habilitado).length;
-            setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0, pendingSignatures: unenrolled }));
-        }
-        setLoading(false);
-
-        // Fase 2 — background paralelo
-        const [docsResult, incidentsResult, activitiesResult, sigStatsResult] = await Promise.allSettled([
-            documentsApi.list({ obraId: selectedObraId || undefined }),
-            incidentsApi.list(),
-            activitiesApi.list({ obraId: selectedObraId || undefined }),
-            signatureRequestsApi.getStats()
-        ]);
-
-        const nextStats: DashboardStats = {};
-
-        if (docsResult.status === 'fulfilled') {
-            const docsRes = docsResult.value;
-            if (docsRes.success && docsRes.data) {
-                nextStats.totalDocuments = docsRes.data?.documents.length || 0;
-            }
-        } else {
-            console.error('Error loading documents:', docsResult.reason);
-        }
-
-        if (incidentsResult.status === 'fulfilled') {
-            const incidentsRes = incidentsResult.value;
-            if (incidentsRes.success && incidentsRes.data) {
-                nextStats.pendingIncidents = incidentsRes.data.filter(incidenteAbierto).length;
-            }
-        } else {
-            console.error('Error loading incidents:', incidentsResult.reason);
-        }
-
-        if (activitiesResult.status === 'fulfilled') {
-            const activitiesRes = activitiesResult.value;
-            if (activitiesRes.success && activitiesRes.data) {
-                const recent = activitiesRes.data.activities.slice(0, 5);
-                setRecentActivities(recent);
-                const today = new Date().toISOString().split('T')[0];
-                nextStats.activitiesToday = activitiesRes.data.activities.filter(a => a.fecha === today).length;
-            }
-        } else {
-            console.error('Error loading activities:', activitiesResult.reason);
-        }
-
-        if (sigStatsResult.status === 'fulfilled') {
-            const sigStatsRes = sigStatsResult.value;
-            if (sigStatsRes.success && sigStatsRes.data) {
-                const totalPendingFirmas = sigStatsRes.data.totalFirmasRequeridas - sigStatsRes.data.totalFirmasObtenidas;
-                nextStats.workersPendingSignatures = Math.max(0, totalPendingFirmas);
-            }
-        } else {
-            console.error('Error loading signature stats:', sigStatsResult.reason);
-        }
-
-        setStats(s => ({ ...s, ...nextStats }));
-
-        if (selectedObraId) {
-            const obra = obras.find(o => o.obraId === selectedObraId);
-            if (obra) {
-                void loadDs44Progress([obra]);
-            }
-        } else {
-            void loadDs44Progress(obras);
-        }
-    };
-
-    const loadSupervisorDashboard = async () => {
-        // Fase 1 — crítico: trabajadores
-        const workersRes = await workersApi.list({ obraId: selectedObraId || undefined }).catch(() => null);
-        if (workersRes?.success && workersRes.data) {
-            setWorkers(workersRes.data);
-            setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0 }));
-        }
-        setLoading(false);
-
-        // Fase 2 — background paralelo
-        const [activitiesResult, incidentsResult] = await Promise.allSettled([
-            activitiesApi.list({ obraId: selectedObraId || undefined }),
-            incidentsApi.list()
-        ]);
-
-        const nextStats: DashboardStats = {};
-
-        if (activitiesResult.status === 'fulfilled') {
-            const activitiesRes = activitiesResult.value;
-            if (activitiesRes.success && activitiesRes.data) {
-                const recent = activitiesRes.data.activities.slice(0, 5);
-                setRecentActivities(recent);
-                const today = new Date().toISOString().split('T')[0];
-                nextStats.activitiesToday = activitiesRes.data.activities.filter(a => a.fecha === today).length;
-            }
-        } else {
-            console.error('Error loading activities:', activitiesResult.reason);
-        }
-
-        if (incidentsResult.status === 'fulfilled') {
-            const incidentsRes = incidentsResult.value;
-            if (incidentsRes.success && incidentsRes.data) {
-                nextStats.pendingIncidents = incidentsRes.data.filter(incidenteAbierto).length;
-            }
-        } else {
-            console.error('Error loading incidents:', incidentsResult.reason);
-        }
-
-        setStats(s => ({ ...s, ...nextStats }));
-    };
-
-    const loadAdminDashboard = async () => {
-        // Fase 1 — crítico: trabajadores
-        const workersRes = await workersApi.list({ obraId: selectedObraId || undefined }).catch(() => null);
-        if (workersRes?.success && workersRes.data) {
-            setWorkers(workersRes.data);
-            setStats(s => ({ ...s, totalWorkers: workersRes.data?.length || 0 }));
-        }
-        setLoading(false);
-
-        // Fase 2 — background paralelo
-        const [activitiesResult, docsResult, incidentsResult] = await Promise.allSettled([
-            activitiesApi.list({ obraId: selectedObraId || undefined }),
-            documentsApi.list({ obraId: selectedObraId || undefined }),
-            incidentsApi.list()
-        ]);
-
-        const nextStats: DashboardStats = {};
-
-        if (activitiesResult.status === 'fulfilled') {
-            const activitiesRes = activitiesResult.value;
-            if (activitiesRes.success && activitiesRes.data) {
-                nextStats.activitiesToday = activitiesRes.data?.activities.length || 0;
-            }
-        } else {
-            console.error('Error loading activities:', activitiesResult.reason);
-        }
-
-        if (docsResult.status === 'fulfilled') {
-            const docsRes = docsResult.value;
-            if (docsRes.success && docsRes.data) {
-                nextStats.totalDocuments = docsRes.data?.documents.length || 0;
-            }
-        } else {
-            console.error('Error loading documents:', docsResult.reason);
-        }
-
-        if (incidentsResult.status === 'fulfilled') {
-            const incidentsRes = incidentsResult.value;
-            if (incidentsRes.success && incidentsRes.data) {
-                nextStats.pendingIncidents = incidentsRes.data?.length || 0;
-            }
-        } else {
-            console.error('Error loading incidents:', incidentsResult.reason);
-        }
-
-        setStats(s => ({ ...s, ...nextStats }));
-
-        const obrasToCheck = selectedObraId ? obras.filter(o => o.obraId === selectedObraId) : obras;
-        void loadDs44Progress(obrasToCheck);
-    };
-
-    const getUrgentTasks = () => pendings.filter(p => p.urgent || p.priority === 'high');
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center" style={{ height: '100vh' }}>
-                <div className="spinner" />
-                <style>{`
-                    .spinner {
-                        width: 40px; height: 40px;
-                        border: 3px solid var(--surface-border);
-                        border-top-color: var(--primary-500);
-                        border-radius: 50%;
-                        animation: spin 0.8s linear infinite;
-                    }
-                    @keyframes spin { to { transform: rotate(360deg); } }
-                `}</style>
-            </div>
-        );
-    }
-
-    const scopeLabel = selectedObra
-        ? [selectedObra.codigo, selectedObra.nombre].filter(Boolean).join(' · ')
-        : user?.rol === 'admin' ? 'Vista empresa' : '';
+    const subtitulo = [fechaLarga(hoy), obraActual?.nombre].filter(Boolean).join(' · ');
+    const chip = ROL_LABELS[user?.rol || ''] || '';
 
     return (
-        <>
-            <div className="page-content">
-                <PageHeader
-                    title={`Hola, ${user?.nombre}`}
-                    scope={scopeLabel ? { label: scopeLabel } : undefined}
-                />
+        <div className="page-content">
+            <div className="inicio">
+                <header className="inicio-hd">
+                    <div className="inicio-hd-texto">
+                        <h1 className="inicio-hd-saludo">Hola, {user?.nombre || ''}</h1>
+                        <p className="inicio-hd-sub">{subtitulo}</p>
+                    </div>
+                    {chip && <span className="inicio-hd-chip">{chip}</span>}
+                </header>
 
-                {/* VISTA PERSONAL: trabajador, colaborador y roles personalizados no-admin */}
-                {isPersonalRole && (
-                    <div className="dash-role-view">
-                        {personaId && <MisFirmasResumen personaId={personaId} />}
+                {bloqueantes > 0 && !cargando && (
+                    <Link to="/my-signatures" className="inicio-aviso">
+                        <span className="inicio-aviso-icono">
+                            <FiAlertTriangle size={18} />
+                        </span>
+                        <span className="inicio-aviso-cuerpo">
+                            <span className="inicio-aviso-titulo">
+                                {bloqueantes === 1
+                                    ? 'Te falta 1 firma para quedar apto para ingresar a terreno'
+                                    : `Te faltan ${bloqueantes} firmas para quedar apto para ingresar a terreno`}
+                            </span>
+                            <span className="inicio-aviso-nota">
+                                Resuélvelas primero: el resto de tus pendientes puede esperar.
+                            </span>
+                        </span>
+                        <span className="inicio-aviso-cta">Firmar ahora</span>
+                    </Link>
+                )}
 
-                        {getUrgentTasks().length > 0 && (
-                            <div className="alert alert-warning">
-                                <FiAlertCircle />
-                                <div>
-                                    <strong>Requieren tu atención urgente</strong>
-                                    <div className="text-sm mt-1">{getUrgentTasks().length} tarea(s) pendiente(s)</div>
-                                </div>
-                            </div>
-                        )}
+                <section className="inicio-seccion">
+                    <h2 className="inicio-rotulo">Accesos rápidos</h2>
+                    <div className="inicio-accesos">
+                        {accesos.map((a) => (
+                            <Link key={a.key} to={a.to} className="inicio-acceso">
+                                <span
+                                    className={`inicio-acceso-icono${a.alerta ? ' inicio-acceso-icono--alerta' : ''}`}
+                                >
+                                    {a.icono}
+                                </span>
+                                <span className="inicio-acceso-texto">
+                                    <span className="inicio-acceso-nombre">{a.nombre}</span>
+                                    <span
+                                        className={`inicio-acceso-estado${a.activo ? ' inicio-acceso-estado--activo' : ''}`}
+                                    >
+                                        {cargando ? '—' : a.estado}
+                                    </span>
+                                </span>
+                            </Link>
+                        ))}
+                    </div>
+                </section>
 
-                        <div className="dash-stats-grid">
-                            <MetricCard icon={<FiTrendingUp size={20} />} value={`${progressPercentage}%`} label="completado" tint="success" emphasize />
-                            <MetricCard icon={<FiClock size={20} />} value={pendings.length} label="pendientes" tint="warning" emphasize={pendings.length > 0} />
-                            {(stats.unreadMessages ?? 0) > 0 && (
-                                <MetricCard icon={<FiBell size={20} />} value={stats.unreadMessages} label="sin leer" tint="primary" to="/inbox" />
+                <div className="inicio-cols">
+                    {/* ── Pendientes ─────────────────────────────────────────── */}
+                    <section className="inicio-panel">
+                        <div className="inicio-panel-hd">
+                            <h2 className="inicio-panel-titulo">Tus pendientes</h2>
+                            {atrasados > 0 && (
+                                <span className="inicio-marca-alerta">
+                                    {atrasados} {atrasados === 1 ? 'atrasado' : 'atrasados'}
+                                </span>
                             )}
+                            <span className="inicio-panel-nota">
+                                {cargando
+                                    ? ''
+                                    : pendientes.length === 0
+                                      ? 'Ninguno'
+                                      : vencenHoy > 0
+                                        ? `${vencenHoy} ${vencenHoy === 1 ? 'vence' : 'vencen'} hoy`
+                                        : `${pendientes.length} en total`}
+                            </span>
                         </div>
 
-                        {pendings.length === 0 ? (
-                            <div className="empty-state">
-                                <FiCheckSquare size={48} className="empty-state-icon" style={{ color: 'var(--success-500)' }} />
-                                <h3 className="empty-state-title">¡Todo al día!</h3>
-                                <p className="empty-state-description">No tienes tareas pendientes en este momento.</p>
+                        {cargando ? (
+                            <div className="inicio-cargando" />
+                        ) : pendientes.length === 0 ? (
+                            <>
+                                <div className="inicio-vacio">
+                                    <span className="inicio-vacio-sello">
+                                        <FiCheckCircle size={26} />
+                                    </span>
+                                    <p className="inicio-vacio-titulo">Todo al día</p>
+                                    <p className="inicio-vacio-texto">
+                                        No tienes firmas, actividades ni encuestas esperando por ti en esta obra.
+                                    </p>
+                                </div>
+                                {proxima && (
+                                    <div className="inicio-proximo">
+                                        <FiClock size={16} />
+                                        <span>
+                                            Lo próximo: <strong>{proxima.titulo}</strong> · {proxima.cuando}
+                                        </span>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                <ul className="inicio-lista">
+                                    {visibles.map((p) => (
+                                        <li key={p.id}>
+                                            <Link to={p.to} className="inicio-item">
+                                                <span
+                                                    className={`inicio-item-icono${p.urgencia === 'atrasado' ? ' inicio-item-icono--alerta' : ''}`}
+                                                >
+                                                    {p.icono}
+                                                </span>
+                                                <span className="inicio-item-cuerpo">
+                                                    <span className="inicio-item-titulo">{p.titulo}</span>
+                                                    <span className="inicio-item-meta">{p.meta}</span>
+                                                </span>
+                                                {p.marca && (
+                                                    <span
+                                                        className={`inicio-marca${p.urgencia === 'atrasado' ? ' inicio-marca--alerta' : ''}`}
+                                                    >
+                                                        {p.marca}
+                                                    </span>
+                                                )}
+                                                <span className="inicio-item-chevron">
+                                                    <FiChevronRight size={18} />
+                                                </span>
+                                            </Link>
+                                        </li>
+                                    ))}
+                                </ul>
+                                <Link to="/my-signatures" className="inicio-panel-pie">
+                                    {restantes > 0
+                                        ? `${restantes} ${restantes === 1 ? 'pendiente más' : 'pendientes más'}`
+                                        : 'Ver todos tus pendientes'}
+                                    <FiArrowRight size={16} />
+                                </Link>
+                            </>
+                        )}
+                    </section>
+
+                    {/* ── Agenda del día ─────────────────────────────────────── */}
+                    <section className="inicio-panel">
+                        <div className="inicio-panel-hd">
+                            <h2 className="inicio-panel-titulo">Tu día</h2>
+                            <span className="inicio-panel-nota">
+                                {cargando
+                                    ? ''
+                                    : totalActividadesHoy === 0
+                                      ? 'Sin actividades'
+                                      : `${totalActividadesHoy} ${totalActividadesHoy === 1 ? 'actividad' : 'actividades'}`}
+                            </span>
+                        </div>
+
+                        {cargando ? (
+                            <div className="inicio-cargando" />
+                        ) : agenda.length === 0 ? (
+                            <div className="inicio-vacio">
+                                <span className="inicio-vacio-icono">
+                                    <FiCalendar size={30} />
+                                </span>
+                                <p className="inicio-vacio-texto">
+                                    No hay actividades programadas para hoy en esta obra.
+                                </p>
                             </div>
                         ) : (
-                            <div>
-                                <h2 className="dash-section-title" style={{ marginBottom: 'var(--space-3)' }}>Mis pendientes</h2>
-                                <div className="flex flex-col gap-3">
-                                    {pendings.map(task => (
-                                        <div
-                                            key={task.id}
-                                            className={`pending-task-card ${task.urgent ? 'urgent' : ''}`}
-                                            onClick={() => {
-                                                if (task.type === 'survey') navigate('/surveys');
-                                                else if (task.type === 'signature') navigate('/enroll-me');
-                                                // Documento → abre su detalle (visualización + firmar) vía deep-link.
-                                                else if (task.type === 'document') navigate(`/documents?doc=${encodeURIComponent(task.id)}`);
-                                                else if (task.type === 'activity') navigate('/activities');
-                                            }}
-                                            style={{ cursor: 'pointer' }}
+                            <ul className="inicio-agenda">
+                                {agenda.map((a, i) => (
+                                    <li key={a.id}>
+                                        <span
+                                            className={`inicio-agenda-hora${a.estado === 'ahora' ? ' inicio-agenda-hora--ahora' : ''}`}
                                         >
-                                            <div className="flex items-start gap-3">
-                                                <div className={`avatar avatar-sm priority-${task.priority}`}>
-                                                    {task.type === 'survey' && <FiFileText />}
-                                                    {task.type === 'signature' && <FiEdit3 />}
-                                                    {task.type === 'activity' && <FiCalendar />}
-                                                    {task.type === 'document' && <FiCheckSquare />}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="font-bold">{task.title}</div>
-                                                    <div className="text-sm text-muted">{task.description}</div>
-                                                </div>
-                                                <FiArrowRight className="text-muted flex-shrink-0" />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* PREVENCIONISTA VIEW */}
-                {user?.rol === 'prevencionista' && (
-                    <div className="dash-role-view">
-                        {personaId && <MisFirmasResumen personaId={personaId} />}
-                        <div className="dash-stats-grid">
-                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
-                            <MetricCard icon={<FiEdit3 size={20} />} value={stats.workersPendingSignatures || 0} label="firmas pendientes" tint="warning" emphasize={(stats.workersPendingSignatures || 0) > 0} />
-                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades hoy" tint="primary" />
-                            {(stats.pendingIncidents || 0) > 0 && (
-                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
-                            )}
-                        </div>
-
-                        {(stats.workersPendingSignatures || 0) > 0 && (
-                            <div className="dash-action-banner">
-                                <div className="dash-action-banner-body">
-                                    <FiEdit3 size={20} />
-                                    <div>
-                                        <div className="dash-action-banner-count">{stats.workersPendingSignatures}</div>
-                                        <div className="dash-action-banner-label">firmas de trabajadores pendientes</div>
-                                    </div>
-                                </div>
-                                <Link to="/signature-requests" className="btn btn-secondary btn-sm">
-                                    Ver solicitudes <FiArrowRight />
-                                </Link>
-                            </div>
-                        )}
-
-                        {selectedObra && selectedObraProgress && (
-                            <div>
-                                <h2 className="dash-section-title" style={{ marginBottom: 'var(--space-3)' }}>DS44 · {selectedObra.nombre}</h2>
-                                <ObraProgressCard
-                                    obra={selectedObra}
-                                    progress={selectedObraProgress}
-                                    managePath={hasPermission('gestionar_obras') ? `/obras/${selectedObra.obraId}` : undefined}
-                                />
-                            </div>
-                        )}
-
-                        <div>
-                            <div className="dash-section-header">
-                                <h2 className="dash-section-title">Actividades recientes</h2>
-                                <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
-                            </div>
-                            {recentActivities.length === 0 ? (
-                                <div className="dash-empty-card">
-                                    <FiCalendar size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
-                                    <p className="text-sm text-muted">No hay actividades recientes</p>
-                                </div>
-                            ) : (
-                                <div className="dash-list">
-                                    {recentActivities.map(activity => (
-                                        <div key={activity.activityId} className="dash-list-row">
-                                            <div className="flex items-center gap-3">
-                                                <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}><FiCalendar /></div>
-                                                <div>
-                                                    <div className="font-bold">{activity.titulo}</div>
-                                                    <div className="text-sm text-muted">{activity.fecha}</div>
-                                                </div>
-                                            </div>
-                                            <span className="badge badge-secondary">{activity.tipo}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* JEFE DE OBRA VIEW */}
-                {(user?.rol as string) === 'jefe_obra' && (
-                    <div className="dash-role-view">
-                        {personaId && <MisFirmasResumen personaId={personaId} />}
-                        <div className="dash-stats-grid">
-                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
-                            <MetricCard icon={<FiEdit3 size={20} />} value={stats.workersPendingSignatures || 0} label="firmas pendientes" tint="warning" emphasize={(stats.workersPendingSignatures || 0) > 0} />
-                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades hoy" tint="primary" />
-                            {(stats.pendingIncidents || 0) > 0 && (
-                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
-                            )}
-                        </div>
-
-                        {(stats.workersPendingSignatures || 0) > 0 && (
-                            <div className="dash-action-banner">
-                                <div className="dash-action-banner-body">
-                                    <FiEdit3 size={20} />
-                                    <div>
-                                        <div className="dash-action-banner-count">{stats.workersPendingSignatures}</div>
-                                        <div className="dash-action-banner-label">firmas de trabajadores pendientes</div>
-                                    </div>
-                                </div>
-                                <Link to="/signature-requests" className="btn btn-secondary btn-sm">
-                                    Ver solicitudes <FiArrowRight />
-                                </Link>
-                            </div>
-                        )}
-
-                        {selectedObra && selectedObraProgress && (
-                            <div>
-                                <h2 className="dash-section-title" style={{ marginBottom: 'var(--space-3)' }}>DS44 · {selectedObra.nombre}</h2>
-                                <ObraProgressCard
-                                    obra={selectedObra}
-                                    progress={selectedObraProgress}
-                                    managePath={hasPermission('gestionar_obras') ? `/obras/${selectedObra.obraId}` : undefined}
-                                />
-                            </div>
-                        )}
-
-                        <div>
-                            <div className="dash-section-header">
-                                <h2 className="dash-section-title">Actividades recientes</h2>
-                                <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
-                            </div>
-                            {recentActivities.length === 0 ? (
-                                <div className="dash-empty-card">
-                                    <FiCalendar size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
-                                    <p className="text-sm text-muted">No hay actividades recientes</p>
-                                </div>
-                            ) : (
-                                <div className="dash-list">
-                                    {recentActivities.map(activity => (
-                                        <div key={activity.activityId} className="dash-list-row">
-                                            <div className="flex items-center gap-3">
-                                                <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}><FiCalendar /></div>
-                                                <div>
-                                                    <div className="font-bold">{activity.titulo}</div>
-                                                    <div className="text-sm text-muted">{activity.fecha}</div>
-                                                </div>
-                                            </div>
-                                            <span className="badge badge-secondary">{activity.tipo}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* SUPERVISOR VIEW */}
-                {(user?.rol as any) === 'supervisor' && (
-                    <div className="dash-role-view">
-                        {personaId && <MisFirmasResumen personaId={personaId} />}
-                        <div className="dash-stats-grid">
-                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
-                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades hoy" tint="primary" />
-                            {(stats.pendingIncidents || 0) > 0 && (
-                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
-                            )}
-                        </div>
-
-                        <div>
-                            <div className="dash-section-header">
-                                <h2 className="dash-section-title">Actividades recientes</h2>
-                                <Link to="/activities" className="btn btn-primary btn-sm"><FiPlus /> Nueva</Link>
-                            </div>
-                            {recentActivities.length === 0 ? (
-                                <div className="dash-empty-card">
-                                    <FiCalendar size={32} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
-                                    <p className="text-sm text-muted">No hay actividades recientes</p>
-                                </div>
-                            ) : (
-                                <div className="dash-list">
-                                    {recentActivities.map(activity => (
-                                        <div key={activity.activityId} className="dash-list-row">
-                                            <div className="flex items-center gap-3">
-                                                <div className="avatar avatar-sm" style={{ background: 'var(--primary-500)' }}><FiCalendar /></div>
-                                                <div>
-                                                    <div className="font-bold">{activity.titulo}</div>
-                                                    <div className="text-sm text-muted">{activity.fecha}</div>
-                                                </div>
-                                            </div>
-                                            <span className="badge badge-secondary">{activity.tipo}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* ADMIN VIEW */}
-                {user?.rol === 'admin' && (
-                    <div className="dash-role-view">
-                        <div className="dash-stats-grid">
-                            <MetricCard icon={<FiUsers size={20} />} value={stats.totalWorkers || 0} label="trabajadores" tint="primary" />
-                            <MetricCard icon={<FiCalendar size={20} />} value={stats.activitiesToday || 0} label="actividades" tint="primary" />
-                            <MetricCard icon={<FiFolder size={20} />} value={stats.totalDocuments || 0} label="documentos" tint="primary" />
-                            {(stats.pendingIncidents || 0) > 0 && (
-                                <MetricCard icon={<FiAlertTriangle size={20} />} value={stats.pendingIncidents} label="incidentes" tint="danger" emphasize to="/incidents" />
-                            )}
-                        </div>
-
-                        <div>
-                            <div className="dash-section-header">
-                                <h2 className="dash-section-title">{selectedObraId ? 'Tu obra' : 'Obras'}</h2>
-                                {/* El listado completo pertenece a la vista de empresa: dentro de una
-                                    obra el resto de las obras queda fuera del alcance. */}
-                                {!selectedObraId && <Link to="/obras" className="btn btn-secondary btn-sm">Ver todas</Link>}
-                            </div>
-
-                            {obras.length === 0 ? (
-                                <div className="empty-state">
-                                    <FiAlertTriangle size={48} className="empty-state-icon" style={{ color: 'var(--warning-500)' }} />
-                                    <h3 className="empty-state-title">No tienes obras creadas</h3>
-                                    <p className="empty-state-description">
-                                        1. Crea tu primera Obra.<br />
-                                        2. Enrola trabajadores y asígnalos.<br />
-                                        3. Sube los documentos para comenzar.
-                                    </p>
-                                    <Link to="/obras" className="btn btn-primary mt-4"><FiPlus /> Crear Obra</Link>
-                                </div>
-                            ) : (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
-                                    {(selectedObraId ? obras.filter(o => o.obraId === selectedObraId) : obras).map((obra) => {
-                                        const obraStats = obraProgress[obra.obraId] || { uploaded: 0, total: 0, progress: 0 };
-                                        return (
-                                            <ObraProgressCard
-                                                key={obra.obraId}
-                                                obra={obra}
-                                                progress={obraStats}
-                                                managePath={hasPermission('gestionar_obras') ? `/obras/${obra.obraId}` : undefined}
+                                            {a.hora}
+                                        </span>
+                                        <span className="inicio-agenda-riel">
+                                            <span
+                                                className={`inicio-agenda-punto${a.estado === 'hecha' ? ' inicio-agenda-punto--hecha' : ''}${a.estado === 'ahora' ? ' inicio-agenda-punto--ahora' : ''}`}
                                             />
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-            </div>
+                                            {i < agenda.length - 1 && <span className="inicio-agenda-linea" />}
+                                        </span>
+                                        <span className="inicio-agenda-cuerpo">
+                                            <span
+                                                className={`inicio-agenda-titulo${a.estado === 'hecha' ? ' inicio-agenda-titulo--hecha' : ''}`}
+                                            >
+                                                {a.titulo}
+                                            </span>
+                                            {a.meta && <span className="inicio-agenda-meta">{a.meta}</span>}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
 
-            <style>{`
-                .dash-role-view {
-                    display: flex;
-                    flex-direction: column;
-                    gap: var(--space-6);
-                }
-                .dash-stats-grid {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-                    gap: var(--space-4);
-                }
-                .dash-stat-link { text-decoration: none; display: block; }
-                .dash-stat {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-3);
-                    padding: var(--space-4);
-                    background: var(--surface-card);
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-lg);
-                    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
-                }
-                .dash-stat-link:hover .dash-stat {
-                    transform: translateY(-2px);
-                    box-shadow: var(--shadow-md);
-                    border-color: var(--primary-300);
-                }
-                .dash-stat-icon {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    width: 46px;
-                    height: 46px;
-                    flex-shrink: 0;
-                    border-radius: var(--radius-md);
-                    background: var(--surface-elevated);
-                    color: var(--primary-600);
-                }
-                .dash-stat-icon.tint-primary { background: rgba(59, 130, 246, 0.12); color: var(--primary-600); }
-                .dash-stat-icon.tint-warning { background: rgba(234, 179, 8, 0.16); color: var(--warning-600); }
-                .dash-stat-icon.tint-danger  { background: rgba(239, 68, 68, 0.12); color: var(--danger-600); }
-                .dash-stat-icon.tint-success { background: rgba(16, 185, 129, 0.16); color: var(--success-600); }
-                .dash-stat-body {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 3px;
-                    min-width: 0;
-                }
-                .dash-stat-value {
-                    font-size: var(--text-2xl);
-                    font-weight: 700;
-                    color: var(--text-primary);
-                    line-height: 1;
-                }
-                .dash-stat-label {
-                    font-size: var(--text-xs);
-                    color: var(--text-secondary);
-                    text-transform: uppercase;
-                    letter-spacing: 0.05em;
-                }
-                .dash-section-header {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    margin-bottom: var(--space-4);
-                }
-                .dash-section-title {
-                    font-size: var(--text-sm);
-                    font-weight: 700;
-                    text-transform: uppercase;
-                    letter-spacing: 0.06em;
-                    color: var(--text-secondary);
-                    margin: 0;
-                }
-                .dash-action-banner {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    gap: var(--space-4);
-                    padding: var(--space-4) var(--space-5);
-                    background: rgba(234, 179, 8, 0.06);
-                    border: 1px solid rgba(234, 179, 8, 0.22);
-                    border-radius: var(--radius-md);
-                }
-                .dash-action-banner-body {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-3);
-                    color: var(--warning-600);
-                }
-                .dash-action-banner-count {
-                    font-size: var(--text-2xl);
-                    font-weight: 700;
-                    color: var(--warning-600);
-                    line-height: 1;
-                }
-                .dash-action-banner-label {
-                    font-size: var(--text-sm);
-                    color: var(--text-secondary);
-                }
-                .dash-list {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 1px;
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-md);
-                    overflow: hidden;
-                }
-                .dash-list-row {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    padding: var(--space-3) var(--space-4);
-                    background: var(--surface-card);
-                    transition: background 0.15s;
-                }
-                .dash-list-row:hover { background: var(--surface-elevated); }
-                .dash-empty-card {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    gap: var(--space-2);
-                    padding: var(--space-8) var(--space-4);
-                    border: 1px dashed var(--surface-border);
-                    border-radius: var(--radius-lg);
-                    background: var(--surface-card);
-                    text-align: center;
-                }
-                .pending-task-card {
-                    padding: var(--space-4);
-                    background: var(--surface-elevated);
-                    border-radius: var(--radius-md);
-                    border: 1px solid var(--surface-border);
-                    cursor: pointer;
-                    transition: all 0.2s;
-                }
-                .pending-task-card:hover {
-                    background: var(--surface-hover);
-                    transform: translateY(-2px);
-                    box-shadow: var(--shadow-md);
-                }
-                .pending-task-card.urgent {
-                    border-left: 4px solid var(--danger-500);
-                    background: rgba(var(--danger-rgb), 0.05);
-                }
-                .priority-high { background: var(--danger-500) !important; }
-                .priority-normal { background: var(--primary-500) !important; }
-                .priority-low { background: var(--gray-500) !important; }
-            `}</style>
-        </>
+                        {!cargando && (
+                            <Link to="/activities" className="inicio-panel-pie">
+                                {totalActividadesHoy > MAX_AGENDA
+                                    ? `${totalActividadesHoy - MAX_AGENDA} actividades más hoy`
+                                    : 'Ver calendario de la obra'}
+                                <FiArrowRight size={16} />
+                            </Link>
+                        )}
+                    </section>
+                </div>
+            </div>
+        </div>
     );
 }

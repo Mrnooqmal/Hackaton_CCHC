@@ -89,7 +89,7 @@ export default function About() {
     return (
         <div ref={rootRef} className="ab-root">
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,500&family=Roboto:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+                @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
 
                 .ab-root {
                     position: fixed;
@@ -161,7 +161,7 @@ export default function About() {
                 }
 
                 .ab-nav-brand {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-weight: 700;
                     font-size: 18px;
                     color: #fff;
@@ -218,7 +218,7 @@ export default function About() {
                 }
 
                 .ab-hero-title {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(42px, 7.5vw, 104px);
                     font-weight: 700;
                     line-height: 0.95;
@@ -253,7 +253,7 @@ export default function About() {
                 }
 
                 .ab-stat-num {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(28px, 4vw, 48px);
                     font-weight: 700;
                     color: #fff;
@@ -273,7 +273,7 @@ export default function About() {
                     position: absolute;
                     right: -40px;
                     bottom: -20px;
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(120px, 20vw, 320px);
                     font-weight: 700;
                     color: rgba(0,110,220,0.035);
@@ -305,7 +305,7 @@ export default function About() {
                     right: clamp(24px, 4vw, 60px);
                     top: 50%;
                     transform: translateY(-50%);
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(80px, 14vw, 200px);
                     font-weight: 700;
                     color: rgba(0,110,220,0.07);
@@ -336,7 +336,7 @@ export default function About() {
                 }
 
                 .ab-ds44-badge-num {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: 36px;
                     font-weight: 700;
                     color: #4d9fff;
@@ -346,7 +346,7 @@ export default function About() {
                 .ab-ds44-content {}
 
                 .ab-ds44-title {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(20px, 2.5vw, 30px);
                     font-weight: 600;
                     color: #fff;
@@ -389,7 +389,7 @@ export default function About() {
                 }
 
                 .ab-section-title {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(28px, 4vw, 52px);
                     font-weight: 700;
                     line-height: 1.1;
@@ -475,7 +475,7 @@ export default function About() {
                 .ab-module:hover .ab-module-icon { transform: scale(1.1); }
 
                 .ab-module-title {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: 14.5px;
                     font-weight: 600;
                     color: rgba(221,227,240,0.9);
@@ -535,7 +535,7 @@ export default function About() {
                 }
 
                 .ab-pillar-title {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: 18px;
                     font-weight: 600;
                     color: #fff;
@@ -569,7 +569,7 @@ export default function About() {
                 }
 
                 .ab-cta-title {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: clamp(28px, 4.5vw, 58px);
                     font-weight: 700;
                     color: #fff;
@@ -625,7 +625,7 @@ export default function About() {
                 }
 
                 .ab-footer-brand {
-                    font-family: 'Lora', serif;
+                    font-family: var(--font-display);
                     font-size: 15px;
                     font-weight: 600;
                     color: rgba(221,227,240,0.4);

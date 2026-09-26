@@ -195,7 +195,7 @@ export default function Footer() {
                     display: flex;
                     align-items: baseline;
                     gap: 5px;
-                    font-family: var(--font-display, 'Lora', Georgia, serif);
+                    font-family: var(--font-display);
                     font-size: 1.75rem;
                     font-weight: 600;
                     line-height: 1;
@@ -252,7 +252,7 @@ export default function Footer() {
                 }
 
                 .ft-col-title {
-                    font-family: var(--font-display, 'Lora', Georgia, serif);
+                    font-family: var(--font-display);
                     font-size: 13px;
                     font-weight: 600;
                     color: #ffffff;
