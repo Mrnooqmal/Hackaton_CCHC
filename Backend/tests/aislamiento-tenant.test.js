@@ -19,6 +19,9 @@ const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { docClient } = require('../lib/clients/dynamodb');
+const { crearDobleS3 } = require('./doble-s3');
+
+let dobleS3;
 const documentos = require('../handlers/documents/handler');
 const firmas = require('../handlers/signatures/handler');
 const personas = require('../handlers/personas-module/handler');
@@ -49,6 +52,8 @@ let store;
 let originalSend;
 
 beforeEach(() => {
+    // Los escritores de documentos leen la huella del archivo de S3 (H-7).
+    dobleS3 = crearDobleS3();
     store = { item: null, personaItems: [], escrituras: [], borrados: [] };
     originalSend = docClient.send;
     docClient.send = async (cmd) => {
@@ -72,7 +77,7 @@ beforeEach(() => {
     };
 });
 
-afterEach(() => { docClient.send = originalSend; });
+afterEach(() => { docClient.send = originalSend; dobleS3.restaurar(); });
 
 const cuerpo = (evento, body) => ({ ...evento, body: JSON.stringify(body) });
 

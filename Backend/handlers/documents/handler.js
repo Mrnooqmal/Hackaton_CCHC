@@ -15,6 +15,8 @@ const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { TIPOS_SALUD, filtrarSalud } = require('../../lib/documentos-salud');
 const { DESTINATARIO, MEDIO } = require('../../lib/distribucion');
 const almacenamiento = require('../../lib/almacenamiento');
+const { camposDeArchivo, verificarArchivo } = require('../../lib/huellaArchivo');
+const { registrarFallo } = require('../../lib/degradacion');
 const {
     llaveDe: llaveDeArreglos,
     construirAsignacion,
@@ -273,6 +275,8 @@ module.exports.create = async (event) => {
             s3Key: body.s3Key || null,
             archivoUrl: body.archivoUrl || null,
             archivoNombre: body.archivoNombre || null,
+            // H-7: la huella del archivo, leída de S3 —nunca del cuerpo—.
+            ...(await camposDeArchivo(body.s3Key || body.archivoUrl || null)),
             fechaCaducidad: body.fechaCaducidad || null,
             periodo: body.periodo || null,
             // Desde cuándo rige el documento. Es contra esta fecha, y no contra la
@@ -515,6 +519,16 @@ module.exports.update = async (event) => {
         }
 
         const body = JSON.parse(event.body || '{}');
+
+        // Una firma solo existe si pasó por PIN o vale (`FirmaService.crear`).
+        // Esta ruta descartaba `asignaciones` y `firmas` en silencio, y una
+        // pantalla —la carga masiva de onboarding— los mandaba creyendo que
+        // marcaba a cada persona como firmada. Se rechaza en voz alta para que
+        // nadie vuelva a creer que registró una firma por acá.
+        if (body.asignaciones !== undefined || body.firmas !== undefined || body.firmaRelator !== undefined) {
+            return error('Las firmas se registran firmando con PIN o vale, no editando el documento.', 400);
+        }
+
         const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad', 'periodo', 'fecha', 'fechaEntradaVigencia'];
         const updateExpressions = [];
         const expressionNames = {};
@@ -535,6 +549,12 @@ module.exports.update = async (event) => {
         // Archivar la versión saliente cuando el archivo cambia de verdad.
         const nuevoS3Key = body.s3Key !== undefined ? body.s3Key : body.archivoUrl;
         if (nuevoS3Key) {
+            // H-7: el archivo nuevo trae su huella, leída de S3.
+            const { archivoHuella } = await camposDeArchivo(nuevoS3Key);
+            updateExpressions.push('#archivoHuella = :archivoHuella');
+            expressionNames['#archivoHuella'] = 'archivoHuella';
+            expressionValues[':archivoHuella'] = archivoHuella;
+
             const doc = actual;
 
             const s3KeyActual = doc.s3Key || doc.archivoUrl || null;
@@ -544,6 +564,8 @@ module.exports.update = async (event) => {
                     version: versionActual,
                     s3Key: s3KeyActual,
                     archivoNombre: doc.archivoNombre || null,
+                    // La versión archivada sigue pudiendo probarse (H-7).
+                    archivoHuella: doc.archivoHuella || null,
                     publicadaPor: doc.ultimaPublicacionPor || doc.createdBy || null,
                     publicadaPorNombre: doc.ultimaPublicacionNombre || doc.creatorName || null,
                     publicadaEn: doc.updatedAt || doc.createdAt || null,
@@ -665,12 +687,17 @@ module.exports.nuevaVersionCorporativa = async (event) => {
         const firmantes = new Set();
         let actualizados = 0;
 
+        // H-7: el archivo nuevo es uno solo para todas las copias; su huella se
+        // lee de S3 una vez.
+        const { archivoHuella } = await camposDeArchivo(s3Key);
+
         for (const doc of copias) {
             const versionPrevia = doc.version || 1;
             const snapshot = {
                 version: versionPrevia,
                 s3Key: doc.s3Key || doc.archivoUrl || null,
                 archivoNombre: doc.archivoNombre || null,
+                archivoHuella: doc.archivoHuella || null,
                 motivo: doc.ultimoMotivoVersion || null,
                 // FUF 51 / Art. 57 inc. 5: participantes de la revisión anual.
                 participantes: doc.ultimosParticipantesRevision || null,
@@ -688,7 +715,7 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                     TableName: TABLE_NAME,
                     Key: { documentId: doc.documentId },
                     UpdateExpression: 'SET #version = :v'
-                        + ', s3Key = :k, archivoUrl = :k, archivoNombre = :n, firmas = :vacio,'
+                        + ', s3Key = :k, archivoUrl = :k, archivoNombre = :n, archivoHuella = :h, firmas = :vacio,'
                         + ' asignaciones = :asig,'
                         + ' ultimoMotivoVersion = :m, notasCambio = :nc,'
                         + ' ultimaPublicacionPor = :p, ultimaPublicacionNombre = :pn,'
@@ -699,6 +726,7 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                         ':v': versionPrevia + 1,
                         ':k': s3Key,
                         ':n': archivoNombre || doc.archivoNombre || null,
+                        ':h': archivoHuella,
                         ':vacio': [],
                         ':asig': asignacionesReset,
                         ':m': String(motivo).trim(),
@@ -793,6 +821,7 @@ module.exports.nuevaVersion = async (event) => {
             // la versión archivada quedaba sin archivo que descargar.
             s3Key: doc.s3Key || doc.archivoUrl || null,
             archivoNombre: doc.archivoNombre || null,
+            archivoHuella: doc.archivoHuella || null,
             publicadaPor: doc.ultimaPublicacionPor || doc.createdBy || null,
             publicadaPorNombre: doc.ultimaPublicacionNombre || doc.creatorName || null,
             publicadaEn: doc.updatedAt || doc.createdAt || null,
@@ -842,7 +871,7 @@ module.exports.nuevaVersion = async (event) => {
         await docClient.send(new UpdateCommand({
             TableName: TABLE_NAME,
             Key: { documentId: id },
-            UpdateExpression: 'SET version = :v, versiones = :vs, s3Key = :s3, archivoUrl = :s3, archivoNombre = :an, '
+            UpdateExpression: 'SET version = :v, versiones = :vs, s3Key = :s3, archivoUrl = :s3, archivoNombre = :an, archivoHuella = :h, '
                 + 'firmas = :empty, asignaciones = :asig, '
                 + '#um = :motivo, notasCambio = :notas, ultimaPublicacionPor = :pby, ultimaPublicacionNombre = :pbn, ultimosParticipantesRevision = :part, updatedAt = :now',
             ExpressionAttributeNames: { '#um': 'ultimoMotivoVersion' },
@@ -851,6 +880,8 @@ module.exports.nuevaVersion = async (event) => {
                 ':vs': versiones,
                 ':s3': s3Key,
                 ':an': body.archivoNombre || doc.archivoNombre || null,
+                // H-7: leída de S3, no del cuerpo.
+                ':h': (await camposDeArchivo(s3Key)).archivoHuella,
                 ':empty': [],
                 ':asig': [...asignacionesReset, ...asignacionesNuevas],
                 ':motivo': motivo,
@@ -1407,6 +1438,14 @@ module.exports.downloadFirmado = async (event) => {
         // según el flujo de creación (ver documents.create / documents.list).
         const fileKey = documentData.s3Key || documentData.archivoUrl;
         if (!fileKey) return error('El documento no tiene archivo asociado', 400);
+
+        // H-7: sobre un original alterado no se estampa ni se entrega nada. El
+        // anexo le pondría firmas válidas a un archivo que no es el que se firmó.
+        const integridad = await verificarArchivo(documentData, fileKey);
+        if (integridad === 'alterada') {
+            registrarFallo('integridad.archivo', new Error('El archivo no coincide con su huella registrada'), { clave: fileKey, documentId: id });
+            return error('El archivo guardado no coincide con su huella de integridad registrada. No se entrega.', 409);
+        }
 
         // El anexo de firmas estampa el RUT en el PDF: acá sí hace falta en
         // claro. Es el único lugar donde este dato tiene que salir del sobre.

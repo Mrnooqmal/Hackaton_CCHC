@@ -155,7 +155,7 @@ class IncidentsRepository {
                     TableName: this.inboxTable,
                     Item: message
                 }));
-                console.log(`Notificación enviada a prevencionista: ${prev.nombre} ${prev.apellido || ''}`);
+                console.log('Notificación de incidente enviada a', prev.userId);
             } catch (error) {
                 console.error(`Error enviando notificación a ${prev.userId}:`, error);
             }
@@ -164,8 +164,12 @@ class IncidentsRepository {
 
     // CREATE
     async create(data, context) {
-        console.log('[CREATE] Repo.create called with data:', JSON.stringify(data));
         const incidentId = uuidv4();
+        // Solo identificadores. Esto registraba el incidente completo con
+        // `JSON.stringify(data)`: el RUT, el nombre y el género del trabajador, y
+        // el relato del accidente, en claro en CloudWatch — por fuera del cifrado
+        // que protege esos mismos datos en la tabla.
+        console.log('[CREATE] incidente', incidentId, '| empresa', data?.tenantId || data?.empresaId || '-', '| tipo', data?.tipo || '-');
         const now = new Date().toISOString();
 
         // Validation: tipo siempre requerido; descripcion requerida; resto opcional.
@@ -524,7 +528,8 @@ class IncidentsRepository {
 
     // UPDATE
     async update(id, data) {
-        console.log('[UPDATE] Repo.update called for ID:', id, 'with data:', JSON.stringify(data));
+        // Qué campos cambian, nunca sus valores (ver la nota de `create`).
+        console.log('[UPDATE] incidente', id, '| campos:', Object.keys(data || {}).join(',') || '-');
         const now = new Date().toISOString();
         let updateExpression = 'SET updatedAt = :updatedAt';
         const expressionAttributeValues = { ':updatedAt': now };
@@ -590,7 +595,8 @@ class IncidentsRepository {
 
     // UPLOAD EVIDENCE
     async uploadEvidence({ fileName, fileType, incidentId, tenantId, checksumSha256 }) {
-        console.log('[UPLOAD_EVIDENCE] Called with:', { fileName, fileType, incidentId });
+        // Sin el nombre del archivo: suele traer el de la persona.
+        console.log('[UPLOAD_EVIDENCE] incidente', incidentId, '| tipo', fileType);
         if (!fileName || !fileType) {
             throw new Error('fileName y fileType son requeridos');
         }

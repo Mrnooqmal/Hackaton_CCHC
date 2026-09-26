@@ -10,6 +10,10 @@ const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const { verificarConLimiteOLanzar } = require('../limitePin');
+
+/** Error de PIN con un código estable, para que la ruta responda el estado HTTP
+ *  correcto sin interpretar mensajes. */
+const errorPin = (mensaje, codigo) => Object.assign(new Error(mensaje), { codigo });
 const { fechaHoraChile } = require('../utils/fechaChile');
 const { Persona, ROLES } = require('../models/Persona');
 const cifradoCampo = require('../cifradoCampo');
@@ -593,48 +597,76 @@ class PersonaService {
     }
 
     /**
-     * Configurar PIN — un solo hash, un solo update (no dos como antes)
+     * Configura o cambia el PIN de una persona. Es la credencial con la que se
+     * firma: quien la fija puede firmar por esa persona. Por eso la regla vive
+     * ACÁ, en el único punto por donde pasa todo cambio de PIN, y no en cada
+     * ruta que lo llame:
+     *
+     *   - si la persona YA tiene PIN, solo ella lo cambia, probando el actual, y
+     *     esa prueba pasa por el límite de intentos (D-9);
+     *   - si no lo tiene, lo configura ella o quien tenga el permiso de enrolar
+     *     (en terreno el trabajador teclea su PIN en el dispositivo de quien lo
+     *     registra).
+     *
+     * Hasta el 26 de septiembre de 2026 el PIN actual se verificaba solo "si el
+     * cliente lo envía": omitirlo cambiaba el PIN sin prueba. La ruta lo exigía,
+     * pero era la única defensa, y la escritura no estaba condicionada: entre que
+     * la ruta leía "no tiene PIN" y el servicio escribía, un PIN recién creado se
+     * podía sobrescribir sin conocerlo. Ahora la escritura solo procede si el PIN
+     * guardado sigue siendo el que se verificó (o si sigue sin haber uno).
+     *
+     * @param {object} actor - quién pide el cambio, SIEMPRE desde la sesión:
+     *        `{ personaId, puedeEnrolar }`.
      */
-    async setPin(tenantId, personaId, pin, pinActual) {
+    async setPin(tenantId, personaId, pin, pinActual, actor) {
+        if (!actor?.personaId) throw errorPin('Falta quién cambia el PIN', 'PIN_SIN_ACTOR');
+
         const pinValidation = validatePin(pin);
-        if (!pinValidation.valid) throw new Error(pinValidation.error);
+        if (!pinValidation.valid) throw errorPin(pinValidation.error, 'PIN_INVALIDO');
 
         const persona = await this.getById(personaId);
-        if (!persona) throw new Error('Persona no encontrada');
+        if (!persona) throw errorPin('Persona no encontrada', 'PERSONA_NO_ENCONTRADA');
 
-        const yaTienePin = !!persona._pinHash;
+        const esPropio = actor.personaId === personaId;
+        const pinAnterior = persona._pinHash || null;
 
-        // Verificacion opcional del PIN actual: si el cliente lo envia, se valida.
-        // No es obligatorio, lo que permite la actualizacion directa del PIN.
-        if (yaTienePin && pinActual) {
+        if (pinAnterior) {
+            if (!esPropio) throw errorPin('Solo la propia persona puede cambiar su PIN', 'PIN_AJENO');
+            if (!pinActual) throw errorPin('Debes ingresar tu PIN actual para cambiarlo', 'PIN_ACTUAL_REQUERIDO');
+            // Lanza PIN_BLOQUEADO si la cuenta está bloqueada, y cuenta el fallo.
             const ok = await verificarConLimiteOLanzar(persona, pinActual, verifyPin);
-            if (!ok) throw new Error('PIN actual incorrecto');
-        }
-
-        // Validacion de duplicados: el nuevo PIN no puede ser identico al registrado.
-        if (yaTienePin && await verifyPin(pin, persona._pinHash, personaId)) {
-            throw new Error('El nuevo PIN no puede ser igual al PIN actual');
+            if (!ok) throw errorPin('PIN actual incorrecto', 'PIN_ACTUAL_INCORRECTO');
+            if (await verifyPin(pin, pinAnterior, personaId)) {
+                throw errorPin('El nuevo PIN no puede ser igual al PIN actual', 'PIN_IGUAL');
+            }
+        } else if (!esPropio && !actor.puedeEnrolar) {
+            throw errorPin('No tienes permiso para configurar el PIN de otra persona', 'PIN_AJENO');
         }
 
         const now = new Date().toISOString();
         const newPinHash = await hashPin(pin, personaId);
 
-        await this.dynamo.send(new UpdateCommand({
-            TableName: this.table,
-            Key: {
-                PK: `TENANT#${tenantId}`,
-                SK: `PERSONA#${personaId}`
-            },
-            UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
-            ExpressionAttributeValues: {
-                ':pinHash': newPinHash,
-                ':pinCreatedAt': now,
-                ':updatedAt': now
-            }
-        }));
+        try {
+            await this.dynamo.send(new UpdateCommand({
+                TableName: this.table,
+                Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+                UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
+                // El PIN que se verificó (o su ausencia) tiene que seguir ahí.
+                ConditionExpression: pinAnterior ? 'pinHash = :anterior' : 'attribute_not_exists(pinHash)',
+                ExpressionAttributeValues: {
+                    ':pinHash': newPinHash,
+                    ':pinCreatedAt': now,
+                    ':updatedAt': now,
+                    ...(pinAnterior ? { ':anterior': pinAnterior } : {}),
+                },
+            }));
+        } catch (err) {
+            if (err.name !== 'ConditionalCheckFailedException') throw err;
+            throw errorPin('El PIN cambió mientras se procesaba la solicitud. Intenta de nuevo.', 'PIN_CAMBIO_CONCURRENTE');
+        }
 
         return {
-            message: persona._pinHash ? 'PIN actualizado exitosamente' : 'PIN configurado exitosamente',
+            message: pinAnterior ? 'PIN actualizado exitosamente' : 'PIN configurado exitosamente',
             pinCreatedAt: now
         };
     }

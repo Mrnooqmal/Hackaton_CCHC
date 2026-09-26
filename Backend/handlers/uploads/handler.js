@@ -15,6 +15,20 @@ const isOffline = process.env.IS_OFFLINE === 'true';
 
 // Configuración del cliente S3
 const { s3Client, HUELLA_SHA256, urlDeSubida } = require("../../lib/clients/s3");
+const { leerHuellaArchivo, verificarArchivo } = require('../../lib/huellaArchivo');
+
+/**
+ * Antes de entregar un archivo, ¿sigue siendo el que se registró? (H-7)
+ * Si fue alterado, no se entrega y queda medido: es la señal de que algo
+ * cambió un archivo de evidencia por debajo de su documento.
+ */
+const integridadParaEntregar = async (fileKey, mapaDocs) => {
+    const integridad = await verificarArchivo(mapaDocs.get(fileKey), fileKey);
+    if (integridad === 'alterada') {
+        registrarFallo('integridad.archivo', new Error('El archivo no coincide con su huella registrada'), { clave: fileKey });
+    }
+    return integridad;
+};
 
 // Tipos MIME permitidos
 const ALLOWED_MIME_TYPES = [
@@ -260,6 +274,11 @@ module.exports.getDownloadUrl = async (event) => {
             return error('Archivo no encontrado', 404);
         }
 
+        const integridad = await integridadParaEntregar(body.fileKey, mapaDocs);
+        if (integridad === 'alterada') {
+            return error('El archivo guardado no coincide con su huella de integridad registrada. No se entrega.', 409);
+        }
+
         const command = new GetObjectCommand({
             Bucket: almacenamiento.bucketDeClave(body.fileKey),
             Key: body.fileKey,
@@ -273,6 +292,7 @@ module.exports.getDownloadUrl = async (event) => {
         return success({
             downloadUrl,
             expiresIn,
+            integridad,
         });
     } catch (err) {
         console.error('Error generating download URL:', err);
@@ -312,18 +332,18 @@ module.exports.confirmUpload = async (event) => {
             return error('Archivo no encontrado', 404);
         }
 
-        // Verificar que el archivo existe en S3
+        // Que el archivo exista, y su huella (H-7). `HeadObject`, no `GetObject`:
+        // lo de antes decía "solo verificar que existe, no descargar" pero abría
+        // la descarga del archivo completo y dejaba el cuerpo sin leer.
+        //
+        // La huella es la que el navegador calculó y S3 comprobó contra los bytes
+        // al recibir el PUT: se lee, no se recalcula ni se toma del cliente.
         const bucket = almacenamiento.bucketDeClave(fileKey);
+        let huella;
         try {
-            const command = new GetObjectCommand({
-                Bucket: bucket,
-                Key: fileKey,
-            });
-
-            // Solo verificar que existe, no descargar
-            await s3Client.send(command);
+            huella = await leerHuellaArchivo(fileKey);
         } catch (s3Error) {
-            if (s3Error.name === 'NoSuchKey') {
+            if (s3Error.name === 'NotFound' || s3Error.name === 'NoSuchKey' || s3Error.$metadata?.httpStatusCode === 404) {
                 return error('El archivo no fue encontrado en el servidor', 404);
             }
             throw s3Error;
@@ -344,6 +364,9 @@ module.exports.confirmUpload = async (event) => {
                 tipo: fileType,
                 tamaño: fileSize,
                 subidoEn: new Date().toISOString(),
+                // Informativa para quien subió: el documento NO la toma de acá,
+                // la vuelve a leer de S3 al recibir el archivo (lib/huellaArchivo.js).
+                huella,
             },
             downloadUrl,  // URL temporal para vista previa
         });
@@ -452,12 +475,16 @@ module.exports.getBatchDownloadUrls = async (event) => {
                     return { fileKey, downloadUrl: null, error: 'Archivo no encontrado' };
                 }
                 try {
+                    const integridad = await integridadParaEntregar(fileKey, mapaDocs);
+                    if (integridad === 'alterada') {
+                        return { fileKey, downloadUrl: null, integridad, error: 'El archivo no coincide con su huella de integridad registrada' };
+                    }
                     const command = new GetObjectCommand({
                         Bucket: almacenamiento.bucketDeClave(fileKey),
                         Key: fileKey,
                     });
                     const downloadUrl = await getSignedUrl(s3Client, command, { expiresIn });
-                    return { fileKey, downloadUrl, error: null };
+                    return { fileKey, downloadUrl, integridad, error: null };
                 } catch (err) {
                     return { fileKey, downloadUrl: null, error: err.message };
                 }

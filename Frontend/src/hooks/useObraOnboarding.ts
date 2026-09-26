@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { activitiesApi, documentsApi, signatureRequestsApi, surveysApi, uploadsApi } from '../api/client';
+import { CATEGORIA_EVIDENCIA_DS44 } from '../api/uploads.api';
 import { useCargoCatalog } from './useCargoCatalog';
 import { computeOnboardingSummary, type OnboardingSummary } from '../utils/onboardingObra';
 import { DS44_ONBOARDING_ITEMS } from '../utils/ds44';
@@ -92,7 +93,7 @@ export function useObraOnboarding(obraId: string | null | undefined, trabajadore
         try {
             const uploadRes = await uploadsApi.getUploadUrl({
                 archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
-                categoria: 'obras', empresaId: tenantId,
+                categoria: CATEGORIA_EVIDENCIA_DS44, empresaId: tenantId,
             });
             if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
             await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });

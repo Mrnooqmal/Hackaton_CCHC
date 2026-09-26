@@ -169,17 +169,32 @@ test('la recuperación de contraseña encuentra a la persona por su RUT', async 
     // devuelve, resolver la ficha.
     const auth = require('../handlers/auth/handler');
 
-    const res = await auth.forgotPassword({
-        body: JSON.stringify({ rut: '12.345.678-5' }),
-        requestContext: { http: { sourceIp: '1.2.3.4' } },
-        headers: {},
-    });
+    // El correo se simula. Antes esta prueba llamaba a SES de verdad, con las
+    // credenciales de quien corría las pruebas: `tests/sin-aws.js` lo impide
+    // ahora para toda la suite.
+    const notificaciones = require('../handlers/notifications/handler');
+    const enviarOriginal = notificaciones.sendPasswordResetEmail;
+    const correos = [];
+    notificaciones.sendPasswordResetEmail = async (email, nombre, url) => { correos.push({ email, url }); };
+
+    let res;
+    try {
+        res = await auth.forgotPassword({
+            body: JSON.stringify({ rut: '12.345.678-5' }),
+            requestContext: { http: { sourceIp: '1.2.3.4' } },
+            headers: {},
+        });
+    } finally {
+        notificaciones.sendPasswordResetEmail = enviarOriginal;
+    }
 
     assert.equal(res.statusCode, 200);
     // La respuesta es genérica a propósito (no revela si el RUT existe), así que
-    // lo que se comprueba es que llegó a ESCRIBIR el token: si la búsqueda
-    // hubiera fallado, no habría UpdateCommand.
+    // lo que se comprueba es que llegó a ESCRIBIR el token y a MANDAR el correo a
+    // quien corresponde: si la búsqueda hubiera fallado, no habría ninguno.
     assert.ok(consultas.includes('UpdateCommand'), 'se registró el token de recuperación');
+    assert.equal(correos.length, 1, 'se mandó un correo de recuperación');
+    assert.equal(correos[0].email, 'persona@ejemplo.cl');
 });
 
 // ─── Obras y empresas: el mismo criterio, los mismos dos pasos ───────────────

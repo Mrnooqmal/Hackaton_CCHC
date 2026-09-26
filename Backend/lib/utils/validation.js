@@ -2,9 +2,6 @@ const { validate, format, clean } = require('rut.js');
 const crypto = require('crypto');
 const credenciales = require('../credenciales');
 
-// Sal del token de firma. El hasheo de credenciales ya NO pasa por acá: usa
-// scrypt con sal por hash y pimienta de servidor (`lib/credenciales.js`).
-const PIN_SALT = process.env.PIN_SALT;
 
 /**
  * Valida y formatea un RUT chileno
@@ -63,19 +60,26 @@ const validateRequired = (obj, requiredFields) => {
 };
 
 /**
- * Genera un token de firma único con alta entropía
- * Formato: SIG-[timestamp]-[random]-[checksum]
+ * Genera un token de firma. Formato: SIG-[timestamp]-[96 bits aleatorios].
+ *
+ * El token es la clave con que cualquiera verifica una firma en la ruta
+ * PÚBLICA de verificación, así que lo único que lo protege es que no se pueda
+ * adivinar: por eso 96 bits de `randomBytes`.
+ *
+ * Hasta el 26 de septiembre de 2026 terminaba en un "checksum" de 6 caracteres
+ * (SHA-256 de timestamp, parte aleatoria y `PIN_SALT`). No lo verificaba nadie
+ * —la autenticidad de una firma viene de encontrar su token en la tabla—, y
+ * `PIN_SALT` podía estar ausente, con lo que el "checksum" era función de datos
+ * públicos. Se reemplazó por más aleatoriedad real (antes eran 64 bits), para
+ * que quitarlo no achicara el espacio de tokens en ningún escenario. Los tokens
+ * viejos siguen verificándose igual: la búsqueda es por el texto completo.
+ *
  * @returns {string}
  */
 const generateSignatureToken = () => {
     const timestamp = Date.now().toString(36);
-    const random = crypto.randomBytes(8).toString('hex');
-    const checksum = crypto
-        .createHash('sha256')
-        .update(`${timestamp}-${random}-${PIN_SALT}`)
-        .digest('hex')
-        .substring(0, 6);
-    return `SIG-${timestamp}-${random}-${checksum}`.toUpperCase();
+    const random = crypto.randomBytes(12).toString('hex');
+    return `SIG-${timestamp}-${random}`.toUpperCase();
 };
 
 /**

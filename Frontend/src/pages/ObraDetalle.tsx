@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
+import { CATEGORIA_EVIDENCIA_DS44 } from '../api/uploads.api';
 import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido, resolverDocumentoFirmable } from '../utils/documentoFirmado';
 import { publicarNuevaVersion, esVersionable, ENTIDADES_REVISION } from '../utils/versionarDocumento';
 import { caducidadPorDefecto, tiempoRelativo, revisionVencida, MESES_VIGENCIA_DEFECTO } from '../utils/vigenciaDocumento';
@@ -683,7 +684,7 @@ export default function ObraDetalle() {
         if (doCreateForm.file) {
           const up = await uploadsApi.getUploadUrl({
             archivo: doCreateForm.file, fileName: doCreateForm.file.name, fileType: doCreateForm.file.type,
-            fileSize: doCreateForm.file.size, categoria: 'obras', empresaId: obra.tenantId,
+            fileSize: doCreateForm.file.size, categoria: CATEGORIA_EVIDENCIA_DS44, empresaId: obra.tenantId,
           });
           if (up.success && up.data) {
             await fetch(up.data.uploadUrl, { method: 'PUT', body: doCreateForm.file, headers: up.data.uploadHeaders });
@@ -834,7 +835,7 @@ export default function ObraDetalle() {
           archivo: pendingDoFile, fileName: pendingDoFile.name,
           fileType: pendingDoFile.type,
           fileSize: pendingDoFile.size,
-          categoria: 'obras',
+          categoria: CATEGORIA_EVIDENCIA_DS44,
           empresaId: obra?.tenantId
         });
         if (!uploadUrlRes.success || !uploadUrlRes.data) throw new Error('Error al obtener URL de subida');
@@ -923,7 +924,7 @@ export default function ObraDetalle() {
     try {
       const uploadRes = await uploadsApi.getUploadUrl({
         archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
-        categoria: 'obras', empresaId: obra.tenantId
+        categoria: CATEGORIA_EVIDENCIA_DS44, empresaId: obra.tenantId
       });
       if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
       await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });
@@ -941,17 +942,14 @@ export default function ObraDetalle() {
             (d.asignaciones || []).some((a: any) => (a.personaId) === workerId)
           );
           if (targetDoc) {
-            // Update file + mark the worker's asignacion as firmado so checklist reflects it
-            const updatedAsignaciones = (targetDoc.asignaciones || []).map((a: any) =>
-              (a.personaId) === workerId
-                ? { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() }
-                : a
-            );
+            // Solo el archivo. Esto marcaba además la asignación de cada persona
+            // como "firmado": una firma solo existe si pasó por PIN o vale, y el
+            // backend lo descartaba en silencio mientras la pantalla lo daba por
+            // hecho. La asignación queda pendiente hasta que la persona firme.
             await documentsApi.update(targetDoc.documentId, {
               s3Key: fileKey,
               archivoUrl: fileKey,
               archivoNombre: file.name,
-              asignaciones: updatedAsignaciones
             } as any);
           }
         }
@@ -1184,7 +1182,7 @@ export default function ObraDetalle() {
           archivo: pendingDs44File, fileName: pendingDs44File.name,
           fileType: pendingDs44File.type,
           fileSize: pendingDs44File.size,
-          categoria: 'obras',
+          categoria: CATEGORIA_EVIDENCIA_DS44,
           empresaId: obra?.tenantId
         });
 
@@ -2816,7 +2814,7 @@ export default function ObraDetalle() {
               <div key={item.key} className="ds44-doc-row">
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)', minWidth: 0 }}>
                   {isDone
-                    ? <LuCircleCheck size={16} style={{ color: '#10b981', marginTop: '2px', flexShrink: 0 }} />
+                    ? <LuClock size={16} style={{ color: 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }} />
                     : item.kind === 'document'
                       ? <LuDownload size={16} style={{ color: 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }} />
                       : <LuClock size={16} style={{ color: 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }} />
@@ -2842,7 +2840,10 @@ export default function ObraDetalle() {
                     </label>
                   )}
                   {item.kind === 'document' && isDone && (
-                    <span className="badge badge-success" style={{ fontSize: '0.8rem' }}>Subido</span>
+                    <span className="badge badge-secondary" style={{ fontSize: '0.78rem' }}
+                      title="Cada persona lo firma con su PIN o con un vale. Subir el archivo no es firmarlo.">
+                      Archivo subido · pendiente de firma
+                    </span>
                   )}
                   {item.kind === 'signature' && (
                     <span className="badge badge-secondary" style={{ fontSize: '0.78rem' }}>Solicitud creada</span>

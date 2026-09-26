@@ -49,6 +49,12 @@ const crypto = require('crypto');
 
 const ALGORITMO = 'aes-256-gcm';
 const LARGO_IV = 12;
+// La etiqueta de autenticación de GCM es de 128 bits, y SOLO de 128 bits. Por
+// defecto, al descifrar Node acepta etiquetas más cortas (hasta 32 bits): una
+// etiqueta truncada es una etiqueta más fácil de forjar, y el sobre dejaría de
+// garantizar que el contenido no fue alterado. Se fija en los dos lados y,
+// además, se rechaza cualquier largo distinto antes de llegar a Node.
+const LARGO_TAG = 16;
 
 // ─── El HMAC ─────────────────────────────────────────────────────────────────
 
@@ -124,14 +130,18 @@ const hmacRut = async (rut) => {
 
 const cifrarConLlave = (texto, llave) => {
     const iv = crypto.randomBytes(LARGO_IV);
-    const cipher = crypto.createCipheriv(ALGORITMO, llave, iv);
+    const cipher = crypto.createCipheriv(ALGORITMO, llave, iv, { authTagLength: LARGO_TAG });
     const c = Buffer.concat([cipher.update(String(texto), 'utf8'), cipher.final()]);
     return { c: c.toString('base64'), iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64') };
 };
 
 const descifrarConLlave = (sobre, llave) => {
-    const decipher = crypto.createDecipheriv(ALGORITMO, llave, Buffer.from(sobre.iv, 'base64'));
-    decipher.setAuthTag(Buffer.from(sobre.tag, 'base64'));
+    const tag = Buffer.from(String(sobre.tag || ''), 'base64');
+    if (tag.length !== LARGO_TAG) {
+        throw new Error(`Etiqueta de autenticación de ${tag.length * 8} bits: se exigen ${LARGO_TAG * 8}`);
+    }
+    const decipher = crypto.createDecipheriv(ALGORITMO, llave, Buffer.from(sobre.iv, 'base64'), { authTagLength: LARGO_TAG });
+    decipher.setAuthTag(tag);
     return Buffer.concat([
         decipher.update(Buffer.from(sobre.c, 'base64')),
         decipher.final(),

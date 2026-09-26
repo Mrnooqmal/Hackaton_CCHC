@@ -23,6 +23,20 @@ const { InboxRepository } = require('../inbox-module/inbox.repository');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
 const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
+const { camposDeArchivo } = require('../../lib/huellaArchivo');
+
+/** Estado HTTP de cada rechazo de `PersonaService.setPin`. PIN_BLOQUEADO (límite
+ *  de intentos, D-9) es 423 en todas las rutas que verifican un PIN. */
+const ESTADO_POR_ERROR_DE_PIN = {
+    PIN_INVALIDO: 400,
+    PIN_ACTUAL_REQUERIDO: 400,
+    PIN_IGUAL: 400,
+    PIN_ACTUAL_INCORRECTO: 401,
+    PIN_AJENO: 403,
+    PERSONA_NO_ENCONTRADA: 404,
+    PIN_CAMBIO_CONCURRENTE: 409,
+    PIN_BLOQUEADO: 423,
+};
 
 const personaService = new PersonaService();
 const obraService = new ObraService();
@@ -246,6 +260,8 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
         // Plantilla pegada (si el kit la trae): el ítem nace con archivo →
         // queda listo para firma (pendiente_firma). Sin plantilla: pendiente_asignar.
         s3Key: docConfig.plantilla?.fileKey || null,
+        // H-7: la huella del archivo de la plantilla, leída de S3.
+        ...(await camposDeArchivo(docConfig.plantilla?.fileKey || null)),
         archivoUrl: null,
         archivoNombre: docConfig.plantilla?.nombre || null,
         fechaCaducidad: null,
@@ -739,8 +755,8 @@ const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
             await docClient.send(new UpdateCommand({
                 TableName: DOCUMENTS_TABLE,
                 Key: { documentId: doc.documentId },
-                UpdateExpression: 'SET s3Key = :s, archivoNombre = :n, asignaciones = :asig, firmas = :f, updatedAt = :u',
-                ExpressionAttributeValues: { ':s': null, ':n': null, ':asig': asigReset, ':f': [], ':u': now },
+                UpdateExpression: 'SET s3Key = :s, archivoNombre = :n, archivoHuella = :h, asignaciones = :asig, firmas = :f, updatedAt = :u',
+                ExpressionAttributeValues: { ':s': null, ':n': null, ':h': null, ':asig': asigReset, ':f': [], ':u': now },
             }));
             removidos++;
             continue;
@@ -776,13 +792,16 @@ const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
             }));
         }
 
+        // H-7: la plantilla nueva trae su huella, leída de S3.
+        const { archivoHuella } = await camposDeArchivo(ch.plantilla.fileKey);
         const updateExpr = esRenovacion && huboFirmados
-            ? 'SET s3Key = :s, archivoNombre = :n, asignaciones = :asig, version = :ver, firmas = :firmas, updatedAt = :u'
-            : 'SET s3Key = :s, archivoNombre = :n, updatedAt = :u';
+            ? 'SET s3Key = :s, archivoNombre = :n, archivoHuella = :h, asignaciones = :asig, version = :ver, firmas = :firmas, updatedAt = :u'
+            : 'SET s3Key = :s, archivoNombre = :n, archivoHuella = :h, updatedAt = :u';
         const exprValues = esRenovacion && huboFirmados
             ? {
                 ':s': ch.plantilla.fileKey,
                 ':n': ch.plantilla.nombre || doc.archivoNombre || null,
+                ':h': archivoHuella,
                 ':asig': nuevasAsignaciones,
                 ':ver': (doc.version || 1) + 1,
                 ':firmas': [],
@@ -791,6 +810,7 @@ const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
             : {
                 ':s': ch.plantilla.fileKey,
                 ':n': ch.plantilla.nombre || doc.archivoNombre || null,
+                ':h': archivoHuella,
                 ':u': now,
             };
 
@@ -2155,36 +2175,26 @@ module.exports.personasHandler = async (event) => {
             return success({ message: 'Entrega de EPP validada', entrega });
         }
 
-        // POST /personas/{id}/set-pin — Configurar PIN.
+        // POST /personas/{id}/set-pin — Configurar o cambiar el PIN.
         //
-        // El PIN es la credencial con la que se firma: quien lo sobreescribe puede
-        // firmar por esa persona. Antes cualquiera con el id podía reemplazarlo sin
-        // conocer el actual. Ahora:
-        //   - si la persona YA tiene PIN, solo ella lo cambia, y probando el actual;
-        //   - si no lo tiene (enrolamiento en el dispositivo de quien registra), lo
-        //     configura ella misma o quien tenga el permiso de crear personas.
+        // La regla completa —quién puede, y que cambiar un PIN existente exige el
+        // actual y pasa por el límite de intentos— vive en `PersonaService.setPin`,
+        // que es el único punto por donde pasa todo cambio de PIN. Acá solo se
+        // dice quién actúa, desde la sesión, y se traduce el resultado a HTTP.
         if (method === 'POST' && personaId && action === 'set-pin') {
             if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
-            const objetivoPin = await personaDelTenant(personaId);
-            if (!objetivoPin) return error('Persona no encontrada', 404);
-
-            const esPropio = objetivoPin.personaId === sesion.personaId;
-            const yaTienePin = objetivoPin.tienePinConfigurado();
-            if (yaTienePin) {
-                if (!esPropio) return error('Solo la propia persona puede cambiar su PIN', 403);
-                if (!body.pinActual) return error('Debes ingresar tu PIN actual para cambiarlo', 400);
-            } else if (!esPropio && !puede(PERMISSIONS.PERSONAS_CREAR)) {
-                return error('No tienes permiso para configurar el PIN de otra persona', 403);
-            }
+            if (!await personaDelTenant(personaId)) return error('Persona no encontrada', 404);
 
             try {
-                const result = await personaService.setPin(tenantId, personaId, body.pin, body.pinActual);
+                const result = await personaService.setPin(tenantId, personaId, body.pin, body.pinActual, {
+                    personaId: sesion.personaId,
+                    puedeEnrolar: puede(PERMISSIONS.PERSONAS_CREAR),
+                });
                 return success(result);
             } catch (err) {
-                // El límite de intentos (H-2) responde 423, no el 500 genérico
-                // del catch de más abajo: es un rechazo esperado, no una falla.
-                if (err.codigo === 'PIN_BLOQUEADO') return error(err.message, 423);
+                const estado = ESTADO_POR_ERROR_DE_PIN[err.codigo];
+                if (estado) return error(err.message, estado);
                 throw err;
             }
         }
