@@ -53,9 +53,13 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
         /* ── Banner variant ──
            El banner comparte superficie con la barra principal del header, de
            modo que header + título forman un solo bloque de chrome continuo.
-           La regla azul→rojo del borde inferior es la única costura entre ese
-           bloque y el lienzo de contenido. El navy institucional queda
-           reservado para el marco de la app (franja superior y footer). */
+           La costura con el lienzo de contenido es una regla NEUTRA de 1 px
+           que no llega a los bordes: arranca y termina donde arranca y termina
+           el texto (--banner-rule-inset = --banner-bleed), así el corte se lee
+           como parte de la columna de contenido y no como un marco. Antes era
+           una barra de 3 px con degradado azul→naranjo: pesaba más que el
+           título y repetía la marca que ya cargan la franja superior y el
+           footer. El color institucional queda para el marco de la app. */
         .ui-page-header--banner {
           /* Sangrado lateral = padding de .main-content + el de .page-content.
              La MISMA medida se reutiliza como padding interno, de modo que el
@@ -63,8 +67,12 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
              contenido de la página que va debajo. Ambos paddings cambian por
              breakpoint, así que sólo se redefine la variable (ver abajo). */
           --banner-bleed: calc(var(--space-6) + var(--space-6));
+          /* Margen lateral de la regla. Sigue al sangrado, de modo que en cada
+             breakpoint queda alineada con el título de arriba y el contenido
+             de abajo sin tener que redefinirla. */
+          --banner-rule-inset: var(--banner-bleed);
           margin: calc(-1 * var(--space-6)) calc(-1 * var(--banner-bleed)) var(--space-6);
-          padding: var(--space-8) var(--banner-bleed) calc(var(--space-6) + 3px);
+          padding: var(--space-8) var(--banner-bleed) calc(var(--space-6) + 1px);
           background: var(--surface-card);
           position: relative;
           border-top: none;
@@ -74,10 +82,10 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           content: '';
           position: absolute;
           bottom: 0;
-          left: 0;
-          right: 0;
-          height: 3px;
-          background: var(--cchc-accent-line);
+          left: var(--banner-rule-inset);
+          right: var(--banner-rule-inset);
+          height: 1px;
+          background: var(--surface-border);
         }
 
         .ui-page-header-breadcrumb {

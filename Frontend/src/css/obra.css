@@ -45,12 +45,34 @@
 
 /* ── Cabecera ─────────────────────────────────────────────────────────────── */
 
+/* Franja, no tarjeta.
+   El recuadro con borde y esquinas redondeadas encerraba la identidad de la
+   obra en una caja que competía con los paneles del contenido: dos niveles de
+   marco apilados. Ahora es una franja del ancho de la página —mismo sangrado
+   y misma matemática que .ui-page-header--banner— cuya única costura con el
+   lienzo es una regla neutra de 1 px que NO llega a los bordes: arranca y
+   termina donde arranca el contenido, así que la pestaña activa apoya su
+   subrayado sobre ella. */
 .ob-cabecera {
+  /* Sangrado lateral = padding de .main-content + el de .page-content, igual
+     que el banner del PageHeader; se redefine por breakpoint más abajo. */
+  --ob-bleed: calc(var(--space-6) + var(--space-6));
+  --ob-rule-inset: var(--ob-bleed);
+  position: relative;
   background: var(--surface-card);
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5) var(--space-6) 0;
-  margin-bottom: var(--space-6);
+  border: none;
+  border-radius: 0;
+  margin: calc(-1 * var(--space-6)) calc(-1 * var(--ob-bleed)) var(--space-6);
+  padding: var(--space-6) var(--ob-bleed) 0;
+}
+.ob-cabecera::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: var(--ob-rule-inset);
+  right: var(--ob-rule-inset);
+  height: 1px;
+  background: var(--surface-border);
 }
 .ob-cabecera__identidad { display: flex; align-items: center; gap: var(--space-5); }
 .ob-cabecera__foto {
@@ -63,6 +85,23 @@
   overflow: hidden;
 }
 .ob-cabecera__foto img { width: 100%; height: 100%; object-fit: cover; }
+/* La foto se monta ya decodificada (ver ObraCabecera): el fundido solo suaviza
+   la aparición, no esconde un pintado a medias. */
+.ob-cabecera__foto-img { animation: ob-aparecer 240ms ease-out; }
+/* Reserva el hueco mientras se resuelve el enlace firmado y baja la imagen. */
+.ob-cabecera__foto-espera {
+  width: 100%; height: 100%;
+  background: var(--surface-hover);
+  animation: ob-latido 1.4s ease-in-out infinite;
+}
+@keyframes ob-aparecer {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-cabecera__foto-img { animation: none; }
+  .ob-cabecera__foto-espera { animation: none; }
+}
 .ob-cabecera__texto { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .ob-cabecera__volver {
   font-size: 0.75rem; color: var(--text-secondary);
@@ -248,7 +287,12 @@
   position: relative; min-height: 260px; overflow: hidden;
   border-radius: var(--radius-lg); border: 1px solid var(--surface-border); background: var(--ob-plano);
 }
-.ob-plano svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Hijo DIRECTO: el descendiente suelto también agarraba el ícono del enlace
+   "Abrir en el mapa", que vive dentro de .ob-plano__ficha. Ese ícono quedaba
+   absoluto y al 100% del panel, o sea un pin gigante tapando el plano. Solo
+   se notaba en obras CON dirección, que son las únicas que muestran el
+   enlace. */
+.ob-plano > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .ob-plano__manzana { fill: var(--ob-plano-manzana); }
 .ob-plano__obra { fill: var(--ob-plano-obra); stroke: var(--accent); }
 .ob-plano__calle { stroke: var(--ob-plano-calle); }
@@ -302,12 +346,25 @@
 
 /* ── Pantallas angostas ───────────────────────────────────────────────────── */
 
+/* Sangrado por breakpoint (main-content + page-content): 24+24 → 16+24 (≤1024)
+   → 16+8 (≤768). Mismos valores que .ui-page-header--banner. */
+@media (max-width: 1024px) {
+  .ob-cabecera { --ob-bleed: calc(var(--space-4) + var(--space-6)); }
+}
+@media (max-width: 768px) {
+  .ob-cabecera {
+    --ob-bleed: calc(var(--space-4) + var(--space-2));
+    margin-top: calc(-1 * var(--space-4));
+    margin-bottom: var(--space-4);
+  }
+}
+
 @media (max-width: 1100px) {
   .ob-ds44__cuerpo { grid-template-columns: minmax(0, 1fr); }
   .ob-span-5, .ob-span-7 { grid-column: span 12; }
 }
 @media (max-width: 760px) {
-  .ob-cabecera { padding: var(--space-4) var(--space-4) 0; }
+  .ob-cabecera { padding-top: var(--space-4); }
   .ob-cabecera__foto { width: 56px; height: 42px; }
   .ob-cabecera__titulo { font-size: 1.2rem; }
   .ob-ds44__avance { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
@@ -396,4 +453,97 @@
 @media (max-width: 480px) {
   .dp-campo, .dp-campo--fecha { width: 100%; }
   .ce-archivo { flex-wrap: wrap; }
+}
+
+/* ── Skeleton screens ─────────────────────────────────────────────────────
+   La carga mostraba un spinner centrado a pantalla completa: la página
+   aparecía de golpe y en otra posición, así que cada entrada al detalle era
+   un salto. El esqueleto dibuja la MISMA retícula que va a llegar —franja de
+   cabecera, letrero y plano— para que el contenido solo se rellene.
+
+   Los bloques no llevan texto ni `aria` propio: el estado de carga lo anuncia
+   una sola vez el contenedor con aria-busy, para no leer veinte cajas vacías. */
+
+.ob-skel {
+  background: var(--surface-elevated);
+  border-radius: var(--radius-sm);
+  animation: ob-latido 1.4s ease-in-out infinite;
+}
+.ob-skel--circulo { border-radius: 50%; }
+.ob-skel--foto {
+  width: 88px; height: 66px; flex-shrink: 0;
+  border-radius: var(--radius-md);
+}
+.ob-skel--titulo { height: 26px; width: min(340px, 60vw); }
+.ob-skel--linea { height: 12px; }
+.ob-skel--pestana { height: 16px; width: 92px; }
+
+/* La franja del esqueleto repite el sangrado de .ob-cabecera para que la
+   regla inferior caiga en el mismo sitio antes y después de cargar. */
+.ob-skel-cabecera {
+  --ob-bleed: calc(var(--space-6) + var(--space-6));
+  position: relative;
+  background: var(--surface-card);
+  margin: calc(-1 * var(--space-6)) calc(-1 * var(--ob-bleed)) var(--space-6);
+  padding: var(--space-6) var(--ob-bleed) 0;
+}
+.ob-skel-cabecera::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: var(--ob-bleed);
+  right: var(--ob-bleed);
+  height: 1px;
+  background: var(--surface-border);
+}
+.ob-skel-identidad { display: flex; align-items: center; gap: var(--space-5); }
+.ob-skel-texto { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ob-skel-barra {
+  display: flex; align-items: center; gap: var(--space-5);
+  height: 48px; margin-top: var(--space-4);
+}
+.ob-skel-panel { gap: 16px; }
+
+/* Piezas del esqueleto de la pestaña DS 44: heredan la caja de su equivalente
+   real (.ob-fase, .ob-fila, .ob-modulo) para que el relleno no mueva nada. */
+.ob-skel-fase {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 14px 16px; border-radius: 12px;
+  border: 1px solid var(--surface-border);
+}
+.ob-skel-encabezado {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-4); flex-wrap: wrap;
+}
+.ob-skel-requisito {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 12px; align-items: center; padding: 16px 20px;
+}
+.ob-skel-modulo {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 14px 0; border-top: 1px solid var(--surface-border);
+}
+.ob-skel-fila { display: flex; gap: var(--space-4); }
+.ob-skel-fila > * { flex: 1; }
+
+@keyframes ob-latido {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-skel { animation: none; }
+}
+@media (max-width: 1024px) {
+  .ob-skel-cabecera { --ob-bleed: calc(var(--space-4) + var(--space-6)); }
+}
+@media (max-width: 768px) {
+  .ob-skel-cabecera {
+    --ob-bleed: calc(var(--space-4) + var(--space-2));
+    margin-top: calc(-1 * var(--space-4));
+    margin-bottom: var(--space-4);
+  }
+}
+@media (max-width: 760px) {
+  .ob-skel--foto { width: 56px; height: 42px; }
+  .ob-skel--titulo { height: 20px; }
 }

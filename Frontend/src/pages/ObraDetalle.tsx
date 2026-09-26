@@ -21,6 +21,7 @@ import { useObraContext } from '../context/ObraContext';
 import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
 import { requisitosDeFase, resumenDeFase, type FaseDeming } from '../components/FufPorFase';
 import ObraCabecera from '../components/obra/ObraCabecera';
+import ObraDetalleSkeleton from '../components/obra/ObraDetalleSkeleton';
 import ObraResumen from '../components/obra/ObraResumen';
 import Ds44Fases, { type ModuloFase } from '../components/obra/Ds44Fases';
 import '../css/obra.css';
@@ -260,6 +261,8 @@ export default function ObraDetalle() {
   const [selectedDemingPhase, setSelectedDemingPhase] = useState(faseDeming);
   const [activeTab, setActiveTab] = useState<'resumen' | 'ds44'>('ds44');
   const [obraImagenUrl, setObraImagenUrl] = useState<string | null>(null);
+  /** La obra declara tener foto pero el enlace firmado todavía no llega. */
+  const [obraImagenPendiente, setObraImagenPendiente] = useState(false);
   const [imagenSaving, setImagenSaving] = useState(false);
   const [imagenSuccess, setImagenSuccess] = useState(false);
 
@@ -269,15 +272,20 @@ export default function ObraDetalle() {
   // `imagenKey` es una llave de S3, no una URL: hay que pedir el enlace firmado.
   useEffect(() => {
     const key = obra?.imagenKey;
-    if (!key) { setObraImagenUrl(null); return; }
+    if (!key) { setObraImagenUrl(null); setObraImagenPendiente(false); return; }
     let alive = true;
+    // Se marca pendiente ANTES de pedir el enlace: la cabecera necesita saber
+    // que viene una foto para reservar su lugar en vez de mostrar el ícono de
+    // "sin foto" y cambiarlo un segundo después.
+    setObraImagenPendiente(true);
     uploadsApi.getBatchDownloadUrls([key])
       .then((res) => {
         if (!alive) return;
         const hit = res?.data?.urls?.find((u: any) => u.fileKey === key);
         if (hit?.downloadUrl) setObraImagenUrl(hit.downloadUrl);
+        setObraImagenPendiente(false);
       })
-      .catch(() => { /* sin imagen: queda el icono de respaldo */ });
+      .catch(() => { if (alive) setObraImagenPendiente(false); });
     return () => { alive = false; };
   }, [obra?.imagenKey]);
 
@@ -1529,8 +1537,8 @@ export default function ObraDetalle() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center" style={{ height: '100vh' }}>
-        <div className="spinner" />
+      <div className="page-content">
+        <ObraDetalleSkeleton pestana={activeTab} />
       </div>
     );
   }
@@ -2171,6 +2179,7 @@ export default function ObraDetalle() {
           estado={obra.estado}
           estadoLabel={ESTADO_OBRA_LABEL[obra.estado] ?? obra.estado ?? 'Sin estado'}
           imagenUrl={obraImagenUrl}
+          imagenPendiente={obraImagenPendiente}
           pestana={activeTab}
           onPestana={setActiveTab}
           onVolver={() => navigate('/obras')}

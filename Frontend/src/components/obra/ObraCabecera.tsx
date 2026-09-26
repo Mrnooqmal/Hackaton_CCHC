@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LuBuilding2, LuDownload, LuImage, LuPencil } from 'react-icons/lu';
 
 export type PestanaObra = 'resumen' | 'ds44';
@@ -8,6 +8,8 @@ export interface ObraCabeceraProps {
     estado?: string | null;
     estadoLabel: string;
     imagenUrl: string | null;
+    /** La obra tiene foto pero su enlace firmado aún no llega. */
+    imagenPendiente?: boolean;
     pestana: PestanaObra;
     onPestana: (p: PestanaObra) => void;
     onVolver: () => void;
@@ -28,11 +30,46 @@ export interface ObraCabeceraProps {
  * veces en la misma pantalla.
  */
 export default function ObraCabecera({
-    nombre, estado, estadoLabel, imagenUrl, pestana, onPestana,
+    nombre, estado, estadoLabel, imagenUrl, imagenPendiente = false, pestana, onPestana,
     onVolver, onEditar, onCambiarFoto, guardandoFoto = false, fotoGuardada = false, onExportarFuf,
 }: ObraCabeceraProps) {
     const inputFoto = useRef<HTMLInputElement | null>(null);
     const [exportando, setExportando] = useState(false);
+
+    /**
+     * La foto se monta recién cuando terminó de decodificarse.
+     *
+     * Servirla directo en el <img> dejaba ver el JPEG pintándose por líneas de
+     * arriba hacia abajo mientras bajaba de S3. Precargarla fuera del DOM y
+     * montarla entera después cambia ese barrido por un fundido: el navegador
+     * ya la tiene en caché, así que el <img> real pinta de una sola vez.
+     */
+    // El resultado se guarda junto a la url que lo produjo y el estado se DERIVA
+    // en el render. Reiniciarlo con un setState dentro del efecto obligaba a un
+    // render extra y, por un cuadro, mostraba la foto vieja con la url nueva.
+    const [fotoCargada, setFotoCargada] = useState<{ url: string; estado: 'lista' | 'falla' } | null>(null);
+    const foto: 'cargando' | 'lista' | 'falla' =
+        imagenUrl && fotoCargada?.url === imagenUrl ? fotoCargada.estado : 'cargando';
+
+    useEffect(() => {
+        if (!imagenUrl) return;
+        let vivo = true;
+        const img = new Image();
+        img.src = imagenUrl;
+        const marcar = (estado: 'lista' | 'falla') => () => {
+            if (vivo) setFotoCargada({ url: imagenUrl, estado });
+        };
+        // decode() espera al decodificado completo, no solo a los bytes. Donde
+        // no exista, onload alcanza: igual no se monta nada a medio pintar.
+        if (typeof img.decode === 'function') img.decode().then(marcar('lista')).catch(marcar('falla'));
+        else { img.onload = marcar('lista'); img.onerror = marcar('falla'); }
+        return () => { vivo = false; };
+    }, [imagenUrl]);
+
+    // Mientras se resuelve el enlace o baja la imagen se reserva el hueco con
+    // un latido. El ícono de edificio queda solo para "no hay foto" y para el
+    // fallo: si también cubriera la espera, parpadearía a foto al terminar.
+    const esperando = imagenPendiente || (Boolean(imagenUrl) && foto === 'cargando');
 
     const exportar = async () => {
         if (!onExportarFuf) return;
@@ -46,9 +83,13 @@ export default function ObraCabecera({
         <header className="ob-cabecera">
             <div className="ob-cabecera__identidad">
                 <div className="ob-cabecera__foto">
-                    {imagenUrl
-                        ? <img src={imagenUrl} alt={`Foto de ${nombre}`} />
-                        : <LuBuilding2 size={28} strokeWidth={1.5} aria-label="Sin foto de la obra" />}
+                    {imagenUrl && foto === 'lista' && (
+                        <img className="ob-cabecera__foto-img" src={imagenUrl} alt={`Foto de ${nombre}`} decoding="async" />
+                    )}
+                    {esperando && <span className="ob-cabecera__foto-espera" aria-hidden="true" />}
+                    {!esperando && foto !== 'lista' && (
+                        <LuBuilding2 size={28} strokeWidth={1.5} aria-label="Sin foto de la obra" />
+                    )}
                 </div>
                 <div className="ob-cabecera__texto">
                     <button type="button" className="ob-cabecera__volver" onClick={onVolver}>Obras</button>
