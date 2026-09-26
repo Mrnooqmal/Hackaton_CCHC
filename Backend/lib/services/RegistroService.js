@@ -14,8 +14,9 @@
  * (registro inmutable) y el documento referencia el mismo token + hash.
  */
 
-const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+const { calcularHuella, verificarHuella } = require('../huella');
+const { cifrarSobre, descifrarSobre } = require('../cifradoCampo');
 const { PutCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { PutObjectCommand } = require('@aws-sdk/client-s3');
 const { docClient } = require('../clients/dynamodb');
@@ -33,13 +34,71 @@ class RegistroService {
         this.personaService = new PersonaService();
     }
 
-    /**
-     * Hash reproducible de un snapshot. Serializa de forma estable (claves
-     * ordenadas) para que el mismo contenido produzca siempre el mismo hash.
+    /*
+     * `hashSnapshot` se eliminó el 25 de septiembre de 2026. Pasaba un arreglo
+     * como segundo argumento de `JSON.stringify`, que no ordena: filtra, en
+     * todos los niveles. La huella de un informe del Art. 71 no cubría al
+     * accidentado, la gravedad, si fue fatal, los días perdidos ni la causa
+     * raíz. La reemplaza `calcularHuella` (lib/huella.js), canónica y
+     * versionada. No se había firmado ningún informe con la vieja.
      */
-    static hashSnapshot(snapshot) {
-        const stable = JSON.stringify(snapshot, Object.keys(snapshot).sort());
-        return crypto.createHash('sha256').update(stable).digest('hex');
+
+    /**
+     * ¿El informe guardado sigue siendo el que se firmó?
+     *
+     * Descifra el contenido y recalcula la huella con la regla con que se firmó.
+     * La huella está calculada sobre el claro, así que no depende de con qué
+     * llave esté cifrado hoy: rotar la llave cambia el sobre, no el contenido.
+     *
+     * @param {object} documento - el elemento de DocumentsTable tal como está
+     *        guardado (con `snapshotCifrado` y `huella`), no el que devuelve la
+     *        API, que no lleva el sobre.
+     */
+    static async verificarIntegridad(documento) {
+        if (!documento?.snapshotCifrado || !documento?.huella) {
+            throw new Error('El documento no tiene contenido firmado que verificar');
+        }
+        const snapshot = await descifrarSobre(documento.snapshotCifrado);
+        return verificarHuella(snapshot, documento.huella);
+    }
+
+    /**
+     * El contenido del informe de investigación (Art. 71) que se firma.
+     *
+     * Función pura y aparte a propósito: la prueba de la huella recorre la
+     * salida de ESTE constructor, campo por campo, así que un campo que se
+     * agregue mañana queda cubierto sin que nadie tenga que acordarse.
+     */
+    static construirSnapshotInvestigacion(incident, { tenantId, obraId, generadoEn }) {
+        return {
+            tipoRegistro: 'INVESTIGACION_ACCIDENTE',
+            articulos: 'Art. 71',
+            tenantId,
+            obraId,
+            incidentId: incident.incidentId,
+            generadoEn,
+            afectado: {
+                nombreCompleto: incident.afectado?.nombreCompleto || incident.trabajador?.nombre || '',
+                rut: incident.afectado?.rut || incident.trabajador?.rut || '',
+                cargo: incident.afectado?.cargo || incident.trabajador?.cargo || '',
+                puestoAlMomentoAccidente: incident.afectado?.puestoAlMomentoAccidente || ''
+            },
+            accidente: {
+                fecha: incident.fecha || null,
+                hora: incident.hora || null,
+                gravedad: incident.gravedad || 'leve',
+                esFatal: incident.esFatal || false,
+                diasPerdidos: incident.diasPerdidos || 0,
+                direccion: incident.direccionAccidente || incident.centroTrabajo || '',
+                descripcion: incident.descripcion || ''
+            },
+            relatoAccidente: incident.relatoAccidente || '',
+            listaHechos: incident.listaHechos || [],
+            causasRaiz: incident.causasRaiz || [],
+            arbolCausasUrl: incident.arbolCausasUrl || null,
+            medidasCorrectivas: incident.medidasCorrectivas || [],
+            entrevistados: incident.entrevistados || []
+        };
     }
 
     /**
@@ -107,7 +166,7 @@ class RegistroService {
  Firmante: ${esc(firma?.personaNombre)} (${esc(firma?.personaRut)})<br>
  Método: ${esc(firma?.metodoValidacion)} · Fecha: ${esc(firma?.fecha)} ${esc(firma?.horario)}<br>
  Token: <span class="hash">${esc(firma?.token)}</span><br>
- Hash del contenido (SHA-256): <span class="hash">${esc(snapshot.hash || '')}</span>
+ Huella del contenido (${esc(snapshot.huella?.alg)}, ${esc(snapshot.huella?.canon)}): <span class="hash">${esc(snapshot.huella?.valor || '')}</span>
 </div>
 </body></html>`;
     }
@@ -380,7 +439,13 @@ class RegistroService {
             ...datos,
         };
 
-        const hash = RegistroService.hashSnapshot(snapshot);
+        // Primero la huella, sobre el contenido EN CLARO; recién después se
+        // cifra para guardar. Al revés, rotar la llave invalidaría la huella de
+        // un documento ya firmado (ver lib/huella.js).
+        const huella = calcularHuella(snapshot);
+        // Sobre propio por informe, no la llave compartida de la empresa: estos
+        // informes no se listan descifrados, se verifican de a uno.
+        const snapshotCifrado = await cifrarSobre(snapshot);
 
         // Firma real via FirmaService (PIN valida el PIN del firmante; PRESENCIAL
         // registra firma de tercero). NUNCA firma decorativa.
@@ -398,7 +463,7 @@ class RegistroService {
             referenciaId: documentId,
             referenciaTipo: 'document',
             contexto,
-            metadata: { tipoRegistro: 'REGISTRO_AT_EP', obraId, periodo, hash },
+            metadata: { tipoRegistro: 'REGISTRO_AT_EP', obraId, periodo, huella },
             persona
         });
 
@@ -409,7 +474,7 @@ class RegistroService {
         const s3Key = `tenants/${tenantId}/registros/${obraId}/${documentId}.html`;
         let s3Persistido = false;
         try {
-            const html = RegistroService.renderHtml({ ...snapshot, hash }, firma);
+            const html = RegistroService.renderHtml({ ...snapshot, huella }, firma);
             await s3Client.send(new PutObjectCommand({
                 Bucket: almacenamiento.bucketDeClave(s3Key),
                 Key: s3Key,
@@ -432,9 +497,15 @@ class RegistroService {
             tipoDescripcion: 'Registro AT, EP e Incidentes Peligrosos (Arts. 71-72)',
             obligatorio: true,
             titulo: `Registro AT/EP ${periodo?.desde || ''} a ${periodo?.hasta || ''}`.trim(),
-            contenido: JSON.stringify(snapshot),
-            snapshot,
-            hash,
+            // El contenido firmado va cifrado y una sola vez. Antes iba en claro
+            // y DOS veces —`snapshot` y `contenido: JSON.stringify(snapshot)`—,
+            // con el RUT del accidentado o la aptitud laboral de cada persona,
+            // y las dos copias al índice `tenantId-index` (ALL). `contenido` no
+            // lo leía nadie: una copia de más de datos de salud no se protege
+            // cifrándola, se protege no teniéndola. La huella se calculó arriba
+            // sobre el claro; esto es solo cómo se guarda (lib/huella.js).
+            snapshotCifrado,
+            huella,
             s3Key: s3Persistido ? s3Key : null,
             firmas: [await FirmaService.toDocumentFirmaFormat(firma)],
             asignaciones: [],
@@ -448,7 +519,7 @@ class RegistroService {
 
         await docClient.send(new PutCommand({ TableName: DOCUMENTS_TABLE, Item: document }));
 
-        return { documentId, token: firma.token, hash, snapshot, s3Key: document.s3Key };
+        return { documentId, token: firma.token, hash: huella.valor, huella, s3Key: document.s3Key };
     }
 
     /**
@@ -519,7 +590,7 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
  Firmante: ${esc(firma?.personaNombre)} (${esc(firma?.personaRut)})<br>
  Método: ${esc(firma?.metodoValidacion)} · Fecha: ${esc(firma?.fecha)} ${esc(firma?.horario)}<br>
  Token: <span class="hash">${esc(firma?.token)}</span><br>
- Hash del contenido (SHA-256): <span class="hash">${esc(snapshot.hash || '')}</span>
+ Huella del contenido (${esc(snapshot.huella?.alg)}, ${esc(snapshot.huella?.canon)}): <span class="hash">${esc(snapshot.huella?.valor || '')}</span>
 </div>
 </body></html>`;
     }
@@ -544,37 +615,15 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
         const generadoEn = new Date().toISOString();
         const documentId = uuidv4();
 
-        const snapshot = {
-            tipoRegistro: 'INVESTIGACION_ACCIDENTE',
-            articulos: 'Art. 71',
-            tenantId,
-            obraId,
-            incidentId: incident.incidentId,
-            generadoEn,
-            afectado: {
-                nombreCompleto: incident.afectado?.nombreCompleto || incident.trabajador?.nombre || '',
-                rut: incident.afectado?.rut || incident.trabajador?.rut || '',
-                cargo: incident.afectado?.cargo || incident.trabajador?.cargo || '',
-                puestoAlMomentoAccidente: incident.afectado?.puestoAlMomentoAccidente || ''
-            },
-            accidente: {
-                fecha: incident.fecha || null,
-                hora: incident.hora || null,
-                gravedad: incident.gravedad || 'leve',
-                esFatal: incident.esFatal || false,
-                diasPerdidos: incident.diasPerdidos || 0,
-                direccion: incident.direccionAccidente || incident.centroTrabajo || '',
-                descripcion: incident.descripcion || ''
-            },
-            relatoAccidente: incident.relatoAccidente || '',
-            listaHechos: incident.listaHechos || [],
-            causasRaiz: incident.causasRaiz || [],
-            arbolCausasUrl: incident.arbolCausasUrl || null,
-            medidasCorrectivas: incident.medidasCorrectivas || [],
-            entrevistados: incident.entrevistados || []
-        };
+        const snapshot = RegistroService.construirSnapshotInvestigacion(incident, { tenantId, obraId, generadoEn });
 
-        const hash = RegistroService.hashSnapshot(snapshot);
+        // Primero la huella, sobre el contenido EN CLARO; recién después se
+        // cifra para guardar. Al revés, rotar la llave invalidaría la huella de
+        // un documento ya firmado (ver lib/huella.js).
+        const huella = calcularHuella(snapshot);
+        // Sobre propio por informe, no la llave compartida de la empresa: estos
+        // informes no se listan descifrados, se verifican de a uno.
+        const snapshotCifrado = await cifrarSobre(snapshot);
 
         const credencial = metodo === 'PIN'
             ? (firmante.pin || {})
@@ -590,7 +639,7 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
             referenciaId: documentId,
             referenciaTipo: 'document',
             contexto,
-            metadata: { tipoRegistro: 'INVESTIGACION_ACCIDENTE', incidentId: incident.incidentId, hash },
+            metadata: { tipoRegistro: 'INVESTIGACION_ACCIDENTE', incidentId: incident.incidentId, huella },
             persona
         });
 
@@ -598,7 +647,7 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
         const s3Key = `tenants/${tenantId}/registros/${obraId}/investigaciones/${documentId}.html`;
         let s3Persistido = false;
         try {
-            const html = RegistroService.renderInvestigacionHtml({ ...snapshot, hash }, firma);
+            const html = RegistroService.renderInvestigacionHtml({ ...snapshot, huella }, firma);
             await s3Client.send(new PutObjectCommand({
                 Bucket: almacenamiento.bucketDeClave(s3Key),
                 Key: s3Key,
@@ -620,9 +669,15 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
             tipoDescripcion: 'Investigación de Accidente / EP (Art. 71)',
             obligatorio: true,
             titulo: `Informe investigación AT/EP — ${(incident.descripcion || incident.incidentId || '').slice(0, 60)}`,
-            contenido: JSON.stringify(snapshot),
-            snapshot,
-            hash,
+            // El contenido firmado va cifrado y una sola vez. Antes iba en claro
+            // y DOS veces —`snapshot` y `contenido: JSON.stringify(snapshot)`—,
+            // con el RUT del accidentado o la aptitud laboral de cada persona,
+            // y las dos copias al índice `tenantId-index` (ALL). `contenido` no
+            // lo leía nadie: una copia de más de datos de salud no se protege
+            // cifrándola, se protege no teniéndola. La huella se calculó arriba
+            // sobre el claro; esto es solo cómo se guarda (lib/huella.js).
+            snapshotCifrado,
+            huella,
             s3Key: s3Persistido ? s3Key : null,
             firmas: [await FirmaService.toDocumentFirmaFormat(firma)],
             asignaciones: [],
@@ -636,7 +691,7 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
 
         await docClient.send(new PutCommand({ TableName: DOCUMENTS_TABLE, Item: document }));
 
-        return { documentId, token: firma.token, hash, s3Key: document.s3Key };
+        return { documentId, token: firma.token, hash: huella.valor, huella, s3Key: document.s3Key };
     }
 
     /**

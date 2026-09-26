@@ -3,10 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
     FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
     FiUpload, FiX, FiInfo, FiUsers, FiArrowRight, FiAlertTriangle,
-    FiCheck, FiImage, FiFile, FiEye, FiEdit3,
+    FiCheck, FiImage, FiFile, FiEye, FiEdit3, FiHeart,
 } from 'react-icons/fi';
 import { LuHardHat } from 'react-icons/lu';
-import { AlertBanner, Modal, Select, PageHeader, CollectionView } from '../components/ui';
+import { AlertBanner, Badge, Modal, Select, PageHeader, CollectionView } from '../components/ui';
 import type { CollectionMode } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBrand, DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
@@ -106,7 +106,7 @@ function compressLogo(dataUrl: string): Promise<string> {
 
 interface RoleDraft { _id: string; id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; tipo?: string | null; protegido?: boolean; }
 
-type TabKey = 'identidad' | 'roles' | 'cargos' | 'epp';
+type TabKey = 'identidad' | 'roles' | 'cargos' | 'epp' | 'salud';
 
 export default function MiEmpresa() {
     const { user, hasPermission, updateUser } = useAuth();
@@ -119,12 +119,14 @@ export default function MiEmpresa() {
         roles: hasPermission(PERMISSIONS.EMPRESA_ROLES),
         cargos: hasPermission(PERMISSIONS.EMPRESA_CARGOS),
         epp: hasPermission(PERMISSIONS.EMPRESA_EPP),
+        salud: hasPermission(PERMISSIONS.EMPRESA_FICHA_SALUD),
     };
     const tabs: { key: TabKey; label: string; icon: any }[] = [
         ...(can.identidad ? [{ key: 'identidad' as const, label: 'Identidad', icon: FiBriefcase }] : []),
         ...(can.roles ? [{ key: 'roles' as const, label: 'Roles y permisos', icon: FiShield }] : []),
         ...(can.cargos ? [{ key: 'cargos' as const, label: 'Cargos', icon: FiTag }] : []),
         ...(can.epp ? [{ key: 'epp' as const, label: 'EPP', icon: LuHardHat }] : []),
+        ...(can.salud ? [{ key: 'salud' as const, label: 'Ficha de salud', icon: FiHeart }] : []),
     ];
     const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'identidad');
 
@@ -207,8 +209,144 @@ export default function MiEmpresa() {
             {tab === 'epp' && can.epp && (
                 <EppTab tenantId={tenantId} toast={toast} />
             )}
+            {tab === 'salud' && can.salud && tenant && (
+                <FichaSaludTab tenant={tenant} onSaved={(t) => setTenant(t)} toast={toast} />
+            )}
 
             <style>{styles}</style>
+        </div>
+    );
+}
+
+// ── Ficha de salud ────────────────────────────────────────────────────────────
+//
+// Encender la Ficha Básica de Salud es decidir que se recolectan datos de salud
+// de todo el plantel, y la empresa tiene que poder demostrar que lo decidió. Por
+// eso el registro no se edita desde acá: lo escribe el backend con la persona y
+// la hora de la sesión, y aquí solo se muestra.
+function FichaSaludTab({ tenant, onSaved, toast }: {
+    tenant: Tenant;
+    onSaved: (t: Tenant) => void;
+    toast: ReturnType<typeof useToast>['toast'];
+}) {
+    const [pendiente, setPendiente] = useState<boolean | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState('');
+
+    const habilitada = tenant.fichaSaludHabilitada === true;
+    const historial = [...(tenant.fichaSaludHistorial || [])].reverse();
+
+    const fecha = (iso: string) => new Date(iso).toLocaleString('es-CL', {
+        timeZone: 'America/Santiago', dateStyle: 'long', timeStyle: 'short',
+    });
+
+    const aplicar = async () => {
+        if (pendiente === null) return;
+        setSaving(true);
+        setErr('');
+        try {
+            const res = await tenantsApi.setFichaSalud(tenant.tenantId, pendiente);
+            if (res.success && res.data) {
+                onSaved(res.data.tenant);
+                toast.success(pendiente ? 'Ficha Básica de Salud habilitada' : 'Ficha Básica de Salud deshabilitada');
+                setPendiente(null);
+            } else {
+                setErr(res.error || 'No se pudo guardar el cambio.');
+            }
+        } catch {
+            setErr('Error de conexión al guardar el cambio.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="me-panel">
+            {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
+
+            <section className="me-section">
+                <div className="me-section-head">
+                    <h3 className="me-section-title">Ficha Básica de Salud</h3>
+                    <p className="me-section-hint">
+                        Cuestionario de antecedentes de salud para cada persona de la empresa. Se
+                        envía a todo el plantel y se mantiene al día con las altas nuevas.
+                    </p>
+                </div>
+                <div className="me-section-body me-fs-estado">
+                    <div className="me-fs-estado-texto">
+                        <Badge variant={habilitada ? 'success' : 'neutral'}>
+                            {habilitada ? 'Habilitada' : 'Deshabilitada'}
+                        </Badge>
+                        <p className="me-field-hint">
+                            {habilitada
+                                ? 'Las personas de la empresa la reciben en Encuestas. Las respuestas se guardan cifradas.'
+                                : 'No se recolectan datos de salud a través de esta ficha.'}
+                        </p>
+                    </div>
+                    <button
+                        className={`btn ${habilitada ? 'btn-secondary' : 'btn-primary'}`}
+                        disabled={saving}
+                        onClick={() => setPendiente(!habilitada)}
+                    >
+                        {habilitada ? 'Deshabilitar' : 'Habilitar'}
+                    </button>
+                </div>
+            </section>
+
+            <section className="me-section">
+                <div className="me-section-head">
+                    <h3 className="me-section-title">Registro de decisiones</h3>
+                    <p className="me-section-hint">
+                        Quién la habilitó o deshabilitó, y cuándo. Lo registra el sistema y no se
+                        puede editar.
+                    </p>
+                </div>
+                <div className="me-section-body">
+                    {historial.length === 0 ? (
+                        <p className="me-field-hint">Nunca se ha habilitado.</p>
+                    ) : (
+                        <ol className="me-fs-historial">
+                            {historial.map((e, i) => (
+                                <li key={`${e.en}-${i}`} className="me-fs-evento">
+                                    <span className="me-fs-accion">{e.habilitada ? 'Habilitada' : 'Deshabilitada'}</span>
+                                    <span className="me-fs-quien">por {e.nombre || 'una persona sin nombre registrado'}</span>
+                                    <time className="me-fs-cuando" dateTime={e.en}>{fecha(e.en)}</time>
+                                </li>
+                            ))}
+                        </ol>
+                    )}
+                </div>
+            </section>
+
+            <Modal
+                isOpen={pendiente !== null}
+                onClose={() => !saving && setPendiente(null)}
+                title={pendiente ? 'Habilitar la Ficha Básica de Salud' : 'Deshabilitar la Ficha Básica de Salud'}
+                subtitle={tenant.nombre}
+                icon={pendiente ? <FiHeart size={20} /> : <FiAlertTriangle size={20} />}
+                footer={
+                    <>
+                        <button className="btn btn-secondary" disabled={saving} onClick={() => setPendiente(null)}>Cancelar</button>
+                        <button className="btn btn-primary" disabled={saving} onClick={aplicar}>
+                            {saving ? 'Guardando…' : pendiente ? 'Habilitar' : 'Deshabilitar'}
+                        </button>
+                    </>
+                }
+            >
+                {pendiente ? (
+                    <p className="me-fs-modal-texto">
+                        Todas las personas de la empresa van a recibir la ficha en Encuestas, y las
+                        que se incorporen después también. La decisión queda registrada a tu nombre,
+                        con la fecha y la hora.
+                    </p>
+                ) : (
+                    <p className="me-fs-modal-texto">
+                        La ficha deja de enviarse a las altas nuevas. Lo ya respondido se conserva:
+                        deshabilitarla no borra datos de salud. La decisión queda registrada a tu
+                        nombre, con la fecha y la hora.
+                    </p>
+                )}
+            </Modal>
         </div>
     );
 }
@@ -1478,13 +1616,18 @@ function ReassignModal({ open, title, noun, affected, options, busy, onCancel, o
 }
 
 const styles = `
-.mi-empresa-page .me-tab { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; border-bottom: 2px solid transparent; }
+.mi-empresa-page .me-tab { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; border-bottom: 2px solid transparent; white-space: nowrap; flex: 0 0 auto; }
+/* En pantallas angostas la fila de pestañas se desplaza en vez de desbordar la
+   página; cada pestaña queda en una sola línea. La pestaña cortada en el borde
+   es la señal de que hay más. */
+.mi-empresa-page .tabs { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.mi-empresa-page .tabs::-webkit-scrollbar { display: none; }
 .mi-empresa-page .form-label { display:block; margin-bottom: 6px; }
 
 /* ── Identidad ─────────────────────────────────────────────────────────────── */
 .me-identity { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-4); align-items: start; }
 
-.me-identity-form {
+.me-identity-form, .me-panel {
     background: var(--surface-card); border: 1px solid var(--surface-border);
     border-radius: var(--radius-lg); overflow: hidden;
 }
@@ -1493,6 +1636,19 @@ const styles = `
 .me-section-title { font-size: var(--text-sm); font-weight: 600; margin: 0 0 4px; color: var(--text-primary); }
 .me-section-hint { font-size: var(--text-xs); line-height: 1.5; color: var(--text-muted); margin: 0; }
 .me-section-body > .form-group:last-child { margin-bottom: 0; }
+
+.me-panel > .alert-banner, .me-panel > [role="alert"] { margin: var(--space-4) var(--space-6) 0; }
+.me-fs-estado { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.me-fs-estado-texto { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.me-fs-estado-texto .me-field-hint { margin: 0; max-width: 60ch; }
+.me-fs-historial { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.me-fs-evento { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 10px 0; border-bottom: 1px solid var(--surface-border); font-size: var(--text-sm); }
+.me-fs-evento:first-child { padding-top: 0; }
+.me-fs-evento:last-child { border-bottom: none; padding-bottom: 0; }
+.me-fs-accion { font-weight: 600; color: var(--text-primary); }
+.me-fs-quien { color: var(--text-secondary); }
+.me-fs-cuando { margin-left: auto; color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.me-fs-modal-texto { margin: 0; line-height: 1.55; color: var(--text-secondary); max-width: 60ch; }
 
 .me-field-locked { position: relative; }
 .me-field-locked .form-input { padding-right: 34px; }

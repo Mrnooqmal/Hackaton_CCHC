@@ -53,6 +53,11 @@ const PERMISSIONS = {
     EMPRESA_CARGOS: 'empresa.cargos',
     EMPRESA_EPP: 'empresa.epp',
     EMPRESA_IDENTIDAD: 'empresa.identidad',
+    // Encender o apagar la Ficha Básica de Salud. Permiso propio, y no uno de
+    // los que ya existían: decidir recolectar datos de salud de todo el
+    // plantel no es lo mismo que cambiar el logo ni que editar roles. Por
+    // defecto solo lo tiene el administrador; se puede delegar.
+    EMPRESA_FICHA_SALUD: 'empresa.ficha_salud',
 };
 
 const ALL_PERMISSION_KEYS = Object.values(PERMISSIONS);

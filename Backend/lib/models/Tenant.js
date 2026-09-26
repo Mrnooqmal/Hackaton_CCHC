@@ -38,6 +38,17 @@ class Tenant {
         this.estado = data.estado || 'setup';
         this.adminPersonaId = data.adminPersonaId || null;
 
+        // Ficha Básica de Salud: apagada hasta que la empresa decida encenderla.
+        // Va en atributos propios y NO dentro de `settings` ni `reglas`, a
+        // propósito: esos dos los reemplaza entero el PUT genérico con lo que
+        // mande el cliente, así que cualquiera con ese permiso podría borrar o
+        // falsificar el historial. Estos solo los escribe
+        // `TenantService.cambiarFichaSalud`, que toma quién y cuándo de la sesión.
+        this.fichaSaludHabilitada = data.fichaSaludHabilitada === true;
+        // [{ habilitada, personaId, nombre, en }] — solo se agrega, nunca se
+        // reescribe: es la prueba de que la empresa tomó la decisión.
+        this.fichaSaludHistorial = Array.isArray(data.fichaSaludHistorial) ? data.fichaSaludHistorial : [];
+
         this.settings = {
             maxWorkers: data.settings?.maxWorkers || PLANES.starter.limiteTrabajadores,
             dataRetentionDays: data.settings?.dataRetentionDays || 365,
@@ -228,6 +239,8 @@ class Tenant {
             cantidadTrabajadores: this.cantidadTrabajadores,
             estado: this.estado,
             adminPersonaId: this.adminPersonaId,
+            fichaSaludHabilitada: this.fichaSaludHabilitada,
+            fichaSaludHistorial: this.fichaSaludHistorial,
             settings: this.settings,
             reglas: this.reglas,
             preferencias: this.preferencias,
@@ -258,6 +271,8 @@ class Tenant {
             cantidadTrabajadores: this.cantidadTrabajadores,
             estado: this.estado,
             adminPersonaId: this.adminPersonaId,
+            fichaSaludHabilitada: this.fichaSaludHabilitada,
+            fichaSaludHistorial: this.fichaSaludHistorial,
             settings: this.settings,
             reglas: this.reglas,
             preferencias: this.preferencias,
