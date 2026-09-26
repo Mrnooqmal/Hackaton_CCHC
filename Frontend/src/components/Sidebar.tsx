@@ -17,7 +17,8 @@ import {
     FiClipboard,
     FiShield,
     FiMapPin,
-    FiRepeat
+    FiRepeat,
+    FiMoreHorizontal
 } from 'react-icons/fi';
 import { surveysApi, workersApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -48,9 +49,12 @@ interface NavSection {
 //
 // Cada ítem declara el permiso de vista que lo habilita; el render filtra por
 // hasPermission y oculta secciones vacías. Los módulos sin permiso (Inicio,
-// Firmas, Incidentes, Encuestas, Configuración) son siempre visibles; sus
-// subacciones se gatean dentro de la página. El admin tiene bypass total en
-// hasPermission, por lo que ve todos los ítems.
+// Firmas, Incidentes, Encuestas) son siempre visibles; sus subacciones se
+// gatean dentro de la página. El admin tiene bypass total en hasPermission,
+// por lo que ve todos los ítems.
+//
+// Configuración no está en el menú: es una acción sobre la propia cuenta, no un
+// módulo de trabajo, y vive en el pie junto a cambiar de obra y cerrar sesión.
 
 /** Vista de empresa: solo administración, ninguna operación de obra. */
 const NAV_EMPRESA: NavSection[] = [
@@ -113,24 +117,20 @@ const navObra = (obraId: string | null): NavSection[] => [
             { path: '/prescripciones', icon: FiShield, label: 'Prescripciones', permission: PERMISSIONS.REPOSITORIO_VER },
         ]
     },
-    {
-        section: 'Sistema',
-        items: [
-            { path: '/settings', icon: FiSettings, label: 'Configuración' },
-        ]
-    }
 ];
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, hasPermission, logout } = useAuth();
-    const { selectedObraId, modoEmpresa, puedeGestionarEmpresa, puedeCambiarDeObra, cambiarDeObra } = useObraContext();
+    const { selectedObraId, selectedObra, modoEmpresa, puedeGestionarEmpresa, puedeCambiarDeObra, cambiarDeObra } = useObraContext();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    const [showObraConfirm, setShowObraConfirm] = useState(false);
     const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
     const [workerId, setWorkerId] = useState<string | null>(null);
     const sessionMenuRef = useRef<HTMLDivElement | null>(null);
+    const sessionTriggerRef = useRef<HTMLButtonElement | null>(null);
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
     const pendingBadgeLabel = pendingSurveyCount > 99 ? '99+' : String(pendingSurveyCount);
 
@@ -236,7 +236,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
         [modoEmpresa, puedeGestionarEmpresa, selectedObraId]
     );
 
-    // El menú de sesión se cierra al pinchar fuera o con Escape.
     useEffect(() => {
         if (!sessionMenuOpen) return;
         const handleClickOutside = (event: MouseEvent) => {
@@ -245,7 +244,10 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             }
         };
         const handleEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setSessionMenuOpen(false);
+            if (event.key !== 'Escape') return;
+            setSessionMenuOpen(false);
+            // Sin esto el foco se queda en el vacío que dejó el menú.
+            sessionTriggerRef.current?.focus();
         };
         document.addEventListener('mousedown', handleClickOutside);
         document.addEventListener('keydown', handleEscape);
@@ -263,11 +265,26 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
 
     // Cambiar de obra devuelve al paso de selección posterior al login.
     const handleCambiarDeObra = () => {
+        setShowObraConfirm(false);
         setSessionMenuOpen(false);
         if (onClose) onClose();
         cambiarDeObra();
         navigate('/seleccionar-obra');
     };
+
+    const handleIrAConfiguracion = () => {
+        setSessionMenuOpen(false);
+        if (onClose) onClose();
+        navigate('/configuracion');
+    };
+
+    // Nombrar el ámbito del que se sale es lo que vuelve útil la confirmación:
+    // sin eso solo pregunta si de verdad se pulsó el botón.
+    const ambitoActual = modoEmpresa
+        ? 'la gestión de la empresa'
+        : selectedObra?.nombre
+            ? `«${selectedObra.nombre}»`
+            : 'la obra actual';
 
     return (
         <>
@@ -280,9 +297,21 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             )}
 
             <ConfirmModal
+                isOpen={showObraConfirm}
+                title="Cambiar de obra"
+                message={`¿Estás seguro de que quieres cambiar de obra? Saldrás de ${ambitoActual} y volverás a elegir dónde trabajar.`}
+                confirmLabel="Cambiar de obra"
+                cancelLabel="Cancelar"
+                variant="primary"
+                icon={<FiRepeat size={32} />}
+                onConfirm={handleCambiarDeObra}
+                onCancel={() => setShowObraConfirm(false)}
+            />
+
+            <ConfirmModal
                 isOpen={showLogoutConfirm}
                 title="Cerrar sesión"
-                message="¿Estás seguro de que deseas cerrar sesión?"
+                message="¿Estás seguro de que quieres cerrar sesión?"
                 confirmLabel="Cerrar sesión"
                 cancelLabel="Cancelar"
                 variant="danger"
@@ -364,43 +393,49 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                     return (
                         <div className="sidebar-footer">
                             <div className="sidebar-user">
-                                <button
-                                    className="sidebar-user-profile-btn"
-                                    onClick={() => navigate('/settings')}
-                                    title="Ir a configuración"
-                                >
-                                    <div className="sidebar-user-avatar">
-                                        {user.fotoPerfil
-                                            ? <img src={user.fotoPerfil} alt={initials} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                                            : initials}
-                                    </div>
-                                    <div className="sidebar-user-meta">
-                                        <span className="sidebar-user-name">
-                                            {user.nombre} {user.apellido}
-                                        </span>
-                                        <span className="sidebar-user-role">{roleLabel}</span>
-                                    </div>
-                                </button>
+                                <div className="sidebar-user-avatar">
+                                    {user.fotoPerfil
+                                        ? <img src={user.fotoPerfil} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                                        : initials}
+                                </div>
+                                <div className="sidebar-user-meta">
+                                    <span className="sidebar-user-name">
+                                        {user.nombre} {user.apellido}
+                                    </span>
+                                    <span className="sidebar-user-role">{roleLabel}</span>
+                                </div>
+
                                 <div className="sidebar-session" ref={sessionMenuRef}>
                                     <button
-                                        className="sidebar-user-logout"
+                                        type="button"
+                                        ref={sessionTriggerRef}
+                                        className="sidebar-menu-trigger"
                                         onClick={() => setSessionMenuOpen((prev) => !prev)}
-                                        title="Opciones de sesión"
-                                        aria-label="Opciones de sesión"
+                                        title="Más opciones"
+                                        aria-label="Más opciones"
                                         aria-haspopup="menu"
                                         aria-expanded={sessionMenuOpen}
                                     >
-                                        <FiLogOut />
+                                        <FiMoreHorizontal />
                                     </button>
 
                                     {sessionMenuOpen && (
                                         <div className="sidebar-session-menu" role="menu">
+                                            <button
+                                                type="button"
+                                                role="menuitem"
+                                                className="sidebar-session-item"
+                                                onClick={handleIrAConfiguracion}
+                                            >
+                                                <FiSettings />
+                                                <span>Configurar mi perfil</span>
+                                            </button>
                                             {puedeCambiarDeObra && (
                                                 <button
                                                     type="button"
                                                     role="menuitem"
                                                     className="sidebar-session-item"
-                                                    onClick={handleCambiarDeObra}
+                                                    onClick={() => { setSessionMenuOpen(false); setShowObraConfirm(true); }}
                                                 >
                                                     <FiRepeat />
                                                     <span>Cambiar de obra</span>
@@ -424,23 +459,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                 })()}
 
                 <style>{`
-                .sidebar-user-profile-btn {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                    flex: 1;
-                    min-width: 0;
-                    background: none;
-                    border: none;
-                    padding: 0;
-                    cursor: pointer;
-                    border-radius: var(--radius-md);
-                    transition: opacity 0.15s;
-                    text-align: left;
-                }
-                .sidebar-user-profile-btn:hover {
-                    opacity: 0.8;
-                }
                 /* Attention badge styles */
                 .inbox-badge,
                 .survey-badge {

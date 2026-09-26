@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { FiAlertTriangle } from 'react-icons/fi';
 
@@ -11,6 +11,13 @@ interface ConfirmModalProps {
     onConfirm: () => void;
     onCancel: () => void;
     variant?: 'danger' | 'warning' | 'primary';
+    /**
+     * Icono de la cabecera. Por defecto el triángulo de advertencia, que
+     * corresponde cuando algo se pierde o no se puede deshacer. Una
+     * confirmación de rutina pasa su propio icono: rotular de alarma lo que no
+     * lo es enseña a ignorar las alarmas.
+     */
+    icon?: ReactNode;
 }
 
 export default function ConfirmModal({
@@ -21,7 +28,8 @@ export default function ConfirmModal({
     cancelLabel = 'Cancelar',
     onConfirm,
     onCancel,
-    variant = 'primary'
+    variant = 'primary',
+    icon
 }: ConfirmModalProps) {
     // Lock body scroll when modal is open
     useEffect(() => {
@@ -58,7 +66,7 @@ export default function ConfirmModal({
             <div className="confirm-modal-container" onClick={(e) => e.stopPropagation()}>
                 <div className="confirm-modal-body">
                     <div className={`confirm-modal-icon ${getIconColor()}`}>
-                        <FiAlertTriangle size={32} />
+                        {icon ?? <FiAlertTriangle size={32} />}
                     </div>
                     <h2 className="confirm-modal-title">{title}</h2>
                     <p className="confirm-modal-message">{message}</p>

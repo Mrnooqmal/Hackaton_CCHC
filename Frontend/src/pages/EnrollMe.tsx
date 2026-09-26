@@ -100,7 +100,7 @@ export default function EnrollMe() {
             // perfil y completarEnrolamiento; vamos directo a la confirmación de éxito.
             if (isChangePin) {
                 setCurrentStep('success');
-                setTimeout(() => navigate('/settings', { replace: true }), 3000);
+                setTimeout(() => navigate('/configuracion', { replace: true }), 3000);
                 return;
             }
 
@@ -275,7 +275,7 @@ export default function EnrollMe() {
                             <button
                                 className="btn btn-ghost btn-sm"
                                 style={{ alignSelf: 'center' }}
-                                onClick={() => isChangePin ? navigate('/settings') : setCurrentStep('welcome')}
+                                onClick={() => isChangePin ? navigate('/configuracion') : setCurrentStep('welcome')}
                             >
                                 {isChangePin ? 'Cancelar' : 'Volver'}
                             </button>

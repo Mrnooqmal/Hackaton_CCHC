@@ -182,7 +182,8 @@ function AppContent() {
       <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
       <Route path="/mi-empresa" element={<ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}><MiEmpresa /></ProtectedRoute>} />
       <Route path="/crear" element={<ProtectedRoute><Crear /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      <Route path="/configuracion" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      <Route path="/settings" element={<Navigate to="/configuracion" replace />} />
       <Route path="/enroll-me" element={<ProtectedRoute><EnrollMe /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

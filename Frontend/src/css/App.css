@@ -338,12 +338,15 @@
   50% { transform: scale(1.12); }
 }
 
-/* ── Pie del sidebar: usuario ── */
+/* ── Pie del sidebar: identidad + acciones de sesión ── */
 .sidebar-footer {
   border-top: 1px solid var(--surface-border);
   padding: var(--space-3);
 }
 
+/* Identidad: solo informa quién está dentro. Antes era además un botón hacia
+   configuración; ahora ese destino es una opción del menú y la ficha deja de
+   hacer dos trabajos a la vez. */
 .sidebar-user {
   display: flex;
   align-items: center;
@@ -387,39 +390,56 @@
   align-self: flex-start;
 }
 
-.sidebar-user-logout {
+/* Acciones de sesión tras un disparador de tres puntos: configurar el perfil,
+   cambiar de obra y cerrar sesión.
+
+   Antes el menú colgaba del icono de salir, y eso era lo que confundía: cambiar
+   de obra parecía una variante de cerrar sesión. Tres puntos no prometen nada
+   en concreto, así que las tres opciones quedan del mismo rango. Y quien quiere
+   cambiar de obra suele ir a buscar justamente "cerrar sesión" para volver a
+   entrar: el menú lo intercepta en el camino y le ofrece la vía corta. */
+.sidebar-session {
+  position: relative;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Plano y transparente como los ítems de navegación: el sidebar no encierra
+   nada y este botón no es la excepción. */
+.sidebar-menu-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
-  font-size: 17px;
+  font-size: 18px;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.sidebar-user-logout:hover,
-.sidebar-user-logout[aria-expanded='true'] {
-  background: rgba(223, 54, 1, 0.12);
-  color: var(--cchc-red);
+.sidebar-menu-trigger:hover,
+.sidebar-menu-trigger[aria-expanded='true'] {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
-/* Menú de sesión: cerrar sesión y cambiar de obra */
-.sidebar-session {
-  position: relative;
-  flex-shrink: 0;
+.sidebar-menu-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
+/* El menú sí flota sobre el contenido, así que necesita superficie, borde y
+   sombra propias: los mismos que usa el resto de los popovers de la app. */
 .sidebar-session-menu {
   position: absolute;
   bottom: calc(100% + 6px);
   right: 0;
-  min-width: 190px;
+  min-width: 196px;
   padding: var(--space-1);
   background: var(--surface-card);
   border: 1px solid var(--surface-border);
@@ -443,10 +463,11 @@
   background: none;
   border: none;
   border-radius: var(--radius-sm);
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-family: var(--font-ui);
-  font-size: var(--text-sm);
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 400;
+  white-space: nowrap;
   text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
@@ -454,26 +475,46 @@
 
 .sidebar-session-item svg {
   flex-shrink: 0;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text-muted);
 }
 
-.sidebar-session-item:hover {
-  background: var(--accent-tint);
-  color: var(--accent-text);
+/* Mismos valores que .nav-item:hover: apuntar una opción del menú y apuntar un
+   ítem de la navegación se sienten como el mismo gesto. */
+.sidebar-session-item:hover,
+.sidebar-session-item:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  outline: none;
 }
 
-.sidebar-session-item:hover svg {
-  color: var(--accent-text);
+.sidebar-session-item:hover svg,
+.sidebar-session-item:focus-visible svg {
+  color: var(--text-secondary);
 }
 
-.sidebar-session-item--danger:hover {
+/* Única excepción al hover neutro: cerrar sesión es la acción de la que no se
+   vuelve. En reposo queda tan apagada como las otras dos, porque un rojo
+   permanente convertiría una acción de rutina en una alarma. */
+.sidebar-session-item--danger:hover,
+.sidebar-session-item--danger:focus-visible {
   background: rgba(223, 54, 1, 0.12);
   color: var(--cchc-red);
 }
 
-.sidebar-session-item--danger:hover svg {
+.sidebar-session-item--danger:hover svg,
+.sidebar-session-item--danger:focus-visible svg {
   color: var(--cchc-red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-menu-trigger,
+  .sidebar-session-item {
+    transition: none;
+  }
+  .sidebar-session-menu {
+    animation: none;
+  }
 }
 
 /* ======================================================
