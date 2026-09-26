@@ -519,6 +519,16 @@ module.exports.update = async (event) => {
         }
 
         const body = JSON.parse(event.body || '{}');
+
+        // Una firma solo existe si pasó por PIN o vale (`FirmaService.crear`).
+        // Esta ruta descartaba `asignaciones` y `firmas` en silencio, y una
+        // pantalla —la carga masiva de onboarding— los mandaba creyendo que
+        // marcaba a cada persona como firmada. Se rechaza en voz alta para que
+        // nadie vuelva a creer que registró una firma por acá.
+        if (body.asignaciones !== undefined || body.firmas !== undefined || body.firmaRelator !== undefined) {
+            return error('Las firmas se registran firmando con PIN o vale, no editando el documento.', 400);
+        }
+
         const allowedFields = ['titulo', 'descripcion', 'contenido', 's3Key', 'archivoUrl', 'archivoNombre', 'estado', 'clasificacion', 'fase', 'tipo', 'obligatorio', 'fechaCaducidad', 'periodo', 'fecha', 'fechaEntradaVigencia'];
         const updateExpressions = [];
         const expressionNames = {};

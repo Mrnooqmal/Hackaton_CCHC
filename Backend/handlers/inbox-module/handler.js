@@ -282,7 +282,8 @@ module.exports.inboxHandler = async (event) => {
         const response = await router.fetch(fakeReq);
 
         if (response.statusCode !== undefined) {
-            console.log('Returning custom response:', JSON.stringify(response));
+            // El estado, no el cuerpo: el cuerpo son los mensajes del buzón.
+            console.log('Inbox respuesta', response.statusCode);
             return response;
         }
 

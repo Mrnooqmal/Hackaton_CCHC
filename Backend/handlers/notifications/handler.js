@@ -3,6 +3,13 @@ const { success, error } = require('../../lib/utils/response');
 
 const sesClient = new SESClient({ region: 'us-east-1' });
 
+/** `j***@ejemplo.cl`: el dominio sirve para diagnosticar entregas; la dirección
+ *  completa es un dato personal y no va a los logs. */
+const enmascararCorreo = (email) => {
+    const [local, dominio] = String(email || '').split('@');
+    return dominio ? `${local.slice(0, 1)}***@${dominio}` : '(sin correo)';
+};
+
 // Email verificado en SES (DEBES VERIFICAR ESTE EMAIL EN AWS SES CONSOLE)
 const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'thecodecookers@gmail.com';
 
@@ -196,9 +203,9 @@ Este es un mensaje automático. Por favor no respondas a este correo.
             }
         });
 
-        console.log(`Attempting to send SES email from ${SENDER_EMAIL} to ${email}`);
+        console.log(`Enviando correo a ${enmascararCorreo(email)}`);
         await sesClient.send(command);
-        console.log(`SES Publish successful for ${email}`);
+        console.log(`Correo enviado a ${enmascararCorreo(email)}`);
         return { sent: true, email };
     } catch (err) {
         console.error('Error sending welcome email:', err);
@@ -330,9 +337,9 @@ Este es un mensaje automático. Por favor no respondas a este correo.
             }
         });
 
-        console.log(`Attempting to send SES password reset email from ${SENDER_EMAIL} to ${email}`);
+        console.log(`Enviando correo de recuperación a ${enmascararCorreo(email)}`);
         await sesClient.send(command);
-        console.log(`SES password reset email sent for ${email}`);
+        console.log(`Correo de recuperación enviado a ${enmascararCorreo(email)}`);
         return { sent: true, email };
     } catch (err) {
         console.error('Error sending password reset email:', err);

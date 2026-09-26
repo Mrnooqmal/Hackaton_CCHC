@@ -942,17 +942,14 @@ export default function ObraDetalle() {
             (d.asignaciones || []).some((a: any) => (a.personaId) === workerId)
           );
           if (targetDoc) {
-            // Update file + mark the worker's asignacion as firmado so checklist reflects it
-            const updatedAsignaciones = (targetDoc.asignaciones || []).map((a: any) =>
-              (a.personaId) === workerId
-                ? { ...a, estado: 'firmado', fechaFirma: new Date().toISOString() }
-                : a
-            );
+            // Solo el archivo. Esto marcaba además la asignación de cada persona
+            // como "firmado": una firma solo existe si pasó por PIN o vale, y el
+            // backend lo descartaba en silencio mientras la pantalla lo daba por
+            // hecho. La asignación queda pendiente hasta que la persona firme.
             await documentsApi.update(targetDoc.documentId, {
               s3Key: fileKey,
               archivoUrl: fileKey,
               archivoNombre: file.name,
-              asignaciones: updatedAsignaciones
             } as any);
           }
         }
@@ -2817,7 +2814,7 @@ export default function ObraDetalle() {
               <div key={item.key} className="ds44-doc-row">
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)', minWidth: 0 }}>
                   {isDone
-                    ? <LuCircleCheck size={16} style={{ color: '#10b981', marginTop: '2px', flexShrink: 0 }} />
+                    ? <LuClock size={16} style={{ color: 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }} />
                     : item.kind === 'document'
                       ? <LuDownload size={16} style={{ color: 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }} />
                       : <LuClock size={16} style={{ color: 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }} />
@@ -2843,7 +2840,10 @@ export default function ObraDetalle() {
                     </label>
                   )}
                   {item.kind === 'document' && isDone && (
-                    <span className="badge badge-success" style={{ fontSize: '0.8rem' }}>Subido</span>
+                    <span className="badge badge-secondary" style={{ fontSize: '0.78rem' }}
+                      title="Cada persona lo firma con su PIN o con un vale. Subir el archivo no es firmarlo.">
+                      Archivo subido · pendiente de firma
+                    </span>
                   )}
                   {item.kind === 'signature' && (
                     <span className="badge badge-secondary" style={{ fontSize: '0.78rem' }}>Solicitud creada</span>

@@ -495,6 +495,21 @@ en el punto de encuentro (`crear()` mismo, no en cada llamador) el mismo día,
 desplegado y verificado con una prueba que ejercita `FirmaService.crear`
 directamente.
 
+**Segunda corrección (26 de septiembre de 2026): el cambio de PIN.** El
+servicio (`PersonaService.setPin`) verificaba el PIN actual solo "si el cliente
+lo envía": omitirlo cambiaba el PIN sin prueba y sin pasar por el límite. La
+ruta sí lo exigía, así que no había un camino explotable por la API, pero era la
+única defensa; y la escritura no estaba condicionada, de modo que entre que la
+ruta leía "no tiene PIN" y el servicio escribía, un PIN recién creado se podía
+sobrescribir sin conocerlo. La regla completa pasó al servicio —el único punto
+por donde pasa todo cambio de PIN—: con PIN, solo la propia persona lo cambia,
+probando el actual por el límite de intentos; sin PIN, lo configura ella o quien
+puede enrolar; y la escritura procede solo si el PIN guardado sigue siendo el
+verificado (o si sigue sin haber uno). Otra persona no cambia un PIN existente
+ni sabiéndolo, y en ese caso ni siquiera se consulta el PIN, para que no sirva
+de oráculo. El restablecimiento de un PIN olvidado queda pendiente de diseño
+(hoy no hay salida para quien lo olvida).
+
 ### D-10. Cifrado de campo: RUT buscable por HMAC, sobre de cifrado para el resto
 **Estado: casi completo. Implementado el 23 y 24 de septiembre de 2026 en Personas y Tenants, en los sidecars de firmas e incidentes, en los arreglos embebidos de documentos, actividades y solicitudes, y en encuestas, en dev y prod. Pendiente: las dos copias en claro que arma `RegistroService` (ver "Lo que D-10 todavía no cubre", al final de esta decisión).**
 
@@ -1018,6 +1033,28 @@ alterado. Ahora se fija `authTagLength: 16` al cifrar y al descifrar, y además
 se rechaza cualquier etiqueta de otro largo antes de llegar a Node. La prueba
 usa la etiqueta real recortada, en cada largo de 4 a 15 bytes, porque ese era
 exactamente el caso que pasaba.
+
+### H-11. Datos personales en los logs de CloudWatch
+**Severidad: media — RESUELTO el 26 de septiembre de 2026**
+
+`IncidentsRepository.create` y `update` escribían en CloudWatch la carga
+completa con `JSON.stringify(data)`: el RUT, el nombre y el género del
+trabajador y el relato del accidente, en claro — por fuera del cifrado que
+protege esos mismos datos en la tabla. Revisando el resto aparecieron el nombre
+del prevencionista notificado, el nombre del archivo de evidencia (que suele
+llevar el de la persona), el cuerpo completo de las respuestas del buzón y las
+direcciones de correo en las notificaciones. Ahora se registran identificadores
+(y las claves de los campos que cambian, nunca sus valores); los correos van
+enmascarados. Hay una prueba de comportamiento que captura todo lo que se
+loguea al crear y actualizar un incidente, y un control que falla si otro log
+vuelve a serializar una entidad. En los grupos de log de dev había 2 volcados
+con RUT y nombres; se borraron sus dos streams (CloudWatch no borra eventos
+sueltos; se fueron 408 eventos de depuración de dev con ellos). En prod no
+había ninguno.
+
+**Nota aparte:** `IncidentsRepository` crea sus propios clientes de DynamoDB,
+S3 y SNS en vez de usar los compartidos de `lib/clients`: otro camino propio por
+fuera de los servicios centrales, sin consecuencia de seguridad hoy.
 
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**

@@ -350,3 +350,23 @@ test('un firmante de otra empresa se rechaza y no se publica nada', async () => 
     assert.equal(res.statusCode, 400);
     assert.equal(store.updates.length, 0);
 });
+
+// ─── Una firma solo existe si pasó por PIN o vale ────────────────────────────
+//
+// La carga masiva de onboarding mandaba `asignaciones` con cada persona en
+// "firmado", creyendo que así la marcaba como firmada. La ruta lo descartaba en
+// silencio. Ahora lo rechaza: editar el documento no es firmarlo.
+
+test('editar el documento no puede marcar firmas: asignaciones, firmas o firma del relator', async () => {
+    for (const campo of [
+        { asignaciones: [{ personaId: 'p-1', estado: 'firmado', fechaFirma: '2026-09-26T00:00:00.000Z' }] },
+        { firmas: [{ token: 'SIG-INVENTADA', personaId: 'p-1' }] },
+        { firmaRelator: { personaId: 'p-2', estado: 'firmado' } },
+    ]) {
+        store.doc = { documentId: 'd-1', tenantId: 't1', tipo: 'PROCEDIMIENTO_TRABAJO', s3Key: 'obras/v1.pdf', asignaciones: [], firmas: [] };
+        store.updates = [];
+        const res = await handler.update(ev('d-1', { s3Key: 'obras/v2.pdf', ...campo }));
+        assert.equal(res.statusCode, 400, `se rechaza ${Object.keys(campo)[0]}`);
+        assert.equal(store.updates.length, 0, 'y no se escribe nada, ni siquiera el archivo');
+    }
+});

@@ -25,6 +25,19 @@ const { conNeutro } = require('../../lib/degradacion');
 const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
 const { camposDeArchivo } = require('../../lib/huellaArchivo');
 
+/** Estado HTTP de cada rechazo de `PersonaService.setPin`. PIN_BLOQUEADO (límite
+ *  de intentos, D-9) es 423 en todas las rutas que verifican un PIN. */
+const ESTADO_POR_ERROR_DE_PIN = {
+    PIN_INVALIDO: 400,
+    PIN_ACTUAL_REQUERIDO: 400,
+    PIN_IGUAL: 400,
+    PIN_ACTUAL_INCORRECTO: 401,
+    PIN_AJENO: 403,
+    PERSONA_NO_ENCONTRADA: 404,
+    PIN_CAMBIO_CONCURRENTE: 409,
+    PIN_BLOQUEADO: 423,
+};
+
 const personaService = new PersonaService();
 const obraService = new ObraService();
 const eppService = new EppService();
@@ -2162,36 +2175,26 @@ module.exports.personasHandler = async (event) => {
             return success({ message: 'Entrega de EPP validada', entrega });
         }
 
-        // POST /personas/{id}/set-pin — Configurar PIN.
+        // POST /personas/{id}/set-pin — Configurar o cambiar el PIN.
         //
-        // El PIN es la credencial con la que se firma: quien lo sobreescribe puede
-        // firmar por esa persona. Antes cualquiera con el id podía reemplazarlo sin
-        // conocer el actual. Ahora:
-        //   - si la persona YA tiene PIN, solo ella lo cambia, y probando el actual;
-        //   - si no lo tiene (enrolamiento en el dispositivo de quien registra), lo
-        //     configura ella misma o quien tenga el permiso de crear personas.
+        // La regla completa —quién puede, y que cambiar un PIN existente exige el
+        // actual y pasa por el límite de intentos— vive en `PersonaService.setPin`,
+        // que es el único punto por donde pasa todo cambio de PIN. Acá solo se
+        // dice quién actúa, desde la sesión, y se traduce el resultado a HTTP.
         if (method === 'POST' && personaId && action === 'set-pin') {
             if (!sesion) return sesionRes.respuesta;
             const body = JSON.parse(event.body || '{}');
-            const objetivoPin = await personaDelTenant(personaId);
-            if (!objetivoPin) return error('Persona no encontrada', 404);
-
-            const esPropio = objetivoPin.personaId === sesion.personaId;
-            const yaTienePin = objetivoPin.tienePinConfigurado();
-            if (yaTienePin) {
-                if (!esPropio) return error('Solo la propia persona puede cambiar su PIN', 403);
-                if (!body.pinActual) return error('Debes ingresar tu PIN actual para cambiarlo', 400);
-            } else if (!esPropio && !puede(PERMISSIONS.PERSONAS_CREAR)) {
-                return error('No tienes permiso para configurar el PIN de otra persona', 403);
-            }
+            if (!await personaDelTenant(personaId)) return error('Persona no encontrada', 404);
 
             try {
-                const result = await personaService.setPin(tenantId, personaId, body.pin, body.pinActual);
+                const result = await personaService.setPin(tenantId, personaId, body.pin, body.pinActual, {
+                    personaId: sesion.personaId,
+                    puedeEnrolar: puede(PERMISSIONS.PERSONAS_CREAR),
+                });
                 return success(result);
             } catch (err) {
-                // El límite de intentos (H-2) responde 423, no el 500 genérico
-                // del catch de más abajo: es un rechazo esperado, no una falla.
-                if (err.codigo === 'PIN_BLOQUEADO') return error(err.message, 423);
+                const estado = ESTADO_POR_ERROR_DE_PIN[err.codigo];
+                if (estado) return error(err.message, estado);
                 throw err;
             }
         }
