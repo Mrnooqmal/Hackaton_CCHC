@@ -16,6 +16,7 @@
 
 const { v4: uuidv4 } = require('uuid');
 const { calcularHuella, verificarHuella } = require('../huella');
+const { huellaDePut } = require('../huellaArchivo');
 const { cifrarSobre, descifrarSobre } = require('../cifradoCampo');
 const { PutCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { PutObjectCommand } = require('@aws-sdk/client-s3');
@@ -473,14 +474,20 @@ class RegistroService {
         // Registro AT/EP firmado: es evidencia, va al bucket con bloqueo.
         const s3Key = `tenants/${tenantId}/registros/${obraId}/${documentId}.html`;
         let s3Persistido = false;
+        let archivoHuella = null;
         try {
             const html = RegistroService.renderHtml({ ...snapshot, huella }, firma);
-            await s3Client.send(new PutObjectCommand({
+            // SHA-256 y no el CRC32 por defecto del SDK: es el mismo algoritmo
+            // de toda huella de archivo del sistema (H-7), y S3 lo mide al
+            // recibir el cuerpo y lo devuelve en la respuesta.
+            const escrito = await s3Client.send(new PutObjectCommand({
                 Bucket: almacenamiento.bucketDeClave(s3Key),
                 Key: s3Key,
                 Body: html,
-                ContentType: 'text/html; charset=utf-8'
+                ContentType: 'text/html; charset=utf-8',
+                ChecksumAlgorithm: 'SHA256',
             }));
+            archivoHuella = huellaDePut(escrito);
             s3Persistido = true;
         } catch (s3Err) {
             console.error('No se pudo persistir el registro en S3:', s3Err.message);
@@ -507,6 +514,7 @@ class RegistroService {
             snapshotCifrado,
             huella,
             s3Key: s3Persistido ? s3Key : null,
+            archivoHuella,
             firmas: [await FirmaService.toDocumentFirmaFormat(firma)],
             asignaciones: [],
             estado: 'activo',
@@ -646,14 +654,20 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
         // Informe del Art. 71 firmado: evidencia.
         const s3Key = `tenants/${tenantId}/registros/${obraId}/investigaciones/${documentId}.html`;
         let s3Persistido = false;
+        let archivoHuella = null;
         try {
             const html = RegistroService.renderInvestigacionHtml({ ...snapshot, huella }, firma);
-            await s3Client.send(new PutObjectCommand({
+            // SHA-256 y no el CRC32 por defecto del SDK: es el mismo algoritmo
+            // de toda huella de archivo del sistema (H-7), y S3 lo mide al
+            // recibir el cuerpo y lo devuelve en la respuesta.
+            const escrito = await s3Client.send(new PutObjectCommand({
                 Bucket: almacenamiento.bucketDeClave(s3Key),
                 Key: s3Key,
                 Body: html,
-                ContentType: 'text/html; charset=utf-8'
+                ContentType: 'text/html; charset=utf-8',
+                ChecksumAlgorithm: 'SHA256',
             }));
+            archivoHuella = huellaDePut(escrito);
             s3Persistido = true;
         } catch (s3Err) {
             console.error('No se pudo persistir el informe Art.71 en S3:', s3Err.message);
@@ -679,6 +693,7 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
             snapshotCifrado,
             huella,
             s3Key: s3Persistido ? s3Key : null,
+            archivoHuella,
             firmas: [await FirmaService.toDocumentFirmaFormat(firma)],
             asignaciones: [],
             estado: 'activo',

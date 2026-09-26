@@ -850,6 +850,46 @@ una contraseña `sha256(pass + personaId)` que el login no acepta, por fuera de
 
 **Ubicación:** `Backend/lib/huella.js`, `Backend/lib/services/RegistroService.js`, `Backend/tests/huella-integridad.test.js`
 
+### D-12. Huella de integridad del archivo guardado (H-7), sin un segundo cálculo
+**Estado: implementado el 26 de septiembre de 2026. Corrige H-7.**
+
+**La fuente es la huella que S3 ya verificó.** El navegador calcula el SHA-256
+del archivo, el servidor lo firma dentro de la URL prefirmada y S3 lo comprueba
+contra los bytes al recibir el `PUT` (si no coincide, `BadDigest`). Lo que queda
+en el objeto (`ChecksumSHA256`) es una huella ya verificada, y el servidor la
+LEE con `HeadObject` (`lib/huellaArchivo.js`): no la recalcula y no la acepta
+del cliente, que podría mandar cualquier cosa. Lo que escribe el propio
+servidor —los HTML de los informes del Art. 71— se sube pidiendo `SHA256` a S3
+(el SDK usaba CRC32 por defecto, comprobado en dev) y la huella sale de la
+respuesta del `PUT`: una sola huella de archivo en todo el sistema.
+
+**Se guarda en el documento cuando el documento recibe su archivo**
+(`archivoHuella: { alg, valor, versionId }`), y una versión archivada conserva
+la suya en `versiones[]`. La confirmación de subida la devuelve, pero solo como
+dato informativo: la confirmación no sabe a qué documento pertenece el archivo,
+y si la huella viajara del cliente al documento sería falsificable. Siete
+lugares le asignan su archivo a un documento (crear, actualizar, nueva versión,
+nueva versión corporativa, las copias de onboarding y su sincronización, y los
+informes); todos pasan por `camposDeArchivo`, y hay una prueba estructural que
+falla si una escritura de `s3Key` no escribe también `archivoHuella`.
+
+**Se verifica al entregar.** Antes de firmar una URL de descarga —individual o
+en lote— y antes de estampar el anexo de firmas sobre el original, la huella que
+S3 tiene hoy para el objeto tiene que ser la registrada. Si no coincide, o el
+objeto registrado ya no está, no se entrega (409) y queda medido
+(`integridad.archivo`): en los buckets con versiones una escritura nueva sobre
+la misma clave no borra la anterior, pero pasa a ser la que se sirve. Un
+documento sin huella registrada (anterior a esto) se entrega informando
+`integridad: 'sin-huella'`, sin afirmar nada. Lo que no pertenece a un documento
+(evidencia de incidentes, logos, perfil) no tiene huella registrada contra qué
+comparar.
+
+**De paso:** `confirmUpload` "verificaba que el archivo existe" con
+`GetObject`, que abría la descarga del archivo completo y dejaba el cuerpo sin
+leer; ahora es `HeadObject`.
+
+**Ubicación:** `Backend/lib/huellaArchivo.js`, `Backend/handlers/uploads/handler.js`, `Backend/handlers/documents/handler.js`, `Backend/handlers/personas-module/handler.js`, `Backend/lib/services/RegistroService.js`, `Backend/tests/huella-archivo.test.js`
+
 ---
 
 ## 4. Hallazgos priorizados
@@ -943,7 +983,7 @@ tratamientos, ni protocolo de notificación de brechas.
 asociado y una agencia con potestad fiscalizadora.
 
 ### H-7. Sin huella de integridad del archivo almacenado
-**Severidad: baja**
+**Severidad: baja — RESUELTO el 26 de septiembre de 2026 (ver D-12)**
 
 El sistema preserva el documento original y registra quién lo firmó, pero no calcula una huella
 del binario al subirlo. No se puede demostrar criptográficamente que el archivo servido hoy es
@@ -965,6 +1005,19 @@ marcarlo como fatal, borrar los días perdidos o reescribir la causa raíz, y la
 huella quedaba idéntica. Un documento que parecía inalterable no lo era. Se
 detectó al diseñar el cifrado de esos snapshots, antes de que se firmara
 ninguno (0 informes en dev y en prod).
+
+### H-10. El descifrado aceptaba etiquetas de autenticación truncadas
+**Severidad: media — RESUELTO el 26 de septiembre de 2026**
+
+`cifradoCampo` descifraba AES-256-GCM sin fijar `authTagLength`, y en ese caso
+Node acepta etiquetas desde 32 bits. En GCM un prefijo de la etiqueta correcta
+también verifica: se comprobó que la etiqueta REAL de un sobre, recortada a 32
+bits, descifraba sin error. Una etiqueta de 32 bits se forja probando del orden
+de 2^32 variantes, así que el sobre dejaba de probar que el contenido no fue
+alterado. Ahora se fija `authTagLength: 16` al cifrar y al descifrar, y además
+se rechaza cualquier etiqueta de otro largo antes de llegar a Node. La prueba
+usa la etiqueta real recortada, en cada largo de 4 a 15 bytes, porque ese era
+exactamente el caso que pasaba.
 
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**

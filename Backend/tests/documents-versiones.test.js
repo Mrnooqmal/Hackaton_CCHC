@@ -4,6 +4,9 @@ process.env.CAMPO_CIFRADO_LOCAL_KEY = require('crypto').randomBytes(32).toString
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { docClient } = require('../lib/clients/dynamodb');
+const { crearDobleS3 } = require('./doble-s3');
+
+let dobleS3;
 
 // Reemplazar el archivo de un documento no debe destruir el anterior: la versión
 // saliente se archiva en `versiones[]` y sube el contador `version`. Se mockea
@@ -50,6 +53,8 @@ const escrito = (input) => {
 };
 
 beforeEach(() => {
+    // Los escritores de documentos leen la huella del archivo de S3 (H-7).
+    dobleS3 = crearDobleS3();
     store = { doc: null, updates: [], deletes: [] };
     originalSend = docClient.send;
     docClient.send = async (cmd) => {
@@ -62,7 +67,7 @@ beforeEach(() => {
     };
 });
 
-afterEach(() => { docClient.send = originalSend; });
+afterEach(() => { docClient.send = originalSend; dobleS3.restaurar(); });
 
 test('reemplazar el archivo archiva la versión anterior y sube el contador', async () => {
     store.doc = {

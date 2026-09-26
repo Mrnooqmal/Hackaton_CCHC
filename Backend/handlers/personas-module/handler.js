@@ -23,6 +23,7 @@ const { InboxRepository } = require('../inbox-module/inbox.repository');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
 const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
+const { camposDeArchivo } = require('../../lib/huellaArchivo');
 
 const personaService = new PersonaService();
 const obraService = new ObraService();
@@ -246,6 +247,8 @@ const createOnboardingDocument = async ({ tenantId, obraId, persona, solicitante
         // Plantilla pegada (si el kit la trae): el ítem nace con archivo →
         // queda listo para firma (pendiente_firma). Sin plantilla: pendiente_asignar.
         s3Key: docConfig.plantilla?.fileKey || null,
+        // H-7: la huella del archivo de la plantilla, leída de S3.
+        ...(await camposDeArchivo(docConfig.plantilla?.fileKey || null)),
         archivoUrl: null,
         archivoNombre: docConfig.plantilla?.nombre || null,
         fechaCaducidad: null,
@@ -739,8 +742,8 @@ const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
             await docClient.send(new UpdateCommand({
                 TableName: DOCUMENTS_TABLE,
                 Key: { documentId: doc.documentId },
-                UpdateExpression: 'SET s3Key = :s, archivoNombre = :n, asignaciones = :asig, firmas = :f, updatedAt = :u',
-                ExpressionAttributeValues: { ':s': null, ':n': null, ':asig': asigReset, ':f': [], ':u': now },
+                UpdateExpression: 'SET s3Key = :s, archivoNombre = :n, archivoHuella = :h, asignaciones = :asig, firmas = :f, updatedAt = :u',
+                ExpressionAttributeValues: { ':s': null, ':n': null, ':h': null, ':asig': asigReset, ':f': [], ':u': now },
             }));
             removidos++;
             continue;
@@ -776,13 +779,16 @@ const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
             }));
         }
 
+        // H-7: la plantilla nueva trae su huella, leída de S3.
+        const { archivoHuella } = await camposDeArchivo(ch.plantilla.fileKey);
         const updateExpr = esRenovacion && huboFirmados
-            ? 'SET s3Key = :s, archivoNombre = :n, asignaciones = :asig, version = :ver, firmas = :firmas, updatedAt = :u'
-            : 'SET s3Key = :s, archivoNombre = :n, updatedAt = :u';
+            ? 'SET s3Key = :s, archivoNombre = :n, archivoHuella = :h, asignaciones = :asig, version = :ver, firmas = :firmas, updatedAt = :u'
+            : 'SET s3Key = :s, archivoNombre = :n, archivoHuella = :h, updatedAt = :u';
         const exprValues = esRenovacion && huboFirmados
             ? {
                 ':s': ch.plantilla.fileKey,
                 ':n': ch.plantilla.nombre || doc.archivoNombre || null,
+                ':h': archivoHuella,
                 ':asig': nuevasAsignaciones,
                 ':ver': (doc.version || 1) + 1,
                 ':firmas': [],
@@ -791,6 +797,7 @@ const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
             : {
                 ':s': ch.plantilla.fileKey,
                 ':n': ch.plantilla.nombre || doc.archivoNombre || null,
+                ':h': archivoHuella,
                 ':u': now,
             };
 

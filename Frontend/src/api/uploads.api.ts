@@ -8,6 +8,16 @@ interface ApiResponse<T> {
     error?: string;
 }
 
+/**
+ * Categoría de subida para los documentos DS 44 de una obra —los del plan, los
+ * de la fase "hacer" y la copia de onboarding que firma cada persona—. Son
+ * evidencia de cumplimiento: van al bucket de evidencia (Object Lock), no al de
+ * trabajo. Hasta el 26 de septiembre de 2026 se subían con `obras`, que es
+ * material de trabajo y se puede borrar o sobrescribir; `obras` queda solo para
+ * la imagen de portada de la obra, que no acredita nada.
+ */
+export const CATEGORIA_EVIDENCIA_DS44 = 'documentos';
+
 export interface UploadUrlResponse {
     uploadUrl: string;
     fileKey: string;

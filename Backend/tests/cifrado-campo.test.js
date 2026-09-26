@@ -82,6 +82,52 @@ describe('cifradoCampo', () => {
 
 // ─── La llave compartida por tenant ──────────────────────────────────────────
 
+// ─── La etiqueta de autenticación de GCM: 128 bits exactos ──────────────────
+//
+// En GCM un PREFIJO de la etiqueta correcta también verifica, si el que
+// descifra acepta etiquetas cortas — y Node las acepta por defecto. Cortar la
+// etiqueta real a 32 bits descifraba sin error: una etiqueta de 32 bits se
+// forja probando unas 2^32 variantes, así que el sobre dejaba de probar que el
+// contenido no fue alterado. Estas pruebas usan la etiqueta REAL recortada, no
+// una inventada, porque ese es justamente el caso que pasaba.
+
+describe('etiqueta de autenticación de AES-GCM', () => {
+    const crypto = require('crypto');
+    const recortar = (sobre, bytes) => ({
+        ...sobre,
+        tag: Buffer.from(sobre.tag, 'base64').subarray(0, bytes).toString('base64'),
+    });
+
+    test('la etiqueta completa de 128 bits sigue funcionando', async () => {
+        const sobre = await cifradoCampo.cifrarSobre({ rut: '12.345.678-5' });
+        assert.equal(Buffer.from(sobre.tag, 'base64').length, 16);
+        assert.deepEqual(await cifradoCampo.descifrarSobre(sobre), { rut: '12.345.678-5' });
+    });
+
+    test('la etiqueta real recortada se rechaza, en cada largo menor a 128 bits', async () => {
+        const sobre = await cifradoCampo.cifrarSobre({ rut: '12.345.678-5' });
+        for (let bytes = 4; bytes < 16; bytes++) {
+            await assert.rejects(() => cifradoCampo.descifrarSobre(recortar(sobre, bytes)),
+                /Etiqueta de autenticación de \d+ bits: se exigen 128/,
+                `una etiqueta de ${bytes * 8} bits tiene que rechazarse`);
+        }
+    });
+
+    test('también con la llave de datos de la empresa (el camino de los listados)', () => {
+        const llave = crypto.randomBytes(32);
+        const sobre = cifradoCampo.cifrarConLlaveDatos('12.345.678-5', llave);
+        assert.equal(cifradoCampo.descifrarConLlaveDatos(sobre, llave), '12.345.678-5');
+        assert.throws(() => cifradoCampo.descifrarConLlaveDatos(recortar(sobre, 4), llave), /se exigen 128/);
+    });
+
+    test('una etiqueta más larga, o ausente, tampoco pasa', async () => {
+        const sobre = await cifradoCampo.cifrarSobre('x');
+        const larga = { ...sobre, tag: Buffer.concat([Buffer.from(sobre.tag, 'base64'), Buffer.alloc(4)]).toString('base64') };
+        await assert.rejects(() => cifradoCampo.descifrarSobre(larga), /se exigen 128/);
+        await assert.rejects(() => cifradoCampo.descifrarSobre({ ...sobre, tag: undefined }), /se exigen 128/);
+    });
+});
+
 describe('llaveTenant', () => {
     let tabla;
     let originalSend;
