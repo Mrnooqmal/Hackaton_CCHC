@@ -40,7 +40,7 @@ entraste tras iniciar sesión:
   determina qué documentos y capacitaciones de onboarding necesitará.
 - **Nivel de escolaridad** *(opcional)*.
 - **Acceso web** — indica si la persona podrá iniciar sesión en la plataforma desde un
-  computador o teléfono.
+  computadora o teléfono.
 
 ### Asignación a obras
 

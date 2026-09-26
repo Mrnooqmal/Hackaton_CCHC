@@ -841,9 +841,9 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                                         <button
                                             className="btn btn-secondary" style={{ padding: '2px 10px', fontSize: '0.75rem' }}
                                             onClick={() => agendarItem(ob, item)}
-                                            title="Agendar la capacitación de este ítem para esta persona"
+                                            title="Programar la capacitación de este ítem para esta persona"
                                         >
-                                            Agendar
+                                            Programar
                                         </button>
                                     )}
                                     {item.accion !== 'ENCUESTA' && item.estado === 'pendiente_asignar' && canSubirDocumentos && (

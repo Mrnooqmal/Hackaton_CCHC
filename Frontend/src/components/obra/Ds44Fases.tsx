@@ -352,7 +352,7 @@ export default function Ds44Fases({
                     {falta && <span className="ob-fila__falta">{falta}</span>}
                     {puedeAgendar && (
                         <button type="button" className="ob-fila__alterna" onClick={() => onAgendarActividad(r.acreditacion!.criterio)}>
-                            <LuCalendar size={12} /> o agéndala en la plataforma
+                            <LuCalendar size={12} /> o prográmala en la plataforma
                         </button>
                     )}
                     {versionableDe(r) && r.estado !== 'Vencido' && (

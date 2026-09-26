@@ -78,7 +78,7 @@ Consulta [Roles de Usuario](/roles/) para entender en detalle qué ve y puede ha
 ## Preguntas frecuentes
 
 **Entré y el Dashboard se ve casi vacío. ¿Está bien?**
-Sí. Si recién empiezas y aún no hay obras, personas ni documentos cargados, el Dashboard
+Sí. Si estás empezando y aún no hay obras, personas ni documentos cargados, el Dashboard
 tendrá poco que mostrar. A medida que uses la plataforma se irá llenando de información.
 
 **Veo "¡Todo al día!" pero creo que tengo cosas pendientes.**

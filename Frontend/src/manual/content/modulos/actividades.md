@@ -289,7 +289,7 @@ Comité Paritario) desde **Mi Empresa → Roles**. Consulta [Roles de Usuario](/
 **¿Qué diferencia hay entre un borrador y una actividad programada?**
 El **borrador** lo genera la planificación mensual: tiene fecha, tipo y responsable, pero
 le falta el detalle del día. Cuando el responsable lo **completa**, pasa a **programada** y
-recién entonces se convoca a los asistentes.
+solo entonces se convoca a los asistentes.
 
 **El supervisor que tenía asignada la charla está con licencia. ¿Puede dictarla otro?**
 Sí. Al **completar el borrador**, cambia el campo **Relator** por quien la va a dictar.

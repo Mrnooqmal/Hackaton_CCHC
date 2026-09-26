@@ -1184,7 +1184,7 @@ export default function Activities() {
                             <div>
                                 <h2 className="act-card-title">Del plan, por completar</h2>
                                 <p className="act-card-sub">
-                                    Estas actividades están agendadas pero les falta el detalle del día.
+                                    Estas actividades están programadas pero les falta el detalle del día.
                                 </p>
                             </div>
                             <span className="act-card-count">{misBorradores.length}</span>
@@ -1238,12 +1238,12 @@ export default function Activities() {
                         <div className="act-empty">
                             <span className="act-empty-icon"><FiCalendar size={22} /></span>
                             <h3 className="act-empty-title">
-                                {activities.length === 0 ? 'Aún no hay actividades en esta obra' : 'Nada agendado para hoy'}
+                                {activities.length === 0 ? 'Aún no hay actividades en esta obra' : 'Nada programado para hoy'}
                             </h3>
                             <p className="act-empty-text">
                                 {canCrearActividad
                                     ? 'Parte por la charla de 5 minutos: queda registrada con la firma de cada asistente.'
-                                    : 'Cuando el prevencionista agende una actividad, la verás aquí para firmar tu asistencia.'}
+                                    : 'Cuando el prevencionista programe una actividad, la verás aquí para firmar tu asistencia.'}
                             </p>
                             {canCrearActividad && (
                                 <div className="act-empty-actions">
@@ -1646,7 +1646,7 @@ export default function Activities() {
                     onClose={() => !submitting && setShowModal(false)}
                     preventClose={submitting}
                     title="Nueva actividad"
-                    subtitle="Queda agendada y, al iniciar, sus asistentes pueden firmar."
+                    subtitle="Queda programada y, al iniciar, sus asistentes pueden firmar."
                     icon={<FiPlus size={20} />}
                     size="lg"
                     footer={
@@ -2361,7 +2361,7 @@ export default function Activities() {
                                     <h3 className="act-empty-title">Sin actividades este día</h3>
                                     <p className="act-empty-text">
                                         {canCrearActividad
-                                            ? 'Usa «Nueva actividad este día» para agendar la primera.'
+                                            ? 'Usa «Nueva actividad este día» para programar la primera.'
                                             : 'No hay nada registrado ni planificado para esta fecha.'}
                                     </p>
                                 </div>

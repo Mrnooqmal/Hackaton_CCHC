@@ -3,7 +3,7 @@
 Las **firmas digitales** son el corazón del cumplimiento "sin papeleo". En lugar de imprimir
 un documento, juntarlo con la firma de cada trabajador y archivarlo en una carpeta, en la
 plataforma cada persona **firma con su PIN personal** directamente desde su teléfono o
-computador. Cada firma queda registrada con fecha, hora y un código de verificación que
+computadora. Cada firma queda registrada con fecha, hora y un código de verificación que
 permite comprobar después que fue real.
 
 Hay tres pantallas relacionadas con firmas, según lo que necesites hacer:

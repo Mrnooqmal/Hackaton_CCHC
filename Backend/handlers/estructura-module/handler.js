@@ -503,9 +503,9 @@ module.exports.estructuraHandler = async (event) => {
                 const reunion = await estructuraService.reagendarReunion({
                     tenantId, organoId, reunionId: subId, fechaProgramada: body.fechaProgramada,
                 });
-                return success({ message: 'Reunión reagendada', reunion });
+                return success({ message: 'Reunión reprogramada', reunion });
             }
-            return error('Indica fechaRealizada con actaDocumentoId, o fechaProgramada para reagendar');
+            return error('Indica fechaRealizada con actaDocumentoId, o fechaProgramada para reprogramar');
         }
 
         // ── POST .../reuniones/{id}/comunicacion-acuerdos (ítem 36) ──────────

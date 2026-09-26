@@ -11,7 +11,7 @@ firmado digitalmente y siempre disponible** — incluso desde el teléfono y sin
 Desarrollada por **The Code Cookers** para el Hackathon CChC 2025 — *Seguridad sin Papeleo*,
 en colaboración con la Cámara Chilena de la Construcción.
 
-::: tip ¿Recién llegas o te sientes perdido? Empieza por aquí
+::: tip ¿Acabas de llegar o te sientes perdido? Empieza por aquí
 Ve directo al **[Resumen de Módulos](/modulos/)**: ahí está, en un solo lugar, la guía de uso
 de cada parte de la plataforma (Obras, Documentos, Firmas, Personas y más). Es el mejor punto
 de partida si solo quieres saber **cómo hacer algo**.

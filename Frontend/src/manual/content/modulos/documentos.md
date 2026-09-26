@@ -39,7 +39,7 @@ de documentos con las columnas **Documento**, **Asignaciones**, **Fecha** y **Ac
      reglamento, certificado, etc.).
    - **Título** *(obligatorio)* — un nombre claro para identificarlo (ej.: *"IRL - Soldador"*).
    - **Descripción** *(opcional)* — una nota sobre el contenido.
-   - **Archivo del Documento** — selecciona el archivo desde tu computador.
+   - **Archivo del Documento** — selecciona el archivo desde tu computadora.
 3. Haz clic en **Crear Documento**. Mientras se procesa verás *"Subiendo…"* y luego
    *"Creando…"*.
 

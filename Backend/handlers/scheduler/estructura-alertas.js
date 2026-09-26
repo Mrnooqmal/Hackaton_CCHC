@@ -142,7 +142,7 @@ async function revisarEstructuraPreventiva(ahora = new Date()) {
                         hito === 0 ? `Mandato vencido: ${etiqueta}` : `El mandato del ${etiqueta} vence en ${faltan} días`,
                         hito === 0
                             ? `El mandato terminó el ${String(organo.fechaTerminoMandato).slice(0, 10)}. Corresponde una nueva elección.`
-                            : `El mandato termina el ${String(organo.fechaTerminoMandato).slice(0, 10)}. Conviene agendar la elección.`);
+                            : `El mandato termina el ${String(organo.fechaTerminoMandato).slice(0, 10)}. Conviene programar la elección.`);
                     break;
                 }
             }

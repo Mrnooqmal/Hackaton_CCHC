@@ -177,7 +177,7 @@ function evaluarItem18(ctx) {
     if (r.parcial) {
         return {
             estado: E.PARCIAL, acreditacion, cargar: cargaRegistroEpp,
-            detalle: `Capacitación en EPP agendada: ${ACT.motivoIncompleto(r.actividades[0])}.`,
+            detalle: `Capacitación en EPP programada: ${ACT.motivoIncompleto(r.actividades[0])}.`,
         };
     }
     return {
@@ -262,7 +262,7 @@ function evaluarItem23(ctx) {
     if (!r.completo) {
         const carga = { tipo: 'CAPACITACION_SST', que: 'el registro o certificado de la capacitación de 8 horas en prevención de riesgos' };
         return r.parcial
-            ? { estado: E.PARCIAL, acreditacion, cargar: carga, detalle: `Capacitación agendada: ${ACT.motivoIncompleto(r.actividades[0])}.` }
+            ? { estado: E.PARCIAL, acreditacion, cargar: carga, detalle: `Capacitación programada: ${ACT.motivoIncompleto(r.actividades[0])}.` }
             : { estado: E.PENDIENTE, acreditacion, cargar: carga, detalle: 'Sin registro de la capacitación en prevención de riesgos.' };
     }
 

@@ -1153,7 +1153,7 @@ function EppTab({ tenantId, toast }: {
                     <h3>Todavía no hay elementos de EPP</h3>
                     <p>
                         Agrega los cascos, guantes, arneses y demás elementos que entrega tu empresa.
-                        Al registrarlos acá, quien haga una entrega los elige de la lista en vez de escribirlos.
+                        Al registrarlos aquí, quien haga una entrega los elige de la lista en vez de escribirlos.
                     </p>
                     <button className="btn btn-primary" onClick={abrirNuevo}>
                         <FiPlus /> Agregar el primero

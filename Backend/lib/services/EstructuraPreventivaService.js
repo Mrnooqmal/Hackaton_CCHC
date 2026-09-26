@@ -363,7 +363,7 @@ class EstructuraPreventivaService {
         if (!actual.Item) throw new ErrorValidacion('Reunión no encontrada.');
         if (actual.Item.periodoMes && !fechaProgramada.startsWith(actual.Item.periodoMes)) {
             throw new ErrorValidacion(
-                `La reunión ordinaria de ${actual.Item.periodoMes} debe reagendarse dentro del mismo mes (Art. 39).`
+                `La reunión ordinaria de ${actual.Item.periodoMes} debe reprogramarse dentro del mismo mes (Art. 39).`
             );
         }
         const res = await docClient.send(new UpdateCommand({

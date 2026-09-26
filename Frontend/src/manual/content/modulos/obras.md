@@ -44,7 +44,7 @@ Cuando tengas muchas obras, usa las herramientas de la parte superior del listad
 - **Vista:** puedes alternar entre **vista de tarjetas** (con foto) y **vista de tabla**
   (más compacta, ideal para revisar muchas obras de un vistazo).
 
-> Si recién creaste tu empresa y todavía no hay obras, verás el mensaje
+> Si acabas de crear tu empresa y todavía no hay obras, verás el mensaje
 > *"Sin obras registradas"* con un botón directo para crear la primera.
 
 ## Crear una obra nueva
@@ -164,7 +164,7 @@ pendientes obligatorios**, para que no queden vacíos de cumplimiento.
 Cada trabajador muestra su **avance de onboarding** y si ya está **apto para ingresar a
 terreno** (es decir, si completó todos sus requisitos obligatorios). Al abrir su ficha
 tienes el checklist completo, con los atajos para subir el documento, firmar de forma
-asistida o agendar la capacitación pendiente.
+asistida o programar la capacitación pendiente.
 
 ## Editar, pausar o finalizar una obra
 

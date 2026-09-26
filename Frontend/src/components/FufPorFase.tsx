@@ -244,7 +244,7 @@ export default function FufPorFase({
                                     className="btn btn-secondary btn-sm"
                                     onClick={() => onAgendarActividad(r.acreditacion!.criterio)}
                                 >
-                                    <FiCalendar size={13} /> Agendar
+                                    <FiCalendar size={13} /> Programar
                                 </button>
                             )}
 

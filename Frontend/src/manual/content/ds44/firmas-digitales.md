@@ -41,7 +41,7 @@ Como muchas obras tienen mala señal, la firma puede capturarse **sin internet**
 sincronizarse después:
 
 ```
-1. La persona firma en el celular o tablet, sin conexión
+1. La persona firma en el teléfono o tablet, sin conexión
         ↓
 2. La firma se guarda de forma segura en el dispositivo
         ↓

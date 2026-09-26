@@ -1,7 +1,7 @@
 # Cómo ingresar a la plataforma
 
 Build & Serve funciona desde el **navegador** (Chrome, Edge, Safari, etc.), tanto en
-computador como en el teléfono. No necesitas instalar ninguna aplicación: basta con abrir la
+computadora como en el teléfono. No necesitas instalar ninguna aplicación: basta con abrir la
 dirección web que te entregue tu empresa e iniciar sesión.
 
 ## Iniciar sesión
@@ -50,7 +50,7 @@ restablecer tu acceso.
 **¿Necesito instalar algo?**
 No. La plataforma funciona en el navegador. Solo necesitas el enlace y tu RUT y contraseña.
 
-**¿Puedo entrar desde el celular?**
+**¿Puedo entrar desde el teléfono?**
 Sí. Está pensada para usarse también desde el teléfono, especialmente para firmar y registrar
 actividades en obra.
 
