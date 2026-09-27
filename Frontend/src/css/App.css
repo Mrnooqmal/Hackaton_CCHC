@@ -1482,12 +1482,16 @@
   margin-bottom: 0;
 }
 
+/* Rótulo en versalitas: el campo ya no se anuncia con una línea del mismo
+   cuerpo que su contenido, así que el ojo distingue rótulo de dato sin leer. */
 .form-label {
   display: block;
-  font-size: var(--text-sm);
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   color: var(--text-secondary);
-  margin-bottom: var(--space-2);
+  margin-bottom: 6px;
 }
 
 /* Texto de apoyo bajo un campo. Va en --text-secondary y no en --text-muted:
@@ -1500,21 +1504,44 @@
   margin-top: 6px;
 }
 
+/* Campo del sistema: 38px de alto, superficie transparente y cuerpo de 13.5px.
+   Antes eran 46px con fondo --surface-elevated: dos materiales distintos (el
+   campo relleno y la tarjeta que lo contiene) apilados sin que el corte entre
+   ambos dijera nada. Ahora el campo es un hueco delimitado por su borde, igual
+   que los controles del panel de obra. */
 .form-input {
   width: 100%;
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-elevated);
+  height: 38px;
+  padding: 0 12px;
+  /* background-color y no el atajo: el <select> nativo lleva su flecha como
+     background-image y `background` la borraría. */
+  background-color: transparent;
   border: 1px solid var(--surface-border);
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   color: var(--text-primary);
-  font-size: var(--text-base);
+  font-size: 13.5px;
+  font-family: inherit;
   transition: all var(--transition-fast);
+}
+
+/* Los campos de varias líneas crecen; el alto fijo es solo para los de una. */
+textarea.form-input {
+  height: auto;
+  min-height: 84px;
+  padding: 10px 12px;
+  line-height: 1.5;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: var(--primary-500);
-  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+/* En táctil el cuerpo vuelve a 16px: por debajo, iOS hace zoom al enfocar y
+   la página queda desplazada. */
+@media (pointer: coarse) {
+  .form-input { font-size: 16px; }
 }
 
 .form-input::placeholder {

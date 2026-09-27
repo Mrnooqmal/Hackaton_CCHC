@@ -1078,3 +1078,82 @@
 @media (prefers-reduced-motion: reduce) {
     .idp-spinner { animation-duration: 1.4s; }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Disparador del Select (mismo material que .form-input)             */
+/* ------------------------------------------------------------------ */
+/* El disparador del Select imita a .form-input para que un desplegable y un
+   campo de texto en la misma fila se lean como el mismo control. */
+.ui-select-trigger {
+    height: 38px;
+    padding: 0 8px 0 12px;
+    background-color: transparent;
+    border-radius: 8px;
+    font-size: 13.5px;
+}
+
+.ui-select-caret { width: 14px; height: 14px; }
+
+.ui-select-trigger:hover:not(:disabled),
+.ui-select-trigger.open {
+    border-color: var(--accent);
+    box-shadow: none;
+}
+
+@media (pointer: coarse) {
+    .ui-select-trigger { font-size: 16px; }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Skeleton screens                                                   */
+/* ------------------------------------------------------------------ */
+/* Un spinner centrado no dice nada del contenido que viene: la página
+   aparece de golpe, en otra posición, y cada entrada es un salto. El
+   esqueleto dibuja la MISMA retícula que va a llegar, de modo que cargar
+   solo signifique rellenarla.
+
+   Los bloques son decorativos y no llevan `aria` propio: el estado lo
+   anuncia UNA vez el contenedor con aria-busy, para no leerle al lector
+   de pantalla veinte cajas vacías.
+
+   .ob-skel es el nombre que ya usaba el detalle de obra; comparte esta
+   definición para que ambos esqueletos envejezcan juntos. */
+.ui-skel,
+.ob-skel {
+    background: var(--surface-elevated);
+    border-radius: var(--radius-sm);
+    animation: ui-latido 1.4s ease-in-out infinite;
+}
+
+.ui-skel--circulo,
+.ob-skel--circulo { border-radius: 50%; }
+
+.ui-skel--titulo,
+.ob-skel--titulo { height: 26px; width: min(340px, 60vw); }
+
+.ui-skel--linea,
+.ob-skel--linea { height: 12px; }
+
+.ui-skel--pildora { height: 18px; border-radius: 999px; }
+
+/* Medidas propias del esqueleto del detalle de obra (ver ObraDetalleSkeleton). */
+.ob-skel--foto {
+    width: 88px; height: 66px; flex-shrink: 0;
+    border-radius: var(--radius-md);
+}
+.ob-skel--pestana { height: 16px; width: 92px; }
+
+@media (max-width: 760px) {
+    .ob-skel--foto { width: 56px; height: 42px; }
+    .ob-skel--titulo { height: 20px; }
+}
+
+@keyframes ui-latido {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ui-skel,
+    .ob-skel { animation: none; }
+}

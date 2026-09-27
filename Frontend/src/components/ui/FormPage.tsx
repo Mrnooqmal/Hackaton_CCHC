@@ -6,13 +6,15 @@ export interface FormPageProps {
   onSubmit?: (e: React.FormEvent) => void;
   /** Max width of the form inner container. Default 760. Use 960 for wider forms. */
   maxWidth?: number;
+  /** Clases extra en el <form>, para estilos propios de una página. */
+  className?: string;
 }
 
-export default function FormPage({ header, stepper, children, actions, onSubmit, maxWidth = 760 }: FormPageProps) {
+export default function FormPage({ header, stepper, children, actions, onSubmit, maxWidth = 760, className = '' }: FormPageProps) {
   return (
     // El <form> envuelve también las acciones: si el botón submit queda fuera
     // del form, el click no dispara onSubmit (el submit no se asocia a ningún form).
-    <form className="ui-form-page" onSubmit={onSubmit} noValidate>
+    <form className={`ui-form-page${className ? ` ${className}` : ''}`} onSubmit={onSubmit} noValidate>
       <div className="ui-form-page-inner" style={{ maxWidth }}>
         <div className="ui-form-page-header">{header}</div>
         {stepper && <div className="ui-form-page-stepper">{stepper}</div>}
@@ -105,12 +107,18 @@ export interface FieldSectionProps {
   cols?: 2 | 3;
   /** Accent variant for the section header. Default 'none'. */
   accent?: 'blue' | 'none';
+  /**
+   * Rótulo con regla: título y descripción en la MISMA línea, en cuerpo pequeño.
+   * El bloque deja de ser una tarjeta con encabezado y pasa a ser un rótulo del
+   * que cuelgan los campos, igual que una cuadrilla en la vista de obra.
+   */
+  inline?: boolean;
 }
 
-export function FieldSection({ title, description, children, cols = 2, accent = 'none' }: FieldSectionProps) {
+export function FieldSection({ title, description, children, cols = 2, accent = 'none', inline = false }: FieldSectionProps) {
   return (
     <section className="ui-field-section">
-      <div className={`ui-field-section-header${accent === 'blue' ? ' ui-field-section-header--blue' : ''}`}>
+      <div className={`ui-field-section-header${accent === 'blue' ? ' ui-field-section-header--blue' : ''}${inline ? ' ui-field-section-header--inline' : ''}`}>
         <h2 className="ui-field-section-title">{title}</h2>
         {description && <p className="ui-field-section-description">{description}</p>}
       </div>
@@ -124,6 +132,21 @@ export function FieldSection({ title, description, children, cols = 2, accent = 
         .ui-field-section-header {
           padding-bottom: var(--space-3);
           border-bottom: 1px solid var(--surface-border);
+        }
+        .ui-field-section-header--inline {
+          display: flex;
+          align-items: baseline;
+          gap: var(--space-3);
+          flex-wrap: wrap;
+          padding-bottom: 9px;
+        }
+        .ui-field-section-header--inline .ui-field-section-title {
+          font-size: var(--text-sm);
+          font-weight: 600;
+        }
+        .ui-field-section-header--inline .ui-field-section-description {
+          margin: 0;
+          font-size: 11.5px;
         }
         .ui-field-section-header--blue {
           border-bottom-color: var(--primary-400, #006edc);

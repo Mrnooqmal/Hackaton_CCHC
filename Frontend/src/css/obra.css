@@ -92,7 +92,7 @@
 .ob-cabecera__foto-espera {
   width: 100%; height: 100%;
   background: var(--surface-hover);
-  animation: ob-latido 1.4s ease-in-out infinite;
+  animation: ui-latido 1.4s ease-in-out infinite;
 }
 @keyframes ob-aparecer {
   from { opacity: 0; }
@@ -464,19 +464,10 @@
    Los bloques no llevan texto ni `aria` propio: el estado de carga lo anuncia
    una sola vez el contenedor con aria-busy, para no leer veinte cajas vacías. */
 
-.ob-skel {
-  background: var(--surface-elevated);
-  border-radius: var(--radius-sm);
-  animation: ob-latido 1.4s ease-in-out infinite;
-}
-.ob-skel--circulo { border-radius: 50%; }
-.ob-skel--foto {
-  width: 88px; height: 66px; flex-shrink: 0;
-  border-radius: var(--radius-md);
-}
-.ob-skel--titulo { height: 26px; width: min(340px, 60vw); }
-.ob-skel--linea { height: 12px; }
-.ob-skel--pestana { height: 16px; width: 92px; }
+/* Los bloques del esqueleto (.ob-skel y sus variantes) viven en components.css
+   junto a .ui-skel: Personas usa el mismo material, y components.css se empaqueta
+   después que este archivo, así que separarlos dejaba al bloque base pisando a
+   sus propias variantes. Acá quedan solo las cajas que arma el detalle. */
 
 /* La franja del esqueleto repite el sangrado de .ob-cabecera para que la
    regla inferior caiga en el mismo sitio antes y después de cargar. */
@@ -526,13 +517,6 @@
 .ob-skel-fila { display: flex; gap: var(--space-4); }
 .ob-skel-fila > * { flex: 1; }
 
-@keyframes ob-latido {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ob-skel { animation: none; }
-}
 @media (max-width: 1024px) {
   .ob-skel-cabecera { --ob-bleed: calc(var(--space-4) + var(--space-6)); }
 }
@@ -542,8 +526,4 @@
     margin-top: calc(-1 * var(--space-4));
     margin-bottom: var(--space-4);
   }
-}
-@media (max-width: 760px) {
-  .ob-skel--foto { width: 56px; height: 42px; }
-  .ob-skel--titulo { height: 20px; }
 }

@@ -12,8 +12,10 @@ import { AlertBanner, Modal } from './ui';
 import type { CollectionMode } from './ui';
 import { PERMISSIONS } from '../permissions';
 import FirmaAsistidaModal from './FirmaAsistidaModal';
+import { EquipoObraSkeleton } from './personas/PersonasSkeleton';
 import {
-    FiSearch, FiUserPlus, FiCheck, FiX, FiChevronDown,
+    FiSearch, FiUserPlus, FiCheck, FiX, FiChevronDown, FiChevronRight,
+    FiChevronUp, FiMoreHorizontal, FiPlus,
     FiAlertTriangle, FiUsers, FiEdit2, FiList, FiGrid,
     FiUser, FiPenTool, FiArrowRight, FiClipboard,
 } from 'react-icons/fi';
@@ -621,6 +623,12 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
     const supervisorIds = useMemo(() => new Set(supervisores.map((s) => s.personaId)), [supervisores]);
 
     const cuadrillaDe = (supId: string) => trabajadores.filter((w) => supervisorDe(w) === supId);
+    // Quién se está arrastrando: el hueco de inserción lo nombra, para que se
+    // lea DÓNDE cae la tarjeta y no solo que algo cae.
+    const dragWorker = useMemo(
+        () => (dragPersonaId ? workers.find((w) => w.personaId === dragPersonaId) ?? null : null),
+        [workers, dragPersonaId]
+    );
     const sinCuadrilla = useMemo(
         () => trabajadores.filter((w) => { const s = supervisorDe(w); return !s || !supervisorIds.has(s); }),
         [trabajadores, supervisorIds]
@@ -776,16 +784,37 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         }
     };
 
-    /** Píldora de progreso del onboarding; null para quien no tiene kit (gestión). */
-    const renderOnboardingBadge = (w: any, compact = false) => {
+    /**
+     * Píldora de progreso del onboarding; null para quien no tiene kit (gestión).
+     *
+     * La barra siempre es del acento y el estado lo dice el recuento: naranjo con
+     * punto cuando quedan bloqueantes. Un semáforo de tres colores en cada
+     * tarjeta teñía la rejilla completa y competía con el azul de la marca.
+     */
+    const renderOnboardingBadge = (w: any, variant: 'full' | 'card' | 'row' = 'full') => {
         const ob = onboardingPorPersona.get(w.personaId);
         if (!ob || ob.total === 0) return null;
         const pct = Math.round((ob.completed / ob.total) * 100);
+        const bloqueado = !ob.aptoTerreno;
         return (
-            <span className="eq-ob-badge" title={`Onboarding DS 44: ${ob.completed} de ${ob.total} ítems`}>
-                <span className="eq-ob-bar"><span className="eq-ob-bar-fill" style={{ width: `${pct}%`, background: pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444' }} /></span>
-                <span className="eq-ob-count">{ob.completed}/{ob.total}</span>
-                {!compact && (ob.aptoTerreno
+            <span
+                className={`eq-ob-badge${variant === 'row' ? ' eq-ob-badge--row' : ''}`}
+                title={`Onboarding DS 44: ${ob.completed} de ${ob.total} ítems`}
+            >
+                {variant === 'row' && (
+                    <span className={`eq-ob-count${bloqueado ? ' eq-ob-count--warn' : ''}`}>
+                        {bloqueado && <span className="eq-ob-dot" aria-hidden="true" />}
+                        {ob.completed}/{ob.total}
+                    </span>
+                )}
+                <span className="eq-ob-bar"><span className="eq-ob-bar-fill" style={{ width: `${pct}%` }} /></span>
+                {variant !== 'row' && (
+                    <span className={`eq-ob-count${bloqueado ? ' eq-ob-count--warn' : ''}`}>
+                        {bloqueado && <span className="eq-ob-dot" aria-hidden="true" />}
+                        {ob.completed}/{ob.total}
+                    </span>
+                )}
+                {variant === 'full' && (ob.aptoTerreno
                     ? <span className="eq-ob-apto"><LuCircleCheck size={11} /> Apto</span>
                     : <span className="eq-ob-bloq"><LuShieldAlert size={11} /> {ob.bloqueantesPendientes} bloq.</span>
                 )}
@@ -916,13 +945,19 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 onClick={handleCardClick}
             >
                 <PersonaAvatar w={w} className="eq2-card-avatar" />
-                <span className="eq2-card-name">{w.nombre} {w.apellido || ''}</span>
-                {isSup && <span className="eq2-sup-badge">Supervisor</span>}
-                <span className="eq2-card-rut">{w.rut}</span>
-                <span className="eq2-card-cargo">
-                    {cargoLabels.length > 0 ? cargoLabels.join(' · ') : (w.rolNombre || w.rol || '—')}
+                <span className="eq2-card-body">
+                    {isSup && <span className="eq2-sup-badge">{w.rolNombre || 'Supervisor'}</span>}
+                    <span className="eq2-card-name">{w.nombre} {w.apellido || ''}</span>
+                    <span className="eq2-card-rut">{w.rut}</span>
+                    {/* El supervisor se identifica por su distintivo, no por el
+                        cargo: es quien manda en la cuadrilla, no un oficio más. */}
+                    {!isSup && (
+                        <span className="eq2-card-cargo">
+                            {cargoLabels.length > 0 ? cargoLabels.join(' · ') : (w.rolNombre || w.rol || '—')}
+                        </span>
+                    )}
                 </span>
-                {renderOnboardingBadge(w, true)}
+                {!isSup && renderOnboardingBadge(w, 'card')}
             </div>
         );
     };
@@ -931,11 +966,12 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
     const renderPoolCard = (w: any) => {
         const isDragging = dragPersonaId === w.personaId;
         const isOpen = poolCardAction?.worker.personaId === w.personaId;
-        const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        // El menú se ancla a la tarjeta, se abra desde ella o desde «Agregar».
+        const handleClick = (e: React.MouseEvent<HTMLElement>) => {
             e.stopPropagation();
             if (isOpen) { setPoolCardAction(null); return; }
-            const rect = e.currentTarget.getBoundingClientRect();
-            setPoolCardAction({ worker: w, rect });
+            const card = (e.currentTarget as HTMLElement).closest('.eq2-card') ?? e.currentTarget;
+            setPoolCardAction({ worker: w, rect: card.getBoundingClientRect() });
         };
         return (
             <div
@@ -947,9 +983,19 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 onClick={handleClick}
             >
                 <PersonaAvatar w={w} className="eq2-card-avatar" />
-                <span className="eq2-card-name">{w.nombre} {w.apellido || ''}</span>
-                <span className="eq2-card-rut">{w.rut}</span>
-                <span className="eq2-card-cargo">{w.rolNombre || w.rol || '—'}</span>
+                <span className="eq2-card-body">
+                    <span className="eq2-card-name">{w.nombre} {w.apellido || ''}</span>
+                    <span className="eq2-card-rut">{w.rut}</span>
+                    <span className="eq2-card-cargo">{w.rolNombre || w.rol || '—'}</span>
+                </span>
+                <button
+                    type="button"
+                    className="eq2-pool-add"
+                    disabled={updating === w.personaId}
+                    onClick={handleClick}
+                >
+                    Agregar
+                </button>
             </div>
         );
     };
@@ -973,19 +1019,18 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 onDragEnd={handleDragEnd}
                 onClick={handleClick}
             >
-                <span className="eq2-row-drag" title="Arrastra a un equipo">⠿</span>
-                <PersonaAvatar w={w} className="eq-worker-avatar" />
-                <div className="eq-prow-info">
-                    <span className="eq-worker-name">{w.nombre} {w.apellido || ''}</span>
-                    <span className="eq-worker-rut">{w.rut} · {w.rolNombre || w.rol}</span>
+                <PersonaAvatar w={w} className="eq2-row-avatar" />
+                <div className="eq2-row-info">
+                    <span className="eq2-row-name">{w.nombre} {w.apellido || ''}</span>
+                    <span className="eq2-row-rut">{w.rut} · {w.rolNombre || w.rol}</span>
                 </div>
                 <button
                     type="button"
-                    className="btn btn-secondary btn-sm eq-pool-add-btn"
+                    className="eq2-pool-add"
                     disabled={updating === w.personaId}
                     onClick={(e) => { e.stopPropagation(); handleClick(e); }}
                 >
-                    <FiUserPlus size={13} /> Agregar
+                    Agregar
                 </button>
             </div>
         );
@@ -1009,21 +1054,15 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         return (
             <div
                 key={w.personaId}
-                className={`eq2-row${isSup ? ' eq2-row--sup' : ''}${isExpanded ? ' eq2-row--expanded' : ''}${isDragging ? ' eq2-row--dragging' : ''}`}
+                className={`eq2-row${isSup ? ' eq2-row--sup' : ''}${isExpanded ? ' eq2-row--expanded' : ''}${isDragging ? ' eq2-row--dragging' : ''}${isDraggable ? ' eq2-row--draggable' : ''}`}
             >
-                <div className="eq2-row-bar">
-                    {isDraggable && (
-                        <div
-                            className="eq2-drag-handle"
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, w)}
-                            onDragEnd={handleDragEnd}
-                            title="Arrastrar para cambiar de cuadrilla"
-                        >
-                            ⠿
-                        </div>
-                    )}
-
+                <div
+                    className="eq2-row-bar"
+                    draggable={isDraggable}
+                    onDragStart={isDraggable ? (e) => handleDragStart(e, w) : undefined}
+                    onDragEnd={isDraggable ? handleDragEnd : undefined}
+                    title={isDraggable ? 'Arrastra la fila para cambiarla de cuadrilla' : undefined}
+                >
                     <PersonaAvatar
                         w={w}
                         className={`eq2-row-avatar${isSup ? ' eq2-row-avatar--sup' : ''}`}
@@ -1031,14 +1070,15 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                     />
 
                     <div className="eq2-row-info" onClick={() => navigate(`/personas/${encodeURIComponent(w.rut)}`)}>
-                        <span className="eq2-row-name">
-                            {w.nombre} {w.apellido || ''}
-                            {isSup && <span className="eq2-row-sup-badge">Supervisor</span>}
-                        </span>
+                        <span className="eq2-row-name">{w.nombre} {w.apellido || ''}</span>
                         <span className="eq2-row-rut">{w.rut}</span>
                     </div>
 
-                    {!isSup && (
+                    {/* El supervisor lleva su rol donde los demás llevan el cargo:
+                        misma columna, misma lectura. */}
+                    {isSup ? (
+                        <span className="eq2-row-role">{w.rolNombre || 'Supervisor'}</span>
+                    ) : (
                         <div className="eq2-row-chips">
                             {cargoLabels.length > 0
                                 ? cargoLabels.map((l, i) => <span key={i} className="eq2-chip">{l}</span>)
@@ -1047,31 +1087,31 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         </div>
                     )}
 
-                    {isSup && <div style={{ flex: 1 }} />}
+                    <div className="eq2-row-ob">{isSup ? <span className="eq2-row-rut">—</span> : renderOnboardingBadge(w, 'row')}</div>
 
-                    {renderOnboardingBadge(w)}
-
-                    <div className="eq2-row-actions" onClick={(e) => e.stopPropagation()}>
-                        {canFirmaAsistida && (
-                            <button
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => { setFirmaWorkerId(w.personaId); setFirmaOpen(true); }}
-                            >
-                                Firma
-                            </button>
-                        )}
-                        <button
-                            className="eq2-edit-btn"
-                            onClick={() => toggleExpand(w.personaId)}
-                            title={isExpanded ? 'Cerrar' : 'Editar'}
-                        >
-                            <FiEdit2 size={13} className={isExpanded ? 'eq2-edit-icon--active' : ''} />
-                        </button>
-                    </div>
+                    <button
+                        type="button"
+                        className="eq2-row-menu"
+                        onClick={(e) => { e.stopPropagation(); toggleExpand(w.personaId); }}
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? 'Cerrar edición' : 'Opciones'}
+                        title={isExpanded ? 'Cerrar edición' : 'Opciones'}
+                    >
+                        {isExpanded ? <FiChevronUp size={16} /> : <FiMoreHorizontal size={16} />}
+                    </button>
                 </div>
 
                 {isExpanded && (
                     <div className="eq2-row-panel" onClick={(e) => e.stopPropagation()}>
+                        <label className="eq-ctrl">
+                            <span className="eq-ctrl-label">Cargos</span>
+                            <CargoDropdown
+                                options={cargoOptions}
+                                selected={currCargos}
+                                onToggle={(code) => toggleCargo(w.personaId, code, cargosActuales(w))}
+                            />
+                        </label>
+
                         <label className="eq-ctrl">
                             <span className="eq-ctrl-label">Rol</span>
                             <select
@@ -1085,15 +1125,6 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                                 )}
                                 {rolOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                             </select>
-                        </label>
-
-                        <label className="eq-ctrl">
-                            <span className="eq-ctrl-label">Cargos</span>
-                            <CargoDropdown
-                                options={cargoOptions}
-                                selected={currCargos}
-                                onToggle={(code) => toggleCargo(w.personaId, code, cargosActuales(w))}
-                            />
                         </label>
 
                         {showSupervisor && (
@@ -1115,13 +1146,18 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         )}
 
                         <div className="eq2-panel-actions">
-                            {isDirty && (
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => navigate(`/personas/${encodeURIComponent(w.rut)}`)}
+                            >
+                                <FiUser size={13} /> Ver ficha
+                            </button>
+                            {canFirmaAsistida && (
                                 <button
-                                    className="btn btn-primary btn-sm"
-                                    disabled={updating === w.personaId}
-                                    onClick={() => handleUpdateCargos(w)}
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => { setFirmaWorkerId(w.personaId); setFirmaOpen(true); }}
                                 >
-                                    <FiCheck size={13} /> Guardar
+                                    <FiPenTool size={13} /> Firma asistida
                                 </button>
                             )}
                             <button
@@ -1140,6 +1176,15 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                             >
                                 <FiX size={13} /> Dar de baja
                             </button>
+                            {isDirty && (
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    disabled={updating === w.personaId}
+                                    onClick={() => handleUpdateCargos(w)}
+                                >
+                                    <FiCheck size={13} /> Guardar
+                                </button>
+                            )}
                         </div>
 
                         <div className="eq-ob-block">
@@ -1154,47 +1199,60 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         );
     };
 
-    // ── Container renderer ────────────────────────────────────────────────────
+    /**
+     * Una cuadrilla: rótulo con regla y, debajo, las tarjetas.
+     *
+     * En cuadrícula la cuadrilla NO es una caja (la única caja es la tarjeta de
+     * la persona); en lista sí lo es, porque las filas necesitan un marco que
+     * las agrupe o el corte entre cuadrillas no se lee.
+     */
     const renderContainer = (opts: {
         id: string;
         title: string;
         count: number;
         supervisor?: any;
         workers: any[];
-        isGestion?: boolean;
         isSinCuadrilla?: boolean;
     }) => {
-        const { id, title, count, supervisor, workers, isGestion = false, isSinCuadrilla = false } = opts;
+        const { id, title, count, supervisor, workers: crewWorkers, isSinCuadrilla = false } = opts;
         const isDragOver = dragOverContainerId === id;
-        const isGestionDragOver = isDragOver && isGestion;
+        // Durante el arrastre hay UN destino: los demás se atenúan en vez de
+        // ofrecerse todos como candidatos.
+        const isDimmed = !!dragPersonaId && !isDragOver;
         const dropProps = makeContainerDropProps(id);
+        const visibles = crewWorkers.filter(matchesSearch);
+        // La persona arrastrada solo «entra» si viene de otra cuadrilla o del pool.
+        const entra = isDragOver && !!dragWorker && !crewWorkers.some((w) => w.personaId === dragPersonaId);
 
-        if (count === 0 && !supervisor && !isGestion && !isSinCuadrilla) return null;
-        if (isGestion && count === 0) return null;
-        if (isSinCuadrilla && workers.filter(matchesSearch).length === 0) return null;
+        if (count === 0 && !supervisor && !isSinCuadrilla) return null;
+        if (isSinCuadrilla && visibles.length === 0) return null;
 
         return (
-            <div
+            <section
                 key={id}
-                className={`eq2-crew${isDragOver && !isGestion ? ' eq2-crew--dragover' : ''}${isGestionDragOver ? ' eq2-crew--dragwarn' : ''}${isSinCuadrilla ? ' eq2-crew--warn' : ''}`}
+                aria-label={isSinCuadrilla ? 'Sin cuadrilla' : `Cuadrilla de ${title}`}
+                className={`eq2-crew${mode === 'list' ? ' eq2-crew--boxed' : ''}${isDragOver ? ' eq2-crew--dragover' : ''}${isDimmed ? ' eq2-crew--dim' : ''}`}
                 {...dropProps}
             >
-                <div className={`eq2-crew-head${isSinCuadrilla ? ' eq2-crew-head--warn' : ''}`}>
-                    {isSinCuadrilla && <FiAlertTriangle size={14} style={{ flexShrink: 0 }} />}
+                <div className="eq2-crew-head">
                     <span className="eq2-crew-title">{title}</span>
-                    <span className={`eq2-crew-count${isSinCuadrilla ? ' eq2-crew-count--warn' : ''}`}>{count}</span>
-                    {isSinCuadrilla && (
-                        <span className="eq2-crew-hint">Arrastra estos trabajadores a una cuadrilla.</span>
-                    )}
-                    {isGestion && dragPersonaId && (
-                        <span className="eq2-crew-hint eq2-crew-hint--warn">
-                            Este equipo no acepta trabajadores de cuadrilla.
+                    <span className="eq2-crew-count">{entra ? `${count} → ${count + 1}` : count}</span>
+                    {isDragOver ? (
+                        <span className="eq2-crew-hint eq2-crew-hint--drop">
+                            {isSinCuadrilla ? 'Soltar para dejarlo sin supervisor' : 'Soltar para sumar a esta cuadrilla'}
                         </span>
-                    )}
+                    ) : isSinCuadrilla ? (
+                        <span className="eq2-crew-hint">
+                            {mode === 'grid'
+                                ? 'Arrástralos a una cuadrilla para asignarles supervisor.'
+                                : 'Asígnales supervisor desde el menú de cada fila.'}
+                        </span>
+                    ) : null}
+                    <span className="eq2-crew-spacer" />
                     {/* Prevencionista a cargo de esta cuadrilla: define el scope de las
                         charlas del supervisor. Solo se ofrece si la obra tiene alguno. */}
                     {supervisor && prevencionistaSelectOptions.length > 0 && (
-                        <div className="eq2-crew-prev" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 220 }}>
+                        <div className="eq2-crew-prev">
                             <span className="eq2-crew-hint" style={{ flexShrink: 0 }}>Prevencionista:</span>
                             <SupervisorAutocomplete
                                 options={prevencionistaSelectOptions}
@@ -1209,60 +1267,113 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 {mode === 'grid' ? (
                     <div className="eq2-crew-grid">
                         {supervisor && renderCard(supervisor, { isSup: true })}
-                        {workers.filter(matchesSearch).map((w) =>
-                            renderCard(w, { isDraggable: !isGestion && rolTipoDe(w) === 'trabajador' })
+                        {visibles.map((w) =>
+                            renderCard(w, { isDraggable: rolTipoDe(w) === 'trabajador' })
                         )}
-                        {!supervisor && workers.filter(matchesSearch).length === 0 && (
+                        {/* Hueco de inserción: dice DÓNDE cae, con la forma de la tarjeta. */}
+                        {entra && dragWorker && (
+                            <div className="eq2-slot" aria-hidden="true">
+                                <FiPlus size={22} />
+                                <span className="eq2-slot-name">{dragWorker.nombre} {dragWorker.apellido || ''}</span>
+                                <span className="eq2-slot-sub">
+                                    {isSinCuadrilla ? 'queda sin cuadrilla' : 'entra a esta cuadrilla'}
+                                </span>
+                            </div>
+                        )}
+                        {!supervisor && visibles.length === 0 && !entra && (
                             <div className="eq2-crew-empty-grid">Sin personas en este equipo.</div>
                         )}
                     </div>
                 ) : (
                     <div className="eq2-crew-list">
                         {supervisor && renderRow(supervisor, { isSup: true })}
-                        {workers.filter(matchesSearch).map((w) =>
+                        {visibles.map((w) =>
                             renderRow(w, {
-                                isDraggable: !isGestion && rolTipoDe(w) === 'trabajador',
-                                showSupervisor: !isGestion,
+                                isDraggable: rolTipoDe(w) === 'trabajador',
+                                showSupervisor: true,
                             })
                         )}
-                        {!supervisor && workers.filter(matchesSearch).length === 0 && (
+                        {!supervisor && visibles.length === 0 && (
                             <div className="eq2-crew-empty-list">Sin personas en este equipo.</div>
                         )}
                     </div>
                 )}
-            </div>
+            </section>
         );
     };
 
-    // ── Loading ───────────────────────────────────────────────────────────────
-    if (loading) return (
-        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 64 }}>
-            <div className="spinner" />
-        </div>
-    );
+    /**
+     * Equipo de gestión: una fila de píldoras, no una rejilla de tarjetas.
+     *
+     * Son tres o cuatro personas, no se arrastran y no tienen kit DS 44 que
+     * mostrar: la rejilla les daba el mismo peso visual que a una cuadrilla de
+     * quince. Sigue siendo zona de soltar, pero solo para explicar que no
+     * acepta trabajadores de cuadrilla.
+     */
+    const renderGestion = () => {
+        const visibles = gestion.filter(matchesSearch);
+        if (visibles.length === 0) return null;
+        const isDragWarn = dragOverContainerId === GESTION_CONTAINER && !!dragPersonaId;
+        return (
+            <section
+                aria-label="Equipo de gestión"
+                className={`eq2-mgmt${isDragWarn ? ' eq2-mgmt--warn' : ''}`}
+                {...makeContainerDropProps(GESTION_CONTAINER)}
+            >
+                <span className="eq2-mgmt-label">Gestión</span>
+                {visibles.map((w) => (
+                    <button
+                        type="button"
+                        key={w.personaId}
+                        className="eq2-mgmt-chip"
+                        onClick={(e) => {
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            setCardAction(cardAction?.worker.personaId === w.personaId ? null : { worker: w, rect });
+                        }}
+                    >
+                        <PersonaAvatar w={w} className="eq2-mgmt-chip-avatar" />
+                        <span className="eq2-mgmt-chip-name">{w.nombre} {w.apellido || ''}</span>
+                        <span className="eq2-mgmt-chip-role">{w.rolNombre || w.rol}</span>
+                    </button>
+                ))}
+                {isDragWarn && (
+                    <span className="eq2-mgmt-hint">Este equipo no acepta trabajadores de cuadrilla.</span>
+                )}
+            </section>
+        );
+    };
+
+    // ── Carga ─────────────────────────────────────────────────────────────────
+    // El esqueleto dibuja la vista elegida: prometer una cuadrícula y entregar
+    // una lista devuelve el salto que el esqueleto viene a evitar.
+    if (loading) return <EquipoObraSkeleton vista={mode === 'list' ? 'list' : 'grid'} />;
 
     return (
         <>
             {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}
 
-            {/* ── Sección: equipo en obra ── */}
-            <div className="card eq2-section">
-                {/* Toolbar */}
+            {/* La página es UNA columna de secciones separadas por reglas: sin
+                tarjetas contenedoras, la jerarquía la marcan los rótulos. */}
+            <div className="eq2-page">
                 <div className="eq2-toolbar">
                     <div className="eq2-toolbar-left">
-                        <div className="eq-search-wrap">
-                            <FiSearch size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        <label className="eq-search-wrap">
+                            <FiSearch size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                             <input
                                 className="form-input"
-                                style={{ flex: 1, fontSize: 'var(--text-sm)', minWidth: 160 }}
-                                placeholder="Buscar en obra…"
+                                style={{ flex: 1, fontSize: '13.5px', minWidth: 120 }}
+                                placeholder="Buscar en el equipo…"
                                 value={searchAssigned}
                                 onChange={(e) => setSearchAssigned(e.target.value)}
                             />
-                        </div>
+                        </label>
                         <span className="eq2-count-text">
-                            {activeAssigned.length} activos · {supervisores.length} cuadrilla{supervisores.length !== 1 ? 's' : ''}
-                            {sinCuadrilla.length > 0 ? ` · ${sinCuadrilla.length} sin cuadrilla` : ''}
+                            {activeAssigned.length} persona{activeAssigned.length !== 1 ? 's' : ''}
+                            {' · '}
+                            {supervisores.length} cuadrilla{supervisores.length !== 1 ? 's' : ''}
+                            {sinCuadrilla.length > 0 && (
+                                <> {'· '}<strong>{sinCuadrilla.length} sin asignar</strong></>
+                            )}
                         </span>
                     </div>
                     <div className="eq2-toolbar-right">
@@ -1270,6 +1381,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                             <button
                                 className={`eq2-mode-btn${mode === 'grid' ? ' eq2-mode-btn--active' : ''}`}
                                 onClick={() => setMode('grid')} title="Cuadrícula"
+                                aria-label="Cuadrícula"
                                 aria-pressed={mode === 'grid'}
                             >
                                 <FiGrid size={15} />
@@ -1277,6 +1389,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                             <button
                                 className={`eq2-mode-btn${mode === 'list' ? ' eq2-mode-btn--active' : ''}`}
                                 onClick={() => setMode('list')} title="Lista"
+                                aria-label="Lista"
                                 aria-pressed={mode === 'list'}
                             >
                                 <FiList size={15} />
@@ -1285,7 +1398,6 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                     </div>
                 </div>
 
-                {/* Containers */}
                 {assigned.length === 0 ? (
                     <div className="eq-empty-state">
                         <FiUsers size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
@@ -1293,47 +1405,42 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                     </div>
                 ) : (
                     <div className="eq2-groups">
-                        {/* Equipo de gestión */}
-                        {renderContainer({
-                            id: GESTION_CONTAINER,
-                            title: `Equipo de gestión`,
-                            count: gestion.filter(matchesSearch).length,
-                            workers: gestion,
-                            isGestion: true,
-                        })}
+                        {renderGestion()}
 
-                        {/* Sin cuadrilla */}
+                        {/* Sin cuadrilla va primero: es lo que hay que resolver. */}
                         {renderContainer({
                             id: SIN_CUADRILLA_CONTAINER,
-                            title: `Sin cuadrilla asignada`,
+                            title: 'Sin cuadrilla',
                             count: sinCuadrilla.filter(matchesSearch).length,
                             workers: sinCuadrilla,
                             isSinCuadrilla: true,
                         })}
 
-                        {/* Cuadrillas por supervisor */}
+                        {/* Una cuadrilla se nombra por su supervisor, sin el rodeo
+                            de «Equipo de»: el rótulo ya está en contexto. */}
                         {supervisores.map((sup) => {
                             const crew = cuadrillaDe(sup.personaId);
                             const visibleCrew = crew.filter(matchesSearch);
                             const supVisible = matchesSearch(sup);
                             if (!supVisible && visibleCrew.length === 0) return null;
-                            const total = crew.length + 1; // +1 for the supervisor
+                            const total = crew.length + 1; // +1 por el supervisor
                             return renderContainer({
                                 id: sup.personaId,
-                                title: `Equipo de ${sup.nombre} ${sup.apellido || ''}`.trim(),
+                                title: `${sup.nombre} ${sup.apellido || ''}`.trim(),
                                 count: total,
                                 supervisor: supVisible ? sup : undefined,
                                 workers: crew,
                             });
                         })}
 
-                        {/* Dados de baja */}
+                        {/* Dados de baja: un enlace al pie, no una sección más. */}
                         {inactiveAssigned.length > 0 && (
-                            <details className="eq-baja-section">
+                            <details>
                                 <summary className="eq-baja-summary">
+                                    <FiChevronRight size={14} className="eq-baja-chevron" />
                                     Dados de baja · {inactiveAssigned.length}
                                 </summary>
-                                <div className="eq2-crew-list" style={{ marginTop: 'var(--space-2)' }}>
+                                <div className="eq-baja-list">
                                     {inactiveAssigned.map((w) => (
                                         <div key={w.personaId} className="eq2-row eq2-row--inactive">
                                             <div className="eq2-row-bar">
@@ -1342,16 +1449,16 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                                                     <span className="eq2-row-name">{w.nombre} {w.apellido || ''}</span>
                                                     <span className="eq2-row-rut">{w.rut}</span>
                                                 </div>
-                                                <div style={{ flex: 1 }} />
-                                                <div className="eq2-row-actions">
-                                                    <button
-                                                        className="btn btn-primary btn-sm"
-                                                        disabled={updating === w.personaId}
-                                                        onClick={() => handleReactivar(w)}
-                                                    >
-                                                        Reactivar
-                                                    </button>
-                                                </div>
+                                                <span />
+                                                <span />
+                                                <button
+                                                    className="btn btn-secondary btn-sm"
+                                                    style={{ justifySelf: 'end', whiteSpace: 'nowrap' }}
+                                                    disabled={updating === w.personaId}
+                                                    onClick={() => handleReactivar(w)}
+                                                >
+                                                    Reactivar
+                                                </button>
                                             </div>
                                         </div>
                                     ))}
@@ -1360,54 +1467,55 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         )}
                     </div>
                 )}
-            </div>
 
-            {/* ── Agregar personas ── */}
-            {canAsignar && (
-                <div className="card eq2-section">
-                    <div className="eq-section-head" style={{ marginBottom: 'var(--space-3)' }}>
-                        <div>
-                            <div className="eq-section-title">Agregar personas</div>
-                            <div className="eq-section-sub">{filteredUnassigned.length} disponible{filteredUnassigned.length !== 1 ? 's' : ''} en la empresa</div>
-                        </div>
-                    </div>
-                    <div className="eq2-toolbar" style={{ marginBottom: 'var(--space-3)' }}>
-                        <div className="eq2-toolbar-left">
-                            <div className="eq-search-wrap">
-                                <FiSearch size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                {/* Personas de la empresa que no están en esta obra: el origen del
+                    arrastre. Va en la misma columna, con regla punteada, porque no
+                    es el equipo todavía. */}
+                {canAsignar && (
+                    <section aria-label="Personas de la empresa">
+                        <div className="eq-section-head">
+                            <span className="eq-section-title">Personas de la empresa</span>
+                            <span className="eq-section-sub">
+                                {mode === 'grid'
+                                    ? 'No están en esta obra. Arrástralas a una cuadrilla o usa Agregar.'
+                                    : 'No están en esta obra. Usa Agregar para sumarlas.'}
+                            </span>
+                            <span className="eq2-crew-spacer" />
+                            <label className="eq-search-wrap" style={{ maxWidth: 240, flex: '0 0 auto' }}>
+                                <FiSearch size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                                 <input
                                     className="form-input"
-                                    style={{ flex: 1, fontSize: 'var(--text-sm)', minWidth: 160 }}
+                                    style={{ flex: 1, fontSize: '13.5px', minWidth: 100 }}
                                     placeholder="Buscar persona…"
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
                                 />
+                            </label>
+                        </div>
+
+                        {filteredUnassigned.length === 0 ? (
+                            <div className="eq-empty-state">
+                                {search ? 'Sin resultados para esa búsqueda.' : 'Todas las personas de la empresa ya están en esta obra.'}
                             </div>
-                        </div>
-                    </div>
+                        ) : mode === 'grid' ? (
+                            <div className="eq2-crew-grid">
+                                {filteredUnassigned.map(renderPoolCard)}
+                            </div>
+                        ) : (
+                            <div className="eq2-crew--boxed">
+                                {filteredUnassigned.map(renderPoolRow)}
+                            </div>
+                        )}
 
-                    {filteredUnassigned.length === 0 ? (
-                        <div className="eq-empty-state">
-                            {search ? 'Sin resultados para esa búsqueda.' : 'Todas las personas de la empresa ya están en esta obra.'}
-                        </div>
-                    ) : mode === 'grid' ? (
-                        <div className="eq2-crew-grid">
-                            {filteredUnassigned.map(renderPoolCard)}
-                        </div>
-                    ) : (
-                        <div className="eq-prow-list">
-                            {filteredUnassigned.map(renderPoolRow)}
-                        </div>
-                    )}
-
-                    {supervisorSelectOptions.length === 0 && unassigned.some((w) => rolTipoDe(w) === 'trabajador') && (
-                        <div className="eq-add-note">
-                            <FiAlertTriangle size={13} style={{ color: 'var(--warning-500, #d97706)' }} />
-                            Agrega primero un Supervisor a la obra para poder armar cuadrillas.
-                        </div>
-                    )}
-                </div>
-            )}
+                        {supervisorSelectOptions.length === 0 && unassigned.some((w) => rolTipoDe(w) === 'trabajador') && (
+                            <div className="eq-add-note">
+                                <FiAlertTriangle size={13} style={{ color: 'var(--danger-alerta)' }} />
+                                Agrega primero un Supervisor a la obra para poder armar cuadrillas.
+                            </div>
+                        )}
+                    </section>
+                )}
+            </div>
 
             {/* Firma asistida */}
             <FirmaAsistidaModal
@@ -1843,268 +1951,262 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
             </Modal>
 
             <style>{`
-                /* ── Spinner ─────────────────────────────────────────────── */
-                .spinner {
-                    width: 28px; height: 28px;
-                    border: 3px solid var(--surface-border);
-                    border-top-color: var(--primary-500);
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
+                /* ── Lienzo ─────────────────────────────────────
+                   La cuadrilla ya NO es una caja: es un rótulo con una regla
+                   debajo. La única caja es la tarjeta de la persona, que es la
+                   unidad que se arrastra y se lee; así no hay recuadro dentro
+                   de recuadro. --eq-rule es la regla interna, más tenue que el
+                   borde, para separar filas sin dibujar otra caja. */
+                .eq2-page {
+                    display: flex; flex-direction: column; gap: var(--space-6);
+                    --eq-rule: color-mix(in srgb, var(--surface-border) 70%, transparent);
+                    --eq-dash: color-mix(in srgb, var(--surface-border) 55%, var(--text-muted));
                 }
-                @keyframes spin { to { transform: rotate(360deg); } }
-
-                /* ── Section ─────────────────────────────────────────────── */
-                .eq2-section { padding: var(--space-4); margin-bottom: var(--space-4); }
                 .eq-section-head {
-                    display: flex; align-items: flex-start; justify-content: space-between;
-                    gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-4);
+                    display: flex; align-items: center; gap: var(--space-3);
+                    flex-wrap: wrap; padding-bottom: 9px;
+                    border-bottom: 1px dashed var(--eq-dash, var(--surface-border));
+                    margin-bottom: var(--space-4);
                 }
-                .eq-section-title { font-weight: 700; font-size: var(--text-base); color: var(--text-primary); margin-bottom: 2px; }
-                .eq-section-sub { font-size: var(--text-xs); color: var(--text-muted); }
+                .eq-section-title { font-weight: 600; font-size: var(--text-sm); color: var(--text-primary); }
+                .eq-section-sub { font-size: 11.5px; color: var(--text-secondary); }
 
-                /* ── Toolbar ─────────────────────────────────────────────── */
+                /* ── Toolbar ────────────────────────────────── */
                 .eq2-toolbar {
                     display: flex; align-items: center; justify-content: space-between;
-                    gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-4);
+                    gap: var(--space-3); flex-wrap: wrap;
                 }
                 .eq2-toolbar-left {
-                    display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1; min-width: 0;
+                    display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; flex: 1; min-width: 0;
                 }
                 .eq2-toolbar-right { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
-                .eq2-count-text { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
+                .eq2-count-text { font-size: 13px; color: var(--text-secondary); }
+                .eq2-count-text strong { font-weight: 600; color: var(--text-primary); }
 
-                /* ── Mode toggle ─────────────────────────────────────────── */
+                /* ── Cuadrícula / lista ────────────────────────── */
                 .eq2-mode-toggle {
-                    display: flex; border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-sm); overflow: hidden;
+                    display: flex; gap: 3px; padding: 3px;
+                    border: 1px solid var(--surface-border); border-radius: 9px;
                 }
                 .eq2-mode-btn {
                     display: flex; align-items: center; justify-content: center;
-                    width: 32px; height: 32px; border: none; background: none;
-                    color: var(--text-muted); cursor: pointer;
+                    width: 32px; height: 28px; border: none; border-radius: 6px; background: none;
+                    color: var(--text-secondary); cursor: pointer;
                     transition: background 0.12s, color 0.12s;
                 }
-                .eq2-mode-btn:hover { background: var(--surface-hover); color: var(--text-primary); }
-                .eq2-mode-btn--active { background: var(--accent-tint); color: var(--accent); }
+                .eq2-mode-btn:hover { color: var(--text-primary); }
+                .eq2-mode-btn--active { background: var(--surface-hover); color: var(--text-primary); }
 
-                /* ── Groups & containers ─────────────────────────────────── */
-                .eq2-groups { display: flex; flex-direction: column; gap: var(--space-4); }
-                .eq2-crew {
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-lg);
-                    overflow: hidden;
-                    transition: border-color 0.15s, box-shadow 0.15s;
+                /* ── Gestión ──────────────────────────────────
+                   Son tres o cuatro personas y no se arrastran: una fila de
+                   píldoras dice quiénes son sin gastar una rejilla entera. */
+                .eq2-mgmt { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+                .eq2-mgmt-label {
+                    font-size: 11px; font-weight: 700; text-transform: uppercase;
+                    letter-spacing: 0.08em; color: var(--text-secondary); flex-shrink: 0;
                 }
-                .eq2-crew--dragover {
-                    border-color: var(--accent);
-                    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent 80%);
+                .eq2-mgmt-chip {
+                    display: inline-flex; align-items: center; gap: var(--space-2);
+                    padding: 4px 12px 4px 4px; background: none;
+                    border: 1px solid var(--surface-border); border-radius: 999px;
+                    color: inherit; font-family: inherit; cursor: pointer;
+                    transition: border-color 0.12s, background 0.12s;
                 }
-                .eq2-crew--dragwarn {
-                    border-color: var(--warning-500, #d97706) !important;
-                    box-shadow: 0 0 0 3px rgba(217,119,6,0.20) !important;
+                .eq2-mgmt-chip:hover { border-color: var(--accent); background: var(--accent-tint); }
+                .eq2-mgmt-chip-avatar {
+                    width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
+                    display: flex; align-items: center; justify-content: center;
+                    font-size: 10px; font-weight: 700; text-transform: uppercase;
+                    background: var(--accent-tint); color: var(--accent-text);
+                    border: 1.5px solid color-mix(in srgb, var(--accent) 28%, transparent);
                 }
-                .eq2-crew--warn {
-                    border-color: rgba(239,68,68,0.35);
+                .eq2-mgmt-chip-name { font-size: 12.5px; font-weight: 500; }
+                .eq2-mgmt-chip-role { font-size: 11.5px; color: var(--text-secondary); }
+                .eq2-mgmt-hint { font-size: 11.5px; font-weight: 500; color: var(--danger-alerta); }
+                .eq2-mgmt--warn .eq2-mgmt-chip {
+                    border-color: color-mix(in srgb, var(--danger-alerta) 45%, transparent);
                 }
 
-                /* ── Crew header ─────────────────────────────────────────── */
+                /* ── Cuadrillas ─────────────────────────────── */
+                .eq2-groups { display: flex; flex-direction: column; gap: var(--space-6); }
+                .eq2-crew { transition: opacity 0.15s, border-color 0.15s; }
+                /* Durante el arrastre hay UN destino, no cinco candidatos. */
+                .eq2-crew--dim { opacity: 0.45; }
                 .eq2-crew-head {
-                    display: flex; align-items: center; gap: var(--space-2);
-                    padding: 10px var(--space-4);
-                    background: var(--surface-subtle, rgba(0,0,0,0.02));
+                    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+                    padding-bottom: 9px; margin-bottom: var(--space-4);
                     border-bottom: 1px solid var(--surface-border);
                 }
-                .eq2-crew-head--warn { color: var(--danger-500, #ef4444); }
-                .eq2-crew-title { font-weight: 700; font-size: var(--text-sm); color: var(--text-primary); }
-                .eq2-crew-head--warn .eq2-crew-title { color: var(--danger-500, #ef4444); }
+                .eq2-crew--dragover .eq2-crew-head { border-bottom-color: var(--accent); }
+                .eq2-crew-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
                 .eq2-crew-count {
-                    font-size: 11px; font-weight: 700; padding: 1px 8px;
-                    border-radius: 999px; background: var(--accent-tint); color: var(--accent-text);
+                    padding: 1px 8px; border: 1px solid var(--surface-border); border-radius: 999px;
+                    font-size: 11.5px; font-weight: 600; color: var(--text-primary);
+                    font-variant-numeric: tabular-nums; white-space: nowrap;
                 }
-                .eq2-crew-count--warn { background: rgba(239,68,68,0.12); color: var(--danger-500, #ef4444); }
-                .eq2-crew-hint { font-size: var(--text-xs); color: var(--text-muted); flex: 1; }
-                .eq2-crew-hint--warn { color: var(--warning-700, #b45309); font-weight: 500; }
-                .eq2-crew-empty-list, .eq2-crew-empty-grid {
-                    padding: var(--space-3) var(--space-4);
+                .eq2-crew--dragover .eq2-crew-count { border-color: var(--accent); color: var(--accent-text); }
+                .eq2-crew-hint { font-size: 11.5px; color: var(--text-secondary); }
+                .eq2-crew-hint--drop { color: var(--accent-text); font-weight: 500; }
+                .eq2-crew-spacer { flex: 1; min-width: 0; }
+                .eq2-crew-prev { display: flex; align-items: center; gap: var(--space-2); min-width: 220px; }
+                .eq2-crew-empty-grid, .eq2-crew-empty-list {
                     font-size: var(--text-xs); color: var(--text-muted); font-style: italic;
                 }
+                .eq2-crew-empty-list { padding: var(--space-3) var(--space-4); }
 
-                /* ── Grid layout ─────────────────────────────────────────── */
+                /* En lista la cuadrilla SÍ es una caja: las filas necesitan un
+                   marco que las agrupe, o el corte entre cuadrillas no se lee. */
+                .eq2-crew--boxed {
+                    border: 1px solid var(--surface-border); border-radius: 12px; overflow: hidden;
+                }
+                .eq2-crew--boxed .eq2-crew-head {
+                    padding: 11px var(--space-4); margin-bottom: 0;
+                }
+                .eq2-crew--boxed.eq2-crew--dragover { border-color: var(--accent); }
+
+                /* ── Rejilla ────────────────────────────────── */
                 .eq2-crew-grid {
-                    display: grid;
-                    grid-template-columns: repeat(4, 1fr);
-                    gap: 12px;
-                    padding: var(--space-4);
+                    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;
                 }
                 @media (max-width: 900px) {
-                    .eq2-crew-grid { grid-template-columns: repeat(3, 1fr); }
+                    .eq2-crew-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
                 }
                 @media (max-width: 580px) {
-                    .eq2-crew-grid { grid-template-columns: repeat(2, 1fr); }
+                    .eq2-crew-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
                 }
 
-                /* ── Grid card ───────────────────────────────────────────── */
+                /* ── Tarjeta de persona ───────────────────────── */
                 .eq2-card {
                     position: relative;
-                    display: flex; flex-direction: column; align-items: center; text-align: center;
-                    padding: 24px 16px 16px;
-                    border-radius: 12px; border: 1px solid var(--surface-border);
-                    background: var(--surface-card);
-                    cursor: pointer; user-select: none;
-                    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s;
+                    display: flex; flex-direction: column; align-items: center; text-align: center; gap: 9px;
+                    padding: 20px 14px 14px;
+                    border: 1px solid var(--surface-border); border-radius: 12px;
+                    background: none; cursor: pointer; user-select: none;
+                    transition: transform 0.18s ease, border-color 0.18s, background 0.18s, opacity 0.15s;
                     animation: eq2cardIn 0.25s ease both;
                 }
                 @keyframes eq2cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-                .eq2-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px -4px rgba(0,0,0,0.18); border-color: var(--primary-400); }
+                .eq2-card:hover { transform: translateY(-2px); border-color: var(--accent); }
                 .eq2-card--draggable { cursor: grab; }
                 .eq2-card--draggable:active { cursor: grabbing; }
-                .eq2-card--dragging { opacity: 0.4; transform: scale(0.97); }
-                .eq2-card--sup {
-                    border-color: color-mix(in srgb, var(--accent) 30%, var(--surface-border) 70%);
-                }
+                /* El hueco que dejó la tarjeta levantada queda a la vista. */
+                .eq2-card--dragging { opacity: 0.5; transform: none; }
+                .eq2-card--open { border-color: var(--accent); background: var(--accent-tint); }
+                .eq2-card--sup { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 
-                /* Supervisor badge on card — below the name, not overlapping the avatar */
-                .eq2-sup-badge {
-                    display: inline-block;
-                    font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-                    padding: 2px 8px; border-radius: 999px;
-                    background: var(--accent); color: #fff;
-                    margin-bottom: 4px;
-                }
-
-                /* Card avatar */
                 .eq2-card-avatar {
-                    width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+                    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
                     display: flex; align-items: center; justify-content: center;
-                    font-weight: 700; font-size: 21px; text-transform: uppercase;
-                    background: rgba(0,110,220,0.12); color: var(--accent-text, #4d9fff);
-                    border: 1.5px solid rgba(0,110,220,0.2);
-                    overflow: hidden;
+                    font-weight: 700; font-size: 18px; text-transform: uppercase;
+                    background: color-mix(in srgb, var(--accent) 10%, transparent);
+                    border: 1.5px solid var(--surface-border);
+                    color: var(--text-secondary);
                 }
-
+                .eq2-card--sup .eq2-card-avatar {
+                    background: var(--accent-tint);
+                    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+                    color: var(--accent-text);
+                }
                 /* La foto cubre el círculo; el borde del avatar la enmarca. */
                 .eq-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-                /* Card text */
+                .eq2-card-body { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 100%; }
+                .eq2-sup-badge {
+                    padding: 2px 8px; border-radius: 999px;
+                    background: color-mix(in srgb, var(--accent) 18%, transparent);
+                    color: var(--accent-text);
+                    font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+                }
                 .eq2-card-name {
                     font-size: 13.5px; font-weight: 600; color: var(--text-primary);
-                    line-height: 1.35; word-break: break-word; margin: 12px 0 4px; width: 100%;
+                    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                 }
                 .eq2-card-rut {
-                    font-family: var(--font-mono, monospace); font-size: 10.5px;
-                    color: var(--text-muted); letter-spacing: 0.04em;
+                    font-family: var(--font-mono, monospace); font-size: 11px; color: var(--text-muted);
                 }
                 .eq2-card-cargo {
-                    font-size: 11px; color: var(--text-secondary);
-                    /* Al pie de la tarjeta: la del supervisor lleva una línea más
-                       (su distintivo) y sin esto el cargo quedaba desalineado del
-                       resto de la fila. */
-                    margin-top: auto; padding-top: 10px;
-                    border-top: 1px solid var(--surface-border);
-                    width: 100%; word-break: break-word; line-height: 1.4;
+                    font-size: 11.5px; color: var(--text-secondary);
+                    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                 }
 
-                /* ── List layout ─────────────────────────────────────────── */
+                /* Hueco de inserción: dice DÓNDE cae, con la forma de la tarjeta. */
+                .eq2-slot {
+                    display: flex; flex-direction: column; align-items: center; justify-content: center;
+                    gap: 8px; padding: 20px 14px 14px; text-align: center;
+                    border: 1.5px dashed var(--accent); border-radius: 12px; color: var(--accent-text);
+                }
+                .eq2-slot-name { font-size: 12.5px; font-weight: 600; }
+                .eq2-slot-sub { font-size: 11px; color: var(--text-secondary); }
+
+                /* ── Fila de lista ───────────────────────────── */
                 .eq2-crew-list { display: flex; flex-direction: column; }
-
-                /* ── List row ────────────────────────────────────────────── */
-                .eq2-row { border-bottom: 1px solid var(--surface-border); }
-                .eq2-row:last-child { border-bottom: none; }
+                .eq2-row { border-top: 1px solid var(--eq-rule, var(--surface-border)); }
+                .eq2-row:first-child { border-top: none; }
+                .eq2-row--dragging { opacity: 0.5; }
                 .eq2-row--inactive .eq2-row-bar { opacity: 0.55; }
-                .eq2-row--dragging { opacity: 0.4; }
-
                 .eq2-row-bar {
-                    display: flex; align-items: center; gap: var(--space-3);
-                    padding: 10px var(--space-4); transition: background 0.12s;
+                    display: grid; grid-template-columns: 34px minmax(0, 1fr) 180px 120px 32px;
+                    align-items: center; gap: 14px; padding: 10px var(--space-4);
+                    transition: background 0.12s;
                 }
                 .eq2-row-bar:hover { background: var(--surface-hover); }
-                .eq2-row--expanded .eq2-row-bar { background: var(--surface-hover); }
+                .eq2-row--draggable .eq2-row-bar { cursor: grab; }
+                /* Fila abierta: se edita EN la fila, marcada por el acento a la izquierda. */
+                .eq2-row--expanded { border-left: 2px solid var(--accent); }
+                .eq2-row--expanded .eq2-row-bar { padding-left: calc(var(--space-4) - 2px); }
 
-                .eq2-row--sup .eq2-row-bar {
-                    padding: 12px var(--space-4);
-                    background: color-mix(in srgb, var(--accent) 5%, var(--surface-subtle, rgba(0,0,0,0.02)) 95%);
-                    border-bottom: 1px solid var(--surface-border);
-                }
-                .eq2-row--sup.eq2-row--expanded .eq2-row-bar,
-                .eq2-row--sup .eq2-row-bar:hover {
-                    background: color-mix(in srgb, var(--accent) 10%, var(--surface-hover) 90%);
-                }
-
-                /* Drag handle */
-                .eq2-drag-handle {
-                    font-size: 14px; color: var(--text-muted); cursor: grab;
-                    padding: 0 2px; user-select: none; flex-shrink: 0;
-                    opacity: 0.4; transition: opacity 0.12s;
-                }
-                .eq2-row-bar:hover .eq2-drag-handle { opacity: 0.8; }
-                .eq2-drag-handle:active { cursor: grabbing; }
-
-                /* Row avatar */
                 .eq2-row-avatar {
-                    width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+                    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
                     display: flex; align-items: center; justify-content: center;
-                    font-weight: 700; font-size: var(--text-xs); text-transform: uppercase;
-                    background: rgba(0,110,220,0.12); color: var(--accent-text, #4d9fff);
-                    border: 1.5px solid rgba(0,110,220,0.2); cursor: pointer;
-                    overflow: hidden;
+                    font-weight: 700; font-size: 11.5px; text-transform: uppercase;
+                    background: var(--surface-hover); color: var(--text-secondary);
+                    border: none; cursor: pointer;
                 }
-                .eq2-row-avatar--sup {
-                    width: 38px; height: 38px; font-size: var(--text-sm);
-                }
-                .eq2-row-avatar--inactive {
-                    background: var(--surface-hover); color: var(--text-muted); border-color: var(--surface-border);
-                }
+                .eq2-row-avatar--sup { background: var(--accent-tint); color: var(--accent-text); }
+                .eq2-row-avatar--inactive { background: var(--surface-hover); color: var(--text-muted); }
 
-                /* Row info */
-                .eq2-row-info { flex: 0 0 auto; cursor: pointer; min-width: 120px; }
-                .eq2-row-name { font-weight: 500; font-size: var(--text-sm); color: var(--text-primary); display: block; }
-                .eq2-row--sup .eq2-row-name { font-weight: 700; }
-                .eq2-row-rut { font-size: var(--text-xs); color: var(--text-muted); display: block; margin-top: 1px; }
-
-                /* Supervisor inline badge (list mode) */
-                .eq2-row-sup-badge {
-                    margin-left: 8px; font-size: 10px; font-weight: 700;
-                    letter-spacing: 0.04em; text-transform: uppercase;
-                    padding: 1px 7px; border-radius: 999px;
-                    background: var(--accent); color: #fff;
-                    vertical-align: middle;
+                .eq2-row-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; cursor: pointer; }
+                .eq2-row-name {
+                    font-size: 13.5px; font-weight: 600; color: var(--text-primary);
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                 }
-
-                /* Cargo chips */
-                .eq2-row-chips {
-                    display: flex; gap: 4px; flex: 1; flex-wrap: wrap; align-items: center; min-width: 0;
+                .eq2-row-rut {
+                    font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono, monospace);
                 }
+                .eq2-row-role { font-size: 12px; color: var(--accent-text); }
+                .eq2-row-chips { display: flex; gap: 5px; flex-wrap: wrap; min-width: 0; }
                 .eq2-chip {
-                    font-size: 11px; font-weight: 600; white-space: nowrap;
-                    padding: 2px 9px; border-radius: 999px;
-                    background: var(--accent-tint, rgba(0,110,220,0.10));
-                    color: var(--accent-text, #4d9fff);
+                    padding: 2px 8px; border: 1px solid var(--surface-border); border-radius: 999px;
+                    font-size: 11px; color: var(--text-primary); white-space: nowrap;
                 }
-                .eq2-chip--empty { opacity: 0.4; font-weight: 400; font-style: italic; }
-
-                /* Row actions */
-                .eq2-row-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
-                .eq2-edit-btn {
-                    display: flex; align-items: center; justify-content: center;
-                    width: 30px; height: 30px; border: 1px solid var(--surface-border);
-                    background: var(--surface-elevated); color: var(--text-muted);
-                    border-radius: var(--radius-md); cursor: pointer;
-                    transition: background 0.12s, color 0.12s, border-color 0.12s;
+                .eq2-chip--empty { color: var(--text-muted); font-style: italic; }
+                .eq2-row-ob { min-width: 0; }
+                .eq2-row-menu {
+                    display: flex; align-items: center; justify-content: center; justify-self: end;
+                    width: 28px; height: 28px; padding: 0; background: none; border: none;
+                    border-radius: var(--radius-sm); color: var(--text-muted); cursor: pointer;
+                    transition: background 0.12s, color 0.12s;
                 }
-                .eq2-edit-btn:hover { background: var(--surface-hover); color: var(--text-primary); border-color: var(--accent); }
-                .eq2-edit-icon--active { color: var(--accent); }
+                .eq2-row-menu:hover { background: var(--surface-hover); color: var(--text-primary); }
+                .eq2-row--expanded .eq2-row-menu { color: var(--accent-text); }
+                @media (max-width: 760px) {
+                    .eq2-row-bar { grid-template-columns: 34px minmax(0, 1fr) 32px; row-gap: 8px; }
+                    .eq2-row-chips, .eq2-row-ob { grid-column: 2 / 3; }
+                }
 
-                /* Expanded panel */
+                /* Los campos cuelgan de la fila, sangrados bajo el nombre. */
                 .eq2-row-panel {
-                    display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: flex-end;
-                    padding: var(--space-3) var(--space-4) var(--space-3) 62px;
-                    background: var(--surface-subtle, rgba(0,0,0,0.02));
-                    border-top: 1px dashed var(--surface-border);
+                    display: flex; align-items: flex-end; gap: var(--space-4); flex-wrap: wrap;
+                    padding: 0 var(--space-4) var(--space-4) 60px;
                 }
                 .eq2-panel-actions {
-                    display: flex; gap: 6px; align-items: center; margin-left: auto; flex-shrink: 0;
+                    display: flex; align-items: center; gap: var(--space-2);
+                    margin-left: auto; flex-wrap: wrap;
                 }
-                .eq2-baja-btn { color: var(--danger-500) !important; }
+                .eq2-baja-btn { color: var(--danger-alerta) !important; }
+                @media (max-width: 760px) {
+                    .eq2-row-panel { padding-left: var(--space-4); }
+                }
 
                 /* ── Card action popover ─────────────────────────────────── */
                 .eq2-card-popover {
@@ -2184,10 +2286,11 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
                 /* ── Shared helpers ──────────────────────────────────────── */
                 .eq-search-wrap {
-                    display: flex; align-items: center; gap: var(--space-2);
-                    border: 1px solid var(--surface-border); border-radius: var(--radius-md);
-                    padding: 0 var(--space-2); background: var(--surface); min-width: 200px;
+                    display: flex; align-items: center; gap: 9px; height: 38px;
+                    border: 1px solid var(--surface-border); border-radius: 8px;
+                    padding: 0 12px; background: none; min-width: 200px; max-width: 320px; flex: 1;
                 }
+                .eq-search-wrap:focus-within { border-color: var(--accent); }
                 .eq-search-wrap .form-input { border: none; box-shadow: none; background: transparent; padding: 6px 0; }
                 .eq-empty-state {
                     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -2198,8 +2301,8 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 /* ── Controls (labels + inputs) ──────────────────────────── */
                 .eq-ctrl { display: flex; flex-direction: column; gap: 3px; min-width: 120px; }
                 .eq-ctrl-label {
-                    font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
-                    text-transform: uppercase; color: var(--text-muted);
+                    font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em;
+                    text-transform: uppercase; color: var(--text-secondary);
                 }
                 .eq-ctrl--wide { min-width: 190px; }
                 .eq-select {
@@ -2295,28 +2398,6 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 .eq-edit-modal-body .eq-ac-input { font-size: var(--text-base); }
 
                 /* ── Add section ─────────────────────────────────────────── */
-                .eq-prow-list { display: flex; flex-direction: column; }
-                .eq-prow-info { flex: 0 0 auto; cursor: pointer; min-width: 120px; }
-                .eq-worker-avatar {
-                    width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
-                    display: flex; align-items: center; justify-content: center;
-                    font-weight: 700; font-size: var(--text-xs); text-transform: uppercase;
-                    background: rgba(0,110,220,0.12); color: var(--accent-text, #4d9fff);
-                    border: 1.5px solid rgba(0,110,220,0.2);
-                    overflow: hidden;
-                }
-                .eq-worker-name { font-weight: 500; font-size: var(--text-sm); color: var(--text-primary); display: block; }
-                .eq-worker-rut { font-size: var(--text-xs); color: var(--text-muted); display: block; margin-top: 1px; }
-                .eq-add-row {
-                    display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
-                    padding: var(--space-3) var(--space-4);
-                    border-bottom: 1px solid var(--surface-border);
-                    transition: background 0.12s;
-                }
-                .eq-add-row:last-of-type { border-bottom: none; }
-                .eq-add-row:hover { background: var(--surface-hover); }
-                .eq-add-controls { display: flex; gap: var(--space-3); flex: 1; flex-wrap: wrap; align-items: flex-end; }
-                .eq-prow-bar-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
                 .eq-add-note {
                     display: flex; align-items: center; gap: 6px;
                     padding: var(--space-2) var(--space-4) var(--space-3);
@@ -2324,24 +2405,33 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 }
 
                 /* ── Pool card (unassigned, grid) ───────────────────────── */
-                .eq2-card--pool {
-                    border-style: dashed;
-                    opacity: 0.88;
+                /* No están en esta obra: lo dice el aro punteado del avatar, no
+                   un borde punteado en toda la tarjeta, que la sacaba de la
+                   familia de tarjetas sin necesidad. */
+                .eq2-card--pool .eq2-card-avatar {
+                    background: none; color: var(--text-secondary);
+                    border: 1.5px dashed var(--eq-dash, var(--surface-border));
                 }
-                .eq2-card--pool:hover { opacity: 1; }
+                .eq2-pool-add {
+                    padding: 5px 14px; background: none;
+                    border: 1px solid var(--surface-border); border-radius: 7px;
+                    color: var(--text-primary); font-family: inherit; font-size: 11.5px;
+                    cursor: pointer; transition: border-color 0.12s, background 0.12s;
+                }
+                .eq2-pool-add:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-tint); }
+                .eq2-pool-add:disabled { opacity: 0.5; cursor: default; }
 
-                /* ── Pool row (unassigned, list) ─────────────────────────── */
+                /* Fila del pool (vista de lista) */
                 .eq-pool-row {
-                    display: flex; align-items: center; gap: var(--space-3);
-                    padding: var(--space-3) var(--space-4);
-                    border-bottom: 1px solid var(--surface-border);
-                    cursor: pointer;
-                    transition: background 0.12s;
+                    display: grid; grid-template-columns: 34px minmax(0, 1fr) auto;
+                    align-items: center; gap: 14px;
+                    padding: 10px var(--space-4);
+                    border-top: 1px solid var(--eq-rule, var(--surface-border));
+                    cursor: pointer; transition: background 0.12s;
                 }
-                .eq-pool-row:last-of-type { border-bottom: none; }
+                .eq-pool-row:first-child { border-top: none; }
                 .eq-pool-row:hover { background: var(--surface-hover); }
                 .eq-pool-row--open { background: var(--accent-tint); }
-                .eq-pool-add-btn { margin-left: auto; flex-shrink: 0; }
 
                 /* ── Asignar a equipo modal list ─────────────────────────── */
                 .eq-team-list { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -2385,32 +2475,49 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 .eq-team-meta { font-size: var(--text-xs); color: var(--text-muted); margin-top: 1px; }
 
                 /* ── Dados de baja ───────────────────────────────────────── */
-                .eq-baja-section { border-top: 1px solid var(--surface-border); margin-top: var(--space-2); }
                 .eq-baja-summary {
-                    font-size: var(--text-xs); font-weight: 700; color: var(--text-muted);
-                    text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer;
-                    padding: var(--space-3) var(--space-4); list-style: none; display: block;
-                    user-select: none;
+                    display: flex; align-items: center; gap: var(--space-2);
+                    font-size: 12.5px; color: var(--text-secondary);
+                    cursor: pointer; list-style: none; user-select: none;
+                    transition: color 0.12s;
+                }
+                .eq-baja-summary:hover { color: var(--text-primary); }
+                .eq-baja-chevron { transition: transform 0.15s; flex-shrink: 0; }
+                details[open] .eq-baja-chevron { transform: rotate(90deg); }
+                .eq-baja-list {
+                    margin-top: var(--space-3);
+                    border: 1px solid var(--surface-border); border-radius: 12px; overflow: hidden;
                 }
                 .eq-baja-summary::-webkit-details-marker { display: none; }
-                .eq-baja-summary::before { content: '▶  '; font-size: 9px; }
-                details[open] .eq-baja-summary::before { content: '▼  '; }
-
+                
                 /* ── Onboarding DS 44 ────────────────────────────────────── */
+                /* El relleno de la barra es SIEMPRE el acento: el estado lo dice
+                   el recuento (naranjo + punto cuando quedan bloqueantes), no un
+                   semáforo de tres colores compitiendo con la marca. */
                 .eq-ob-badge {
-                    display: inline-flex; align-items: center; gap: 6px;
-                    flex-shrink: 0; font-size: 0.72rem; color: var(--text-muted);
+                    display: inline-flex; align-items: center; gap: 7px;
+                    flex-shrink: 0; font-size: 10.5px; color: var(--text-secondary);
                     white-space: nowrap;
                 }
-                .eq2-card .eq-ob-badge { margin-top: 8px; }
                 .eq-ob-bar {
-                    display: block; width: 52px; height: 4px; border-radius: 999px;
-                    background: var(--surface-elevated); overflow: hidden;
+                    display: block; width: 46px; height: 3px; border-radius: 999px;
+                    background: var(--surface-hover); overflow: hidden; flex-shrink: 0;
                 }
-                .eq-ob-bar-fill { display: block; height: 100%; transition: width 300ms ease; }
-                .eq-ob-count { font-variant-numeric: tabular-nums; }
-                .eq-ob-apto { display: inline-flex; align-items: center; gap: 3px; color: #10b981; }
-                .eq-ob-bloq { display: inline-flex; align-items: center; gap: 3px; color: #ef4444; }
+                .eq-ob-bar-fill {
+                    display: block; height: 100%; background: var(--accent);
+                    transition: width 300ms ease;
+                }
+                .eq-ob-count {
+                    display: inline-flex; align-items: center; gap: 4px;
+                    font-variant-numeric: tabular-nums;
+                }
+                .eq-ob-count--warn { color: var(--danger-alerta); }
+                .eq-ob-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--danger-alerta); }
+                /* En lista ocupa una columna: el recuento va sobre la barra. */
+                .eq-ob-badge--row { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+                .eq-ob-badge--row .eq-ob-bar { width: 100%; }
+                .eq-ob-apto { display: inline-flex; align-items: center; gap: 3px; color: var(--success-apagado); }
+                .eq-ob-bloq { display: inline-flex; align-items: center; gap: 3px; color: var(--danger-alerta); }
 
                 /* El panel de la fila es flex con wrap: el bloque ocupa una línea entera. */
                 .eq-ob-block {

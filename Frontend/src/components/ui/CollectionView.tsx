@@ -12,6 +12,10 @@ export interface CollectionViewProps {
   mode: CollectionMode;
   onModeChange: (m: CollectionMode) => void;
   count?: number;
+  /** Sustantivo del recuento ("persona", "obra"…). Por omisión, "elemento". */
+  countNoun?: string;
+  /** Pie de la colección: paginación, «Cargar más», totales. */
+  footer?: React.ReactNode;
   list: React.ReactNode;
   grid: React.ReactNode;
   actions?: React.ReactNode;
@@ -20,7 +24,7 @@ export interface CollectionViewProps {
 export default function CollectionView({
   searchValue, onSearchChange, searchPlaceholder,
   filters, sort, mode, onModeChange,
-  count, list, grid, actions,
+  count, countNoun = 'elemento', footer, list, grid, actions,
 }: CollectionViewProps) {
   return (
     <div className="ui-collection">
@@ -34,28 +38,28 @@ export default function CollectionView({
           {filters && <div className="ui-collection-filters">{filters}</div>}
           {sort && <div className="ui-collection-sort">{sort}</div>}
           {count !== undefined && (
-            <span className="ui-collection-count">{count} elemento{count !== 1 ? 's' : ''}</span>
+            <span className="ui-collection-count">{count} {countNoun}{count !== 1 ? 's' : ''}</span>
           )}
         </div>
         <div className="ui-collection-toolbar-right">
           <div className="ui-collection-mode-toggle" role="group" aria-label="Vista">
             <button
-              className={`ui-collection-mode-btn${mode === 'list' ? ' active' : ''}`}
-              onClick={() => onModeChange('list')}
-              aria-pressed={mode === 'list'}
-              aria-label="Vista lista"
-              title="Lista"
-            >
-              <FiList size={16} />
-            </button>
-            <button
               className={`ui-collection-mode-btn${mode === 'grid' ? ' active' : ''}`}
               onClick={() => onModeChange('grid')}
               aria-pressed={mode === 'grid'}
-              aria-label="Vista grilla"
-              title="Grilla"
+              aria-label="Cuadrícula"
+              title="Cuadrícula"
             >
-              <FiGrid size={16} />
+              <FiGrid size={15} />
+            </button>
+            <button
+              className={`ui-collection-mode-btn${mode === 'list' ? ' active' : ''}`}
+              onClick={() => onModeChange('list')}
+              aria-pressed={mode === 'list'}
+              aria-label="Lista"
+              title="Lista"
+            >
+              <FiList size={15} />
             </button>
           </div>
           {actions && <div className="ui-collection-actions">{actions}</div>}
@@ -64,6 +68,7 @@ export default function CollectionView({
       <div className="ui-collection-body">
         {mode === 'list' ? list : grid}
       </div>
+      {footer && <div className="ui-collection-footer">{footer}</div>}
       <style>{`
         .ui-collection { display: flex; flex-direction: column; gap: var(--space-4); }
         .ui-collection-toolbar {
@@ -93,32 +98,43 @@ export default function CollectionView({
           gap: var(--space-2);
         }
         .ui-collection-count {
-          font-size: var(--text-xs);
-          color: var(--text-muted);
+          font-size: 13px;
+          color: var(--text-secondary);
           white-space: nowrap;
           padding-left: var(--space-1);
         }
         .ui-collection-mode-toggle {
           display: flex;
+          gap: 3px;
+          padding: 3px;
           border: 1px solid var(--surface-border);
-          border-radius: var(--radius-sm);
-          overflow: hidden;
+          border-radius: 9px;
         }
         .ui-collection-mode-btn {
           display: flex;
           align-items: center;
           justify-content: center;
           width: 32px;
-          height: 32px;
+          height: 28px;
           border: none;
+          border-radius: 6px;
           background: none;
-          color: var(--text-muted);
+          color: var(--text-secondary);
           cursor: pointer;
           transition: background var(--transition-fast), color var(--transition-fast);
         }
-        .ui-collection-mode-btn:hover { background: var(--surface-hover); color: var(--text-primary); }
-        .ui-collection-mode-btn.active { background: var(--accent-tint); color: var(--accent); }
+        .ui-collection-mode-btn:hover { color: var(--text-primary); }
+        .ui-collection-mode-btn.active { background: var(--surface-hover); color: var(--text-primary); }
         .ui-collection-actions { display: flex; gap: var(--space-2); }
+        /* Pie: cuánto se está viendo del total y cómo pedir más. */
+        .ui-collection-footer {
+          display: flex;
+          align-items: center;
+          gap: var(--space-3);
+          padding-top: var(--space-2);
+          font-size: var(--text-xs);
+          color: var(--text-muted);
+        }
         .ui-collection-body { min-height: 200px; }
         @media (max-width: 640px) {
           .ui-collection-toolbar { flex-direction: column; align-items: stretch; }

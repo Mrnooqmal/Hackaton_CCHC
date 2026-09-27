@@ -4,7 +4,10 @@ import { apiBaseUrl, personasApi } from '../api/client';
 import type { BulkPreviewRow, BulkCatalogos, BulkRowInput, BulkResultados } from '../api/personas.api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader } from '../components/ui';
-import { FiDownload, FiUpload, FiCheckCircle, FiAlertTriangle, FiInfo, FiX } from 'react-icons/fi';
+import {
+    FiDownload, FiUpload, FiCheckCircle, FiAlertTriangle, FiInfo, FiX,
+    FiCheck, FiFilter, FiFileText,
+} from 'react-icons/fi';
 
 // Validación local del RUT (mod 11) — para re-validar al vuelo mientras se edita.
 const rutValido = (rut: string): boolean => {
@@ -71,6 +74,56 @@ function revalidar(rows: EditableRow[], cat: BulkCatalogos): EditableRow[] {
 
 const ESTADO_ORDER: Record<string, number> = { error: 0, advertencia: 1, ok: 2 };
 
+const PASOS = [
+    { id: 'form', label: 'Subir' },
+    { id: 'review', label: 'Revisar y corregir' },
+    { id: 'result', label: 'Resultado' },
+] as const;
+
+/**
+ * Los tres pasos a la vista desde el principio: el que viene ya se anuncia, y
+ * queda claro que subir el archivo no crea a nadie todavía.
+ */
+function Pasos({ actual }: { actual: 'form' | 'review' | 'result' }) {
+    const i = PASOS.findIndex((x) => x.id === actual);
+    return (
+        <ol className="cm-pasos">
+            {PASOS.map((paso, idx) => (
+                <li key={paso.id} className="cm-paso-wrap">
+                    {idx > 0 && <span className="cm-paso-line" aria-hidden="true" />}
+                    <span
+                        className={`cm-paso${idx === i ? ' cm-paso--on' : ''}${idx < i ? ' cm-paso--done' : ''}`}
+                        aria-current={idx === i ? 'step' : undefined}
+                    >
+                        <span className="cm-paso-num" aria-hidden="true">
+                            {idx < i ? <FiCheck size={13} /> : idx + 1}
+                        </span>
+                        {paso.label}
+                    </span>
+                </li>
+            ))}
+        </ol>
+    );
+}
+
+/**
+ * Campo al que apunta un mensaje de validación. El error se marca en la celda
+ * culpable, no solo al final de la fila: así se corrige donde se lee.
+ */
+const campoCulpable = (msg: string): keyof BulkPreviewRow | null => {
+    const m = msg.toLowerCase();
+    if (m.includes('rut')) return 'rut';
+    if (m.includes('nombre')) return 'nombre';
+    if (m.includes('rol')) return 'rol';
+    if (m.includes('obra')) return 'obra';
+    if (m.includes('supervisor')) return 'supervisor';
+    return null;
+};
+const campoConError = (r: EditableRow, campo: keyof BulkPreviewRow) =>
+    r.errores.some((e) => campoCulpable(e) === campo);
+const campoConAdvertencia = (r: EditableRow, campo: keyof BulkPreviewRow) =>
+    r.advertencias.some((e) => campoCulpable(e) === campo);
+
 export default function PersonasCargaMasiva() {
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -85,6 +138,9 @@ export default function PersonasCargaMasiva() {
     const [rows, setRows] = useState<EditableRow[]>([]);
     const [catalogos, setCatalogos] = useState<BulkCatalogos | null>(null);
     const [resultado, setResultado] = useState<BulkResultados | null>(null);
+    // Con planillas largas lo que importa son las filas que no pasan: el filtro
+    // deja ver solo esas sin perder el recuento total, que manda arriba.
+    const [soloProblemas, setSoloProblemas] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const readFileAsBase64 = (file: File) => new Promise<string>((resolve, reject) => {
@@ -180,13 +236,14 @@ export default function PersonasCargaMasiva() {
 
     const reset = () => {
         setStep('form'); setUploadFile(null); setRows([]); setCatalogos(null);
-        setResultado(null); setError('');
+        setResultado(null); setError(''); setSoloProblemas(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const incluidasOk = rows.filter((r) => r.incluir && r.estado !== 'error').length;
     const conError = rows.filter((r) => r.estado === 'error').length;
     const conAdv = rows.filter((r) => r.estado === 'advertencia').length;
+    const visibles = soloProblemas ? rows.filter((r) => r.estado !== 'ok') : rows;
 
     return (
         <>
@@ -197,13 +254,15 @@ export default function PersonasCargaMasiva() {
                     backLabel="Personas"
                     title="Carga masiva de personas"
                     description={
-                        (step === 'form' && 'Descarga la plantilla, complétala y súbela para revisar antes de cargar.') ||
-                        (step === 'review' && 'Revisa y corrige los datos. Solo se crearán las filas marcadas y sin error.') ||
+                        (step === 'form' && 'Nada se crea hasta que revises el archivo. La validación es el paso 2.') ||
+                        (step === 'review' && 'Corrige aquí mismo. Solo se crean las filas marcadas y sin error.') ||
                         (step === 'result' && 'Resultado de la carga.') ||
                         undefined
                     }
                 />
                 <div style={{ maxWidth: step === 'review' ? 1300 : 900, margin: '0 auto' }}>
+
+                    <div style={{ marginBottom: 'var(--space-6)' }}><Pasos actual={step} /></div>
 
                     {error && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: 'var(--danger-700)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
@@ -214,50 +273,66 @@ export default function PersonasCargaMasiva() {
                     {/* ── Paso 1: subir ── */}
                     {step === 'form' && (
                         <form onSubmit={handleValidar} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-                            <div className="cm-section">
-                                <div className="cm-section-header"><span className="cm-step-num">1</span>
-                                    <div><div className="cm-section-title">Descarga la plantilla</div>
-                                        <div className="cm-section-sub">Trae desplegables de rol, cargo y obra de tu empresa.</div></div>
+                            {/* Cada bloque es un rótulo con regla: la numeración ya
+                                la lleva la barra de pasos, y repetirla en cada
+                                encabezado contaba dos veces lo mismo. */}
+                            <section aria-label="Descarga la plantilla">
+                                <div className="cm-rotulo">
+                                    <span className="cm-rotulo-title">Descarga la plantilla</span>
+                                    <span className="cm-rotulo-sub">Trae los roles y cargos de tu empresa como desplegables.</span>
                                 </div>
-                                <div className="cm-section-body">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
                                     <button type="button" className="btn btn-secondary" onClick={handleDownloadTemplate}><FiDownload /> Descargar plantilla Excel</button>
-                                    {downloadError && <p style={{ color: 'var(--danger-600)', fontSize: 'var(--text-sm)', marginTop: 8 }}>{downloadError}</p>}
-                                    <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                                        <strong style={{ color: 'var(--text-primary)' }}>Obligatorias:</strong> rut, nombre, rol<br />
-                                        <strong style={{ color: 'var(--text-primary)' }}>obra:</strong> elígela del desplegable (o escribe el código, varias separadas por coma).<br />
-                                        <strong style={{ color: 'var(--text-primary)' }}>supervisor:</strong> RUT del supervisor de la cuadrilla (puede venir en el mismo Excel con rol Supervisor).
-                                    </div>
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Obligatorios: RUT, nombre y rol.</span>
                                 </div>
-                            </div>
+                                {downloadError && <p style={{ color: 'var(--danger-600)', fontSize: 'var(--text-sm)', marginTop: 8 }}>{downloadError}</p>}
+                                <ul className="cm-reglas">
+                                    <li><strong>obra:</strong> elígela del desplegable (o escribe el código; varias separadas por coma).</li>
+                                    <li><strong>supervisor:</strong> RUT del supervisor de la cuadrilla (puede venir en el mismo Excel con rol Supervisor).</li>
+                                </ul>
+                            </section>
 
-                            <div className="cm-section">
-                                <div className="cm-section-header"><span className="cm-step-num">2</span>
-                                    <div><div className="cm-section-title">Sube el archivo</div>
-                                        <div className="cm-section-sub">Lo validamos y te dejamos revisar antes de crear nada.</div></div>
+                            <section aria-label="Sube el archivo">
+                                <div className="cm-rotulo">
+                                    <span className="cm-rotulo-title">Sube el archivo</span>
+                                    <span className="cm-rotulo-sub">Solo .xlsx</span>
                                 </div>
-                                <div className="cm-section-body">
-                                    <div className="cm-dropzone" onClick={() => fileInputRef.current?.click()} style={{ borderColor: uploadFile ? 'var(--primary-400)' : undefined, background: uploadFile ? 'rgba(0,110,220,0.04)' : undefined }}>
-                                        {uploadFile ? (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                                                <FiCheckCircle size={24} style={{ color: 'var(--primary-500)', flexShrink: 0 }} />
-                                                <div><div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--primary-600)' }}>{uploadFile.name}</div>
-                                                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{(uploadFile.size / 1024).toFixed(1)} KB · Haz clic para cambiar</div></div>
-                                                <button type="button" onClick={e => { e.stopPropagation(); setUploadFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><FiX /></button>
-                                            </div>
-                                        ) : (
-                                            <><FiUpload size={28} style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }} />
-                                                <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>Haz clic para seleccionar</div>
-                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 4 }}>Solo archivos .xlsx</div></>
-                                        )}
-                                    </div>
-                                    <input ref={fileInputRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={e => setUploadFile(e.target.files?.[0] || null)} />
+                                <div
+                                    className={`cm-dropzone${uploadFile ? ' cm-dropzone--on' : ''}`}
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <span className="cm-dropzone-icon"><FiUpload size={24} /></span>
+                                    <span className="cm-dropzone-text">
+                                        <span className="cm-dropzone-title">Arrastra la plantilla completada</span>
+                                        <span className="cm-dropzone-sub">o búscala en tu equipo</span>
+                                    </span>
+                                    {/* Archivo elegido: se confirma qué se va a validar, antes de validar. */}
+                                    {uploadFile && (
+                                        <span className="cm-file">
+                                            <FiFileText size={16} style={{ color: 'var(--accent-text)', flexShrink: 0 }} />
+                                            <span className="cm-file-info">
+                                                <span className="cm-file-name">{uploadFile.name}</span>
+                                                <span className="cm-file-meta">{(uploadFile.size / 1024).toFixed(1)} KB</span>
+                                            </span>
+                                            <button
+                                                type="button"
+                                                aria-label="Quitar archivo"
+                                                className="cm-file-x"
+                                                onClick={e => { e.stopPropagation(); setUploadFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                                            >
+                                                <FiX size={15} />
+                                            </button>
+                                        </span>
+                                    )}
                                 </div>
-                            </div>
+                                <input ref={fileInputRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={e => setUploadFile(e.target.files?.[0] || null)} />
+                            </section>
 
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', paddingBottom: 'var(--space-8)' }}>
+                            <div className="cm-repisa">
+                                <span className="cm-repisa-hint">Subir el archivo no crea a nadie: en el paso 2 eliges qué filas se cargan.</span>
                                 <button type="button" className="btn btn-secondary" onClick={() => navigate('/personas')}>Cancelar</button>
                                 <button type="submit" className="btn btn-primary" disabled={loading || !uploadFile}>
-                                    {loading ? 'Validando…' : <>Validar y revisar</>}
+                                    {loading ? 'Validando…' : 'Revisar el archivo'}
                                 </button>
                             </div>
                         </form>
@@ -266,14 +341,31 @@ export default function PersonasCargaMasiva() {
                     {/* ── Paso 2: revisión editable ── */}
                     {step === 'review' && catalogos && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', paddingBottom: 'var(--space-8)' }}>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', alignItems: 'center' }}>
-                                <span className="cm-chip cm-chip-ok"><FiCheckCircle size={13} /> {incluidasOk} a cargar</span>
-                                <span className="cm-chip cm-chip-adv"><FiInfo size={13} /> {conAdv} con advertencia</span>
-                                <span className="cm-chip cm-chip-err"><FiAlertTriangle size={13} /> {conError} con error</span>
-                                <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
+                            {/* El recuento manda: dice cuántas entran y cuántas no,
+                                antes de la tabla. El error va en naranjo y con punto;
+                                la advertencia se carga igual, así que no se tiñe. */}
+                            <div className="cm-cuenta">
+                                <span className="cm-chip"><strong>{incluidasOk}</strong> se van a crear</span>
+                                <span className="cm-chip cm-chip--muted">{conAdv} con advertencia</span>
+                                {conError > 0 && (
+                                    <span className="cm-chip cm-chip--err">
+                                        <span className="cm-dot" aria-hidden="true" />
+                                        {conError} con error, no se cargan
+                                    </span>
+                                )}
+                                <span style={{ flex: 1 }} />
+                                <label className="cm-check">
                                     <input type="checkbox" checked={sendWelcomeEmail} onChange={e => setSendWelcomeEmail(e.target.checked)} />
                                     Enviar credenciales por email
                                 </label>
+                                <button
+                                    type="button"
+                                    className={`cm-filtro${soloProblemas ? ' cm-filtro--on' : ''}`}
+                                    aria-pressed={soloProblemas}
+                                    onClick={() => setSoloProblemas(v => !v)}
+                                >
+                                    <FiFilter size={14} /> Solo con problemas
+                                </button>
                             </div>
 
                             <div style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', overflowX: 'auto' }}>
@@ -282,7 +374,7 @@ export default function PersonasCargaMasiva() {
                                         <tr>
                                             <th style={{ width: 36, position: 'sticky', left: 0, zIndex: 2 }}></th>
                                             <th style={{ width: 44 }}>Fila</th>
-                                            <th style={{ minWidth: 150 }}>Estado</th>
+                                            <th style={{ width: 34 }} aria-label="Estado" />
                                             <th>Nombre</th>
                                             <th>Ap. paterno</th>
                                             <th>Ap. materno</th>
@@ -299,30 +391,32 @@ export default function PersonasCargaMasiva() {
                                             <th>Contacto teléfono</th>
                                             <th>Contacto relación</th>
                                             <th>Cursos</th>
+                                            <th style={{ minWidth: 200 }}>Observación</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {rows.map((r, idx) => (
+                                        {visibles.map((r) => {
+                                            const idx = rows.indexOf(r);
+                                            const cls = (campo: Parameters<typeof campoConError>[1]) =>
+                                                `cm-input${campoConError(r, campo) ? ' cm-input--err' : campoConAdvertencia(r, campo) ? ' cm-input--adv' : ''}`;
+                                            return (
                                             <tr key={r.filaExcel} className={`cm-row cm-row-${r.estado}`} style={{ opacity: r.incluir ? 1 : 0.45 }}>
-                                                <td className="cm-sticky-col"><input type="checkbox" checked={r.incluir} onChange={e => updateRow(idx, { incluir: e.target.checked })} title={r.estado === 'error' ? 'No se puede cargar con errores' : 'Incluir en la carga'} /></td>
+                                                <td className="cm-sticky-col"><input type="checkbox" checked={r.incluir} disabled={r.estado === 'error'} onChange={e => updateRow(idx, { incluir: e.target.checked })} title={r.estado === 'error' ? 'No se puede cargar con errores' : 'Incluir en la carga'} /></td>
                                                 <td style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{r.filaExcel}</td>
                                                 <td>
-                                                    {r.estado === 'ok' && <span className="cm-badge cm-badge-ok">Listo</span>}
-                                                    {r.estado === 'advertencia' && <span className="cm-badge cm-badge-adv" title={r.advertencias.join(' · ')}>Advertencia</span>}
-                                                    {r.estado === 'error' && <span className="cm-badge cm-badge-err" title={r.errores.join(' · ')}>Error</span>}
-                                                    {(r.errores.length > 0 || r.advertencias.length > 0) && (
-                                                        <div className="cm-msgs">{[...r.errores, ...r.advertencias].join(' · ')}</div>
-                                                    )}
+                                                    {r.estado === 'ok' && <FiCheck size={15} style={{ color: 'var(--text-secondary)' }} aria-label="Listo" />}
+                                                    {r.estado === 'advertencia' && <FiInfo size={15} style={{ color: 'var(--text-secondary)' }} aria-label="Con advertencia" />}
+                                                    {r.estado === 'error' && <FiAlertTriangle size={15} style={{ color: 'var(--danger-alerta)' }} aria-label="Con error" />}
                                                 </td>
-                                                <td><input className="cm-input" style={{ width: 130 }} value={r.nombre} onChange={e => updateRow(idx, { nombre: e.target.value })} /></td>
+                                                <td><input className={cls('nombre')} style={{ width: 130 }} value={r.nombre} onChange={e => updateRow(idx, { nombre: e.target.value })} /></td>
                                                 <td><input className="cm-input" style={{ width: 110 }} value={r.apellidoPaterno || ''} onChange={e => updateRow(idx, { apellidoPaterno: e.target.value })} placeholder="—" /></td>
                                                 <td><input className="cm-input" style={{ width: 110 }} value={r.apellidoMaterno || ''} onChange={e => updateRow(idx, { apellidoMaterno: e.target.value })} placeholder="—" /></td>
-                                                <td><input className="cm-input" style={{ width: 110, fontFamily: 'monospace' }} value={r.rut} onChange={e => updateRow(idx, { rut: e.target.value })} /></td>
+                                                <td><input className={cls('rut')} style={{ width: 110, fontFamily: 'monospace' }} value={r.rut} onChange={e => updateRow(idx, { rut: e.target.value })} /></td>
                                                 <td><input className="cm-input" style={{ width: 120 }} value={r.fechaNacimiento || ''} onChange={e => updateRow(idx, { fechaNacimiento: e.target.value })} placeholder="AAAA-MM-DD" /></td>
                                                 <td><input className="cm-input" style={{ width: 170 }} value={r.email || ''} onChange={e => updateRow(idx, { email: e.target.value })} placeholder="—" /></td>
                                                 <td><input className="cm-input" style={{ width: 120 }} value={r.telefono || ''} onChange={e => updateRow(idx, { telefono: e.target.value })} placeholder="—" /></td>
                                                 <td>
-                                                    <select className="cm-input" style={{ width: 140 }} value={r.rol} onChange={e => updateRow(idx, { rol: e.target.value })}>
+                                                    <select className={cls('rol')} style={{ width: 140 }} value={r.rol} onChange={e => updateRow(idx, { rol: e.target.value })}>
                                                         <option value="">—</option>
                                                         {!catalogos.roles.some(x => x.toLowerCase() === (r.rol || '').toLowerCase()) && r.rol && <option value={r.rol}>{r.rol} (inválido)</option>}
                                                         {catalogos.roles.map(x => <option key={x} value={x}>{x}</option>)}
@@ -335,8 +429,8 @@ export default function PersonasCargaMasiva() {
                                                         {catalogos.cargos.map(x => <option key={x} value={x}>{x}</option>)}
                                                     </select>
                                                 </td>
-                                                <td><input className="cm-input" list="cm-obras" style={{ width: 160 }} value={r.obra || ''} onChange={e => updateRow(idx, { obra: e.target.value })} placeholder="—" /></td>
-                                                <td><input className="cm-input" list="cm-sups" style={{ width: 130, fontFamily: 'monospace' }} value={r.supervisor || ''} onChange={e => updateRow(idx, { supervisor: e.target.value })} placeholder="—" /></td>
+                                                <td><input className={cls('obra')} list="cm-obras" style={{ width: 160 }} value={r.obra || ''} onChange={e => updateRow(idx, { obra: e.target.value })} placeholder="—" /></td>
+                                                <td><input className={cls('supervisor')} list="cm-sups" style={{ width: 130, fontFamily: 'monospace' }} value={r.supervisor || ''} onChange={e => updateRow(idx, { supervisor: e.target.value })} placeholder="—" /></td>
                                                 <td>
                                                     <select className="cm-input" style={{ width: 150 }} value={r.nivelEscolar || ''} onChange={e => updateRow(idx, { nivelEscolar: e.target.value })}>
                                                         <option value="">—</option>
@@ -354,18 +448,28 @@ export default function PersonasCargaMasiva() {
                                                     </select>
                                                 </td>
                                                 <td><input className="cm-input" style={{ width: 200 }} value={r.cursos || ''} onChange={e => updateRow(idx, { cursos: e.target.value })} placeholder="Curso 1; Curso 2" /></td>
+                                                <td className={r.errores.length ? 'cm-obs cm-obs--err' : 'cm-obs'}>
+                                                    {[...r.errores, ...r.advertencias].join(' · ') || '—'}
+                                                </td>
                                             </tr>
-                                        ))}
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                                 <datalist id="cm-obras">{catalogos.obras.map(o => <option key={o.obraId} value={o.label} />)}</datalist>
                                 <datalist id="cm-sups">{catalogos.supervisores.map(s => <option key={s.rut} value={s.rut}>{s.nombre}</option>)}</datalist>
                             </div>
 
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                            <div className="cm-repisa">
                                 <button type="button" className="btn btn-secondary" onClick={reset} disabled={loading}>Volver</button>
+                                <span style={{ flex: 1 }} />
+                                <span className="cm-repisa-hint" style={{ marginRight: 0 }}>
+                                    {conError > 0
+                                        ? `Las ${conError} filas con error quedan fuera; puedes corregirlas aquí mismo.`
+                                        : 'Ninguna fila queda fuera.'}
+                                </span>
                                 <button type="button" className="btn btn-primary" onClick={handleConfirmar} disabled={loading || incluidasOk === 0}>
-                                    {loading ? 'Cargando…' : `Confirmar carga (${incluidasOk})`}
+                                    {loading ? 'Cargando…' : `Crear ${incluidasOk} persona${incluidasOk !== 1 ? 's' : ''}`}
                                 </button>
                             </div>
                         </div>
@@ -400,38 +504,150 @@ export default function PersonasCargaMasiva() {
             </div>
 
             <style>{`
-                .cm-section { border: 1px solid var(--surface-border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface-card); }
-                .cm-section-header { display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4) var(--space-6); background: var(--surface-elevated); border-bottom: 1px solid var(--surface-border); }
-                .cm-step-num { width: 28px; height: 28px; border-radius: 50%; background: #006edc; color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
-                .cm-section-title { font-size: var(--text-base); font-weight: 600; color: var(--text-primary); }
-                .cm-section-sub { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 2px; }
-                .cm-section-body { padding: var(--space-5) var(--space-6); }
-                .cm-dropzone { border: 2px dashed var(--surface-border); border-radius: var(--radius-md); padding: var(--space-8) var(--space-6); text-align: center; cursor: pointer; transition: all 0.2s; background: var(--surface-elevated); }
-                .cm-dropzone:hover { border-color: var(--primary-400); background: rgba(0,110,220,0.04); }
-                .cm-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: var(--text-xs); font-weight: 600; }
-                .cm-chip-ok { background: rgba(34,197,94,0.1); color: var(--success-600); }
-                .cm-chip-adv { background: rgba(234,179,8,0.12); color: var(--warning-600); }
-                .cm-chip-err { background: rgba(239,68,68,0.1); color: var(--danger-600); }
-                .cm-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-                .cm-table th { padding: var(--space-2) var(--space-3); text-align: left; font-weight: 600; color: var(--text-secondary); background: var(--surface-elevated); white-space: nowrap; position: sticky; top: 0; }
-                .cm-table td { padding: var(--space-2) var(--space-3); border-top: 1px solid var(--surface-border); vertical-align: top; white-space: nowrap; }
+                /* ── Pasos ────────────────────────────────────── */
+                .cm-pasos { margin: 0; padding: 0; list-style: none; display: flex; align-items: center; flex-wrap: wrap; }
+                .cm-paso-wrap { display: flex; align-items: center; gap: 10px; }
+                .cm-paso-line { width: 40px; height: 1px; background: var(--surface-border); }
+                .cm-paso {
+                    display: inline-flex; align-items: center; gap: 9px;
+                    font-size: 13px; color: var(--text-secondary); white-space: nowrap;
+                }
+                .cm-paso--on { color: var(--text-primary); font-weight: 600; }
+                .cm-paso-num {
+                    display: flex; align-items: center; justify-content: center;
+                    width: 26px; height: 26px; border-radius: 50%;
+                    border: 1.5px solid var(--surface-border); color: var(--text-muted);
+                    font-size: 12px; font-weight: 700; flex-shrink: 0;
+                }
+                .cm-paso--on .cm-paso-num {
+                    background: var(--accent-tint); border-color: var(--accent); color: var(--accent-text);
+                }
+                .cm-paso--done .cm-paso-num { color: var(--text-secondary); }
+
+                /* ── Rótulo con regla ─────────────────────────── */
+                .cm-rotulo {
+                    display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap;
+                    padding-bottom: 9px; margin-bottom: var(--space-4);
+                    border-bottom: 1px solid var(--surface-border);
+                }
+                .cm-rotulo-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+                .cm-rotulo-sub { font-size: 11.5px; color: var(--text-secondary); }
+                .cm-reglas {
+                    margin: var(--space-4) 0 0; padding-left: 18px;
+                    font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.7;
+                }
+                .cm-reglas strong { color: var(--text-primary); }
+
+                /* ── Zona de arrastre ─────────────────────────── */
+                .cm-dropzone {
+                    display: flex; flex-direction: column; align-items: center; justify-content: center;
+                    gap: 12px; padding: var(--space-8); text-align: center; cursor: pointer;
+                    border: 1.5px dashed color-mix(in srgb, var(--surface-border) 55%, var(--text-muted));
+                    border-radius: 12px; transition: border-color 0.2s, background 0.2s;
+                }
+                .cm-dropzone:hover { border-color: var(--accent); }
+                .cm-dropzone--on { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+                .cm-dropzone-icon {
+                    display: flex; align-items: center; justify-content: center;
+                    width: 52px; height: 52px; border-radius: 50%;
+                    border: 1.5px solid var(--surface-border); color: var(--text-muted);
+                }
+                .cm-dropzone-text { display: flex; flex-direction: column; gap: 4px; }
+                .cm-dropzone-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+                .cm-dropzone-sub { font-size: 12.5px; color: var(--text-secondary); }
+                .cm-file {
+                    display: inline-flex; align-items: center; gap: 10px; margin-top: 6px;
+                    padding: 9px 12px; border: 1px solid var(--surface-border); border-radius: 9px;
+                }
+                .cm-file-info { display: flex; flex-direction: column; gap: 1px; text-align: left; }
+                .cm-file-name { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+                .cm-file-meta { font-size: 11px; color: var(--text-muted); }
+                .cm-file-x {
+                    display: flex; padding: 2px; background: none; border: none;
+                    color: var(--text-muted); cursor: pointer;
+                }
+                .cm-file-x:hover { color: var(--danger-alerta); }
+
+                /* ── Repisa de acciones ──────────────────────── */
+                .cm-repisa {
+                    display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+                    padding-top: 18px; margin-bottom: var(--space-8);
+                    border-top: 1px solid var(--surface-border);
+                }
+                .cm-repisa-hint { font-size: 12px; color: var(--text-muted); margin-right: auto; }
+
+                /* ── Recuento de la revisión ──────────────────── */
+                .cm-cuenta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+                .cm-chip {
+                    display: inline-flex; align-items: center; gap: 6px;
+                    padding: 5px 12px; border: 1px solid var(--surface-border); border-radius: 9999px;
+                    font-size: 12.5px; color: var(--text-primary);
+                }
+                .cm-chip strong { font-weight: 600; }
+                .cm-chip--muted { color: var(--text-secondary); }
+                .cm-chip--err {
+                    color: var(--danger-alerta);
+                    border-color: color-mix(in srgb, var(--danger-alerta) 45%, transparent);
+                }
+                .cm-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--danger-alerta); }
+                .cm-check {
+                    display: flex; align-items: center; gap: 8px;
+                    font-size: 12.5px; color: var(--text-secondary); cursor: pointer;
+                }
+                .cm-filtro {
+                    display: inline-flex; align-items: center; gap: 7px;
+                    padding: 7px 13px; background: none;
+                    border: 1px solid var(--surface-border); border-radius: 8px;
+                    color: var(--text-primary); font-family: inherit; font-size: 12.5px; cursor: pointer;
+                    transition: border-color 0.12s, background 0.12s;
+                }
+                .cm-filtro:hover { border-color: var(--accent); }
+                .cm-filtro--on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text); }
+
+                /* ── Tabla de revisión ─────────────────────────
+                   La advertencia se carga igual, así que la fila no se tiñe; el
+                   error sí bloquea, y se marca con el acento a la izquierda y en
+                   la celda culpable. */
+                .cm-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+                .cm-table th {
+                    padding: 9px var(--space-3); text-align: left; white-space: nowrap;
+                    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+                    color: var(--text-secondary); background: var(--surface-card);
+                    border-bottom: 1px solid var(--surface-border);
+                    position: sticky; top: 0;
+                }
+                .cm-table td {
+                    padding: var(--space-2) var(--space-3); vertical-align: middle; white-space: nowrap;
+                    border-top: 1px solid color-mix(in srgb, var(--surface-border) 70%, transparent);
+                }
                 .cm-table td.cm-sticky-col { position: sticky; left: 0; background: var(--surface-card); z-index: 1; }
-                .cm-table thead th:first-child { z-index: 3; background: var(--surface-elevated); }
-                .cm-row-error { background: rgba(239,68,68,0.04); }
-                .cm-row-advertencia { background: rgba(234,179,8,0.04); }
-                .cm-input { width: 100%; min-width: 90px; padding: 4px 6px; border: 1px solid var(--surface-border); border-radius: 6px; background: var(--surface-card); color: var(--text-primary); font-size: var(--text-sm); }
-                .cm-input:focus { outline: none; border-color: var(--primary-400); }
-                .cm-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-                .cm-badge-ok { background: rgba(34,197,94,0.12); color: var(--success-600); }
-                .cm-badge-adv { background: rgba(234,179,8,0.15); color: var(--warning-600); }
-                .cm-badge-err { background: rgba(239,68,68,0.12); color: var(--danger-600); }
-                .cm-msgs { font-size: 11px; color: var(--text-muted); margin-top: 3px; max-width: 220px; }
-                .cm-stat { padding: var(--space-5); border-radius: var(--radius-lg); display: flex; flex-direction: column; align-items: center; gap: 6px; }
-                .cm-stat-n { font-size: var(--text-3xl); font-weight: 800; }
+                .cm-table thead th:first-child { z-index: 3; }
+                .cm-row-error td:first-child { box-shadow: inset 2px 0 0 var(--danger-alerta); }
+                .cm-obs { white-space: normal; max-width: 260px; color: var(--text-secondary); font-size: 11.5px; }
+                .cm-obs--err { color: var(--danger-alerta); }
+                .cm-input {
+                    width: 100%; min-width: 90px; padding: 4px 8px;
+                    border: 1px solid var(--surface-border); border-radius: 6px;
+                    background: none; color: var(--text-primary); font-size: 12.5px; font-family: inherit;
+                }
+                .cm-input:focus { outline: none; border-color: var(--accent); }
+                .cm-input--err { border-color: color-mix(in srgb, var(--danger-alerta) 50%, transparent); color: var(--danger-alerta); }
+                .cm-input--adv { border-color: color-mix(in srgb, var(--surface-border) 40%, var(--text-muted)); }
+
+                /* ── Resultado ─────────────────────────────── */
+                .cm-stat {
+                    padding: var(--space-5); border-radius: 12px;
+                    display: flex; flex-direction: column; align-items: center; gap: 6px;
+                    border: 1px solid var(--surface-border); color: var(--text-primary);
+                }
+                .cm-stat-n { font-size: var(--text-3xl); font-weight: 700; font-variant-numeric: tabular-nums; }
                 .cm-stat-l { font-size: var(--text-sm); color: var(--text-secondary); }
-                .cm-stat-ok { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25); color: var(--success-600); }
-                .cm-stat-adv { background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.25); color: var(--warning-600); }
-                .cm-stat-err { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); color: var(--danger-600); }
+                .cm-stat-ok { color: var(--success-apagado); }
+                .cm-stat-adv { color: var(--text-secondary); }
+                .cm-stat-err {
+                    color: var(--danger-alerta);
+                    border-color: color-mix(in srgb, var(--danger-alerta) 40%, transparent);
+                }
             `}</style>
         </>
     );

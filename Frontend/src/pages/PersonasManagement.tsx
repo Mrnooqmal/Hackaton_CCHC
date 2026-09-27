@@ -13,10 +13,14 @@ import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { Select } from '../components/ui';
 import ConfirmModal from '../components/ConfirmModal';
 import ObraEquipoPanel from '../components/ObraEquipoPanel';
+import { DirectorioSkeleton } from '../components/personas/PersonasSkeleton';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 const AVATAR_TINT = { bg: 'rgba(0, 110, 220, 0.12)', fg: '#4d9fff', border: 'rgba(0, 110, 220, 0.25)' };
+
+/** Tamaño de tanda del directorio (rejilla y tabla). */
+const PAGINA = 24;
 
 function PersonaAvatar({ p, size = 40 }: { p: PersonaResponse; size?: number }) {
     return (
@@ -63,6 +67,9 @@ export default function PersonasManagement() {
     const [filterRol, setFilterRol] = useState('');
     const [filterCargo, setFilterCargo] = useState('');
     const [mode, setMode] = useState<CollectionMode>('grid');
+    // El directorio de una empresa mediana son cientos de personas: la rejilla
+    // muestra una tanda y el pie dice cuánto falta, en vez de pintarlas todas.
+    const [visibles, setVisibles] = useState(PAGINA);
 
     const [tenantRoles, setTenantRoles] = useState<TenantRole[]>([]);
 
@@ -97,6 +104,8 @@ export default function PersonasManagement() {
 
     useEffect(() => { fetchPersonas(); }, [tenantId, filterRol, selectedObraId, isObraScoped]);
 
+    useEffect(() => { setVisibles(PAGINA); }, [searchTerm, filterRol, filterCargo]);
+
     const filtered = personas.filter(p => {
         const s = searchTerm.toLowerCase().replace(/[.-]/g, '');
         const rut = p.rut.toLowerCase().replace(/[.-]/g, '');
@@ -107,10 +116,13 @@ export default function PersonasManagement() {
     });
 
     const obraNombre = selectedObra?.nombre || selectedObra?.codigo || 'la obra activa';
+    // La obra y su comuna encabezan la descripción: quien entró a trabajar en
+    // una obra necesita confirmar en cuál está antes de leer el resto.
+    const obraLugar = [obraNombre, selectedObra?.comuna].filter(Boolean).join(', ');
     const pageTitle = isObraScoped ? 'Equipo de obra' : 'Personas';
     const pageDescription = isObraScoped
-        ? `Cuadrillas, roles, cargos y onboarding del equipo de ${obraNombre}.`
-        : 'Directorio de personas, roles y accesos de la empresa.';
+        ? `${obraLugar} · Cuadrillas, cargos y onboarding`
+        : 'Directorio de personas, roles y accesos de la empresa';
 
     // DataTable columns
     const columns: DataTableColumn<PersonaResponse>[] = [
@@ -199,13 +211,17 @@ export default function PersonasManagement() {
                 <div style={{ gridColumn: '1/-1', padding: 'var(--space-10)', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No hay personas que coincidan con los filtros.
                 </div>
-            ) : filtered.map((p, i) => {
+            ) : filtered.slice(0, visibles).map((p, i) => {
+                const rolLabel = tenantRoles.find(r => r.id === p.rol)?.nombre || p.rol || '—';
                 const cardInner = (
                     <>
-                        <PersonaAvatar p={p} size={56} />
-                        <span className="pdir-name">{p.nombre} {p.apellido}</span>
-                        <span className="pdir-rut">{p.rut}</span>
-                        <span className="pdir-cargo">{getCargoLabel(p.cargo) || p.rol || '—'}</span>
+                        <PersonaAvatar p={p} size={52} />
+                        <span className="pdir-body">
+                            <span className="pdir-name">{p.nombre} {p.apellido}</span>
+                            <span className="pdir-rut">{p.rut}</span>
+                            <span className="pdir-cargo">{getCargoLabel(p.cargo) || '—'}</span>
+                        </span>
+                        <span className="pdir-rol">{rolLabel}</span>
                     </>
                 );
                 const style = { animationDelay: `${Math.min(i * 20, 400)}ms` };
@@ -221,7 +237,7 @@ export default function PersonasManagement() {
     const tableList = (
         <DataTable
             columns={columns}
-            rows={filtered}
+            rows={filtered.slice(0, visibles)}
             rowKey={(p) => p.personaId}
             loading={loading}
             onRowClick={canVerDetalle ? (p) => navigate(`/personas/${p.rut}`) : undefined}
@@ -282,12 +298,12 @@ export default function PersonasManagement() {
                         searchValue={searchTerm}
                         onSearchChange={setSearchTerm}
                         searchPlaceholder="Buscar por nombre o RUT…"
-                        count={filtered.length}
+                        count={loading ? undefined : filtered.length}
                         mode={mode}
                         onModeChange={setMode}
                         filters={
                             <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                                <div style={{ width: 160 }}>
+                                <div style={{ width: 164 }}>
                                     <Select
                                         ariaLabel="Filtrar por rol"
                                         value={filterRol}
@@ -311,8 +327,23 @@ export default function PersonasManagement() {
                                 </div>
                             </div>
                         }
-                        list={tableList}
-                        grid={cardGrid}
+                        countNoun="persona"
+                        footer={!loading && filtered.length > 0 && (
+                            <>
+                                <span>Mostrando {Math.min(visibles, filtered.length)} de {filtered.length}</span>
+                                {visibles < filtered.length && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => setVisibles(v => v + PAGINA)}
+                                    >
+                                        Cargar más
+                                    </button>
+                                )}
+                            </>
+                        )}
+                        list={loading ? <DirectorioSkeleton vista="list" /> : tableList}
+                        grid={loading ? <DirectorioSkeleton vista="grid" /> : cardGrid}
                     />
                 )}
             </div>
@@ -330,26 +361,42 @@ export default function PersonasManagement() {
             <style>{`
                 .pdir-grid {
                     display: grid;
-                    grid-template-columns: repeat(4, 1fr);
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
                     gap: 12px;
-                    padding: var(--space-2) 0;
                 }
+                /* Sin obra activa no hay cuadrillas, así que no hay nada que
+                   agrupar: todas las personas valen lo mismo y van en una sola
+                   rejilla de tarjetas, la única caja de la página. */
                 .pdir-card {
                     display: flex; flex-direction: column; align-items: center; text-align: center;
-                    padding: 24px 16px 16px;
+                    gap: 9px; padding: 20px 14px 14px;
                     border-radius: 12px; border: 1px solid var(--surface-border);
-                    background: var(--surface-card);
+                    background: none;
                     text-decoration: none; color: inherit;
-                    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s;
+                    transition: transform 0.18s ease, border-color 0.18s;
                     animation: pdirIn 0.3s ease both;
                 }
                 @keyframes pdirIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-                .pdir-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px -4px rgba(0,0,0,0.18); border-color: var(--primary-400); }
-                .pdir-name { font-size: 13.5px; font-weight: 600; color: var(--text-primary); line-height: 1.35; word-break: break-word; margin: 12px 0 4px; }
-                .pdir-rut { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.04em; }
-                .pdir-cargo { font-size: 11px; color: var(--text-secondary); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--surface-border); width: 100%; word-break: break-word; line-height: 1.4; }
-                @media (max-width: 900px) { .pdir-grid { grid-template-columns: repeat(3, 1fr); } }
-                @media (max-width: 580px) { .pdir-grid { grid-template-columns: repeat(2, 1fr); } }
+                .pdir-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+                .pdir-body { display: flex; flex-direction: column; gap: 3px; width: 100%; }
+                .pdir-name {
+                    font-size: 13.5px; font-weight: 600; color: var(--text-primary);
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                }
+                .pdir-rut { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+                .pdir-cargo {
+                    font-size: 11.5px; color: var(--text-secondary);
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                }
+                /* El rol es lo que la persona puede hacer en el sistema; el cargo,
+                   lo que hace en la obra. Separarlos evita leer uno por el otro. */
+                .pdir-rol {
+                    padding: 2px 9px; border: 1px solid var(--surface-border); border-radius: 9999px;
+                    font-size: 10.5px; color: var(--text-primary); max-width: 100%;
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                }
+                @media (max-width: 900px) { .pdir-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+                @media (max-width: 580px) { .pdir-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             `}</style>
         </>
     );

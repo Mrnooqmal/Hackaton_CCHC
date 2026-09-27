@@ -5,7 +5,7 @@ import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { FormPage, FieldSection, Select, CredentialCard, PageHeader } from '../components/ui';
-import { FiCheckCircle, FiInfo } from 'react-icons/fi';
+import { FiCheckCircle } from 'react-icons/fi';
 import { getCargoLabel } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import type { PersonaResponse } from '../api/types';
@@ -42,19 +42,19 @@ function PhoneField({ value, onChange, label }: { value: string; onChange: (v: s
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label className="form-label">{label}</label>
             <div style={{
-                display: 'flex', alignItems: 'center', border: `1.5px solid ${borderColor}`,
-                borderRadius: 'var(--radius-md)', background: 'var(--surface-card)', overflow: 'hidden',
-                transition: 'border-color 0.2s, box-shadow 0.2s',
-                boxShadow: focused ? `0 0 0 3px ${complete ? 'rgba(34,197,94,0.15)' : 'rgba(0,110,220,0.12)'}` : 'none',
-                height: '42px',
+                display: 'flex', alignItems: 'center', border: `1px solid ${borderColor}`,
+                borderRadius: '8px', background: 'none', overflow: 'hidden',
+                transition: 'border-color 0.2s',
+                height: '38px',
             }}>
+                {/* El prefijo es parte del campo, no una pastilla aparte: con el
+                    fondo transparente del lienzo, el bloque gris sobraba. */}
                 <div style={{
-                    display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px', height: '100%',
-                    borderRight: '1.5px solid var(--surface-border)', background: 'var(--surface-elevated)',
+                    display: 'flex', alignItems: 'center', gap: '6px', padding: '0 0 0 12px', height: '100%',
                     flexShrink: 0, userSelect: 'none',
                 }}>
-                    <span style={{ fontSize: '13px', lineHeight: 1 }}>🇨🇱</span>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>+56</span>
+                    <span style={{ fontSize: '12px', lineHeight: 1 }}>🇨🇱</span>
+                    <span style={{ fontSize: '13.5px', color: 'var(--text-secondary)' }}>+56</span>
                 </div>
                 <input
                     type="text"
@@ -66,7 +66,7 @@ function PhoneField({ value, onChange, label }: { value: string; onChange: (v: s
                     onChange={(e) => onChange(formatTelLocal(e.target.value))}
                     style={{
                         flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                        fontSize: '15px', color: 'var(--text-primary)', padding: '0 10px', caretColor: 'var(--accent)',
+                        fontSize: '13.5px', color: 'var(--text-primary)', padding: '0 10px', caretColor: 'var(--accent)',
                     }}
                 />
                 <div style={{
@@ -77,7 +77,6 @@ function PhoneField({ value, onChange, label }: { value: string; onChange: (v: s
                     <FiCheckCircle size={16} style={{ color: 'var(--success-500)' }} />
                 </div>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Formato: +56 9 1234 5678</span>
         </div>
     );
 }
@@ -115,7 +114,6 @@ const INITIAL_FORM = {
     telefono: '',
     rol: '',
     cargo: '',
-    tieneAccesoWeb: true,
     nivelEscolar: '',
     contactoNombre: '',
     contactoTelefono: '',
@@ -213,7 +211,13 @@ export default function PersonaNueva() {
                 telefono: telToFull(form.telefono),
                 rol: form.rol,
                 cargo: form.cargo || undefined,
-                tieneAccesoWeb: form.tieneAccesoWeb,
+                // Toda persona dada de alta accede al sistema: firma, encuestas y
+                // su onboarding pasan por ahí. Era un interruptor en el formulario
+                // que nadie apagaba, y apagarlo dejaba a la persona sin forma de
+                // firmar. Si alguna vez hay que registrar a alguien sin acceso,
+                // el backend ya resuelve el caso omitiendo este campo (lo deduce
+                // del rol), pero eso se decide por rol, no por casilla.
+                tieneAccesoWeb: true,
                 obraIds: selectedObraIds.length > 0 ? selectedObraIds : undefined,
                 solicitanteId,
                 nivelEscolar: form.nivelEscolar || undefined,
@@ -328,7 +332,7 @@ export default function PersonaNueva() {
                     backTo="/personas"
                     backLabel="Personas"
                     title="Nueva persona"
-                    description="Registra una persona trabajadora o miembro del equipo en la empresa."
+                    description="Queda registrada en la empresa. La asignación a obras puede cambiarse después."
                 />
             </div>
 
@@ -338,9 +342,13 @@ export default function PersonaNueva() {
                 header={<></>}
                 actions={
                     <>
-                        {formError && (
+                        {formError ? (
                             <span style={{ marginRight: 'auto', fontSize: 'var(--text-sm)', color: 'var(--danger-600)' }}>
                                 {formError}
+                            </span>
+                        ) : (
+                            <span style={{ marginRight: 'auto', fontSize: '12px', color: 'var(--text-muted)' }}>
+                                Al crearla se genera su clave de primer acceso.
                             </span>
                         )}
                         <button type="button" className="btn btn-secondary" onClick={() => navigate('/personas')}>
@@ -353,7 +361,7 @@ export default function PersonaNueva() {
                 }
             >
                 {/* Datos personales */}
-                <FieldSection title="Datos personales" accent="blue" cols={3}>
+                <FieldSection title="Datos personales" inline cols={3}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                         <label className="form-label">RUT <span style={{ color: 'var(--danger-500)' }}>*</span></label>
                         <input
@@ -385,112 +393,77 @@ export default function PersonaNueva() {
                         <input className="form-input" type="date" name="fechaNacimiento" value={form.fechaNacimiento} onChange={handleChange} />
                     </div>
                     <PhoneField label="Teléfono" value={form.telefono} onChange={v => setForm(prev => ({ ...prev, telefono: v }))} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', gridColumn: '1 / -1' }}>
-                        <label className="form-label">Email</label>
-                        <input className="form-input" type="email" name="email" value={form.email} onChange={handleChange} placeholder="correo@ejemplo.com" autoComplete="email" style={{ maxWidth: 360 }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                        <label className="form-label">Correo</label>
+                        <input className="form-input" type="email" name="email" value={form.email} onChange={handleChange} placeholder="correo@ejemplo.com" autoComplete="email" />
                     </div>
                 </FieldSection>
 
-                {/* Acceso y rol */}
-                <div style={{ background: 'var(--surface-elevated)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-6)', border: '1px solid var(--surface-border)' }}>
-                    <FieldSection title="Acceso y rol" accent="blue" cols={3} description="Define el nivel de acceso y cargo de esta persona dentro de la empresa.">
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                            <label className="form-label">Rol <span style={{ color: 'var(--danger-500)' }}>*</span></label>
-                            <Select ariaLabel="Rol" value={form.rol} onChange={v => setForm(prev => ({ ...prev, rol: v }))} options={rolOptions} />
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                            <label className="form-label">Cargo DS44</label>
-                            <Select ariaLabel="Cargo" value={form.cargo} onChange={v => setForm(prev => ({ ...prev, cargo: v }))} options={cargoSelectOptions} />
-                            {form.cargo && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>{getCargoLabel(form.cargo)}</span>}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                            <label className="form-label">Nivel de escolaridad</label>
-                            <Select ariaLabel="Nivel de escolaridad" value={form.nivelEscolar} onChange={v => setForm(prev => ({ ...prev, nivelEscolar: v }))} options={NIVEL_ESCOLAR_OPTIONS} />
-                        </div>
-                        <div style={{ gridColumn: '1 / -1' }}>
-                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', cursor: 'pointer', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', background: form.tieneAccesoWeb ? 'rgba(0,110,220,0.05)' : 'transparent', transition: 'all 0.2s' }}>
-                                <input type="checkbox" name="tieneAccesoWeb" checked={form.tieneAccesoWeb} onChange={handleChange} style={{ marginTop: 2 }} />
-                                <div>
-                                    <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>Acceso web</div>
-                                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>
-                                        {form.tieneAccesoWeb
-                                            ? 'La contraseña temporal serán los primeros 4 dígitos del RUT — la persona la cambia en su primer ingreso.'
-                                            : 'La persona solo existe en el sistema, sin credenciales de acceso web.'}
-                                    </div>
-                                </div>
-                            </label>
-                        </div>
-                    </FieldSection>
-                </div>
+                {/* Acceso y rol. Ya no va en una tarjeta propia: era la única
+                    sección enmarcada del formulario y el marco la hacía leer como
+                    otra cosa, no como un bloque más de la misma ficha. */}
+                <FieldSection title="Acceso y rol" inline cols={3} description="El cargo define qué exige el DS 44 a esta persona.">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                        <label className="form-label">Rol <span style={{ color: 'var(--danger-500)' }}>*</span></label>
+                        <Select ariaLabel="Rol" value={form.rol} onChange={v => setForm(prev => ({ ...prev, rol: v }))} options={rolOptions} />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                        <label className="form-label">Cargo</label>
+                        <Select ariaLabel="Cargo" value={form.cargo} onChange={v => setForm(prev => ({ ...prev, cargo: v }))} options={cargoSelectOptions} />
+                        {form.cargo && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2 }}>{getCargoLabel(form.cargo)}</span>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                        <label className="form-label">Nivel de escolaridad</label>
+                        <Select ariaLabel="Nivel de escolaridad" value={form.nivelEscolar} onChange={v => setForm(prev => ({ ...prev, nivelEscolar: v }))} options={NIVEL_ESCOLAR_OPTIONS} />
+                    </div>
+                </FieldSection>
 
                 {/* Asignación a obras */}
                 {obras.length > 0 && (
-                    <FieldSection title="Asignación a obras" accent="blue" description="Selecciona las obras a las que se asignará esta persona al momento de crearla. Puedes cambiar esto después desde el perfil.">
+                    <FieldSection title="Asignación a obras" inline description="Opcional. Al asignarla a una obra empieza su onboarding DS 44.">
                         <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                            {selectedObraIds.length > 0 && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-                                    <FiInfo size={14} style={{ color: 'var(--primary-500)' }} />
-                                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                                        {selectedObraIds.length} obra{selectedObraIds.length > 1 ? 's' : ''} seleccionada{selectedObraIds.length > 1 ? 's' : ''}
-                                    </span>
-                                </div>
-                            )}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 'var(--space-2)' }}>
+                            {/* La cuadrilla se elige EN la misma fila de la obra: es
+                                un dato de esa asignación, no una sección aparte. El
+                                recuento de obras marcadas sobraba, porque las marcas
+                                ya están a la vista. */}
+                            <div className="pn-obras">
                                 {obras.map(obra => {
                                     const checked = selectedObraIds.includes(obra.obraId);
                                     const sups = supervisoresDeObra(obra.obraId);
                                     return (
-                                        <div
-                                            key={obra.obraId}
-                                            style={{
-                                                borderRadius: 'var(--radius-md)',
-                                                border: `1px solid ${checked ? 'var(--primary-400)' : 'var(--surface-border)'}`,
-                                                background: checked ? 'rgba(0,110,220,0.06)' : 'var(--surface-card)',
-                                                transition: 'all 0.18s', overflow: 'hidden',
-                                            }}
-                                        >
-                                            <label
-                                                style={{
-                                                    display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
-                                                    padding: 'var(--space-3) var(--space-4)', cursor: 'pointer',
-                                                }}
-                                            >
+                                        <div key={obra.obraId} className={`pn-obra${checked ? ' pn-obra--on' : ''}`}>
+                                            <label className="pn-obra-main">
                                                 <input
                                                     type="checkbox"
                                                     checked={checked}
                                                     onChange={() => toggleObra(obra.obraId)}
-                                                    style={{ marginTop: 2 }}
                                                 />
-                                                <div style={{ minWidth: 0 }}>
-                                                    <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                        {obra.nombre}
-                                                    </div>
-                                                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 6 }}>
-                                                        {obra.codigo && <span style={{ fontFamily: 'monospace' }}>{obra.codigo}</span>}
-                                                        {obra.codigo && <span>·</span>}
-                                                        <span style={{ fontFamily: 'monospace', opacity: 0.6 }}>{obra.obraId?.slice(0, 8)}…</span>
-                                                    </div>
-                                                </div>
+                                                <span className="pn-obra-info">
+                                                    <span className="pn-obra-name">{obra.nombre}</span>
+                                                    <span className="pn-obra-meta">
+                                                        {obra.codigo && <>{obra.codigo}{obra.comuna ? ' · ' : ''}</>}
+                                                        {obra.comuna}
+                                                    </span>
+                                                </span>
                                             </label>
                                             {checked && esTrabajador && (
-                                                <div style={{ padding: '0 var(--space-4) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                                    <label className="form-label" style={{ fontSize: 'var(--text-xs)' }}>Asignar a supervisor</label>
-                                                    {sups.length > 0 ? (
+                                                sups.length > 0 ? (
+                                                    <div className="pn-obra-sup">
                                                         <Select
-                                                            ariaLabel={`Supervisor en ${obra.nombre}`}
+                                                            ariaLabel={`Cuadrilla en ${obra.nombre}`}
                                                             value={obraSupervisores[obra.obraId] || ''}
                                                             onChange={v => setObraSupervisores(prev => ({ ...prev, [obra.obraId]: v }))}
                                                             options={[
-                                                                { value: '', label: '— Sin asignar —' },
-                                                                ...sups.map(s => ({ value: s.personaId, label: `${s.nombre} ${s.apellido || ''}`.trim() })),
+                                                                { value: '', label: 'Cuadrilla: sin asignar' },
+                                                                ...sups.map(sup => ({ value: sup.personaId, label: `Cuadrilla: ${sup.nombre} ${sup.apellido || ''}`.trim() })),
                                                             ]}
                                                         />
-                                                    ) : (
-                                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--warning-600, #b45309)' }}>
-                                                            No hay supervisores en esta obra. Podrás asignarlo después desde el equipo de la obra.
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                    </div>
+                                                ) : (
+                                                    <span className="pn-obra-warn">
+                                                        Sin supervisores: podrás asignarle cuadrilla desde el equipo de la obra.
+                                                    </span>
+                                                )
                                             )}
                                         </div>
                                     );
@@ -506,7 +479,7 @@ export default function PersonaNueva() {
                 )}
 
                 {/* Contacto de emergencia */}
-                <FieldSection title="Contacto de emergencia" description="Datos opcionales para el expediente del trabajador.">
+                <FieldSection title="Contacto de emergencia" inline cols={3} description="Opcional. Va al expediente del trabajador.">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                         <label className="form-label">Nombre completo</label>
                         <input className="form-input" name="contactoNombre" value={form.contactoNombre} onChange={handleChange} placeholder="Nombre completo del contacto" />
@@ -518,6 +491,33 @@ export default function PersonaNueva() {
                     </div>
                 </FieldSection>
             </FormPage>
+
+            <style>{`
+                .pn-obras { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+                .pn-obra {
+                    display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+                    padding: 12px 14px;
+                    border: 1px solid var(--surface-border); border-radius: 10px;
+                    transition: border-color 0.18s;
+                }
+                .pn-obra--on { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+                .pn-obra-main {
+                    display: flex; align-items: center; gap: var(--space-3);
+                    flex: 1; min-width: 0; cursor: pointer;
+                }
+                .pn-obra-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+                .pn-obra-name {
+                    font-size: 13px; font-weight: 600; color: var(--text-primary);
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                }
+                .pn-obra-meta { font-size: 11px; color: var(--text-muted); }
+                .pn-obra-sup { width: 190px; flex-shrink: 0; }
+                .pn-obra-warn { font-size: 11px; color: var(--danger-alerta); flex-basis: 100%; }
+                @media (max-width: 760px) {
+                    .pn-obras { grid-template-columns: 1fr; }
+                    .pn-obra-sup { width: 100%; }
+                }
+            `}</style>
         </>
     );
 }
