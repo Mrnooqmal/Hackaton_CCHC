@@ -252,7 +252,6 @@ export default function EstructuraOrgano() {
             <PageHeader
                 title={TIPO_ORGANO_LABEL[organo.tipo]}
                 description={organo.ambito === 'obra' ? 'Ámbito: obra o faena' : 'Ámbito: entidad empleadora'}
-                backTo={organo.obraId ? `/obras/${organo.obraId}` : '/mi-empresa'}
                 actions={
                     organo.estado === ESTADO_ORGANO.VIGENTE ? (
                         <button className="btn btn-secondary btn-sm" type="button"

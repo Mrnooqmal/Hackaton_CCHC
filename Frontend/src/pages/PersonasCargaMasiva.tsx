@@ -250,8 +250,6 @@ export default function PersonasCargaMasiva() {
             <div className="page-content">
                 <PageHeader
                     banner
-                    backTo="/personas"
-                    backLabel="Personas"
                     title="Carga masiva de personas"
                     description={
                         (step === 'form' && 'Nada se crea hasta que revises el archivo. La validación es el paso 2.') ||

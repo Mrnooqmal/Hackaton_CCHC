@@ -13,7 +13,7 @@ import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { Select } from '../components/ui';
 import ConfirmModal from '../components/ConfirmModal';
 import ObraEquipoPanel from '../components/ObraEquipoPanel';
-import { DirectorioSkeleton } from '../components/personas/PersonasSkeleton';
+import { DirectorioSkeleton } from '../components/ui/Skeletons';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

@@ -11,6 +11,8 @@ interface NominatimResult {
         city?: string;
         town?: string;
         village?: string;
+        municipality?: string;
+        city_district?: string;
         county?: string;
         state?: string;
         postcode?: string;
@@ -19,9 +21,36 @@ interface NominatimResult {
     lon: string;
 }
 
+/**
+ * Lo que se sabe del lugar elegido, además de la calle.
+ *
+ * La comuna viene como una lista de candidatas de MÁS a MENOS específica: el
+ * proveedor la reparte entre varios campos según cómo esté mapeada la zona, y
+ * quien recibe esto suele tener su propio catálogo con el que contrastarlas.
+ *
+ * El orden importa y no es el obvio. En el Gran Santiago `city` trae la
+ * conurbación ("Santiago") y la comuna real queda en `suburb`: pidiendo
+ * primero `city`, una dirección de Las Condes, Ñuñoa o Maipú se guardaba como
+ * Santiago. Los barrios que ocupan `suburb` fuera de la capital ("Almendral"
+ * en Valparaíso, "Rancagua Sur") no figuran en ningún catálogo de comunas, así
+ * que no calzan y la búsqueda sigue hasta `city`.
+ *
+ * `county` queda fuera a propósito: en Chile trae la provincia, que a veces se
+ * llama igual que una comuna que no es esta.
+ */
+export interface LugarElegido {
+    direccion: string;
+    region: string;
+    comunaCandidatas: string[];
+    lat: string;
+    lon: string;
+}
+
 interface Props {
     value: string;
     onChange: (value: string) => void;
+    /** Se dispara solo al elegir una sugerencia, no al escribir. */
+    onSelect?: (lugar: LugarElegido) => void;
     placeholder?: string;
     required?: boolean;
     className?: string;
@@ -43,9 +72,7 @@ function getSecondaryLine(result: NominatimResult): string {
         .join(', ');
 }
 
-let debounceTimer: ReturnType<typeof setTimeout>;
-
-export default function AddressAutocomplete({ value, onChange, placeholder = 'Ej: Av. Providencia 1234, Santiago', required, className }: Props) {
+export default function AddressAutocomplete({ value, onChange, onSelect, placeholder = 'Ej: Av. Providencia 1234, Santiago', required, className }: Props) {
     const [query, setQuery] = useState(value);
     const [results, setResults] = useState<NominatimResult[]>([]);
     const [loading, setLoading] = useState(false);
@@ -53,6 +80,10 @@ export default function AddressAutocomplete({ value, onChange, placeholder = 'Ej
     const [activeIndex, setActiveIndex] = useState(-1);
     const containerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    // Con el debounce, una respuesta lenta de una consulta vieja puede llegar
+    // después de una nueva: solo se pinta la del último pedido.
+    const pedidoRef = useRef(0);
 
     // Sync external value changes (e.g. form reset)
     useEffect(() => {
@@ -71,26 +102,36 @@ export default function AddressAutocomplete({ value, onChange, placeholder = 'Ej
     }, []);
 
     const fetchSuggestions = useCallback((q: string) => {
-        clearTimeout(debounceTimer);
-        if (q.trim().length < 3) { setResults([]); setOpen(false); return; }
-        debounceTimer = setTimeout(async () => {
-            setLoading(true);
+        clearTimeout(debounceRef.current);
+        if (q.trim().length < 3) { setResults([]); setOpen(false); setLoading(false); return; }
+        // La lista se abre YA, en «buscando», sin esperar al debounce ni a la
+        // red. El buscador tarda un par de segundos y, sin esta señal, el campo
+        // se lee como un texto libre cualquiera: nadie espera sugerencias que
+        // no sabe que existen.
+        setResults([]);
+        setLoading(true);
+        setOpen(true);
+        setActiveIndex(-1);
+        const pedido = ++pedidoRef.current;
+        debounceRef.current = setTimeout(async () => {
             try {
                 const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', Chile')}&countrycodes=cl&format=json&addressdetails=1&limit=6&accept-language=es`;
                 const res = await fetch(url, {
                     headers: { 'User-Agent': 'BuildAndServe/1.0 (contacto@example.com)' }
                 });
                 const data: NominatimResult[] = await res.json();
+                if (pedido !== pedidoRef.current) return;
                 setResults(data);
-                setOpen(data.length > 0);
                 setActiveIndex(-1);
             } catch {
-                setResults([]);
+                if (pedido === pedidoRef.current) setResults([]);
             } finally {
-                setLoading(false);
+                if (pedido === pedidoRef.current) setLoading(false);
             }
         }, 550);
     }, []);
+
+    useEffect(() => () => clearTimeout(debounceRef.current), []);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const v = e.target.value;
@@ -103,6 +144,18 @@ export default function AddressAutocomplete({ value, onChange, placeholder = 'Ej
         const streetOnly = getMainLine(result);
         setQuery(streetOnly);
         onChange(streetOnly);
+        // La comuna y la región se veían en la sugerencia y se perdían al
+        // elegirla: quedaba solo la calle y había que volver a tipearlas en sus
+        // propios campos, teniéndolas ya a la vista.
+        const a = result.address;
+        onSelect?.({
+            direccion: streetOnly,
+            region: a.state || '',
+            comunaCandidatas: [a.suburb, a.city_district, a.municipality, a.village, a.town, a.city]
+                .filter((v): v is string => Boolean(v)),
+            lat: result.lat,
+            lon: result.lon,
+        });
         setOpen(false);
         setResults([]);
     };
@@ -149,9 +202,20 @@ export default function AddressAutocomplete({ value, onChange, placeholder = 'Ej
                 </div>
             </div>
 
-            {open && results.length > 0 && (
+            {open && (
                 <div className="addr-dropdown">
-                    {results.map((r, i) => (
+                    {loading && (
+                        <div className="addr-estado">
+                            <FiLoader size={14} style={{ animation: 'addr-spin 0.8s linear infinite', flexShrink: 0 }} />
+                            Buscando direcciones…
+                        </div>
+                    )}
+                    {!loading && results.length === 0 && (
+                        <div className="addr-estado">
+                            Sin resultados. Puedes escribir la dirección a mano.
+                        </div>
+                    )}
+                    {!loading && results.map((r, i) => (
                         <button
                             key={r.place_id}
                             type="button"
@@ -235,6 +299,17 @@ export default function AddressAutocomplete({ value, onChange, placeholder = 'Ej
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
+                }
+                /* Mientras busca y cuando no hay nada: una fila con el mismo
+                   alto que una sugerencia, para que la lista no dé un salto al
+                   llenarse. */
+                .addr-estado {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 13px 14px;
+                    font-size: 13px;
+                    color: var(--text-secondary);
                 }
                 .addr-footer {
                     padding: 5px 14px;

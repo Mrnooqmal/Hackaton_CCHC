@@ -1,13 +1,9 @@
 import { Link } from 'react-router-dom';
-import { FiArrowLeft } from 'react-icons/fi';
 
 export interface PageHeaderProps {
   title: string;
   description?: React.ReactNode;
   scope?: { label: string };
-  backTo?: string;
-  /** Custom label for the back link (defaults to "Volver") */
-  backLabel?: string;
   /** Optional breadcrumb segments shown before the title */
   breadcrumb?: { label: string; to: string }[];
   actions?: React.ReactNode;
@@ -15,7 +11,7 @@ export interface PageHeaderProps {
   banner?: boolean;
 }
 
-export default function PageHeader({ title, description, scope, backTo, backLabel, breadcrumb, actions, banner }: PageHeaderProps) {
+export default function PageHeader({ title, description, scope, breadcrumb, actions, banner }: PageHeaderProps) {
   return (
     <div className={`ui-page-header${banner ? ' ui-page-header--banner' : ''}`}>
       {breadcrumb && breadcrumb.length > 0 && (
@@ -28,12 +24,6 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           ))}
           <span className="ui-page-header-breadcrumb-current">{title}</span>
         </nav>
-      )}
-      {backTo && !breadcrumb && (
-        <Link to={backTo} className="ui-page-header-back">
-          <FiArrowLeft size={15} />
-          <span>{backLabel ?? 'Volver'}</span>
-        </Link>
       )}
       <div className="ui-page-header-main">
         <div className="ui-page-header-info">
@@ -117,17 +107,6 @@ export default function PageHeader({ title, description, scope, backTo, backLabe
           color: var(--text-secondary);
           font-weight: 500;
         }
-        .ui-page-header-back {
-          display: inline-flex;
-          align-items: center;
-          gap: var(--space-1);
-          font-size: var(--text-sm);
-          color: var(--text-muted);
-          text-decoration: none;
-          margin-bottom: var(--space-3);
-          transition: color var(--transition-fast);
-        }
-        .ui-page-header-back:hover { color: var(--text-primary); }
         .ui-page-header-main {
           display: flex;
           align-items: flex-start;

@@ -329,8 +329,6 @@ export default function PersonaNueva() {
             <div className="page-content">
                 <PageHeader
                     banner
-                    backTo="/personas"
-                    backLabel="Personas"
                     title="Nueva persona"
                     description="Queda registrada en la empresa. La asignación a obras puede cambiarse después."
                 />

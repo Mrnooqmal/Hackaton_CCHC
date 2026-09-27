@@ -12,7 +12,7 @@ import { AlertBanner, Modal } from './ui';
 import type { CollectionMode } from './ui';
 import { PERMISSIONS } from '../permissions';
 import FirmaAsistidaModal from './FirmaAsistidaModal';
-import { EquipoObraSkeleton } from './personas/PersonasSkeleton';
+import { EquipoObraSkeleton } from './ui/Skeletons';
 import {
     FiSearch, FiUserPlus, FiCheck, FiX, FiChevronDown, FiChevronRight,
     FiChevronUp, FiMoreHorizontal, FiPlus,

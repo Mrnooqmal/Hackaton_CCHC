@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { LuPlus } from 'react-icons/lu';
 import { FiAlertTriangle, FiCopy } from 'react-icons/fi';
 import { Select } from '../components/ui';
-import { PageHeader, CollectionView, DataTable, Badge } from '../components/ui';
+import { PageHeader, CollectionView, DataTable, Badge, ObrasSkeleton } from '../components/ui';
 import type { CollectionMode, DataTableColumn } from '../components/ui';
 import { PERMISSIONS } from '../permissions';
 
@@ -364,7 +364,7 @@ export const Obras: React.FC = () => {
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
           searchPlaceholder="Buscar por nombre, código o dirección…"
-          count={filteredObras.length}
+          count={loading ? undefined : filteredObras.length}
           mode={mode}
           onModeChange={setMode}
           filters={
@@ -382,8 +382,8 @@ export const Obras: React.FC = () => {
               />
             </div>
           }
-          list={tableList}
-          grid={cardGrid}
+          list={loading ? <ObrasSkeleton vista="list" /> : tableList}
+          grid={loading ? <ObrasSkeleton vista="grid" /> : cardGrid}
         />
       )}
     </div>
