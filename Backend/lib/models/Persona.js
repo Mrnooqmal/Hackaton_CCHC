@@ -120,6 +120,15 @@ class Persona {
         // aparte sería una lectura más en cada intento de firma.
         this.pinIntentosFallidos = data.pinIntentosFallidos || 0;
         this.pinBloqueadaHasta = data.pinBloqueadaHasta || null;
+        // Restablecimiento de PIN pendiente: `{por, nombre, en, motivo}` desde
+        // que alguien lo restablece hasta que se configura el nuevo. Mientras
+        // exista, quien restableció NO puede asistir en la configuración del
+        // nuevo (PersonaService.setPin): hacen falta dos personas distintas.
+        this.pinRestablecido = data.pinRestablecido || null;
+        // Historial solo de agregado de cada evento del PIN —configurado,
+        // cambiado, restablecido—, con quién, cuándo y si fue asistido. Nunca el
+        // PIN ni su hash.
+        this.pinHistorial = data.pinHistorial || [];
         this.passwordTemporal = data.passwordTemporal || false;
 
         // Enrolamiento
@@ -337,6 +346,8 @@ class Persona {
             pinCreatedAt: this.pinCreatedAt,
             pinIntentosFallidos: this.pinIntentosFallidos,
             pinBloqueadaHasta: this.pinBloqueadaHasta,
+            pinRestablecido: this.pinRestablecido,
+            pinHistorial: this.pinHistorial,
             passwordTemporal: this.passwordTemporal,
             habilitado: this.habilitado,
             firmaEnrolamiento: this.firmaEnrolamiento,
@@ -402,6 +413,12 @@ class Persona {
             tieneAccesoWeb: this.tieneAccesoWeb,
             habilitado: this.habilitado,
             pinConfigurado: this.tienePinConfigurado(),
+            // Sin el motivo, que es texto libre y puede traer detalles de la
+            // persona: basta saber que hay uno pendiente y quién lo hizo, para
+            // que la pantalla no le ofrezca asistir a esa misma persona.
+            pinRestablecido: this.pinRestablecido
+                ? { por: this.pinRestablecido.por, nombre: this.pinRestablecido.nombre, en: this.pinRestablecido.en }
+                : null,
             enrolado: this.estaEnrolado(),
             estado: this.estado,
             passwordTemporal: this.passwordTemporal,

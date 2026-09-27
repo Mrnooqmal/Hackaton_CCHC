@@ -177,6 +177,19 @@ export const personasApi = {
             body: JSON.stringify({ pin, pinActual }),
         }),
 
+    // Borra el PIN para que la persona configure uno nuevo. Exige
+    // persona.restablecer_pin y un motivo; la persona recibe aviso en su bandeja
+    // (en la misma escritura) y por correo si tiene.
+    restablecerPin: (tenantId: string, id: string, motivo: string) =>
+        apiRequest<{
+            message: string; restablecidoEn: string; avisoBandeja: boolean;
+            avisoCorreo: 'enviado' | 'fallido' | 'sin-correo';
+            valesAnulados: number; valesSinAnular: number | null;
+        }>(`/personas/${id}/restablecer-pin?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify({ motivo }),
+        }),
+
     completarEnrolamiento: (tenantId: string, id: string, pin: string) =>
         apiRequest<{ message: string; personaId: string; habilitado: boolean; firmaEnrolamiento: any }>(`/personas/${id}/enrolamiento?tenantId=${tenantId}`, {
             method: 'POST',

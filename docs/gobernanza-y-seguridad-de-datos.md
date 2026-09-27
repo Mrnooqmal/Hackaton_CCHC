@@ -66,6 +66,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 2.5 | Mensajes de error genéricos ante credencial inválida | **Implementado** | No revelan si falló el PIN, el estado de la persona u otro. |
 | 2.6 | **Función de derivación con costo para el PIN** | **Implementado** | scrypt `N=2^15, r=8, p=1`; ~112 ms por verificación, medidos en la Lambda. Cada hash guarda su algoritmo y sus parámetros, y se actualiza solo al usarse. Ver D-7. |
 | 2.7 | **Límite de intentos de PIN** | **Implementado** | Contador por persona, bloqueo progresivo (1/5/15/60 min), reseteo en el primer acierto. Ver D-9. |
+| 2.7b | Restablecimiento de un PIN olvidado, con control dual | **Implementado** | Permiso propio y motivo obligatorio; quien restablece no puede asistir en el PIN nuevo; aviso en bandeja en la misma transacción y por correo; vales anulados; historial. `PersonaService.restablecerPin`, `Backend/tests/cambio-pin.test.js`. Ver D-9, "Restablecimiento". |
 | 2.8 | **Throttling a nivel de API** | **Pendiente** | Sin plan de uso ni límite de tasa configurado en `Backend/serverless.yml`. |
 | 2.9 | El token de sesión se almacena hasheado | **Implementado** | Se guarda `sha256(token)` y se resuelve por índice. Antes se guardaba el token en claro: un volcado de la tabla de sesiones era suplantación inmediata de cualquier usuario. `Backend/lib/auth/sesion.js` |
 | 2.10 | El PIN ya no se guarda en el dispositivo (modo sin conexión) | **Implementado** | Las firmas sin red se acreditan con un **vale de un solo uso** que la persona desbloquea con su PIN al inicio del turno, con red; el dispositivo guarda vales, no el PIN, y el servidor solo guarda el hash del vale. `Backend/lib/services/ValeFirmaService.js`, `Backend/tests/vale-firma.test.js`. Ver D-3 para las dos decisiones de diseño (vale vencido y equipo que pierde su identificador). |
@@ -507,8 +508,57 @@ probando el actual por el límite de intentos; sin PIN, lo configura ella o quie
 puede enrolar; y la escritura procede solo si el PIN guardado sigue siendo el
 verificado (o si sigue sin haber uno). Otra persona no cambia un PIN existente
 ni sabiéndolo, y en ese caso ni siquiera se consulta el PIN, para que no sirva
-de oráculo. El restablecimiento de un PIN olvidado queda pendiente de diseño
-(hoy no hay salida para quien lo olvida).
+de oráculo.
+
+**Tercera corrección (27 de septiembre de 2026): el primer PIN.** La escritura
+condicionada de la segunda corrección tenía un error propio, y llegó a dev y
+prod con `58845ba`: la condición "sigue sin haber PIN" era
+`attribute_not_exists(pinHash)`, pero `crear` guarda `pinHash: null`, y para
+DynamoDB un NULL es un atributo presente. Resultado: **ninguna persona nueva
+podía configurar su primer PIN** (409, "el PIN cambió mientras se procesaba").
+Al detectarlo había 15 fichas así en dev y 1 en prod, y ninguna sin el
+atributo. Las pruebas estaban en verde porque el doble de DynamoDB resolvía la
+condición con `!ficha.pinHash`, que trata `null` como ausente. La condición
+ahora es `attribute_not_exists(pinHash) OR pinHash = :nulo`, y los dobles de
+PIN y de vales pasaron a evaluar condiciones con la semántica de DynamoDB
+(`Backend/tests/expresiones-dynamo.js`): contra el código desplegado, el doble
+nuevo reproduce el fallo. Se revisaron las demás condiciones
+`attribute_not_exists` sobre atributos que no son clave: licencias y vales ya
+contemplaban el NULL, y `fichaSaludHabilitada` se guarda siempre como booleano.
+
+**Restablecimiento de un PIN olvidado (27 de septiembre de 2026).** Hasta ahora
+no había salida para quien lo olvida. Ahora una persona con el permiso
+`persona.restablecer_pin` (solo el administrador por defecto) lo borra,
+indicando un motivo, para que se configure uno nuevo. Las reglas:
+
+- **Dos personas distintas.** Quien restablece no puede asistir en la
+  configuración del PIN nuevo; lo hace la propia persona desde su cuenta, o en
+  terreno otra persona con permiso de enrolar. Restablecer y asistir son las dos
+  mitades de poner un PIN que la persona no eligió sola; si las pudiera hacer
+  una sola, esa persona se quedaría con la credencial de otra. Lo exige
+  `PersonaService.setPin`, contra el restablecimiento vigente, con la escritura
+  condicionada a que siga siendo el mismo.
+- **No hay restablecimiento sin aviso.** Quitar el PIN y dejar el aviso en la
+  bandeja de la persona son una sola transacción de DynamoDB: o pasan las dos o
+  ninguna. La persona afectada es la única que puede notar que no lo pidió. Si
+  tiene correo, también se le escribe; SES no entra en la transacción, así que
+  es mejor esfuerzo, pero si falla queda medido (`registrarFallo`) y se le dice
+  a quien restableció que avise por otro medio.
+- **Quien asiste nunca conoce el valor.** En el asistido, el PIN lo escribe el
+  trabajador en el equipo; la pantalla no tiene botón "Mostrar" y no guarda el
+  PIN más allá de confirmarlo. Lo mismo vale ahora para el enrolamiento asistido
+  y la firma asistida, que sí tenían el botón.
+- **Los vales se anulan.** Se desbloquearon con el PIN anterior. La revocación
+  (`ValeFirmaService.revocarDePersona`, que no tenía llamadores) se tragaba los
+  errores y marcaba los vales como usados; ahora pagina, filtra por empresa,
+  informa por separado los que no pudo anular, y registra `revocadoEn` en vez de
+  `usedAt`, con una condición que la excluye mutuamente del consumo.
+- **Queda todo registrado.** `pinRestablecido` mientras está pendiente, y
+  `pinHistorial` para siempre: cada restablecimiento, configuración y cambio,
+  con quién, cuándo, el motivo y si fue asistido. Nunca el PIN ni su hash.
+
+El cambio del propio PIN desde Configuración tampoco funcionaba: llamaba a
+`setPin` sin el PIN actual, que la ruta exigía desde antes. Ahora lo pide.
 
 ### D-10. Cifrado de campo: RUT buscable por HMAC, sobre de cifrado para el resto
 **Estado: casi completo. Implementado el 23 y 24 de septiembre de 2026 en Personas y Tenants, en los sidecars de firmas e incidentes, en los arreglos embebidos de documentos, actividades y solicitudes, y en encuestas, en dev y prod. Pendiente: las dos copias en claro que arma `RegistroService` (ver "Lo que D-10 todavía no cubre", al final de esta decisión).**

@@ -3,13 +3,9 @@ const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, Scan
 const { docClient } = require('../../lib/clients/dynamodb');
 const { normalizeRol } = require('../../lib/utils/validation');
 const { sendSms, toE164Chile } = require('../../lib/services/SmsService');
+const { construirMensaje, INBOX_TABLE, PRIORITIES } = require('../../lib/bandeja');
 
-const INBOX_TABLE = process.env.INBOX_TABLE || 'Inbox';
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
-
-// Tipos de mensaje
-const MESSAGE_TYPES = ['message', 'notification', 'alert', 'task'];
-const PRIORITIES = ['normal', 'high', 'urgent'];
 
 class InboxRepository {
     constructor() {
@@ -29,7 +25,6 @@ class InboxRepository {
             throw new Error('subject y content son requeridos');
         }
 
-        const messageType = MESSAGE_TYPES.includes(type) ? type : 'message';
         const messagePriority = PRIORITIES.includes(priority) ? priority : 'normal';
         const now = new Date().toISOString();
         const baseMessageId = uuidv4();
@@ -38,26 +33,10 @@ class InboxRepository {
 
         // Crear un mensaje por cada destinatario
         for (const recipientId of recipientIds) {
-            const messageId = `${baseMessageId}-${recipientId.substring(0, 8)}`;
-
-            const message = {
-                recipientId,
-                messageId,
-                senderId,
-                senderName: senderName || 'Sistema',
-                senderRol: senderRol || 'system',
-                type: messageType,
-                priority: messagePriority,
-                subject,
-                content,
-                read: false,
-                readAt: null,
-                archivedByRecipient: false,
-                archivedBySender: false,
-                linkedEntity: linkedEntity || null,
-                createdAt: now,
-                updatedAt: now
-            };
+            const message = construirMensaje({
+                recipientId, baseMessageId, now,
+                senderId, senderName, senderRol, type, priority, subject, content, linkedEntity,
+            });
 
             await this.dynamo.send(new PutCommand({
                 TableName: this.inboxTable,

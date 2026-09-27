@@ -39,6 +39,7 @@ import { PERMISSIONS } from '../permissions';
 import { useObraContext } from '../context/ObraContext';
 import { Modal, Select, IdentityPanel } from '../components/ui';
 import WorkerEvidencias from '../components/WorkerEvidencias';
+import PinDeFirma, { type PinRestablecido } from '../components/PinDeFirma';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { eppApi, faltantesLabel, type EppElemento } from '../api/epp.api';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
@@ -54,6 +55,8 @@ interface WorkerStats {
 interface WorkerWithRole extends ApiWorker {
     rol?: 'admin' | 'prevencionista' | 'trabajador';
     obraIds?: string[];
+    pinConfigurado?: boolean;
+    pinRestablecido?: PinRestablecido | null;
 }
 
 // Item de EPP dentro del formulario de entrega. El elemento se elige del
@@ -97,6 +100,7 @@ export default function WorkerDetail() {
     const canOnboarding = hasPermission(PERMISSIONS.PERSONA_ONBOARDING);
     const canVigilancia = hasPermission(PERMISSIONS.PERSONA_VIGILANCIA_SALUD);
     const canDesvincular = hasPermission(PERMISSIONS.PERSONA_DESVINCULAR);
+    const canRestablecerPin = hasPermission(PERMISSIONS.PERSONA_RESTABLECER_PIN);
     // Editar datos sensibles de la persona (cargo, teléfono, etc.): mismo permiso
     // que gestionar/añadir personas.
     const canEditarDatos = hasPermission(PERMISSIONS.PERSONAS_CREAR);
@@ -1330,6 +1334,15 @@ Generado por PrevencionApp
                         tenantId={authTenantId}
                         initial={(worker as any).evidencias || []}
                         canEdit={canVigilancia}
+                    />
+
+                    <PinDeFirma
+                        tenantId={authTenantId}
+                        persona={worker}
+                        actorPersonaId={user?.personaId}
+                        puedeRestablecer={canRestablecerPin}
+                        puedeAsistir={canEditarDatos}
+                        onCambio={loadWorkerData}
                     />
 
                     {/* Danger zone */}

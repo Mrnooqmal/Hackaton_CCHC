@@ -177,9 +177,17 @@ export default function Settings() {
                             <button className="btn btn-secondary btn-sm" onClick={() => navigate('/change-password')}>
                                 <FiLock size={13} /> Cambiar contraseña
                             </button>
-                            <button className="btn btn-secondary btn-sm" onClick={() => setShowPinConfirm(true)}>
-                                <FiKey size={13} /> Cambiar PIN de firma
-                            </button>
+                            {(user as any)?.pinConfigurado === false ? (
+                                // Sin PIN (se lo restablecieron): no hay nada que confirmar
+                                // ni PIN actual que pedir; se crea directo.
+                                <button className="btn btn-primary btn-sm" onClick={() => navigate('/enroll-me', { state: { changePin: true } })}>
+                                    <FiKey size={13} /> Crear PIN de firma nuevo
+                                </button>
+                            ) : (
+                                <button className="btn btn-secondary btn-sm" onClick={() => setShowPinConfirm(true)}>
+                                    <FiKey size={13} /> Cambiar PIN de firma
+                                </button>
+                            )}
                         </>
                     }
                 />

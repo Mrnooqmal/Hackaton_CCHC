@@ -19,6 +19,7 @@ const assert = require('node:assert/strict');
 const { docClient } = require('../lib/clients/dynamodb');
 const { ValeFirmaService, hashVale, VENTANA_REVISION_DIAS } = require('../lib/services/ValeFirmaService');
 const { FirmaService } = require('../lib/services/FirmaService');
+const { cumple, aplicar } = require('./expresiones-dynamo');
 
 const EMPRESA = 't-empresa-a';
 const PERSONA = 'p-trabajador';
@@ -45,22 +46,39 @@ beforeEach(() => {
         if (nombre === 'GetCommand' && input.TableName?.includes('ales')) {
             return { Item: store.vales.find((v) => v.valeHash === input.Key.valeHash) || undefined };
         }
+        if (nombre === 'QueryCommand' && input.IndexName === 'personaId-index' && input.TableName?.includes('ales')) {
+            // Lo que el índice PROYECTA de verdad (INCLUDE usedAt, D-8): ni
+            // `tenantId` ni `revocadoEn` llegan por acá.
+            // Y en páginas de 2, como DynamoDB cuando la respuesta pasa de 1 MB:
+            // quien lee solo la primera página deja vales vivos.
+            const p = input.ExpressionAttributeValues[':p'];
+            const todos = store.vales.filter((v) => v.personaId === p)
+                .map(({ valeHash, personaId, usedAt }) => ({ valeHash, personaId, usedAt }));
+            const desde = input.ExclusiveStartKey ? todos.findIndex((v) => v.valeHash === input.ExclusiveStartKey.valeHash) + 1 : 0;
+            const pagina = todos.slice(desde, desde + 2);
+            return {
+                Items: pagina,
+                ...(desde + 2 < todos.length ? { LastEvaluatedKey: { valeHash: pagina.at(-1).valeHash } } : {}),
+            };
+        }
         if (nombre === 'QueryCommand' && input.IndexName === 'personaId-index') {
             // Idempotencia de FirmaService: sin firmas previas.
             return { Items: [] };
         }
-        if (nombre === 'UpdateCommand') {
-            const registro = store.vales.find((v) => v.valeHash === input.Key.valeHash);
-            // Uso único: la escritura condicional falla si ya se gastó.
-            if (registro?.usedAt && input.ConditionExpression) {
+        if (nombre === 'UpdateCommand' && input.TableName?.includes('ales')) {
+            const i = store.vales.findIndex((v) => v.valeHash === input.Key.valeHash);
+            const registro = i >= 0 ? store.vales[i] : null;
+            // Semántica de DynamoDB, no comparación de texto.
+            if (!cumple(registro, input.ConditionExpression, input.ExpressionAttributeValues, input.ExpressionAttributeNames)) {
                 const err = new Error('The conditional request failed');
                 err.name = 'ConditionalCheckFailedException';
                 throw err;
             }
-            if (registro) {
-                registro.usedAt = input.ExpressionAttributeValues[':ahora'];
-                registro.deviceIdUso = input.ExpressionAttributeValues[':dev'] ?? null;
-            }
+            if (registro) store.vales[i] = aplicar(registro, input.UpdateExpression, input.ExpressionAttributeValues, input.ExpressionAttributeNames);
+            store.escrituras.push(input);
+            return {};
+        }
+        if (nombre === 'UpdateCommand') {
             store.escrituras.push(input);
             return {};
         }
@@ -192,23 +210,120 @@ test('un vale vencido tampoco se puede reutilizar', async () => {
 
 // ─── Revocación ──────────────────────────────────────────────────────────────
 
-test('revocar invalida los vales sin usar de una persona', async () => {
-    await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 3 });
-    // El mock resuelve personaId-index como vacío para la idempotencia de firmas;
-    // acá se consulta la tabla de vales, así que se responde con los emitidos.
+const vales = (lista) => lista.map((v) => store.vales.find((r) => r.valeHash === hashVale(v)));
+
+test('revocar anula los vales sin usar, sin marcarlos como usados', async () => {
+    const { vales: emitidos } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 3 });
+
+    const r = await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA, motivo: 'pin_restablecido', por: 'p-admin' });
+
+    assert.deepEqual(r, { revocados: 3, noAplicaban: 0, fallidos: 0 });
+    for (const v of vales(emitidos)) {
+        assert.ok(v.revocadoEn);
+        assert.equal(v.revocadoPor, 'p-admin');
+        assert.equal(v.usedAt, null, 'revocado no es usado: el acta tiene que distinguirlos');
+    }
+});
+
+test('un vale revocado no firma, y el motivo lo dice', async () => {
+    const { vales: [vale] } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA, motivo: 'pin_restablecido' });
+    const r = await ValeFirmaService.consumir({ vale, personaId: PERSONA });
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'revocado');
+});
+
+test('revocar no toca un vale ya usado: su registro de uso queda intacto', async () => {
+    const { vales: [usado, libre] } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 2 });
+    await ValeFirmaService.consumir({ vale: usado, personaId: PERSONA });
+    const usoOriginal = vales([usado])[0].usedAt;
+
+    const r = await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA });
+
+    assert.equal(r.revocados, 1);
+    assert.equal(r.noAplicaban, 1);
+    assert.equal(vales([usado])[0].usedAt, usoOriginal);
+    assert.ok(!('revocadoEn' in vales([usado])[0]));
+    assert.ok(vales([libre])[0].revocadoEn);
+});
+
+test('si un vale se usa entre la consulta y la revocación, su uso no se pisa', async () => {
+    const { vales: [vale] } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
     const anterior = docClient.send;
     docClient.send = async (cmd) => {
-        if (cmd.constructor.name === 'QueryCommand' && cmd.input.IndexName === 'personaId-index') {
-            return { Items: store.vales };
+        const res = await anterior(cmd);
+        if (cmd.constructor.name === 'QueryCommand' && cmd.input.TableName?.includes('ales')) {
+            docClient.send = anterior;
+            await ValeFirmaService.consumir({ vale, personaId: PERSONA });   // se usa justo ahora
+        }
+        return res;
+    };
+    const r = await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA });
+    docClient.send = anterior;
+    assert.equal(r.revocados, 0);
+    const [registro] = vales([vale]);
+    assert.ok(registro.usedAt);
+    assert.ok(!('revocadoEn' in registro));
+});
+
+test('con más vales de los que caben en una página, se anulan todos', async () => {
+    await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 5 });
+    const r = await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA });
+    assert.equal(r.revocados, 5);
+});
+
+test('revocar en una empresa no toca los vales de la misma persona en otra', async () => {
+    const { vales: [deOtra] } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: 't-empresa-b', cantidad: 1 });
+    const r = await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA });
+    assert.equal(r.revocados, 0);
+    assert.ok(!('revocadoEn' in vales([deOtra])[0]));
+});
+
+test('si revocar y consumir llegan a la vez, gana uno solo: nunca queda usado Y revocado', async () => {
+    const { vales: [vale] } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    // consumir ya leyó el vale (libre); antes de escribir, se revoca.
+    const anterior = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'UpdateCommand' && cmd.input.UpdateExpression.includes('deviceIdUso')) {
+            docClient.send = anterior;
+            await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA });
         }
         return anterior(cmd);
     };
-
-    const revocados = await ValeFirmaService.revocarDePersona(PERSONA);
+    const r = await ValeFirmaService.consumir({ vale, personaId: PERSONA });
     docClient.send = anterior;
 
-    assert.equal(revocados, 3);
-    assert.ok(store.vales.every((v) => v.usedAt), 'ninguno queda disponible');
+    assert.equal(r.ok, false);
+    assert.equal(r.motivo, 'revocado');
+    const [registro] = vales([vale]);
+    assert.ok(registro.revocadoEn);
+    assert.equal(registro.usedAt, null);
+});
+
+test('si la consulta de vales falla, revocar lanza: no dice "0 revocados" como si no hubiera', async () => {
+    const anterior = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'QueryCommand') throw Object.assign(new Error('caído'), { name: 'InternalServerError' });
+        return anterior(cmd);
+    };
+    await assert.rejects(ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA }));
+    docClient.send = anterior;
+});
+
+test('un vale que no se pudo anular se cuenta como fallido, no como anulado', async () => {
+    await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 2 });
+    const anterior = docClient.send;
+    let primera = true;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'UpdateCommand' && primera) {
+            primera = false;
+            throw Object.assign(new Error('throttling'), { name: 'ProvisionedThroughputExceededException' });
+        }
+        return anterior(cmd);
+    };
+    const r = await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA });
+    docClient.send = anterior;
+    assert.deepEqual(r, { revocados: 1, noAplicaban: 0, fallidos: 1 });
 });
 
 // ─── Armado de la escritura sobre el documento ───────────────────────────────

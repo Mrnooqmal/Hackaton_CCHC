@@ -25,16 +25,20 @@ const { conNeutro } = require('../../lib/degradacion');
 const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
 const { camposDeArchivo } = require('../../lib/huellaArchivo');
 
-/** Estado HTTP de cada rechazo de `PersonaService.setPin`. PIN_BLOQUEADO (límite
- *  de intentos, D-9) es 423 en todas las rutas que verifican un PIN. */
+/** Estado HTTP de cada rechazo de `PersonaService.setPin` y `restablecerPin`.
+ *  PIN_BLOQUEADO (límite de intentos, D-9) es 423 en todas las rutas que
+ *  verifican un PIN. */
 const ESTADO_POR_ERROR_DE_PIN = {
     PIN_INVALIDO: 400,
     PIN_ACTUAL_REQUERIDO: 400,
     PIN_IGUAL: 400,
     PIN_ACTUAL_INCORRECTO: 401,
+    MOTIVO_REQUERIDO: 400,
     PIN_AJENO: 403,
+    PIN_MISMA_PERSONA: 403,
     PERSONA_NO_ENCONTRADA: 404,
     PIN_CAMBIO_CONCURRENTE: 409,
+    PIN_NO_CONFIGURADO: 409,
     PIN_BLOQUEADO: 423,
 };
 
@@ -1163,6 +1167,14 @@ module.exports.personasHandler = async (event) => {
         return p && p.tenantId === tenantId ? p : null;
     };
 
+    // Nombre de quien actúa, para el historial del PIN y el aviso a la persona.
+    // La sesión solo trae el `personaId`, así que se lee su ficha.
+    const nombreDeSesion = async () => {
+        const yo = await conNeutro('persona.nombre_actor', () => personaService.getById(sesion.personaId), null);
+        if (!yo) return null;
+        return [yo.nombre, yo.apellidoPaterno || yo.apellido].filter(Boolean).join(' ').trim() || null;
+    };
+
     // Ficha de una persona tal como puede verla quien pide: los datos de salud solo
     // para quien tiene el permiso o para ella misma.
     const fichaVisible = (persona) => persona.toSafeFormat({
@@ -2189,7 +2201,42 @@ module.exports.personasHandler = async (event) => {
             try {
                 const result = await personaService.setPin(tenantId, personaId, body.pin, body.pinActual, {
                     personaId: sesion.personaId,
+                    // Complemento del historial: el `personaId` ya identifica a quien actuó.
+                    nombre: await nombreDeSesion(),
                     puedeEnrolar: puede(PERMISSIONS.PERSONAS_CREAR),
+                });
+                return success(result);
+            } catch (err) {
+                const estado = ESTADO_POR_ERROR_DE_PIN[err.codigo];
+                if (estado) return error(err.message, estado);
+                throw err;
+            }
+        }
+
+        // POST /personas/{id}/restablecer-pin — Borrar el PIN de alguien que lo
+        // olvidó, para que configure uno nuevo.
+        //
+        // Las reglas —motivo, aviso en la misma transacción, vales anulados, y que
+        // quien restablece no pueda asistir en el PIN nuevo— viven en
+        // `PersonaService.restablecerPin`. Acá: permiso, pertenencia y quién actúa.
+        if (method === 'POST' && personaId && action === 'restablecer-pin') {
+            if (!sesion) return sesionRes.respuesta;
+            if (!puede(PERMISSIONS.PERSONA_RESTABLECER_PIN)) {
+                return error('No tienes permiso para restablecer el PIN de firma', 403);
+            }
+            const body = JSON.parse(event.body || '{}');
+            if (!await personaDelTenant(personaId)) return error('Persona no encontrada', 404);
+
+            // El nombre NO es opcional acá: es lo que lee la persona afectada en el
+            // aviso, y la única forma que tiene de reconocer quién lo hizo. Sin él
+            // no se restablece.
+            const nombre = await nombreDeSesion();
+            if (!nombre) return error('No se pudo identificar a quien restablece. Intenta de nuevo.', 503);
+
+            try {
+                const result = await personaService.restablecerPin(tenantId, personaId, body.motivo, {
+                    personaId: sesion.personaId,
+                    nombre,
                 });
                 return success(result);
             } catch (err) {
