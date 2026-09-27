@@ -7,9 +7,24 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const { verificarConLimiteOLanzar } = require('../limitePin');
+const { construirMensaje, INBOX_TABLE } = require('../bandeja');
+const { registrarFallo } = require('../degradacion');
+const { ValeFirmaService } = require('./ValeFirmaService');
+
+/** Largo mínimo del motivo de un restablecimiento: una palabra suelta ("olvido")
+ *  no sirve para que la persona afectada, o quien revise después, entienda qué
+ *  pasó. */
+const MOTIVO_MIN = 10;
+const MOTIVO_MAX = 500;
+
+/** Condiciones de "no hay" para atributos que `crear` escribe como NULL: en
+ *  DynamoDB un NULL es un atributo presente, así que `attribute_not_exists`
+ *  solo no alcanza. Usan `:nulo`. */
+const SIN_PIN = '(attribute_not_exists(pinHash) OR pinHash = :nulo)';
+const SIN_RESTABLECIMIENTO = '(attribute_not_exists(pinRestablecido) OR pinRestablecido = :nulo)';
 
 /** Error de PIN con un código estable, para que la ruta responda el estado HTTP
  *  correcto sin interpretar mensajes. */
@@ -606,7 +621,14 @@ class PersonaService {
      *     esa prueba pasa por el límite de intentos (D-9);
      *   - si no lo tiene, lo configura ella o quien tenga el permiso de enrolar
      *     (en terreno el trabajador teclea su PIN en el dispositivo de quien lo
-     *     registra).
+     *     registra);
+     *   - si no lo tiene porque alguien lo RESTABLECIÓ (`pinRestablecido`), vale
+     *     lo mismo, con una excepción: quien restableció no puede ser quien
+     *     asiste. Restablecer y asistir son las dos mitades de poner un PIN que
+     *     la persona no eligió sola; exigir que sean dos personas distintas es
+     *     lo que impide que una sola se quede con la credencial de otra.
+     *
+     * Cada evento queda en `pinHistorial`, con quién lo hizo y si fue asistido.
      *
      * Hasta el 26 de septiembre de 2026 el PIN actual se verificaba solo "si el
      * cliente lo envía": omitirlo cambiaba el PIN sin prueba. La ruta lo exigía,
@@ -616,7 +638,7 @@ class PersonaService {
      * guardado sigue siendo el que se verificó (o si sigue sin haber uno).
      *
      * @param {object} actor - quién pide el cambio, SIEMPRE desde la sesión:
-     *        `{ personaId, puedeEnrolar }`.
+     *        `{ personaId, nombre, puedeEnrolar }`.
      */
     async setPin(tenantId, personaId, pin, pinActual, actor) {
         if (!actor?.personaId) throw errorPin('Falta quién cambia el PIN', 'PIN_SIN_ACTOR');
@@ -643,22 +665,60 @@ class PersonaService {
             throw errorPin('No tienes permiso para configurar el PIN de otra persona', 'PIN_AJENO');
         }
 
+        const restablecido = pinAnterior ? null : (persona.pinRestablecido || null);
+        if (restablecido && !esPropio && restablecido.por === actor.personaId) {
+            throw errorPin('Restableciste este PIN, así que no puedes asistir en la configuración del nuevo. '
+                + 'Debe hacerlo otra persona, o el propio trabajador desde su cuenta.', 'PIN_MISMA_PERSONA');
+        }
+
         const now = new Date().toISOString();
         const newPinHash = await hashPin(pin, personaId);
+        const evento = {
+            evento: pinAnterior ? 'cambiado' : 'configurado',
+            por: actor.personaId,
+            nombre: actor.nombre || null,
+            asistido: !esPropio,
+            en: now,
+            ...(restablecido ? { trasRestablecimientoDe: restablecido.en } : {}),
+        };
+
+        // Lo que se verificó tiene que seguir siendo cierto al escribir:
+        //   - con PIN: el mismo hash que se probó;
+        //   - sin PIN tras un restablecimiento: ESE restablecimiento (otro
+        //     posterior podría ser de otra persona, y entonces quien asiste
+        //     tendría que volver a pasar la regla);
+        //   - sin PIN y sin restablecimiento: que siga sin haber ninguno.
+        //
+        // "Sin PIN" es ausente O NULL: `crear` guarda `pinHash: null`, un
+        // atributo presente. El 26 de septiembre de 2026 esta condición decía
+        // solo `attribute_not_exists(pinHash)`, y con eso ninguna persona nueva
+        // podía configurar su primer PIN (ver `tests/expresiones-dynamo.js`).
+        let condicion;
+        const valores = {
+            ':pinHash': newPinHash, ':pinCreatedAt': now, ':updatedAt': now,
+            ':evento': [evento], ':vacia': [],
+        };
+        if (pinAnterior) {
+            condicion = 'pinHash = :anterior';
+            valores[':anterior'] = pinAnterior;
+        } else if (restablecido) {
+            condicion = `${SIN_PIN} AND pinRestablecido.en = :restEn`;
+            valores[':restEn'] = restablecido.en;
+            valores[':nulo'] = null;
+        } else {
+            condicion = `${SIN_PIN} AND ${SIN_RESTABLECIMIENTO}`;
+            valores[':nulo'] = null;
+        }
 
         try {
             await this.dynamo.send(new UpdateCommand({
                 TableName: this.table,
                 Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
-                UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt',
-                // El PIN que se verificó (o su ausencia) tiene que seguir ahí.
-                ConditionExpression: pinAnterior ? 'pinHash = :anterior' : 'attribute_not_exists(pinHash)',
-                ExpressionAttributeValues: {
-                    ':pinHash': newPinHash,
-                    ':pinCreatedAt': now,
-                    ':updatedAt': now,
-                    ...(pinAnterior ? { ':anterior': pinAnterior } : {}),
-                },
+                UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt,'
+                    + ' pinHistorial = list_append(if_not_exists(pinHistorial, :vacia), :evento)'
+                    + ' REMOVE pinRestablecido',
+                ConditionExpression: condicion,
+                ExpressionAttributeValues: valores,
             }));
         } catch (err) {
             if (err.name !== 'ConditionalCheckFailedException') throw err;
@@ -668,6 +728,150 @@ class PersonaService {
         return {
             message: pinAnterior ? 'PIN actualizado exitosamente' : 'PIN configurado exitosamente',
             pinCreatedAt: now
+        };
+    }
+
+    /**
+     * Restablece el PIN de una persona que lo olvidó: lo borra para que se
+     * configure uno nuevo. Nadie ve ni fija el PIN acá; solo se quita el que
+     * había.
+     *
+     * Tres garantías, en este orden de importancia:
+     *
+     *   1. **No hay restablecimiento sin aviso.** Quitar el PIN y dejar el
+     *      mensaje en la bandeja de la persona son UNA transacción: o pasan las
+     *      dos o ninguna. La persona afectada es la única que puede notar que no
+     *      lo pidió, así que un restablecimiento que ella no se entera que
+     *      ocurrió no puede existir. El correo, si tiene, va después y es mejor
+     *      esfuerzo: SES no entra en una transacción de DynamoDB, pero si falla
+     *      queda medido (`registrarFallo`) y se le dice a quien restableció.
+     *   2. **Quien restablece no puede asistir en el PIN nuevo** (ver `setPin`).
+     *      Queda registrado en `pinRestablecido` hasta que se configura, y en
+     *      `pinHistorial` para siempre.
+     *   3. **Los vales sin usar se anulan**: se desbloquearon con el PIN
+     *      anterior. Tampoco entran en la transacción (son N escrituras de otra
+     *      tabla); lo que no se pudo anular se informa, no se calla.
+     *
+     * La escritura exige que el PIN siga siendo el que se leyó: dos
+     * restablecimientos simultáneos no generan dos avisos por un solo cambio,
+     * y uno no borra un PIN que la persona acaba de configurar.
+     *
+     * @param {object} actor - desde la sesión: `{ personaId, nombre }`. El
+     *        permiso (`persona.restablecer_pin`) lo verifica la ruta.
+     */
+    async restablecerPin(tenantId, personaId, motivo, actor) {
+        if (!actor?.personaId) throw errorPin('Falta quién restablece el PIN', 'PIN_SIN_ACTOR');
+        const motivoLimpio = String(motivo ?? '').trim();
+        if (motivoLimpio.length < MOTIVO_MIN) {
+            throw errorPin(`Indica el motivo del restablecimiento (al menos ${MOTIVO_MIN} caracteres).`, 'MOTIVO_REQUERIDO');
+        }
+        if (motivoLimpio.length > MOTIVO_MAX) {
+            throw errorPin(`El motivo no puede superar ${MOTIVO_MAX} caracteres.`, 'MOTIVO_REQUERIDO');
+        }
+
+        const persona = await this.getById(personaId);
+        if (!persona || persona.tenantId !== tenantId) throw errorPin('Persona no encontrada', 'PERSONA_NO_ENCONTRADA');
+        const pinAnterior = persona._pinHash || null;
+        if (!pinAnterior) {
+            throw errorPin(persona.pinRestablecido
+                ? 'El PIN de esta persona ya está restablecido y espera que se configure uno nuevo.'
+                : 'Esta persona todavía no tiene PIN: no hay nada que restablecer.', 'PIN_NO_CONFIGURADO');
+        }
+
+        const ahora = new Date();
+        const en = ahora.toISOString();
+        const porNombre = actor.nombre || 'Un administrador';
+        const restablecimiento = { por: actor.personaId, nombre: porNombre, en, motivo: motivoLimpio };
+        const { fecha, horario } = fechaHoraChile(ahora);
+
+        const aviso = construirMensaje({
+            recipientId: personaId,
+            baseMessageId: uuidv4(),
+            now: en,
+            senderId: actor.personaId,
+            senderName: porNombre,
+            senderRol: 'system',
+            type: 'alert',
+            priority: 'high',
+            subject: 'Tu PIN de firma fue restablecido',
+            content: `${porNombre} restableció tu PIN de firma el ${fecha} a las ${horario}. `
+                + `Motivo: ${motivoLimpio}\n\n`
+                + 'Tu PIN anterior ya no sirve y tus vales para firmar sin conexión quedaron anulados. '
+                + 'Para volver a firmar, crea un PIN nuevo: tú mismo en Configuración, «Crear PIN de firma nuevo», o en terreno con ayuda de alguien '
+                + 'distinto de quien lo restableció. El PIN nuevo lo escribes tú; nadie más debe conocerlo.\n\n'
+                + 'Si no pediste esto, avisa a tu empresa o al prevencionista de tu obra.',
+            linkedEntity: { type: 'persona', id: personaId },
+        });
+
+        try {
+            await this.dynamo.send(new TransactWriteCommand({
+                TransactItems: [
+                    {
+                        Update: {
+                            TableName: this.table,
+                            Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+                            UpdateExpression: 'SET pinRestablecido = :rest, pinIntentosFallidos = :cero, updatedAt = :en,'
+                                + ' pinHistorial = list_append(if_not_exists(pinHistorial, :vacia), :evento)'
+                                + ' REMOVE pinHash, pinCreatedAt, pinBloqueadaHasta',
+                            ConditionExpression: 'pinHash = :anterior',
+                            ExpressionAttributeValues: {
+                                ':rest': restablecimiento,
+                                ':cero': 0,
+                                ':en': en,
+                                ':vacia': [],
+                                ':evento': [{ evento: 'restablecido', ...restablecimiento }],
+                                ':anterior': pinAnterior,
+                            },
+                        },
+                    },
+                    {
+                        Put: {
+                            TableName: INBOX_TABLE,
+                            Item: aviso,
+                            ConditionExpression: 'attribute_not_exists(messageId)',
+                        },
+                    },
+                ],
+            }));
+        } catch (err) {
+            const razones = err.CancellationReasons || [];
+            if (err.name === 'TransactionCanceledException' && razones[0]?.Code === 'ConditionalCheckFailed') {
+                throw errorPin('El PIN cambió mientras se procesaba la solicitud. Revisa el estado y vuelve a intentar.', 'PIN_CAMBIO_CONCURRENTE');
+            }
+            throw err;
+        }
+
+        // Desde acá el restablecimiento ya ocurrió y la persona ya tiene su aviso.
+        // Lo que sigue no puede deshacerlo, pero tampoco puede fallar en silencio.
+        let vales;
+        try {
+            vales = await ValeFirmaService.revocarDePersona(personaId, {
+                tenantId, motivo: 'pin_restablecido', por: actor.personaId,
+            });
+            if (vales.fallidos > 0) registrarFallo('pin.revocar_vales', new Error(`${vales.fallidos} vales sin anular`), { personaId });
+        } catch (err) {
+            registrarFallo('pin.revocar_vales', err, { personaId });
+            vales = { revocados: 0, noAplicaban: 0, fallidos: null };
+        }
+
+        let correo = 'sin-correo';
+        if (persona.email) {
+            // Carga diferida: `lib/` no depende de `handlers/` al importarse.
+            const { sendPinRestablecidoEmail } = require('../../handlers/notifications/handler');
+            const r = await sendPinRestablecidoEmail(persona.email, persona.nombre, { porNombre, fecha, horario, motivo: motivoLimpio })
+                .catch((err) => ({ sent: false, err }));
+            correo = r.sent ? 'enviado' : 'fallido';
+            if (!r.sent) registrarFallo('correo.pin_restablecido', r.err || new Error(r.error || 'no enviado'), { personaId });
+        }
+
+        return {
+            message: 'PIN restablecido. La persona fue avisada y debe configurar uno nuevo.',
+            restablecidoEn: en,
+            avisoBandeja: true,
+            avisoCorreo: correo,
+            // `null` = no se pudo ni consultar cuáles había: hay que revisarlo.
+            valesAnulados: vales.revocados,
+            valesSinAnular: vales.fallidos,
         };
     }
 

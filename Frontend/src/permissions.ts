@@ -27,6 +27,7 @@ export const PERMISSIONS = {
     PERSONA_EPP: 'persona.epp',
     PERSONA_VIGILANCIA_SALUD: 'persona.vigilancia_salud',
     PERSONA_DESVINCULAR: 'persona.desvincular',
+    PERSONA_RESTABLECER_PIN: 'persona.restablecer_pin',
     // Repositorio de archivos
     REPOSITORIO_VER: 'repositorio.ver',
     REPOSITORIO_SUBIR: 'repositorio.subir',
@@ -93,6 +94,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
             { key: PERMISSIONS.PERSONA_EPP, label: 'Registrar entregas de EPP' },
             { key: PERMISSIONS.PERSONA_VIGILANCIA_SALUD, label: 'Editar vigilancia de salud' },
             { key: PERMISSIONS.PERSONA_DESVINCULAR, label: 'Desvincular persona' },
+            { key: PERMISSIONS.PERSONA_RESTABLECER_PIN, label: 'Restablecer PIN de firma', nota: 'Quien restablece no puede asistir en la configuración del PIN nuevo.' },
         ],
     },
     {

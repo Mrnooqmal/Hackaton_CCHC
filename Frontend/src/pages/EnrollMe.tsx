@@ -7,7 +7,7 @@ import { OnboardingShell } from '../components/ui';
 import type { StepperStep } from '../components/ui';
 import { FiCheckCircle, FiShield, FiLock, FiArrowRight, FiKey, FiUser, FiPhone, FiMessageSquare, FiCamera, FiSkipForward } from 'react-icons/fi';
 
-type EnrollmentStep = 'welcome' | 'create-pin' | 'confirm-pin' | 'processing' | 'profile' | 'success';
+type EnrollmentStep = 'welcome' | 'current-pin' | 'create-pin' | 'confirm-pin' | 'processing' | 'profile' | 'success';
 
 function resizeImageToBase64(file: File, maxSize = 256): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -39,9 +39,14 @@ export default function EnrollMe() {
     // Modo "cambio de PIN": el usuario ya está enrolado y sólo quiere actualizar su PIN.
     // Llega desde Configuración → "Cambiar PIN". Omite la bienvenida y el paso de perfil.
     const isChangePin = Boolean((location.state as any)?.changePin);
+    // Cambiar un PIN existente exige el actual (lo verifica el servidor, con
+    // límite de intentos). Sin PIN —porque se lo restablecieron— se crea directo.
+    const tienePin = Boolean((user as any)?.pinConfigurado);
+    const pasoInicialCambio: EnrollmentStep = tienePin ? 'current-pin' : 'create-pin';
 
-    const [currentStep, setCurrentStep] = useState<EnrollmentStep>(isChangePin ? 'create-pin' : 'welcome');
+    const [currentStep, setCurrentStep] = useState<EnrollmentStep>(isChangePin ? pasoInicialCambio : 'welcome');
     const [pin, setPin] = useState('');
+    const [pinActual, setPinActual] = useState('');
     const [error, setError] = useState('');
     const [pinCreateKey, setPinCreateKey] = useState(0);
     const [pinConfirmKey, setPinConfirmKey] = useState(0);
@@ -93,12 +98,15 @@ export default function EnrollMe() {
 
             if (!targetId || !targetTenant) throw new Error('Usuario o Tenant no encontrado en la sesión');
 
-            const setPinResponse = await personasApi.setPin(targetTenant, targetId, pin);
+            const setPinResponse = await personasApi.setPin(targetTenant, targetId, pin, isChangePin && pinActual ? pinActual : undefined);
+            setPinActual('');
             if (!setPinResponse.success) throw new Error(setPinResponse.error || 'Error al configurar el PIN');
 
             // Modo cambio de PIN: el usuario ya estaba enrolado. Omitimos el paso de
             // perfil y completarEnrolamiento; vamos directo a la confirmación de éxito.
             if (isChangePin) {
+                setPin('');
+                updateUser({ pinConfigurado: true, pinRestablecido: null } as any);
                 setCurrentStep('success');
                 setTimeout(() => navigate('/configuracion', { replace: true }), 3000);
                 return;
@@ -113,8 +121,10 @@ export default function EnrollMe() {
         } catch (err) {
             console.error('Error en enrolamiento:', err);
             setError(err instanceof Error ? err.message : 'Error desconocido');
-            // En cambio de PIN volvemos a "crear" para que elija otro (p. ej. PIN duplicado).
-            setCurrentStep(isChangePin ? 'create-pin' : 'confirm-pin');
+            // En cambio de PIN se vuelve a empezar: el PIN actual ya se usó (y pudo
+            // ser el incorrecto), así que se pide de nuevo si corresponde.
+            setPinActual('');
+            setCurrentStep(isChangePin ? pasoInicialCambio : 'confirm-pin');
             if (isChangePin) setPinCreateKey(k => k + 1);
         }
     };
@@ -257,6 +267,27 @@ export default function EnrollMe() {
                             >
                                 Comenzar enrolamiento
                                 <FiArrowRight size={16} />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* STEP: PIN actual (solo al cambiar uno existente) */}
+                    {currentStep === 'current-pin' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeInScale 0.35s ease-out' }}>
+                            <PinInput
+                                key={`actual-${pinCreateKey}`}
+                                mode="verify"
+                                onComplete={(actual) => { setPinActual(actual); setError(''); setCurrentStep('create-pin'); }}
+                                title="Ingresa tu PIN actual"
+                                subtitle="Para cambiarlo, primero confirma que eres tú."
+                                error={error}
+                            />
+                            <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ alignSelf: 'center' }}
+                                onClick={() => navigate('/configuracion')}
+                            >
+                                Cancelar
                             </button>
                         </div>
                     )}

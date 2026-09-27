@@ -73,6 +73,7 @@ const MOTIVOS = {
     OTRA_PERSONA: 'otra_persona',
     YA_USADO: 'ya_usado',
     DEMASIADO_VIEJO: 'demasiado_viejo',
+    REVOCADO: 'revocado',
 };
 
 class ValeFirmaService {
@@ -143,6 +144,7 @@ class ValeFirmaService {
         const registro = res.Item;
         if (!registro) return { ok: false, motivo: MOTIVOS.NO_EXISTE };
         if (registro.personaId !== personaId) return { ok: false, motivo: MOTIVOS.OTRA_PERSONA };
+        if (registro.revocadoEn) return { ok: false, motivo: MOTIVOS.REVOCADO };
         if (registro.usedAt) return { ok: false, motivo: MOTIVOS.YA_USADO };
 
         const ahora = new Date();
@@ -158,7 +160,10 @@ class ValeFirmaService {
                 TableName: VALES_TABLE,
                 Key: { valeHash: registro.valeHash },
                 UpdateExpression: 'SET usedAt = :ahora, deviceIdUso = :dev',
-                ConditionExpression: 'attribute_not_exists(usedAt) OR usedAt = :nulo',
+                // Ni gastado ni revocado: con la condición simétrica de
+                // `revocarDePersona`, consumir y revocar se excluyen aunque
+                // lleguen a la vez.
+                ConditionExpression: '(attribute_not_exists(usedAt) OR usedAt = :nulo) AND attribute_not_exists(revocadoEn)',
                 ExpressionAttributeValues: {
                     ':ahora': ahora.toISOString(),
                     ':dev': deviceId || null,
@@ -166,9 +171,13 @@ class ValeFirmaService {
                 },
             }));
         } catch (err) {
-            // La condición falló: otro intento lo gastó primero.
+            // La condición falló: otro intento lo gastó primero, o se revocó
+            // entre la lectura y la escritura. Se relee para decir cuál.
             if (err.name === 'ConditionalCheckFailedException') {
-                return { ok: false, motivo: MOTIVOS.YA_USADO };
+                const ahoraRes = await docClient.send(new GetCommand({
+                    TableName: VALES_TABLE, Key: { valeHash: registro.valeHash }, ConsistentRead: true,
+                }));
+                return { ok: false, motivo: ahoraRes.Item?.revocadoEn ? MOTIVOS.REVOCADO : MOTIVOS.YA_USADO };
             }
             throw err;
         }
@@ -176,27 +185,67 @@ class ValeFirmaService {
         return { ok: true, vale: registro, vencido };
     }
 
-    /** Invalida los vales sin usar de una persona (cierre de sesión, desvinculación). */
-    static async revocarDePersona(personaId) {
-        const res = await docClient.send(new QueryCommand({
-            TableName: VALES_TABLE,
-            IndexName: 'personaId-index',
-            KeyConditionExpression: 'personaId = :p',
-            ExpressionAttributeValues: { ':p': personaId },
-        })).catch(() => ({ Items: [] }));
+    /**
+     * Invalida los vales sin usar de una persona en una empresa. Se usa al
+     * restablecer su PIN: los vales se desbloquearon con el PIN anterior, y si
+     * ese PIN es el que estaba comprometido, los vales que alguien retenga en un
+     * equipo siguen firmando a su nombre sin conexión.
+     *
+     * Hasta el 27 de septiembre de 2026 esto no tenía llamadores, y se tragaba
+     * los errores: si la consulta fallaba devolvía "0 revocados" como si no
+     * hubiera nada que revocar. Ahora la consulta falla hacia arriba, y cada vale
+     * que no se pudo revocar se cuenta aparte, para que quien llama sepa que
+     * quedó trabajo sin hacer en vez de creer que se hizo.
+     *
+     * Revocar ya no escribe `usedAt`: un vale revocado no es un vale usado, y el
+     * acta tiene que poder distinguirlos. `revocadoEn` y la condición de
+     * `consumir` se excluyen mutuamente, así que un vale nunca termina gastado Y
+     * revocado aunque ambas cosas pasen a la vez.
+     *
+     * El índice proyecta solo `usedAt` (D-8), así que la empresa se exige en la
+     * condición de la escritura y no en la lectura.
+     *
+     * @returns {Promise<{revocados: number, noAplicaban: number, fallidos: number}>}
+     *          `noAplicaban`: ya usado, ya revocado, o de otra empresa.
+     */
+    static async revocarDePersona(personaId, { tenantId, motivo, por }) {
+        if (!tenantId) throw new Error('revocarDePersona: falta la empresa');
+        const resultado = { revocados: 0, noAplicaban: 0, fallidos: 0 };
+        const ahora = new Date().toISOString();
 
-        let revocados = 0;
-        for (const registro of (res.Items || [])) {
-            if (registro.usedAt) continue;
-            await docClient.send(new UpdateCommand({
+        let desde;
+        do {
+            const pagina = await docClient.send(new QueryCommand({
                 TableName: VALES_TABLE,
-                Key: { valeHash: registro.valeHash },
-                UpdateExpression: 'SET usedAt = :ahora, revocado = :si',
-                ExpressionAttributeValues: { ':ahora': new Date().toISOString(), ':si': true },
-            })).catch(() => {});
-            revocados += 1;
-        }
-        return revocados;
+                IndexName: 'personaId-index',
+                KeyConditionExpression: 'personaId = :p',
+                ExpressionAttributeValues: { ':p': personaId },
+                ExclusiveStartKey: desde,
+            }));
+            for (const registro of (pagina.Items || [])) {
+                if (registro.usedAt) { resultado.noAplicaban += 1; continue; }
+                try {
+                    await docClient.send(new UpdateCommand({
+                        TableName: VALES_TABLE,
+                        Key: { valeHash: registro.valeHash },
+                        UpdateExpression: 'SET revocadoEn = :ahora, motivoRevocacion = :motivo, revocadoPor = :por',
+                        ConditionExpression: 'tenantId = :t AND (attribute_not_exists(usedAt) OR usedAt = :nulo)'
+                            + ' AND attribute_not_exists(revocadoEn)',
+                        ExpressionAttributeValues: {
+                            ':ahora': ahora, ':motivo': motivo || null, ':por': por || null,
+                            ':t': tenantId, ':nulo': null,
+                        },
+                    }));
+                    resultado.revocados += 1;
+                } catch (err) {
+                    if (err.name === 'ConditionalCheckFailedException') resultado.noAplicaban += 1;
+                    else resultado.fallidos += 1;
+                }
+            }
+            desde = pagina.LastEvaluatedKey;
+        } while (desde);
+
+        return resultado;
     }
 }
 

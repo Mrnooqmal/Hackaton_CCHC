@@ -27,6 +27,11 @@ const PERMISSIONS = {
     PERSONA_EPP: 'persona.epp',
     PERSONA_VIGILANCIA_SALUD: 'persona.vigilancia_salud',
     PERSONA_DESVINCULAR: 'persona.desvincular',
+    // Restablecer el PIN de firma de otra persona (lo borra para que configure
+    // uno nuevo). Permiso propio porque quien lo tiene puede dejar a cualquiera
+    // sin poder firmar, y es la mitad de poner un PIN que la persona no eligió
+    // sola. Por defecto solo el administrador; ninguno de los presets lo trae.
+    PERSONA_RESTABLECER_PIN: 'persona.restablecer_pin',
     // Repositorio
     REPOSITORIO_VER: 'repositorio.ver',
     REPOSITORIO_SUBIR: 'repositorio.subir',

@@ -92,18 +92,30 @@ export default function WorkerEnroll() {
         }
     };
 
-    const handleCreatePin = async (pin: string) => {
-        if (!workerId) return;
-
+    // El PIN se guarda recién al confirmarlo. Antes se guardaba al primer
+    // ingreso y la confirmación solo se comparaba en el navegador: si el
+    // trabajador se equivocaba al confirmar y volvía a crear otro, el servidor
+    // ya tenía uno que nadie confirmó, y cambiarlo exige el PIN actual.
+    const handleCreatePin = (pin: string) => {
         setNewPin(pin);
+        setPinError('');
+        setStep('confirm-pin');
+    };
+
+    const handleConfirmPin = async (pin: string) => {
+        if (!workerId) return;
+        if (pin !== newPin) {
+            setPinError('Los PIN no coinciden. Intenta nuevamente.');
+            return;
+        }
+
         setLoading(true);
         setPinError('');
-
         try {
             const response = await workersApi.setPin(workerId, pin);
-
             if (response.success) {
-                setStep('confirm-pin');
+                setNewPin('');   // no queda en memoria más de lo necesario
+                setStep('sign');
             } else {
                 setPinError(response.error || 'Error al configurar PIN');
             }
@@ -112,16 +124,6 @@ export default function WorkerEnroll() {
         } finally {
             setLoading(false);
         }
-    };
-
-    const handleConfirmPin = async (pin: string) => {
-        if (pin !== newPin) {
-            setPinError('Los PIN no coinciden. Intenta nuevamente.');
-            return;
-        }
-
-        setPinError('');
-        setStep('sign');
     };
 
     const handleSign = async (pin: string) => {
@@ -432,6 +434,9 @@ export default function WorkerEnroll() {
                         </div>
 
                         <PinInput
+                            // Asistido: el trabajador teclea su PIN en un equipo ajeno. Quien
+                            // asiste habilita el acto, pero nunca debe poder ver el valor.
+                            showToggle={false}
                             onComplete={handleCreatePin}
                             mode="create"
                             error={pinError}
@@ -461,6 +466,9 @@ export default function WorkerEnroll() {
                         </p>
 
                         <PinInput
+                            // Asistido: el trabajador teclea su PIN en un equipo ajeno. Quien
+                            // asiste habilita el acto, pero nunca debe poder ver el valor.
+                            showToggle={false}
                             onComplete={handleConfirmPin}
                             mode="confirm"
                             error={pinError}
@@ -521,6 +529,9 @@ export default function WorkerEnroll() {
                         </div>
 
                         <PinInput
+                            // Asistido: el trabajador teclea su PIN en un equipo ajeno. Quien
+                            // asiste habilita el acto, pero nunca debe poder ver el valor.
+                            showToggle={false}
                             onComplete={handleSign}
                             mode="verify"
                             title="Ingresa tu PIN para firmar"
@@ -528,18 +539,6 @@ export default function WorkerEnroll() {
                             error={pinError}
                             disabled={loading}
                         />
-
-                        <div className="flex gap-3 mt-6">
-                            <button
-                                type="button"
-                                className="btn btn-secondary"
-                                onClick={() => setStep('confirm-pin')}
-                                disabled={loading}
-                            >
-                                <FiArrowLeft />
-                                Volver
-                            </button>
-                        </div>
                     </div>
                 )}
 

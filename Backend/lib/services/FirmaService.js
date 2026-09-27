@@ -174,6 +174,7 @@ class FirmaService {
                     [MOTIVOS.OTRA_PERSONA]: 'El vale de firma no es válido.',
                     [MOTIVOS.YA_USADO]: 'Este vale de firma ya se usó.',
                     [MOTIVOS.DEMASIADO_VIEJO]: 'El vale de firma venció hace demasiado tiempo y ya no puede sincronizarse.',
+                    [MOTIVOS.REVOCADO]: 'El vale de firma se anuló porque el PIN de esta persona se restableció. Debe firmar de nuevo con su PIN nuevo.',
                 }[consumo.motivo] || 'El vale de firma no es válido.';
                 throw new Error(explicacion);
             }

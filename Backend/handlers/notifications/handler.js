@@ -436,6 +436,88 @@ Este es un mensaje automático. Por favor no respondas a este correo.
     }
 };
 
+const escaparHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/**
+ * Aviso a una persona de que su PIN de firma fue restablecido por otra.
+ *
+ * Es la otra mitad del aviso en bandeja: la persona afectada es la única que
+ * puede notar que no lo pidió, y puede no estar entrando a la plataforma. El
+ * correo no lleva enlace ni ningún dato que sirva para configurar el PIN nuevo:
+ * solo dice qué pasó, quién y cuándo, y qué hacer si no lo pidió.
+ *
+ * `motivo` y `porNombre` los escribe un usuario: se escapan antes de ir al HTML.
+ */
+const sendPinRestablecidoEmail = async (email, nombre, { porNombre, fecha, horario, motivo }) => {
+    if (!email) return { sent: false, reason: 'no_email' };
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;padding:32px;">
+    <tr><td>
+      <div style="font-size:20px;font-weight:700;color:#002855;margin-bottom:24px;">Build &amp; Serve</div>
+      <h1 style="font-size:18px;margin:0 0 12px;">Tu PIN de firma fue restablecido</h1>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">
+        Hola ${escaparHtml(nombre)}: <strong>${escaparHtml(porNombre)}</strong> restableció tu PIN de firma
+        el ${escaparHtml(fecha)} a las ${escaparHtml(horario)}.
+      </p>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">Motivo registrado: ${escaparHtml(motivo)}</p>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">
+        Tu PIN anterior ya no sirve, y los vales para firmar sin conexión que tenías quedaron anulados.
+        Para volver a firmar tienes que crear un PIN nuevo: tú mismo en la plataforma (Configuración, «Crear PIN de firma nuevo»), o en terreno
+        con ayuda de alguien distinto de quien lo restableció. El PIN nuevo lo escribes tú; nadie más
+        debe conocerlo.
+      </p>
+      <p style="font-size:14px;line-height:1.6;margin:0;">
+        <strong>Si no pediste esto</strong>, avisa a tu empresa o al prevencionista de tu obra.
+      </p>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+    const textBody = `
+Build & Serve — Tu PIN de firma fue restablecido
+
+Hola ${nombre}: ${porNombre} restableció tu PIN de firma el ${fecha} a las ${horario}.
+
+Motivo registrado: ${motivo}
+
+Tu PIN anterior ya no sirve, y los vales para firmar sin conexión que tenías
+quedaron anulados. Para volver a firmar tienes que crear un PIN nuevo: tú mismo
+en la plataforma (Configuración, «Crear PIN de firma nuevo»), o en terreno con
+ayuda de alguien distinto de quien lo restableció. El PIN nuevo lo escribes tú; nadie más debe conocerlo.
+
+Si no pediste esto, avisa a tu empresa o al prevencionista de tu obra.
+
+---
+Build & Serve — Plataforma de Gestión de Obras
+Este es un mensaje automático. Por favor no respondas a este correo.
+`.trim();
+
+    try {
+        await sesClient.send(new SendEmailCommand({
+            Source: SENDER_EMAIL,
+            Destination: { ToAddresses: [email] },
+            Message: {
+                Subject: { Data: 'Build & Serve — Tu PIN de firma fue restablecido', Charset: 'UTF-8' },
+                Body: {
+                    Html: { Data: htmlBody, Charset: 'UTF-8' },
+                    Text: { Data: textBody, Charset: 'UTF-8' },
+                },
+            },
+        }));
+        return { sent: true };
+    } catch (err) {
+        console.error('Error enviando el aviso de PIN restablecido a', enmascararCorreo(email), '-', err.name);
+        return { sent: false, error: err.name || 'error', err };
+    }
+};
+
 /**
  * POST /notifications/welcome - Enviar email de bienvenida manualmente
  */
@@ -477,3 +559,4 @@ module.exports.sendWelcome = async (event) => {
 module.exports.sendWelcomeEmail = sendWelcomeEmail;
 module.exports.sendPasswordResetEmail = sendPasswordResetEmail;
 module.exports.sendOnboardingLicenseEmail = sendOnboardingLicenseEmail;
+module.exports.sendPinRestablecidoEmail = sendPinRestablecidoEmail;

@@ -301,6 +301,9 @@ export default function FirmaAsistidaModal({
 
                         {/* PIN input — same component as MySignatures */}
                         <PinInput
+                            // Asistido: el trabajador teclea su PIN en un equipo ajeno. Quien
+                            // asiste habilita el acto, pero nunca debe poder ver el valor.
+                            showToggle={false}
                             key={pinKey}
                             onComplete={(completedPin) => { setPin(completedPin); setError(null); }}
                             mode="verify"
