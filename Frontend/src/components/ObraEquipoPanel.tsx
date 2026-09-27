@@ -753,7 +753,9 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         if (item.accion === 'ENCUESTA') {
             navigate('/surveys', { state: { prefill: { rut: ob.rut, nombre: ob.nombre, titulo: item.label, kitItemKey: item.key } } });
         } else {
-            navigate('/activities', { state: { prefill: { obraId, personaId: ob.workerId, nombre: ob.nombre, subtipo: item.subtipo || 'OTRA', titulo: item.label, kitItemKey: item.key } } });
+            // "Nueva actividad" vive en su propia página desde el rediseño:
+            // se navega directo ahí, no a la lista de Actividades.
+            navigate('/activities/nueva', { state: { prefill: { obraId, personaId: ob.workerId, nombre: ob.nombre, subtipo: item.subtipo || 'OTRA', titulo: item.label, kitItemKey: item.key } } });
         }
     };
 

@@ -26,6 +26,14 @@ export interface WorkerPickerProps {
     /** Filas más bajas (para listas anidadas, como el planificador) */
     compact?: boolean;
     onSelectAll?: () => void;
+    /**
+     * 'card' (por defecto): fila-botón con avatar y check propios, usada donde
+     * hace falta marcar estados (citado, ya firmó). 'flat': casillero nativo
+     * con RUT y filas separadas por línea, igual que "Trabajadores asignados"
+     * en Obra nueva — para los selectores simples (Nueva actividad, Planificar
+     * el mes) que no tienen esos estados y deben verse consistentes con ese.
+     */
+    variant?: 'card' | 'flat';
 }
 
 /**
@@ -48,6 +56,7 @@ export default function WorkerPicker({
     maxHeight = 260,
     compact = false,
     onSelectAll,
+    variant = 'card',
 }: WorkerPickerProps) {
     const lockedSet = new Set(lockedIds);
     const highlightSet = new Set(highlightIds);
@@ -86,7 +95,11 @@ export default function WorkerPicker({
             {workers.length === 0 ? (
                 <p className="wp-empty">{emptyMessage}</p>
             ) : (
-                <>
+                /* Búsqueda y lista comparten UNA sola caja: la búsqueda vive
+                   dentro, con una regla abajo, para que el panel no cambie de
+                   alto al escribir — mismo trazo que "Trabajadores asignados"
+                   en Obra nueva. */
+                <div className="wp-box">
                     {workers.length > 6 && (
                         <div className="wp-search">
                             <FiSearch size={14} aria-hidden="true" />
@@ -99,9 +112,40 @@ export default function WorkerPicker({
                         </div>
                     )}
 
-                    <div className="wp-list" style={{ maxHeight }}>
+                    <div className={`wp-list${variant === 'flat' ? ' wp-list-flat' : ''}`} style={{ maxHeight }}>
                         {visibles.length === 0 ? (
                             <p className="wp-empty">Ningún trabajador coincide con «{search}».</p>
+                        ) : variant === 'flat' ? (
+                            visibles.map((w, idx) => {
+                                const isSelected = selected.includes(w.personaId);
+                                const isLocked = lockedSet.has(w.personaId);
+                                const isHighlighted = highlightSet.has(w.personaId);
+                                return (
+                                    <label
+                                        key={w.personaId}
+                                        className={`wp-flat-row${isLocked ? ' locked' : ''}`}
+                                        style={{ borderBottom: idx < visibles.length - 1 ? '1px solid var(--surface-border)' : 'none' }}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            className="checkbox-input custom-checkbox"
+                                            checked={isSelected}
+                                            disabled={isLocked}
+                                            onChange={() => onToggle(w.personaId)}
+                                        />
+                                        <span className="wp-flat-identity">
+                                            <span>
+                                                {w.nombre} {w.apellido}
+                                                {isHighlighted && <span className="wp-tag">{highlightLabel}</span>}
+                                            </span>
+                                            <span className="text-muted wp-flat-meta">
+                                                {[w.rut, w.cargo].filter(Boolean).join(' · ')}
+                                            </span>
+                                        </span>
+                                        {isLocked && <span className="badge badge-success badge-sm">{lockedLabel}</span>}
+                                    </label>
+                                );
+                            })
                         ) : (
                             visibles.map((w) => {
                                 const isSelected = selected.includes(w.personaId);
@@ -136,7 +180,7 @@ export default function WorkerPicker({
                             })
                         )}
                     </div>
-                </>
+                </div>
             )}
 
             <style>{`
@@ -147,20 +191,34 @@ export default function WorkerPicker({
                 .wp-head-actions { display: flex; align-items: center; gap: var(--space-1); }
                 .wp-empty { font-size: var(--text-sm); color: var(--text-muted); margin: 0; padding: var(--space-3) 0; }
 
-                .wp-search { position: relative; display: flex; align-items: center; }
+                /* Una sola caja: la búsqueda va arriba con una regla abajo, la
+                   lista se desplaza debajo. Ninguna de las dos lleva su propio
+                   borde — el borde es de la caja. */
+                .wp-box {
+                    display: flex; flex-direction: column;
+                    border: 1px solid var(--surface-border); border-radius: var(--radius-md);
+                    overflow: hidden; background: none;
+                }
+                .wp-search {
+                    position: relative; display: flex; align-items: center; flex-shrink: 0;
+                    border-bottom: 1px solid var(--surface-border);
+                }
                 .wp-search > svg { position: absolute; left: 11px; color: var(--text-muted); pointer-events: none; }
                 .wp-search input {
-                    width: 100%; padding: 8px 12px 8px 33px;
-                    border: 1px solid var(--surface-border); border-radius: var(--radius-md);
-                    background: var(--surface-bg); color: var(--text-primary); font-size: var(--text-sm);
+                    width: 100%; height: 38px; padding: 0 12px 0 33px;
+                    border: none; background: none; color: var(--text-primary); font-size: var(--text-sm);
                 }
-                .wp-search input:focus { outline: none; border-color: var(--primary-500); box-shadow: 0 0 0 3px var(--accent-tint); }
+                .wp-search input:focus { outline: none; }
+                /* Solo el buscador prende el contorno de la caja: si fuera
+                   :focus-within, tocar a una persona de la lista (que también
+                   mueve el foco a su checkbox) encendería el borde entero de
+                   la caja en cada clic. */
+                .wp-box:has(.wp-search input:focus) { border-color: var(--primary-500); box-shadow: 0 0 0 3px var(--accent-tint); }
 
                 .wp-list {
                     display: flex; flex-direction: column; gap: 2px;
                     overflow-y: auto; padding: 4px;
-                    border: 1px solid var(--surface-border); border-radius: var(--radius-md);
-                    background: var(--surface-bg);
+                    background: none;
                 }
                 .wp-row {
                     display: flex; align-items: center; gap: var(--space-3);
@@ -196,6 +254,20 @@ export default function WorkerPicker({
                     transition: background var(--transition-fast), border-color var(--transition-fast);
                 }
                 .wp-row.selected .wp-check { background: var(--primary-500); border-color: var(--primary-500); }
+
+                /* variant="flat": mismo trazo que "Trabajadores asignados" en Obra
+                   nueva — casillero nativo y filas separadas por línea, sin avatar
+                   ni fondo de seleccionado. */
+                .wp-list-flat { gap: 0; padding: 0; }
+                .wp-flat-row {
+                    display: flex; align-items: center; gap: var(--space-2);
+                    padding: var(--space-2) var(--space-3); cursor: pointer;
+                }
+                .wp-flat-row.locked { opacity: 0.55; cursor: default; }
+                .wp-compact .wp-flat-row { padding: 6px 10px; }
+                .wp-flat-identity { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+                .wp-flat-identity > span:first-child { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+                .wp-flat-meta { font-size: var(--text-xs); }
             `}</style>
         </div>
     );

@@ -37,7 +37,7 @@ import { PERMISSIONS } from '../permissions';
 import ConfirmModal from '../components/ConfirmModal';
 import PinInput from '../components/PinInput';
 import { useOfflineSignature, type OfflinePendingSignature } from '../hooks/useOfflineSignature';
-import { Modal, AlertBanner } from '../components/ui';
+import { Modal, AlertBanner, PageHeader } from '../components/ui';
 
 type TabType = 'pendientes' | 'historial';
 
@@ -467,125 +467,34 @@ export default function SignatureRequests() {
                     />
                 )}
 
-                <div className="page-header">
-                    <div className="page-header-info">
-                        <h2 className="page-header-title">
-                            <FiClipboard className="text-primary-500" />
-                            Firma Electrónica
-                        </h2>
-                        <p className="page-header-description">
-                            Gestiona solicitudes de firma digital para documentos y actividades.
-                        </p>
-                    </div>
-                    {canCrearSolicitud && (
-                        <div className="page-header-actions">
-                            <button
-                                className="btn btn-primary"
-                                onClick={() => setShowModal(true)}
-                            >
-                                <FiPlus />
-                                Nueva Solicitud
-                            </button>
-                        </div>
-                    )}
-                </div>
-
-                {/* Tabs */}
-                <div
-                    className="flex gap-3 mb-6"
-                    style={{
-                        background: 'var(--surface-elevated)',
-                        padding: 'var(--space-2)',
-                        borderRadius: 'var(--radius-xl)',
-                        border: '1px solid var(--surface-border)',
-                    }}
-                >
-                    <button
-                        className="flex items-center gap-3"
-                        onClick={() => setActiveTab('pendientes')}
-                        style={{
-                            flex: 1,
-                            padding: 'var(--space-4)',
-                            borderRadius: 'var(--radius-lg)',
-                            border: activeTab === 'pendientes' ? '1px solid var(--primary-400)' : '1px solid transparent',
-                            background: activeTab === 'pendientes'
-                                ? 'linear-gradient(135deg, rgba(0, 110, 220, 0.12), rgba(0, 110, 220, 0.04))'
-                                : 'transparent',
-                            cursor: 'pointer',
-                            transition: 'all var(--transition-fast)',
-                            boxShadow: activeTab === 'pendientes' ? 'var(--shadow-md)' : 'none',
-                        }}
-                    >
-                        <div
-                            className="avatar"
-                            style={{
-                                background: activeTab === 'pendientes' ? 'var(--primary-500)' : 'var(--surface-hover)',
-                                color: activeTab === 'pendientes' ? 'white' : 'var(--text-muted)',
-                                width: '44px',
-                                height: '44px',
-                                transition: 'all var(--transition-fast)',
-                            }}
-                        >
-                            <FiClock size={20} />
-                        </div>
-                        <div style={{ textAlign: 'left' }}>
-                            <div style={{ fontWeight: 600, color: activeTab === 'pendientes' ? 'var(--primary-600)' : 'var(--text-secondary)', fontSize: 'var(--text-base)' }}>
-                                Solicitudes Pendientes
-                            </div>
-                            <div style={{ fontSize: 'var(--text-sm)', color: activeTab === 'pendientes' ? 'var(--primary-500)' : 'var(--text-muted)' }}>
-                                {activeRequests.length} solicitud{activeRequests.length !== 1 ? 'es' : ''} activa{activeRequests.length !== 1 ? 's' : ''}
-                            </div>
-                        </div>
-                        {activeRequests.length > 0 && (
-                            <span className="badge" style={{ marginLeft: 'auto', background: 'var(--primary-500)', color: 'white', fontWeight: 600, minWidth: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-full)' }}>
-                                {activeRequests.length}
-                            </span>
-                        )}
-                    </button>
-
-                    <button
-                        className="flex items-center gap-3"
-                        onClick={() => setActiveTab('historial')}
-                        style={{
-                            flex: 1,
-                            padding: 'var(--space-4)',
-                            borderRadius: 'var(--radius-lg)',
-                            border: activeTab === 'historial' ? '1px solid var(--primary-400)' : '1px solid transparent',
-                            background: activeTab === 'historial'
-                                ? 'linear-gradient(135deg, rgba(0, 110, 220, 0.12), rgba(0, 110, 220, 0.04))'
-                                : 'transparent',
-                            cursor: 'pointer',
-                            transition: 'all var(--transition-fast)',
-                            boxShadow: activeTab === 'historial' ? 'var(--shadow-md)' : 'none',
-                        }}
-                    >
-                        <div
-                            className="avatar"
-                            style={{
-                                background: activeTab === 'historial' ? 'var(--primary-500)' : 'var(--surface-hover)',
-                                color: activeTab === 'historial' ? 'white' : 'var(--text-muted)',
-                                width: '44px',
-                                height: '44px',
-                                transition: 'all var(--transition-fast)',
-                            }}
-                        >
-                            <FiCheck size={20} />
-                        </div>
-                        <div style={{ textAlign: 'left' }}>
-                            <div style={{ fontWeight: 600, color: activeTab === 'historial' ? 'var(--primary-600)' : 'var(--text-secondary)', fontSize: 'var(--text-base)' }}>
-                                Historial
-                            </div>
-                            <div style={{ fontSize: 'var(--text-sm)', color: activeTab === 'historial' ? 'var(--primary-500)' : 'var(--text-muted)' }}>
-                                {historicalRequests.length} solicitud{historicalRequests.length !== 1 ? 'es' : ''} completada{historicalRequests.length !== 1 ? 's' : ''}
-                            </div>
-                        </div>
-                        {historicalRequests.length > 0 && (
-                            <span className="badge" style={{ marginLeft: 'auto', background: activeTab === 'historial' ? 'var(--primary-500)' : 'var(--surface-hover)', color: activeTab === 'historial' ? 'white' : 'var(--text-muted)', fontWeight: 600, minWidth: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-full)', transition: 'all var(--transition-fast)' }}>
-                                {historicalRequests.length}
-                            </span>
-                        )}
-                    </button>
-                </div>
+                {/* Pendientes / Historial son dos vistas de lo mismo, no un
+                    filtro: van en el encabezado, como en el resto de páginas
+                    con secciones alternables. Reemplaza el selector de
+                    tarjetas propio (con degradado e íconos redundantes) por
+                    el mismo mecanismo que ya usan Mis Firmas y las encuestas. */}
+                <PageHeader
+                    banner
+                    title="Firma electrónica"
+                    description="Gestiona solicitudes de firma digital para documentos y actividades."
+                    tabs={[
+                        {
+                            id: 'pendientes', label: 'Pendientes', icon: <FiClock size={15} />,
+                            badge: activeRequests.length > 0 ? activeRequests.length : undefined,
+                        },
+                        {
+                            id: 'historial', label: 'Historial', icon: <FiCheck size={15} />,
+                            badge: historicalRequests.length > 0 ? historicalRequests.length : undefined,
+                        },
+                    ]}
+                    activeTab={activeTab}
+                    onTabChange={(id) => setActiveTab(id as TabType)}
+                    tabsLabel="Vista de solicitudes"
+                    actions={canCrearSolicitud ? (
+                        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                            <FiPlus /> Nueva solicitud
+                        </button>
+                    ) : undefined}
+                />
 
                 {/* Offline Pending Signatures Section */}
                 {(offlinePending.length > 0 || !isOnline) && (

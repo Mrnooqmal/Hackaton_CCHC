@@ -159,25 +159,22 @@ export default function MiEmpresa() {
 
     return (
         <div className="mi-empresa-page" style={{ padding: '0 24px 40px' }}>
+            {/* Las secciones de la empresa son pestañas del encabezado, como en
+                el resto de páginas con contenido alternable. */}
             <PageHeader
                 banner
                 title="Mi Empresa"
                 description={`Administra la identidad, los roles y permisos, los cargos y el catálogo de EPP de ${tenant?.nombre || 'tu empresa'}.`}
+                tabs={tabs.map((t) => {
+                    const Icon = t.icon;
+                    return { id: t.key, label: t.label, icon: <Icon size={15} /> };
+                })}
+                activeTab={tab}
+                onTabChange={(id) => setTab(id as TabKey)}
+                tabsLabel="Secciones de la empresa"
             />
 
             {loadError && <AlertBanner variant="error" message={loadError} onDismiss={() => setLoadError('')} />}
-
-            <div className="tabs" role="tablist">
-                {tabs.map((t) => {
-                    const Icon = t.icon;
-                    return (
-                        <button key={t.key} role="tab" aria-selected={tab === t.key}
-                            className={`tab me-tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
-                            <Icon size={15} /> {t.label}
-                        </button>
-                    );
-                })}
-            </div>
 
             {tab === 'identidad' && can.identidad && tenant && (
                 <IdentidadTab
@@ -1616,12 +1613,6 @@ function ReassignModal({ open, title, noun, affected, options, busy, onCancel, o
 }
 
 const styles = `
-.mi-empresa-page .me-tab { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; border-bottom: 2px solid transparent; white-space: nowrap; flex: 0 0 auto; }
-/* En pantallas angostas la fila de pestañas se desplaza en vez de desbordar la
-   página; cada pestaña queda en una sola línea. La pestaña cortada en el borde
-   es la señal de que hay más. */
-.mi-empresa-page .tabs { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
-.mi-empresa-page .tabs::-webkit-scrollbar { display: none; }
 .mi-empresa-page .form-label { display:block; margin-bottom: 6px; }
 
 /* ── Identidad ─────────────────────────────────────────────────────────────── */

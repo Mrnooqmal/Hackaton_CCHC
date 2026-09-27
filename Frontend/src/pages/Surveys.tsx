@@ -107,6 +107,8 @@ export default function Surveys() {
     const [responseError, setResponseError] = useState('');
     const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
     const [activeTab, setActiveTab] = useState<'assigned' | 'created'>('assigned');
+    // El recuento de la pestaña "Mis encuestas" es solo lo pendiente, no el
+    // total: es la cifra que le importa a quien la mira (cuánto le falta).
     const [showOnlyMine, setShowOnlyMine] = useState(false); // Filter for 'Encuestas Creadas' tab
     const [searchQuery, setSearchQuery] = useState(''); // Search filter for surveys
     const [showSignatureModal, setShowSignatureModal] = useState(false); // Signature modal for survey response
@@ -304,6 +306,11 @@ export default function Surveys() {
 
         return result;
     }, [showOnlyMine, mySurveys, surveys, searchQuery]);
+
+    const assignedPendingCount = useMemo(
+        () => assignedSurveys.filter(s => s.recipient.estado === 'pendiente').length,
+        [assignedSurveys]
+    );
 
     // Filtered assigned surveys for "Mis Encuestas" tab search
     const filteredAssignedSurveys = useMemo(() => {
@@ -761,12 +768,29 @@ export default function Surveys() {
             )}
 
             <div className="page-content">
+                {/* Mis encuestas / Encuestas creadas son dos vistas de lo mismo,
+                    no un filtro: van en el encabezado, como en Actividades y en
+                    el repositorio de documentos. Quien solo responde encuestas
+                    (sin gestionarlas) no tiene nada que alternar. */}
                 <PageHeader
                     banner
                     title={canManageSurveys ? 'Encuestas y diagnósticos' : 'Mis encuestas asignadas'}
                     description={canManageSurveys
                         ? 'Diseña y distribuye diagnósticos de seguridad, evaluaciones de riesgo y encuestas de cumplimiento.'
                         : 'Responde las encuestas que te han asignado y revisa tu historial.'}
+                    tabs={canManageSurveys ? [
+                        {
+                            id: 'assigned', label: 'Mis encuestas', icon: <FiUserCheck size={15} />,
+                            badge: assignedPendingCount > 0 ? assignedPendingCount : undefined,
+                        },
+                        {
+                            id: 'created', label: 'Encuestas creadas', icon: <FiBarChart2 size={15} />,
+                            badge: surveys.length > 0 ? surveys.length : undefined,
+                        },
+                    ] : undefined}
+                    activeTab={activeTab}
+                    onTabChange={(id) => setActiveTab(id as 'assigned' | 'created')}
+                    tabsLabel="Vista de las encuestas"
                     actions={
                         canManageSurveys ? (
                             <button
@@ -920,151 +944,6 @@ export default function Surveys() {
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                 />
                             </div>
-                        </div>
-
-                        {/* Tabs for Prevencionistas */}
-                        <div
-                            className="flex gap-3 mb-6"
-                            style={{
-                                background: 'var(--surface-elevated)',
-                                padding: 'var(--space-2)',
-                                borderRadius: 'var(--radius-xl)',
-                                border: '1px solid var(--surface-border)',
-                                flexWrap: 'wrap',
-                                overflow: 'hidden',
-                            }}
-                        >
-                            <button
-                                className="flex items-center gap-3"
-                                onClick={() => setActiveTab('assigned')}
-                                style={{
-                                    flex: 1,
-                                    minWidth: '140px',
-                                    padding: 'var(--space-4)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    border: activeTab === 'assigned' ? '1px solid var(--warning-400)' : '1px solid transparent',
-                                    background: activeTab === 'assigned'
-                                        ? 'linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 193, 7, 0.05))'
-                                        : 'transparent',
-                                    cursor: 'pointer',
-                                    transition: 'all var(--transition-fast)',
-                                    boxShadow: activeTab === 'assigned' ? 'var(--shadow-md)' : 'none',
-                                }}
-                            >
-                                <div
-                                    className="avatar"
-                                    style={{
-                                        background: activeTab === 'assigned' ? 'var(--warning-500)' : 'var(--surface-hover)',
-                                        color: activeTab === 'assigned' ? 'white' : 'var(--text-muted)',
-                                    }}
-                                >
-                                    <FiUserCheck size={20} />
-                                </div>
-                                <div style={{ textAlign: 'left' }}>
-                                    <div
-                                        style={{
-                                            fontWeight: 600,
-                                            color: activeTab === 'assigned' ? '#b45309' : 'var(--text-secondary)',
-                                            fontSize: 'var(--text-base)',
-                                        }}
-                                    >
-                                        Mis Encuestas
-                                    </div>
-                                    <div
-                                        style={{
-                                            fontSize: 'var(--text-sm)',
-                                            color: activeTab === 'assigned' ? '#d97706' : 'var(--text-muted)',
-                                        }}
-                                    >
-                                        Seguimiento personal
-                                    </div>
-                                </div>
-                                {filteredAssignedSurveys.filter(s => s.recipient.estado === 'pendiente').length > 0 && (
-                                    <span
-                                        className="badge"
-                                        style={{
-                                            marginLeft: 'auto',
-                                            background: 'var(--warning-500)',
-                                            color: 'white',
-                                            fontWeight: 600,
-                                            minWidth: '28px',
-                                            height: '28px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            borderRadius: 'var(--radius-full)',
-                                        }}
-                                    >
-                                        {assignedSurveys.filter(s => s.recipient.estado === 'pendiente').length}
-                                    </span>
-                                )}
-                            </button>
-
-                            <button
-                                className="flex items-center gap-3"
-                                onClick={() => setActiveTab('created')}
-                                style={{
-                                    flex: 1,
-                                    minWidth: '140px',
-                                    padding: 'var(--space-4)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    border: activeTab === 'created' ? '1px solid var(--primary-400)' : '1px solid transparent',
-                                    background: activeTab === 'created'
-                                        ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05))'
-                                        : 'transparent',
-                                    cursor: 'pointer',
-                                    transition: 'all var(--transition-fast)',
-                                    boxShadow: activeTab === 'created' ? 'var(--shadow-md)' : 'none',
-                                }}
-                            >
-                                <div
-                                    className="avatar"
-                                    style={{
-                                        background: activeTab === 'created' ? 'var(--primary-500)' : 'var(--surface-hover)',
-                                        color: activeTab === 'created' ? 'white' : 'var(--text-muted)',
-                                    }}
-                                >
-                                    <FiBarChart2 size={20} />
-                                </div>
-                                <div style={{ textAlign: 'left' }}>
-                                    <div
-                                        style={{
-                                            fontWeight: 600,
-                                            color: activeTab === 'created' ? 'var(--primary-700)' : 'var(--text-secondary)',
-                                            fontSize: 'var(--text-base)',
-                                        }}
-                                    >
-                                        Encuestas Creadas
-                                    </div>
-                                    <div
-                                        style={{
-                                            fontSize: 'var(--text-sm)',
-                                            color: activeTab === 'created' ? 'var(--primary-600)' : 'var(--text-muted)',
-                                        }}
-                                    >
-                                        {surveys.length} encuesta{surveys.length !== 1 ? 's' : ''}
-                                    </div>
-                                </div>
-                                {surveys.length > 0 && (
-                                    <span
-                                        className="badge"
-                                        style={{
-                                            marginLeft: 'auto',
-                                            background: 'var(--primary-500)',
-                                            color: 'white',
-                                            fontWeight: 600,
-                                            minWidth: '28px',
-                                            height: '28px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            borderRadius: 'var(--radius-full)',
-                                        }}
-                                    >
-                                        {surveys.length}
-                                    </span>
-                                )}
-                            </button>
                         </div>
 
                         {/* Tab Content: Mis Encuestas (Assigned to me) */}

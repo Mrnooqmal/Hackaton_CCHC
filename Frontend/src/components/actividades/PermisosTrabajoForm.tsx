@@ -48,9 +48,18 @@ export default function PermisosTrabajoForm({ value, onChange, permisosDef, work
                     const def = permisosDef[tipo];
                     const permiso = permisoDe(tipo);
                     return (
-                        <div key={tipo} style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)' }}>
+                        <div
+                            key={tipo}
+                            style={{
+                                border: `1px solid ${permiso ? 'color-mix(in srgb, var(--primary-500) 35%, transparent)' : 'var(--surface-border)'}`,
+                                borderRadius: 'var(--radius-md)',
+                                padding: 'var(--space-3)',
+                                background: permiso ? 'color-mix(in srgb, var(--primary-500) 4%, transparent)' : 'none',
+                                transition: 'border-color var(--transition-fast), background var(--transition-fast)',
+                            }}
+                        >
                             <label className="flex items-center gap-2" style={{ cursor: 'pointer' }}>
-                                <input type="checkbox" checked={!!permiso} onChange={() => toggle(tipo)} />
+                                <input type="checkbox" className="checkbox-input custom-checkbox" checked={!!permiso} onChange={() => toggle(tipo)} />
                                 <span className="font-bold">{def.label}</span>
                             </label>
 

@@ -99,6 +99,21 @@ export default function ActivityCalendar({
                 /* Vencida (no realizada dentro del plazo): anillo rojo para que resalte. */
                 .acal-chip--vencida { box-shadow: 0 0 0 2px var(--danger-500); }
                 .acal-mas { font-size: 0.68rem; color: var(--text-muted); padding-left: 4px; }
+
+                /* Leyenda: un solo panel contenido (no texto suelto flotando).
+                   «Tipo» son puntos de color; «Estado» son muestras del propio
+                   trazo del chip (punteado, anillo) — dos alfabetos visuales
+                   distintos, separados por una regla vertical, en la misma fila. */
+                .acal-legend {
+                    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+                    margin-top: var(--space-4); padding: 14px 18px;
+                    background: var(--surface-elevated); border: 1px solid var(--surface-border); border-radius: var(--radius-md);
+                }
+                .acal-legend-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); flex-shrink: 0; }
+                .acal-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; }
+                .acal-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+                .acal-legend-divider { width: 1px; align-self: stretch; background: var(--surface-border); flex-shrink: 0; }
+                .acal-legend-sample { width: 18px; height: 11px; border-radius: 3px; flex-shrink: 0; box-sizing: border-box; background: var(--surface-hover); }
             `}</style>
 
             <div className="card-header flex items-center justify-between">
@@ -174,40 +189,28 @@ export default function ActivityCalendar({
                 })}
             </div>
 
-            {/* Leyenda: cuadrado y texto separados con gap fijo; los ítems no se
-                parten (nowrap) y fluyen en varias filas en pantallas angostas. */}
-            <div
-                className="mt-4"
-                style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    columnGap: 'var(--space-5, 20px)',
-                    rowGap: 'var(--space-2, 8px)',
-                }}
-            >
+            {/* Leyenda: un panel contenido, no texto suelto. «Tipo» son puntos
+                de color; «Estado» son muestras del propio trazo del chip
+                —punteado o con anillo— para que la leyenda enseñe exactamente
+                lo que se ve arriba, no un símbolo aparte que hay que traducir. */}
+            <div className="acal-legend">
+                <span className="acal-legend-label">Tipo</span>
                 {Object.entries(typeColors).map(([key, { label, color }]) => (
-                    <span
-                        key={key}
-                        className="text-xs text-muted"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
-                    >
-                        <span style={{ width: 12, height: 12, borderRadius: 3, background: color, display: 'inline-block', flexShrink: 0 }} />
+                    <span key={key} className="acal-legend-item">
+                        <span className="acal-legend-dot" style={{ background: color }} />
                         {label}
                     </span>
                 ))}
-                <span
-                    className="text-xs text-muted"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
-                >
-                    <span style={{ width: 12, height: 12, borderRadius: 3, border: '1px dashed var(--text-muted)', display: 'inline-block', flexShrink: 0 }} />
+
+                <span className="acal-legend-divider" aria-hidden="true" />
+
+                <span className="acal-legend-label">Estado</span>
+                <span className="acal-legend-item">
+                    <span className="acal-legend-sample" style={{ border: '1.5px dashed var(--text-muted)' }} aria-hidden="true" />
                     Borrador por completar
                 </span>
-                <span
-                    className="text-xs text-muted"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
-                >
-                    <span style={{ width: 12, height: 12, borderRadius: 3, boxShadow: '0 0 0 2px var(--danger-500)', display: 'inline-block', flexShrink: 0 }} />
+                <span className="acal-legend-item">
+                    <span className="acal-legend-sample" style={{ boxShadow: '0 0 0 2px var(--danger-500)' }} aria-hidden="true" />
                     Vencida (no realizada)
                 </span>
             </div>

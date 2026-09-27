@@ -241,40 +241,32 @@ export default function MySignatures() {
     return (
         <>
             <div className="page-content">
+                {/* Pendientes / Historial son dos vistas de lo mismo, no un
+                    filtro: van en el encabezado, como en Actividades, el
+                    repositorio de documentos y las encuestas. */}
                 <PageHeader
                     banner
                     title="Mis Firmas"
                     description="Documentos pendientes de firma y registro de tu historial."
+                    tabs={[
+                        {
+                            id: 'pendientes', label: 'Pendientes', icon: <FiClock size={15} />,
+                            badge: pendingRequests.length > 0 ? pendingRequests.length : undefined,
+                        },
+                        {
+                            id: 'historial', label: 'Historial', icon: <FiCheck size={15} />,
+                            badge: signatureHistory.length > 0 ? signatureHistory.length : undefined,
+                        },
+                    ]}
+                    activeTab={activeTab}
+                    onTabChange={(id) => setActiveTab(id as TabType)}
+                    tabsLabel="Vista de firmas"
                     actions={
                         <button className="btn btn-secondary" onClick={loadData} disabled={loading}>
                             <FiRefreshCw className={loading ? 'spin' : ''} /> Actualizar
                         </button>
                     }
                 />
-
-                {/* Tabs */}
-                <div className="msig-tabs">
-                    <button
-                        className={`msig-tab ${activeTab === 'pendientes' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('pendientes')}
-                    >
-                        <FiClock size={15} />
-                        Pendientes
-                        {pendingRequests.length > 0 && (
-                            <span className="msig-tab-count">{pendingRequests.length}</span>
-                        )}
-                    </button>
-                    <button
-                        className={`msig-tab ${activeTab === 'historial' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('historial')}
-                    >
-                        <FiCheck size={15} />
-                        Historial
-                        {signatureHistory.length > 0 && (
-                            <span className="msig-tab-count msig-tab-count--muted">{signatureHistory.length}</span>
-                        )}
-                    </button>
-                </div>
 
                 {/* Pendientes */}
                 {activeTab === 'pendientes' && (
@@ -490,57 +482,6 @@ export default function MySignatures() {
             </Modal>
 
             <style>{`
-                /* ── Tabs ── */
-                .msig-tabs {
-                    display: flex;
-                    gap: var(--space-1);
-                    background: var(--surface-elevated);
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-lg);
-                    padding: var(--space-1);
-                    width: fit-content;
-                    margin-bottom: var(--space-5);
-                }
-                .msig-tab {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-2);
-                    padding: var(--space-2) var(--space-4);
-                    border-radius: var(--radius-md);
-                    border: none;
-                    background: transparent;
-                    color: var(--text-muted);
-                    font-size: var(--text-sm);
-                    font-weight: 500;
-                    cursor: pointer;
-                    transition: all 0.15s;
-                    white-space: nowrap;
-                }
-                .msig-tab:hover { color: var(--text-primary); background: var(--surface-hover); }
-                .msig-tab.active {
-                    background: var(--surface-card);
-                    color: var(--text-primary);
-                    box-shadow: var(--shadow-sm);
-                    border: 1px solid var(--surface-border);
-                }
-                .msig-tab-count {
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    min-width: 20px;
-                    height: 20px;
-                    padding: 0 6px;
-                    border-radius: var(--radius-full);
-                    font-size: 11px;
-                    font-weight: 700;
-                    background: var(--warning-500);
-                    color: white;
-                }
-                .msig-tab-count--muted {
-                    background: var(--surface-border);
-                    color: var(--text-secondary);
-                }
-
                 /* ── Lista de pendientes ── */
                 .msig-list {
                     display: flex;
@@ -796,8 +737,6 @@ export default function MySignatures() {
 
                 /* ── Mobile ── */
                 @media (max-width: 640px) {
-                    .msig-tabs { width: 100%; }
-                    .msig-tab { flex: 1; justify-content: center; }
                     .msig-card-main { flex-wrap: wrap; }
                     .msig-card-action { width: 100%; padding-top: var(--space-3); border-top: 1px solid var(--surface-border); }
                     .msig-card-action .btn { width: 100%; justify-content: center; }

@@ -25,29 +25,52 @@ const opciones = (items: CatalogoItem[], conOtro: boolean) => [
     ...(conOtro ? [{ value: OTRO, label: 'Otro…' }] : []),
 ];
 
-/** Desplegable multi-selección simple sobre checkboxes (lista corta). */
+/**
+ * Selector de catálogo como chips (etiquetas): seleccionados se pintan con
+ * borde de acento y una «×» para quitarlos; el resto son píldoras vacías que
+ * se rellenan al tocarlas. Mismo trazo que el resto de picks de catálogo del
+ * formulario — no una lista de checkboxes dentro de una caja con scroll.
+ */
 function MultiCatalogo({ label, items, seleccion, otro, onToggle, onOtro, requerido = false }: {
     label: string; items: CatalogoItem[]; seleccion: string[]; otro: string | null | undefined;
     onToggle: (codigo: string) => void; onOtro: (texto: string | null) => void; requerido?: boolean;
 }) {
     return (
-        <div className="form-group">
+        <div className="form-group full-width">
             <label className="form-label">{label}{requerido ? ' *' : ''}</label>
-            <div className="flex flex-col gap-1" style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-2)' }}>
-                {items.map((i) => (
-                    <label key={i.codigo} className="flex items-center gap-2 text-sm" style={{ cursor: 'pointer' }}>
-                        <input type="checkbox" checked={seleccion.includes(i.codigo)} onChange={() => onToggle(i.codigo)} />
-                        {i.label}
-                    </label>
-                ))}
-                <label className="flex items-center gap-2 text-sm" style={{ cursor: 'pointer' }}>
-                    <input type="checkbox" checked={otro != null} onChange={() => onOtro(otro != null ? null : '')} />
-                    Otro…
-                </label>
-                {otro != null && (
-                    <input className="form-input" placeholder="Especificar…" maxLength={200} value={otro} onChange={(e) => onOtro(e.target.value)} />
-                )}
+            <div className="mc-chips">
+                {items.map((i) => {
+                    const on = seleccion.includes(i.codigo);
+                    return (
+                        <button
+                            key={i.codigo}
+                            type="button"
+                            className={`mc-chip ${on ? 'mc-chip--on' : 'mc-chip--off'}`}
+                            aria-pressed={on}
+                            onClick={() => onToggle(i.codigo)}
+                        >
+                            {i.label}
+                            {on && <span className="mc-chip-x" aria-hidden="true">×</span>}
+                        </button>
+                    );
+                })}
+                <button
+                    type="button"
+                    className={`mc-chip ${otro != null ? 'mc-chip--on' : 'mc-chip--off'}`}
+                    aria-pressed={otro != null}
+                    onClick={() => onOtro(otro != null ? null : '')}
+                >
+                    {otro != null ? 'Otro' : '+ Otro…'}
+                    {otro != null && <span className="mc-chip-x" aria-hidden="true">×</span>}
+                </button>
             </div>
+            {otro != null && (
+                <input
+                    className="form-input" style={{ marginTop: 'var(--space-2)' }}
+                    placeholder="Especificar…" maxLength={200} value={otro}
+                    onChange={(e) => onOtro(e.target.value)}
+                />
+            )}
         </div>
     );
 }
@@ -92,6 +115,39 @@ export default function PlanificacionDiariaForm({ value, onChange, catalogos, ti
                         )}
                     </div>
 
+                    <div className="form-group">
+                        <label className="form-label">Tipo de trabajo</label>
+                        <Select
+                            ariaLabel="Tipo de trabajo"
+                            placeholder="Interior / exterior"
+                            value={value.tipoTrabajo || ''}
+                            onChange={(v) => set({
+                                tipoTrabajo: (v || null) as PlanificacionActividad['tipoTrabajo'],
+                                // Al pasar a exterior el protector solar parte activado.
+                                protectorSolar: v === 'exterior' ? (value.protectorSolar ?? true) : null,
+                            })}
+                            options={[
+                                { value: 'interior', label: 'Interior' },
+                                { value: 'exterior', label: 'Exterior' },
+                            ]}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Condición climática</label>
+                        <Select
+                            ariaLabel="Condición climática"
+                            placeholder="Selecciona"
+                            value={value.condicionClimatica || ''}
+                            onChange={(v) => set({ condicionClimatica: (v || null) as PlanificacionActividad['condicionClimatica'] })}
+                            options={[
+                                { value: 'despejado', label: 'Despejado' },
+                                { value: 'parcial', label: 'Parcialmente nublado' },
+                                { value: 'nublado', label: 'Nublado' },
+                                { value: 'lluvia', label: 'Lluvia' },
+                            ]}
+                        />
+                    </div>
+
                     <MultiCatalogo label="Recursos utilizados" items={catalogos.recursos}
                         seleccion={value.recursos?.codigos || []} otro={value.recursos?.otro}
                         onToggle={toggleEn('recursos')} onOtro={otroEn('recursos')} />
@@ -104,46 +160,12 @@ export default function PlanificacionDiariaForm({ value, onChange, catalogos, ti
                         seleccion={value.medidas?.codigos || []} otro={value.medidas?.otro}
                         onToggle={toggleEn('medidas')} onOtro={otroEn('medidas')} />
 
-                    <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
-                        <div className="form-group">
-                            <label className="form-label">Tipo de trabajo</label>
-                            <Select
-                                ariaLabel="Tipo de trabajo"
-                                placeholder="Interior / exterior"
-                                value={value.tipoTrabajo || ''}
-                                onChange={(v) => set({
-                                    tipoTrabajo: (v || null) as PlanificacionActividad['tipoTrabajo'],
-                                    // Al pasar a exterior el protector solar parte activado.
-                                    protectorSolar: v === 'exterior' ? (value.protectorSolar ?? true) : null,
-                                })}
-                                options={[
-                                    { value: 'interior', label: 'Interior' },
-                                    { value: 'exterior', label: 'Exterior' },
-                                ]}
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Condición climática</label>
-                            <Select
-                                ariaLabel="Condición climática"
-                                placeholder="Selecciona"
-                                value={value.condicionClimatica || ''}
-                                onChange={(v) => set({ condicionClimatica: (v || null) as PlanificacionActividad['condicionClimatica'] })}
-                                options={[
-                                    { value: 'despejado', label: 'Despejado' },
-                                    { value: 'parcial', label: 'Parcialmente nublado' },
-                                    { value: 'nublado', label: 'Nublado' },
-                                    { value: 'lluvia', label: 'Lluvia' },
-                                ]}
-                            />
-                        </div>
-                    </div>
-
                     {value.tipoTrabajo === 'exterior' && (
-                        <div className="form-group">
+                        <div className="form-group full-width">
                             <label className="flex items-center gap-2" style={{ cursor: 'pointer' }}>
                                 <input
                                     type="checkbox"
+                                    className="checkbox-input custom-checkbox"
                                     checked={value.protectorSolar ?? true}
                                     onChange={(e) => set({ protectorSolar: e.target.checked })}
                                 />
@@ -159,7 +181,7 @@ export default function PlanificacionDiariaForm({ value, onChange, catalogos, ti
                 </>
             )}
 
-            <div className="form-group">
+            <div className="form-group full-width">
                 <label className="form-label">{esComite ? 'Participación y consulta' : 'Observaciones'}</label>
                 <textarea
                     className="form-input" rows={3} maxLength={4000} style={{ resize: 'vertical' }}
@@ -170,6 +192,25 @@ export default function PlanificacionDiariaForm({ value, onChange, catalogos, ti
                     onChange={(e) => set({ observaciones: e.target.value })}
                 />
             </div>
+
+            <style>{`
+                .mc-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+                .mc-chip {
+                    display: inline-flex; align-items: center; gap: 6px;
+                    font-family: inherit; font-size: 12px; border-radius: var(--radius-full);
+                    cursor: pointer; transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+                }
+                .mc-chip--off {
+                    padding: 5px 12px; background: none; border: 1px solid var(--surface-border); color: var(--text-muted);
+                }
+                .mc-chip--off:hover { border-color: var(--primary-400); color: var(--text-primary); }
+                .mc-chip--on { padding: 5px 8px 5px 12px; background: var(--accent-tint); border: 1px solid var(--primary-500); color: var(--text-primary); }
+                .mc-chip-x {
+                    display: inline-flex; align-items: center; justify-content: center;
+                    width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
+                    background: var(--surface-hover); color: var(--text-muted); font-size: 12px; line-height: 1;
+                }
+            `}</style>
         </>
     );
 }

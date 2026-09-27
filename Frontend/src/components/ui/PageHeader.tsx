@@ -1,5 +1,13 @@
 import { Link } from 'react-router-dom';
 
+export interface PageHeaderTab {
+  id: string;
+  label: string;
+  /** Recuento u otra marca corta a la derecha del rótulo. */
+  badge?: React.ReactNode;
+  icon?: React.ReactNode;
+}
+
 export interface PageHeaderProps {
   title: string;
   description?: React.ReactNode;
@@ -7,13 +15,28 @@ export interface PageHeaderProps {
   /** Optional breadcrumb segments shown before the title */
   breadcrumb?: { label: string; to: string }[];
   actions?: React.ReactNode;
+  /**
+   * Secciones de la página. Cuando el contenido cambia por pestañas, estas van
+   * en el encabezado —pegadas a su regla inferior, como en el detalle de obra—
+   * y no sueltas sobre el contenido: así el corte entre secciones pertenece al
+   * chrome de la página y no compite con lo que la sección muestra.
+   */
+  tabs?: PageHeaderTab[];
+  activeTab?: string;
+  onTabChange?: (id: string) => void;
+  /** Etiqueta del grupo de pestañas para lectores de pantalla. */
+  tabsLabel?: string;
   /** When true, renders as a full-bleed CChC navy→blue gradient banner */
   banner?: boolean;
 }
 
-export default function PageHeader({ title, description, scope, breadcrumb, actions, banner }: PageHeaderProps) {
+export default function PageHeader({
+  title, description, scope, breadcrumb, actions,
+  tabs, activeTab, onTabChange, tabsLabel, banner,
+}: PageHeaderProps) {
+  const conTabs = Boolean(tabs && tabs.length > 0);
   return (
-    <div className={`ui-page-header${banner ? ' ui-page-header--banner' : ''}`}>
+    <div className={`ui-page-header${banner ? ' ui-page-header--banner' : ''}${conTabs ? ' ui-page-header--con-tabs' : ''}`}>
       {breadcrumb && breadcrumb.length > 0 && (
         <nav className="ui-page-header-breadcrumb">
           {breadcrumb.map((crumb, i) => (
@@ -33,6 +56,24 @@ export default function PageHeader({ title, description, scope, breadcrumb, acti
         </div>
         {actions && <div className="ui-page-header-actions">{actions}</div>}
       </div>
+      {conTabs && (
+        <div className="ui-page-header-tabs" role="tablist" aria-label={tabsLabel ?? 'Secciones'}>
+          {tabs!.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              className="ui-page-header-tab"
+              aria-selected={tab.id === activeTab}
+              onClick={() => onTabChange?.(tab.id)}
+            >
+              {tab.icon}
+              {tab.label}
+              {tab.badge !== undefined && <span className="ui-page-header-tab-badge">{tab.badge}</span>}
+            </button>
+          ))}
+        </div>
+      )}
       <style>{`
         .ui-page-header {
           padding: var(--space-6) 0 var(--space-4);
@@ -106,6 +147,54 @@ export default function PageHeader({ title, description, scope, breadcrumb, acti
         .ui-page-header-breadcrumb-current {
           color: var(--text-secondary);
           font-weight: 500;
+        }
+        /* Las pestañas se apoyan en la regla inferior del encabezado: el
+           subrayado de la activa y esa regla son la misma línea. Por eso el
+           relleno de abajo se anula y lo pone el alto de la pestaña. */
+        .ui-page-header--con-tabs { padding-bottom: 0; }
+        .ui-page-header--banner.ui-page-header--con-tabs { padding-bottom: 0; }
+        .ui-page-header-tabs {
+          display: flex;
+          gap: 4px;
+          margin-top: var(--space-4);
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .ui-page-header-tabs::-webkit-scrollbar { display: none; }
+        .ui-page-header-tab {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          height: 48px;
+          padding: 0 var(--space-4);
+          background: none;
+          border: none;
+          border-bottom: 2px solid transparent;
+          font-family: inherit;
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          white-space: nowrap;
+          cursor: pointer;
+          transition: color var(--transition-fast), border-color var(--transition-fast);
+        }
+        .ui-page-header-tab:hover { color: var(--text-primary); }
+        .ui-page-header-tab[aria-selected='true'] {
+          border-bottom-color: var(--accent);
+          color: var(--accent-text);
+          font-weight: 500;
+        }
+        .ui-page-header-tab-badge {
+          padding: 1px 7px;
+          border-radius: 999px;
+          background: var(--surface-hover);
+          color: var(--text-secondary);
+          font-size: 0.72rem;
+          font-weight: 700;
+          font-variant-numeric: tabular-nums;
+        }
+        .ui-page-header-tab[aria-selected='true'] .ui-page-header-tab-badge {
+          background: var(--accent-tint);
+          color: var(--accent-text);
         }
         .ui-page-header-main {
           display: flex;

@@ -391,10 +391,27 @@ export default function DocumentsRepository() {
         <>
 
             <div className="page-content">
+                {/* El ámbito (general / personal) es una sección de la página,
+                    no un filtro: vive en el encabezado, como las pestañas del
+                    detalle de obra. Suelto sobre el contenido competía con la
+                    barra de carpetas que viene justo debajo. */}
                 <PageHeader
                     banner
                     title="Repositorio de documentos"
                     description="Documentos organizados por carpetas: base, registros y los asignados a cada persona. La carpeta DS44 no es una carpeta de archivos, es el formulario de fiscalización."
+                    tabs={selectedObraId ? (
+                        canViewGeneral
+                            ? [
+                                { id: 'general', label: 'General', icon: <FiFolder size={15} />, badge: generalCount },
+                                { id: 'personal', label: 'Personal', icon: <FiUser size={15} />, badge: personalCount },
+                            ]
+                            // Sin acceso al general no hay nada que alternar, pero la
+                            // pestaña sigue diciendo dónde se está parado y cuánto hay.
+                            : [{ id: 'personal', label: 'Mis documentos', icon: <FiUser size={15} />, badge: personalCount }]
+                    ) : undefined}
+                    activeTab={activeScope}
+                    onTabChange={(id) => switchScope(id as 'general' | 'personal')}
+                    tabsLabel="Ámbito del repositorio"
                     actions={
                         canUpload && selectedObraId ? (
                             <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)}>
@@ -411,31 +428,6 @@ export default function DocumentsRepository() {
                             ? 'No hay una obra activa. Para ver el repositorio de una obra, usa «Cambiar de obra», en el botón de sesión al final del menú lateral. El formulario de cumplimiento de la entidad empleadora no depende de la obra y está disponible abajo.'
                             : 'No hay una obra activa. Para ver el repositorio de documentos de una obra, usa «Cambiar de obra», en el botón de sesión al final del menú lateral.'}
                     />
-                )}
-
-                {selectedObraId && canViewGeneral && (
-                    <div className="repo-scope">
-                        <button
-                            className={`repo-scope-btn${activeScope === 'general' ? ' repo-scope-btn--active' : ''}`}
-                            onClick={() => switchScope('general')}
-                        >
-                            <FiFolder size={15} /> General <span className="repo-scope-count">{generalCount}</span>
-                        </button>
-                        <button
-                            className={`repo-scope-btn${activeScope === 'personal' ? ' repo-scope-btn--active' : ''}`}
-                            onClick={() => switchScope('personal')}
-                        >
-                            <FiUser size={15} /> Personal <span className="repo-scope-count">{personalCount}</span>
-                        </button>
-                    </div>
-                )}
-
-                {selectedObraId && !canViewGeneral && (
-                    <div className="repo-scope">
-                        <span className="repo-scope-btn repo-scope-btn--active">
-                            <FiUser size={15} /> Mis documentos <span className="repo-scope-count">{personalCount}</span>
-                        </span>
-                    </div>
                 )}
 
                 {showUploadForm && canUpload && selectedObraId && (
@@ -722,27 +714,6 @@ export default function DocumentsRepository() {
                 )}
 
                 <style>{`
-                    .repo-scope {
-                        display: inline-flex; gap: 4px; padding: 4px;
-                        background: var(--surface-elevated);
-                        border: 1px solid var(--surface-border);
-                        border-radius: var(--radius-lg);
-                        margin-bottom: var(--space-5);
-                    }
-                    .repo-scope-btn {
-                        display: inline-flex; align-items: center; gap: 7px;
-                        padding: 7px 14px; border: none; background: none; cursor: pointer;
-                        font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
-                        border-radius: var(--radius-md); transition: all var(--transition-fast);
-                    }
-                    .repo-scope-btn:hover { color: var(--text-primary); }
-                    .repo-scope-btn--active { background: var(--surface-card); color: var(--primary-600); box-shadow: var(--shadow-sm); }
-                    .repo-scope-count {
-                        font-size: 0.72rem; font-weight: 700; padding: 1px 7px; border-radius: 999px;
-                        background: var(--surface-border); color: var(--text-muted);
-                    }
-                    .repo-scope-btn--active .repo-scope-count { background: var(--accent-tint); color: var(--accent-text); }
-
                     .repo-toolbar {
                         display: flex; align-items: center; justify-content: space-between;
                         gap: var(--space-4); margin-bottom: var(--space-4); flex-wrap: wrap;

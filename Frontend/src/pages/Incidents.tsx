@@ -972,10 +972,22 @@ export default function Incidents() {
     return (
         <>
             <div className="page-content">
+                {/* Listado y estadísticas son dos vistas de lo mismo, no un
+                    filtro: van en el encabezado, como en el resto de páginas
+                    con secciones alternables. Cada pestaña requiere su propio
+                    permiso de vista, así que puede faltar una de las dos —o
+                    las dos, sin obra activa. */}
                 <PageHeader
                     banner
                     title="Incidentes y hallazgos"
                     description="Reporte, seguimiento y análisis estadístico de incidentes, accidentes y hallazgos de seguridad."
+                    tabs={selectedObraId && (canVerHistorial || canVerEstadisticas) ? [
+                        ...(canVerHistorial ? [{ id: 'listado', label: 'Listado', icon: <FiList size={15} /> }] : []),
+                        ...(canVerEstadisticas ? [{ id: 'estadisticas', label: 'Estadísticas', icon: <FiPieChart size={15} /> }] : []),
+                    ] : undefined}
+                    activeTab={activeTab}
+                    onTabChange={(id) => setActiveTab(id as 'listado' | 'estadisticas')}
+                    tabsLabel="Vista de incidentes"
                     actions={
                         <>
                             <button
@@ -1023,30 +1035,6 @@ export default function Incidents() {
 
                 {/* Contenido — solo visible cuando hay obra seleccionada */}
                 {selectedObraId && <>
-
-                {/* Tabs — cada pestaña requiere su permiso de vista */}
-                {(canVerHistorial || canVerEstadisticas) && (
-                    <div className="incidents-tabs mb-6" style={{ display: 'grid', gridTemplateColumns: canVerHistorial && canVerEstadisticas ? '1fr 1fr' : '1fr', gap: 'var(--space-2)' }}>
-                        {canVerHistorial && (
-                            <button
-                                className={`incidents-tab ${activeTab === 'listado' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('listado')}
-                            >
-                                <FiList size={18} />
-                                Listado
-                            </button>
-                        )}
-                        {canVerEstadisticas && (
-                            <button
-                                className={`incidents-tab ${activeTab === 'estadisticas' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('estadisticas')}
-                            >
-                                <FiPieChart size={18} />
-                                Estadísticas
-                            </button>
-                        )}
-                    </div>
-                )}
 
                 {/* Statistics Dashboard Tab */}
                 {activeTab === 'estadisticas' && canVerEstadisticas && (() => {
@@ -2261,40 +2249,6 @@ export default function Incidents() {
 
                 @media (prefers-reduced-motion: reduce) {
                     .incident-row { transition: none; }
-                }
-
-                /* Tabs Navigation */
-                .incidents-tabs {
-                    display: flex;
-                    gap: var(--space-2);
-                    background: var(--surface-card);
-                    padding: var(--space-2);
-                    border-radius: var(--radius-lg);
-                    border: 1px solid var(--surface-border);
-                }
-
-                .incidents-tab {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-2);
-                    padding: var(--space-3) var(--space-5);
-                    border-radius: var(--radius-md);
-                    border: none;
-                    background: transparent;
-                    color: var(--text-muted);
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: all var(--transition-normal);
-                }
-
-                .incidents-tab:hover {
-                    background: var(--surface-elevated);
-                    color: var(--text-primary);
-                }
-
-                .incidents-tab.active {
-                    background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
-                    color: white;
                 }
 
                 /* Dashboard Header */

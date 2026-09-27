@@ -3,18 +3,13 @@ import {
     FiPlus,
     FiUsers,
     FiCheck,
-    FiMessageSquare,
     FiAlertTriangle,
-    FiBook,
-    FiAward,
     FiSearch,
     FiCalendar,
     FiClock,
     FiFileText,
     FiList,
     FiEdit3,
-    FiTrash2,
-    FiGrid,
     FiChevronDown,
     FiUserX,
     FiX,
@@ -33,7 +28,6 @@ import {
     type PermisosTrabajoDef,
     type PlanificacionActividad,
     type PermisoTrabajo,
-    type PlanItem,
     type EvaluacionRespaldo,
 } from '../api/client';
 import SignatureModal from '../components/SignatureModal';
@@ -45,82 +39,26 @@ import PermisosTrabajoForm from '../components/actividades/PermisosTrabajoForm';
 import ReporteActividad from '../components/actividades/ReporteActividad';
 import EvaluacionActividad from '../components/actividades/EvaluacionActividad';
 import WorkerPicker from '../components/actividades/WorkerPicker';
+import { ActivitiesHoySkeletonRows, ActivitiesHistSkeletonRows } from '../components/actividades/ActivitiesSkeleton';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import ActivityCalendar from '../components/ActivityCalendar';
-import { Modal, Select, PageHeader, SegmentedControl } from '../components/ui';
+import DayTimeline from '../components/actividades/DayTimeline';
+import { Modal, Select, PageHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
-import { useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
-// Semáforo de seguimiento → clase de badge existente.
-const NIVEL_BADGE: Record<string, string> = { verde: 'success', amarillo: 'warning', rojo: 'danger', neutral: 'neutral' };
-
-const ACTIVITY_TYPES: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
-    CHARLA_5MIN: { label: 'Charla 5 Minutos', color: 'var(--primary-500)', icon: <FiMessageSquare /> },
-    ART: { label: 'Análisis de Riesgos', color: 'var(--warning-500)', icon: <FiAlertTriangle /> },
-    CAPACITACION: { label: 'Capacitación', color: 'var(--info-500)', icon: <FiBook /> },
-    INDUCCION: { label: 'Inducción', color: 'var(--success-500)', icon: <FiAward /> },
-    INSPECCION: { label: 'Inspección', color: 'var(--accent-500)', icon: <FiSearch /> },
-    REUNION_COMITE: { label: 'Reunión Comité Paritario', color: 'var(--secondary-500, #7c3aed)', icon: <FiUsers /> },
-    SIMULACRO: { label: 'Simulacro de Emergencia', color: 'var(--danger-500, #dc2626)', icon: <FiAlertTriangle /> },
-    // Casos no contemplados en el catálogo: el detalle va en el título/descripción.
-    OTRO: { label: 'Otra actividad', color: 'var(--gray-500)', icon: <FiFileText /> },
-};
-
-// Etapas constructivas de la obra: dimensión "tipo de trabajo" de la planificación
-// (misma nomenclatura que Obra.etapaConstructivaActual en el backend).
-const TIPOS_TRABAJO: Record<string, string> = {
-    excavacion: 'Excavación',
-    obra_gruesa: 'Obra gruesa',
-    terminaciones: 'Terminaciones',
-    entrega: 'Entrega',
-};
-
-// Subtipos de CAPACITACION segun el DS44 (deben coincidir con CAPACITACION_SUBTIPOS del backend).
-const CAPACITACION_SUBTIPOS: Record<string, string> = {
-    PRL_8H: 'Prevención de Riesgos Laborales (8h) — Art. 16',
-    EPP: 'Uso y mantención de EPP — Art. 13',
-    CPHS_ORIENTACION: 'Orientación CPHS (8h) — Art. 32',
-    CPHS_20H: 'Curso 20h CPHS — Art. 32',
-    DELEGADO: 'Capacitación Delegado SST — Art. 66',
-    ENCARGADO: 'Encargado Gestión del Riesgo — Art. 65',
-    OTRA: 'Otra capacitación',
-};
-
-// Opciones de periodicidad para actividades recurrentes.
-const FRECUENCIA_OPCIONES: Record<'unica' | 'diaria' | 'semanal' | 'mensual', string> = {
-    unica: 'Una vez (sin repetir)',
-    diaria: 'Diaria',
-    semanal: 'Semanal',
-    mensual: 'Mensual',
-};
-const labelFrecuencia = (f: 'unica' | 'diaria' | 'semanal' | 'mensual') => FRECUENCIA_OPCIONES[f].toLowerCase();
-
-// Ítem del formulario del planificador (esqueleto mensual).
-interface PlanItemForm {
-    tipo: string;
-    periodicidad: 'diaria' | 'semanal' | 'mensual';
-    tipoTrabajo: string;
-    responsables: string[];
-    tituloBase: string;
-    horaInicio: string;
-    ubicacion: string;
-}
-
-const emptyPlanItem: PlanItemForm = {
-    tipo: 'CHARLA_5MIN',
-    periodicidad: 'diaria',
-    tipoTrabajo: '',
-    responsables: [],
-    tituloBase: '',
-    horaInicio: '09:00',
-    ubicacion: '',
-};
+// Catálogos de tipos, subtipos y periodicidad: compartidos con los
+// formularios a pantalla completa (Nueva actividad / Planificar el mes).
+import {
+    ACTIVITY_TYPES, TIPOS_TRABAJO, CAPACITACION_SUBTIPOS, NIVEL_BADGE,
+} from '../utils/actividadCatalogos';
 
 export default function Activities() {
+    const navigate = useNavigate();
     const { user, hasPermission } = useAuth();
     const canCrearActividad = hasPermission(PERMISSIONS.ACTIVIDADES_CREAR);
     const canPlanificar = hasPermission(PERMISSIONS.ACTIVIDADES_PLANIFICAR);
@@ -130,8 +68,6 @@ export default function Activities() {
     const [activities, setActivities] = useState<Activity[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
-    const [showModal, setShowModal] = useState(false);
-    const [submitting, setSubmitting] = useState(false);
     const [showAttendanceModal, setShowAttendanceModal] = useState(false);
     const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
@@ -149,7 +85,6 @@ export default function Activities() {
     // grupo del relator (su cuadrilla / las cuadrillas de sus supervisores). El
     // toggle permite expandir a toda la obra por si algún vínculo no está cargado.
     const [verTodaLaObra, setVerTodaLaObra] = useState(false);
-    const [newAttendeeSearch, setNewAttendeeSearch] = useState('');
     const [attendanceSearch, setAttendanceSearch] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('');
@@ -169,13 +104,6 @@ export default function Activities() {
     // Vista: lista clásica o calendario mensual.
     const [viewMode, setViewMode] = useState<'lista' | 'calendario'>('lista');
     const [calendarMonth, setCalendarMonth] = useState(new Date());
-    // Planificador (esqueleto mensual): rango + ítems por tipo/periodicidad/responsables.
-    const [showPlanModal, setShowPlanModal] = useState(false);
-    const [planSubmitting, setPlanSubmitting] = useState(false);
-    const [planRango, setPlanRango] = useState({ desde: '', hasta: '' });
-    const [planItems, setPlanItems] = useState<PlanItemForm[]>([{ ...emptyPlanItem }]);
-    // Buscador del selector de responsables, por ítem del plan.
-    const [planSearch, setPlanSearch] = useState<Record<number, string>>({});
     // Detalle de un día del calendario (todas sus actividades + pendientes).
     const [dayModalFecha, setDayModalFecha] = useState<string | null>(null);
     // Pendientes de firmar de UNA actividad de hoy (se abre desde su tarjeta).
@@ -185,6 +113,9 @@ export default function Activities() {
     const [histDesde, setHistDesde] = useState('');
     const [histHasta, setHistHasta] = useState('');
     const [histVisibles, setHistVisibles] = useState(10);
+    // "Hoy" no crece sin límite: se cortan a 4 y el resto queda detrás de un
+    // enlace, igual que "N actividades más hoy" en el tablero de carga alta.
+    const [hoyVisibles, setHoyVisibles] = useState(4);
     // Vista previa del acta en PDF, dentro de la página (sin abrir pestañas).
     const [reportePreview, setReportePreview] = useState<{ url: string; activity: Activity } | null>(null);
     // Completar borrador (rellenar el detalle del día → programada).
@@ -199,44 +130,18 @@ export default function Activities() {
     // Check if user can manage (prevencionista/admin)
     const canManage = canCrearActividad;
 
-    const emptyActivity = {
-        tipo: 'CHARLA_5MIN',
-        subtipo: '',
-        titulo: '',
-        descripcion: '',
-        relatorId: '',
-        fecha: hoyISO(),
-        horaInicio: new Date().toTimeString().slice(0, 5),
-        horaFin: '',
-        ubicacion: '',
-        asistentesRequeridos: [] as string[],
-        // Periodicidad: 'unica' (sin repetición) o repetir hasta una fecha.
-        frecuencia: 'unica' as 'unica' | 'diaria' | 'semanal' | 'mensual',
-        repetirHasta: '',
-        // Vínculo con un ítem de onboarding (si se agendó desde el Equipo).
-        kitItemKey: '' as string,
-        // Evaluación de aprendizaje (solo CAPACITACION). El kit del cargo exige
-        // 70% general y 90% en altura/SPDC: son las dos únicas notas admitidas.
-        evaluacionExigida: false,
-        evaluacionNotaMinima: 70 as 70 | 90,
-        planificacion: { observaciones: '' } as PlanificacionActividad,
-        permisosTrabajo: [] as PermisoTrabajo[],
-    };
-    const [newActivity, setNewActivity] = useState(emptyActivity);
-    const location = useLocation();
-
     // Día de hoy en fecha LOCAL (no UTC: con toISOString, desde las ~20:00 en Chile
     // el día ya salta al siguiente y las charlas del día dejan de ser firmables).
-    // Se declara acá arriba a propósito: loadData() lo usa y el efecto de montaje la
-    // invoca desde un render que corta antes en `if (loading) return <spinner/>`.
+    // Se declara acá arriba a propósito: loadData() y el JSX de abajo lo usan.
     const today = hoyISO();
 
     useEffect(() => {
         loadData();
     }, [selectedObraId]);
 
-    // Catálogos de planificación diaria (temas/recursos/riesgos/medidas) y
-    // definición de permisos de trabajo del tenant, para el formulario de creación.
+    // Catálogos de planificación diaria y definición de permisos de trabajo:
+    // ya no alimentan un formulario acá (se fue a Nueva actividad), pero
+    // generarReporte() los sigue necesitando para armar el acta en PDF.
     useEffect(() => {
         if (!user?.tenantId) return;
         tenantsApi.getCatalogosActividad(user.tenantId).then((res) => {
@@ -249,23 +154,6 @@ export default function Activities() {
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.tenantId]);
-
-    // Prefill desde el Equipo de la obra: "Agendar" una capacitación para una persona.
-    useEffect(() => {
-        const prefill = (location.state as any)?.prefill;
-        if (!prefill || !prefill.personaId) return;
-        setNewActivity({
-            ...emptyActivity,
-            tipo: 'CAPACITACION',
-            subtipo: prefill.subtipo || 'OTRA',
-            titulo: prefill.titulo || '',
-            asistentesRequeridos: [prefill.personaId],
-            kitItemKey: prefill.kitItemKey || '',
-        });
-        setShowModal(true);
-        window.history.replaceState({}, ''); // evita reabrir al volver
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     // Sync pending offline signatures when online
     useEffect(() => {
@@ -315,149 +203,21 @@ export default function Activities() {
         }
     };
 
-    const handleCreateActivity = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (submitting) return;
-        if (!selectedObraId) {
-            toast.error('Selecciona una obra antes de crear una actividad');
-            return;
-        }
-        if (['CHARLA_5MIN', 'ART'].includes(newActivity.tipo) && !catalogos) {
-            toast.error('No se pudieron cargar los catálogos de actividades. Recarga la página para crear charlas o ART.');
-            return;
-        }
-
-        setSubmitting(true);
-        try {
-            const payload: any = { ...newActivity, obraId: selectedObraId };
-            // El subtipo solo aplica a capacitaciones.
-            if (payload.tipo !== 'CAPACITACION') delete payload.subtipo;
-            // La evaluación viaja como bloque; los flags del form no son del API.
-            delete payload.evaluacionExigida;
-            delete payload.evaluacionNotaMinima;
-            if (payload.tipo === 'CAPACITACION' && newActivity.evaluacionExigida) {
-                payload.evaluacion = { exigida: true, notaMinima: newActivity.evaluacionNotaMinima };
-            }
-            // Campos opcionales vacíos no se envían.
-            if (!payload.horaFin) delete payload.horaFin;
-            if (!payload.ubicacion) delete payload.ubicacion;
-            // Periodicidad: validar que la repetición tenga fecha de término.
-            if (payload.frecuencia === 'unica') {
-                delete payload.frecuencia;
-                delete payload.repetirHasta;
-            } else if (!payload.repetirHasta) {
-                toast.error('Indica hasta qué fecha se debe repetir la actividad');
-                setSubmitting(false);
-                return;
-            } else if (payload.repetirHasta < payload.fecha) {
-                toast.error('La fecha de término debe ser posterior a la fecha de inicio');
-                setSubmitting(false);
-                return;
-            }
-            // La planificación completa solo aplica a charlas/ART; para el resto
-            // solo viajan las observaciones (si las hay).
-            if (!['CHARLA_5MIN', 'ART'].includes(payload.tipo)) {
-                const obs = payload.planificacion?.observaciones?.trim();
-                payload.planificacion = obs ? { observaciones: obs } : undefined;
-                payload.permisosTrabajo = undefined;
-            }
-            const response = await activitiesApi.create(payload);
-            if (response.success && response.data) {
-                const data = response.data as any;
-                if (data?.serie) {
-                    // Serie recurrente: recargamos para traer todas las ocurrencias de la obra.
-                    await loadData();
-                    toast.success(`${data.count} actividades creadas (serie ${labelFrecuencia(newActivity.frecuencia)})`);
-                } else {
-                    setActivities([data, ...activities]);
-                    toast.success('Actividad creada correctamente');
-                }
-                setShowModal(false);
-                setNewActivity(emptyActivity);
-            } else {
-                toast.error(response.error || 'Error al crear la actividad');
-            }
-        } catch (error) {
-            console.error('Error creating activity:', error);
-            toast.error('Error al crear la actividad');
-        } finally {
-            setSubmitting(false);
-        }
+    // "Nueva actividad" y "Planificar el mes" viven en sus propias páginas
+    // (ver ActivityNueva.tsx / ActivityPlanificar.tsx); acá solo queda la
+    // navegación hacia ellas, con el estado que cada una necesita de prefill.
+    const irANuevaActividad = (fecha?: string) => {
+        navigate('/activities/nueva', fecha ? { state: { prefill: { fecha } } } : undefined);
     };
 
-    // ── Planificador (esqueleto mensual) ─────────────────────────────────────
-
-    const openPlanModal = () => {
-        // Rango por defecto: el mes visible del calendario completo.
+    // El planificador arranca en el mes visible del calendario, o el actual
+    // si se abre desde la lista.
+    const irAPlanificar = () => {
         const base = viewMode === 'calendario' ? calendarMonth : new Date();
         const desde = new Date(base.getFullYear(), base.getMonth(), 1);
         const hasta = new Date(base.getFullYear(), base.getMonth() + 1, 0);
         const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        setPlanRango({ desde: iso(desde), hasta: iso(hasta) });
-        setPlanItems([{ ...emptyPlanItem }]);
-        setShowPlanModal(true);
-    };
-
-    const updatePlanItem = (index: number, patch: Partial<PlanItemForm>) =>
-        setPlanItems(prev => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
-
-    const togglePlanResponsable = (index: number, personaId: string) =>
-        setPlanItems(prev => prev.map((it, i) => {
-            if (i !== index) return it;
-            const responsables = it.responsables.includes(personaId)
-                ? it.responsables.filter(id => id !== personaId)
-                : [...it.responsables, personaId];
-            return { ...it, responsables };
-        }));
-
-    const handleGeneratePlan = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (planSubmitting || !selectedObraId || !user?.personaId) return;
-        if (!planRango.desde || !planRango.hasta || planRango.hasta < planRango.desde) {
-            toast.error('Indica un rango de fechas válido');
-            return;
-        }
-        const sinResponsables = planItems.findIndex(it => it.responsables.length === 0);
-        if (sinResponsables >= 0) {
-            toast.error(`El ítem ${sinResponsables + 1} no tiene responsables asignados`);
-            return;
-        }
-
-        setPlanSubmitting(true);
-        try {
-            const items: PlanItem[] = planItems.map(it => ({
-                tipo: it.tipo,
-                periodicidad: it.periodicidad,
-                tipoTrabajo: it.tipoTrabajo || undefined,
-                responsables: it.responsables,
-                tituloBase: it.tituloBase || undefined,
-                camposPrellenados: {
-                    horaInicio: it.horaInicio || undefined,
-                    ubicacion: it.ubicacion || undefined,
-                },
-            }));
-            const response = await activitiesApi.plan({
-                obraId: selectedObraId,
-                rangoDesde: planRango.desde,
-                rangoHasta: planRango.hasta,
-                solicitanteId: user.personaId,
-                items,
-            });
-            if (response.success && response.data) {
-                await loadData();
-                const { count, omitidas } = response.data;
-                toast.success(`${count} actividad(es) planificada(s)${omitidas > 0 ? ` · ${omitidas} ya existían` : ''}`);
-                setShowPlanModal(false);
-                setViewMode('calendario');
-            } else {
-                toast.error(response.error || 'Error al generar la planificación');
-            }
-        } catch (error) {
-            console.error('Error generating plan:', error);
-            toast.error('Error al generar la planificación');
-        } finally {
-            setPlanSubmitting(false);
-        }
+        navigate('/activities/planificar', { state: { rango: { desde: iso(desde), hasta: iso(hasta) } } });
     };
 
     // ── Completar borrador (rellenar el detalle del día) ─────────────────────
@@ -529,11 +289,6 @@ export default function Activities() {
         }
     };
 
-    // Limpia la búsqueda de asistentes cada vez que se abre "Nueva actividad".
-    useEffect(() => {
-        if (showModal) setNewAttendeeSearch('');
-    }, [showModal]);
-
     // Limpia la búsqueda de asistentes cada vez que se abre "Registrar Asistencia".
     useEffect(() => {
         if (showAttendanceModal) setAttendanceSearch('');
@@ -545,8 +300,7 @@ export default function Activities() {
     // Crear ad-hoc con la fecha del día pre-cargada (desde el panel del día).
     const crearEnFecha = (fechaISO: string) => {
         setDayModalFecha(null);
-        setNewActivity({ ...emptyActivity, fecha: fechaISO });
-        setShowModal(true);
+        irANuevaActividad(fechaISO);
     };
 
     // Click en un chip del calendario: borrador propio → completar; resto → detalle.
@@ -791,15 +545,6 @@ export default function Activities() {
         }
     };
 
-    const toggleRequiredAttendee = (personaId: string) => {
-        setNewActivity(prev => ({
-            ...prev,
-            asistentesRequeridos: prev.asistentesRequeridos.includes(personaId)
-                ? prev.asistentesRequeridos.filter(id => id !== personaId)
-                : [...prev.asistentesRequeridos, personaId],
-        }));
-    };
-
     // Self-sign handler for workers
     const handleSelfSign = async (pin: string) => {
         if (!selfSignActivity || !user?.personaId) return;
@@ -900,13 +645,14 @@ export default function Activities() {
         }
     };
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center" style={{ height: '100vh' }}>
-                <div className="spinner" />
-            </div>
-        );
-    }
+    // No hay un `if (loading) return <otro árbol>`: la barra de búsqueda, el
+    // filtro, los rótulos de «Hoy»/«Historial» y los filtros del historial no
+    // dependen de `activities` (son estado local o texto fijo), así que se
+    // dibujan reales desde el primer render. Solo el CONTENIDO de esas dos
+    // secciones —las filas, que sí necesitan los datos— se reemplaza por un
+    // esqueleto mientras `loading` es true (ver más abajo, junto a cada
+    // sección). Así la estructura que carga es la misma que la real, en vez
+    // de una pantalla aparte que se reemplaza entera al terminar.
 
     const matchesFilters = (a: Activity) => {
         const matchesSearch = searchTerm.trim() === '' ||
@@ -1034,10 +780,20 @@ export default function Activities() {
 
 
             <div className="page-content">
+                {/* Lista y calendario son dos vistas de lo mismo, no un filtro:
+                    van en el encabezado, como las pestañas del detalle de obra.
+                    Sin obra activa no hay nada que ver en ninguna de las dos. */}
                 <PageHeader
                     banner
                     title="Actividades y capacitación"
                     description="Charlas de 5 minutos, inducciones, ART y capacitación técnica, con asistencia y firma de los participantes."
+                    tabs={selectedObraId ? [
+                        { id: 'lista', label: 'Lista', icon: <FiList size={15} /> },
+                        { id: 'calendario', label: 'Calendario', icon: <FiCalendar size={15} /> },
+                    ] : undefined}
+                    activeTab={viewMode}
+                    onTabChange={(id) => setViewMode(id as 'lista' | 'calendario')}
+                    tabsLabel="Vista de las actividades"
                     actions={
                         (canCrearActividad || canPlanificar) ? (
                             <div className="flex items-center gap-2">
@@ -1046,7 +802,7 @@ export default function Activities() {
                                         className="btn btn-secondary"
                                         disabled={!selectedObraId}
                                         title={!selectedObraId ? 'Selecciona una obra para planificar el mes' : 'Armar el esqueleto de actividades del mes'}
-                                        onClick={openPlanModal}
+                                        onClick={irAPlanificar}
                                     >
                                         <FiCalendar /> Planificar mes
                                     </button>
@@ -1056,7 +812,7 @@ export default function Activities() {
                                         className="btn btn-primary"
                                         disabled={!selectedObraId}
                                         title={!selectedObraId ? 'Entra a una obra para crear una actividad' : undefined}
-                                        onClick={() => { setVerTodaLaObra(false); setShowModal(true); }}
+                                        onClick={() => irANuevaActividad()}
                                     >
                                         <FiPlus /> Nueva actividad
                                     </button>
@@ -1151,16 +907,6 @@ export default function Activities() {
                             />
                         </div>
                     </div>
-                    <SegmentedControl
-                        ariaLabel="Modo de vista"
-                        fullWidth={false}
-                        value={viewMode}
-                        onChange={(v) => setViewMode(v as 'lista' | 'calendario')}
-                        options={[
-                            { value: 'lista', label: 'Lista', icon: <FiList size={14} /> },
-                            { value: 'calendario', label: 'Calendario', icon: <FiGrid size={14} /> },
-                        ]}
-                    />
                 </div>
 
                 {/* Vista CALENDARIO: coordinación visual del mes */}
@@ -1179,22 +925,21 @@ export default function Activities() {
 
                 {/* Borradores por completar (planificación pendiente del usuario) */}
                 {misBorradores.length > 0 && (
-                    <section className="card act-card act-card-todo mb-6">
-                        <header className="act-card-head">
-                            <div>
-                                <h2 className="act-card-title">Del plan, por completar</h2>
-                                <p className="act-card-sub">
-                                    Estas actividades están programadas pero les falta el detalle del día.
-                                </p>
-                            </div>
-                            <span className="act-card-count">{misBorradores.length}</span>
-                        </header>
+                    <section className="act-section act-section--todo" aria-label="Del plan, por completar">
+                        <div className="act-rotulo">
+                            <span className="act-rotulo-title">Del plan, por completar</span>
+                            <span className="act-rotulo-sub">
+                                Estas actividades están programadas pero les falta el detalle del día.
+                            </span>
+                            <span className="act-rotulo-spacer" />
+                            <span className="act-rotulo-count">{misBorradores.length}</span>
+                        </div>
                         <ul className="act-todo-list">
                             {misBorradores.slice(0, 5).map((a) => {
                                 const typeInfo = ACTIVITY_TYPES[a.tipo] || { label: a.tipo, color: 'var(--gray-500)', icon: <FiFileText /> };
                                 return (
                                     <li key={a.activityId} className="act-todo-row">
-                                        <span className="act-row-type" style={{ background: typeInfo.color }} aria-hidden="true">
+                                        <span className="act-row-type" aria-hidden="true">
                                             {typeInfo.icon}
                                         </span>
                                         <div className="act-row-main">
@@ -1223,18 +968,20 @@ export default function Activities() {
                 {viewMode === 'lista' && <>
 
                 {/* Actividades de hoy — la superficie de trabajo del día */}
-                <section className="card act-card mb-6">
-                    <header className="act-card-head">
-                        <div>
-                            <h2 className="act-card-title">Hoy</h2>
-                            <p className="act-card-sub">
-                                {new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
-                                {upcomingActivities.length > 0 && ` · ${upcomingActivities.length} programada${upcomingActivities.length === 1 ? '' : 's'} más adelante`}
-                            </p>
-                        </div>
-                    </header>
+                <section className="act-section" aria-label="Hoy">
+                    <div className="act-rotulo">
+                        <span className="act-rotulo-title">Hoy</span>
+                        <span className="act-rotulo-sub">
+                            {new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
+                            {upcomingActivities.length > 0 && ` · ${upcomingActivities.length} programada${upcomingActivities.length === 1 ? '' : 's'} más adelante`}
+                        </span>
+                    </div>
 
-                    {todayActivities.length === 0 ? (
+                    {loading ? (
+                        <ul className="act-today-list">
+                            <ActivitiesHoySkeletonRows />
+                        </ul>
+                    ) : todayActivities.length === 0 ? (
                         <div className="act-empty">
                             <span className="act-empty-icon"><FiCalendar size={22} /></span>
                             <h3 className="act-empty-title">
@@ -1247,11 +994,11 @@ export default function Activities() {
                             </p>
                             {canCrearActividad && (
                                 <div className="act-empty-actions">
-                                    <button className="btn btn-primary" onClick={() => { setVerTodaLaObra(false); setShowModal(true); }}>
+                                    <button className="btn btn-primary" onClick={() => irANuevaActividad()}>
                                         <FiPlus /> Crear actividad
                                     </button>
                                     {canPlanificar && (
-                                        <button className="btn btn-ghost" onClick={openPlanModal}>
+                                        <button className="btn btn-ghost" onClick={irAPlanificar}>
                                             <FiCalendar /> Planificar el mes
                                         </button>
                                     )}
@@ -1259,12 +1006,12 @@ export default function Activities() {
                             )}
                         </div>
                     ) : (
+                        <>
                         <ul className="act-today-list">
-                            {todayActivities.map((activity) => {
+                            {todayActivities.slice(0, hoyVisibles).map((activity) => {
                                 const typeInfo = ACTIVITY_TYPES[activity.tipo] || {
                                     label: activity.tipo, color: 'var(--gray-500)', icon: <FiFileText />,
                                 };
-                                const seg = estadoSeguimiento(activity);
                                 const firmas = firmasDe(activity);
                                 const tieneConvocados = firmas.esperados > 0;
                                 const completo = tieneConvocados && firmas.pendientes.length === 0;
@@ -1285,9 +1032,12 @@ export default function Activities() {
                                                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetailModal(activity); }
                                             }}
                                         >
-                                            <span className="act-row-hora">
-                                                <b>{(activity.horaInicio || '').slice(0, 5)}</b>
-                                                {activity.horaFin && <i>{activity.horaFin.slice(0, 5)}</i>}
+                                            <span className="act-row-when">
+                                                <span className="act-row-type" aria-hidden="true">{typeInfo.icon}</span>
+                                                <span className="act-row-hora">
+                                                    <b>{(activity.horaInicio || '').slice(0, 5)}</b>
+                                                    {activity.horaFin && <i>{activity.horaFin.slice(0, 5)}</i>}
+                                                </span>
                                             </span>
 
                                             <div className="act-row-main">
@@ -1321,8 +1071,6 @@ export default function Activities() {
                                                     </span>
                                                 )}
                                             </div>
-
-                                            <span className={`badge badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>
 
                                             <div className="act-row-actions" onClick={(e) => e.stopPropagation()}>
                                                 {canManage && (firmas.pendientes.length > 0 || firmas.ausentes.length > 0) && (
@@ -1365,20 +1113,24 @@ export default function Activities() {
                                 );
                             })}
                         </ul>
+                        {todayActivities.length > hoyVisibles && (
+                            <button type="button" className="act-hoy-mas" onClick={() => setHoyVisibles(todayActivities.length)}>
+                                {todayActivities.length - hoyVisibles} actividad{todayActivities.length - hoyVisibles === 1 ? '' : 'es'} más hoy
+                            </button>
+                        )}
+                        </>
                     )}
                 </section>
 
                 {/* Historial — herramienta de consulta: buscar un registro puntual */}
-                <section className="card act-card">
-                    <header className="act-card-head">
-                        <div>
-                            <h2 className="act-card-title">Historial</h2>
-                            <p className="act-card-sub">
-                                Actividades ya realizadas en esta obra
-                                {histFiltrado && ` · ${filteredActivities.length} de ${historialBase.length}`}
-                            </p>
-                        </div>
-                    </header>
+                <section className="act-section act-section--last" aria-label="Historial">
+                    <div className="act-rotulo">
+                        <span className="act-rotulo-title">Historial</span>
+                        <span className="act-rotulo-sub">
+                            Actividades ya realizadas en esta obra
+                            {histFiltrado && ` · ${filteredActivities.length} de ${historialBase.length}`}
+                        </span>
+                    </div>
 
                     <div className="act-hist-filters">
                         <div className="act-hist-search">
@@ -1415,7 +1167,17 @@ export default function Activities() {
                         </div>
                     </div>
 
-                    {filteredActivities.length === 0 ? (
+                    {loading ? (
+                        <div className="act-hist-table-wrap">
+                            <div className="table-container">
+                                <table className="table act-hist-table" aria-hidden="true">
+                                    <tbody>
+                                        <ActivitiesHistSkeletonRows />
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ) : filteredActivities.length === 0 ? (
                         <div className="act-empty act-empty-sm">
                             <span className="act-empty-icon"><FiClock size={20} /></span>
                             <h3 className="act-empty-title">
@@ -1436,6 +1198,7 @@ export default function Activities() {
                         </div>
                     ) : (
                         <>
+                            <div className="act-hist-table-wrap">
                             <div className="table-container">
                                 {/* Sin fila de encabezados: cada celda se explica sola.
                                     El nombre accesible lo aporta aria-label. */}
@@ -1447,6 +1210,14 @@ export default function Activities() {
                                                 label: activity.tipoDescripcion || activity.tipo, color: 'var(--gray-500)', icon: <FiFileText />,
                                             };
                                             const fecha = new Date(`${activity.fecha}T00:00:00`);
+                                            const sinFirmar = firmasDe(activity).pendientes.length;
+                                            const excepcion = seg.nivel === 'rojo'
+                                                ? seg.label
+                                                : seg.nivel === 'neutral'
+                                                    ? 'Cancelada'
+                                                    : sinFirmar > 0
+                                                        ? `${sinFirmar} sin firmar`
+                                                        : null;
                                             return (
                                                 <tr key={activity.activityId} onClick={() => openDetailModal(activity)} style={{ cursor: 'pointer' }}>
                                                     <td>
@@ -1461,9 +1232,8 @@ export default function Activities() {
                                                     <td>
                                                         <span className="act-hist-title">{activity.titulo}</span>
                                                         <span className="act-hist-type">
-                                                            <i style={{ background: typeInfo.color }} aria-hidden="true" />
                                                             {typeInfo.label}
-                                                            <span className={`badge badge-sm badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>
+                                                            {excepcion && <span className="act-hist-exception">· {excepcion}</span>}
                                                         </span>
                                                     </td>
                                                     <td>
@@ -1509,6 +1279,7 @@ export default function Activities() {
                                     </span>
                                 </div>
                             )}
+                            </div>
                         </>
                     )}
                 </section>
@@ -1638,251 +1409,6 @@ export default function Activities() {
                             </div>
                         );
                     })()}
-                </Modal>
-
-                {/* Create Activity Modal */}
-                <Modal
-                    isOpen={showModal}
-                    onClose={() => !submitting && setShowModal(false)}
-                    preventClose={submitting}
-                    title="Nueva actividad"
-                    subtitle="Queda programada y, al iniciar, sus asistentes pueden firmar."
-                    icon={<FiPlus size={20} />}
-                    size="lg"
-                    footer={
-                        <>
-                            <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => setShowModal(false)}>Cancelar</button>
-                            <button type="submit" form="create-activity-form" className="btn btn-primary" disabled={submitting}>
-                                {submitting ? 'Creando…' : 'Crear Actividad'}
-                            </button>
-                        </>
-                    }
-                >
-                    <form id="create-activity-form" onSubmit={handleCreateActivity}>
-                        <div className="form-group">
-                            <label className="form-label">Tipo de Actividad *</label>
-                            <Select
-                                ariaLabel="Tipo de actividad"
-                                value={newActivity.tipo}
-                                onChange={(v) => setNewActivity({ ...newActivity, tipo: v })}
-                                options={Object.entries(ACTIVITY_TYPES).map(([key, { label, icon }]) => ({
-                                    value: key,
-                                    label,
-                                    icon,
-                                }))}
-                            />
-                        </div>
-
-                        {newActivity.tipo === 'CAPACITACION' && (
-                            <div className="form-group">
-                                <label className="form-label">Tipo de capacitación (DS44) *</label>
-                                <Select
-                                    ariaLabel="Tipo de capacitación DS44"
-                                    placeholder="Selecciona el tipo de capacitación"
-                                    searchable
-                                    value={newActivity.subtipo}
-                                    onChange={(v) => setNewActivity({ ...newActivity, subtipo: v })}
-                                    options={Object.entries(CAPACITACION_SUBTIPOS).map(([key, label]) => ({
-                                        value: key,
-                                        label,
-                                    }))}
-                                />
-                            </div>
-                        )}
-
-                        {/* Evaluación de aprendizaje: el DS44 no se conforma con que la
-                            capacitación se dicte (Art. 13.4 exige registrar las evaluaciones).
-                            Se puede activar después desde el detalle, mientras nadie haya rendido. */}
-                        {newActivity.tipo === 'CAPACITACION' && (
-                            <div className="form-group">
-                                <label className="ev-check">
-                                    <input
-                                        type="checkbox"
-                                        checked={newActivity.evaluacionExigida}
-                                        onChange={(e) => setNewActivity({ ...newActivity, evaluacionExigida: e.target.checked })}
-                                    />
-                                    <span>Con evaluación de aprendizaje</span>
-                                </label>
-                                {newActivity.evaluacionExigida && (
-                                    <div className="ev-minima-pick">
-                                        <span className="form-label">Nota mínima de aprobación</span>
-                                        <SegmentedControl
-                                            value={String(newActivity.evaluacionNotaMinima)}
-                                            onChange={(v) => setNewActivity({ ...newActivity, evaluacionNotaMinima: Number(v) as 70 | 90 })}
-                                            options={[
-                                                { value: '70', label: '70% general' },
-                                                { value: '90', label: '90% altura / SPDC' },
-                                            ]}
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="form-group">
-                            <label className="form-label">Título *</label>
-                            <input
-                                type="text"
-                                value={newActivity.titulo}
-                                onChange={(e) => setNewActivity({ ...newActivity, titulo: e.target.value })}
-                                className="form-input"
-                                placeholder="Ej: Uso correcto de EPP"
-                                required
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">Descripción</label>
-                            <textarea
-                                value={newActivity.descripcion}
-                                onChange={(e) => setNewActivity({ ...newActivity, descripcion: e.target.value })}
-                                className="form-input"
-                                rows={3}
-                                placeholder="Descripción de la actividad..."
-                                style={{ resize: 'vertical' }}
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">Relator *</label>
-                            <Select
-                                ariaLabel="Relator"
-                                placeholder="Selecciona un relator"
-                                searchable
-                                value={newActivity.relatorId}
-                                onChange={(v) => setNewActivity({ ...newActivity, relatorId: v })}
-                                options={workers.map((worker) => ({
-                                    value: worker.personaId,
-                                    label: `${worker.nombre} ${worker.apellido}`,
-                                    description: worker.cargo,
-                                }))}
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">{newActivity.frecuencia === 'unica' ? 'Fecha *' : 'Fecha de inicio *'}</label>
-                            <input
-                                type="date"
-                                value={newActivity.fecha}
-                                onChange={(e) => setNewActivity({ ...newActivity, fecha: e.target.value })}
-                                className="form-input"
-                                required
-                            />
-                        </div>
-
-                        <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
-                            <div className="form-group">
-                                <label className="form-label">Periodicidad</label>
-                                <Select
-                                    ariaLabel="Periodicidad"
-                                    value={newActivity.frecuencia}
-                                    onChange={(v) => setNewActivity({ ...newActivity, frecuencia: v as typeof newActivity.frecuencia })}
-                                    options={Object.entries(FRECUENCIA_OPCIONES).map(([value, label]) => ({ value, label }))}
-                                />
-                            </div>
-                            {newActivity.frecuencia !== 'unica' && (
-                                <div className="form-group">
-                                    <label className="form-label">Repetir hasta *</label>
-                                    <input
-                                        type="date"
-                                        value={newActivity.repetirHasta}
-                                        min={newActivity.fecha}
-                                        onChange={(e) => setNewActivity({ ...newActivity, repetirHasta: e.target.value })}
-                                        className="form-input"
-                                        required
-                                    />
-                                </div>
-                            )}
-                        </div>
-
-                        {newActivity.frecuencia !== 'unica' && (
-                            <div className="form-group" style={{ marginTop: 'calc(-1 * var(--space-2))' }}>
-                                <p className="text-xs text-muted" style={{ margin: 0 }}>
-                                    Se creará una actividad {labelFrecuencia(newActivity.frecuencia)} a las {newActivity.horaInicio || '—'} desde {newActivity.fecha || '—'}{newActivity.repetirHasta ? ` hasta ${newActivity.repetirHasta}` : ''}.
-                                </p>
-                            </div>
-                        )}
-
-                        <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
-                            <div className="form-group">
-                                <label className="form-label">Hora inicio *</label>
-                                <input
-                                    type="time"
-                                    value={newActivity.horaInicio}
-                                    onChange={(e) => setNewActivity({ ...newActivity, horaInicio: e.target.value })}
-                                    className="form-input"
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Hora fin</label>
-                                <input
-                                    type="time"
-                                    value={newActivity.horaFin}
-                                    onChange={(e) => setNewActivity({ ...newActivity, horaFin: e.target.value })}
-                                    className="form-input"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">Ubicación</label>
-                            <input
-                                type="text"
-                                value={newActivity.ubicacion}
-                                onChange={(e) => setNewActivity({ ...newActivity, ubicacion: e.target.value })}
-                                className="form-input"
-                                placeholder="Ej: Frente de obra, sala de charlas..."
-                            />
-                        </div>
-
-                        {catalogos && (
-                            <PlanificacionDiariaForm
-                                value={newActivity.planificacion}
-                                onChange={(planificacion) => setNewActivity({ ...newActivity, planificacion })}
-                                catalogos={catalogos}
-                                tipoActividad={newActivity.tipo}
-                            />
-                        )}
-
-                        {['CHARLA_5MIN', 'ART'].includes(newActivity.tipo) && Object.keys(permisosDef).length > 0 && (
-                            <PermisosTrabajoForm
-                                value={newActivity.permisosTrabajo}
-                                onChange={(permisosTrabajo) => setNewActivity({ ...newActivity, permisosTrabajo })}
-                                permisosDef={permisosDef}
-                                workers={workers}
-                            />
-                        )}
-
-                        <div className="form-group">
-                            {(() => {
-                                const { list: visibles, scoped } = visibleWorkersFor(newActivity.relatorId);
-                                return (
-                                    <WorkerPicker
-                                        label="Asistentes requeridos"
-                                        workers={visibles}
-                                        selected={newActivity.asistentesRequeridos}
-                                        onToggle={toggleRequiredAttendee}
-                                        search={newAttendeeSearch}
-                                        onSearchChange={setNewAttendeeSearch}
-                                        maxHeight={220}
-                                        emptyMessage={
-                                            workers.length === 0
-                                                ? 'No hay trabajadores asignados a esta obra.'
-                                                : 'Este relator no tiene trabajadores en su grupo. Usa «Ver toda la obra» para elegir de todos modos.'
-                                        }
-                                        headerActions={
-                                            scoped ? (
-                                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setVerTodaLaObra((v) => !v)}>
-                                                    {verTodaLaObra ? 'Ver solo su grupo' : 'Ver toda la obra'}
-                                                </button>
-                                            ) : undefined
-                                        }
-                                    />
-                                );
-                            })()}
-                        </div>
-                    </form>
                 </Modal>
 
                 {/* Attendance Modal */}
@@ -2368,16 +1894,10 @@ export default function Activities() {
                             );
                         }
 
-                        const estadoBadge = (a: Activity) => {
-                            switch (a.estado) {
-                                case 'borrador': return <span className="badge badge-warning">Por completar</span>;
-                                case 'completada': return <span className="badge badge-success">Completada</span>;
-                                case 'cancelada': return <span className="badge badge-danger">Cancelada</span>;
-                                case 'en_curso': return <span className="badge badge-warning">En curso</span>;
-                                default: return <span className="badge badge-neutral">Programada</span>;
-                            }
-                        };
-
+                        // Línea de tiempo de 24 horas, como Google Calendar: cada
+                        // actividad va en su bloque de hora real, no en una lista
+                        // aparte. Un clic hace lo mismo que un chip del mes: completa
+                        // si es un borrador propio, o abre el detalle si no.
                         return (
                             <div className="flex flex-col gap-3">
                                 {pendientes.length > 0 && (
@@ -2385,230 +1905,19 @@ export default function Activities() {
                                         <strong>{pendientes.length}</strong> actividad(es) de este día aún está(n) <strong>por completar</strong>.
                                     </div>
                                 )}
-                                {delDia.map((a) => {
-                                    const typeInfo = ACTIVITY_TYPES[a.tipo] || { label: a.tipoDescripcion || a.tipo, color: 'var(--gray-500)', icon: <FiFileText /> };
-                                    const responsable = workers.find(w => w.personaId === a.relatorId);
-                                    return (
-                                        <div
-                                            key={a.activityId}
-                                            className="flex items-center justify-between"
-                                            style={{
-                                                padding: 'var(--space-3)',
-                                                background: 'var(--surface-elevated)',
-                                                borderRadius: 'var(--radius-md)',
-                                                border: a.estado === 'borrador' ? '1px dashed var(--warning-500)' : '1px solid var(--surface-border)',
-                                            }}
-                                        >
-                                            <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
-                                                <div className="avatar avatar-sm" style={{ background: typeInfo.color, flexShrink: 0 }}>{typeInfo.icon}</div>
-                                                <div style={{ minWidth: 0 }}>
-                                                    <div className="font-bold" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.titulo}</div>
-                                                    <div className="text-sm text-muted">
-                                                        {typeInfo.label}
-                                                        {a.horaInicio && ` · ${a.horaInicio.slice(0, 5)}`}
-                                                        {a.horaFin && `–${a.horaFin.slice(0, 5)}`}
-                                                        {responsable && ` · ${responsable.nombre} ${responsable.apellido || ''}`.trimEnd()}
-                                                        {a.tipoTrabajo && TIPOS_TRABAJO[a.tipoTrabajo] && ` · ${TIPOS_TRABAJO[a.tipoTrabajo]}`}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                                                {estadoBadge(a)}
-                                                {puedeCompletar(a) ? (
-                                                    <button
-                                                        className="btn btn-primary btn-sm"
-                                                        onClick={() => { setDayModalFecha(null); openCompleteModal(a); }}
-                                                    >
-                                                        <FiEdit3 size={14} /> Completar
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        className="btn btn-secondary btn-sm"
-                                                        onClick={() => { setDayModalFecha(null); openDetailModal(a); }}
-                                                    >
-                                                        Ver detalle
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                <DayTimeline
+                                    fecha={dayModalFecha}
+                                    activities={delDia}
+                                    typeColors={ACTIVITY_TYPES}
+                                    onActivityClick={(a) => {
+                                        setDayModalFecha(null);
+                                        if (puedeCompletar(a)) openCompleteModal(a);
+                                        else openDetailModal(a);
+                                    }}
+                                />
                             </div>
                         );
                     })()}
-                </Modal>
-
-                {/* Planificador: esqueleto de actividades del mes */}
-                <Modal
-                    isOpen={showPlanModal}
-                    onClose={() => !planSubmitting && setShowPlanModal(false)}
-                    preventClose={planSubmitting}
-                    icon={<FiCalendar size={20} />}
-                    title="Planificar actividades del mes"
-                    subtitle="Arma el esqueleto: cada ítem genera actividades en borrador que los responsables completan día a día. Sábados y domingos se excluyen automáticamente."
-                    size="lg"
-                    footer={
-                        <>
-                            <button type="button" className="btn btn-secondary" disabled={planSubmitting} onClick={() => setShowPlanModal(false)}>Cancelar</button>
-                            <button type="submit" form="plan-form" className="btn btn-primary" disabled={planSubmitting}>
-                                {planSubmitting ? 'Generando…' : 'Generar planificación'}
-                            </button>
-                        </>
-                    }
-                >
-                    <form id="plan-form" onSubmit={handleGeneratePlan}>
-                        <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
-                            <div className="form-group">
-                                <label className="form-label">Desde *</label>
-                                <input
-                                    type="date"
-                                    value={planRango.desde}
-                                    onChange={(e) => setPlanRango({ ...planRango, desde: e.target.value })}
-                                    className="form-input"
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Hasta *</label>
-                                <input
-                                    type="date"
-                                    value={planRango.hasta}
-                                    min={planRango.desde}
-                                    onChange={(e) => setPlanRango({ ...planRango, hasta: e.target.value })}
-                                    className="form-input"
-                                    required
-                                />
-                            </div>
-                        </div>
-
-                        {planItems.map((item, index) => (
-                            <div key={index} className="act-plan-item">
-                                <div className="act-plan-item-head">
-                                    <span className="act-plan-item-type" style={{ background: ACTIVITY_TYPES[item.tipo]?.color }} aria-hidden="true">
-                                        {ACTIVITY_TYPES[item.tipo]?.icon}
-                                    </span>
-                                    <div className="act-plan-item-copy">
-                                        <b>{item.tituloBase.trim() || ACTIVITY_TYPES[item.tipo]?.label || 'Actividad'}</b>
-                                        <span>
-                                            {item.periodicidad === 'diaria' ? 'Cada día hábil' : item.periodicidad === 'semanal' ? 'Una vez por semana' : 'Una vez al mes'}
-                                            {' · '}
-                                            {item.responsables.length > 0
-                                                ? `${item.responsables.length} responsable${item.responsables.length === 1 ? '' : 's'}`
-                                                : 'sin responsables'}
-                                        </span>
-                                    </div>
-                                    {planItems.length > 1 && (
-                                        <button
-                                            type="button"
-                                            className="btn btn-ghost btn-sm"
-                                            aria-label={`Quitar ${ACTIVITY_TYPES[item.tipo]?.label || 'este ítem'} del plan`}
-                                            onClick={() => setPlanItems(prev => prev.filter((_, i) => i !== index))}
-                                        >
-                                            <FiTrash2 size={14} />
-                                        </button>
-                                    )}
-                                </div>
-
-                                <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
-                                    <div className="form-group">
-                                        <label className="form-label">Tipo de actividad *</label>
-                                        <Select
-                                            ariaLabel={`Tipo de actividad del ítem ${index + 1}`}
-                                            value={item.tipo}
-                                            onChange={(v) => updatePlanItem(index, { tipo: v })}
-                                            options={Object.entries(ACTIVITY_TYPES).map(([key, { label, icon }]) => ({ value: key, label, icon }))}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Periodicidad *</label>
-                                        <Select
-                                            ariaLabel={`Periodicidad del ítem ${index + 1}`}
-                                            value={item.periodicidad}
-                                            onChange={(v) => updatePlanItem(index, { periodicidad: v as PlanItemForm['periodicidad'] })}
-                                            options={[
-                                                { value: 'diaria', label: 'Diaria (lunes a viernes)' },
-                                                { value: 'semanal', label: 'Semanal' },
-                                                { value: 'mensual', label: 'Mensual' },
-                                            ]}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
-                                    <div className="form-group">
-                                        <label className="form-label">Tipo de trabajo</label>
-                                        <Select
-                                            ariaLabel={`Tipo de trabajo del ítem ${index + 1}`}
-                                            placeholder="(Todos)"
-                                            value={item.tipoTrabajo}
-                                            onChange={(v) => updatePlanItem(index, { tipoTrabajo: v })}
-                                            options={[
-                                                { value: '', label: 'Todos / no aplica' },
-                                                ...Object.entries(TIPOS_TRABAJO).map(([value, label]) => ({ value, label })),
-                                            ]}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Hora por defecto</label>
-                                        <input
-                                            type="time"
-                                            value={item.horaInicio}
-                                            onChange={(e) => updatePlanItem(index, { horaInicio: e.target.value })}
-                                            className="form-input"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
-                                    <div className="form-group">
-                                        <label className="form-label">Título base</label>
-                                        <input
-                                            type="text"
-                                            value={item.tituloBase}
-                                            onChange={(e) => updatePlanItem(index, { tituloBase: e.target.value })}
-                                            className="form-input"
-                                            placeholder={ACTIVITY_TYPES[item.tipo]?.label || 'Título de la actividad'}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Ubicación por defecto</label>
-                                        <input
-                                            type="text"
-                                            value={item.ubicacion}
-                                            onChange={(e) => updatePlanItem(index, { ubicacion: e.target.value })}
-                                            className="form-input"
-                                            placeholder="Ej: Frente de obra"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="form-group" style={{ marginBottom: 0 }}>
-                                    <p className="act-plan-hint">
-                                        Elige solo a quienes les corresponde esta actividad (ej. inspección de andamios → quienes la realizan).
-                                        Se genera un borrador por día para cada responsable.
-                                    </p>
-                                    <WorkerPicker
-                                        label="Responsables"
-                                        compact
-                                        workers={workers}
-                                        selected={item.responsables}
-                                        onToggle={(personaId) => togglePlanResponsable(index, personaId)}
-                                        search={planSearch[index] || ''}
-                                        onSearchChange={(v) => setPlanSearch((prev) => ({ ...prev, [index]: v }))}
-                                        maxHeight={180}
-                                    />
-                                </div>
-                            </div>
-                        ))}
-
-                        <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => setPlanItems(prev => [...prev, { ...emptyPlanItem }])}
-                        >
-                            <FiPlus size={14} /> Agregar otro ítem
-                        </button>
-                    </form>
                 </Modal>
 
                 {/* Completar borrador: rellenar el detalle del día */}
@@ -2791,8 +2100,6 @@ const activitiesStyles = `
 .act-filterbar-select .ui-select-trigger.open { background: var(--surface-hover); border-color: transparent; box-shadow: none; }
 .act-filterbar-select .ui-select-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-.act-toolbar .ui-segmented { height: var(--act-ctl-h); flex-shrink: 0; }
-
 @media (max-width: 720px) {
     .act-filterbar { flex-direction: column; height: auto; max-width: none; }
     .act-filterbar-search { height: var(--act-ctl-h); }
@@ -2801,29 +2108,33 @@ const activitiesStyles = `
     .act-toolbar .ui-segmented { width: 100%; }
 }
 
-/* ── Tarjetas de sección ─────────────────────────────────────────────────── */
-/* Contenedor de sección: no reacciona al hover como una card clicable */
-.act-card { padding: 0; }
-.act-card:hover { border-color: var(--surface-border); box-shadow: none; }
-/* La tabla es parte de la tarjeta: sin doble borde ni doble radio.
-   min-width:0 es obligatorio — como hijo flex de .card, sin él la tabla se niega a
-   encogerse bajo su ancho de contenido y estira la página entera en móvil. */
-.act-card .table-container { border: 0; border-radius: 0; border-top: 1px solid var(--surface-border); min-width: 0; }
-.act-card .table td { padding-top: var(--space-3); padding-bottom: var(--space-3); }
-.act-card .table th:first-child, .act-card .table td:first-child { padding-left: var(--space-5); }
-.act-card .table th:last-child, .act-card .table td:last-child { padding-right: var(--space-5); }
-.act-card-head {
-    display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
-    padding: var(--space-5) var(--space-5) var(--space-4);
+/* ── Secciones: rótulo con regla, sin caja ───────────────────────────────
+   "Del plan", "Hoy" e "Historial" ya no van en tarjetas: son un rótulo con
+   una regla debajo, como las cuadrillas en Personas. La única caja que
+   queda es la fila, que es la unidad que se lee y se abre. */
+.act-section { margin-bottom: var(--space-6); }
+.act-section--last { margin-bottom: 0; }
+.act-rotulo {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    padding-bottom: 9px; margin-bottom: var(--space-4);
+    border-bottom: 1px solid var(--surface-border);
 }
-.act-card-title { font-size: var(--text-lg); font-weight: 600; margin: 0; letter-spacing: -0.01em; }
-.act-card-sub { font-size: var(--text-sm); color: var(--text-muted); margin: 2px 0 0; }
-.act-card-sub::first-letter { text-transform: uppercase; }
-.act-card-count {
-    font-size: var(--text-sm); font-weight: 700; color: var(--accent-text);
-    background: var(--accent-tint); min-width: 28px; height: 28px; padding: 0 9px;
+.act-rotulo-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.act-rotulo-sub { font-size: 11.5px; color: var(--text-muted); }
+.act-rotulo-sub::first-letter { text-transform: uppercase; }
+.act-rotulo-spacer { flex: 1; min-width: 0; }
+.act-rotulo-count {
+    font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
+    background: var(--surface-hover); min-width: 22px; height: 22px; padding: 0 8px;
     border-radius: var(--radius-full); display: inline-flex; align-items: center; justify-content: center;
 }
+/* La tabla del historial ya no vive dentro de una tarjeta: su propio borde
+   redondeado hace de caja. */
+.act-hist-table-wrap { border: 1px solid var(--surface-border); border-radius: var(--radius-md); overflow: hidden; }
+.act-hist-table-wrap .table-container { border: 0; border-radius: 0; min-width: 0; }
+.act-hist-table-wrap .table td { padding-top: var(--space-3); padding-bottom: var(--space-3); }
+.act-hist-table-wrap .table th:first-child, .act-hist-table-wrap .table td:first-child { padding-left: var(--space-5); }
+.act-hist-table-wrap .table th:last-child, .act-hist-table-wrap .table td:last-child { padding-right: var(--space-5); }
 
 /* ── Estado vacío (con salida a la acción) ───────────────────────────────── */
 .act-empty { text-align: center; padding: var(--space-10) var(--space-6) var(--space-8); }
@@ -2838,12 +2149,15 @@ const activitiesStyles = `
 .act-empty-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-5); }
 
 /* ── Actividades de hoy ──────────────────────────────────────────────────── */
-.act-today-list { list-style: none; margin: 0; padding: 0 var(--space-3) var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+/* El semáforo verde/amarillo/rojo por fila se fue: el medidor de firmas ya
+   dice si está al día, y el ícono del tipo es siempre neutro — el tipo se
+   lee en el ícono y en el texto, no en un color propio por fila. */
+.act-today-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .act-row {
     display: grid;
     /* Anchos fijos en las columnas de estado: cada fila es su propia grilla, así que
-       sin ellos las medidas y los badges no se alinean entre filas de la lista. */
-    grid-template-columns: 52px minmax(0, 1fr) 132px 96px auto;
+       sin ellos las medidas no se alinean entre filas de la lista. */
+    grid-template-columns: 94px minmax(0, 1fr) 132px auto;
     align-items: center; gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
     background: var(--surface-elevated); border: 1px solid var(--surface-border);
@@ -2853,30 +2167,32 @@ const activitiesStyles = `
 .act-row:hover { background: var(--surface-hover); border-color: var(--primary-400); }
 .act-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* La hora es el ancla de lectura del día: va primero y en tabulares */
+/* Hora + ícono del tipo van juntos: es UNA celda de la grilla por dentro
+   organizada con flex, así el resto de las columnas no se mueve. */
+.act-row-when { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .act-row-hora { display: flex; flex-direction: column; line-height: 1.15; font-variant-numeric: tabular-nums; }
-.act-row-hora b { font-size: var(--text-base); font-weight: 600; color: var(--text-primary); }
-.act-row-hora i { font-style: normal; font-size: var(--text-xs); color: var(--text-muted); }
+.act-row-hora b { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.act-row-hora i { font-style: normal; font-size: 10.5px; color: var(--text-muted); }
 
 .act-row-type {
-    width: 36px; height: 36px; border-radius: var(--radius-md); color: #fff;
+    width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius-md);
+    background: var(--surface-hover); color: var(--text-secondary);
     display: flex; align-items: center; justify-content: center; font-size: 1rem;
 }
 .act-row-main { min-width: 0; }
 .act-row-title { font-size: var(--text-sm); font-weight: 600; margin: 0; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .act-row-meta { font-size: var(--text-xs); color: var(--text-muted); margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Medidor de firmas: el dato que define el estado real de la actividad */
+/* Medidor de firmas: el dato que define el estado real de la actividad.
+   La barra es SIEMPRE azul, completa o no — el ancho ya dice cuánto falta,
+   pintarla de verde al llegar a 100% repetía el mismo dato con otro color. */
 .act-firmas { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.act-row > .badge { justify-self: start; }
 .act-row-actions { justify-self: end; }
 .act-firmas-num { font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .act-firmas-num b { font-size: var(--text-sm); font-weight: 700; color: var(--text-primary); }
 .act-firmas-bar { display: block; height: 4px; border-radius: var(--radius-full); background: var(--surface-border); overflow: hidden; }
-.act-firmas-bar i { display: block; height: 100%; border-radius: inherit; background: var(--warning-500); transition: width var(--transition-normal); }
-.act-firmas.done .act-firmas-bar i { background: var(--success-500); }
+.act-firmas-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--transition-normal); }
 .act-firmas-label { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
-.act-firmas.done .act-firmas-label { color: var(--success-600, var(--success-500)); font-weight: 500; }
 
 .act-row-actions { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .act-row-hint { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
@@ -2886,12 +2202,19 @@ const activitiesStyles = `
     border-top: 1px dashed var(--surface-border); margin-top: 2px; padding-top: var(--space-2);
 }
 
+/* "N actividades más hoy": la lista no crece sin límite, se corta a 4 y el
+   resto queda detrás de este enlace — igual que en el tablero de carga alta. */
+.act-hoy-mas {
+    display: flex; align-items: center; justify-content: center; width: 100%;
+    margin-top: var(--space-2); padding: var(--space-3);
+    background: none; border: none; cursor: pointer;
+    font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--accent-text);
+}
+.act-hoy-mas:hover { color: var(--accent); }
+
 @media (max-width: 900px) {
-    /* La 1ª columna pasa a auto: la comparten la hora y el badge, y así el badge
-       cabe a la izquierda con las acciones a la derecha en la misma línea. */
     .act-row { grid-template-columns: auto minmax(0, 1fr); row-gap: var(--space-3); }
     .act-firmas { grid-column: 1 / -1; max-width: 360px; }
-    .act-row > .badge { grid-column: 1 / 2; }
     /* stretch, no "end": con justify-self:end la celda toma su ancho máximo y desborda */
     .act-row-actions { grid-column: 2 / -1; justify-self: stretch; justify-content: flex-end; flex-wrap: wrap; }
 }
@@ -2903,28 +2226,28 @@ const activitiesStyles = `
 
 /* ── Del plan, por completar ─────────────────────────────────────────────── */
 /* El borde punteado dice "esto todavía no está en firme" sin necesidad de copy */
-.act-card-todo { border-style: dashed; }
-.act-todo-list { list-style: none; margin: 0; padding: 0 var(--space-3) var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.act-todo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .act-todo-row {
     display: flex; align-items: center; gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
-    background: var(--surface-elevated); border: 1px dashed var(--surface-border);
+    background: none; border: 1px dashed var(--surface-border);
     border-radius: var(--radius-md);
 }
+.act-todo-row .act-row-type { background: none; border: 1.5px dashed var(--surface-border); }
 .act-todo-row .act-row-main { flex: 1; }
 .act-todo-more { font-size: var(--text-xs); color: var(--text-muted); text-align: center; padding-top: var(--space-1); }
 
 /* ── Historial ───────────────────────────────────────────────────────────── */
 .act-hist-filters {
     display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
-    padding: 0 var(--space-5) var(--space-4);
+    margin-bottom: var(--space-4);
 }
 .act-hist-search { position: relative; display: flex; align-items: center; flex: 1 1 220px; min-width: 190px; max-width: 340px; }
 .act-hist-search > svg { position: absolute; left: 12px; color: var(--text-muted); pointer-events: none; }
 .act-hist-search input {
     width: 100%; padding: 9px 12px 9px 36px;
     border: 1px solid var(--surface-border); border-radius: var(--radius-md);
-    background: var(--surface-bg); color: var(--text-primary); font-size: 0.88rem;
+    background: none; color: var(--text-primary); font-size: 0.88rem;
 }
 .act-hist-search input:focus { outline: none; border-color: var(--primary-400); box-shadow: 0 0 0 3px var(--accent-tint); }
 
@@ -2933,7 +2256,7 @@ const activitiesStyles = `
 .act-hist-range span { font-size: var(--text-xs); color: var(--text-muted); }
 .act-hist-range input {
     padding: 7px 10px; border: 1px solid var(--surface-border); border-radius: var(--radius-md);
-    background: var(--surface-bg); color: var(--text-primary); font-size: var(--text-xs);
+    background: none; color: var(--text-primary); font-size: var(--text-xs);
     font-family: inherit;
     /* El calendario nativo sigue el tema de la app (clase), no el del sistema */
     color-scheme: dark;
@@ -2944,7 +2267,7 @@ const activitiesStyles = `
 .act-hist-chips { display: flex; align-items: center; gap: 6px; }
 .act-chip {
     font-size: var(--text-xs); font-weight: 500; color: var(--text-secondary);
-    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+    background: none; border: 1px solid var(--surface-border);
     padding: 6px 11px; border-radius: var(--radius-full); cursor: pointer; font-family: inherit;
     transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
 }
@@ -2957,9 +2280,10 @@ const activitiesStyles = `
 .act-hist-time { display: block; font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .act-hist-title { display: block; font-size: var(--text-sm); font-weight: 500; color: var(--text-primary); }
 .act-hist-type { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
-.act-hist-type i { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+/* La única vez que aparece color en el historial: una excepción real
+   (vencida, cancelada, o gente sin firmar) — texto, nunca una píldora. */
+.act-hist-exception { color: var(--danger-alerta); font-weight: 500; }
 .act-hist-firmas { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.act-hist-type .badge { font-size: 10px; padding: 1px 6px; }
 .act-hist-report { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
 .act-hist-report .btn { color: var(--text-muted); }
 .act-hist-report .btn:hover { color: var(--accent-text); background: var(--accent-tint); }
@@ -2970,7 +2294,6 @@ const activitiesStyles = `
 .act-hist-more-count { font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 640px) {
-    .act-hist-filters { padding: 0 var(--space-4) var(--space-4); }
     .act-hist-range { width: 100%; }
     .act-hist-range label { flex: 1; }
     .act-hist-range input { width: 100%; }

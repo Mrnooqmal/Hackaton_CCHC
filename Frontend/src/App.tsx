@@ -9,6 +9,8 @@ import WorkerDetail from './pages/WorkerDetail';
 import WorkerEnroll from './pages/WorkerEnroll';
 import DocumentsRepository from './pages/DocumentsRepository';
 import Activities from './pages/Activities';
+import ActivityNueva from './pages/ActivityNueva';
+import ActivityPlanificar from './pages/ActivityPlanificar';
 import Surveys from './pages/Surveys';
 import Incidents from './pages/Incidents';
 import Inbox from './pages/Inbox';
@@ -176,6 +178,10 @@ function AppContent() {
       <Route path="/surveys" element={<ProtectedRoute><Surveys /></ProtectedRoute>} />
       <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
       <Route path="/activities" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_VER}><Activities /></ProtectedRoute>} />
+      {/* Antes eran modales de la lista; ahora son pantallas completas, como
+          Personas → Nueva persona. */}
+      <Route path="/activities/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_CREAR}><ActivityNueva /></ProtectedRoute>} />
+      <Route path="/activities/planificar" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_PLANIFICAR}><ActivityPlanificar /></ProtectedRoute>} />
       <Route path="/signature-requests" element={<ProtectedRoute><SignatureRequests /></ProtectedRoute>} />
       <Route path="/my-signatures" element={<ProtectedRoute><MySignatures /></ProtectedRoute>} />
       <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
