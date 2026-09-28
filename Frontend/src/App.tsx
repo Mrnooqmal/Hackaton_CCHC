@@ -12,6 +12,7 @@ import Activities from './pages/Activities';
 import ActivityNueva from './pages/ActivityNueva';
 import ActivityPlanificar from './pages/ActivityPlanificar';
 import Surveys from './pages/Surveys';
+import SurveyNueva from './pages/SurveyNueva';
 import Incidents from './pages/Incidents';
 import Inbox from './pages/Inbox';
 import Login from './pages/Login';
@@ -176,6 +177,9 @@ function AppContent() {
       <Route path="/workers/enroll" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><WorkerEnroll /></ProtectedRoute>} />
       <Route path="/documents-repository" element={<ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}><DocumentsRepository /></ProtectedRoute>} />
       <Route path="/surveys" element={<ProtectedRoute><Surveys /></ProtectedRoute>} />
+      {/* Antes era un modal de la lista; ahora es pantalla completa, como
+          Actividades → Nueva actividad. */}
+      <Route path="/surveys/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.ENCUESTAS_CREAR}><SurveyNueva /></ProtectedRoute>} />
       <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
       <Route path="/activities" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_VER}><Activities /></ProtectedRoute>} />
       {/* Antes eran modales de la lista; ahora son pantallas completas, como

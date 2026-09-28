@@ -751,7 +751,9 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
     const agendarItem = (ob: OnboardingWorker, item: OnboardingItem) => {
         setSelectedObraId(obraId);
         if (item.accion === 'ENCUESTA') {
-            navigate('/surveys', { state: { prefill: { rut: ob.rut, nombre: ob.nombre, titulo: item.label, kitItemKey: item.key } } });
+            // "Nueva encuesta" vive en su propia página desde el rediseño:
+            // se navega directo ahí, no a la lista de Encuestas.
+            navigate('/surveys/nueva', { state: { prefill: { rut: ob.rut, nombre: ob.nombre, titulo: item.label, kitItemKey: item.key } } });
         } else {
             // "Nueva actividad" vive en su propia página desde el rediseño:
             // se navega directo ahí, no a la lista de Actividades.

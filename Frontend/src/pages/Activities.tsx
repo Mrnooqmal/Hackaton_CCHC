@@ -1629,38 +1629,49 @@ export default function Activities() {
                         >
                             <div className="ad">
                                 {/* Estado de firmas: lo primero que se necesita saber */}
-                                <section className={`ad-hero${firmas.esperados > 0 && firmas.pendientes.length === 0 ? ' done' : ''}`}>
-                                    <span className="ad-hero-rail" style={{ background: typeInfo.color }} aria-hidden="true" />
-                                    <div className="ad-hero-body">
-                                        <div className="ad-hero-top">
-                                            <span className="ad-hero-eyebrow">Firmas</span>
-                                            <span className={`badge badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>
-                                        </div>
-                                        {firmas.esperados > 0 ? (
-                                            <>
-                                                <p className="ad-hero-num">
-                                                    <b>{firmas.firmados}</b><span>/{firmas.esperados}</span>
-                                                </p>
-                                                <span className="ad-hero-bar" role="img"
-                                                    aria-label={`${firmas.firmados} de ${firmas.esperados} convocados han firmado`}>
-                                                    <i style={{ width: `${Math.round((firmas.firmados / firmas.esperados) * 100)}%` }} />
-                                                </span>
-                                                <p className="ad-hero-note">
-                                                    {firmas.pendientes.length === 0
-                                                        ? 'Todos los convocados firmaron.'
-                                                        : `Faltan ${firmas.pendientes.length} por firmar.`}
-                                                    {firmas.ausentes.length > 0 && ` ${firmas.ausentes.length} con ausencia justificada.`}
-                                                </p>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <p className="ad-hero-num"><b>{firmas.totalFirmas}</b></p>
-                                                <p className="ad-hero-note">
-                                                    {firmas.totalFirmas === 1 ? 'firma registrada' : 'firmas registradas'} · nadie fue convocado
-                                                </p>
-                                            </>
-                                        )}
+                                <section className="card" style={{ gap: 'var(--space-3)' }}>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)' }}>Firmas</span>
+                                        <span className={`badge badge-${NIVEL_BADGE[seg.nivel]}`}>{seg.label}</span>
                                     </div>
+                                    {firmas.esperados > 0 ? (
+                                        <div>
+                                            <p style={{ margin: 0, lineHeight: 1 }}>
+                                                <b style={{ fontSize: '2rem', fontWeight: 700, letterSpacing: '-0.03em', color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                                                    {firmas.firmados}
+                                                </b>
+                                                <span style={{ fontSize: '1.1rem', color: 'var(--text-muted)' }}>/{firmas.esperados}</span>
+                                            </p>
+                                            <div
+                                                className="progress"
+                                                style={{ margin: 'var(--space-3) 0 var(--space-2)' }}
+                                                role="img"
+                                                aria-label={`${firmas.firmados} de ${firmas.esperados} convocados han firmado`}
+                                            >
+                                                <div
+                                                    className="progress-bar"
+                                                    style={{
+                                                        width: `${Math.round((firmas.firmados / firmas.esperados) * 100)}%`,
+                                                        background: firmas.pendientes.length === 0 ? 'var(--success-apagado)' : 'var(--accent)',
+                                                    }}
+                                                />
+                                            </div>
+                                            <p
+                                                className="text-xs"
+                                                style={{ margin: 0, color: firmas.pendientes.length === 0 ? 'var(--success-600, var(--success-500))' : 'var(--text-muted)' }}
+                                            >
+                                                {firmas.pendientes.length === 0
+                                                    ? 'Todos los convocados firmaron.'
+                                                    : `Faltan ${firmas.pendientes.length} por firmar.`}
+                                                {firmas.ausentes.length > 0 && ` ${firmas.ausentes.length} con ausencia justificada.`}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <p style={{ margin: 0 }}>
+                                            <b style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>{firmas.totalFirmas}</b>
+                                            <span className="text-sm text-muted"> {firmas.totalFirmas === 1 ? 'firma registrada' : 'firmas registradas'} · nadie fue convocado</span>
+                                        </p>
+                                    )}
                                     <dl className="ad-datos">
                                         <div><dt>Fecha</dt><dd>{new Date(`${a.fecha}T00:00:00`).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })}</dd></div>
                                         <div><dt>Horario</dt><dd>{(a.horaInicio || '—').slice(0, 5)}{a.horaFin && `–${a.horaFin.slice(0, 5)}`}</dd></div>
@@ -2355,31 +2366,14 @@ const activitiesStyles = `
 /* ── Detalle de la actividad ─────────────────────────────────────────────── */
 .ad { display: flex; flex-direction: column; gap: var(--space-6); }
 
-/* Hero: el estado de firmas manda, igual que en la lista de hoy */
-.ad-hero {
-    display: grid; grid-template-columns: 3px minmax(215px, 250px) minmax(0, 1fr);
-    gap: 0 var(--space-5); align-items: start;
-    background: var(--surface-elevated); border: 1px solid var(--surface-border);
-    border-radius: var(--radius-lg); overflow: hidden;
-}
-.ad-hero-rail { align-self: stretch; }
-.ad-hero-body { padding: var(--space-4) 0 var(--space-4) var(--space-2); }
-.ad-hero-top { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2); }
-.ad-hero-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); }
-.ad-hero-num { margin: 0; line-height: 1; font-variant-numeric: tabular-nums; }
-.ad-hero-num b { font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; color: var(--text-primary); }
-.ad-hero-num span { font-size: 1.1rem; color: var(--text-muted); }
-.ad-hero-bar { display: block; height: 5px; border-radius: var(--radius-full); background: var(--surface-border); overflow: hidden; margin: var(--space-3) 0 var(--space-2); }
-.ad-hero-bar i { display: block; height: 100%; border-radius: inherit; background: var(--warning-500); transition: width var(--transition-normal); }
-.ad-hero.done .ad-hero-bar i { background: var(--success-500); }
-.ad-hero-note { margin: 0; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
-.ad-hero.done .ad-hero-note { color: var(--success-600, var(--success-500)); }
-
-/* Ficha de datos: pares etiqueta/valor, sin cajas */
+/* Ficha de datos: pares etiqueta/valor, con la regla que la separa del
+   bloque de firmas de arriba (antes venía del hero de al lado, que ya no
+   existe: la tarjeta es una sola, igual que en Encuestas). */
 .ad-datos {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-3) var(--space-4); margin: 0;
-    padding: var(--space-4) var(--space-4) var(--space-4) 0;
+    padding-top: var(--space-4);
+    border-top: 1px solid #22303f;
 }
 .ad-datos dt { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 2px; }
 .ad-datos dd { margin: 0; font-size: var(--text-sm); color: var(--text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -2415,19 +2409,27 @@ const activitiesStyles = `
 
 /* Asistencia */
 /* Sin scroll propio: el cuerpo del modal ya scrollea y dos barras anidadas
-   hacen imposible llegar al final de la lista. */
+   hacen imposible llegar al final de la lista. Filas separadas por línea
+   dentro de un solo contenedor, igual que las listas de Encuestas. */
 .ad-lista {
-    list-style: none; margin: 0; padding: 4px;
-    display: flex; flex-direction: column; gap: 2px;
-    border: 1px solid var(--surface-border); border-radius: var(--radius-md); background: var(--surface-bg);
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column;
+    border: 1px solid var(--surface-border); border-radius: var(--radius-lg);
+    background: var(--surface-card); overflow: hidden;
 }
-.ad-persona { display: flex; align-items: center; gap: var(--space-3); padding: 7px 9px; border-radius: var(--radius-sm); }
+.ad-persona {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--surface-hover);
+    transition: background var(--transition-fast);
+}
+.ad-lista .ad-persona:last-child { border-bottom: none; }
 .ad-persona:hover { background: var(--surface-hover); }
 .ad-persona-avatar {
-    width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%;
-    background: var(--surface-hover); color: var(--text-muted);
+    width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%;
+    background: var(--surface-elevated); color: var(--text-secondary);
     display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
 }
 /* Quien firmó se marca en el avatar: la lista se lee de un vistazo */
 .ad-persona.firmo .ad-persona-avatar { background: var(--accent-tint); color: var(--accent-text); }
@@ -2508,8 +2510,6 @@ const activitiesStyles = `
 .ad-footer-main { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 
 @media (max-width: 640px) {
-    .ad-hero { grid-template-columns: 3px minmax(0, 1fr); }
-    .ad-datos { grid-column: 2 / -1; padding: 0 var(--space-4) var(--space-4) var(--space-2); }
     .ad-footer { justify-content: stretch; }
     .ad-footer-main { flex: 1; }
     .ad-footer-main .btn { flex: 1 1 auto; justify-content: center; }

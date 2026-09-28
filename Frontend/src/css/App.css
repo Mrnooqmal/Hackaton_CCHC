@@ -1632,39 +1632,52 @@ textarea.form-input {
   cursor: not-allowed;
 }
 
+/* Radio circular: misma técnica que el checkbox custom (input real, sin
+   div-falso), para la audiencia de una encuesta (opción única). */
+.radio-input.custom-radio {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-block;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  vertical-align: middle;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-muted);
+  background: none;
+  position: relative;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.radio-input.custom-radio:hover:not(:checked):not(:disabled) {
+  border-color: var(--primary-400);
+}
+
+.radio-input.custom-radio:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.radio-input.custom-radio:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.radio-input.custom-radio:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0b1622;
+  transform: translate(-50%, -50%);
+}
+
 /* Survey builder */
-.survey-hero {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05));
-  border: 1px solid rgba(76, 175, 80, 0.3);
-  margin-bottom: var(--space-5);
-}
-
-.survey-hero-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-lg);
-  background: rgba(76, 175, 80, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--primary-50);
-  font-size: 1.5rem;
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.1);
-}
-
-.survey-hero-eyebrow {
-  font-size: var(--text-xs);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--primary-200);
-  margin-bottom: var(--space-1);
-}
-
 .survey-section {
   background: var(--surface-elevated);
   border: 1px solid var(--surface-border);
@@ -1696,17 +1709,6 @@ textarea.form-input {
   font-size: var(--text-sm);
 }
 
-.survey-field-grid {
-  display: grid;
-  gap: var(--space-4);
-}
-
-@media (min-width: 768px) {
-  .survey-field-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 .audience-options {
   display: grid;
   gap: var(--space-3);
@@ -1727,25 +1729,12 @@ textarea.form-input {
 }
 
 .audience-card:hover {
-  border-color: var(--primary-500);
+  border-color: var(--accent);
 }
 
 .audience-card.active {
-  border-color: var(--primary-500);
-  box-shadow: var(--shadow-glow-primary);
-  background: rgba(76, 175, 80, 0.08);
-}
-
-.audience-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-lg);
-  background: var(--surface-elevated);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--primary-300);
-  font-size: 1.25rem;
+  border-color: var(--accent);
+  background: rgba(77, 159, 255, 0.04);
 }
 
 .audience-label {
@@ -1817,15 +1806,15 @@ textarea.form-input {
 }
 
 .option-pill.selectable.active {
-  border-color: var(--primary-500);
-  background: rgba(76, 175, 80, 0.2);
+  border-color: var(--accent);
+  background: var(--accent-tint);
   color: var(--text-primary);
 }
 
 .survey-question-card {
   padding: var(--space-4);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
 }
 
 .survey-question-header {
@@ -1835,99 +1824,159 @@ textarea.form-input {
   margin-bottom: var(--space-3);
 }
 
+/* Sin pastilla: en el canvas "Pregunta N" es solo un rótulo, igual que un
+   label de campo — no una insignia con fondo. */
 .survey-question-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-full);
-  background: rgba(76, 175, 80, 0.15);
-  color: var(--primary-50);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+}
+
+/* Encuestas — resumen: rótulo, cifra y una línea de contexto (o la barra de
+   progreso, en la de tasa de respuesta). Sin ícono de avatar: la cifra grande
+   ya es el punto focal. */
+.survey-stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+}
+
+.survey-stat-tile-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+}
+
+.survey-stat-tile-value {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.survey-stat-tile-sub {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Banner de estado offline/sincronización: misma superficie que el resto de
+   la página (no un aviso de color aparte), con el ícono en el acento. */
+.survey-offline-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-elevated);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+}
+
+.survey-offline-banner-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.survey-offline-banner-text {
+  flex: 1;
   font-size: var(--text-sm);
+  color: var(--text-secondary);
 }
 
-.assigned-section {
-  margin-bottom: var(--space-6);
+.survey-offline-banner-text strong {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
-.assigned-grid {
-  display: grid;
+/* Encuestas asignadas: un contenedor por grupo (Pendientes / Respondidas),
+   con su rótulo arriba y filas separadas por una línea — mismo patrón que el
+   panel "Tus pendientes" de Inicio, no una tarjeta suelta por fila. */
+.survey-row-section {
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.survey-row-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.survey-row-section-header h2 {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.survey-row-section-header span {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.survey-row-list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.survey-row {
+  display: flex;
+  align-items: center;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--surface-hover);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.survey-row-list li:last-child .survey-row { border-bottom: none; }
+.survey-row:hover { background: var(--surface-hover); }
+.survey-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.survey-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  color: var(--text-secondary);
+}
+
+.survey-row-main { flex: 1; min-width: 0; }
+.survey-row-title { font-size: var(--text-sm); font-weight: 600; margin: 0; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.survey-row-meta { font-size: var(--text-xs); color: var(--text-muted); margin: 2px 0 0; }
+
+.survey-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 @media (max-width: 640px) {
-  .assigned-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Surveys page grids - responsive and full width */
-.surveys-stats-grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-}
-
-.surveys-list-grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-}
-
-@media (max-width: 768px) {
-  .surveys-stats-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .surveys-list-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.assigned-card {
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  background: var(--surface-card);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.assigned-card.pendiente {
-  border-color: rgba(234, 179, 8, 0.4);
-}
-
-.assigned-card.respondida {
-  border-color: rgba(34, 197, 94, 0.4);
-}
-
-.assigned-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.assigned-card-header h4 {
-  margin-bottom: var(--space-1);
-}
-
-.assigned-card-meta {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-
-.assigned-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  justify-content: flex-end;
+  .survey-row { flex-wrap: wrap; }
+  .survey-row-actions { flex-basis: 100%; justify-content: flex-end; }
 }
 
 .response-question-list {
@@ -1951,65 +2000,6 @@ textarea.form-input {
   margin-bottom: var(--space-3);
 }
 
-
-.survey-detail-hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--surface-border);
-  background: linear-gradient(135deg, rgba(36, 36, 36, 0.9), rgba(18, 18, 18, 0.9));
-  margin-bottom: var(--space-5);
-}
-
-.survey-detail-meta {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  align-items: flex-end;
-}
-
-.survey-stats-grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  margin-bottom: var(--space-5);
-}
-
-.survey-stat-card {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--surface-border);
-  background: var(--surface-card);
-}
-
-.survey-stat-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-lg);
-  background: rgba(76, 175, 80, 0.15);
-  color: var(--primary-500);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.25rem;
-}
-
-.survey-stat-label {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-
-.survey-stat-value {
-  font-size: var(--text-2xl);
-  font-weight: 700;
-  line-height: 1.1;
-}
 
 .survey-question-list {
   display: flex;
@@ -2223,6 +2213,13 @@ select.form-input option {
   color: var(--info-500);
 }
 
+/* Estado "en curso"/activo con el mismo azul de acento que el resto de la
+   interfaz (no el info-500 genérico, que es otro azul distinto). */
+.badge-accent {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
 /* Un paso más que `--surface-elevated` a propósito: las filas de evidencia del
    DS44 usan ese mismo tono de fondo, y con él la pastilla desaparecía contra la
    fila. El texto también se subió de `--text-muted` a `--text-secondary`: en
@@ -2391,12 +2388,6 @@ select.form-input option {
   }
 
   /* Survey Specific */
-  .survey-hero {
-    flex-direction: column;
-    text-align: center;
-    padding: var(--space-4);
-  }
-
   .survey-section {
     padding: var(--space-4);
   }
@@ -2408,19 +2399,6 @@ select.form-input option {
 
   .option-input-row {
     flex-direction: column;
-  }
-
-  .survey-detail-hero {
-    flex-direction: column;
-  }
-
-  .survey-detail-meta {
-    width: 100%;
-    align-items: flex-start;
-  }
-
-  .survey-stats-grid {
-    grid-template-columns: 1fr;
   }
 
   /* Table Responsiveness */
@@ -2501,12 +2479,24 @@ select.form-input option {
   align-items: center;
 }
 
+.items-start {
+  align-items: flex-start;
+}
+
 .justify-between {
   justify-content: space-between;
 }
 
 .justify-center {
   justify-content: center;
+}
+
+.justify-end {
+  justify-content: flex-end;
+}
+
+.gap-1 {
+  gap: var(--space-1);
 }
 
 .gap-2 {
@@ -2546,6 +2536,14 @@ select.form-input option {
   margin-top: var(--space-6);
 }
 
+.mb-2 {
+  margin-bottom: var(--space-2);
+}
+
+.mb-3 {
+  margin-bottom: var(--space-3);
+}
+
 .mb-4 {
   margin-bottom: var(--space-4);
 }
@@ -2557,6 +2555,10 @@ select.form-input option {
 /* Text utilities */
 .text-center {
   text-align: center;
+}
+
+.text-xs {
+  font-size: var(--text-xs);
 }
 
 .text-muted {
@@ -2581,6 +2583,10 @@ select.form-input option {
 
 .text-sm {
   font-size: var(--text-sm);
+}
+
+.font-semibold {
+  font-weight: 600;
 }
 
 .font-bold {
@@ -3866,6 +3872,15 @@ select.form-input option {
 
 /* Modal Responsiveness */
 @media (max-width: 640px) {
+  /* El overlay conservaba su padding de var(--space-6)/var(--space-4) aunque
+     el modal ya mide 100vw/100vh: quedaba un margen visible del backdrop
+     alrededor (y scroll de sobra), así que "pantalla completa" en el celular
+     nunca llegaba a serlo del todo. Sin padding, el modal queda pegado a los
+     cuatro bordes reales del viewport. */
+  .modal-overlay {
+    padding: 0;
+  }
+
   .modal {
     width: 100vw !important;
     height: 100vh !important;

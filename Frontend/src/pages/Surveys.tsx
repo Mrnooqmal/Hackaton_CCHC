@@ -1,191 +1,92 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import type { IconType } from 'react-icons';
+import { useNavigate } from 'react-router-dom';
 import {
     surveysApi,
     workersApi,
-    inboxApi,
     type Survey,
-    type SurveyAudienceType,
     type SurveyQuestionType,
     type Worker,
-    type CreateSurveyQuestion,
     type SurveyRecipient,
     type SurveyAnswer
 } from '../api/client';
 import {
     FiPlus,
-    FiUsers,
-    FiTarget,
     FiCheckCircle,
     FiAlertCircle,
     FiBarChart2,
-    FiSend,
-    FiEye,
     FiUserCheck,
+    FiUserX,
     FiClipboard,
-    FiList,
-    FiX,
     FiLock,
     FiSearch,
-    FiCalendar
+    FiWifiOff
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { PERMISSIONS } from '../permissions';
 import SignatureModal from '../components/SignatureModal';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
-import { Modal, Select, PageHeader } from '../components/ui';
-
-interface QuestionDraft {
-    id: string;
-    titulo: string;
-    descripcion: string;
-    tipo: SurveyQuestionType;
-    opciones: string[];
-    newOption: string;
-    escalaMax: number;
-    required: boolean;
-}
-
-interface AudienceOption {
-    value: SurveyAudienceType;
-    label: string;
-    description: string;
-    icon: IconType;
-}
-
-const makeId = () => Math.random().toString(36).substring(2, 10);
-
-const defaultQuestion = (): QuestionDraft => ({
-    id: makeId(),
-    titulo: '',
-    descripcion: '',
-    tipo: 'multiple',
-    opciones: ['Sí', 'No'],
-    newOption: '',
-    escalaMax: 5,
-    required: true,
-});
-
-const audienceOptions: AudienceOption[] = [
-    {
-        value: 'todos',
-        label: 'Toda la organización',
-        description: 'Comunica el mensaje a cada trabajador activo',
-        icon: FiUsers,
-    },
-    {
-        value: 'cargo',
-        label: 'Por cargo',
-        description: 'Enfoca la encuesta en perfiles o mandos específicos',
-        icon: FiTarget,
-    },
-    {
-        value: 'personalizado',
-        label: 'Lista personalizada',
-        description: 'Selecciona manualmente quienes deben responder',
-        icon: FiUserCheck,
-    },
-];
+import { Modal, PageHeader } from '../components/ui';
+import { SurveyStatTileSkeleton, SurveyRowSectionSkeleton, SurveyCardSkeleton } from '../components/surveys/SurveysSkeleton';
 
 export default function Surveys() {
+    const navigate = useNavigate();
     const { user, hasPermission } = useAuth();
+    const { toast } = useToast();
     const { isOnline, pendingCount, signSurvey, syncPendingSignatures } = useOfflineSignature();
     const canManageSurveys = hasPermission(PERMISSIONS.ENCUESTAS_CREAR);
     const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
     const [surveys, setSurveys] = useState<Survey[]>([]);
-    const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [showModal, setShowModal] = useState(false);
-    const [creating, setCreating] = useState(false);
     const [selectedSurvey, setSelectedSurvey] = useState<Survey | null>(null);
     const [currentWorker, setCurrentWorker] = useState<Worker | null>(null);
     const [responseModal, setResponseModal] = useState<{ survey: Survey; recipient: SurveyRecipient } | null>(null);
     const [responseValues, setResponseValues] = useState<Record<string, string | number>>({});
     const [responding, setResponding] = useState(false);
     const [responseError, setResponseError] = useState('');
-    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
     const [activeTab, setActiveTab] = useState<'assigned' | 'created'>('assigned');
     // El recuento de la pestaña "Mis encuestas" es solo lo pendiente, no el
     // total: es la cifra que le importa a quien la mira (cuánto le falta).
     const [showOnlyMine, setShowOnlyMine] = useState(false); // Filter for 'Encuestas Creadas' tab
     const [searchQuery, setSearchQuery] = useState(''); // Search filter for surveys
     const [showSignatureModal, setShowSignatureModal] = useState(false); // Signature modal for survey response
-
-    const [form, setForm] = useState({
-        titulo: '',
-        descripcion: '',
-        audienceType: 'todos' as SurveyAudienceType,
-        cargoDestino: '',
-        selectedRuts: [] as string[],
-        selectedWorkerId: '',
-        // Vínculo con un ítem de onboarding (si se asignó desde el Equipo).
-        kitItemKey: '' as string,
-    });
-
-    const [questions, setQuestions] = useState<QuestionDraft[]>([defaultQuestion()]);
-
-    const location = useLocation();
+    // Solo para la cifra de contexto "de N en la obra" en la tarjeta de
+    // resumen; el gestor es el único que ve esa tarjeta.
+    const [totalWorkers, setTotalWorkers] = useState(0);
 
     useEffect(() => {
         loadData();
     }, []);
 
-    // Prefill desde el Equipo de la obra: "Asignar encuesta" precargada a una persona.
     useEffect(() => {
-        const prefill = (location.state as any)?.prefill;
-        if (!prefill || !prefill.rut) return;
-        setForm((prev) => ({
-            ...prev,
-            audienceType: 'personalizado' as SurveyAudienceType,
-            selectedRuts: [prefill.rut],
-            titulo: prefill.titulo ? `Encuesta: ${prefill.titulo}` : prev.titulo,
-            kitItemKey: prefill.kitItemKey || '',
-        }));
-        setShowModal(true);
-        window.history.replaceState({}, ''); // evita reabrir al volver
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        if (!canManageSurveys) return;
+        workersApi.list().then((res) => {
+            if (res.success && res.data) setTotalWorkers(res.data.length);
+        }).catch(() => {});
+    }, [canManageSurveys]);
 
     // Sync pending offline signatures when online
     useEffect(() => {
         if (isOnline && pendingCount > 0) {
             syncPendingSignatures().then(result => {
                 if (result.synced > 0) {
-                    showNotification(`${result.synced} firma(s) sincronizada(s)`, 'success');
+                    toast.success(`${result.synced} firma(s) sincronizada(s)`);
                     loadData();
                 }
             });
         }
     }, [isOnline]);
 
-    const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
-        setNotification({ message, type });
-        setTimeout(() => setNotification(null), 5000);
-    };
-
     const loadData = async () => {
         setLoading(true);
         setError('');
         try {
-            const surveysPromise = surveysApi.list();
-            const workersPromise = canManageSurveys
-                ? workersApi.list()
-                : Promise.resolve({ success: true, data: [] as Worker[] });
-
-            const [surveysRes, workersRes] = await Promise.all([surveysPromise, workersPromise]);
-
-            if (surveysRes.success && surveysRes.data) {
-                setSurveys(surveysRes.data.surveys || []);
+            const res = await surveysApi.list();
+            if (res.success && res.data) {
+                setSurveys(res.data.surveys || []);
             } else {
-                setError(surveysRes.error || 'No fue posible cargar las encuestas');
-            }
-
-            if (canManageSurveys && workersRes.success && workersRes.data) {
-                setWorkers(workersRes.data);
-            } else if (!canManageSurveys) {
-                setWorkers([]);
+                setError(res.error || 'No fue posible cargar las encuestas');
             }
         } catch (err) {
             console.error(err);
@@ -228,14 +129,6 @@ export default function Surveys() {
         };
     }, [user?.rut, canRespondSurveys]);
 
-    const cargoOptions = useMemo(() => {
-        const cargos = new Set<string>();
-        workers.forEach((worker) => {
-            if (worker.cargo) cargos.add(worker.cargo);
-        });
-        return Array.from(cargos).sort();
-    }, [workers]);
-
     const globalStats = useMemo(() => {
         const totals = surveys.reduce(
             (acc, survey) => {
@@ -262,6 +155,11 @@ export default function Surveys() {
             completion,
         };
     }, [surveys]);
+
+    const activeSurveysCount = useMemo(
+        () => surveys.filter((s) => s.estado !== 'completada').length,
+        [surveys]
+    );
 
     const assignedSurveys = useMemo(() => {
         if (!currentWorker) return [] as Array<{ survey: Survey; recipient: SurveyRecipient }>;
@@ -322,202 +220,6 @@ export default function Surveys() {
             (survey.descripcion && survey.descripcion.toLowerCase().includes(query))
         );
     }, [assignedSurveys, searchQuery]);
-
-    const updateQuestion = (id: string, changes: Partial<QuestionDraft>) => {
-        setQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, ...changes } : q)));
-    };
-
-    const addQuestion = () => setQuestions((prev) => [...prev, defaultQuestion()]);
-
-    const removeQuestion = (id: string) => {
-        setQuestions((prev) => (prev.length > 1 ? prev.filter((q) => q.id !== id) : prev));
-    };
-
-    const handleQuestionTypeChange = (id: string, tipo: SurveyQuestionType) => {
-        setQuestions((prev) => prev.map((question) => {
-            if (question.id !== id) return question;
-            const isMultiple = tipo === 'multiple';
-            return {
-                ...question,
-                tipo,
-                opciones: isMultiple
-                    ? (question.opciones.length > 0 ? question.opciones : ['Opción 1', 'Opción 2'])
-                    : [],
-                newOption: '',
-            };
-        }));
-    };
-
-    const updateNewOptionValue = (id: string, value: string) => {
-        setQuestions((prev) => prev.map((question) => (
-            question.id === id ? { ...question, newOption: value } : question
-        )));
-    };
-
-    const addOptionToQuestion = (id: string) => {
-        setQuestions((prev) => prev.map((question) => {
-            if (question.id !== id) return question;
-            const value = question.newOption.trim();
-            if (!value || question.opciones.includes(value)) {
-                return question;
-            }
-            return {
-                ...question,
-                opciones: [...question.opciones, value],
-                newOption: '',
-            };
-        }));
-    };
-
-    const removeOptionFromQuestion = (id: string, option: string) => {
-        setQuestions((prev) => prev.map((question) => (
-            question.id === id
-                ? { ...question, opciones: question.opciones.filter((opt) => opt !== option) }
-                : question
-        )));
-    };
-
-    const resetForm = () => {
-        setForm({
-            titulo: '',
-            descripcion: '',
-            audienceType: 'todos',
-            cargoDestino: '',
-            selectedRuts: [],
-            selectedWorkerId: '',
-            kitItemKey: '',
-        });
-        setQuestions([defaultQuestion()]);
-    };
-
-    const handleAddRut = () => {
-        if (!form.selectedWorkerId) return;
-        const worker = workers.find((w) => w.personaId === form.selectedWorkerId);
-        if (!worker) return;
-        if (form.selectedRuts.includes(worker.rut)) return;
-        setForm((prev) => ({
-            ...prev,
-            selectedRuts: [...prev.selectedRuts, worker.rut],
-            selectedWorkerId: '',
-        }));
-    };
-
-    const handleRemoveRut = (rut: string) => {
-        setForm((prev) => ({
-            ...prev,
-            selectedRuts: prev.selectedRuts.filter((value) => value !== rut),
-        }));
-    };
-
-    const buildQuestionsPayload = (): CreateSurveyQuestion[] => {
-        return questions.map((question) => ({
-            titulo: question.titulo,
-            descripcion: question.descripcion,
-            tipo: question.tipo,
-            opciones: question.tipo === 'multiple'
-                ? question.opciones
-                : undefined,
-            escalaMax: question.tipo === 'escala' ? Number(question.escalaMax || 5) : undefined,
-            required: question.required,
-        }));
-    };
-
-    const handleCreateSurvey = async (event: React.FormEvent) => {
-        event.preventDefault();
-        setError('');
-
-        const hasEmptyQuestion = questions.some((q) => !q.titulo.trim() || (q.tipo === 'multiple' && q.opciones.length < 2));
-        const preguntas = buildQuestionsPayload();
-        if (!form.titulo.trim()) {
-            setError('El título es obligatorio');
-            return;
-        }
-        if (hasEmptyQuestion) {
-            setError('Todas las preguntas deben tener título y opciones válidas');
-            return;
-        }
-        if (form.audienceType === 'cargo' && !form.cargoDestino) {
-            setError('Selecciona un cargo destino');
-            return;
-        }
-        if (form.audienceType === 'personalizado' && form.selectedRuts.length === 0) {
-            setError('Agrega al menos un RUT para la audiencia personalizada');
-            return;
-        }
-
-        setCreating(true);
-        const payload: any = {
-            titulo: form.titulo,
-            descripcion: form.descripcion,
-            preguntas,
-            // El backend lee estos campos a nivel raíz (no anidados en `audience`).
-            audienceType: form.audienceType,
-            cargoDestino: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
-            ruts: form.audienceType === 'personalizado' ? form.selectedRuts : undefined,
-            kitItemKey: form.kitItemKey || undefined,
-            createdBy: user?.personaId || user?.userId,
-            creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined,
-        };
-
-        try {
-            const response = await surveysApi.create(payload);
-            setCreating(false);
-
-            if (response.success && response.data) {
-                // FIXED MISSING NOTIFICATIONS (Frontend explicit push)
-                try {
-                    const recipientsRes = await inboxApi.getRecipients(user?.personaId || user?.userId || '', user?.tenantId || user?.empresaId || '');
-                    if (recipientsRes.success && recipientsRes.data) {
-                        const allRecipients = recipientsRes.data.recipients;
-                        let assignedRuts: string[] = [];
-                        
-                        // Determinar los RUTs asignados según la audiencia
-                        if (form.audienceType === 'todos') {
-                            assignedRuts = workers.filter(w => w.habilitado).map(w => w.rut);
-                        } else if (form.audienceType === 'cargo' && form.cargoDestino) {
-                            assignedRuts = workers.filter(w => w.habilitado && w.cargo === form.cargoDestino).map(w => w.rut);
-                        } else if (form.audienceType === 'personalizado' && form.selectedRuts) {
-                            assignedRuts = form.selectedRuts;
-                        }
-                        
-                        const recipientUserIds = allRecipients.filter(r => assignedRuts.includes(r.rut)).map(r => r.userId);
-                        
-                        if (recipientUserIds.length > 0) {
-                            await inboxApi.send({
-                                senderId: user?.personaId || user?.userId || 'system',
-                                senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'PrevencionApp',
-                                senderRol: 'system',
-                                recipientIds: recipientUserIds,
-                                type: 'task',
-                                priority: 'normal',
-                                subject: `Nueva encuesta asignada: ${response.data.titulo}`,
-                                content: `Se te ha asignado la encuesta "${response.data.titulo}". Por favor responde a la brevedad.`,
-                                linkedEntity: { type: 'survey', id: response.data.surveyId }
-                            });
-                        }
-                    }
-                } catch (notifErr) {
-                    console.error('Error mandando notificación desde frontend', notifErr);
-                }
-
-                setSurveys([response.data, ...surveys]);
-                setShowModal(false);
-                resetForm();
-                showNotification('Encuesta creada exitosamente', 'success');
-            } else {
-                showNotification(response.error || 'No fue posible crear la encuesta.', 'error');
-            }
-        } catch (err) {
-            console.error('Error creando encuesta', err);
-            showNotification('Ocurrió un error al crear la encuesta. Intenta nuevamente.', 'error');
-        } finally {
-            setCreating(false);
-            // Refresh data to ensure createdBy is populated from server
-            loadData();
-            // Dispatch event to refresh sidebar counts
-            window.dispatchEvent(new CustomEvent('surveyResponded'));
-        }
-    };
 
     const formatAudience = (survey: Survey) => {
         if (survey.audience?.tipo === 'cargo') {
@@ -660,7 +362,7 @@ export default function Surveys() {
             }
 
             if (result.offline) {
-                showNotification('Respuesta guardada localmente. Se sincronizará cuando vuelva la conexión.', 'info');
+                toast.info('Respuesta guardada localmente. Se sincronizará cuando vuelva la conexión.');
                 setShowSignatureModal(false);
                 closeResponseModal();
                 return;
@@ -668,7 +370,7 @@ export default function Surveys() {
 
             // If online, we get the updated survey from the response (in a real scenario, signSurvey should return data)
             // But since we are using a hook that abstracts API calls, we'll just reload data if online
-            showNotification('Encuesta respondida exitosamente', 'success');
+            toast.success('Encuesta respondida exitosamente');
             setShowSignatureModal(false);
             closeResponseModal();
             loadData();
@@ -732,41 +434,115 @@ export default function Surveys() {
         );
     };
 
-    if (loading) {
+    // Compartida entre la vista de trabajador (sin pestañas) y la pestaña
+    // "Mis encuestas" del gestor: mismo contenido en ambos casos. Dos
+    // contenedores (Pendientes / Respondidas), cada fila clicable entera
+    // (abre el detalle) con su acción principal a la derecha.
+    const renderSurveyRow = ({ survey, recipient }: { survey: Survey; recipient: SurveyRecipient }) => (
+        <li key={survey.surveyId}>
+            <div
+                className="survey-row"
+                role="button"
+                tabIndex={0}
+                aria-label={`Ver detalle de ${survey.titulo}`}
+                onClick={() => setSelectedSurvey(survey)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedSurvey(survey); }
+                }}
+            >
+                <span className="survey-row-icon" aria-hidden="true"><FiClipboard size={16} /></span>
+                <div className="survey-row-main">
+                    <h3 className="survey-row-title">{survey.titulo}</h3>
+                    <p className="survey-row-meta">
+                        {survey.preguntas?.length || 0} preguntas
+                        {recipient.estado === 'respondida' && ` · Respondida el ${formatDateTime(recipient.respondedAt)}`}
+                    </p>
+                </div>
+                <div className="survey-row-actions" onClick={(e) => e.stopPropagation()}>
+                    <button
+                        className="btn btn-primary btn-sm"
+                        type="button"
+                        onClick={() => openResponseModal(survey, recipient)}
+                    >
+                        {recipient.estado === 'respondida' ? 'Actualizar respuesta' : 'Responder ahora'}
+                    </button>
+                </div>
+            </div>
+        </li>
+    );
+
+    const renderAssignedSection = (className = '') => {
+        if (loading) {
+            return (
+                <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                    <SurveyRowSectionSkeleton rows={3} />
+                </div>
+            );
+        }
+
+        if (!currentWorker) {
+            return (
+                <div className={`card ${className}`}>
+                    <div className="empty-state">
+                        <div className="empty-state-icon"><FiUserX /></div>
+                        <h3 className="empty-state-title">No encontramos tu perfil de trabajador</h3>
+                        <p className="empty-state-description">
+                            Tu cuenta no está vinculada a una persona de esta obra, así que no podemos mostrarte
+                            encuestas asignadas. Pide a tu administrador o prevencionista que revise tu perfil.
+                        </p>
+                    </div>
+                </div>
+            );
+        }
+
+        if (filteredAssignedSurveys.length === 0) {
+            const sinResultadosDeBusqueda = searchQuery.trim() !== '' && assignedSurveys.length > 0;
+            return (
+                <div className={`card ${className}`}>
+                    <div className="empty-state">
+                        <div className="empty-state-icon">{sinResultadosDeBusqueda ? <FiSearch /> : <FiCheckCircle />}</div>
+                        <h3 className="empty-state-title">
+                            {sinResultadosDeBusqueda ? 'Ninguna encuesta coincide' : 'Estás al día'}
+                        </h3>
+                        <p className="empty-state-description">
+                            {sinResultadosDeBusqueda
+                                ? `No encontramos encuestas que coincidan con «${searchQuery}».`
+                                : 'No tienes encuestas pendientes por responder. Cuando te asignen una nueva, aparecerá aquí.'}
+                        </p>
+                    </div>
+                </div>
+            );
+        }
+
+        const pendientes = filteredAssignedSurveys.filter(({ recipient }) => recipient.estado === 'pendiente');
+        const respondidas = filteredAssignedSurveys.filter(({ recipient }) => recipient.estado === 'respondida');
+
         return (
-            <div className="flex items-center justify-center" style={{ height: '100vh' }}>
-                <div className="spinner" />
+            <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                {pendientes.length > 0 && (
+                    <section className="survey-row-section">
+                        <div className="survey-row-section-header">
+                            <h2>Pendientes</h2>
+                            <span>{pendientes.length} por responder</span>
+                        </div>
+                        <ul className="survey-row-list">{pendientes.map(renderSurveyRow)}</ul>
+                    </section>
+                )}
+                {respondidas.length > 0 && (
+                    <section className="survey-row-section">
+                        <div className="survey-row-section-header">
+                            <h2>Respondidas</h2>
+                            <span>{respondidas.length} en total</span>
+                        </div>
+                        <ul className="survey-row-list">{respondidas.map(renderSurveyRow)}</ul>
+                    </section>
+                )}
             </div>
         );
-    }
+    };
 
     return (
         <>
-
-            {notification && (
-                <div className={`notification notification-${notification.type}`} style={{
-                    position: 'fixed',
-                    top: '20px',
-                    right: '20px',
-                    zIndex: 10000,
-                    padding: 'var(--space-4) var(--space-6)',
-                    borderRadius: 'var(--radius-lg)',
-                    background: notification.type === 'error' ? 'var(--danger-500)' :
-                        notification.type === 'success' ? 'var(--success-500)' :
-                            notification.type === 'warning' ? 'var(--warning-500)' : 'var(--primary-500)',
-                    color: 'white',
-                    boxShadow: 'var(--shadow-lg)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--space-3)',
-                    animation: 'slideIn 0.3s ease-out'
-                }}>
-                    {notification.type === 'error' && <FiAlertCircle />}
-                    {notification.type === 'success' && <FiCheckCircle />}
-                    <span>{notification.message}</span>
-                </div>
-            )}
-
             <div className="page-content">
                 {/* Mis encuestas / Encuestas creadas son dos vistas de lo mismo,
                     no un filtro: van en el encabezado, como en Actividades y en
@@ -774,10 +550,8 @@ export default function Surveys() {
                     (sin gestionarlas) no tiene nada que alternar. */}
                 <PageHeader
                     banner
-                    title={canManageSurveys ? 'Encuestas y diagnósticos' : 'Mis encuestas asignadas'}
-                    description={canManageSurveys
-                        ? 'Diseña y distribuye diagnósticos de seguridad, evaluaciones de riesgo y encuestas de cumplimiento.'
-                        : 'Responde las encuestas que te han asignado y revisa tu historial.'}
+                    title="Encuestas"
+                    description="Charlas de opinión, evaluaciones y fichas de salud respondidas por los trabajadores de la obra."
                     tabs={canManageSurveys ? [
                         {
                             id: 'assigned', label: 'Mis encuestas', icon: <FiUserCheck size={15} />,
@@ -793,22 +567,7 @@ export default function Surveys() {
                     tabsLabel="Vista de las encuestas"
                     actions={
                         canManageSurveys ? (
-                            <button
-                                className="btn btn-primary"
-                                onClick={() => {
-                                    setForm({
-                                        titulo: '',
-                                        descripcion: '',
-                                        audienceType: 'todos',
-                                        cargoDestino: '',
-                                        selectedRuts: [],
-                                        selectedWorkerId: '',
-                                        kitItemKey: '',
-                                    });
-                                    setQuestions([defaultQuestion()]);
-                                    setShowModal(true);
-                                }}
-                            >
+                            <button className="btn btn-primary" onClick={() => navigate('/surveys/nueva')}>
                                 <FiPlus /> Nueva encuesta
                             </button>
                         ) : undefined
@@ -817,39 +576,22 @@ export default function Surveys() {
 
                 {/* Offline Banner */}
                 {(!isOnline || pendingCount > 0) && (
-                    <div
-                        className="mb-4 p-3 rounded-lg flex items-center justify-between"
-                        style={{
-                            background: !isOnline ? 'rgba(245, 158, 11, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                            border: `1px solid ${!isOnline ? '#f59e0b' : '#3b82f6'}`,
-                            color: !isOnline ? '#b45309' : '#1d4ed8'
-                        }}
-                    >
-                        <div className="flex items-center gap-2">
+                    <div className="survey-offline-banner">
+                        <span className="survey-offline-banner-icon" aria-hidden="true">
+                            <FiWifiOff size={17} />
+                        </span>
+                        <span className="survey-offline-banner-text">
                             {!isOnline ? (
                                 <>
-                                    <FiAlertCircle size={18} />
-                                    <span className="font-medium">Sin conexión - Tus respuestas se guardarán localmente</span>
+                                    Sin conexión — las respuestas quedan guardadas en este dispositivo.
+                                    {pendingCount > 0 && <> <strong>{pendingCount} encuesta{pendingCount === 1 ? '' : 's'}</strong> por sincronizar.</>}
                                 </>
                             ) : (
-                                <>
-                                    <FiCheckCircle size={18} />
-                                    <span className="font-medium">{pendingCount} encuesta(s) pendiente(s) de sincronizar</span>
-                                </>
+                                <><strong>{pendingCount} encuesta{pendingCount === 1 ? '' : 's'}</strong> por sincronizar.</>
                             )}
-                        </div>
+                        </span>
                         {isOnline && pendingCount > 0 && (
-                            <button
-                                className="btn btn-sm"
-                                style={{
-                                    background: '#3b82f6',
-                                    color: 'white',
-                                    border: 'none',
-                                    padding: 'var(--space-1) var(--space-3)',
-                                    borderRadius: 'var(--radius-md)'
-                                }}
-                                onClick={() => syncPendingSignatures()}
-                            >
+                            <button className="btn btn-secondary btn-sm" onClick={() => syncPendingSignatures()}>
                                 Sincronizar ahora
                             </button>
                         )}
@@ -862,80 +604,14 @@ export default function Surveys() {
                     </div>
                 )}
                 {/* Section for workers only - prevencionistas have tabs */}
-                {canRespondSurveys && !canManageSurveys && (
-                    <section className="survey-section assigned-section">
-                        <div className="survey-section-header">
-                            <div>
-                                <p className="survey-section-eyebrow">Mis encuestas</p>
-                                <h3>Seguimiento personal</h3>
-                                <p className="survey-section-description">
-                                    {filteredAssignedSurveys.length > 0
-                                        ? 'Selecciona una encuesta para revisarla o responder.'
-                                        : 'Aún no tienes encuestas asignadas.'}
-                                </p>
-                            </div>
-                        </div>
-
-                        {!currentWorker && (
-                            <p className="text-muted text-sm">
-                                No encontramos un registro de trabajador asociado a tu cuenta. Contacta a tu administrador si debes recibir encuestas.
-                            </p>
-                        )}
-
-                        {currentWorker && filteredAssignedSurveys.length === 0 && (
-                            <p className="text-muted text-sm">No tienes encuestas asignadas por ahora.</p>
-                        )}
-
-                        {currentWorker && filteredAssignedSurveys.length > 0 && (
-                            <div className="assigned-grid">
-                                {filteredAssignedSurveys.map(({ survey, recipient }) => (
-                                    <div key={survey.surveyId} className={`assigned-card ${recipient.estado}`}>
-                                        <div className="assigned-card-header">
-                                            <div>
-                                                <h4>{survey.titulo}</h4>
-                                                <p className="text-sm text-muted">{survey.descripcion || 'Sin descripción'}</p>
-                                            </div>
-                                            <span className={`badge ${recipient.estado === 'respondida' ? 'badge-success' : 'badge-warning'}`}>
-                                                {recipient.estado === 'respondida' ? 'Respondida' : 'Pendiente'}
-                                            </span>
-                                        </div>
-                                        <div className="assigned-card-meta">
-                                            <span>{survey.preguntas?.length || 0} preguntas</span>
-                                            <span>
-                                                {recipient.estado === 'respondida'
-                                                    ? `Respondida el ${formatDateTime(recipient.respondedAt)}`
-                                                    : 'Aún pendiente'}
-                                            </span>
-                                        </div>
-                                        <div className="assigned-card-actions">
-                                            <button
-                                                className="btn btn-secondary"
-                                                type="button"
-                                                onClick={() => setSelectedSurvey(survey)}
-                                            >
-                                                <FiEye />
-                                                Ver detalles
-                                            </button>
-                                            <button
-                                                className="btn btn-primary"
-                                                type="button"
-                                                onClick={() => openResponseModal(survey, recipient)}
-                                            >
-                                                {recipient.estado === 'respondida' ? 'Actualizar respuesta' : 'Responder ahora'}
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </section>
-                )}
+                {canRespondSurveys && !canManageSurveys && renderAssignedSection()}
 
                 {canManageSurveys && (
                     <>
-                        {/* Toolbar: búsqueda */}
+                        {/* Toolbar: búsqueda, y el toggle "Mostrar" en la misma línea
+                            cuando corresponde (solo tiene sentido en "Encuestas creadas"). */}
                         <div className="tbar">
-                            <div className="tbar-search" style={{ maxWidth: 'none' }}>
+                            <div className="tbar-search">
                                 <FiSearch size={15} />
                                 <input
                                     type="text"
@@ -944,83 +620,8 @@ export default function Surveys() {
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                 />
                             </div>
-                        </div>
-
-                        {/* Tab Content: Mis Encuestas (Assigned to me) */}
-                        {activeTab === 'assigned' && (
-                            <section className="survey-section assigned-section mb-6">
-                                <div className="survey-section-header">
-                                    <div>
-                                        <p className="survey-section-eyebrow">Mis encuestas</p>
-                                        <h3>Seguimiento personal</h3>
-                                        <p className="survey-section-description">
-                                            {filteredAssignedSurveys.length > 0
-                                                ? 'Selecciona una encuesta para revisarla o responder.'
-                                                : 'Aún no tienes encuestas asignadas.'}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {!currentWorker && (
-                                    <p className="text-muted text-sm">
-                                        No encontramos un registro de trabajador asociado a tu cuenta. Contacta a tu administrador si debes recibir encuestas.
-                                    </p>
-                                )}
-
-                                {currentWorker && filteredAssignedSurveys.length === 0 && (
-                                    <p className="text-muted text-sm">No tienes encuestas asignadas por ahora.</p>
-                                )}
-
-                                {currentWorker && filteredAssignedSurveys.length > 0 && (
-                                    <div className="assigned-grid">
-                                        {filteredAssignedSurveys.map(({ survey, recipient }) => (
-                                            <div key={survey.surveyId} className={`assigned-card ${recipient.estado}`}>
-                                                <div className="assigned-card-header">
-                                                    <div>
-                                                        <h4>{survey.titulo}</h4>
-                                                        <p className="text-sm text-muted">{survey.descripcion || 'Sin descripción'}</p>
-                                                    </div>
-                                                    <span className={`badge ${recipient.estado === 'respondida' ? 'badge-success' : 'badge-warning'}`}>
-                                                        {recipient.estado === 'respondida' ? 'Respondida' : 'Pendiente'}
-                                                    </span>
-                                                </div>
-                                                <div className="assigned-card-meta">
-                                                    <span>{survey.preguntas?.length || 0} preguntas</span>
-                                                    <span>
-                                                        {recipient.estado === 'respondida'
-                                                            ? `Respondida el ${formatDateTime(recipient.respondedAt)}`
-                                                            : 'Aún pendiente'}
-                                                    </span>
-                                                </div>
-                                                <div className="assigned-card-actions">
-                                                    <button
-                                                        className="btn btn-secondary"
-                                                        type="button"
-                                                        onClick={() => setSelectedSurvey(survey)}
-                                                    >
-                                                        <FiEye />
-                                                        Ver detalles
-                                                    </button>
-                                                    <button
-                                                        className="btn btn-primary"
-                                                        type="button"
-                                                        onClick={() => openResponseModal(survey, recipient)}
-                                                    >
-                                                        {recipient.estado === 'respondida' ? 'Actualizar respuesta' : 'Responder ahora'}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </section>
-                        )}
-
-                        {/* Tab Content: Encuestas Creadas (Management) */}
-                        {activeTab === 'created' && (
-                            <>
-                                {/* Filter Toggle */}
-                                <div className="flex items-center justify-end gap-3 mb-4">
+                            {activeTab === 'created' && (
+                                <div className="flex items-center gap-3">
                                     <span className="text-sm text-muted">Mostrar:</span>
                                     <div
                                         className="flex gap-1"
@@ -1047,435 +648,128 @@ export default function Surveys() {
                                         </button>
                                     </div>
                                 </div>
+                            )}
+                        </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                    <div className="card">
-                                        <div className="flex items-center gap-3">
-                                            <div className="avatar" style={{ background: 'var(--primary-500)' }}>
-                                                <FiBarChart2 />
+                        {/* Tab Content: Mis Encuestas (Assigned to me) */}
+                        {activeTab === 'assigned' && renderAssignedSection('mb-6')}
+
+                        {/* Tab Content: Encuestas Creadas (Management) */}
+                        {activeTab === 'created' && (
+                            <>
+
+                                <div className="grid grid-cols-3 gap-4 mb-6">
+                                    {loading ? (
+                                        <>
+                                            <SurveyStatTileSkeleton />
+                                            <SurveyStatTileSkeleton />
+                                            <SurveyStatTileSkeleton />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="survey-stat-tile">
+                                                <span className="survey-stat-tile-label">Encuestas creadas</span>
+                                                <span className="survey-stat-tile-value">{globalStats.totalSurveys}</span>
+                                                <span className="survey-stat-tile-sub">{activeSurveysCount} activa{activeSurveysCount === 1 ? '' : 's'} ahora</span>
                                             </div>
-                                            <div>
-                                                <div className="stat-value" style={{ fontSize: '2rem' }}>{globalStats.totalSurveys}</div>
-                                                <div className="text-muted text-sm">Encuestas creadas</div>
+                                            <div className="survey-stat-tile">
+                                                <span className="survey-stat-tile-label">Trabajadores alcanzados</span>
+                                                <span className="survey-stat-tile-value">{globalStats.totalRecipients}</span>
+                                                <span className="survey-stat-tile-sub">de {totalWorkers} en la obra</span>
                                             </div>
-                                        </div>
-                                    </div>
-                                    <div className="card">
-                                        <div className="flex items-center gap-3">
-                                            <div className="avatar" style={{ background: 'var(--info-500)' }}>
-                                                <FiUsers />
+                                            <div className="survey-stat-tile">
+                                                <span className="survey-stat-tile-label">Tasa de respuesta</span>
+                                                <span className="survey-stat-tile-value">{globalStats.completion}%</span>
+                                                <div className="progress">
+                                                    <div className="progress-bar" style={{ width: `${globalStats.completion}%` }} />
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div className="stat-value" style={{ fontSize: '2rem' }}>{globalStats.totalRecipients}</div>
-                                                <div className="text-muted text-sm">Trabajadores alcanzados</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="card">
-                                        <div className="flex items-center gap-3">
-                                            <div className="avatar" style={{ background: 'var(--success-500)' }}>
-                                                <FiCheckCircle />
-                                            </div>
-                                            <div>
-                                                <div className="stat-value" style={{ fontSize: '2rem' }}>{globalStats.completion}%</div>
-                                                <div className="text-muted text-sm">Tasa de respuesta</div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                        </>
+                                    )}
                                 </div>
 
-                                {filteredSurveys.length === 0 ? (
+                                {loading ? (
+                                    <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                                        <SurveyCardSkeleton i={0} />
+                                        <SurveyCardSkeleton i={1} />
+                                    </div>
+                                ) : filteredSurveys.length === 0 ? (
                                     <div className="card">
                                         <div className="empty-state">
                                             <div className="empty-state-icon"><FiClipboard /></div>
                                             <h3 className="empty-state-title">{showOnlyMine ? 'No has creado encuestas' : 'Aún no hay encuestas'}</h3>
                                             <p className="empty-state-description">{showOnlyMine ? 'Las encuestas que crees aparecerán aquí.' : 'Crea tu primera encuesta para recopilar feedback de los trabajadores.'}</p>
-                                            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                                            <button className="btn btn-primary" onClick={() => navigate('/surveys/nueva')}>
                                                 <FiPlus />
                                                 Crear Encuesta
                                             </button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 'var(--space-4)' }}>
-                                        {filteredSurveys.map((survey) => (
-                                            <div key={survey.surveyId} className="card">
-                                                <div className="card-header">
-                                                    <div>
-                                                        <h3 className="card-title">{survey.titulo}</h3>
-                                                        <p className="card-subtitle">{survey.descripcion || 'Sin descripción'}</p>
+                                    <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
+                                        {filteredSurveys.map((survey) => {
+                                            const total = survey.stats?.totalRecipients || survey.recipients?.length || 0;
+                                            const responded = survey.stats?.responded || 0;
+                                            const pct = total > 0 ? Math.round((responded / total) * 100) : 0;
+                                            const isCompletada = survey.estado === 'completada';
+                                            const progressColor = pct >= 100 ? 'var(--success-apagado)' : 'var(--accent)';
+                                            return (
+                                                <div key={survey.surveyId} className="card" style={{ gap: 'var(--space-3)' }}>
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <h3 className="card-title" style={{ margin: 0 }}>{survey.titulo}</h3>
+                                                        <span className={`badge ${isCompletada ? 'badge-neutral' : 'badge-accent'}`} style={{ flexShrink: 0 }}>
+                                                            {isCompletada ? 'Completada' : 'Activa'}
+                                                        </span>
                                                     </div>
-                                                    <span className={`badge ${survey.estado === 'completada' ? 'badge-success' : 'badge-neutral'}`}>
-                                                        {survey.estado}
+
+                                                    <p className="text-sm text-muted" style={{ margin: 0 }}>{survey.descripcion || 'Sin descripción'}</p>
+
+                                                    <span className="text-xs text-muted">
+                                                        Creada el {formatDateTime(survey.createdAt)} · Audiencia: {formatAudience(survey)}
                                                     </span>
-                                                </div>
 
-                                                <div className="flex items-center gap-2 text-xs text-muted">
-                                                    <FiCalendar size={14} />
-                                                    <span>Creada el {formatDateTime(survey.createdAt)}</span>
-                                                </div>
-
-                                                <div className="flex items-center gap-3 mb-4">
-                                                    <FiTarget style={{ color: 'var(--text-muted)' }} />
-                                                    <span className="text-sm">{formatAudience(survey)}</span>
-                                                </div>
-
-                                                <div className="grid grid-cols-4 mb-4" style={{ gap: 'var(--space-3)' }}>
-                                                    <div>
-                                                        <div className="text-sm text-muted">Preguntas</div>
-                                                        <div className="font-bold">{survey.preguntas?.length || 0}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-sm text-muted">Destinatarios</div>
-                                                        <div className="font-bold">{survey.stats?.totalRecipients || survey.recipients?.length || 0}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-sm text-muted">Respondidas</div>
-                                                        <div className="font-bold" style={{ color: 'var(--success-500)' }}>{survey.stats?.responded || 0}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-sm text-muted">% Respuesta</div>
-                                                        <div className="font-bold" style={{ color: 'var(--primary-500)' }}>
-                                                            {(() => {
-                                                                const total = survey.stats?.totalRecipients || survey.recipients?.length || 0;
-                                                                const responded = survey.stats?.responded || 0;
-                                                                return total > 0 ? Math.round((responded / total) * 100) : 0;
-                                                            })()}%
+                                                    <div
+                                                        className="grid grid-cols-4"
+                                                        style={{ gap: 'var(--space-2)', padding: 'var(--space-3) 0', borderTop: '1px solid #22303f', borderBottom: '1px solid #22303f' }}
+                                                    >
+                                                        <div>
+                                                            <div className="font-bold">{survey.preguntas?.length || 0}</div>
+                                                            <div className="text-xs text-muted">Preguntas</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-bold">{total}</div>
+                                                            <div className="text-xs text-muted">Destinatarios</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-bold">{responded}</div>
+                                                            <div className="text-xs text-muted">Respondidas</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-bold" style={{ color: progressColor }}>{pct}%</div>
+                                                            <div className="text-xs text-muted">Respuesta</div>
                                                         </div>
                                                     </div>
-                                                </div>
 
-                                                <div className="recipients-summary">
-                                                    <div
-                                                        className="flex items-center gap-2 text-sm"
-                                                        style={{
-                                                            padding: 'var(--space-2) var(--space-3)',
-                                                            background: 'var(--surface-elevated)',
-                                                            borderRadius: 'var(--radius-md)',
-                                                            border: '1px solid var(--surface-border)'
-                                                        }}
-                                                    >
-                                                        <FiUsers size={16} style={{ color: 'var(--primary-500)' }} />
-                                                        <span style={{ color: 'var(--text-primary)' }}>
-                                                            {survey.audience.tipo === 'todos' ? (
-                                                                <>Todos los trabajadores ({survey.recipients?.length || 0})</>
-                                                            ) : (
-                                                                <>{survey.recipients?.length || 0} trabajadores asignados</>
-                                                            )}
-                                                        </span>
-                                                        <span style={{
-                                                            marginLeft: 'auto',
-                                                            color: 'var(--success-500)',
-                                                            fontWeight: 600
-                                                        }}>
-                                                            {survey.recipients?.filter(r => r.estado === 'respondida').length || 0} respondidas
-                                                        </span>
+                                                    <div className="progress">
+                                                        <div className="progress-bar" style={{ width: `${pct}%`, background: progressColor }} />
                                                     </div>
-                                                </div>
 
-                                                <div className="flex justify-end mt-4">
                                                     <button
                                                         className="btn btn-secondary"
+                                                        style={{ width: '100%', justifyContent: 'center' }}
                                                         onClick={() => setSelectedSurvey(survey)}
                                                     >
-                                                        <FiEye />
                                                         Ver detalles
                                                     </button>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </>
                         )}
                     </>
                 )}
-                {canManageSurveys && (
-                    <Modal
-                        isOpen={showModal}
-                        onClose={() => { setShowModal(false); resetForm(); }}
-                        title="Nueva Encuesta"
-                        size="xl"
-                        preventClose={creating}
-                        footer={
-                            <>
-                                <button type="button" className="btn btn-secondary" onClick={() => { setShowModal(false); resetForm(); }}>
-                                    Cancelar
-                                </button>
-                                <button type="submit" form="create-survey-form" className="btn btn-primary" disabled={creating}>
-                                    {creating ? (
-                                        <div className="spinner" />
-                                    ) : (
-                                        <>
-                                            <FiSend />
-                                            Crear y enviar
-                                        </>
-                                    )}
-                                </button>
-                            </>
-                        }
-                    >
-                        <form id="create-survey-form" className="modal-form" onSubmit={handleCreateSurvey}>
-                            <div className="modal-body" style={{ padding: 0 }}>
-                                    <div className="survey-hero">
-                                        <div className="survey-hero-icon">
-                                            <FiClipboard size={24} />
-                                        </div>
-                                        <div>
-                                            <p className="survey-hero-eyebrow">Nueva encuesta</p>
-                                            <h3>Conecta con tus equipos</h3>
-                                            <p>Personaliza cada paso y haz que la experiencia de responder sea memorable.</p>
-                                        </div>
-                                    </div>
-
-                                    {error && (
-                                        <div className="alert alert-danger">
-                                            <FiAlertCircle size={20} />
-                                            <div>{error}</div>
-                                        </div>
-                                    )}
-
-                                    <section className="survey-section">
-                                        <div className="survey-section-header">
-                                            <div>
-                                                <p className="survey-section-eyebrow">Paso 1</p>
-                                                <h3>Información general</h3>
-                                                <p className="survey-section-description">Define el propósito y el tono para que los colaboradores entiendan el contexto.</p>
-                                            </div>
-                                        </div>
-                                        <div className="survey-field-grid">
-                                            <div className="form-group">
-                                                <label className="form-label">Título *</label>
-                                                <input
-                                                    className="form-input"
-                                                    value={form.titulo}
-                                                    onChange={(e) => setForm({ ...form, titulo: e.target.value })}
-                                                    placeholder="Ej: Encuesta de seguridad"
-                                                    required
-                                                />
-                                            </div>
-                                            <div className="form-group">
-                                                <label className="form-label">Descripción</label>
-                                                <textarea
-                                                    className="form-input"
-                                                    value={form.descripcion}
-                                                    onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-                                                    rows={3}
-                                                    placeholder="Comparte el objetivo, duración estimada o beneficios."
-                                                />
-                                            </div>
-                                        </div>
-                                    </section>
-
-                                    <section className="survey-section">
-                                        <div className="survey-section-header">
-                                            <div>
-                                                <p className="survey-section-eyebrow">Paso 2</p>
-                                                <h3>Audiencia destino</h3>
-                                                <p className="survey-section-description">Selecciona quiénes recibirán la encuesta para mantenerla relevante.</p>
-                                            </div>
-                                        </div>
-                                        <div className="audience-options">
-                                            {audienceOptions.map((option) => {
-                                                const Icon = option.icon;
-                                                const isActive = form.audienceType === option.value;
-                                                return (
-                                                    <label key={option.value} className={`audience-card ${isActive ? 'active' : ''}`}>
-                                                        <input
-                                                            type="radio"
-                                                            name="audience"
-                                                            style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
-                                                            checked={isActive}
-                                                            onChange={() => setForm({ ...form, audienceType: option.value })}
-                                                        />
-                                                        <span className="audience-icon">
-                                                            <Icon />
-                                                        </span>
-                                                        <div>
-                                                            <p className="audience-label">{option.label}</p>
-                                                            <p className="audience-description">{option.description}</p>
-                                                        </div>
-                                                    </label>
-                                                );
-                                            })}
-                                        </div>
-
-                                        {form.audienceType === 'cargo' && (
-                                            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
-                                                <label className="form-label">Cargo destino *</label>
-                                                <Select
-                                                    ariaLabel="Cargo destino"
-                                                    placeholder="Selecciona un cargo"
-                                                    searchable
-                                                    value={form.cargoDestino}
-                                                    onChange={(v) => setForm({ ...form, cargoDestino: v })}
-                                                    options={cargoOptions.map((cargo) => ({ value: cargo, label: cargo }))}
-                                                />
-                                            </div>
-                                        )}
-
-                                        {form.audienceType === 'personalizado' && (
-                                            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
-                                                <label className="form-label">Seleccionar por RUT *</label>
-                                                <div className="option-input-row">
-                                                    <Select
-                                                        ariaLabel="Trabajador"
-                                                        placeholder="Seleccionar trabajador"
-                                                        searchable
-                                                        value={form.selectedWorkerId}
-                                                        onChange={(v) => setForm({ ...form, selectedWorkerId: v })}
-                                                        options={workers.map((worker) => ({
-                                                            value: worker.personaId,
-                                                            label: `${worker.nombre} ${worker.apellido}`,
-                                                            description: worker.rut,
-                                                        }))}
-                                                    />
-                                                    <button type="button" className="btn btn-secondary" onClick={handleAddRut}>
-                                                        <FiPlus />
-                                                        Agregar
-                                                    </button>
-                                                </div>
-                                                {form.selectedRuts.length > 0 && (
-                                                    <div className="option-pill-group">
-                                                        {form.selectedRuts.map((rut) => (
-                                                            <span key={rut} className="option-pill">
-                                                                {rut}
-                                                                <button type="button" onClick={() => handleRemoveRut(rut)}>
-                                                                    <FiX />
-                                                                </button>
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </section>
-
-                                    <section className="survey-section">
-                                        <div className="survey-section-header">
-                                            <div>
-                                                <p className="survey-section-eyebrow">Paso 3</p>
-                                                <h3>Diseña las preguntas</h3>
-                                                <p className="survey-section-description">Alterna tipos de pregunta y define si cada una será obligatoria.</p>
-                                            </div>
-                                            <button type="button" className="btn btn-secondary btn-sm" onClick={addQuestion}>
-                                                <FiPlus />
-                                                Agregar pregunta
-                                            </button>
-                                        </div>
-
-                                        <div className="flex flex-col gap-4">
-                                            {questions.map((question, index) => (
-                                                <div key={question.id} className="card survey-question-card">
-                                                    <div className="survey-question-header">
-                                                        <span className="survey-question-badge">
-                                                            <FiList size={16} />
-                                                            Pregunta {index + 1}
-                                                        </span>
-                                                        {questions.length > 1 && (
-                                                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeQuestion(question.id)}>
-                                                                Eliminar
-                                                            </button>
-                                                        )}
-                                                    </div>
-
-                                                    <input
-                                                        className="form-input mb-3"
-                                                        value={question.titulo}
-                                                        onChange={(e) => updateQuestion(question.id, { titulo: e.target.value })}
-                                                        placeholder="Texto de la pregunta"
-                                                        required
-                                                    />
-
-                                                    <textarea
-                                                        className="form-input mb-3"
-                                                        value={question.descripcion}
-                                                        onChange={(e) => updateQuestion(question.id, { descripcion: e.target.value })}
-                                                        rows={2}
-                                                        placeholder="Agrega contexto, instrucciones o ejemplos (opcional)"
-                                                    />
-
-                                                    <div className="flex gap-3 mb-3" style={{ flexWrap: 'wrap' }}>
-                                                        <div style={{ minWidth: '220px' }}>
-                                                            <Select
-                                                                ariaLabel="Tipo de pregunta"
-                                                                value={question.tipo}
-                                                                onChange={(v) => handleQuestionTypeChange(question.id, v as SurveyQuestionType)}
-                                                                options={[
-                                                                    { value: 'multiple', label: 'Selección múltiple' },
-                                                                    { value: 'escala', label: 'Escala (1 a N)' },
-                                                                    { value: 'abierta', label: 'Pregunta abierta' },
-                                                                ]}
-                                                            />
-                                                        </div>
-
-                                                        <label className="flex items-center gap-2" style={{ cursor: 'pointer' }}>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={question.required}
-                                                                onChange={(e) => updateQuestion(question.id, { required: e.target.checked })}
-                                                            />
-                                                            Pregunta obligatoria
-                                                        </label>
-                                                    </div>
-
-                                                    {question.tipo === 'multiple' && (
-                                                        <div className="option-builder">
-                                                            <label className="form-label">Opciones de respuesta</label>
-                                                            <div className="option-input-row">
-                                                                <input
-                                                                    className="form-input"
-                                                                    value={question.newOption}
-                                                                    onChange={(e) => updateNewOptionValue(question.id, e.target.value)}
-                                                                    placeholder="Ej: Siempre"
-                                                                />
-                                                                <button
-                                                                    type="button"
-                                                                    className="btn btn-secondary"
-                                                                    onClick={() => addOptionToQuestion(question.id)}
-                                                                    disabled={!question.newOption.trim()}
-                                                                >
-                                                                    <FiPlus />
-                                                                    Agregar opción
-                                                                </button>
-                                                            </div>
-                                                            {question.opciones.length > 0 && (
-                                                                <div className="option-pill-group">
-                                                                    {question.opciones.map((option) => (
-                                                                        <span key={option} className="option-pill">
-                                                                            {option}
-                                                                            <button type="button" onClick={() => removeOptionFromQuestion(question.id, option)}>
-                                                                                <FiX />
-                                                                            </button>
-                                                                        </span>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-
-                                                    {question.tipo === 'escala' && (
-                                                        <div className="form-group">
-                                                            <label className="form-label">Valor máximo</label>
-                                                            <input
-                                                                type="number"
-                                                                min={1}
-                                                                className="form-input"
-                                                                value={question.escalaMax}
-                                                                onChange={(e) => updateQuestion(question.id, { escalaMax: Number(e.target.value) })}
-                                                            />
-                                                            <p className="form-hint">Los colaboradores evaluarán en un rango de 1 a este valor.</p>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </section>
-                            </div>
-                        </form>
-                    </Modal>
-                )}
-
                 <Modal
                     isOpen={!!responseModal}
                     onClose={closeResponseModal}
@@ -1545,162 +839,141 @@ export default function Surveys() {
                     subtitle={selectedSurvey?.titulo}
                     size="xl"
                     footer={
-                        <button className="btn" onClick={() => setSelectedSurvey(null)}>
+                        <button className="btn btn-secondary" onClick={() => setSelectedSurvey(null)}>
                             Cerrar
                         </button>
                     }
                 >
-                    {selectedSurvey && (
-                        <div className="modal-body" style={{ padding: 0 }}>
-                            <div className="survey-detail-hero">
-                                    <div>
-                                        <p className="survey-section-eyebrow">Encuesta {selectedSurvey.estado}</p>
-                                        <h3>{selectedSurvey.titulo}</h3>
-                                        <p className="survey-section-description">
-                                            {selectedSurvey.descripcion || 'Sin descripción disponible'}
-                                        </p>
-                                    </div>
-                                    <div className="survey-detail-meta">
-                                        <span className="badge badge-neutral">{formatAudience(selectedSurvey)}</span>
-                                        <span className="badge badge-neutral">Creada: {formatDateTime(selectedSurvey.createdAt)}</span>
+                    {selectedSurvey && (() => {
+                        const isCompletada = selectedSurvey.estado === 'completada';
+                        const progressColor = detailCompletion >= 100 ? 'var(--success-apagado)' : 'var(--accent)';
+                        return (
+                        <div className="modal-body" style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+                            <div className="card" style={{ gap: 'var(--space-2)' }}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <h3 className="card-title" style={{ margin: 0 }}>{selectedSurvey.titulo}</h3>
+                                    <span className={`badge ${isCompletada ? 'badge-neutral' : 'badge-accent'}`} style={{ flexShrink: 0 }}>
+                                        {isCompletada ? 'Completada' : 'Activa'}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-muted" style={{ margin: 0 }}>
+                                    {selectedSurvey.descripcion || 'Sin descripción disponible'}
+                                </p>
+                                <span className="text-xs text-muted">
+                                    Creada el {formatDateTime(selectedSurvey.createdAt)} · Audiencia: {formatAudience(selectedSurvey)}
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-4 gap-4">
+                                <div className="survey-stat-tile">
+                                    <span className="survey-stat-tile-label">Destinatarios</span>
+                                    <span className="survey-stat-tile-value">{detailStats?.totalRecipients ?? 0}</span>
+                                </div>
+                                <div className="survey-stat-tile">
+                                    <span className="survey-stat-tile-label">Respondidas</span>
+                                    <span className="survey-stat-tile-value">{detailStats?.respondedCount ?? 0}</span>
+                                </div>
+                                <div className="survey-stat-tile">
+                                    <span className="survey-stat-tile-label">Pendientes</span>
+                                    <span className="survey-stat-tile-value">{detailStats?.pendingCount ?? 0}</span>
+                                </div>
+                                <div className="survey-stat-tile">
+                                    <span className="survey-stat-tile-label">Progreso</span>
+                                    <span className="survey-stat-tile-value">{detailCompletion}%</span>
+                                    <div className="progress">
+                                        <div className="progress-bar" style={{ width: `${detailCompletion}%`, background: progressColor }} />
                                     </div>
                                 </div>
+                            </div>
 
-                                <div className="survey-stats-grid">
-                                    <div className="survey-stat-card">
-                                        <div className="survey-stat-icon">
-                                            <FiUsers />
-                                        </div>
-                                        <div>
-                                            <p className="survey-stat-label">Destinatarios</p>
-                                            <p className="survey-stat-value">{detailStats?.totalRecipients ?? 0}</p>
-                                        </div>
-                                    </div>
-                                    <div className="survey-stat-card">
-                                        <div className="survey-stat-icon" style={{ background: 'rgba(34, 197, 94, 0.15)', color: 'var(--success-500)' }}>
-                                            <FiCheckCircle />
-                                        </div>
-                                        <div>
-                                            <p className="survey-stat-label">Respondidas</p>
-                                            <p className="survey-stat-value">{detailStats?.respondedCount ?? 0}</p>
-                                        </div>
-                                    </div>
-                                    <div className="survey-stat-card">
-                                        <div className="survey-stat-icon" style={{ background: 'rgba(234, 179, 8, 0.15)', color: 'var(--warning-500)' }}>
-                                            <FiAlertCircle />
-                                        </div>
-                                        <div>
-                                            <p className="survey-stat-label">Pendientes</p>
-                                            <p className="survey-stat-value">{detailStats?.pendingCount ?? 0}</p>
-                                        </div>
-                                    </div>
-                                    <div className="survey-stat-card">
-                                        <div className="survey-stat-icon" style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--info-500)' }}>
-                                            <FiBarChart2 />
-                                        </div>
-                                        <div>
-                                            <p className="survey-stat-label">Progreso</p>
-                                            <p className="survey-stat-value">{detailCompletion}%</p>
-                                        </div>
-                                    </div>
+                            <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: 'var(--space-3)', borderBottom: '1px solid var(--surface-border)' }}>
+                                    <h3 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 700 }}>Preguntas</h3>
+                                    <p className="text-sm text-muted" style={{ margin: 0 }}>Tal como las recibió el trabajador.</p>
                                 </div>
-
-                                <section className="survey-section">
-                                    <div className="survey-section-header">
-                                        <div>
-                                            <p className="survey-section-eyebrow">Bloque de preguntas</p>
-                                            <h3>Preguntas enviadas</h3>
-                                            <p className="survey-section-description">Visualiza el detalle de cada ítem tal como lo recibió el colaborador.</p>
-                                        </div>
-                                    </div>
-                                    {selectedSurvey.preguntas?.length ? (
-                                        <div className="survey-question-list">
-                                            {selectedSurvey.preguntas.map((question, index) => (
-                                                <div key={question.questionId || `${question.titulo}-${index}`} className="card survey-question-card">
-                                                    <div className="survey-question-header">
-                                                        <span className="survey-question-badge">
-                                                            <FiList size={16} />
-                                                            Pregunta {index + 1}
-                                                        </span>
-                                                        <span className="badge badge-neutral">{formatQuestionType(question.tipo)}</span>
-                                                    </div>
-                                                    <h4 className="font-semibold mb-2">{question.titulo}</h4>
-                                                    {question.descripcion && (
-                                                        <p className="text-sm text-muted mb-3">{question.descripcion}</p>
-                                                    )}
-                                                    {question.tipo === 'multiple' && question.opciones && (
-                                                        <div>
-                                                            <p className="text-sm font-semibold mb-2">Opciones</p>
-                                                            <div className="option-pill-group">
-                                                                {question.opciones.map((opcion) => (
-                                                                    <span key={opcion} className="option-pill">
-                                                                        {opcion}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {question.tipo === 'escala' && (
-                                                        <p className="text-sm text-muted">Escala máxima: {question.escalaMax || 5}</p>
-                                                    )}
+                                {selectedSurvey.preguntas?.length ? (
+                                    <div className="survey-question-list">
+                                        {selectedSurvey.preguntas.map((question, index) => (
+                                            <div key={question.questionId || `${question.titulo}-${index}`} className="card survey-question-card">
+                                                <div className="survey-question-header">
+                                                    <span className="survey-question-badge">Pregunta {index + 1}</span>
+                                                    <span className="badge badge-neutral">{formatQuestionType(question.tipo)}</span>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <p className="text-muted text-sm">No hay preguntas registradas.</p>
-                                    )}
-                                </section>
-
-                                <section className="survey-section">
-                                    <div className="survey-section-header">
-                                        <div>
-                                            <p className="survey-section-eyebrow">Destinatarios</p>
-                                            <h3>Estado de respuestas</h3>
-                                            <p className="survey-section-description">
-                                                {detailStats
-                                                    ? `${detailStats.respondedCount} respondieron · ${detailStats.pendingCount} pendientes`
-                                                    : 'Sin destinatarios registrados'}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    {selectedSurvey.recipients?.length ? (
-                                        <div className="table-container" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                            <table className="table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Trabajador</th>
-                                                        <th>RUT</th>
-                                                        <th>Cargo</th>
-                                                        <th>Estado</th>
-                                                        <th>Asignada</th>
-                                                        <th>Respondió</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {selectedSurvey.recipients.map((recipient) => (
-                                                        <tr key={recipient.workerId}>
-                                                            <td>{recipient.nombre}</td>
-                                                            <td>{recipient.rut}</td>
-                                                            <td>{recipient.cargo || 'Sin cargo'}</td>
-                                                            <td>
-                                                                <span className={`badge ${recipient.estado === 'respondida' ? 'badge-success' : 'badge-neutral'}`}>
-                                                                    {recipient.estado}
+                                                <h4 className="font-semibold mb-2">{question.titulo}</h4>
+                                                {question.descripcion && (
+                                                    <p className="text-sm text-muted mb-3">{question.descripcion}</p>
+                                                )}
+                                                {question.tipo === 'multiple' && question.opciones && (
+                                                    <div>
+                                                        <p className="text-sm font-semibold mb-2">Opciones</p>
+                                                        <div className="option-pill-group">
+                                                            {question.opciones.map((opcion) => (
+                                                                <span key={opcion} className="option-pill">
+                                                                    {opcion}
                                                                 </span>
-                                                            </td>
-                                                            <td>{formatDateTime(recipient.respondedAt ? recipient.respondedAt : selectedSurvey.createdAt)}</td>
-                                                            <td>{recipient.respondedAt ? formatDateTime(recipient.respondedAt) : '—'}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    ) : (
-                                        <p className="text-muted text-sm">No hay trabajadores asignados.</p>
-                                    )}
-                                </section>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {question.tipo === 'escala' && (
+                                                    <p className="text-sm text-muted">Escala máxima: {question.escalaMax || 5}</p>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-muted text-sm">No hay preguntas registradas.</p>
+                                )}
+                            </section>
+
+                            <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: 'var(--space-3)', borderBottom: '1px solid var(--surface-border)' }}>
+                                    <h3 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 700 }}>Destinatarios</h3>
+                                    <p className="text-sm text-muted" style={{ margin: 0 }}>
+                                        {detailStats
+                                            ? `${detailStats.respondedCount} respondieron · ${detailStats.pendingCount} pendientes`
+                                            : 'Sin destinatarios registrados'}
+                                    </p>
+                                </div>
+
+                                {selectedSurvey.recipients?.length ? (
+                                    <div className="table-container" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                        <table className="table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Trabajador</th>
+                                                    <th>RUT</th>
+                                                    <th>Cargo</th>
+                                                    <th>Estado</th>
+                                                    <th>Asignada</th>
+                                                    <th>Respondió</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {selectedSurvey.recipients.map((recipient) => (
+                                                    <tr key={recipient.workerId}>
+                                                        <td>{recipient.nombre}</td>
+                                                        <td>{recipient.rut}</td>
+                                                        <td>{recipient.cargo || 'Sin cargo'}</td>
+                                                        <td>
+                                                            <span className={`badge ${recipient.estado === 'respondida' ? 'badge-neutral' : 'badge-accent'}`}>
+                                                                {recipient.estado === 'respondida' ? 'Respondida' : 'Pendiente'}
+                                                            </span>
+                                                        </td>
+                                                        <td>{formatDateTime(recipient.respondedAt ? recipient.respondedAt : selectedSurvey.createdAt)}</td>
+                                                        <td>{recipient.respondedAt ? formatDateTime(recipient.respondedAt) : '—'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <p className="text-muted text-sm">No hay trabajadores asignados.</p>
+                                )}
+                            </section>
                         </div>
-                    )}
+                        );
+                    })()}
                 </Modal>
             </div>
 
@@ -1716,46 +989,6 @@ export default function Surveys() {
                 loading={responding}
                 error={responseError}
             />
-            <style>{`
-                @keyframes slideIn {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to { transform: translateX(0); opacity: 1; }
-                }
-
-                .notification {
-                    transition: all 0.3s ease;
-                }
-
-                .spinner {
-                    width: 40px;
-                    height: 40px;
-                    border: 3px solid var(--surface-border);
-                    border-top-color: var(--primary-500);
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
-                }
-
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
-                }
-
-                .survey-card {
-                    padding: var(--space-6);
-                    background: var(--surface-elevated);
-                    border-radius: var(--radius-lg);
-                    border: 1px solid var(--surface-border);
-                    transition: all 0.3s ease;
-                    display: flex;
-                    flex-direction: column;
-                    gap: var(--space-4);
-                }
-
-                .survey-card:hover {
-                    transform: translateY(-4px);
-                    box-shadow: var(--shadow-lg);
-                    border-color: var(--primary-500);
-                }
-            `}</style>
         </>
     );
 }
