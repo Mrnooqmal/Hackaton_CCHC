@@ -321,6 +321,7 @@ module.exports.estructuraHandler = async (event) => {
                     statusCode: 200,
                     headers: {
                         'Content-Type': 'text/html; charset=utf-8',
+                        'Cache-Control': 'no-store',
                         'Access-Control-Allow-Origin': '*',
                         'Content-Disposition': `inline; filename="cumplimiento-fuf-${ambito}${obraId ? '-' + obraId : ''}.html"`,
                     },

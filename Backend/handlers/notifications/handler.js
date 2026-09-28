@@ -1,5 +1,6 @@
 const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 const { success, error } = require('../../lib/utils/response');
+const { escaparHtml } = require('../../lib/escaparHtml');
 
 const sesClient = new SESClient({ region: 'us-east-1' });
 
@@ -90,7 +91,7 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
         <p class="logo-sub">Plataforma de Gestión de Obras y Prevención de Riesgos</p>
       </div>
       <div class="body">
-        <p class="greeting">Hola, <strong>${nombre}</strong></p>
+        <p class="greeting">Hola, <strong>${escaparHtml(nombre)}</strong></p>
         <p class="intro">
           Has sido registrado en <strong>Build &amp; Serve</strong>. A continuación encontrarás
           tus credenciales de acceso al sistema.
@@ -101,11 +102,11 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
           <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
             <tr>
               <td style="font-size:13px;color:#64748b;padding:10px 0;border-bottom:1px solid #e8edf3;">RUT (usuario)</td>
-              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;border-bottom:1px solid #e8edf3;">${rut}</td>
+              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;border-bottom:1px solid #e8edf3;">${escaparHtml(rut)}</td>
             </tr>
             <tr>
               <td style="font-size:13px;color:#64748b;padding:10px 0;">Contraseña temporal</td>
-              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;">${passwordTemporal}</td>
+              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;">${escaparHtml(passwordTemporal)}</td>
             </tr>
           </table>
         </div>
@@ -117,7 +118,7 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
         </div>
 
         <div style="text-align:center;margin:0 0 28px;">
-          <a href="${loginUrl}" class="btn-login" style="display:inline-block;background:#006edc;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;font-family:'Segoe UI',Helvetica,Arial,sans-serif;padding:14px 32px;border-radius:10px;">Ingresar al sistema</a>
+          <a href="${escaparHtml(loginUrl)}" class="btn-login" style="display:inline-block;background:#006edc;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;font-family:'Segoe UI',Helvetica,Arial,sans-serif;padding:14px 32px;border-radius:10px;">Ingresar al sistema</a>
         </div>
 
         <p class="steps-title">Primeros pasos</p>
@@ -277,18 +278,18 @@ const sendPasswordResetEmail = async (email, nombre, resetUrl, minutosVigencia =
         <p class="logo-sub">Plataforma de Gestión de Obras y Prevención de Riesgos</p>
       </div>
       <div class="body">
-        <p class="greeting">Hola, <strong>${nombre}</strong></p>
+        <p class="greeting">Hola, <strong>${escaparHtml(nombre)}</strong></p>
         <p class="intro">
           Recibimos una solicitud para restablecer la contraseña de tu cuenta. Haz clic en el
-          botón para crear una nueva contraseña. Este enlace caduca en ${minutosVigencia} minutos.
+          botón para crear una nueva contraseña. Este enlace caduca en ${escaparHtml(minutosVigencia)} minutos.
         </p>
 
         <div class="btn-wrap">
-          <a href="${resetUrl}" class="btn" style="display:inline-block;background:#006edc;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;font-family:'Segoe UI',Helvetica,Arial,sans-serif;padding:14px 32px;border-radius:10px;">Restablecer contraseña</a>
+          <a href="${escaparHtml(resetUrl)}" class="btn" style="display:inline-block;background:#006edc;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;font-family:'Segoe UI',Helvetica,Arial,sans-serif;padding:14px 32px;border-radius:10px;">Restablecer contraseña</a>
         </div>
 
         <p class="link-fallback">
-          Si el botón no funciona, copia y pega este enlace en tu navegador:<br>${resetUrl}
+          Si el botón no funciona, copia y pega este enlace en tu navegador:<br>${escaparHtml(resetUrl)}
         </p>
 
         <div class="alert">
@@ -365,7 +366,7 @@ Este es un mensaje automático. Por favor no respondas a este correo.
 const sendOnboardingLicenseEmail = async (email, enlace, dias, nombreEmpresa = null) => {
     if (!email) return { sent: false, reason: 'no_email' };
 
-    const para = nombreEmpresa ? ` de <strong>${nombreEmpresa}</strong>` : '';
+    const para = nombreEmpresa ? ` de <strong>${escaparHtml(nombreEmpresa)}</strong>` : '';
     const htmlBody = `
 <!DOCTYPE html>
 <html lang="es">
@@ -384,15 +385,15 @@ const sendOnboardingLicenseEmail = async (email, enlace, dias, nombreEmpresa = n
       </p>
 
       <p style="margin:0 0 24px;">
-        <a href="${enlace}" style="display:inline-block;background:#002855;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-size:14px;font-weight:600;">Activar mi empresa</a>
+        <a href="${escaparHtml(enlace)}" style="display:inline-block;background:#002855;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-size:14px;font-weight:600;">Activar mi empresa</a>
       </p>
 
       <p style="font-size:13px;line-height:1.6;color:#6b7280;margin:0 0 8px;">
-        El enlace <strong>sirve una sola vez</strong> y vence en ${dias} días.
+        El enlace <strong>sirve una sola vez</strong> y vence en ${escaparHtml(dias)} días.
         No lo reenvíes: quien lo tenga puede completar el alta.
       </p>
       <p style="font-size:12px;color:#9ca3af;word-break:break-all;margin:16px 0 0;">
-        Si el botón no funciona, copia esta dirección en tu navegador:<br>${enlace}
+        Si el botón no funciona, copia esta dirección en tu navegador:<br>${escaparHtml(enlace)}
       </p>
     </td></tr>
   </table>
@@ -435,9 +436,6 @@ Este es un mensaje automático. Por favor no respondas a este correo.
         return { sent: false, error: err.message };
     }
 };
-
-const escaparHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /**
  * Aviso a una persona de que su PIN de firma fue restablecido por otra.

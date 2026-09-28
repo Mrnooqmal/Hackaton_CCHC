@@ -1,5 +1,6 @@
 import { apiRequest, apiBaseUrl } from './client';
 import type { CompletitudAmbito } from '../utils/completitud';
+import { abrirHtmlEnPestana } from '../utils/informesHtml';
 import type {
     Ambito, TipoOrgano, Origen, EstadoOrgano, Estamento, Calidad, CargoOrgano,
     TipoReunion, CausalExtraordinaria, EstadoReunion, Obligaciones, DotacionEfectiva,
@@ -215,11 +216,9 @@ export const estructuraApi = {
                 win.close();
                 return { ok: false, error: 'No se pudo generar el reporte del FUF.' };
             }
-            const blob = new Blob([await res.text()], { type: 'text/html;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            win.location.href = url;
-            // Se libera después para no cortar la carga de la pestaña.
-            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            // El HTML lo arma el backend (`lib/completitud-export.js`), que
+            // escapa todo texto con `lib/escaparHtml.js`.
+            abrirHtmlEnPestana(await res.text(), win);
             return { ok: true };
         } catch {
             win.close();

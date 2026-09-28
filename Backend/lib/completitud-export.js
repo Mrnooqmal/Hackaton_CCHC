@@ -23,9 +23,7 @@
 
 const { ESTADO_REQUISITO } = require('./completitud');
 
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
-));
+const { escaparHtml: esc } = require('./escaparHtml');
 
 /**
  * Las mismas palabras que la plataforma (ESPEJO de ESTADO_LABEL en
@@ -87,9 +85,9 @@ function construirExport(completitud, { nombreEmpresa = null, nombreObra = null,
 function renderHtml(exp) {
     const filas = (bloque) => bloque.requisitos.map((r) => `
         <tr>
-          <td class="item">${r.item ?? '—'}</td>
+          <td class="item">${esc(r.item ?? '—')}</td>
           <td>${esc(r.titulo)}</td>
-          <td><span class="estado" style="color:${COLOR_ESTADO[r.estado]}">${etiquetaDe(r)}</span></td>
+          <td><span class="estado" style="color:${COLOR_ESTADO[r.estado]}">${esc(etiquetaDe(r))}</span></td>
           <td class="detalle">${esc(r.justificacion || r.detalle || '')}</td>
         </tr>`).join('');
 

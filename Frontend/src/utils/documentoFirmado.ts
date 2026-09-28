@@ -66,9 +66,9 @@ export async function abrirDocumentoFirmable({
 }: AbrirDocumentoFirmableParams): Promise<void> {
     const ventana = window.open('', '_blank');
     if (ventana) {
-        ventana.document.write(
-            '<p style="font-family: system-ui, sans-serif; padding: 24px; color: #444;">Preparando documento…</p>'
-        );
+        // Texto, no HTML: sin sumideros fuera de `utils/informesHtml.ts`.
+        ventana.document.title = 'Preparando documento…';
+        ventana.document.body.textContent = 'Preparando documento…';
     }
     const navegar = (url: string) => {
         if (ventana && !ventana.closed) ventana.location.href = url;

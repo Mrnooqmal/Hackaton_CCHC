@@ -202,6 +202,7 @@ module.exports.obrasHandler = async (event) => {
                 statusCode: 200,
                 headers: {
                     'Content-Type': 'text/html; charset=utf-8',
+                    'Cache-Control': 'no-store',
                     'Access-Control-Allow-Origin': '*',
                     'Content-Disposition': `inline; filename="expediente-prevencion-${obraId}.html"`,
                 },
