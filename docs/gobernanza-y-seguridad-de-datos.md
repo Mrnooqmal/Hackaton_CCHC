@@ -128,7 +128,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 6.6 | Política de retención de infraestructura | **Implementado** | `DeletionPolicy` y `UpdateReplacePolicy` configurados por ambiente. |
 | 6.8 | Región de tratamiento de los datos | **Evaluada y postergada** | Ver decisión D-1. |
 | 6.9 | Versionado de los buckets | **Implementado** | Habilitado en los cuatro buckets y declarado en el stack. Sustituye al punto 6.7, que lo reportaba pendiente. |
-| 6.12 | Cabeceras de seguridad del frontend | **Implementado (a mano)** | HSTS, `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` y `Referrer-Policy`, con una política de cabeceras de CloudFront creada a mano porque la distribución no está en código. La CSP de scripts, pendiente (primero en modo solo reporte). Ver D-14. |
+| 6.12 | Cabeceras de seguridad del frontend | **Implementado; CSP en solo reporte** | HSTS, `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` y `Referrer-Policy`, declarados en `infra/frontend.yml`. La CSP de scripts, en modo solo reporte hasta confirmar que no hay violaciones legítimas. Ver D-14. |
 | 6.13 | Las respuestas de la API no se cachean | **Implementado** | `Cache-Control: no-store` en toda respuesta; una prueba invoca cada función HTTP y lo comprueba. |
 | 6.14 | HTML armado con texto de usuario | **Implementado** | Un solo escapado por lado y una prueba que falla si aparece un sumidero de HTML nuevo. Ver H-13. |
 | 6.15 | Token de sesión fuera del alcance de un script | **Postergado** | Vive en `localStorage`. Moverlo a una cookie `httpOnly` exige dominio propio y protección CSRF. Ver D-14. |
@@ -1022,10 +1022,27 @@ Cada punto con su estado al diagnosticar, el riesgo concreto y lo que se hizo.
 | `Cache-Control` en la API | Ausente en todas las respuestas. | El JSON con datos personales podía quedar en el caché de disco de un equipo compartido. | `no-store` en toda respuesta. |
 | CSP y cabeceras del frontend | Ninguna. | Nada acotaba un XSS, y la app se podía meter en un iframe ajeno (clickjacking sobre la firma). | `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` y `Referrer-Policy`. La CSP de scripts va después, primero en modo solo reporte: hay que permitir el script en línea de `index.html`, Google Fonts, Nominatim, S3 y la API. |
 
-**Lo que está a mano y no en código.** La distribución de CloudFront, su política
-de cabeceras (`buildandserve-cabeceras-seguridad`) y la política del bucket del
-frontend se cambiaron desde la consola o la CLI. Ningún despliegue las comprueba
-ni las repone. Declararlas en código está propuesto y pendiente de decisión.
+**El frontend, en código (28 de septiembre de 2026).** La distribución, su
+política de cabeceras, el OAC, el bucket del frontend y su política estaban
+creados a mano. Se incorporaron por `IMPORT` a un stack propio,
+`BuildAndServe-frontend` (`infra/frontend.yml`), sin recrear nada y con
+`DeletionPolicy: Retain`; la detección de drift dio `IN_SYNC` al importar. Los
+dos cambios que se habían hecho a mano (cabeceras y deny sin TLS) quedaron en la
+plantilla. Se aplica con `infra/desplegar-infra-frontend.sh <commit>` y se
+publica con `infra/desplegar-frontend.sh <commit>`; los dos rechazan un commit
+que no esté pusheado y construyen en un worktree limpio.
+
+**CSP en modo solo reporte.** `Content-Security-Policy-Report-Only`, armada por
+`infra/desplegar-infra-frontend.sh` con la URL de la API y los hashes de los
+scripts en línea (el de `index.html` y el que imprime los informes, que se abren
+como `blob:` y heredan la política). Los reportes llegan a `POST /csp/reporte`,
+una ruta pública con cuerpo máximo de 8 KB, 20 violaciones por envío y límite de
+tasa propio (10 de ráfaga, 5 por segundo). Registra solo los campos útiles de
+cada violación, **sin la consulta ni el fragmento de ninguna URL** (ahí viajan
+los tokens de restablecer contraseña y de la licencia de alta), sin la muestra
+del script (puede traer datos de la página) y sin user-agent. Cada violación deja
+la métrica `CspViolaciones` por directiva. Pasa a activa (renombrar la cabecera a
+`Content-Security-Policy`) cuando pasen unos días sin violaciones legítimas.
 
 ## 4. Hallazgos priorizados
 

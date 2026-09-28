@@ -872,9 +872,26 @@ functions:
           path: /onboarding/completar
           method: POST
 
+  # Reportes de la CSP del frontend (modo solo reporte, ver handlers/csp). Es
+  # pública porque la llama el navegador por su cuenta, sin sesión. En la lista
+  # blanca de `tests/rutas-autenticadas.test.js`, con cuerpo acotado en el
+  # handler y límite de tasa propio en RouteSettings.
+  cspReporte:
+    handler: handlers/csp/handler.reportar
+    memorySize: 256
+    timeout: 5
+    events:
+      - httpApi:
+          path: /csp/reporte
+          method: POST
+
   corsPreflight:
     handler: handlers/cors/handler.preflight
     events:
+      # Los reportes de `report-to` pueden llegar con preflight CORS.
+      - httpApi:
+          path: /csp/reporte
+          method: options
       # Onboarding: sin estas dos, el navegador recibe 401 en el preflight y el
       # formulario falla con "failed to fetch" sin decir por qué. Ya pasó una vez.
       - httpApi:
@@ -1107,6 +1124,7 @@ resources:
       DependsOn:
         - HttpApiRouteGetOnboardingLicenciaTokenVar
         - HttpApiRoutePostOnboardingCompletar
+        - HttpApiRoutePostCspReporte
       Properties:
         DefaultRouteSettings:
           ThrottlingBurstLimit: 200
@@ -1118,6 +1136,13 @@ resources:
           'POST /onboarding/completar':
             ThrottlingBurstLimit: 3
             ThrottlingRateLimit: 1
+          # Pública y la llama cualquier navegador: estricta. Un reporte por
+          # violación y por página; con la política bien armada, casi nunca llega
+          # nada. Si una violación masiva real se pierde por el límite, basta con
+          # las que sí entran para ver cuál es.
+          'POST /csp/reporte':
+            ThrottlingBurstLimit: 10
+            ThrottlingRateLimit: 5
 
   Resources:
     # ==========================================

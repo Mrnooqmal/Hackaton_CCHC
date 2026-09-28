@@ -1,0 +1,201 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Build & Serve - frontend: bucket, acceso de CloudFront (OAC), cabeceras de
+  seguridad y distribucion. Stack aparte del backend (Backend/serverless.yml)
+  porque tienen ciclos distintos: desplegar el backend nunca toca el CDN.
+
+# ─── Por qué existe este archivo ────────────────────────────────────────────
+#
+# Hasta el 28 de septiembre de 2026 todo esto estaba creado a mano en la consola:
+# ningún despliegue podía comprobar ni reponer su configuración, y los cambios de
+# seguridad (HSTS, nosniff, frame-ancestors, el deny sin TLS del bucket) se
+# hicieron a mano. Se incorporaron a CloudFormation por IMPORT, sin recrear nada
+# (la URL y el contenido publicado no cambian), con `DeletionPolicy: Retain`:
+# borrar el stack NUNCA borra el bucket ni la distribución.
+#
+# Cambios: se editan ACÁ y se aplican con `infra/desplegar-infra-frontend.sh`.
+# Publicar una versión del frontend es otra cosa: `infra/desplegar-frontend.sh`.
+#
+# Una sola distribución, que sirve producción. El TLS mínimo (hoy TLSv1) no se
+# puede subir con el certificado por defecto de cloudfront.net: requiere dominio
+# propio con certificado de ACM (ver D-14 en docs/gobernanza-y-seguridad-de-datos.md).
+
+Parameters:
+  NombreBucket:
+    Type: String
+    Default: buildandserve-frontend
+  CspSoloReporte:
+    Type: String
+    Default: ''
+    Description: >-
+      Política CSP en modo solo reporte (Content-Security-Policy-Report-Only).
+      Vacía = no se envía. La arma infra/desplegar-infra-frontend.sh con la URL
+      de la ruta de reportes de la API.
+
+  ReportingEndpoints:
+    Type: String
+    Default: ''
+    Description: >-
+      Cabecera Reporting-Endpoints para `report-to` (Chrome). Va junto con la CSP
+      en modo solo reporte.
+
+Conditions:
+  ConCspSoloReporte: !Not [!Equals [!Ref CspSoloReporte, '']]
+
+Resources:
+
+  BucketFrontend:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref NombreBucket
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: false
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  PoliticaBucketFrontend:
+    Type: AWS::S3::BucketPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Bucket: !Ref BucketFrontend
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Solo esta distribución lee el bucket (OAC), nadie más.
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${NombreBucket}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribucion}'
+          # Solo con TLS (antes a mano, 28 de septiembre de 2026).
+          - Sid: SoloConTLS
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub 'arn:aws:s3:::${NombreBucket}'
+              - !Sub 'arn:aws:s3:::${NombreBucket}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  AccesoOrigen:
+    Type: AWS::CloudFront::OriginAccessControl
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      OriginAccessControlConfig:
+        Name: buildandserve-frontend-oac
+        Description: OAC for buildandserve-frontend
+        SigningProtocol: sigv4
+        SigningBehavior: always
+        OriginAccessControlOriginType: s3
+
+  CabecerasSeguridad:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: buildandserve-cabeceras-seguridad
+        Comment: HSTS, nosniff, frame-ancestors y Referrer-Policy para el frontend. La CSP de scripts va aparte, primero en modo solo reporte.
+        SecurityHeadersConfig:
+          # Un año, sin preload ni subdominios: el dominio es cloudfront.net.
+          StrictTransportSecurity:
+            Override: true
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: false
+            Preload: false
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            Override: true
+            FrameOption: DENY
+          # Solo frame-ancestors: se aplica de verdad sin restringir scripts.
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: "frame-ancestors 'none'"
+          ReferrerPolicy:
+            Override: true
+            ReferrerPolicy: strict-origin-when-cross-origin
+        CustomHeadersConfig: !If
+          - ConCspSoloReporte
+          - Items:
+              - Header: Content-Security-Policy-Report-Only
+                Value: !Ref CspSoloReporte
+                Override: true
+              - Header: Reporting-Endpoints
+                Value: !Ref ReportingEndpoints
+                Override: true
+          - !Ref AWS::NoValue
+
+  Distribucion:
+    Type: AWS::CloudFront::Distribution
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DistributionConfig:
+        Comment: CF for buildandserve-frontend
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: S3-buildandserve-frontend
+            DomainName: !Sub '${NombreBucket}.s3.${AWS::Region}.amazonaws.com'
+            OriginAccessControlId: !GetAtt AccesoOrigen.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+              OriginReadTimeout: 30
+            ConnectionAttempts: 3
+            ConnectionTimeout: 10
+            OriginShield:
+              Enabled: false
+        DefaultCacheBehavior:
+          TargetOriginId: S3-buildandserve-frontend
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [HEAD, GET]
+          CachedMethods: [HEAD, GET]
+          Compress: true
+          SmoothStreaming: false
+          # Administrada por AWS: CachingOptimized.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: !GetAtt CabecerasSeguridad.Id
+        # SPA: toda ruta desconocida sirve index.html.
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+          MinimumProtocolVersion: TLSv1
+
+Outputs:
+  DistribucionId:
+    Value: !Ref Distribucion
+  DominioDistribucion:
+    Value: !GetAtt Distribucion.DomainName
+  Bucket:
+    Value: !Ref BucketFrontend
