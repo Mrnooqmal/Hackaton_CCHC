@@ -14,6 +14,7 @@ import ActivityPlanificar from './pages/ActivityPlanificar';
 import Surveys from './pages/Surveys';
 import SurveyNueva from './pages/SurveyNueva';
 import Incidents from './pages/Incidents';
+import IncidentReportar from './pages/IncidentReportar';
 import Inbox from './pages/Inbox';
 import Login from './pages/Login';
 // Legacy UserManagement replaced by PersonasManagement
@@ -181,6 +182,11 @@ function AppContent() {
           Actividades → Nueva actividad. */}
       <Route path="/surveys/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.ENCUESTAS_CREAR}><SurveyNueva /></ProtectedRoute>} />
       <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
+      {/* Antes era un modal de la lista; ahora es pantalla completa, como
+          Actividades → Nueva actividad. Sin requiredPermission: cualquiera
+          puede reportar un hallazgo, y el segmentado "Incidente" queda
+          deshabilitado dentro de la página si falta INCIDENTES_REPORTAR. */}
+      <Route path="/incidents/reportar" element={<ProtectedRoute><IncidentReportar /></ProtectedRoute>} />
       <Route path="/activities" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_VER}><Activities /></ProtectedRoute>} />
       {/* Antes eran modales de la lista; ahora son pantallas completas, como
           Personas → Nueva persona. */}

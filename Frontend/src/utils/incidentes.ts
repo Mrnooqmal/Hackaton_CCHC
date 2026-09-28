@@ -16,3 +16,17 @@ export const incidenteCerrado = (inc: any): boolean =>
     : inc?.estado === 'cerrado';
 
 export const incidenteAbierto = (inc: any): boolean => !incidenteCerrado(inc);
+
+// Etapas constructivas del catálogo de incidentes. Compartida entre el
+// listado/estadísticas (pages/Incidents.tsx) y el formulario de reporte
+// (pages/IncidentReportar.tsx).
+export const ETAPAS_CONSTRUCTIVAS = [
+  'Excavaciones',
+  'Fundaciones',
+  'Obra Gruesa',
+  'Instalaciones Sanitarias',
+  'Instalaciones Eléctricas',
+  'Terminaciones',
+  'Obras Exteriores',
+  'Otro',
+];

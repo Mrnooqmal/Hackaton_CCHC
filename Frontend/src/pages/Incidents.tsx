@@ -1,18 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import type { KeyboardEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-    FiPlus, FiAlertTriangle, FiX, FiUpload, FiImage,
-    FiUser, FiCalendar, FiActivity,
-    FiAlertCircle, FiFileText, FiSave,
-    FiPieChart, FiList, FiBarChart2, FiCheck, FiArrowRight,
-    FiMic, FiCamera, FiRefreshCw, FiChevronLeft, FiChevronRight
+    FiPlus, FiAlertTriangle, FiX, FiImage,
+    FiCalendar, FiActivity, FiShield, FiZap, FiTrendingUp,
+    FiAlertCircle, FiFileText,
+    FiPieChart, FiList, FiBarChart2,
+    FiChevronLeft, FiChevronRight, FiCheckCircle, FiClock, FiCircle
 } from 'react-icons/fi';
-import { incidentsApi, aiApi, workersApi } from '../api/client';
-import type { Incident, CreateIncidentData, IncidentStats, AnalyticsData, IncidentLocation } from '../api/client';
+import { incidentsApi, workersApi } from '../api/client';
+import type { Incident, IncidentStats, AnalyticsData } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
-import { Modal, Select, PageHeader } from '../components/ui';
+import { Modal, Select, PageHeader, SegmentedControl, SearchInput, StatCard, IncidentesSkeleton, IncidentesStatsSkeleton } from '../components/ui';
+import { incidenteCerrado, ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
 
@@ -35,75 +37,37 @@ const buildEvidenceUrl = (s3Key: string) => {
     return '';
 };
 
-// Construction phases for the dropdown
-const ETAPAS_CONSTRUCTIVAS = [
-    'Excavaciones',
-    'Fundaciones',
-    'Obra Gruesa',
-    'Instalaciones Sanitarias',
-    'Instalaciones Eléctricas',
-    'Terminaciones',
-    'Obras Exteriores',
-    'Otro'
-];
-
-
 export default function Incidents() {
+    const navigate = useNavigate();
     const { user, hasPermission } = useAuth();
     const { selectedObraId } = useObraContext();
     const [incidents, setIncidents] = useState<Incident[]>([]);
     const [stats, setStats] = useState<IncidentStats | null>(null);
     const [_analytics, setAnalytics] = useState<AnalyticsData | null>(null);
     const [loading, setLoading] = useState(true);
-    const [showModal, setShowModal] = useState(false);
     const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailError, setDetailError] = useState('');
     // Carrusel de evidencias: índice de la imagen abierta dentro de la galería
     // navegable (o null si el visor está cerrado).
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-    const [_showFilters, _setShowFilters] = useState(false);
     const [activeTab, setActiveTab] = useState<'listado' | 'estadisticas'>('listado');
-    const [filters, _setFilters] = useState({
+    const [filters] = useState({
         tipo: '',
         estado: '',
         fechaInicio: '',
         fechaFin: ''
     });
 
-    // Form state with enhanced fields for Phase 4
-    const [formData, setFormData] = useState<CreateIncidentData>({
-        tipo: 'incidente',
-        centroTrabajo: '',
-        trabajador: {
-            nombre: '',
-            rut: '',
-            genero: '',
-            cargo: ''
-        },
-        descripcion: '',
-        gravedad: 'leve',
-        diasPerdidos: 0,
-        evidencias: [],
-        // New fields for Phase 4
-        clasificacion: 'incidente',
-        tipoHallazgo: 'condicion',
-        etapaConstructiva: ''
-    });
+    // Filtros del listado — client-side, sobre lo ya cargado (igual que el
+    // segmentado hallazgos/incidentes): no hay volumen que justifique pedirlos
+    // al backend.
+    const [listSearch, setListSearch] = useState('');
+    const [filtroGravedad, setFiltroGravedad] = useState('');
+    const [filtroCierre, setFiltroCierre] = useState('');
+    const [filtroEtapa, setFiltroEtapa] = useState('');
 
-
-    const [confirmaEnvio, setConfirmaEnvio] = useState(false);
-    const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-    const [uploading, setUploading] = useState(false);
-    const [location, setLocation] = useState<IncidentLocation | null>(null);
-    const [isGettingLocation, setIsGettingLocation] = useState(false);
-    // El mensaje de error de ubicación ya no se muestra en la UI; se conserva el setter
-    const [, setLocationError] = useState('');
-
-    const [_chartMetric, _setChartMetric] = useState<'total' | 'accidentes' | 'incidentes'>('total');
     const [calendarMonth, setCalendarMonth] = useState(new Date());
-    const [showSuccess, setShowSuccess] = useState(false);
-    const [formError, setFormError] = useState('');
 
     // ─── Reunion 2026-06-10: hallazgos vs incidentes ──────────────────────────
     // Incidentes/accidentes: creacion restringida a supervisor y superiores.
@@ -115,22 +79,12 @@ export default function Incidents() {
     const esHallazgo = (inc: Incident) =>
         (inc as any).clasificacion === 'hallazgo' || ['condicion_subestandar', 'accion_subestandar'].includes(inc.tipo);
 
-    // Reporte flash (datos minimos, editable en investigacion)
-    const [flashMode, setFlashMode] = useState(false);
-    const [flashAfectados, setFlashAfectados] = useState<Array<{ nombre: string; rut: string; cargo: string }>>([{ nombre: '', rut: '', cargo: '' }]);
-    const [flashDescripcion, setFlashDescripcion] = useState('');
-    const [flashUbicacion, setFlashUbicacion] = useState('');
-
     // Gobernanza de hallazgos (panel supervisor+)
     const [gobIncident, setGobIncident] = useState<Incident | null>(null);
     const [gobForm, setGobForm] = useState({ responsableId: '', plazoRespuestaISO: '', estadoCierre: 'abierto', comentarioCierre: '' });
     const [gobSaving, setGobSaving] = useState(false);
     const [gobError, setGobError] = useState('');
     const [personasTenant, setPersonasTenant] = useState<any[]>([]);
-
-    // Autocomplete de trabajadores para hallazgo
-    const [trabajadorSearch, setTrabajadorSearch] = useState('');
-    const [showTrabajadorDropdown, setShowTrabajadorDropdown] = useState(false);
 
     const openGobernanza = async (inc: Incident) => {
         const g = (inc as any).gobernanza || {};
@@ -195,15 +149,6 @@ export default function Incidents() {
         }
     }, [canVerHistorial, canVerEstadisticas, activeTab]);
 
-    // Precarga trabajadores al abrir el modal (hallazgo e incidente)
-    useEffect(() => {
-        if (showModal && personasTenant.length === 0) {
-            workersApi.list().then(res => {
-                if (res.success && res.data) setPersonasTenant(res.data as any[]);
-            });
-        }
-    }, [showModal]);
-
     const loadIncidents = async () => {
         if (!selectedObraId) {
             setIncidents([]);
@@ -263,343 +208,9 @@ export default function Incidents() {
         }
     };
 
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            const files = Array.from(e.target.files);
-            setUploadedFiles(prev => [...prev, ...files]);
-        }
-    };
-
-    const removeFile = (index: number) => {
-        setUploadedFiles(prev => prev.filter((_, i) => i !== index));
-    };
-
-    // AI Quick Report States
-    const [step, setStep] = useState(1);
-    const [cameraActive, setCameraActive] = useState(false);
-    const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-
-    // Dictation for description field
-    const [isDictating, setIsDictating] = useState(false);
-    const [isTranscribingDesc, setIsTranscribingDesc] = useState(false);
-    const dictationRecorderRef = useRef<MediaRecorder | null>(null);
-    const dictationChunksRef = useRef<Blob[]>([]);
-
     // Confirmación inline para calificar como accidente
     const [confirmingAccidenteId, setConfirmingAccidenteId] = useState<string | null>(null);
     const [markingAccidente, setMarkingAccidente] = useState(false);
-
-    // Multiple afectados for accion subestandar
-    const [afectados, setAfectados] = useState<Array<{ nombre: string; rut: string; cargo: string }>>([{ nombre: '', rut: '', cargo: '' }]);
-    const [afectadoSearch, setAfectadoSearch] = useState<string[]>(['']);
-    const [showAfectadoDropdown, setShowAfectadoDropdown] = useState<boolean[]>([false]);
-
-    const requestLocation = useCallback(async (options?: { force?: boolean }) => {
-        if (location && !options?.force) return location;
-        if (!navigator.geolocation) {
-            setLocationError('Tu navegador no permite obtener la ubicación automáticamente.');
-            return null;
-        }
-
-        setIsGettingLocation(true);
-        setLocationError('');
-
-        const getPosition = (opts: PositionOptions) => new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, opts);
-        });
-
-        try {
-            const baseOptions: PositionOptions = {
-                enableHighAccuracy: true,
-                timeout: 20000,
-                maximumAge: 0
-            };
-
-            const first = await getPosition(baseOptions);
-            let best = first;
-
-            // If accuracy is low (bigger number = worse), try once more to refine
-            if (typeof first.coords.accuracy === 'number' && first.coords.accuracy > 40) {
-                try {
-                    const second = await getPosition({ ...baseOptions, timeout: 25000 });
-                    if (second.coords.accuracy < first.coords.accuracy) {
-                        best = second;
-                    }
-                } catch (retryErr) {
-                    console.warn('No se pudo mejorar la precisión de GPS', retryErr);
-                }
-            }
-
-            const coords: IncidentLocation = {
-                lat: Number(best.coords.latitude.toFixed(6)),
-                lng: Number(best.coords.longitude.toFixed(6)),
-                accuracy: Math.round(best.coords.accuracy),
-                source: 'geolocalizacion',
-                timestamp: best.timestamp
-            };
-            setLocation(coords);
-            return coords;
-        } catch (err) {
-            console.error('Error obteniendo ubicación', err);
-            setLocationError('No se pudo obtener tu ubicación. Revisa permisos de GPS.');
-            return null;
-        } finally {
-            setIsGettingLocation(false);
-        }
-    }, [location]);
-
-    useEffect(() => {
-        if (showModal && step === 1 && !location && !isGettingLocation) {
-            requestLocation();
-        }
-    }, [showModal, step, location, isGettingLocation, requestLocation]);
-
-    // Keep video element in sync with the active stream so the preview renders reliably
-    useEffect(() => {
-        if (!videoRef.current) return;
-
-        if (videoStream) {
-            videoRef.current.srcObject = videoStream;
-            const playPromise = videoRef.current.play();
-            playPromise?.catch(err => console.warn('No se pudo reproducir la vista previa de la cámara', err));
-        } else {
-            videoRef.current.srcObject = null;
-        }
-    }, [videoStream]);
-
-    useEffect(() => {
-        if (!showModal) {
-            stopCamera();
-            stopRecording(); // ADDED: Ensure recording stops when modal closes
-            setFormError('');
-        }
-    }, [showModal]);
-
-    const startCamera = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' }
-            });
-            setVideoStream(stream);
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-            }
-            setCameraActive(true);
-        } catch (err) {
-            console.error('Error accessing camera:', err);
-            setFormError('No se pudo acceder a la cámara. Asegúrate de dar los permisos necesarios.');
-        }
-    };
-
-    const stopCamera = () => {
-        if (videoStream) {
-            videoStream.getTracks().forEach(track => track.stop());
-            setVideoStream(null);
-        }
-        setCameraActive(false);
-    };
-
-    const capturePhoto = () => {
-        if (videoRef.current) {
-            const canvas = document.createElement('canvas');
-            canvas.width = videoRef.current.videoWidth;
-            canvas.height = videoRef.current.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx?.drawImage(videoRef.current, 0, 0);
-
-            canvas.toBlob((blob) => {
-                if (blob) {
-                    const file = new File([blob], `incidente_${Date.now()}.jpg`, { type: 'image/jpeg' });
-                    setUploadedFiles(prev => [...prev, file]);
-                    stopCamera();
-                }
-            }, 'image/jpeg', 0.8);
-        }
-    };
-
-    const handleCloseModal = () => {
-        setShowModal(false);
-        setShowSuccess(false);
-        setStep(1);
-        resetForm();
-    };
-
-
-    const stopRecording = () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop();
-        }
-    };
-
-    const startDictation = async () => {
-        setIsDictating(true);
-        dictationChunksRef.current = [];
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mediaRecorder = new MediaRecorder(stream);
-            dictationRecorderRef.current = mediaRecorder;
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) dictationChunksRef.current.push(e.data);
-            };
-            mediaRecorder.onstop = async () => {
-                setIsDictating(false);
-                setIsTranscribingDesc(true);
-                stream.getTracks().forEach(t => t.stop());
-                const audioBlob = new Blob(dictationChunksRef.current, { type: 'audio/webm' });
-                const reader = new FileReader();
-                reader.readAsDataURL(audioBlob);
-                reader.onloadend = async () => {
-                    const base64 = (reader.result as string).split(',')[1];
-                    try {
-                        const result = await aiApi.transcribeAudio(base64, 'audio/webm');
-                        if (result.success && result.data) {
-                            setFormData(prev => ({
-                                ...prev,
-                                descripcion: prev.descripcion ? prev.descripcion + ' ' + result.data!.text : result.data!.text
-                            }));
-                        }
-                    } catch {
-                        setFormError('No se pudo transcribir el audio.');
-                    } finally {
-                        setIsTranscribingDesc(false);
-                    }
-                };
-            };
-            mediaRecorder.start();
-            setFormError('');
-        } catch {
-            setIsDictating(false);
-            setFormError('No se pudo acceder al micrófono.');
-        }
-    };
-
-    const stopDictation = () => {
-        if (dictationRecorderRef.current && dictationRecorderRef.current.state !== 'inactive') {
-            dictationRecorderRef.current.stop();
-        }
-    };
-
-
-    const uploadFiles = async (incidentId: string): Promise<string[]> => {
-        const s3Keys: string[] = [];
-
-        for (const file of uploadedFiles) {
-            try {
-                const urlResponse = await incidentsApi.uploadEvidence({
-                    archivo: file,
-                    fileName: file.name,
-                    fileType: file.type,
-                    incidentId
-                });
-
-                if (urlResponse.success && urlResponse.data) {
-                    await fetch(urlResponse.data.uploadUrl, {
-                        method: 'PUT',
-                        body: file,
-                        headers: urlResponse.data.uploadHeaders
-                    });
-
-                    s3Keys.push(urlResponse.data.s3Key);
-                }
-            } catch (error) {
-                console.error('Error subiendo archivo:', error);
-            }
-        }
-
-        return s3Keys;
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setUploading(true);
-        setFormError('');
-
-        const currentLocation = await requestLocation({ force: true });
-
-        try {
-            const esHallazgoForm = formData.clasificacion === 'hallazgo';
-            const esFlashForm = !esHallazgoForm && flashMode;
-
-            // El tipo efectivo del hallazgo sale del selector accion/condicion.
-            const tipoEfectivo = esHallazgoForm
-                ? (formData.tipoHallazgo === 'accion' ? 'accion_subestandar' : 'condicion_subestandar')
-                : formData.tipo;
-
-            const nombreCompleto = [user?.nombre, user?.apellidoPaterno, user?.apellidoMaterno].filter(Boolean).join(' ');
-            const payload: CreateIncidentData & { realizadoPor: unknown } = {
-                ...formData,
-                tipo: tipoEfectivo as CreateIncidentData['tipo'],
-                obraId: selectedObraId || undefined,
-                solicitanteId: user?.personaId,
-                reportadoPor: nombreCompleto || 'Usuario',
-                realizadoPor: {
-                    personaId: user?.personaId || null,
-                    nombre: nombreCompleto || '',
-                    rut: user?.rut || '',
-                    cargo: '',
-                },
-                // El backend persiste tenantId; empresaId se mantiene como alias legacy.
-                tenantId: (user as any)?.tenantId,
-                empresaId: (user as any)?.tenantId,
-                ubicacion: currentLocation || undefined,
-                // centroTrabajo no se captura en el formulario actual — backend lo acepta vacío
-                centroTrabajo: formData.centroTrabajo || '',
-                // Para hallazgos el trabajador es opcional; se pasa null cuando no se seleccionó
-                ...(esHallazgoForm && !formData.trabajador.nombre
-                    ? { trabajador: { nombre: '', rut: '', genero: '', cargo: '' } }
-                    : {}),
-                // Afectados de acción subestándar (múltiples, opcional)
-                ...(esHallazgoForm && formData.tipoHallazgo === 'accion'
-                    ? { afectados: afectados.filter(a => a.nombre.trim() !== '') }
-                    : {})
-            };
-
-            if (esFlashForm) {
-                const afectados = flashAfectados.filter((a) => a.nombre.trim() !== '');
-                if (afectados.length === 0) {
-                    setFormError('Indica al menos un afectado (nombre requerido).');
-                    setUploading(false);
-                    return;
-                }
-                payload.esFlash = true;
-                payload.afectados = afectados.map((a) => ({ nombre: a.nombre.trim(), rut: a.rut.trim() || null, cargo: a.cargo.trim() || null }));
-                payload.descripcionBreve = flashDescripcion.slice(0, 500);
-                payload.ubicacionReferencia = flashUbicacion;
-                // El backend completa trabajador/descripcion/centroTrabajo desde el flash.
-                payload.descripcion = payload.descripcion || flashDescripcion.slice(0, 500);
-                payload.trabajador = payload.trabajador?.nombre ? payload.trabajador : { nombre: afectados[0].nombre, rut: afectados[0].rut || '', genero: '', cargo: afectados[0].cargo || '' };
-                payload.centroTrabajo = payload.centroTrabajo || flashUbicacion || 'Por definir';
-            }
-
-            const response = await incidentsApi.create(payload);
-
-            if (response.success && response.data) {
-                if (uploadedFiles.length > 0) {
-                    const s3Keys = await uploadFiles(response.data.incidentId);
-
-                    if (s3Keys.length > 0) {
-                        await incidentsApi.update(response.data.incidentId, {
-                            evidencias: s3Keys
-                        });
-                    }
-                }
-
-                resetForm();
-                loadIncidents();
-                loadStats();
-                setShowSuccess(true);
-            } else {
-                setFormError(response.error || 'Error al reportar incidente');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            setFormError('Error de conexión con el servidor.');
-        } finally {
-            setUploading(false);
-        }
-    };
 
     const handleMarcarAccidente = async (incidentId: string) => {
         if (!user?.personaId) return;
@@ -620,43 +231,6 @@ export default function Incidents() {
             setConfirmingAccidenteId(null);
         }
     };
-
-    const resetForm = () => {
-        setFormData({
-            tipo: 'incidente',
-            centroTrabajo: '',
-            trabajador: {
-                nombre: '',
-                rut: '',
-                genero: '',
-                cargo: ''
-            },
-            descripcion: '',
-            gravedad: 'leve',
-            diasPerdidos: 0,
-            evidencias: [],
-            clasificacion: 'incidente',
-            tipoHallazgo: 'condicion',
-            etapaConstructiva: ''
-        });
-        setUploadedFiles([]);
-        setConfirmaEnvio(false);
-        setLocation(null);
-        setLocationError('');
-        setIsGettingLocation(false);
-        setFlashMode(false);
-        setFlashAfectados([{ nombre: '', rut: '', cargo: '' }]);
-        setFlashDescripcion('');
-        setFlashUbicacion('');
-        setTrabajadorSearch('');
-        setShowTrabajadorDropdown(false);
-        setAfectados([{ nombre: '', rut: '', cargo: '' }]);
-        setAfectadoSearch(['']);
-        setShowAfectadoDropdown([false]);
-        setIsDictating(false);
-        setIsTranscribingDesc(false);
-    };
-
 
     const openIncidentDetail = async (incident: Incident) => {
         setDetailError('');
@@ -693,22 +267,30 @@ export default function Incidents() {
         }
     };
 
-    const getEstadoBadge = (estado: string) => {
-        const badges: Record<string, string> = {
-            reportado: 'badge-warning',
-            en_investigacion: 'badge-info',
-            cerrado: 'badge-secondary'
-        };
-        return badges[estado] || 'badge-secondary';
+    // Estado y cierre son flujos de trabajo (no un semáforo bueno/malo): un
+    // punto de acento para "recién llegado", un aro para "en curso" y un
+    // check neutro para "resuelto" — mismo lenguaje en ambos casos.
+    const renderEstadoBadge = (estado: string) => {
+        if (estado === 'cerrado') return <span className="badge badge-neutral"><FiCheckCircle size={11} /> Cerrado</span>;
+        if (estado === 'en_investigacion') return <span className="badge badge-secondary"><FiClock size={11} /> En investigación</span>;
+        return <span className="badge badge-accent"><FiCircle size={10} /> Reportado</span>;
     };
 
-    const getGravedadBadge = (gravedad: string) => {
-        const badges: Record<string, string> = {
-            leve: 'badge-success',
-            grave: 'badge-warning',
-            fatal: 'badge-danger'
-        };
-        return badges[gravedad] || 'badge-secondary';
+    const renderCierreBadge = (estadoCierre: string) => {
+        if (estadoCierre === 'cerrado') return <span className="badge badge-neutral"><FiCheckCircle size={11} /> Cerrado</span>;
+        if (estadoCierre === 'en_proceso') return <span className="badge badge-secondary"><FiClock size={11} /> En proceso</span>;
+        return <span className="badge badge-accent"><FiCircle size={10} /> Abierto</span>;
+    };
+
+    // Gravedad SÍ es una escala de riesgo real, pero se evita el semáforo
+    // verde/ámbar/rojo: leve queda neutro, grave usa el único acento de
+    // alerta que ya existe en el resto de la app (--danger-alerta, el mismo
+    // de "Dar de baja" en Personas) y el rojo de marca queda reservado solo
+    // para fatal.
+    const renderGravedadBadge = (gravedad: string) => {
+        if (gravedad === 'fatal') return <span className="badge inc-badge-critico"><FiAlertCircle size={11} /> Fatal</span>;
+        if (gravedad === 'grave') return <span className="badge inc-badge-alerta"><FiAlertTriangle size={11} /> Grave</span>;
+        return <span className="badge badge-neutral"><FiCircle size={10} /> Leve</span>;
     };
 
 
@@ -993,7 +575,7 @@ export default function Incidents() {
                             <button
                                 className="btn btn-secondary"
                                 disabled={!selectedObraId}
-                                onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'hallazgo' })); setFlashMode(false); setStep(1); setShowModal(true); }}
+                                onClick={() => navigate('/incidents/reportar', { state: { clasificacion: 'hallazgo' } })}
                             >
                                 <FiPlus /> Reportar hallazgo
                             </button>
@@ -1001,7 +583,7 @@ export default function Incidents() {
                                 <button
                                     className="btn btn-primary"
                                     disabled={!selectedObraId}
-                                    onClick={() => { setFormData((prev) => ({ ...prev, clasificacion: 'incidente' })); setStep(1); setShowModal(true); }}
+                                    onClick={() => navigate('/incidents/reportar', { state: { clasificacion: 'incidente' } })}
                                 >
                                     <FiPlus /> Reportar incidente
                                 </button>
@@ -1038,12 +620,13 @@ export default function Incidents() {
 
                 {/* Statistics Dashboard Tab */}
                 {activeTab === 'estadisticas' && canVerEstadisticas && (() => {
+                    if (loading) return <IncidentesStatsSkeleton />;
                     const hallazgosCount = incidents.filter(esHallazgo).length;
                     const accidentesCount = incidents.filter(i => i.tipo === 'accidente').length;
                     const incidentesCount = incidents.filter(i => !esHallazgo(i) && i.tipo === 'incidente').length;
                     const total = incidents.length;
                     const tasaCorregida = total > 0 ? (accidentesCount / total * 100) : 0;
-                    const hallazgosCerrados = incidents.filter(i => esHallazgo(i) && (i as any).gobernanza?.estadoCierre === 'cerrado').length;
+                    const hallazgosCerrados = incidents.filter(i => esHallazgo(i) && incidenteCerrado(i)).length;
                     const pctCerrados = hallazgosCount > 0 ? (hallazgosCerrados / hallazgosCount * 100) : 0;
                     const indiceProactivo = total > 0 ? (hallazgosCount / total * 100) : 0;
 
@@ -1094,19 +677,14 @@ export default function Incidents() {
                                 </div>
                             </div>
 
-                            {/* 4 key metrics */}
+                            {/* 4 métricas clave — un solo acento (azul) para la que resume el
+                                riesgo del período; el resto queda neutro, sin colorear cada
+                                tarjeta por categoría. */}
                             <div className="stats-grid-4 mb-4">
-                                {([
-                                    { label: 'Hallazgos', value: hallazgosCount },
-                                    { label: 'Incidentes', value: incidentesCount },
-                                    { label: 'Accidentes', value: accidentesCount },
-                                    { label: 'Tasa de accidentabilidad', value: `${tasaCorregida.toFixed(1)}%` },
-                                ] as { label: string; value: string | number }[]).map(({ label, value }) => (
-                                    <div key={label} className="stat-card" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-2)' }}>
-                                        <div className="stat-card-label">{label}</div>
-                                        <div className="stat-card-value" style={{ fontSize: '1.875rem', color: 'var(--primary-400)' }}>{value}</div>
-                                    </div>
-                                ))}
+                                <StatCard icon={<FiShield size={20} />} value={hallazgosCount} label="Hallazgos" color="var(--gray-600)" />
+                                <StatCard icon={<FiZap size={20} />} value={incidentesCount} label="Incidentes" color="var(--gray-600)" />
+                                <StatCard icon={<FiAlertCircle size={20} />} value={accidentesCount} label="Accidentes" color="var(--gray-600)" />
+                                <StatCard icon={<FiTrendingUp size={20} />} value={`${tasaCorregida.toFixed(1)}%`} label="Tasa de accidentabilidad" color="var(--primary-600)" />
                             </div>
 
                             {/* 2 proportion metrics */}
@@ -1145,9 +723,9 @@ export default function Incidents() {
                                                 const aH = (m.accidentes / maxTrend) * chartH;
                                                 return (
                                                     <g key={i}>
-                                                        {m.hallazgos > 0 && <rect x={x} y={chartBottom - hH} width={barW} height={hH} rx={2} fill="rgba(0,110,220,0.22)" />}
-                                                        {m.incidentes > 0 && <rect x={x} y={chartBottom - hH - iH} width={barW} height={iH} rx={2} fill="#006edc" />}
-                                                        {m.accidentes > 0 && <rect x={x} y={chartBottom - hH - iH - aH} width={barW} height={aH} rx={2} fill="#002952" />}
+                                                        {m.hallazgos > 0 && <rect x={x} y={chartBottom - hH} width={barW} height={hH} rx={2} fill="var(--accent-tint)" />}
+                                                        {m.incidentes > 0 && <rect x={x} y={chartBottom - hH - iH} width={barW} height={iH} rx={2} fill="var(--primary-500)" />}
+                                                        {m.accidentes > 0 && <rect x={x} y={chartBottom - hH - iH - aH} width={barW} height={aH} rx={2} fill="var(--primary-800)" />}
                                                         <text x={x + barW / 2} y={144} fontSize="9" textAnchor="middle" fill="var(--text-muted)">{m.label}</text>
                                                     </g>
                                                 );
@@ -1155,9 +733,9 @@ export default function Incidents() {
                                         </svg>
                                         <div style={{ display: 'flex', gap: 'var(--space-5)', justifyContent: 'center', paddingBottom: 'var(--space-2)' }}>
                                             {[
-                                                { color: 'rgba(0,110,220,0.22)', border: '1px solid #006edc', label: 'Hallazgos' },
-                                                { color: '#006edc', border: 'none', label: 'Incidentes' },
-                                                { color: '#002952', border: 'none', label: 'Accidentes' },
+                                                { color: 'var(--accent-tint)', border: '1px solid var(--primary-500)', label: 'Hallazgos' },
+                                                { color: 'var(--primary-500)', border: 'none', label: 'Incidentes' },
+                                                { color: 'var(--primary-800)', border: 'none', label: 'Accidentes' },
                                             ].map(l => (
                                                 <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                                                     <div style={{ width: 10, height: 10, background: l.color, border: l.border, borderRadius: 2, flexShrink: 0 }} />
@@ -1202,22 +780,35 @@ export default function Incidents() {
                                             <FiAlertTriangle /> Gravedad
                                         </h3>
                                     </div>
-                                    <div className="chart-container bar-chart-container">
-                                        <div className="horizontal-bars">
-                                            {[
-                                                { label: 'Leve', count: incidents.filter(i => i.gravedad === 'leve').length },
-                                                { label: 'Grave', count: incidents.filter(i => i.gravedad === 'grave').length },
-                                                { label: 'Fatal', count: incidents.filter(i => i.gravedad === 'fatal').length },
-                                            ].map((row, i) => (
-                                                <div key={i} className="h-bar-group">
-                                                    <div className="h-bar-label">{row.label}</div>
-                                                    <div className="h-bar-track">
-                                                        <div className="h-bar-fill" style={{ width: `${(row.count / gravedadTotal) * 100}%`, background: 'var(--primary-500)' }} />
+                                    {/* Dona con una sola rampa: neutro (leve) → acento de alerta
+                                        (grave) → rojo de marca reservado solo para fatal. Reemplaza
+                                        las barras verde/ámbar/rojo que traía esta tarjeta. */}
+                                    <div className="chart-container" style={{ height: 'auto', padding: 'var(--space-4)' }}>
+                                        {(() => {
+                                            const leveN = incidents.filter(i => i.gravedad === 'leve').length;
+                                            const graveN = incidents.filter(i => i.gravedad === 'grave').length;
+                                            const fatalN = incidents.filter(i => i.gravedad === 'fatal').length;
+                                            const pLeve = (leveN / gravedadTotal) * 100;
+                                            const pGrave = (graveN / gravedadTotal) * 100;
+                                            return (
+                                                <div className="inc-gravedad-row">
+                                                    <div
+                                                        className="inc-gravedad-donut"
+                                                        style={{ background: `conic-gradient(var(--surface-hover) 0% ${pLeve}%, var(--danger-alerta) ${pLeve}% ${pLeve + pGrave}%, var(--cchc-red) ${pLeve + pGrave}% 100%)` }}
+                                                    >
+                                                        <div className="inc-gravedad-hole">
+                                                            <span className="inc-gravedad-total">{leveN + graveN + fatalN}</span>
+                                                            <span className="inc-gravedad-total-label">total</span>
+                                                        </div>
                                                     </div>
-                                                    <span className="h-bar-value">{row.count}</span>
+                                                    <div className="inc-gravedad-legend">
+                                                        <div><span className="inc-gravedad-dot" style={{ background: 'var(--surface-hover)' }} />Leve<b>{leveN}</b></div>
+                                                        <div><span className="inc-gravedad-dot" style={{ background: 'var(--danger-alerta)' }} />Grave<b>{graveN}</b></div>
+                                                        <div><span className="inc-gravedad-dot" style={{ background: 'var(--cchc-red)' }} />Fatal<b>{fatalN}</b></div>
+                                                    </div>
                                                 </div>
-                                            ))}
-                                        </div>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
 
@@ -1276,669 +867,119 @@ export default function Incidents() {
                 })()}
 
                 {/* Listado Tab Content */}
-                {activeTab === 'listado' && canVerHistorial && (
-                    <>
-                        {/* Incidents Table */}
+                {activeTab === 'listado' && canVerHistorial && (() => {
+                    const base = incidents.filter((i) => listTab === 'hallazgos' ? esHallazgo(i) : !esHallazgo(i));
+                    const filtered = base.filter((i) => {
+                        if (listSearch && !(i.descripcion || '').toLowerCase().includes(listSearch.toLowerCase())) return false;
+                        if (filtroGravedad && i.gravedad !== filtroGravedad) return false;
+                        if (filtroCierre === 'abierto' && incidenteCerrado(i)) return false;
+                        if (filtroCierre === 'cerrado' && !incidenteCerrado(i)) return false;
+                        if (filtroEtapa && (i as any).etapaConstructiva !== filtroEtapa) return false;
+                        return true;
+                    });
+                    const abiertos = base.filter((i) => !incidenteCerrado(i)).length;
+                    const cerrados = base.length - abiertos;
+
+                    return (
                         <div className="card">
-                            {/* Separacion hallazgos / incidentes (reunion 2026-06-10) */}
-                            <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
-                                <button
-                                    type="button"
-                                    className={`btn btn-sm ${listTab === 'hallazgos' ? 'btn-primary' : 'btn-secondary'}`}
-                                    onClick={() => setListTab('hallazgos')}
-                                >
-                                    Hallazgos ({incidents.filter(esHallazgo).length})
-                                </button>
-                                <button
-                                    type="button"
-                                    className={`btn btn-sm ${listTab === 'incidentes' ? 'btn-primary' : 'btn-secondary'}`}
-                                    onClick={() => setListTab('incidentes')}
-                                >
-                                    Incidentes ({incidents.filter((i) => !esHallazgo(i)).length})
-                                </button>
+                            {/* Segmentado hallazgos/incidentes + buscador + filtros (reunion
+                                2026-06-10): antes eran dos botones sueltos sin buscador. */}
+                            <div className="inc-toolbar">
+                                <SegmentedControl
+                                    ariaLabel="Tipo"
+                                    fullWidth={false}
+                                    value={listTab}
+                                    onChange={(v) => setListTab(v as 'hallazgos' | 'incidentes')}
+                                    options={[
+                                        { value: 'hallazgos', label: `Hallazgos (${incidents.filter(esHallazgo).length})` },
+                                        { value: 'incidentes', label: `Incidentes (${incidents.filter((i) => !esHallazgo(i)).length})` },
+                                    ]}
+                                />
+                                <SearchInput value={listSearch} onChange={setListSearch} placeholder="Buscar por descripción…" maxWidth="260px" />
+                                <Select ariaLabel="Gravedad" value={filtroGravedad} onChange={setFiltroGravedad}
+                                    placeholder="Gravedad: Todas"
+                                    options={[
+                                        { value: '', label: 'Gravedad: Todas' },
+                                        { value: 'leve', label: 'Leve' },
+                                        { value: 'grave', label: 'Grave' },
+                                        { value: 'fatal', label: 'Fatal' },
+                                    ]}
+                                />
+                                <Select ariaLabel="Cierre" value={filtroCierre} onChange={setFiltroCierre}
+                                    placeholder="Cierre: Todos"
+                                    options={[
+                                        { value: '', label: 'Cierre: Todos' },
+                                        { value: 'abierto', label: 'Abiertos' },
+                                        { value: 'cerrado', label: 'Cerrados' },
+                                    ]}
+                                />
+                                <Select ariaLabel="Etapa constructiva" value={filtroEtapa} onChange={setFiltroEtapa}
+                                    placeholder="Etapa: Todas" searchable
+                                    options={[{ value: '', label: 'Etapa: Todas' }, ...ETAPAS_CONSTRUCTIVAS.map((e) => ({ value: e, label: e }))]}
+                                />
+                                <span className="inc-toolbar-count">{abiertos} abiertos · {cerrados} cerrados</span>
                             </div>
 
                             <div className="incident-list">
                                 {loading ? (
-                                    <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}>
-                                        <div className="spinner" />
-                                    </div>
-                                ) : incidents.filter((i) => listTab === 'hallazgos' ? esHallazgo(i) : !esHallazgo(i)).length === 0 ? (
+                                    <IncidentesSkeleton />
+                                ) : filtered.length === 0 ? (
                                     <div style={{ padding: 'var(--space-10)', textAlign: 'center', color: 'var(--text-muted)' }}>
                                         <FiAlertTriangle size={36} style={{ margin: '0 auto var(--space-3)', opacity: 0.25, display: 'block' }} />
                                         <p style={{ fontWeight: 500, marginBottom: 'var(--space-1)' }}>{listTab === 'hallazgos' ? 'Sin hallazgos registrados' : 'Sin incidentes registrados'}</p>
-                                        <p style={{ fontSize: 'var(--text-sm)' }}>{listTab === 'hallazgos' ? 'Cualquier trabajador puede reportar un hallazgo' : 'Los incidentes reportados aparecerán aquí'}</p>
+                                        <p style={{ fontSize: 'var(--text-sm)' }}>{base.length > 0 ? 'Ningún registro coincide con los filtros.' : listTab === 'hallazgos' ? 'Cualquier trabajador puede reportar un hallazgo' : 'Los incidentes reportados aparecerán aquí'}</p>
                                     </div>
                                 ) : (
-                                    incidents.filter((i) => listTab === 'hallazgos' ? esHallazgo(i) : !esHallazgo(i)).map((incident) => (
-                                        <div
-                                            key={incident.incidentId}
-                                            className="incident-row"
-                                            onClick={() => openIncidentDetail(incident)}
-                                            role="button"
-                                            tabIndex={0}
-                                            onKeyDown={(e) => e.key === 'Enter' && openIncidentDetail(incident)}
-                                        >
-                                            <div className="incident-row-meta">
-                                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                                                    {new Date(incident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    filtered.map((incident) => {
+                                        const gravedad = incident.gravedad;
+                                        const tintClass = gravedad === 'fatal' ? 'inc-icon-critico' : gravedad === 'grave' ? 'inc-icon-alerta' : 'inc-icon-neutro';
+                                        return (
+                                            <div
+                                                key={incident.incidentId}
+                                                className="incident-row"
+                                                onClick={() => openIncidentDetail(incident)}
+                                                role="button"
+                                                tabIndex={0}
+                                                onKeyDown={(e) => e.key === 'Enter' && openIncidentDetail(incident)}
+                                            >
+                                                <span className={`incident-row-icon ${tintClass}`}>
+                                                    {esHallazgo(incident) ? <FiShield size={17} /> : <FiZap size={17} />}
                                                 </span>
-                                                {isNewIncident(incident) && (
-                                                    <span className="badge badge-success" style={{ fontSize: '10px', marginTop: '4px', display: 'block', width: 'fit-content' }}>Nuevo</span>
-                                                )}
+                                                <div className="incident-row-body">
+                                                    <div className="incident-row-eyebrow">
+                                                        {getTipoLabel(incident.tipo)}
+                                                        {(incident as any).etapaConstructiva && <><span className="dot">·</span>{(incident as any).etapaConstructiva}</>}
+                                                        {isNewIncident(incident) && <span className="badge badge-accent inc-nuevo-pill">Nuevo</span>}
+                                                    </div>
+                                                    <p className="incident-row-desc">
+                                                        {incident.descripcion || 'Sin descripción registrada'}
+                                                    </p>
+                                                    <div className="incident-row-meta">
+                                                        {/* reportadoPor puede venir como ID de persona: se muestra
+                                                            solo un nombre legible, o se omite. */}
+                                                        {((incident as any).realizadoPor?.nombre || incident.trabajadorNombre) && (
+                                                            <><span>{(incident as any).realizadoPor?.nombre || incident.trabajadorNombre}</span><span className="dot">·</span></>
+                                                        )}
+                                                        <span>{new Date(incident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                                        {incident.evidencias?.length > 0 && (
+                                                            <><span className="dot">·</span><span><FiImage size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />{incident.evidencias.length} foto{incident.evidencias.length !== 1 ? 's' : ''}</span></>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="incident-row-status">
+                                                    {esHallazgo(incident)
+                                                        ? renderCierreBadge((incident as any).gobernanza?.estadoCierre || 'abierto')
+                                                        : renderEstadoBadge(incident.estado)}
+                                                    {renderGravedadBadge(incident.gravedad)}
+                                                </div>
                                             </div>
-                                            <div className="incident-row-desc">
-                                                <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: incident.descripcion ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: incident.descripcion ? 'normal' : 'italic', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.55 }}>
-                                                    {incident.descripcion || 'Sin descripción registrada'}
-                                                </p>
-                                            </div>
-                                            <div className="incident-row-status">
-                                                {esHallazgo(incident) && (incident as any).gobernanza ? (
-                                                    <span className={`badge ${(incident as any).gobernanza.estadoCierre === 'cerrado' ? 'badge-success' : (incident as any).gobernanza.estadoCierre === 'en_proceso' ? 'badge-info' : 'badge-warning'}`} style={{ fontSize: '10px' }}>
-                                                        {String((incident as any).gobernanza.estadoCierre || 'abierto').replace('_', ' ')}
-                                                    </span>
-                                                ) : (
-                                                    <span className={`badge ${getEstadoBadge(incident.estado)}`} style={{ fontSize: '10px' }}>
-                                                        {incident.estado.replace('_', ' ')}
-                                                    </span>
-                                                )}
-                                                <FiArrowRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: '4px' }} />
-                                            </div>
-                                        </div>
-                                    ))
+                                        );
+                                    })
                                 )}
                             </div>
                         </div>
-                    </>
-                )}
-
-                {/* Create Modal */}
-                <Modal
-                    isOpen={showModal}
-                    onClose={handleCloseModal}
-                    title={showSuccess ? '¡Reporte Enviado!' : formData.clasificacion === 'hallazgo' ? 'Reportar Hallazgo' : 'Reportar Incidente'}
-                    subtitle={showSuccess
-                        ? 'El incidente ha sido registrado y notificado correctamente'
-                        : formData.clasificacion === 'hallazgo'
-                            ? 'Completa la información del hallazgo observado'
-                            : 'Completa la información del incidente ocurrido'
-                    }
-                    icon={<FiAlertTriangle size={24} />}
-                    size="xl"
-                    preventClose={uploading}
-                >
-                    <div className="modal-body p-0">
-                                {showSuccess ? (
-                                    <div className="success-modal-body p-12 text-center">
-                                        <div className="success-animation-container mb-8">
-                                            <div className="success-pulse"></div>
-                                            <div className="success-icon-wrapper">
-                                                <FiCheck size={48} className="text-white" />
-                                            </div>
-                                        </div>
-                                        <h3 className="text-2xl font-bold mb-4">Registro Exitoso</h3>
-                                        <p className="text-muted mb-8 max-w-sm mx-auto" style={{ marginBottom: 'var(--space-12)' }}>
-                                            El reporte ha sido ingresado al sistema. El prevencionista a cargo recibirá una notificación inmediata para su revisión.
-                                        </p>
-                                        <button
-                                            className="btn btn-primary btn-lg px-12 mt-8"
-                                            onClick={handleCloseModal}
-                                            style={{ marginTop: 'var(--space-10)' }}
-                                        >
-                                            Entendido
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <form onSubmit={handleSubmit} className="p-6">
-                                        {/* Sección: Clasificación del Reporte */}
-                                        <div className="form-section">
-                                            <h3 className="form-section-title">
-                                                {formData.clasificacion === 'hallazgo' ? 'Tipo de Hallazgo' : 'Detalles del Incidente'}
-                                            </h3>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                {formData.clasificacion === 'hallazgo' && (
-                                                    <div className="form-group">
-                                                        <label className="form-label">Tipo de Hallazgo *</label>
-                                                        <Select
-                                                            ariaLabel="Tipo de hallazgo"
-                                                            value={formData.tipoHallazgo}
-                                                            onChange={(v) => setFormData({ ...formData, tipoHallazgo: v as any })}
-                                                            options={[
-                                                                { value: 'accion', label: 'Acción Subestándar' },
-                                                                { value: 'condicion', label: 'Condición Subestándar' },
-                                                            ]}
-                                                        />
-                                                        <span className="form-hint">Acción: comportamiento inseguro. Condición: estado físico peligroso.</span>
-                                                    </div>
-                                                )}
-
-                                                <div className="form-group">
-                                                    <label className="form-label">Etapa Constructiva</label>
-                                                    <Select
-                                                        ariaLabel="Etapa constructiva"
-                                                        placeholder="Seleccionar etapa…"
-                                                        searchable
-                                                        value={formData.etapaConstructiva}
-                                                        onChange={(v) => setFormData({ ...formData, etapaConstructiva: v })}
-                                                        options={ETAPAS_CONSTRUCTIVAS.map((etapa) => ({ value: etapa, label: etapa }))}
-                                                    />
-                                                </div>
-
-                                                {formData.clasificacion === 'incidente' && (
-                                                    <div className="form-group">
-                                                        <label className="form-label">Gravedad *</label>
-                                                        <Select
-                                                            ariaLabel="Gravedad"
-                                                            value={formData.gravedad}
-                                                            onChange={(v) => setFormData({ ...formData, gravedad: v as any })}
-                                                            options={[
-                                                                { value: 'leve', label: 'Leve' },
-                                                                { value: 'grave', label: 'Grave' },
-                                                                { value: 'fatal', label: 'Fatal' },
-                                                            ]}
-                                                        />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Sección: Trabajador Afectado (solo incidente) */}
-                                        {formData.clasificacion === 'incidente' && (
-                                        <div className="form-section">
-                                            <h3 className="form-section-title">Trabajador Afectado</h3>
-                                            <div className="form-group">
-                                                <label className="form-label">Buscar trabajador</label>
-                                                <div style={{ position: 'relative' }}>
-                                                    <input
-                                                        type="text"
-                                                        className="form-input"
-                                                        placeholder="Escribe nombre o RUT…"
-                                                        value={trabajadorSearch}
-                                                        autoComplete="off"
-                                                        onChange={(e) => {
-                                                            setTrabajadorSearch(e.target.value);
-                                                            setShowTrabajadorDropdown(true);
-                                                            if (!e.target.value) setFormData({ ...formData, trabajador: { nombre: '', rut: '', genero: '', cargo: '' } });
-                                                        }}
-                                                        onFocus={() => setShowTrabajadorDropdown(true)}
-                                                        onBlur={() => setTimeout(() => setShowTrabajadorDropdown(false), 150)}
-                                                    />
-                                                    {showTrabajadorDropdown && trabajadorSearch.length > 0 && (() => {
-                                                        const q = trabajadorSearch.toLowerCase();
-                                                        const filtered = personasTenant.filter(p => {
-                                                            const fullName = `${p.nombre || ''} ${p.apellido || ''}`.toLowerCase();
-                                                            return fullName.includes(q) || (p.rut && p.rut.toLowerCase().includes(q));
-                                                        });
-                                                        return (
-                                                            <div style={{
-                                                                position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
-                                                                zIndex: 60, background: 'var(--surface-card)',
-                                                                border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)',
-                                                                boxShadow: 'var(--shadow-xl)', maxHeight: '220px', overflowY: 'auto'
-                                                            }}>
-                                                                {filtered.length === 0 ? (
-                                                                    <div style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-                                                                        No se encontraron trabajadores
-                                                                    </div>
-                                                                ) : filtered.map((p: any) => (
-                                                                    <button
-                                                                        key={p.personaId || p.workerId}
-                                                                        type="button"
-                                                                        style={{
-                                                                            width: '100%', display: 'flex', flexDirection: 'column',
-                                                                            padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--surface-border)',
-                                                                            background: 'transparent', cursor: 'pointer', textAlign: 'left'
-                                                                        }}
-                                                                        onMouseDown={() => {
-                                                                            const nombre = `${p.nombre || ''} ${p.apellido || ''}`.trim();
-                                                                            setTrabajadorSearch(nombre);
-                                                                            setShowTrabajadorDropdown(false);
-                                                                            setFormData({
-                                                                                ...formData,
-                                                                                trabajador: {
-                                                                                    nombre,
-                                                                                    rut: p.rut || '',
-                                                                                    genero: p.genero || '',
-                                                                                    cargo: p.cargo || p.puesto || ''
-                                                                                }
-                                                                            });
-                                                                        }}
-                                                                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-hover)')}
-                                                                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                                                                    >
-                                                                        <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
-                                                                            {p.nombre} {p.apellido || ''}
-                                                                        </span>
-                                                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                                                                            {p.rut}{p.cargo ? ` · ${p.cargo}` : p.puesto ? ` · ${p.puesto}` : ''}
-                                                                        </span>
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </div>
-                                                {formData.trabajador.nombre && (
-                                                    <p className="form-hint" style={{ color: 'var(--primary-400)', marginTop: 'var(--space-2)' }}>
-                                                        <FiCheck style={{ display: 'inline', marginRight: '4px' }} />
-                                                        {formData.trabajador.nombre}{formData.trabajador.rut ? ` — ${formData.trabajador.rut}` : ''}{formData.trabajador.cargo ? ` · ${formData.trabajador.cargo}` : ''}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-                                        )}
-
-                                        {/* Sección: Afectados (solo hallazgo tipo acción subestándar, opcional, múltiple) */}
-                                        {formData.clasificacion === 'hallazgo' && formData.tipoHallazgo === 'accion' && (
-                                        <div className="form-section">
-                                            <h3 className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                                Trabajador(es) Afectado(s)
-                                                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 400, color: 'var(--text-muted)' }}>(opcional)</span>
-                                            </h3>
-                                            {afectados.map((afectado, idx) => (
-                                                <div key={idx} style={{ marginBottom: 'var(--space-3)' }}>
-                                                    <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start' }}>
-                                                        <div style={{ position: 'relative', flex: 1 }}>
-                                                            <input
-                                                                type="text"
-                                                                className="form-input"
-                                                                placeholder="Buscar por nombre o RUT…"
-                                                                value={afectadoSearch[idx] ?? ''}
-                                                                autoComplete="off"
-                                                                onChange={(e) => {
-                                                                    const next = [...afectadoSearch];
-                                                                    next[idx] = e.target.value;
-                                                                    setAfectadoSearch(next);
-                                                                    const nextDrop = [...showAfectadoDropdown];
-                                                                    nextDrop[idx] = true;
-                                                                    setShowAfectadoDropdown(nextDrop);
-                                                                    if (!e.target.value) {
-                                                                        setAfectados(afectados.map((a, i) => i === idx ? { nombre: '', rut: '', cargo: '' } : a));
-                                                                    }
-                                                                }}
-                                                                onFocus={() => {
-                                                                    const nextDrop = [...showAfectadoDropdown];
-                                                                    nextDrop[idx] = true;
-                                                                    setShowAfectadoDropdown(nextDrop);
-                                                                }}
-                                                                onBlur={() => setTimeout(() => {
-                                                                    const nextDrop = [...showAfectadoDropdown];
-                                                                    nextDrop[idx] = false;
-                                                                    setShowAfectadoDropdown(nextDrop);
-                                                                }, 150)}
-                                                            />
-                                                            {showAfectadoDropdown[idx] && (afectadoSearch[idx] ?? '').length > 0 && (() => {
-                                                                const q = (afectadoSearch[idx] ?? '').toLowerCase();
-                                                                const filtered = personasTenant.filter(p => {
-                                                                    const fullName = `${p.nombre || ''} ${p.apellido || ''}`.toLowerCase();
-                                                                    return fullName.includes(q) || (p.rut && p.rut.toLowerCase().includes(q));
-                                                                });
-                                                                return (
-                                                                    <div style={{
-                                                                        position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
-                                                                        zIndex: 60, background: 'var(--surface-card)',
-                                                                        border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)',
-                                                                        boxShadow: 'var(--shadow-xl)', maxHeight: '200px', overflowY: 'auto'
-                                                                    }}>
-                                                                        {filtered.length === 0 ? (
-                                                                            <div style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-                                                                                No se encontraron trabajadores
-                                                                            </div>
-                                                                        ) : filtered.map((p: any) => (
-                                                                            <button
-                                                                                key={p.personaId || p.workerId}
-                                                                                type="button"
-                                                                                style={{
-                                                                                    width: '100%', display: 'flex', flexDirection: 'column',
-                                                                                    padding: '10px 14px', border: 'none', borderBottom: '1px solid var(--surface-border)',
-                                                                                    background: 'transparent', cursor: 'pointer', textAlign: 'left'
-                                                                                }}
-                                                                                onMouseDown={() => {
-                                                                                    const nombre = `${p.nombre || ''} ${p.apellido || ''}`.trim();
-                                                                                    const next = [...afectadoSearch];
-                                                                                    next[idx] = nombre;
-                                                                                    setAfectadoSearch(next);
-                                                                                    const nextDrop = [...showAfectadoDropdown];
-                                                                                    nextDrop[idx] = false;
-                                                                                    setShowAfectadoDropdown(nextDrop);
-                                                                                    setAfectados(afectados.map((a, i) => i === idx ? {
-                                                                                        nombre,
-                                                                                        rut: p.rut || '',
-                                                                                        cargo: p.cargo || p.puesto || ''
-                                                                                    } : a));
-                                                                                }}
-                                                                                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-hover)')}
-                                                                                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                                                                            >
-                                                                                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
-                                                                                    {p.nombre} {p.apellido || ''}
-                                                                                </span>
-                                                                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                                                                                    {p.rut}{p.cargo ? ` · ${p.cargo}` : p.puesto ? ` · ${p.puesto}` : ''}
-                                                                                </span>
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                        {afectados.length > 1 && (
-                                                            <button
-                                                                type="button"
-                                                                style={{
-                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                    width: '36px', height: '36px', flexShrink: 0,
-                                                                    border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)',
-                                                                    background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer'
-                                                                }}
-                                                                onClick={() => {
-                                                                    setAfectados(afectados.filter((_, i) => i !== idx));
-                                                                    setAfectadoSearch(afectadoSearch.filter((_, i) => i !== idx));
-                                                                    setShowAfectadoDropdown(showAfectadoDropdown.filter((_, i) => i !== idx));
-                                                                }}
-                                                            >
-                                                                <FiX size={14} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    {afectado.nombre && (
-                                                        <p style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-sm)', color: 'var(--primary-400)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                            <FiCheck size={13} />
-                                                            {afectado.nombre}{afectado.rut ? ` — ${afectado.rut}` : ''}{afectado.cargo ? ` · ${afectado.cargo}` : ''}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            ))}
-                                            <button
-                                                type="button"
-                                                className="btn btn-secondary btn-sm"
-                                                onClick={() => {
-                                                    setAfectados([...afectados, { nombre: '', rut: '', cargo: '' }]);
-                                                    setAfectadoSearch([...afectadoSearch, '']);
-                                                    setShowAfectadoDropdown([...showAfectadoDropdown, false]);
-                                                }}
-                                            >
-                                                <FiPlus size={14} style={{ marginRight: '4px' }} /> Agregar afectado
-                                            </button>
-                                        </div>
-                                        )}
-
-                                        {/* Sección: Descripción */}
-                                        <div className="form-section">
-                                            <h3 className="form-section-title">
-                                                {formData.clasificacion === 'hallazgo' ? 'Descripción del Hallazgo' : 'Descripción del Incidente'}
-                                            </h3>
-                                            <div className="form-group">
-                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-                                                    <label className="form-label" style={{ margin: 0 }}>Detalle *</label>
-                                                    <button
-                                                        type="button"
-                                                        title={isDictating ? 'Detener grabación' : isTranscribingDesc ? 'Transcribiendo…' : 'Dictar descripción con voz'}
-                                                        onClick={isDictating ? stopDictation : startDictation}
-                                                        disabled={isTranscribingDesc}
-                                                        style={{
-                                                            display: 'inline-flex', alignItems: 'center', gap: '7px',
-                                                            padding: '6px 14px', minHeight: '36px',
-                                                            borderRadius: 'var(--radius-full)',
-                                                            border: `1.5px solid ${isDictating ? 'var(--danger-500)' : isTranscribingDesc ? 'var(--primary-500)' : 'var(--surface-border)'}`,
-                                                            background: isDictating ? 'rgba(244,67,54,0.10)' : isTranscribingDesc ? 'rgba(0,110,220,0.10)' : 'var(--surface-hover)',
-                                                            color: isDictating ? 'var(--danger-400)' : isTranscribingDesc ? 'var(--primary-400)' : 'var(--text-secondary)',
-                                                            cursor: isTranscribingDesc ? 'not-allowed' : 'pointer',
-                                                            fontSize: 'var(--text-sm)', fontWeight: 500,
-                                                            transition: 'all var(--transition-fast)',
-                                                            flexShrink: 0,
-                                                        }}
-                                                    >
-                                                        {isTranscribingDesc ? (
-                                                            <>
-                                                                <FiRefreshCw size={14} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
-                                                                Transcribiendo…
-                                                            </>
-                                                        ) : isDictating ? (
-                                                            <>
-                                                                <span style={{
-                                                                    width: 9, height: 9, borderRadius: '50%',
-                                                                    background: 'var(--danger-500)',
-                                                                    display: 'inline-block', flexShrink: 0,
-                                                                    animation: 'pulse-badge 1s ease-in-out infinite'
-                                                                }} />
-                                                                Grabando · Detener
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <FiMic size={14} />
-                                                                Dictar
-                                                            </>
-                                                        )}
-                                                    </button>
-                                                </div>
-                                                <textarea
-                                                    className="form-input"
-                                                    rows={5}
-                                                    placeholder={formData.clasificacion === 'hallazgo'
-                                                        ? 'Describa el hallazgo observado: condición o acción detectada, lugar exacto, posibles riesgos asociados…'
-                                                        : 'Describa con detalle lo ocurrido, incluyendo circunstancias, lugar exacto, hora aproximada y cualquier información relevante…'}
-                                                    value={formData.descripcion}
-                                                    onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-                                                    required
-                                                />
-                                                <span className="form-hint">
-                                                    {formData.clasificacion === 'hallazgo'
-                                                        ? 'Incluya toda la información que permita verificar y gestionar el hallazgo'
-                                                        : 'Sea lo más específico posible para facilitar la investigación'}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {/* Sección: Evidencias */}
-                                        <div className="form-section">
-                                            <h3 className="form-section-title">Evidencias Fotográficas</h3>
-                                            <div className="form-group">
-                                                <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch', marginBottom: (uploadedFiles.length > 0 || cameraActive) ? 'var(--space-3)' : 0 }}>
-                                                    <div className="upload-zone" style={{ flex: 1 }}>
-                                                        <input
-                                                            type="file"
-                                                            id="file-upload"
-                                                            className="hidden"
-                                                            multiple
-                                                            accept="image/*"
-                                                            onChange={handleFileSelect}
-                                                        />
-                                                        <label htmlFor="file-upload" className="upload-label">
-                                                            <FiUpload size={24} className="text-muted mb-1" />
-                                                            <p className="font-semibold" style={{ fontSize: 'var(--text-sm)' }}>Seleccionar fotos</p>
-                                                            <p className="text-xs text-muted">PNG, JPG hasta 10MB</p>
-                                                        </label>
-                                                    </div>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flexShrink: 0 }}>
-                                                        <button
-                                                            type="button"
-                                                            onClick={cameraActive ? capturePhoto : startCamera}
-                                                            title={cameraActive ? 'Tomar foto' : 'Abrir cámara'}
-                                                            style={{
-                                                                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                                                gap: '5px', padding: 'var(--space-3)', minWidth: '76px', flex: 1,
-                                                                border: `1.5px solid ${cameraActive ? 'var(--primary-500)' : 'var(--surface-border)'}`,
-                                                                borderRadius: 'var(--radius-md)',
-                                                                background: cameraActive ? 'rgba(0,110,220,0.10)' : 'var(--surface-hover)',
-                                                                color: cameraActive ? 'var(--primary-400)' : 'var(--text-secondary)',
-                                                                cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: 600,
-                                                                transition: 'all var(--transition-fast)',
-                                                            }}
-                                                        >
-                                                            <FiCamera size={22} />
-                                                            {cameraActive ? 'Capturar' : 'Cámara'}
-                                                        </button>
-                                                        {cameraActive && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={stopCamera}
-                                                                title="Cerrar cámara"
-                                                                style={{
-                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
-                                                                    padding: 'var(--space-2)', minHeight: '34px',
-                                                                    border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)',
-                                                                    background: 'transparent', color: 'var(--text-muted)',
-                                                                    cursor: 'pointer', fontSize: 'var(--text-xs)',
-                                                                    transition: 'all var(--transition-fast)',
-                                                                }}
-                                                            >
-                                                                <FiX size={13} /> Cerrar
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {cameraActive && (
-                                                    <div style={{ marginBottom: 'var(--space-3)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1.5px solid var(--primary-500)', background: '#000' }}>
-                                                        <div style={{
-                                                            padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px',
-                                                            background: 'rgba(0,110,220,0.12)', borderBottom: '1px solid rgba(0,110,220,0.25)',
-                                                            fontSize: 'var(--text-xs)', color: 'var(--primary-400)', fontWeight: 600,
-                                                        }}>
-                                                            <span style={{
-                                                                width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                                                background: 'var(--danger-500)',
-                                                                animation: 'pulse-badge 1s ease-in-out infinite'
-                                                            }} />
-                                                            Cámara activa — presiona Capturar para tomar la foto
-                                                        </div>
-                                                        <video
-                                                            ref={videoRef}
-                                                            autoPlay
-                                                            playsInline
-                                                            style={{ width: '100%', maxHeight: '240px', objectFit: 'cover', display: 'block' }}
-                                                        />
-                                                    </div>
-                                                )}
-
-                                                {uploadedFiles.length > 0 && (
-                                                    <div>
-                                                        <p className="text-sm font-semibold mb-2">{uploadedFiles.length} archivo(s) seleccionado(s)</p>
-                                                        <div className="grid grid-cols-4 gap-3">
-                                                            {uploadedFiles.map((file, index) => (
-                                                                <div key={index} className="relative group">
-                                                                    <img
-                                                                        src={URL.createObjectURL(file)}
-                                                                        alt={file.name}
-                                                                        className="w-full h-24 object-cover rounded border border-surface-border"
-                                                                    />
-                                                                    <button
-                                                                        type="button"
-                                                                        className="absolute top-1 right-1 bg-danger-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                        onClick={() => removeFile(index)}
-                                                                    >
-                                                                        <FiX size={14} />
-                                                                    </button>
-                                                                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-1 text-xs text-white truncate rounded-b opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                        {file.name}
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Sección: Confirmación de Envío */}
-                                        <div className="form-section">
-                                            <h3 className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                                <FiCheck size={16} />
-                                                Confirmación de Envío
-                                            </h3>
-                                            <div style={{
-                                                background: 'var(--surface-elevated)',
-                                                border: '1px solid var(--surface-border)',
-                                                borderRadius: 'var(--radius-lg)',
-                                                overflow: 'hidden'
-                                            }}>
-                                                {/* Metadata del reporte */}
-                                                <div style={{
-                                                    display: 'flex', gap: 'var(--space-6)', flexWrap: 'wrap',
-                                                    padding: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)',
-                                                    background: 'var(--surface-card)'
-                                                }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                                        <FiUser size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Reportado por</span>
-                                                        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                            {[user?.nombre, user?.apellidoPaterno, user?.apellidoMaterno].filter(Boolean).join(' ')}
-                                                        </span>
-                                                    </div>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                                        <FiCalendar size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Fecha y hora</span>
-                                                        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                            {new Date().toLocaleString('es-CL')}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                {/* Checkbox de declaración */}
-                                                <label style={{
-                                                    display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
-                                                    padding: 'var(--space-4)', cursor: 'pointer'
-                                                }}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={confirmaEnvio}
-                                                        onChange={(e) => setConfirmaEnvio(e.target.checked)}
-                                                        style={{ marginTop: '3px', flexShrink: 0, accentColor: 'var(--primary-500)' }}
-                                                        required
-                                                    />
-                                                    <div>
-                                                        <p style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)', margin: 0 }}>
-                                                            {formData.clasificacion === 'hallazgo'
-                                                                ? 'Declaro que el hallazgo reportado ha sido observado directamente y es comprobable en el lugar.'
-                                                                : 'Declaro que la información proporcionada corresponde fielmente a los hechos ocurridos.'}
-                                                        </p>
-                                                        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-1)' }}>
-                                                            Esta declaración queda registrada con tu nombre y es verificable por cargos superiores.
-                                                        </p>
-                                                    </div>
-                                                </label>
-                                            </div>
-                                        </div>
-
-                                        {formError && (
-                                            <div className="bg-danger-500/10 border border-danger-500/20 text-danger-500 p-4 rounded-lg mb-6 flex items-center gap-3 animate-shake">
-                                                <FiAlertCircle size={20} />
-                                                <span className="text-sm font-medium">{formError}</span>
-                                            </div>
-                                        )}
-
-                                        <div className="modal-footer">
-                                            <button
-                                                type="button"
-                                                className="btn btn-secondary"
-                                                onClick={() => setShowModal(false)}
-                                                disabled={uploading}
-                                            >
-                                                <FiX className="mr-2" />
-                                                Cancelar
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                className="btn btn-primary"
-                                                disabled={uploading}
-                                            >
-                                                {uploading ? (
-                                                    <>
-                                                        <div className="spinner mr-2" />
-                                                        Enviando...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <FiSave className="mr-2" />
-                                                        {formData.clasificacion === 'hallazgo' ? 'Reportar Hallazgo' : 'Reportar Incidente'}
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
-                                    </form>
-                                )}
-                            </div>
-                </Modal>
+                    );
+                })()}
 
                 {/* Detail Modal */}
                 <Modal
@@ -1971,10 +1012,24 @@ export default function Incidents() {
                     {selectedIncident && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
 
+                            {/* Cabecera: cierre/estado + gravedad como chips, no como
+                                tabla de datos — mismo lenguaje que las filas del listado. */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', paddingBottom: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)' }}>
+                                {esHallazgo(selectedIncident)
+                                    ? renderCierreBadge((selectedIncident as any).gobernanza?.estadoCierre || 'abierto')
+                                    : renderEstadoBadge(selectedIncident.estado)}
+                                {renderGravedadBadge(selectedIncident.gravedad)}
+                                <span style={{ flexGrow: 1 }} />
+                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                                    {new Date(selectedIncident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    {selectedIncident.hora && ` · ${selectedIncident.hora}`}
+                                </span>
+                            </div>
+
                             {/* Flash banner */}
                             {(selectedIncident as any).reporteFlash?.esFlash && (
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)' }}>
-                                    <FiAlertCircle size={14} style={{ color: 'var(--warning-500)', flexShrink: 0, marginTop: '2px' }} />
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'var(--accent-tint)', border: '1px solid rgba(0,110,220,0.25)' }}>
+                                    <FiAlertCircle size={14} style={{ color: 'var(--accent-text)', flexShrink: 0, marginTop: '2px' }} />
                                     <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
                                         Reporte inicial — datos serán completados durante la investigación.
                                     </p>
@@ -1994,161 +1049,219 @@ export default function Incidents() {
                                 </div>
                             )}
 
-                            {/* Metadatos — tira compacta */}
-                            <div style={{ display: 'flex', gap: 'var(--space-6)', flexWrap: 'wrap', paddingBottom: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)' }}>
-                                <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Tipo</div>
-                                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>{getTipoLabel(selectedIncident.tipo)}</div>
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Estado</div>
-                                    <span className={`badge ${getEstadoBadge(selectedIncident.estado)}`} style={{ fontSize: '11px' }}>{selectedIncident.estado.replace('_', ' ')}</span>
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Gravedad</div>
-                                    <span className={`badge ${getGravedadBadge(selectedIncident.gravedad)}`} style={{ fontSize: '11px' }}>{selectedIncident.gravedad}</span>
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Fecha</div>
-                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
-                                        {new Date(selectedIncident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                        {selectedIncident.hora && <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>{selectedIncident.hora}</span>}
-                                    </div>
-                                </div>
-                                {(selectedIncident.diasPerdidos ?? 0) > 0 && (
+                            {/* Dos columnas: qué pasó a la izquierda, quién responde a la
+                                derecha — un hallazgo se gestiona por gobernanza, un
+                                incidente por su ciclo de investigación (utils/incidentes.ts). */}
+                            <div className="inc-detail-grid">
+                                <div className="inc-detail-col">
                                     <div>
-                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '3px' }}>Días perdidos</div>
-                                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--danger-400)' }}>{selectedIncident.diasPerdidos}</div>
+                                        <div className="inc-detail-label">
+                                            {esHallazgo(selectedIncident) ? 'Descripción del hallazgo' : 'Descripción del incidente'}
+                                        </div>
+                                        <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: selectedIncident.descripcion ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: selectedIncident.descripcion ? 'normal' : 'italic', lineHeight: 1.75 }}>
+                                            {selectedIncident.descripcion || 'Sin descripción registrada.'}
+                                        </p>
                                     </div>
-                                )}
-                            </div>
 
-                            {/* Descripción — bloque principal */}
-                            <div>
-                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>
-                                    {esHallazgo(selectedIncident) ? 'Descripción del hallazgo' : 'Descripción del incidente'}
-                                </div>
-                                <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: selectedIncident.descripcion ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: selectedIncident.descripcion ? 'normal' : 'italic', lineHeight: 1.75 }}>
-                                    {selectedIncident.descripcion || 'Sin descripción registrada.'}
-                                </p>
-                            </div>
-
-                            {/* Trabajador afectado */}
-                            {(selectedIncident.trabajadorNombre || selectedIncident.trabajador?.nombre) && (
-                                <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>Trabajador afectado</div>
-                                    <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-                                        <div>
-                                            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{selectedIncident.trabajadorNombre || selectedIncident.trabajador?.nombre}</div>
-                                            {selectedIncident.trabajador?.rut && (
-                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{selectedIncident.trabajador?.rut}</div>
+                                    {((selectedIncident as any).etapaConstructiva || (selectedIncident.diasPerdidos ?? 0) > 0) && (
+                                        <div style={{ display: 'flex', gap: 'var(--space-6)' }}>
+                                            {(selectedIncident as any).etapaConstructiva && (
+                                                <div>
+                                                    <div className="inc-detail-label">Etapa</div>
+                                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{(selectedIncident as any).etapaConstructiva}</div>
+                                                </div>
+                                            )}
+                                            {(selectedIncident.diasPerdidos ?? 0) > 0 && (
+                                                <div>
+                                                    <div className="inc-detail-label">Días perdidos</div>
+                                                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>{selectedIncident.diasPerdidos}</div>
+                                                </div>
                                             )}
                                         </div>
-                                        {selectedIncident.trabajador?.cargo && (
-                                            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', padding: '3px 8px', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-sm)' }}>
-                                                {selectedIncident.trabajador?.cargo}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
+                                    )}
 
-                            {/* Gestionar — acciones con permisos */}
-                            {(canCreateIncidente || canCalificarAccidente) && (
-                                <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 'var(--space-3)' }}>Gestionar</div>
-                                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
-                                        {esHallazgo(selectedIncident) && canCreateIncidente && (
-                                            <button
-                                                className="btn btn-sm btn-secondary"
-                                                onClick={() => openGobernanza(selectedIncident)}
-                                            >
-                                                <FiActivity size={13} style={{ marginRight: '4px' }} />
-                                                Gobernanza del hallazgo
-                                            </button>
-                                        )}
-                                        {canCalificarAccidente && selectedIncident.tipo !== 'accidente' && (
-                                            confirmingAccidenteId === selectedIncident.incidentId ? (
-                                                <>
-                                                    <button
-                                                        className="btn btn-sm"
-                                                        disabled={markingAccidente}
-                                                        onClick={() => handleMarcarAccidente(selectedIncident.incidentId)}
-                                                        style={{ background: 'var(--danger-600)', color: '#fff', border: 'none', opacity: markingAccidente ? 0.7 : 1 }}
+                                    {/* Trabajador afectado */}
+                                    {(selectedIncident.trabajadorNombre || selectedIncident.trabajador?.nombre) && (
+                                        <div>
+                                            <div className="inc-detail-label">Trabajador afectado</div>
+                                            <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <div>
+                                                    <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{selectedIncident.trabajadorNombre || selectedIncident.trabajador?.nombre}</div>
+                                                    {selectedIncident.trabajador?.rut && (
+                                                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{selectedIncident.trabajador?.rut}</div>
+                                                    )}
+                                                </div>
+                                                {selectedIncident.trabajador?.cargo && (
+                                                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', padding: '3px 8px', background: 'var(--surface-elevated)', border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-sm)' }}>
+                                                        {selectedIncident.trabajador?.cargo}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Evidencias */}
+                                    {incidentEvidenceItems.length > 0 && (
+                                        <div>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                                                <span className="inc-detail-label" style={{ marginBottom: 0 }}>Evidencias fotográficas</span>
+                                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{incidentEvidenceItems.length} archivo{incidentEvidenceItems.length !== 1 ? 's' : ''}</span>
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--space-2)' }}>
+                                                {incidentEvidenceItems.map(item => (
+                                                    <div
+                                                        key={item.id}
+                                                        className="incident-evidence-card"
+                                                        onClick={() => item.url && openLightbox(item)}
+                                                        title={item.url ? 'Ver imagen' : 'Imagen no disponible'}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+                                                            if (event.key === 'Enter' && item.url) openLightbox(item);
+                                                        }}
                                                     >
-                                                        {markingAccidente ? 'Guardando…' : '¿Confirmar accidente?'}
-                                                    </button>
-                                                    <button className="btn btn-sm btn-secondary" disabled={markingAccidente} onClick={() => setConfirmingAccidenteId(null)}>
-                                                        Cancelar
-                                                    </button>
-                                                </>
-                                            ) : (
-                                                <button
-                                                    className="btn btn-sm btn-secondary"
-                                                    onClick={() => setConfirmingAccidenteId(selectedIncident.incidentId)}
-                                                    style={{ color: 'var(--danger-400)', borderColor: 'rgba(239,68,68,0.4)' }}
-                                                >
-                                                    <FiAlertCircle size={13} style={{ marginRight: '4px' }} />
-                                                    Marcar como accidente
-                                                </button>
-                                            )
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Trazabilidad */}
-                            {selectedIncident.reportadoPor && (
-                                <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '2px' }}>Reportado por</div>
-                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
-                                        {(selectedIncident as any).realizadoPor?.nombre || selectedIncident.reportadoPor}
-                                    </div>
-                                    {(selectedIncident as any).realizadoPor?.rut && (
-                                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
-                                            {(selectedIncident as any).realizadoPor.rut}
+                                                        {item.url ? (
+                                                            <img src={item.url} alt={item.title} loading="lazy" />
+                                                        ) : (
+                                                            <div className="incident-evidence-placeholder">
+                                                                <FiImage size={24} />
+                                                            </div>
+                                                        )}
+                                                        <div className="incident-evidence-meta">
+                                                            <FiImage size={10} />
+                                                            <span>{item.label}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
-                            )}
 
-                            {/* Evidencias */}
-                            {incidentEvidenceItems.length > 0 && (
-                                <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--surface-border)' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
-                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Evidencias fotográficas</span>
-                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{incidentEvidenceItems.length} archivo{incidentEvidenceItems.length !== 1 ? 's' : ''}</span>
-                                    </div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--space-2)' }}>
-                                        {incidentEvidenceItems.map(item => (
-                                            <div
-                                                key={item.id}
-                                                className="incident-evidence-card"
-                                                onClick={() => item.url && openLightbox(item)}
-                                                title={item.url ? 'Ver imagen' : 'Imagen no disponible'}
-                                                role="button"
-                                                tabIndex={0}
-                                                onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-                                                    if (event.key === 'Enter' && item.url) openLightbox(item);
-                                                }}
-                                            >
-                                                {item.url ? (
-                                                    <img src={item.url} alt={item.title} loading="lazy" />
-                                                ) : (
-                                                    <div className="incident-evidence-placeholder">
-                                                        <FiImage size={24} />
+                                <div className="inc-detail-col inc-detail-col-side">
+                                    {esHallazgo(selectedIncident) ? (
+                                        <div>
+                                            <div className="inc-detail-label">Gobernanza</div>
+                                            {(() => {
+                                                const gob = (selectedIncident as any).gobernanza || {};
+                                                return (
+                                                    <div className="inc-gob-panel">
+                                                        <div className="inc-gob-row">
+                                                            <span>Responsable</span>
+                                                            <strong>{gob.responsableNombre || 'Sin asignar'}</strong>
+                                                        </div>
+                                                        <div className="inc-gob-row">
+                                                            <span>Plazo de respuesta</span>
+                                                            <strong>{gob.plazoRespuestaISO ? new Date(gob.plazoRespuestaISO).toLocaleDateString('es-CL') : 'Sin definir'}</strong>
+                                                        </div>
+                                                        {gob.comentarioCierre && (
+                                                            <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                                                                “{gob.comentarioCierre}”
+                                                            </p>
+                                                        )}
                                                     </div>
-                                                )}
-                                                <div className="incident-evidence-meta">
-                                                    <FiImage size={10} />
-                                                    <span>{item.label}</span>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+                                                );
+                                            })()}
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <div className="inc-detail-label">Investigación</div>
+                                            {(() => {
+                                                const inv = selectedIncident.investigaciones || {};
+                                                const roles: Array<{ key: keyof typeof inv; label: string }> = [
+                                                    { key: 'prevencionista', label: 'Prevencionista' },
+                                                    { key: 'jefeDirecto', label: 'Jefe directo' },
+                                                    { key: 'comiteParitario', label: 'Comité paritario' },
+                                                ];
+                                                const alguna = roles.some((r) => inv[r.key]);
+                                                if (!alguna) {
+                                                    return <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontStyle: 'italic' }}>Aún no hay investigaciones registradas.</p>;
+                                                }
+                                                return (
+                                                    <div className="inc-gob-panel">
+                                                        {roles.map((r) => {
+                                                            const investigacion = inv[r.key];
+                                                            const completada = investigacion?.estado === 'completada';
+                                                            return (
+                                                                <div key={r.key} className="inc-gob-row">
+                                                                    <span>{investigacion?.investigador || r.label}</span>
+                                                                    {investigacion ? (
+                                                                        <span className={`badge ${completada ? 'badge-neutral' : 'badge-accent'}`} style={{ fontSize: '10.5px' }}>
+                                                                            {completada ? <FiCheckCircle size={10} /> : <FiClock size={10} />}
+                                                                            {completada ? 'Completada' : 'Pendiente'}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Sin asignar</span>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+                                    )}
 
+                                    {/* Gestionar — acciones con permisos */}
+                                    {(canCreateIncidente || canCalificarAccidente) && (
+                                        <div>
+                                            <div className="inc-detail-label">Gestionar</div>
+                                            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
+                                                {esHallazgo(selectedIncident) && canCreateIncidente && (
+                                                    <button
+                                                        className="btn btn-sm btn-secondary"
+                                                        onClick={() => openGobernanza(selectedIncident)}
+                                                    >
+                                                        <FiActivity size={13} style={{ marginRight: '4px' }} />
+                                                        Editar gobernanza
+                                                    </button>
+                                                )}
+                                                {canCalificarAccidente && selectedIncident.tipo !== 'accidente' && (
+                                                    confirmingAccidenteId === selectedIncident.incidentId ? (
+                                                        <>
+                                                            <button
+                                                                className="btn btn-sm"
+                                                                disabled={markingAccidente}
+                                                                onClick={() => handleMarcarAccidente(selectedIncident.incidentId)}
+                                                                style={{ background: 'var(--danger-600)', color: '#fff', border: 'none', opacity: markingAccidente ? 0.7 : 1 }}
+                                                            >
+                                                                {markingAccidente ? 'Guardando…' : '¿Confirmar accidente?'}
+                                                            </button>
+                                                            <button className="btn btn-sm btn-secondary" disabled={markingAccidente} onClick={() => setConfirmingAccidenteId(null)}>
+                                                                Cancelar
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <button
+                                                            className="btn btn-sm btn-secondary"
+                                                            onClick={() => setConfirmingAccidenteId(selectedIncident.incidentId)}
+                                                            style={{ color: 'var(--danger-400)', borderColor: 'rgba(239,68,68,0.4)' }}
+                                                        >
+                                                            <FiAlertCircle size={13} style={{ marginRight: '4px' }} />
+                                                            Marcar como accidente
+                                                        </button>
+                                                    )
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Trazabilidad */}
+                                    {selectedIncident.reportadoPor && (
+                                        <div>
+                                            <div className="inc-detail-label">Reportado por</div>
+                                            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                                                {(selectedIncident as any).realizadoPor?.nombre || selectedIncident.reportadoPor}
+                                            </div>
+                                            {(selectedIncident as any).realizadoPor?.rut && (
+                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                                                    {(selectedIncident as any).realizadoPor.rut}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     )}
                 </Modal>
@@ -2200,6 +1313,25 @@ export default function Incidents() {
 
 
                 <style>{`
+                /* ── Barra de herramientas del listado ── */
+                .inc-toolbar {
+                    display: flex;
+                    align-items: center;
+                    gap: var(--space-3);
+                    flex-wrap: wrap;
+                    margin-bottom: var(--space-4);
+                }
+                /* .ui-select ocupa el 100% por defecto (pensado para formularios);
+                   en la barra cada filtro es una pastilla del ancho de su texto. */
+                .inc-toolbar .ui-select { width: auto; flex: 0 0 auto; min-width: 150px; }
+                .inc-toolbar .ui-search-input { flex: 1 1 200px; }
+                .inc-toolbar-count {
+                    margin-left: auto;
+                    font-size: var(--text-xs);
+                    color: var(--text-muted);
+                    white-space: nowrap;
+                }
+
                 /* ── Lista de incidentes/hallazgos ── */
                 .incident-list {
                     border-top: 1px solid var(--surface-border);
@@ -2207,9 +1339,9 @@ export default function Incidents() {
 
                 .incident-row {
                     display: grid;
-                    grid-template-columns: 7rem 1fr auto;
+                    grid-template-columns: auto 1fr auto;
                     gap: var(--space-4);
-                    align-items: start;
+                    align-items: flex-start;
                     padding: var(--space-4) var(--space-5);
                     border-bottom: 1px solid var(--surface-border);
                     cursor: pointer;
@@ -2222,13 +1354,35 @@ export default function Incidents() {
                     background: var(--surface-elevated);
                 }
 
-                .incident-row-meta {
-                    padding-top: 2px;
+                /* Ícono de fila tintado por gravedad — leve queda neutro, grave usa
+                   el único acento de alerta que ya existe en el resto de la app y
+                   fatal el rojo de marca. Nada de verde/ámbar/rojo genérico. */
+                .incident-row-icon {
+                    width: 38px; height: 38px; flex-shrink: 0;
+                    display: flex; align-items: center; justify-content: center;
+                    border-radius: var(--radius-md);
                 }
+                .inc-icon-neutro { background: var(--surface-hover); color: var(--text-secondary); }
+                .inc-icon-alerta { background: rgba(223,54,1,0.12); color: var(--danger-alerta); }
+                .inc-icon-critico { background: rgba(223,54,1,0.12); color: var(--cchc-red); }
 
-                .incident-row-desc {
-                    padding-top: 2px;
+                .incident-row-body { min-width: 0; padding-top: 1px; }
+                .incident-row-eyebrow {
+                    display: flex; align-items: center; gap: 6px;
+                    font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
+                    color: var(--text-muted); margin-bottom: 3px;
                 }
+                .incident-row-eyebrow .dot { color: var(--surface-border); }
+                .inc-nuevo-pill { font-size: 9.5px; padding: 1px 7px; text-transform: none; letter-spacing: 0.02em; }
+                .incident-row-desc {
+                    margin: 0 0 4px; font-size: var(--text-sm); color: var(--text-primary);
+                    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5;
+                }
+                .incident-row-meta {
+                    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+                    font-size: var(--text-xs); color: var(--text-muted);
+                }
+                .incident-row-meta .dot { color: var(--surface-border); }
 
                 .incident-row-status {
                     display: flex;
@@ -2241,7 +1395,6 @@ export default function Incidents() {
 
                 @media (max-width: 600px) {
                     .incident-row {
-                        grid-template-columns: 6rem 1fr auto;
                         gap: var(--space-3);
                         padding: var(--space-3) var(--space-4);
                     }
@@ -2249,6 +1402,41 @@ export default function Incidents() {
 
                 @media (prefers-reduced-motion: reduce) {
                     .incident-row { transition: none; }
+                }
+
+                /* ── Detalle: dos columnas ── */
+                .inc-detail-grid {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                    gap: var(--space-6);
+                }
+                .inc-detail-col {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-4);
+                    min-width: 0;
+                }
+                .inc-detail-col-side {
+                    padding-left: var(--space-6);
+                    border-left: 1px solid var(--surface-border);
+                }
+                .inc-detail-label {
+                    font-size: 11px; color: var(--text-muted); font-weight: 600;
+                    margin-bottom: var(--space-2);
+                }
+                .inc-gob-panel {
+                    display: flex; flex-direction: column; gap: var(--space-2);
+                    padding: var(--space-3); border: 1px solid var(--surface-border);
+                    border-radius: var(--radius-md); background: var(--surface-elevated);
+                }
+                .inc-gob-row {
+                    display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+                    font-size: var(--text-sm); color: var(--text-secondary);
+                }
+                .inc-gob-row strong { color: var(--text-primary); font-weight: 600; }
+                @media (max-width: 768px) {
+                    .inc-detail-grid { grid-template-columns: 1fr; }
+                    .inc-detail-col-side { padding-left: 0; border-left: none; padding-top: var(--space-4); border-top: 1px solid var(--surface-border); }
                 }
 
                 /* Dashboard Header */
@@ -2423,9 +1611,12 @@ export default function Incidents() {
                     background: var(--surface-card);
                 }
 
-                .calendar-cell-day.leve { background: linear-gradient(135deg, rgba(76, 175, 80, 0.35), rgba(76, 175, 80, 0.15)); border-color: rgba(76, 175, 80, 0.4); }
-                .calendar-cell-day.grave { background: linear-gradient(135deg, rgba(255, 152, 0, 0.35), rgba(255, 152, 0, 0.15)); border-color: rgba(255, 152, 0, 0.4); }
-                .calendar-cell-day.fatal { background: linear-gradient(135deg, rgba(244, 67, 54, 0.45), rgba(244, 67, 54, 0.25)); border-color: rgba(244, 67, 54, 0.4); }
+                /* Mismo criterio que la dona de Gravedad: neutro para leve, el
+                   acento de alerta para grave, y el rojo de marca reservado solo
+                   para fatal — no el semáforo verde/ámbar/rojo anterior. */
+                .calendar-cell-day.leve { background: var(--surface-hover); border-color: var(--surface-border); }
+                .calendar-cell-day.grave { background: rgba(223,54,1,0.14); border-color: rgba(223,54,1,0.35); }
+                .calendar-cell-day.fatal { background: rgba(223,54,1,0.22); border-color: var(--cchc-red); box-shadow: inset 0 0 0 1.5px var(--cchc-red); }
 
                 /* Custom Tooltip Styling */
                 .calendar-tooltip {
@@ -2503,9 +1694,9 @@ export default function Incidents() {
                     background: rgba(255, 255, 255, 0.05);
                 }
 
-                .severity-badge.leve { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
-                .severity-badge.grave { color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
-                .severity-badge.fatal { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+                .severity-badge.leve { color: var(--text-secondary); background: var(--surface-hover); }
+                .severity-badge.grave { color: var(--danger-alerta); background: rgba(223,54,1,0.12); }
+                .severity-badge.fatal { color: #fff; background: var(--cchc-red); }
 
                 /* Incident Detail Modal */
                 .detail-row {
@@ -2527,34 +1718,25 @@ export default function Incidents() {
                     font-weight: 600;
                 }
 
-                .avatar {
-                    width: 48px;
-                    height: 48px;
-                    border-radius: var(--radius-full);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-weight: 700;
-                    font-size: var(--text-lg);
-                }
+                /* Gravedad grave/fatal: el único acento de alerta ya existente en la
+                   app (tenue para grave) y el rojo de marca sólo para fatal — no un
+                   badge-danger nuevo con el rojo Material genérico. */
+                .inc-badge-alerta { background: rgba(223,54,1,0.12); color: var(--danger-alerta); }
+                .inc-badge-critico { background: var(--cchc-red); color: #fff; }
 
-                .avatar-sm {
-                    width: 32px;
-                    height: 32px;
-                    font-size: var(--text-sm);
+                /* Dona de gravedad (Estadísticas) */
+                .inc-gravedad-row { display: flex; align-items: center; gap: var(--space-5); }
+                .inc-gravedad-donut { position: relative; width: 132px; height: 132px; flex-shrink: 0; border-radius: 50%; }
+                .inc-gravedad-hole {
+                    position: absolute; inset: 18px; border-radius: 50%; background: var(--surface-card);
+                    display: flex; flex-direction: column; align-items: center; justify-content: center;
                 }
-
-                .badge {
-                    padding: 4px 12px;
-                    border-radius: var(--radius-full);
-                    font-size: var(--text-xs);
-                    font-weight: 700;
-                    text-transform: uppercase;
-                }
-
-                .badge-success { background: var(--success-500); color: white; }
-                .badge-warning { background: var(--warning-500); color: white; }
-                .badge-danger { background: var(--danger-500); color: white; }
+                .inc-gravedad-total { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+                .inc-gravedad-total-label { font-size: 10.5px; color: var(--text-muted); }
+                .inc-gravedad-legend { display: flex; flex-direction: column; gap: var(--space-2); flex-grow: 1; }
+                .inc-gravedad-legend > div { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); color: var(--text-secondary); }
+                .inc-gravedad-legend > div b { margin-left: auto; color: var(--text-primary); font-weight: 600; }
+                .inc-gravedad-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
 
                 /* Evidence Preview */
                 .incident-evidence-card {
@@ -2657,61 +1839,6 @@ export default function Incidents() {
                     .incident-evidence-lightbox-nav.next { right: 8px; }
                 }
 
-                /* AI Quick Report Styles */
-                .quick-report-container {
-                    background: var(--surface-card);
-                    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-                }
-
-                .camera-view {
-                    aspect-ratio: 4/3;
-                    border: 2px solid var(--surface-border);
-                    box-shadow: var(--shadow-inner);
-                    position: relative;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-
-                .camera-live-label {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 6px 10px;
-                    font-size: 10px;
-                    letter-spacing: 0.08em;
-                    text-transform: uppercase;
-                    color: white;
-                    background: rgba(0,0,0,0.6);
-                    border: 1px solid rgba(255,255,255,0.12);
-                    border-radius: 999px;
-                    margin-bottom: var(--space-2);
-                    width: fit-content;
-                }
-
-                .camera-view.is-idle {
-                    aspect-ratio: auto;
-                }
-
-                .camera-placeholder {
-                    padding: var(--space-3);
-                    min-height: 120px;
-                    justify-content: center;
-                }
-
-                .audio-recorder {
-                    min-height: 250px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-
-                .modal-header-text {
-                    flex: 1;
-                    display: flex;
-                    flex-direction: column;
-                }
-
                 @media (max-width: 640px) {
                     .modal-header {
                         flex-direction: column;
@@ -2727,214 +1854,6 @@ export default function Incidents() {
                         font-size: var(--text-xs);
                         margin-top: var(--space-1);
                     }
-                }
-
-                .loader-dots {
-                    display: flex;
-                    gap: 6px;
-                }
-
-                .loader-dots div {
-                    width: 10px;
-                    height: 10px;
-                    background: var(--primary-500);
-                    border-radius: 50%;
-                    animation: loader-dots 1.4s infinite ease-in-out both;
-                }
-
-                .loader-dots div:nth-child(2) { animation-delay: -0.16s; }
-
-                /* Shutter Button Styles */
-                .btn-shutter {
-                    background: transparent;
-                    border: none;
-                    cursor: pointer;
-                    padding: 0;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-                }
-
-                .btn-shutter:hover {
-                    transform: scale(1.1);
-                }
-
-                .btn-shutter:active {
-                    transform: scale(0.9);
-                }
-
-                .btn-shutter-outer {
-                    width: 58px;
-                    height: 58px;
-                    border-radius: 50%;
-                    border: 4px solid white;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    background: rgba(255, 255, 255, 0.1);
-                    backdrop-filter: blur(4px);
-                    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-                }
-
-                .btn-shutter-inner {
-                    width: 44px;
-                    height: 44px;
-                    border-radius: 50%;
-                    background: white;
-                    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1);
-                    transition: all 0.2s;
-                }
-
-                .btn-shutter:hover .btn-shutter-inner {
-                    background: var(--primary-500);
-                }
-
-                /* Location preview */
-                .location-box {
-                    border: 1px dashed var(--surface-border);
-                    background: var(--surface-elevated);
-                    border-radius: var(--radius-md);
-                    padding: var(--space-3);
-                }
-
-                .location-error {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-2);
-                    color: var(--danger-500);
-                    font-size: var(--text-sm);
-                    margin-top: var(--space-2);
-                }
-
-                .location-loading {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-2);
-                    color: var(--text-muted);
-                    margin-top: var(--space-2);
-                }
-
-                .map-preview-frame {
-                    position: relative;
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-md);
-                    overflow: hidden;
-                    background: var(--surface-card);
-                    aspect-ratio: 16 / 9;
-                }
-
-                .map-preview-frame iframe {
-                    width: 100%;
-                    height: 100%;
-                    border: 0;
-                    pointer-events: none;
-                }
-
-                .map-preview-overlay {
-                    position: absolute;
-                    inset: 0;
-                    display: flex;
-                    align-items: flex-end;
-                    padding: var(--space-3);
-                    background: linear-gradient(180deg, transparent 60%, rgba(0, 0, 0, 0.55));
-                    color: white;
-                    font-weight: 700;
-                    text-decoration: none;
-                    opacity: 1;
-                    transition: opacity var(--transition-normal);
-                }
-
-                .map-preview-frame:hover .map-preview-overlay {
-                    opacity: 1;
-                }
-
-                .location-map-card {
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-md);
-                    padding: var(--space-3);
-                    background: var(--surface-card);
-                }
-
-                .modal-close-btn {
-                    background: transparent;
-                    border: none;
-                    color: var(--text-muted);
-                    padding: var(--space-2);
-                    border-radius: var(--radius-md);
-                    cursor: pointer;
-                    transition: all var(--transition-normal);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-
-                .modal-close-btn:hover {
-                    background: var(--surface-elevated);
-                    color: var(--text-primary);
-                }
-
-                /* Success View Styles */
-                .success-modal-body {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                }
-
-                .success-animation-container {
-                    position: relative;
-                    width: 100px;
-                    height: 100px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-
-                .success-pulse {
-                    position: absolute;
-                    width: 100%;
-                    height: 100%;
-                    background: var(--success-500);
-                    border-radius: 50%;
-                    opacity: 0.2;
-                    animation: pulse-success 2s infinite;
-                }
-
-                .success-icon-wrapper {
-                    position: relative;
-                    width: 80px;
-                    height: 80px;
-                    background: var(--success-500);
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    box-shadow: 0 10px 25px rgba(34, 197, 94, 0.4);
-                }
-
-                @keyframes pulse-success {
-                    0% { transform: scale(1); opacity: 0.4; }
-                    100% { transform: scale(1.6); opacity: 0; }
-                }
-
-                @keyframes shake {
-                    0%, 100% { transform: translateX(0); }
-                    10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
-                    20%, 40%, 60%, 80% { transform: translateX(4px); }
-                }
-
-                .animate-shake {
-                    animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
-                }
-
-                @keyframes loader-dots {
-                    0%, 80%, 100% { transform: scale(0); }
-                    40% { transform: scale(1); }
-                }
-
-                @keyframes bounce {
-                    0%, 100% { transform: scaleY(1); }
-                    50% { transform: scaleY(0.4); }
                 }
             `}</style>
             </>}

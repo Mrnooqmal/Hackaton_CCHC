@@ -162,6 +162,62 @@ export function ObrasSkeleton({ vista = 'grid', filas = 6 }: { vista?: Vista; fi
     );
 }
 
+/**
+ * Listado de incidentes y hallazgos: ícono de 38px, rótulo + descripción +
+ * meta, y las dos pastillas apiladas (cierre/estado y gravedad) de cada fila.
+ */
+export function IncidentesSkeleton({ filas = 5 }: { filas?: number }) {
+    return (
+        <div aria-busy="true" aria-live="polite" aria-label="Cargando los reportes">
+            {Array.from({ length: filas }, (_, i) => (
+                <div key={i} className="sk-inc-row">
+                    <div className="ui-skel" style={{ width: 38, height: 38, borderRadius: 10 }} />
+                    <div className="sk-row-info">
+                        <div className="ui-skel ui-skel--linea" style={{ width: 170, height: 9 }} />
+                        <div className="ui-skel ui-skel--linea" style={{ width: ANCHOS[i % ANCHOS.length], height: 13 }} />
+                        <div className="ui-skel ui-skel--linea" style={{ width: '32%', height: 9 }} />
+                    </div>
+                    <div className="sk-inc-pills">
+                        <div className="ui-skel ui-skel--pildora" style={{ width: 78 }} />
+                        <div className="ui-skel ui-skel--pildora" style={{ width: 56 }} />
+                    </div>
+                </div>
+            ))}
+            <EstilosSkeleton />
+        </div>
+    );
+}
+
+/** Estadísticas de incidentes: cuatro tarjetas y dos filas de dos gráficos. */
+export function IncidentesStatsSkeleton() {
+    return (
+        <div aria-busy="true" aria-live="polite" aria-label="Cargando las estadísticas" className="sk-page">
+            <div className="sk-inc-stats">
+                {Array.from({ length: 4 }, (_, i) => (
+                    <div key={i} className="sk-inc-stat">
+                        <div className="ui-skel ui-skel--circulo" style={{ width: 40, height: 40 }} />
+                        <div className="sk-row-info">
+                            <div className="ui-skel ui-skel--linea" style={{ width: 48, height: 20 }} />
+                            <div className="ui-skel ui-skel--linea" style={{ width: '70%', height: 9 }} />
+                        </div>
+                    </div>
+                ))}
+            </div>
+            {[0, 1].map((r) => (
+                <div key={r} className="sk-inc-charts">
+                    {[0, 1].map((c) => (
+                        <div key={c} className="sk-inc-chart">
+                            <div className="ui-skel ui-skel--linea" style={{ width: 140, height: 13 }} />
+                            <div className="ui-skel" style={{ height: 150, borderRadius: 10 }} />
+                        </div>
+                    ))}
+                </div>
+            ))}
+            <EstilosSkeleton />
+        </div>
+    );
+}
+
 /* Las medidas repiten las de la pantalla real (rejilla de 4, tarjeta de
    20/14/14, avatar de 52, fila de 5 columnas) para que el relleno no mueva
    nada de sitio. */
@@ -215,6 +271,26 @@ function EstilosSkeleton() {
             .sk-row-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
             /* Código · nombre · estado · DS 44 · ubicación (ver obraColumns). */
             .sk-row--obras { grid-template-columns: 140px minmax(0, 1fr) 110px 90px minmax(0, 1fr); }
+
+            /* Incidentes: misma rejilla que .incident-row (Incidents.tsx). */
+            .sk-inc-row {
+                display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-4);
+                align-items: flex-start; padding: var(--space-4) var(--space-5);
+                border-bottom: 1px solid var(--surface-border);
+            }
+            .sk-inc-pills { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); }
+            .sk-inc-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
+            .sk-inc-stat {
+                display: flex; align-items: center; gap: var(--space-3); padding: var(--space-5);
+                border: 1px solid var(--surface-border); border-radius: var(--radius-lg);
+            }
+            .sk-inc-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+            .sk-inc-chart {
+                display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4);
+                border: 1px solid var(--surface-border); border-radius: var(--radius-lg);
+            }
+            @media (max-width: 1024px) { .sk-inc-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+            @media (max-width: 1200px) { .sk-inc-charts { grid-template-columns: 1fr; } }
 
             @media (max-width: 900px) { .sk-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
             @media (max-width: 760px) {

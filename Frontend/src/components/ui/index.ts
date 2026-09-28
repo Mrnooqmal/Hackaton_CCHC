@@ -51,7 +51,7 @@ export type { DataTableProps, DataTableColumn } from './DataTable';
 export { default as CollectionView } from './CollectionView';
 export type { CollectionViewProps, CollectionMode } from './CollectionView';
 
-export { DirectorioSkeleton, EquipoObraSkeleton, ObrasSkeleton } from './Skeletons';
+export { DirectorioSkeleton, EquipoObraSkeleton, ObrasSkeleton, IncidentesSkeleton, IncidentesStatsSkeleton } from './Skeletons';
 
 export { default as FormPage, FieldSection } from './FormPage';
 export type { FormPageProps, FieldSectionProps } from './FormPage';
