@@ -1106,6 +1106,40 @@ había ninguno.
 S3 y SNS en vez de usar los compartidos de `lib/clients`: otro camino propio por
 fuera de los servicios centrales, sin consecuencia de seguridad hoy.
 
+### H-12. No se podía registrar a nadie sin correo
+**Severidad: alta — RESUELTO el 27 de septiembre de 2026 (en el árbol, sin desplegar)**
+
+La contraseña inicial son los cuatro primeros dígitos del RUT precisamente
+porque en terreno mucha gente no tiene correo. Pero `PersonaService.crear`
+escribía `email: ''`, `email` es la clave de `email-index`, y DynamoDB
+rechaza la escritura completa si una clave de índice viene vacía: el alta
+manual y la carga masiva fallaban para cualquiera sin correo. Las 18 personas
+de dev y prod tienen correo; la primera carga masiva real habría fallado. Y
+aunque se hubiera podido crear, la contraseña inicial solo se generaba si había
+correo, así que esa persona no habría podido entrar.
+
+Ahora sin correo no se escribe el atributo (la persona queda fuera del índice),
+borrar el correo al editar lo quita en vez de dejarlo vacío, y la contraseña
+inicial se genera con o sin correo. Quien registra la recibe en pantalla para
+decírsela en persona.
+
+**Recuperación de contraseña sin correo:** la respuesta es la misma para todos
+(no revela si el RUT existe ni si tiene correo), no se envía nada ni se guarda
+un token. La única salida es que un administrador restablezca la contraseña;
+la respuesta genérica ahora lo dice.
+
+**Mismo error en otra tabla:** se revisaron todas las claves de índice de las
+17 tablas. La única otra era `POST /signatures/enroll`, que escribía
+`requestId: null` (clave de `requestId-index`) y por eso fallaba siempre. Esa
+ruta además registraba una firma de enrolamiento "válida" **sin verificar el
+PIN**; corregir el `null` la habría vuelto un camino para crear firmas sin PIN.
+El frontend no la usaba: se retiró (responde 410). El enrolamiento es
+`POST /personas/{id}/enrolamiento`, que sí verifica el PIN.
+
+Las pruebas usan un doble de DynamoDB con los esquemas reales de
+`serverless.yml` (`Backend/tests/doble-dynamo-tablas.js`) que rechaza, como
+DynamoDB, una clave de índice vacía o de otro tipo.
+
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**
 

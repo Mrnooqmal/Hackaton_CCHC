@@ -9,8 +9,8 @@
 //
 // Acá "ausente" es `!(clave in objeto)` y `null` es un valor como cualquier otro,
 // igual que en DynamoDB. Cubre el subconjunto de la gramática que usa el código:
-// AND, OR, NOT, paréntesis, `attribute_exists`, `attribute_not_exists`, `=`,
-// `<>`, rutas con punto y `#nombres`; y en actualizaciones SET (con
+// AND, OR, NOT, paréntesis, `attribute_exists`, `attribute_not_exists`,
+// `begins_with`, `contains`, `=`, `<>`, rutas con punto y `#nombres`; y en actualizaciones SET (con
 // `list_append` e `if_not_exists`), REMOVE y ADD. Lo que no reconoce lo rechaza
 // con un error, en vez de adivinar.
 
@@ -75,6 +75,13 @@ function cumple(item, condicion, valores = {}, nombres = {}) {
             const existe = resolverRuta(base, tomar(), nombres) !== ausente;
             tomar(')');
             return f === 'attribute_exists' ? existe : !existe;
+        }
+        if (ver() === 'begins_with' || ver() === 'contains') {
+            const f = tomar(); tomar('(');
+            const a = operando(); tomar(','); const b = operando(); tomar(')');
+            if (a === ausente || b === ausente) return false;
+            if (f === 'begins_with') return typeof a === 'string' && typeof b === 'string' && a.startsWith(b);
+            return Array.isArray(a) ? a.some((x) => iguales(x, b)) : (typeof a === 'string' && a.includes(b));
         }
         const izq = operando();
         const op = tomar();

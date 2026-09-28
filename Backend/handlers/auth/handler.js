@@ -413,7 +413,10 @@ const RESET_TOKEN_MINUTES = 30;
 module.exports.forgotPassword = async (event) => {
     // Mensaje único para cualquier caso (exista o no el RUT, tenga o no email).
     const genericResponse = success({
-        message: 'Si el RUT está registrado y tiene un correo asociado, te enviamos instrucciones para restablecer tu contraseña.'
+        // Igual en todos los casos: no revela si el RUT existe ni si tiene correo.
+        // Quien no tiene correo no puede recuperarla sola: se lo decimos a todos.
+        message: 'Si el RUT está registrado y tiene un correo asociado, te enviamos instrucciones para restablecer tu contraseña. '
+            + 'Si no tienes correo registrado, pide a un administrador de tu empresa que restablezca tu contraseña.'
     });
 
     try {

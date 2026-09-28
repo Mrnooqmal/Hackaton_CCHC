@@ -23,6 +23,16 @@ const MOTIVO_MAX = 500;
 /** Condiciones de "no hay" para atributos que `crear` escribe como NULL: en
  *  DynamoDB un NULL es un atributo presente, así que `attribute_not_exists`
  *  solo no alcanza. Usan `:nulo`. */
+ /** Correo normalizado, o `undefined` si no hay. Nunca cadena vacía: `email` es
+  * la clave de `email-index`, y DynamoDB rechaza la escritura completa si una
+  * clave de índice viene vacía. Sin el atributo, la persona simplemente no
+  * entra al índice. Hasta el 27 de septiembre de 2026 se escribía `''` y no se
+  * podía crear a nadie sin correo. */
+const correoONada = (email) => {
+    const limpio = typeof email === 'string' ? email.trim() : '';
+    return limpio || undefined;
+};
+
 const SIN_PIN = '(attribute_not_exists(pinHash) OR pinHash = :nulo)';
 const SIN_RESTABLECIMIENTO = '(attribute_not_exists(pinRestablecido) OR pinRestablecido = :nulo)';
 
@@ -160,7 +170,7 @@ class PersonaService {
             apellidoMaterno,
             apellido,
             fechaNacimiento: data.fechaNacimiento || null,
-            email: data.email || '',
+            email: correoONada(data.email),
             telefono: data.telefono || '',
             rol: data.rol,
             permisos: rolConfig ? rolConfig.permisos : [],
@@ -187,12 +197,17 @@ class PersonaService {
         // Generar password temporal si tiene acceso web.
         // Convención: los primeros 4 dígitos del RUT (sin puntos ni dígito verificador).
         // El usuario debe cambiarla en el primer ingreso (passwordTemporal = true).
+        //
+        // CON o SIN correo. La convención existe precisamente porque en terreno
+        // mucha gente no tiene correo: la contraseña se le dice en persona. Hasta
+        // el 27 de septiembre de 2026 solo se generaba si había correo, así que
+        // quien no lo tenía quedaba sin forma de entrar.
         if (tieneAccesoWeb && data.password) {
             // Contraseña elegida por la propia persona (onboarding por interfaz):
             // no es temporal y no hay nada que cambiar en el primer ingreso.
             personaData.passwordHash = await hashPassword(data.password, resolvedPersonaId);
             personaData.passwordTemporal = false;
-        } else if (tieneAccesoWeb && data.email) {
+        } else if (tieneAccesoWeb) {
             const rutDigits = rutValidation.formatted.replace(/[^0-9]/g, '').slice(0, -1); // quita DV
             const first4 = rutDigits.slice(0, 4);
             passwordTemporal = first4.length === 4 ? first4 : generateTempPassword(10);
@@ -456,6 +471,16 @@ class PersonaService {
         const expressionNames = {};
         const expressionValues = {};
 
+        // Borrar el correo es quitar el atributo, no dejarlo en '' (ver `correoONada`).
+        const quitar = [];
+        if (updates.email !== undefined && !correoONada(updates.email)) {
+            quitar.push('#email');
+            expressionNames['#email'] = 'email';
+            updates = { ...updates, email: undefined };
+        } else if (updates.email !== undefined) {
+            updates = { ...updates, email: correoONada(updates.email) };
+        }
+
         allowedFields.forEach(field => {
             if (updates[field] !== undefined) {
                 updateExpressions.push(`#${field} = :${field}`);
@@ -482,7 +507,7 @@ class PersonaService {
             }
         }
 
-        if (updateExpressions.length === 0) throw new Error('No hay campos para actualizar');
+        if (updateExpressions.length === 0 && quitar.length === 0) throw new Error('No hay campos para actualizar');
 
         // Reloj de la conservación: el plazo de retención de la evidencia de una
         // persona se cuenta desde que termina su vínculo laboral, así que la fecha
@@ -516,7 +541,7 @@ class PersonaService {
                 PK: `TENANT#${tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+            UpdateExpression: `SET ${updateExpressions.join(', ')}${quitar.length ? ` REMOVE ${quitar.join(', ')}` : ''}`,
             ExpressionAttributeNames: expressionNames,
             ExpressionAttributeValues: expressionValues,
             ReturnValues: 'ALL_NEW'

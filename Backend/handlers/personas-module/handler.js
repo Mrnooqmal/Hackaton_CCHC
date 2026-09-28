@@ -111,7 +111,7 @@ const TEMPLATE_INSTRUCTIONS = [
     '4. obra: elige la obra del desplegable (muestra "Nombre (CODIGO)"). Tambien puedes escribir el codigo (ej. OBRA-001). Para asignar a varias obras, separalas por coma. Si se deja vacio, la persona se crea en la empresa sin obra (se vincula despues); si la carga se hace desde una obra, se asigna a esa obra.',
     '5. supervisor: RUT del supervisor de la cuadrilla. Puede venir en este mismo Excel con rol "Supervisor". Si se deja vacio, la persona queda sin cuadrilla y se le asigna un supervisor despues.',
     '6. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
-    '7. Si el email es valido, se genera una contraseña temporal para el acceso web: los primeros 4 digitos del RUT. La persona debera cambiarla en su primer ingreso.',
+    '7. El email es opcional. Con o sin email, la contraseña temporal para el acceso web son los primeros 4 digitos del RUT; la persona debera cambiarla en su primer ingreso. Si tiene email, ademas se le envia por correo.',
     '8. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
     '9. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
     '10. Reemplaza los datos de ejemplo por los de tus trabajadores antes de importar.',

@@ -326,7 +326,10 @@ class Persona {
             apellidoMaterno: this.apellidoMaterno,
             apellido: this.apellido,
             fechaNacimiento: this.fechaNacimiento,
-            email: this.email,
+            // Sin correo, sin atributo: `email` es la clave de `email-index` y
+            // DynamoDB no acepta '' en una clave de índice (`undefined` lo omite
+            // el cliente, `removeUndefinedValues`).
+            email: this.email || undefined,
             telefono: this.telefono,
             fotoPerfil: this.fotoPerfil,
             notificacionesSms: this.notificacionesSms,

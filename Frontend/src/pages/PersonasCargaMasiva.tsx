@@ -481,6 +481,13 @@ export default function PersonasCargaMasiva() {
                                 <div className="cm-stat cm-stat-adv"><FiInfo size={26} /><div className="cm-stat-n">{resultado.duplicados.length}</div><div className="cm-stat-l">Duplicados</div></div>
                                 <div className={`cm-stat ${resultado.errores.length ? 'cm-stat-err' : 'cm-stat-ok'}`}>{resultado.errores.length ? <FiAlertTriangle size={26} /> : <FiCheckCircle size={26} />}<div className="cm-stat-n">{resultado.errores.length}</div><div className="cm-stat-l">Errores</div></div>
                             </div>
+                            {resultado.creados.length > 0 && (
+                                // Quien no tiene correo no recibe nada: la contraseña se la dice en persona quien la registra.
+                                <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.55, color: 'var(--text-secondary)', maxWidth: '72ch' }}>
+                                    Cada persona entra con su RUT y, como contraseña inicial, los cuatro primeros dígitos de su RUT;
+                                    se le pide cambiarla al entrar. Quien no tiene correo no recibe aviso: díselo en persona.
+                                </p>
+                            )}
                             {(resultado.errores.length > 0 || resultado.duplicados.length > 0) && (
                                 <div style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                                     <table className="cm-table">
