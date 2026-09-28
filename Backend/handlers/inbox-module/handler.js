@@ -1,4 +1,5 @@
 const { Router } = require('itty-router');
+const { sinCache } = require('../../lib/utils/response');
 const { InboxRepository } = require('./inbox.repository');
 const { conSesion } = require('../../lib/auth/sesion');
 const { PersonaService } = require('../../lib/services/PersonaService');
@@ -244,7 +245,11 @@ async function getRecipients(request) {
 
 
 // Main Lambda Handler
-module.exports.inboxHandler = async (event) => {
+// Toda salida, venga de la rama que venga (router, OPTIONS, conversión de
+// Response, error 500), sale con `Cache-Control: no-store` (lib/utils/response.js).
+module.exports.inboxHandler = async (event) => sinCache(await atender(event));
+
+const atender = async (event) => {
     // Adapt Lambda event to itty-router request
     const path = event.rawPath || event.path;
 

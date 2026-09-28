@@ -5,6 +5,7 @@ const { docClient } = require('../../lib/clients/dynamodb');
 const { created, error } = require('../../lib/utils/response');
 const { validateRequired } = require('../../lib/utils/validation');
 const { conSesion } = require('../../lib/auth/sesion');
+const { escaparHtml } = require('../../lib/escaparHtml');
 
 const SUGGESTIONS_TABLE = process.env.SUGGESTIONS_TABLE || 'Suggestions';
 const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'noreply@buildandserve.cl';
@@ -85,19 +86,19 @@ const sendSuggestionEmail = async ({ userName, interfaceLabel, message, createdA
       <div class="body">
         <div class="row">
           <span class="label">Usuario</span>
-          <span class="value">${userName || 'Desconocido'}</span>
+          <span class="value">${escaparHtml(userName || 'Desconocido')}</span>
         </div>
         <div class="row">
           <span class="label">Interfaz</span>
-          <span class="value">${interfaceLabel}</span>
+          <span class="value">${escaparHtml(interfaceLabel)}</span>
         </div>
         <div class="row">
           <span class="label">Fecha y hora</span>
-          <span class="value">${dateStr}</span>
+          <span class="value">${escaparHtml(dateStr)}</span>
         </div>
         <div class="row">
           <span class="label">Sugerencia</span>
-          <span class="value"><div class="message-box">${message.replace(/\n/g, '<br>')}</div></span>
+          <span class="value"><div class="message-box">${escaparHtml(message).replace(/\n/g, '<br>')}</div></span>
         </div>
       </div>
       <div class="footer">

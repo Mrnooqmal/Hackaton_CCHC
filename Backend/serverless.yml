@@ -43,6 +43,17 @@ custom:
   deletionPolicies:
     prod: Retain
   deletionPolicy: ${self:custom.deletionPolicies.${self:provider.stage}, 'Delete'}
+  # Cifrado en reposo de TODAS las tablas con la clave propia (ClaveDatos), no
+  # con la llave propiedad de AWS: su uso queda en CloudTrail y se puede revocar.
+  # Antes del 28 de septiembre de 2026 las 17 tablas usaban la de AWS. RUT, salud
+  # y snapshots ya iban además cifrados por campo (D-10); esto cubre el resto
+  # (nombres, correos, cargos, firmas). Cambiarlo es en caliente: no reemplaza
+  # tablas ni corta el servicio.
+  cifradoTablas:
+    SSEEnabled: true
+    SSEType: KMS
+    KMSMasterKeyId:
+      Fn::GetAtt: [ClaveDatos, Arn]
 
 provider:
   name: aws
@@ -1253,6 +1264,46 @@ resources:
               ExposedHeaders: [ETag]
               MaxAge: 3000
 
+    # Solo con TLS. Las URL firmadas y el SDK ya usan https, pero S3 también
+    # acepta http: una URL firmada editada a http:// funcionaba y el archivo
+    # (evidencia con datos personales) viajaba en claro. Con esto S3 rechaza
+    # cualquier acceso sin TLS, venga de quien venga.
+    EvidenciaBucketSoloTls:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref EvidenciaBucket
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: SoloConTLS
+              Effect: Deny
+              Principal: '*'
+              Action: 's3:*'
+              Resource:
+                - !GetAtt EvidenciaBucket.Arn
+                - !Sub '${EvidenciaBucket.Arn}/*'
+              Condition:
+                Bool:
+                  'aws:SecureTransport': 'false'
+
+    TrabajoBucketSoloTls:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref TrabajoBucket
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: SoloConTLS
+              Effect: Deny
+              Principal: '*'
+              Action: 's3:*'
+              Resource:
+                - !GetAtt TrabajoBucket.Arn
+                - !Sub '${TrabajoBucket.Arn}/*'
+              Condition:
+                Bool:
+                  'aws:SecureTransport': 'false'
+
     # ==========================================
     # ALARMA DE FALLOS QUE NO SE VEN DESDE AFUERA
     # ==========================================
@@ -1364,6 +1415,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.TENANTS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: PK
             AttributeType: S
@@ -1417,6 +1469,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.OBRAS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: PK
             AttributeType: S
@@ -1459,6 +1512,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.PERSONAS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: PK
             AttributeType: S
@@ -1531,6 +1585,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.DOCUMENTS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: documentId
             AttributeType: S
@@ -1565,6 +1620,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.SUGGESTIONS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: suggestionId
             AttributeType: S
@@ -1606,6 +1662,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.ACTIVITIES_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: activityId
             AttributeType: S
@@ -1640,6 +1697,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.AUSENCIAS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: tenantId
             AttributeType: S
@@ -1667,6 +1725,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.EPP_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: tenantId
             AttributeType: S
@@ -1695,6 +1754,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.ESTRUCTURA_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: tenantId
             AttributeType: S
@@ -1720,6 +1780,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.INCIDENTS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: incidentId
             AttributeType: S
@@ -1757,6 +1818,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.SIGNATURES_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: signatureId
             AttributeType: S
@@ -1806,6 +1868,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.SIGNATURE_REQUESTS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: requestId
             AttributeType: S
@@ -1839,6 +1902,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.SURVEYS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: surveyId
             AttributeType: S
@@ -1890,6 +1954,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.INBOX_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: recipientId
             AttributeType: S
@@ -1957,6 +2022,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.LICENCIAS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: licenciaHash
             AttributeType: S
@@ -1978,6 +2044,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.VALES_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: valeHash
             AttributeType: S
@@ -2011,6 +2078,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.SESSIONS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: sessionId
             AttributeType: S

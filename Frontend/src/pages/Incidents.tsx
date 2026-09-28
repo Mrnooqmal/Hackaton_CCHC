@@ -15,6 +15,7 @@ import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { Modal, Select, PageHeader, SegmentedControl, SearchInput, StatCard, IncidentesSkeleton, IncidentesStatsSkeleton } from '../components/ui';
 import { incidenteCerrado, ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
+import { abrirHtmlEnPestana, htmlImpresionIncidentes } from '../utils/informesHtml';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
 
@@ -405,86 +406,7 @@ export default function Incidents() {
             URL.revokeObjectURL(url);
         } else {
             // For PDF, create a printable version
-            const printContent = `
-                <html>
-                <head>
-                    <title>Reporte de Incidentes</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; padding: 20px; }
-                        h1 { color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }
-                        .stats { display: flex; gap: 20px; margin: 20px 0; }
-                        .stat-box { padding: 15px; background: #f5f5f5; border-radius: 8px; text-align: center; }
-                        .stat-value { font-size: 24px; font-weight: bold; color: #333; }
-                        .stat-label { font-size: 12px; color: #666; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                        th { background: #4CAF50; color: white; }
-                        tr:nth-child(even) { background: #f9f9f9; }
-                        .footer { margin-top: 30px; text-align: center; color: #666; font-size: 12px; }
-                    </style>
-                </head>
-                <body>
-                    <h1>Reporte de Incidentes y Accidentes</h1>
-                    <p>Generado el ${new Date().toLocaleString('es-CL')}</p>
-                    
-                    <div class="stats">
-                        <div class="stat-box">
-                            <div class="stat-value">${stats?.numeroAccidentes || 0}</div>
-                            <div class="stat-label">Accidentes</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-value">${stats?.tasaAccidentabilidad.toFixed(1) || 0}%</div>
-                            <div class="stat-label">Tasa Accidentabilidad</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-value">${stats?.diasPerdidos || 0}</div>
-                            <div class="stat-label">Días Perdidos</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-value">${stats?.siniestralidad.toFixed(1) || 0}%</div>
-                            <div class="stat-label">Siniestralidad</div>
-                        </div>
-                    </div>
-                    
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Fecha</th>
-                                <th>Tipo</th>
-                                <th>Centro de Trabajo</th>
-                                <th>Trabajador</th>
-                                <th>Gravedad</th>
-                                <th>Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${incidents.map(inc => `
-                                <tr>
-                                    <td>${inc.fecha}</td>
-                                    <td>${getTipoLabel(inc.tipo)}</td>
-                                    <td>${inc.centroTrabajo}</td>
-                                    <td>${(inc.trabajadorNombre || inc.trabajador?.nombre || '')}</td>
-                                    <td>${inc.gravedad}</td>
-                                    <td>${inc.estado.replace('_', ' ')}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                    
-                    <div class="footer">
-                        Sistema de Gestión de Seguridad Laboral | Masa Laboral: ${stats?.masaLaboral || 100}
-                    </div>
-                </body>
-                </html>
-            `;
-
-            const printWindow = window.open('', '_blank');
-            if (printWindow) {
-                printWindow.document.write(printContent);
-                printWindow.document.close();
-                printWindow.focus();
-                setTimeout(() => printWindow.print(), 250);
-            }
+            abrirHtmlEnPestana(htmlImpresionIncidentes({ incidents, stats, tipoLabel: getTipoLabel }));
         }
     };
 

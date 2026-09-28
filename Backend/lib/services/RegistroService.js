@@ -17,6 +17,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { calcularHuella, verificarHuella } = require('../huella');
 const { huellaDePut } = require('../huellaArchivo');
+const { escaparHtml: esc } = require('../escaparHtml');
 const { cifrarSobre, descifrarSobre } = require('../cifradoCampo');
 const { PutCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { PutObjectCommand } = require('@aws-sdk/client-s3');
@@ -107,9 +108,6 @@ class RegistroService {
      * imprimible). Incluye hash y token de firma para verificacion.
      */
     static renderHtml(snapshot, firma) {
-        const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
-            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
-        ));
         const ind = snapshot.indicadores || {};
         const filasInc = (snapshot.incidentes || []).map((i) => `
             <tr><td>${esc(i.fecha)}</td><td>${esc(i.tipo)}</td><td>${esc(i.gravedad)}</td>
@@ -146,7 +144,7 @@ class RegistroService {
 <h2>Actividades preventivas (${(snapshot.actividadesPreventivas || []).length})</h2>
 <table><tr><th>Fecha</th><th>Tipo</th><th>Título</th><th>Asistentes</th></tr>${filasAct || '<tr><td colspan="4" class="muted">Sin actividades en el periodo.</td></tr>'}</table>
 
-<h2>Vigilancia de la salud (${snapshot.vigilanciaSalud?.enVigilancia || 0} de ${snapshot.vigilanciaSalud?.totalActivos || 0})</h2>
+<h2>Vigilancia de la salud (${esc(snapshot.vigilanciaSalud?.enVigilancia || 0)} de ${esc(snapshot.vigilanciaSalud?.totalActivos || 0)})</h2>
 <table><tr><th>Persona</th><th>Protocolos</th><th>Aptitud</th></tr>${filasVig || '<tr><td colspan="3" class="muted">Sin personas en vigilancia.</td></tr>'}</table>
 
 <h2>Incidentes / AT / EP (${(snapshot.incidentes || []).length})</h2>
@@ -534,9 +532,6 @@ class RegistroService {
      * Render HTML del Informe de Investigacion (Art. 71, arbol de causas).
      */
     static renderInvestigacionHtml(snapshot, firma) {
-        const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
-            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
-        ));
         const af = snapshot.afectado || {};
         const ac = snapshot.accidente || {};
         const hechos = (snapshot.listaHechos || []).map((h) => `<li>${esc(h.descripcion || h)}</li>`).join('');
@@ -822,9 +817,6 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
 
     /** Render imprimible del Expediente consolidado (HTML → PDF vía navegador). */
     static renderExpedienteHtml(exp) {
-        const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
-            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
-        ));
         const ind = exp.indicadores || {};
         const t = exp.totales || {};
         const miper = exp.miper || {};
@@ -884,7 +876,7 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
 <h2>Expediente documental (${(exp.documentos || []).length})</h2>
 <table><tr><th>Tipo</th><th>Título</th><th>Versión</th><th>Firmas</th><th>Estado</th></tr>${filasDoc || '<tr><td colspan="5" class="muted">Sin documentos en el expediente.</td></tr>'}</table>
 
-<h2>Vigilancia de la salud (${exp.vigilanciaSalud?.enVigilancia || 0} de ${exp.vigilanciaSalud?.totalActivos || 0})</h2>
+<h2>Vigilancia de la salud (${esc(exp.vigilanciaSalud?.enVigilancia || 0)} de ${esc(exp.vigilanciaSalud?.totalActivos || 0)})</h2>
 <table><tr><th>Persona</th><th>Protocolos</th><th>Aptitud</th></tr>${filasVig || '<tr><td colspan="3" class="muted">Sin personas en vigilancia.</td></tr>'}</table>
 
 <h2>Incidentes / AT / EP (${(exp.incidentes || []).length})</h2>

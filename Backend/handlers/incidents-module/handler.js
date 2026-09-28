@@ -1,4 +1,5 @@
 const { Router } = require('itty-router');
+const { sinCache } = require('../../lib/utils/response');
 const { IncidentsRepository } = require('./incidents.repository');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
@@ -444,7 +445,11 @@ async function quickReport(request) {
 }
 
 // Main Lambda Handler
-module.exports.incidentsHandler = async (event) => {
+// Toda salida, venga de la rama que venga (router, OPTIONS, conversión de
+// Response, error 500), sale con `Cache-Control: no-store` (lib/utils/response.js).
+module.exports.incidentsHandler = async (event) => sinCache(await atender(event));
+
+const atender = async (event) => {
     // Adapt Lambda event to itty-router request
     const path = event.rawPath || event.path;
 

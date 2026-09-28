@@ -118,16 +118,20 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 
 | # | Punto | Estado | Evidencia o brecha |
 |---|---|---|---|
-| 6.1 | Cifrado en tránsito | **Implementado** | Todo el tráfico por HTTPS; API Gateway no admite HTTP plano. |
+| 6.1 | Cifrado en tránsito | **Implementado, con una brecha aceptada** | API: solo TLS 1.2 y 1.3, sin puerto 80. Frontend: CloudFront redirige HTTP a HTTPS y envía HSTS (un año). Buckets: todos rechazan accesos sin TLS. Brecha: CloudFront acepta TLS 1.0 porque usa el certificado por defecto de `cloudfront.net`; se resuelve con el dominio propio. Ver D-14. |
 | 6.10 | Los buckets se gobiernan desde el stack | **Implementado** | Estaban **fuera** de CloudFormation, creados a mano: ningún despliegue podía comprobar ni corregir su configuración, y de ahí venían los dos hallazgos anteriores. Se incorporaron por `IMPORT` de CloudFormation —sin recrearlos ni tocar los 135 objetos de producción— con `DeletionPolicy: Retain`, que es la forma correcta de protegerlos de un `serverless remove`. |
 | 6.11 | **Bloqueo de objetos (Object Lock)** | **Pendiente, requiere migración** | No se puede activar sobre un bucket existente. Ver D-5. |
-| 6.2 | Cifrado en reposo declarado | **Parcial** | Verificado en AWS: los cuatro buckets cifran con `AES256` (clave gestionada por AWS), y ahora está **declarado** en `Backend/serverless.yml` en vez de depender del valor por defecto. Falta la clave propia (CMK): ver D-4, que explica por qué no se aplicó a ciegas. |
+| 6.2 | Cifrado en reposo declarado | **Implementado, salvo logs** | Buckets de evidencia y trabajo con la CMK de su ambiente (D-4); el del frontend, con `AES256`. Tablas DynamoDB: pasan a la CMK (`SSESpecification`) con el commit del 28 de septiembre de 2026; antes, las 17 usaban la llave propiedad de AWS. Grupos de logs: sin clave propia, postergado. Ver D-14. |
 | 6.3 | Bloqueo explícito de acceso público a los buckets | **Implementado** | *Corrección de la versión anterior:* se declaraba **Pendiente** por ausencia en `serverless.yml`, pero en AWS ya estaba activo (las cuatro opciones en `true`). Lo que faltaba era la declaración, no la protección. Ahora está en el stack. |
 | 6.4 | Restricción de orígenes CORS en almacenamiento | **Implementado** | Estaba en `AllowedOrigins: ['*']`, es decir cualquier página de internet podía hacerle peticiones al bucket desde el navegador de quien la visitara. Acotado al CloudFront de la aplicación (y `localhost` solo en dev), con métodos `GET`, `PUT` y `HEAD`. |
 | 6.5 | Recuperación a un punto en el tiempo | **Implementado** | `PointInTimeRecoverySpecification` en **las 16 tablas**, dev y prod, verificado `ENABLED` contra AWS. Antes estaba deshabilitado en todas: un borrado no tenía ninguna vía de recuperación. |
 | 6.6 | Política de retención de infraestructura | **Implementado** | `DeletionPolicy` y `UpdateReplacePolicy` configurados por ambiente. |
 | 6.8 | Región de tratamiento de los datos | **Evaluada y postergada** | Ver decisión D-1. |
 | 6.9 | Versionado de los buckets | **Implementado** | Habilitado en los cuatro buckets y declarado en el stack. Sustituye al punto 6.7, que lo reportaba pendiente. |
+| 6.12 | Cabeceras de seguridad del frontend | **Implementado (a mano)** | HSTS, `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` y `Referrer-Policy`, con una política de cabeceras de CloudFront creada a mano porque la distribución no está en código. La CSP de scripts, pendiente (primero en modo solo reporte). Ver D-14. |
+| 6.13 | Las respuestas de la API no se cachean | **Implementado** | `Cache-Control: no-store` en toda respuesta; una prueba invoca cada función HTTP y lo comprueba. |
+| 6.14 | HTML armado con texto de usuario | **Implementado** | Un solo escapado por lado y una prueba que falla si aparece un sumidero de HTML nuevo. Ver H-13. |
+| 6.15 | Token de sesión fuera del alcance de un script | **Postergado** | Vive en `localStorage`. Moverlo a una cookie `httpOnly` exige dominio propio y protección CSRF. Ver D-14. |
 
 ### 2.7 Gobernanza del dato personal
 
@@ -987,6 +991,42 @@ administrador, que crea el alta de empresa, elige su contraseña.
 se decide tratar distinto la contraseña inicial de los roles con permisos de
 gestión.
 
+### D-14. Diagnóstico de cifrado por capa y lo que se corrigió
+**Estado: diagnóstico del 27 de septiembre de 2026, verificado contra AWS y el código. Correcciones del 28 de septiembre.**
+
+Cada punto con su estado al diagnosticar, el riesgo concreto y lo que se hizo.
+
+**En reposo**
+
+| Punto | Estado encontrado | Riesgo concreto | Resolución |
+|---|---|---|---|
+| Tablas DynamoDB | Las 17 tablas de cada ambiente con la llave propiedad de AWS; sin `SSESpecification`. | Sin control de la llave: no se puede auditar su uso ni revocarla. Acotado: RUT, salud y snapshots ya iban cifrados por campo con la CMK (D-10). | `SSESpecification` con `ClaveDatos` en todas, definida una vez (`custom.cifradoTablas`). Es un cambio en caliente, sin reemplazar tablas. |
+| Grupos de logs | Los 146 sin `kmsKeyId`; retención de 14 días en dev y 90 en prod. | Bajo desde H-11: los logs llevan identificadores, no datos personales. | Postergado. Exige dar permiso a CloudWatch Logs en la política de la llave y declarar cada grupo. |
+| Buckets S3 | Evidencia y trabajo con la CMK; frontend con `AES256`; acceso público bloqueado en todos. | Ninguno relevante. | Sin cambios. |
+
+**En tránsito**
+
+| Punto | Estado encontrado | Riesgo concreto | Resolución |
+|---|---|---|---|
+| HTTP a HTTPS en CloudFront | Redirige con 301. | Sin HSTS, la primera visita por `http://` se puede interceptar (por ejemplo, en la red de una obra). | HSTS de un año, sin `preload`. |
+| TLS mínimo en CloudFront | Acepta TLS 1.0, verificado con un handshake real. | Bajo: los navegadores actuales ya no negocian 1.0 ni 1.1. | Pendiente del dominio propio: con el certificado por defecto de `cloudfront.net` no se puede subir el mínimo. |
+| API | Solo TLS 1.2 y 1.3; sin puerto 80. | Ninguno. | Sin cambios. |
+| Buckets sin TLS | Ninguno rechazaba accesos sin TLS. | Una URL firmada editada a `http://` funcionaba y el archivo viajaba en claro. | Deny de `aws:SecureTransport` en evidencia y trabajo (en el stack) y en el del frontend (a mano, porque no está en el stack). Queda sin él el bucket de despliegues de Serverless, que solo guarda el código. |
+
+**En el cliente**
+
+| Punto | Estado encontrado | Riesgo concreto | Resolución |
+|---|---|---|---|
+| Token de sesión | En `localStorage` como `auth_token`; se borra al cerrar sesión. | Cualquier XSS lo lee: H-13 lo hizo concreto. | Cerrado el XSS y agregadas cabeceras. La cookie `httpOnly` queda para cuando exista el dominio propio. |
+| Service worker | Precachea solo archivos estáticos y la navegación a `index.html`; ninguna respuesta de la API (verificado en el `sw.js` generado). | Ninguno en el SW. En `localStorage` quedan los vales y las firmas pendientes (nombre y respuestas de encuesta) hasta sincronizar o cerrar sesión: aceptado en D-3. | Sin cambios. |
+| `Cache-Control` en la API | Ausente en todas las respuestas. | El JSON con datos personales podía quedar en el caché de disco de un equipo compartido. | `no-store` en toda respuesta. |
+| CSP y cabeceras del frontend | Ninguna. | Nada acotaba un XSS, y la app se podía meter en un iframe ajeno (clickjacking sobre la firma). | `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` y `Referrer-Policy`. La CSP de scripts va después, primero en modo solo reporte: hay que permitir el script en línea de `index.html`, Google Fonts, Nominatim, S3 y la API. |
+
+**Lo que está a mano y no en código.** La distribución de CloudFront, su política
+de cabeceras (`buildandserve-cabeceras-seguridad`) y la política del bucket del
+frontend se cambiaron desde la consola o la CLI. Ningún despliegue las comprueba
+ni las repone. Declararlas en código está propuesto y pendiente de decisión.
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo
@@ -1172,6 +1212,42 @@ El frontend no la usaba: se retiró (responde 410). El enrolamiento es
 Las pruebas usan un doble de DynamoDB con los esquemas reales de
 `serverless.yml` (`Backend/tests/doble-dynamo-tablas.js`) que rechaza, como
 DynamoDB, una clave de índice vacía o de otro tipo.
+
+### H-13. XSS almacenado en los informes imprimibles: robo del token de sesión
+**Severidad: alta — RESUELTO el 28 de septiembre de 2026 (en el árbol, sin desplegar)**
+
+El Registro AT/EP de la obra y la impresión del listado de incidentes armaban
+HTML en el navegador interpolando sin escapar la descripción de un hallazgo, el
+centro de trabajo y el nombre del trabajador. Ese HTML se abría como URL `blob:`
+o con `document.write` en una pestaña nueva, y en los dos casos corría con el
+origen de la aplicación: un script ahí adentro podía leer el `auth_token` de
+`localStorage`. Cualquier sesión puede reportar un hallazgo con descripción
+libre, así que bastaba escribir un `<script>` en la descripción y esperar a que
+un prevencionista generara el registro o imprimiera. Se confirmó en el código;
+no se ejecutó contra un ambiente real.
+
+Se trató como categoría, barriendo frontend y backend:
+
+- **Un solo escapado por lado**: `Backend/lib/escaparHtml.js` y su gemelo
+  `Frontend/src/utils/escaparHtml.ts`. Una prueba verifica que den lo mismo.
+  Había cuatro copias en el backend, tres sin la comilla simple.
+- **Frontend**: las dos plantillas pasaron a funciones puras en
+  `utils/informesHtml.ts`, con todo dato escapado, y un único sumidero
+  (`abrirHtmlEnPestana`) que también usa el export del FUF. El `document.write`
+  de la pestaña de espera se reemplazó por texto.
+- **Backend**: los informes que se guardan en S3 como evidencia ya escapaban,
+  salvo dos conteos (sin riesgo real hoy, escapados igual); el export del FUF
+  tenía dos campos sin escapar; y los correos de SES (bienvenida,
+  recuperación, licencia de alta y sugerencias) interpolaban nombre, empresa,
+  enlaces y mensaje sin escapar, lo que permitía phishing con el nombre de la
+  plataforma.
+- **La prueba** (`Backend/tests/html-sin-escapar.test.js`): falla si aparece
+  un sumidero de HTML (innerHTML, document.write, dangerouslySetInnerHTML, Blob
+  `text/html`…) fuera de la lista revisada, o un escapado propio. Además
+  ejecuta cada plantilla, del frontend y del backend, incluidos los correos, con
+  un hallazgo que trae `<script>` y `<img onerror>`, y exige que el HTML tenga
+  exactamente las mismas etiquetas que con texto normal. Se verificó rompiendo
+  cada protección.
 
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**
