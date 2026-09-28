@@ -957,6 +957,36 @@ leer; ahora es `HeadObject`.
 
 ---
 
+### D-13. Contraseña inicial con los cuatro primeros dígitos del RUT: riesgo aceptado
+**Estado: decidido el 27 de septiembre de 2026. Riesgo aceptado, no pendiente.**
+
+La contraseña inicial de toda persona con acceso web son los cuatro primeros
+dígitos de su RUT, con o sin correo, y se le pide cambiarla en el primer
+ingreso. Se mantiene así por comodidad en terreno: mucha gente no tiene correo,
+y la contraseña se le dice en persona al registrarla, sin depender de un canal
+que no existe.
+
+**Riesgo aceptado.** Hasta su primer ingreso, la cuenta queda protegida por un
+dato que no es secreto: el RUT figura en contratos, planillas y documentos de la
+obra. Quien lo conozca puede entrar antes que la persona, fijar una contraseña
+propia y quedarse con la cuenta. El límite de intentos no lo detiene, porque no
+hay nada que adivinar. Con correo el riesgo es el mismo (la contraseña es
+igual); sin correo, además, la persona no recibe ningún aviso de que alguien
+entró.
+
+**Lo que acota el riesgo hoy:** la contraseña se marca como temporal y se exige
+cambiarla al entrar, y firmar exige además el PIN, que se configura aparte y
+nunca deriva del RUT. Para una persona trabajadora, la cuenta tomada sirve para
+ver lo que tiene asignado. **No acota el rol:** el alta manual y la carga masiva
+pueden crear jefes de obra, prevencionistas o supervisores, y un administrador
+puede crear a otro administrador; todos reciben la misma contraseña inicial, y
+con ella los permisos de su rol hasta que la cambien. Solo el primer
+administrador, que crea el alta de empresa, elige su contraseña.
+
+**Se revisa si** aparece un caso de cuenta tomada antes del primer ingreso, o si
+se decide tratar distinto la contraseña inicial de los roles con permisos de
+gestión.
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo
@@ -1122,6 +1152,9 @@ Ahora sin correo no se escribe el atributo (la persona queda fuera del índice),
 borrar el correo al editar lo quita en vez de dejarlo vacío, y la contraseña
 inicial se genera con o sin correo. Quien registra la recibe en pantalla para
 decírsela en persona.
+
+Que esa contraseña inicial derive del RUT es un riesgo aceptado, no un
+pendiente: ver D-13.
 
 **Recuperación de contraseña sin correo:** la respuesta es la misma para todos
 (no revela si el RUT existe ni si tiene correo), no se envía nada ni se guarda
