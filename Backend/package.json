@@ -1,6 +1,9 @@
 {
     "name": "build-and-serve-backend",
     "version": "1.0.0",
+    "engines": {
+        "node": ">=24 <25"
+    },
     "description": "Backend serverless para sistema de prevención de riesgos",
     "main": "index.js",
     "scripts": {

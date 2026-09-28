@@ -46,7 +46,11 @@ custom:
 
 provider:
   name: aws
-  runtime: nodejs18.x
+  # Node 24 LTS (soporte hasta abril de 2028). nodejs18.x deja de aceptar
+  # actualizaciones de funciones el 3 de marzo de 2027. La versión local y la de
+  # CI se fijan en `.nvmrc` y en `engines` de cada package.json: las tres deben
+  # moverse juntas.
+  runtime: nodejs24.x
   region: us-east-1
   stage: ${opt:stage, 'dev'}
   environment:

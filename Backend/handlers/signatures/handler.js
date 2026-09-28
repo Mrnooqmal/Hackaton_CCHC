@@ -278,108 +278,20 @@ module.exports.create = async (event) => {
 };
 
 /**
- * POST /signatures/enroll - Firma de enrolamiento (sin requestId)
- * 
- * Body: {
- *   workerId: string,
- *   pin: string,           // El PIN que el trabajador está configurando
- *   signatureData?: string // Datos del canvas de firma (opcional)
- * }
+ * POST /signatures/enroll — RETIRADA el 27 de septiembre de 2026.
+ *
+ * Registraba una firma de enrolamiento "válida" SIN verificar el PIN: recibía
+ * `pin` y no lo usaba. Si nunca creó una firma fue por accidente: escribía
+ * `requestId: null`, y como `requestId` es la clave de `requestId-index`,
+ * DynamoDB rechazaba la escritura completa. Corregir ese `null` la habría
+ * convertido en un camino para crear firmas sin PIN, y una firma solo existe si
+ * pasó por PIN o vale.
+ *
+ * El frontend no la usa. El enrolamiento es `POST /personas/{id}/enrolamiento`,
+ * que verifica el PIN con límite de intentos (`PersonaService.completarEnrolamiento`).
  */
-module.exports.createEnrollment = async (event) => {
-    try {
-        const ses = conSesion(event);
-        if (!ses.ok) return ses.respuesta;
-        const sesion = ses.sesion;
-
-        const body = JSON.parse(event.body || '{}');
-
-        const validation = validateRequired(body, ['personaId', 'pin']);
-        if (!validation.valid) {
-            return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
-        }
-
-        const { personaId, pin, signatureData } = body;
-
-        // La persona se enrola ella misma, o lo hace quien la registra en su
-        // dispositivo (mismo criterio que POST /personas/{id}/enrolamiento).
-        if (personaId !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.PERSONAS_CREAR)) {
-            return error('No tienes permiso para enrolar a otra persona', 403);
-        }
-
-        // Obtener persona
-        const personaService = new PersonaService();
-        const persona = await personaService.getById(personaId);
-
-        if (!persona || persona.tenantId !== sesion.tenantId) {
-            return error('Persona no encontrada', 404);
-        }
-
-        // Verificar que no esté ya habilitada
-        if (persona.habilitado) {
-            return error('Esta persona ya completó su enrolamiento', 400);
-        }
-
-        const now = new Date();
-        const signatureId = uuidv4();
-        const token = generateSignatureToken();
-
-        // Crear registro de firma de enrolamiento
-        const signature = {
-            signatureId,
-            token,
-            requestId: null, // Sin solicitud asociada
-
-            // Información del firmante
-            personaId: personaId,
-            workerRut: persona.rut,
-            workerNombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
-            workerCargo: persona.cargo,
-
-            // Tipo especial
-            requestTipo: 'ENROLAMIENTO',
-            requestTitulo: 'Firma de Enrolamiento',
-            solicitanteId: null,
-            solicitanteNombre: 'Sistema',
-
-            // Timestamps
-            ...fechaHoraChile(now),
-            timestamp: now.toISOString(),
-
-            // Metadata
-            ipAddress: event.requestContext?.http?.sourceIp ||
-                event.requestContext?.identity?.sourceIp || 'unknown',
-            userAgent: event.headers?.['user-agent'] || 'unknown',
-            metodoValidacion: 'PIN_INICIAL',
-            signatureData: signatureData || null,
-
-            estado: 'valida',
-            tenantId: persona.tenantId || 'default',
-            createdAt: now.toISOString(),
-        };
-
-        // Guardar firma
-        await docClient.send(
-            new PutCommand({
-                TableName: SIGNATURES_TABLE,
-                Item: signature,
-            })
-        );
-
-        return created({
-            message: 'Firma de enrolamiento registrada exitosamente',
-            signature: {
-                signatureId: signature.signatureId,
-                token: signature.token,
-                fecha: signature.fecha,
-                horario: signature.horario,
-            },
-        });
-    } catch (err) {
-        console.error('Error creating enrollment signature:', err);
-        return error(err.message, 500);
-    }
-};
+module.exports.createEnrollment = async () =>
+    error('Esta ruta ya no existe. El enrolamiento se completa en POST /personas/{id}/enrolamiento.', 410);
 
 /**
  * GET /signatures/{id} - Obtener firma por ID
