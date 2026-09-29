@@ -63,6 +63,11 @@ const PERMISSIONS = {
     // plantel no es lo mismo que cambiar el logo ni que editar roles. Por
     // defecto solo lo tiene el administrador; se puede delegar.
     EMPRESA_FICHA_SALUD: 'empresa.ficha_salud',
+    // Derechos de los titulares (Ley 21.719): registrar solicitudes, bloquear,
+    // prorrogar y responder. Quien lo tiene ve qué pidió cada persona y decide
+    // sobre sus datos: por defecto solo el administrador; se puede delegar (por
+    // ejemplo, a Recursos Humanos).
+    EMPRESA_DERECHOS_TITULARES: 'empresa.derechos_titulares',
 };
 
 const ALL_PERMISSION_KEYS = Object.values(PERMISSIONS);

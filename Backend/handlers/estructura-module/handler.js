@@ -97,8 +97,10 @@ const contextoDelTenant = async (tenantId) => {
     // mostraría en verde en la pantalla con la que la empresa acredita. Un fallo
     // de lectura no puede convertirse en una afirmación de cumplimiento: si no se
     // puede leer, no se calcula.
+    // La dotación decide la obligación legal de tener comité: cuenta también a
+    // quien tiene el tratamiento bloqueado (Ley 21.719), porque sigue trabajando.
     const [personas, tenant] = await Promise.all([
-        personaService.listByTenant(tenantId),
+        personaService.listByTenant(tenantId, { incluirBloqueadas: true }),
         tenantService.getById(tenantId),
     ]);
     // Documentos y actividades sí se degradan, y hacia el lado correcto: sin
@@ -212,7 +214,7 @@ module.exports.estructuraHandler = async (event) => {
 
             // Misma razón que en `contextoDelTenant`: de acá sale la obligación de
             // constituir comité o delegado. No se degrada.
-            const personas = await personaService.listByTenant(tenantId);
+            const personas = await personaService.listByTenant(tenantId, { incluirBloqueadas: true });
 
             // La dotación declarada (override manual) vive donde ya se guarda el
             // ámbito: en la obra o en la empresa. No se crea histórico aparte.
@@ -394,7 +396,7 @@ module.exports.estructuraHandler = async (event) => {
             const obraId = body.obraId || null;
             // La dotación decide si el órgano nace obligatorio o voluntario: no se
             // calcula con datos degradados.
-            const personas = await personaService.listByTenant(tenantId);
+            const personas = await personaService.listByTenant(tenantId, { incluirBloqueadas: true });
             const organosAmbito = await estructuraService.listarOrganos(tenantId, { ambito, obraId });
 
             let declarada = null;

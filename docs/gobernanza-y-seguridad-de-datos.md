@@ -138,7 +138,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | # | Punto | Estado | Evidencia o brecha |
 |---|---|---|---|
 | 7.1 | **Política de retención de datos personales** | **Implementada: cálculo y bloqueos. Pendiente: ejecutar la supresión** | Proceso diario (`retencionDiaria`) que calcula por empresa qué venció y qué se conserva, guarda el plan y extiende el Object Lock de la evidencia que debe seguir. Suprimir exige un lote aprobado por dos personas: siguiente etapa. Ver D-15. |
-| 7.2 | **Mecanismo de supresión a solicitud del titular** | **Diseñado, pendiente** | Solicitudes con canal de origen, bloqueo temporal en 2 días hábiles, plazos configurables y alerta de vencimiento. Ver D-15. |
+| 7.2 | **Mecanismo de supresión a solicitud del titular** | **Parcial** | Implementado (API): solicitudes con canal de origen y fecha de recepción inmutable, bloqueo temporal real, prórroga solo a tiempo, respuesta con fundamento, avisos de plazo e historial que solo crece. Pendiente: pantalla y ejecución de la supresión en lotes aprobados por dos personas. Ver D-15. |
 | 7.3 | **Registro de tratamientos** | **Implementado** | Generado desde el inventario de datos (`lib/gobernanza/inventario.js`), que también recorre el proceso de retención: no pueden divergir. Una prueba falla si una tabla nueva no está clasificada. Ver D-15. |
 | 7.4 | **Procedimiento de notificación de brechas** | **Pendiente** | No hay protocolo definido. |
 | 7.5 | Minimización en las respuestas de la API | **Parcial** | El hash del PIN nunca sale, pero no hay una revisión sistemática de qué campos personales viajan en cada respuesta. |
@@ -1045,7 +1045,7 @@ la métrica `CspViolaciones` por directiva. Pasa a activa (renombrar la cabecera
 `Content-Security-Policy`) cuando pasen unos días sin violaciones legítimas.
 
 ### D-15. Gobernanza del dato personal: retención aplicada y derechos del titular
-**Estado: decidido el 28 de septiembre de 2026. Implementado: inventario, registro de tratamientos y proceso de retención (sin ejecutar supresiones). Pendiente: solicitudes del titular, bloqueo temporal y ejecución de lotes.**
+**Estado: decidido el 28 de septiembre de 2026. Implementado: inventario, registro de tratamientos, proceso de retención (sin ejecutar supresiones) y, desde el 29 de septiembre, solicitudes del titular con bloqueo temporal, prórroga, respuesta, avisos e historial. Pendiente: pantalla de solicitudes y ejecución de lotes con aprobación de dos personas.**
 
 **Roles.** Cada constructora es la **responsable** del tratamiento de los datos
 de sus trabajadores; la plataforma es **encargada**. Por eso el canal por el que
@@ -1108,6 +1108,48 @@ herramienta para registrar la solicitud y su canal de origen.
   escribe solo en la de gobernanza y en S3 solo puede listar, leer y extender
   bloqueos, sin bypass ni borrado. El rol compartido de las demás funciones no
   puede tocar bloqueos.
+
+**Derechos del titular: lo implementado (29 de septiembre de 2026).**
+
+- **API** (`/gobernanza/solicitudes`, permiso propio `empresa.derechos_titulares`,
+  solo el administrador por defecto): registrar, listar con plazo vigente,
+  detalle con historial, prórroga y respuesta.
+- **La fecha de recepción** la ingresa quien registra (el plazo parte cuando
+  llega la solicitud, no cuando se ingresa), no puede ser futura, y ninguna
+  actualización la toca: todas las actualizaciones están en un catálogo que una
+  prueba revisa. El evento del historial, que nadie puede editar, guarda la
+  fecha original.
+- **La prórroga** se registra una sola vez y solo si se comunicó antes de que
+  venza el primer plazo. La regla se revisa al leer y se repite en la
+  escritura: si el plazo vence entre una cosa y otra, no procede.
+- **Bloqueo temporal real**, aplicado al registrar (en la misma escritura) para
+  rectificación, supresión y oposición:
+
+  | Uso | ¿Incluye a quien está bloqueado? | Por qué |
+  |---|---|---|
+  | Listados de personas, obras, convocatorias, encuestas, avisos | No | Es tratamiento nuevo |
+  | Registrar una firma | No: se rechaza | Es tratamiento nuevo |
+  | Detección de RUT duplicados en la carga masiva | Sí | Evita crear una segunda ficha; no trata sus datos |
+  | Informes para la autoridad (Registro AT/EP, expediente) | Sí | Obligación legal |
+  | Dotación para la obligación de tener comité | Sí | Es un hecho legal; la persona sigue trabajando |
+
+  Una respuesta levanta el bloqueo, salvo una supresión acogida, que lo
+  mantiene hasta que se ejecute. Con dos solicitudes abiertas, responder una no
+  desbloquea: el bloqueo sigue por la otra.
+- **Historial que solo crece**: tabla aparte, `GobernanzaHistorialTable`, donde
+  ningún rol puede actualizar ni borrar (solo agregar y leer), con
+  `DeletionPolicy: Retain` en todo ambiente. Una prueba falla si algún permiso
+  IAM le da más. Cada operación escribe la solicitud, el bloqueo y sus eventos
+  en una sola transacción: no queda una solicitud sin su registro ni un "bloqueo
+  aplicado" que no se aplicó.
+- **Avisos** diarios (09:00 de Chile) a quienes tienen el permiso: plazo por
+  vencer, plazo vencido, último momento para prorrogar y bloqueo pendiente. Una
+  vez por día y tipo, y cada aviso queda en el historial.
+- **Plazos configurables** por variable de entorno (`GOBERNANZA_PLAZO_RESPUESTA_DIAS`,
+  `GOBERNANZA_PRORROGA_DIAS`, `GOBERNANZA_BLOQUEO_DIAS_HABILES`,
+  `GOBERNANZA_ALERTA_DIAS_ANTES`), con 30, 30, 2 y 5 por omisión, pendientes de
+  la confirmación legal. Los días hábiles excluyen fines de semana y no feriados:
+  el plazo calculado llega antes que el real.
 
 **Registro de tratamientos** (generado desde el inventario):
 

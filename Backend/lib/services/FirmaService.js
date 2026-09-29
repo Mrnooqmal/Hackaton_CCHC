@@ -104,6 +104,13 @@ class FirmaService {
             }
         }
 
+        // Tratamiento bloqueado por una solicitud del titular pendiente (Ley 21.719):
+        // registrar una firma nueva es tratar sus datos. Vale también para la
+        // persona precargada, venga de donde venga.
+        if (Array.isArray(persona.solicitudesBloqueo) && persona.solicitudesBloqueo.length > 0) {
+            throw Object.assign(new Error('El tratamiento de los datos de esta persona está bloqueado por una solicitud pendiente: no se pueden registrar firmas nuevas hasta que se resuelva.'), { codigo: 'TRATAMIENTO_BLOQUEADO' });
+        }
+
         // Verificar que esté habilitada (excepto para enrolamiento)
         if (tipoFirma !== 'enrolamiento' && !persona.habilitado) {
             throw new Error('Persona no está habilitada. Debe completar el enrolamiento primero.');

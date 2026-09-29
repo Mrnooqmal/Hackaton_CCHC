@@ -411,6 +411,14 @@ class PersonaService {
 
     /**
      * Listar personas de un tenant (via PK)
+     *
+     * Por omisión deja fuera a quien tiene el tratamiento BLOQUEADO por una
+     * solicitud de rectificación, supresión u oposición pendiente (Ley 21.719,
+     * lib/gobernanza/derechos.js): no se la lista, no se la convoca, no se le
+     * avisa ni se le asigna nada. `incluirBloqueadas: true` solo donde el uso es
+     * conservación u obligación legal, no tratamiento nuevo: detectar RUT
+     * duplicados en la carga masiva, los informes para la autoridad y el
+     * registro de los comités.
      */
     async listByTenant(tenantId, filters = {}) {
         let filterExpression = '';
@@ -437,6 +445,11 @@ class PersonaService {
         if (filters.obraId) {
             filterExpression += ' AND contains(obraIds, :obraId)';
             expressionValues[':obraId'] = filters.obraId;
+        }
+        if (!filters.incluirBloqueadas) {
+            // El conjunto se elimina solo cuando queda vacío (DynamoDB no guarda
+            // conjuntos vacíos): sin el atributo, no hay bloqueo.
+            filterExpression += ' AND attribute_not_exists(solicitudesBloqueo)';
         }
 
         const params = {

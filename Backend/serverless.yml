@@ -83,6 +83,7 @@ provider:
     SUGGESTIONS_TABLE: ${self:service}-sugerencias-${self:provider.stage}
     AUSENCIAS_TABLE: ${self:service}-ausencias-${self:provider.stage}
     GOBERNANZA_TABLE: ${self:service}-gobernanza-${self:provider.stage}
+    GOBERNANZA_HISTORIAL_TABLE: ${self:service}-gobernanza-historial-${self:provider.stage}
     EPP_TABLE: ${self:service}-epp-${self:provider.stage}
     ESTRUCTURA_TABLE: ${self:service}-estructura-preventiva-${self:provider.stage}
     # --- Storage ---
@@ -219,7 +220,6 @@ provider:
             - !GetAtt AusenciasTable.Arn
             - !Sub ${AusenciasTable.Arn}/index/*
             - !GetAtt EppTable.Arn
-            - !GetAtt GobernanzaTable.Arn
             - !GetAtt EstructuraPreventivaTable.Arn
 
         - Effect: Allow
@@ -227,6 +227,19 @@ provider:
             - ses:SendEmail
             - ses:SendRawEmail
           Resource: "*"
+        # Gobernanza (Ley 21.719): solicitudes y planes se crean y se actualizan,
+        # pero NO se borran. El historial, además, tampoco se actualiza: solo se
+        # le agregan eventos. Es la evidencia de que la empresa cumplió, y la
+        # garantía de que solo crece está en estos permisos, no en la disciplina
+        # del código (ver tests/gobernanza-permisos.test.js).
+        - Effect: Allow
+          Action: [dynamodb:Query, dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+          Resource:
+            - !GetAtt GobernanzaTable.Arn
+        - Effect: Allow
+          Action: [dynamodb:Query, dynamodb:PutItem]
+          Resource:
+            - !GetAtt GobernanzaHistorialTable.Arn
         # Evidencia: se escribe y se lee, pero NO se borra. El permiso de borrado
         # no está por omisión y no por olvido: el bloqueo de objetos lo impediría
         # igual, y así el intento falla donde se entiende por qué.
@@ -951,6 +964,9 @@ functions:
       - httpApi:
           path: /inbox/{proxy+}
           method: options
+      - httpApi:
+          path: /gobernanza/{proxy+}
+          method: options
 
   # Habilita la firma sin conexión: la persona valida su PIN una vez, con red, y
   # recibe vales de un solo uso. Ver lib/services/ValeFirmaService.js.
@@ -1111,6 +1127,29 @@ functions:
           method: any
           authorizer:
             name: sesionUsuario
+
+  # Derechos de los titulares (Ley 21.719): solicitudes, bloqueo temporal,
+  # prórroga y respuesta, con historial que solo crece. Ver handlers/gobernanza.
+  gobernanzaDerechos:
+    handler: handlers/gobernanza/derechos.handler
+    events:
+      - httpApi:
+          path: /gobernanza/{proxy+}
+          method: GET
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /gobernanza/{proxy+}
+          method: POST
+          authorizer:
+            name: sesionUsuario
+
+  # Aviso diario de plazos de las solicitudes de los titulares (09:00 de Chile).
+  alertasDerechos:
+    handler: handlers/gobernanza/derechos.alertasDiarias
+    timeout: 120
+    events:
+      - schedule: cron(0 12 * * ? *)
 
   # Suggestions (Sugerencias)
   createSuggestion:
@@ -1777,10 +1816,13 @@ resources:
                   Resource:
                     - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:service}-*-${self:provider.stage}'
                     - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:service}-*-${self:provider.stage}/index/*'
-                # Escribir SOLO en la de gobernanza.
+                # Escribir SOLO en la de gobernanza; en su historial, solo agregar.
                 - Effect: Allow
                   Action: [dynamodb:PutItem, dynamodb:UpdateItem]
                   Resource: !GetAtt GobernanzaTable.Arn
+                - Effect: Allow
+                  Action: [dynamodb:PutItem]
+                  Resource: !GetAtt GobernanzaHistorialTable.Arn
                 # Tablas y buckets cifrados con la clave propia.
                 - Effect: Allow
                   Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
@@ -1810,6 +1852,32 @@ resources:
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true
+        SSESpecification: ${self:custom.cifradoTablas}
+        AttributeDefinitions:
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenantId
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
+    # Historial de gobernanza: cada solicitud del titular, bloqueo, prórroga,
+    # respuesta y supresión, como eventos que SOLO SE AGREGAN. Ningún rol puede
+    # actualizar ni borrar ítems de esta tabla (solo PutItem y Query), y se
+    # conserva siempre (Retain en todo ambiente): es lo primero que se revisa en
+    # una fiscalización. PK = tenantId, SK = HIST#<solicitud>#<instante>#<n>.
+    GobernanzaHistorialTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        TableName: ${self:provider.environment.GOBERNANZA_HISTORIAL_TABLE}
+        BillingMode: PAY_PER_REQUEST
         SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: tenantId

@@ -85,6 +85,8 @@ test('ningún log serializa una entidad o una carga completa', () => {
         /\[estructura-alertas\]', JSON\.stringify\(resumen\)/,
         // Conteos de la retención diaria: `{ empresas, conAcciones, bloqueosExtendidos, fallidas }`.
         /\[retencion-diaria\]', JSON\.stringify\(resultado\)/,
+        // Conteos del aviso de plazos: `{ solicitudes, avisos, fallidos }`.
+        /\[alertas-derechos\]', JSON\.stringify\(resultado\)/,
         // Ruta, método y parámetros de la consulta del buzón (identificadores).
         /Inbox Handler Event:', JSON\.stringify\(\{/,
         // Métricas embebidas (EMF): se arman campo a campo en `degradacion` y `limitePin`.

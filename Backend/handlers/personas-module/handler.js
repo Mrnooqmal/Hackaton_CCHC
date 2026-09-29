@@ -1047,7 +1047,8 @@ const buildBulkContext = async (tenantId) => {
     const [tenant, obrasTenant, personasTenant] = await Promise.all([
         tenantService.getById(tenantId),
         obraService.listByTenant(tenantId),
-        personaService.listByTenant(tenantId),
+        // Incluye bloqueadas: detectar duplicados no es tratar sus datos.
+        personaService.listByTenant(tenantId, { incluirBloqueadas: true }),
     ]);
 
     const obraPorCodigo = {}, obraPorUUID = {}, obraPorLabel = {};

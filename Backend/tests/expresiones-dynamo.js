@@ -18,7 +18,7 @@ const ausente = Symbol('ausente');
 
 const trocear = (texto) => {
     const tokens = [];
-    const re = /\s*(\(|\)|,|<>|=|[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_#][A-Za-z0-9_]*)*|#[A-Za-z0-9_]+(?:\.[A-Za-z_#][A-Za-z0-9_]*)*|:[A-Za-z0-9_]+)/y;
+    const re = /\s*(\(|\)|,|<>|<=|>=|<|>|=|[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_#][A-Za-z0-9_]*)*|#[A-Za-z0-9_]+(?:\.[A-Za-z_#][A-Za-z0-9_]*)*|:[A-Za-z0-9_]+)/y;
     let m;
     let pos = 0;
     while (pos < texto.length) {
@@ -88,6 +88,11 @@ function cumple(item, condicion, valores = {}, nombres = {}) {
         const der = operando();
         if (op === '=') return iguales(izq, der);
         if (op === '<>') return izq !== ausente && der !== ausente && !iguales(izq, der);
+        if (['<', '<=', '>', '>='].includes(op)) {
+            // DynamoDB compara solo valores del mismo tipo (cadenas o números).
+            if (izq === ausente || der === ausente || typeof izq !== typeof der || !['string', 'number'].includes(typeof izq)) return false;
+            return op === '<' ? izq < der : op === '<=' ? izq <= der : op === '>' ? izq > der : izq >= der;
+        }
         throw new Error(`expresiones-dynamo: operador ${op} no soportado`);
     };
     const termino = () => { let v = factor(); while (ver() === 'AND') { tomar(); const d = factor(); v = v && d; } return v; };
@@ -143,7 +148,7 @@ function aplicar(item, expresion, valores = {}, nombres = {}) {
         if (v === ausente) throw new Error(`expresiones-dynamo: ${texto} no existe`);
         return structuredClone(v);
     };
-    const secciones = expresion.split(/\b(SET|REMOVE|ADD)\b/).map((s) => s.trim()).filter(Boolean);
+    const secciones = expresion.split(/\b(SET|REMOVE|ADD|DELETE)\b/).map((s) => s.trim()).filter(Boolean);
     for (let k = 0; k < secciones.length; k += 2) {
         const accion = secciones[k];
         const cuerpo = secciones[k + 1] || '';
@@ -156,7 +161,21 @@ function aplicar(item, expresion, valores = {}, nombres = {}) {
             } else if (accion === 'ADD') {
                 const [ruta, val] = parte.split(/\s+/);
                 const previo = resolverRuta(nuevo, ruta, nombres);
-                fijarRuta(nuevo, ruta, (previo === ausente ? 0 : previo) + valores[val], nombres);
+                if (valores[val] instanceof Set) {
+                    // Conjunto: unión.
+                    fijarRuta(nuevo, ruta, new Set([...(previo === ausente ? [] : previo), ...valores[val]]), nombres);
+                } else {
+                    fijarRuta(nuevo, ruta, (previo === ausente ? 0 : previo) + valores[val], nombres);
+                }
+            } else if (accion === 'DELETE') {
+                // Conjunto: diferencia. DynamoDB no guarda conjuntos vacíos: si
+                // queda vacío, el atributo desaparece.
+                const [ruta, val] = parte.split(/\s+/);
+                const previo = resolverRuta(nuevo, ruta, nombres);
+                if (previo !== ausente) {
+                    const resto = new Set([...previo].filter((x) => !valores[val].has(x)));
+                    if (resto.size) fijarRuta(nuevo, ruta, resto, nombres); else quitarRuta(nuevo, ruta, nombres);
+                }
             } else {
                 throw new Error(`expresiones-dynamo: acción ${accion} no soportada`);
             }
