@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
     FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
-    FiUpload, FiX, FiInfo, FiUsers, FiArrowRight, FiAlertTriangle,
-    FiCheck, FiImage, FiFile, FiEye, FiEdit3, FiHeart,
+    FiUpload, FiX, FiInfo, FiUsers, FiAlertTriangle, FiChevronRight,
+    FiCheck, FiImage, FiFile, FiEye, FiEdit3, FiHeart, FiSearch,
 } from 'react-icons/fi';
 import { LuHardHat } from 'react-icons/lu';
-import { AlertBanner, Badge, Modal, Select, PageHeader, CollectionView } from '../components/ui';
+import {
+    AlertBanner, Modal, Select, PageHeader, CollectionView,
+    SgsstSkeleton, EstructuraPreventivaSkeleton, CompletitudFufSkeleton,
+} from '../components/ui';
 import type { CollectionMode } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBrand, DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
@@ -78,7 +81,6 @@ function contrastVsWhite(hex: string): number | null {
 // Paleta sugerida: colores de marca legibles con texto blanco (contraste AA ≥ 4.5).
 const SUGGESTED_COLORS = [
     { hex: '#006edc', label: 'Azul CChC' },
-    { hex: '#002952', label: 'Azul marino' },
     { hex: '#df3601', label: 'Naranja' },
     { hex: '#c81e1e', label: 'Rojo' },
     { hex: '#047857', label: 'Verde' },
@@ -129,6 +131,8 @@ export default function MiEmpresa() {
         ...(can.salud ? [{ key: 'salud' as const, label: 'Ficha de salud', icon: FiHeart }] : []),
     ];
     const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'identidad');
+    // La acción principal de EPP vive en el encabezado; el modal, en la pestaña.
+    const [eppNuevo, setEppNuevo] = useState(0);
 
     const [tenant, setTenant] = useState<Tenant | null>(null);
     const [personas, setPersonas] = useState<PersonaResponse[]>([]);
@@ -153,9 +157,6 @@ export default function MiEmpresa() {
     if (!tenantId) {
         return <div style={{ padding: 24 }}><AlertBanner variant="error" message="No hay una empresa asociada a tu sesión." /></div>;
     }
-    if (loading) {
-        return <div style={{ padding: 48, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
-    }
 
     return (
         <div className="mi-empresa-page" style={{ padding: '0 24px 40px' }}>
@@ -164,7 +165,7 @@ export default function MiEmpresa() {
             <PageHeader
                 banner
                 title="Mi Empresa"
-                description={`Administra la identidad, los roles y permisos, los cargos y el catálogo de EPP de ${tenant?.nombre || 'tu empresa'}.`}
+                description="Identidad, roles, cargos, elementos de protección y ficha de salud de la empresa."
                 tabs={tabs.map((t) => {
                     const Icon = t.icon;
                     return { id: t.key, label: t.label, icon: <Icon size={15} /> };
@@ -172,11 +173,29 @@ export default function MiEmpresa() {
                 activeTab={tab}
                 onTabChange={(id) => setTab(id as TabKey)}
                 tabsLabel="Secciones de la empresa"
+                actions={
+                    tab === 'cargos' && can.cargos ? (
+                        <Link to="/cargos-onboarding" className="btn btn-primary">
+                            <FiUsers size={15} /> Onboarding por cargo
+                        </Link>
+                    ) : tab === 'epp' && can.epp ? (
+                        <button className="btn btn-primary" onClick={() => setEppNuevo((n) => n + 1)}>
+                            <FiPlus size={15} /> Nuevo elemento
+                        </button>
+                    ) : undefined
+                }
             />
 
             {loadError && <AlertBanner variant="error" message={loadError} onDismiss={() => setLoadError('')} />}
 
-            {tab === 'identidad' && can.identidad && tenant && (
+            {/* Mientras llega la empresa, cada pestaña que depende de ella muestra su
+                esqueleto. Cargos y EPP no la necesitan: arrancan su propia carga
+                en paralelo y se encargan de su esqueleto. */}
+            {loading && tab === 'identidad' && can.identidad && <IdentidadSkeleton />}
+            {loading && tab === 'roles' && can.roles && <RolesSkeleton />}
+            {loading && tab === 'salud' && can.salud && <FichaSaludSkeleton />}
+
+            {!loading && tab === 'identidad' && can.identidad && tenant && (
                 <IdentidadTab
                     tenant={tenant}
                     personas={personas}
@@ -186,7 +205,7 @@ export default function MiEmpresa() {
                     toast={toast}
                 />
             )}
-            {tab === 'roles' && can.roles && tenant && (
+            {!loading && tab === 'roles' && can.roles && tenant && (
                 <RolesTab
                     tenantId={tenantId}
                     tenant={tenant}
@@ -200,13 +219,14 @@ export default function MiEmpresa() {
                 <CargosTab
                     tenantId={tenantId}
                     personas={personas}
+                    personasListas={!loading}
                     canEditKits={hasPermission(PERMISSIONS.CARGOS_GESTIONAR)}
                 />
             )}
             {tab === 'epp' && can.epp && (
-                <EppTab tenantId={tenantId} toast={toast} />
+                <EppTab tenantId={tenantId} toast={toast} nuevo={eppNuevo} />
             )}
-            {tab === 'salud' && can.salud && tenant && (
+            {!loading && tab === 'salud' && can.salud && tenant && (
                 <FichaSaludTab tenant={tenant} onSaved={(t) => setTenant(t)} toast={toast} />
             )}
 
@@ -258,7 +278,7 @@ function FichaSaludTab({ tenant, onSaved, toast }: {
     };
 
     return (
-        <div className="me-panel">
+        <div className="me-stack">
             {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
 
             <section className="me-section">
@@ -269,19 +289,18 @@ function FichaSaludTab({ tenant, onSaved, toast }: {
                         envía a todo el plantel y se mantiene al día con las altas nuevas.
                     </p>
                 </div>
-                <div className="me-section-body me-fs-estado">
-                    <div className="me-fs-estado-texto">
-                        <Badge variant={habilitada ? 'success' : 'neutral'}>
-                            {habilitada ? 'Habilitada' : 'Deshabilitada'}
-                        </Badge>
-                        <p className="me-field-hint">
-                            {habilitada
-                                ? 'Las personas de la empresa la reciben en Encuestas. Las respuestas se guardan cifradas.'
-                                : 'No se recolectan datos de salud a través de esta ficha.'}
-                        </p>
-                    </div>
+                <div className="me-fs-estado">
+                    <span className={`me-pill ${habilitada ? 'ok' : ''}`}>
+                        <span className="me-pill-dot" aria-hidden="true" />
+                        {habilitada ? 'Habilitada' : 'Deshabilitada'}
+                    </span>
+                    <p className="me-fs-estado-texto">
+                        {habilitada
+                            ? 'Las personas de la empresa la reciben en Encuestas. Las respuestas se guardan cifradas.'
+                            : 'No se recolectan datos de salud a través de esta ficha.'}
+                    </p>
                     <button
-                        className={`btn ${habilitada ? 'btn-secondary' : 'btn-primary'}`}
+                        className={`btn ${habilitada ? 'me-btn-alerta' : 'btn-primary'}`}
                         disabled={saving}
                         onClick={() => setPendiente(!habilitada)}
                     >
@@ -292,27 +311,30 @@ function FichaSaludTab({ tenant, onSaved, toast }: {
 
             <section className="me-section">
                 <div className="me-section-head">
-                    <h3 className="me-section-title">Registro de decisiones</h3>
+                    <h3 className="me-section-title">Historial</h3>
                     <p className="me-section-hint">
                         Quién la habilitó o deshabilitó, y cuándo. Lo registra el sistema y no se
                         puede editar.
                     </p>
                 </div>
-                <div className="me-section-body">
-                    {historial.length === 0 ? (
-                        <p className="me-field-hint">Nunca se ha habilitado.</p>
-                    ) : (
-                        <ol className="me-fs-historial">
-                            {historial.map((e, i) => (
-                                <li key={`${e.en}-${i}`} className="me-fs-evento">
-                                    <span className="me-fs-accion">{e.habilitada ? 'Habilitada' : 'Deshabilitada'}</span>
-                                    <span className="me-fs-quien">por {e.nombre || 'una persona sin nombre registrado'}</span>
-                                    <time className="me-fs-cuando" dateTime={e.en}>{fecha(e.en)}</time>
-                                </li>
-                            ))}
-                        </ol>
-                    )}
-                </div>
+                {historial.length === 0 ? (
+                    <p className="me-field-hint">Nunca se ha habilitado.</p>
+                ) : (
+                    <ol className="me-fs-historial">
+                        {historial.map((e, i) => (
+                            <li key={`${e.en}-${i}`} className="me-fs-evento">
+                                {e.habilitada
+                                    ? <FiCheck size={15} className="me-fs-icono ok" aria-hidden="true" />
+                                    : <FiX size={15} className="me-fs-icono" aria-hidden="true" />}
+                                <span className="me-fs-quien">
+                                    {e.habilitada ? 'Habilitada' : 'Deshabilitada'} por{' '}
+                                    <strong>{e.nombre || 'una persona sin nombre registrado'}</strong>
+                                </span>
+                                <time className="me-fs-cuando" dateTime={e.en}>{fecha(e.en)}</time>
+                            </li>
+                        ))}
+                    </ol>
+                )}
             </section>
 
             <Modal
@@ -431,6 +453,14 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
         || color.toLowerCase() !== (tenant.preferencias?.colorPrimario || DEFAULT_PRIMARY_COLOR).toLowerCase()
         || logoBase64 !== undefined;
 
+    const descartar = () => {
+        setNombre(tenant.nombre || '');
+        setColor(tenant.preferencias?.colorPrimario || DEFAULT_PRIMARY_COLOR);
+        setLogoPreview(auth.user?.branding?.logoUrl || null);
+        setLogoBase64(undefined);
+        setErr('');
+    };
+
     const save = async () => {
         if (!nombre.trim()) { setErr('La razón social no puede quedar vacía.'); return; }
         if (!colorValido) { setErr('El color principal no es un hexadecimal válido (ej. #006edc).'); return; }
@@ -468,31 +498,31 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
 
     return (
         <div className="me-identity">
-            <div className="me-identity-form">
+            <div className="me-stack">
                 <section className="me-section">
                     <div className="me-section-head">
                         <h3 className="me-section-title">Datos de la empresa</h3>
                         <p className="me-section-hint">El nombre con el que tu empresa aparece en la plataforma y en los documentos.</p>
                     </div>
-                    <div className="me-section-body">
-                        <div className="form-group">
+                    <div className="me-datos">
+                        <div className="form-group me-datos-nombre">
                             <label className="form-label" htmlFor="me-nombre">Razón social</label>
                             <input id="me-nombre" className="form-input" value={nombre}
                                 onChange={(e) => setNombre(e.target.value)} placeholder="Constructora Demo SpA" />
                         </div>
                         <div className="form-group">
-                            <label className="form-label" htmlFor="me-rut">RUT empresa</label>
+                            <label className="form-label" htmlFor="me-rut">RUT</label>
                             <div className="me-field-locked">
-                                <input id="me-rut" className="form-input" value={tenant.rutEmpresa} disabled readOnly />
+                                <input id="me-rut" className="form-input" value={tenant.rutEmpresa} disabled readOnly
+                                    title="El RUT no se puede modificar." />
                                 <FiLock size={13} aria-hidden="true" />
                             </div>
-                            <span className="me-field-hint">El RUT no se puede modificar.</span>
                         </div>
                         {/* Representante legal (DS 44 Art. 8 inc. 1): aprueba el Programa de
                             Trabajo Preventivo y firma la Política SST. Se guarda solo, sin
                             depender del botón de identidad, porque es un dato normativo y no
                             de marca. */}
-                        <div className="form-group">
+                        <div className="form-group me-datos-full">
                             <label className="form-label" htmlFor="me-repleg">Representante legal</label>
                             <select
                                 id="me-repleg"
@@ -510,8 +540,81 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                             </select>
                             <span className="me-field-hint">
                                 Aprueba el Programa de Trabajo Preventivo (Art. 8) y firma la Política SST.
-                                Sin designarlo, el programa no se puede aprobar.
+                                Sin designarlo, el programa no se puede aprobar. Se guarda al elegirlo.
                             </span>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Logo</h3>
+                        <p className="me-section-hint">Reemplaza el nombre Build &amp; Serve en la barra superior.</p>
+                    </div>
+                    <div className="me-logo">
+                        <input ref={fileRef} type="file" accept="image/*" hidden
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
+                        <button type="button"
+                            className={`me-dropzone ${dragging ? 'dragging' : ''} ${logoPreview ? 'has-logo' : ''}`}
+                            aria-label={logoPreview ? 'Cambiar el logo' : 'Subir un logo'}
+                            onClick={() => fileRef.current?.click()}
+                            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                            onDragLeave={() => setDragging(false)}
+                            onDrop={(e) => {
+                                e.preventDefault(); setDragging(false);
+                                const f = e.dataTransfer.files?.[0]; if (f) onFile(f);
+                            }}>
+                            {logoPreview
+                                ? <img src={logoPreview} alt="Logo de la empresa" />
+                                : <FiImage size={22} aria-hidden="true" />}
+                        </button>
+                        <div className="me-logo-info">
+                            <span className="me-logo-titulo">
+                                {logoPreview ? 'Logo cargado' : 'Arrastra tu logo o haz clic para subirlo'}
+                            </span>
+                            <span className="me-field-hint">PNG, JPG, SVG o WebP · Máx. 2 MB</span>
+                            <div className="me-logo-actions">
+                                <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>
+                                    <FiUpload size={13} /> {logoPreview ? 'Cambiar logo' : 'Subir logo'}
+                                </button>
+                                {logoPreview && (
+                                    <button className="btn btn-ghost btn-sm me-texto-alerta"
+                                        onClick={() => { setLogoPreview(null); setLogoBase64(''); }}>
+                                        <FiX size={13} /> Quitar
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Color principal</h3>
+                        <p className="me-section-hint">Se aplica a los botones, enlaces y elementos activos de toda la plataforma.</p>
+                    </div>
+                    <div className="me-color-row">
+                        <button type="button" className="me-swatch" style={{ background: colorValido ? color : 'var(--surface-hover)' }}
+                            onClick={() => document.getElementById('me-color-input')?.click()}
+                            aria-label="Abrir el selector de color" />
+                        <input id="me-color-input" type="color" className="me-color-native" tabIndex={-1}
+                            value={colorValido ? color : DEFAULT_PRIMARY_COLOR} onChange={(e) => setColor(e.target.value)} />
+                        <input className="form-input me-hex" value={color} maxLength={7} spellCheck={false}
+                            aria-label="Código del color" onChange={(e) => setColor(e.target.value)} />
+                        <span className="me-color-sep" aria-hidden="true" />
+                        <div className="me-suggested-row" role="group" aria-label="Colores sugeridos">
+                            {SUGGESTED_COLORS.map((s) => {
+                                const active = color.toLowerCase() === s.hex.toLowerCase();
+                                return (
+                                    <button key={s.hex} type="button" title={s.label} aria-label={s.label}
+                                        aria-pressed={active}
+                                        className={`me-suggested-dot ${active ? 'active' : ''}`}
+                                        style={{ background: s.hex }}
+                                        onClick={() => setColor(s.hex)}>
+                                        {active && <FiCheck size={12} aria-hidden="true" />}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                 </section>
@@ -600,84 +703,24 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                     ) : null}
                 </section>
 
-                <section className="me-section">
-                    <div className="me-section-head">
-                        <h3 className="me-section-title">Logo</h3>
-                        <p className="me-section-hint">Reemplaza el nombre Build &amp; Serve en la barra superior.</p>
-                    </div>
-                    <div className="me-section-body">
-                        <input ref={fileRef} type="file" accept="image/*" hidden
-                            onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
-                        <button type="button"
-                            className={`me-dropzone ${dragging ? 'dragging' : ''} ${logoPreview ? 'has-logo' : ''}`}
-                            onClick={() => fileRef.current?.click()}
-                            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-                            onDragLeave={() => setDragging(false)}
-                            onDrop={(e) => {
-                                e.preventDefault(); setDragging(false);
-                                const f = e.dataTransfer.files?.[0]; if (f) onFile(f);
-                            }}>
-                            {logoPreview ? (
-                                <img src={logoPreview} alt="Logo de la empresa" />
-                            ) : (
-                                <span className="me-dropzone-empty">
-                                    <FiImage size={20} aria-hidden="true" />
-                                    <span className="me-dropzone-title">Arrastra tu logo o haz clic para subirlo</span>
-                                    <span className="me-dropzone-sub">PNG, JPG, SVG o WebP · Máx. 2 MB</span>
-                                </span>
-                            )}
-                        </button>
-                        {logoPreview && (
-                            <div className="me-logo-actions">
-                                <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>
-                                    <FiUpload size={13} /> Cambiar logo
-                                </button>
-                                <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
-                                    onClick={() => { setLogoPreview(null); setLogoBase64(''); }}>
-                                    <FiX size={13} /> Quitar
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </section>
-
-                <section className="me-section">
-                    <div className="me-section-head">
-                        <h3 className="me-section-title">Color principal</h3>
-                        <p className="me-section-hint">Se aplica a los botones, enlaces y elementos activos de toda la plataforma.</p>
-                    </div>
-                    <div className="me-section-body">
-                        <div className="me-color-row">
-                            <button type="button" className="me-swatch" style={{ background: colorValido ? color : 'var(--surface-hover)' }}
-                                onClick={() => document.getElementById('me-color-input')?.click()}
-                                aria-label="Abrir el selector de color" />
-                            <input id="me-color-input" type="color" className="me-color-native" tabIndex={-1}
-                                value={colorValido ? color : DEFAULT_PRIMARY_COLOR} onChange={(e) => setColor(e.target.value)} />
-                            <input className="form-input me-hex" value={color} maxLength={7} spellCheck={false}
-                                aria-label="Código del color" onChange={(e) => setColor(e.target.value)} />
-                        </div>
-
-                        <div className="me-suggested">
-                            <span className="me-field-hint">Colores sugeridos</span>
-                            <div className="me-suggested-row">
-                                {SUGGESTED_COLORS.map((s) => {
-                                    const active = color.toLowerCase() === s.hex.toLowerCase();
-                                    return (
-                                        <button key={s.hex} type="button" title={s.label} aria-label={s.label}
-                                            aria-pressed={active}
-                                            className={`me-suggested-dot ${active ? 'active' : ''}`}
-                                            style={{ background: s.hex }}
-                                            onClick={() => setColor(s.hex)}>
-                                            {active && <FiCheck size={13} aria-hidden="true" />}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    </div>
-                </section>
+                {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
+                {/* Fija al pie de la ventana: los cambios se hacen arriba y no hay que
+                    bajar hasta el final del formulario para guardarlos. */}
+                <div className={`me-save-bar${dirty ? ' dirty' : ''}`}>
+                    <span className="me-field-hint">
+                        {dirty && !saving ? 'Tienes cambios sin guardar.' : 'Razón social, logo y color se guardan con este botón.'}
+                    </span>
+                    <button className="btn btn-secondary" disabled={!dirty || saving} onClick={descartar}>
+                        Descartar
+                    </button>
+                    <button className="btn btn-primary" disabled={!dirty || saving} onClick={save}>
+                        {saving ? <div className="spinner" /> : <><FiSave /> Guardar identidad</>}
+                    </button>
+                </div>
             </div>
 
+            {/* Fija bajo el header mientras se recorre el formulario: el logo y el
+                color se editan arriba, pero se sigue viendo el resultado abajo. */}
             <aside className="me-preview">
                 <span className="me-preview-eyebrow">Vista previa</span>
 
@@ -715,26 +758,13 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
 
                 {ratio != null && (
                     <div className={`me-contrast ${contrasteOk ? 'ok' : 'warn'}`}>
-                        <span className="me-contrast-dot" />
-                        <div>
-                            <strong>{contrasteOk ? 'Buen contraste' : 'Contraste bajo'}</strong>
-                            <p>{contrasteOk
-                                ? 'El texto blanco de los botones se lee sin esfuerzo sobre este color.'
-                                : 'El texto blanco de los botones cuesta de leer. Prueba un tono más oscuro.'}</p>
-                        </div>
+                        {contrasteOk
+                            ? <FiCheck size={15} aria-hidden="true" />
+                            : <FiAlertTriangle size={15} aria-hidden="true" />}
+                        <strong>{contrasteOk ? 'Buen contraste' : 'Contraste bajo'}</strong>
                     </div>
                 )}
             </aside>
-
-            <div className="me-save-bar">
-                {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
-                <div className="me-save-actions">
-                    {dirty && !saving && <span className="me-field-hint">Tienes cambios sin guardar.</span>}
-                    <button className="btn btn-primary" disabled={!dirty || saving} onClick={save}>
-                        {saving ? <div className="spinner" /> : <><FiSave /> Guardar identidad</>}
-                    </button>
-                </div>
-            </div>
         </div>
     );
 }
@@ -893,15 +923,16 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
     const countByRole = (r: RoleDraft) => personas.filter((p) => personaActiva(p) && personaEnRol(p, r)).length;
 
     return (
-        <div>
-            <div className="card me-banner">
-                <FiInfo style={{ flexShrink: 0, color: 'var(--info-500)' }} />
-                <span className="text-sm text-muted" style={{ flex: 1 }}>
+        <div className="me-stack">
+            <div className="me-aviso">
+                <FiInfo size={17} className="me-aviso-icono" aria-hidden="true" />
+                <span className="me-aviso-texto">
                     Los roles con <FiLock size={11} style={{ verticalAlign: -1 }} /> son los mínimos de la empresa:
                     puedes renombrarlos y ajustar sus permisos, pero no eliminarlos. Al eliminar un rol con
                     personas asignadas, se te pedirá reasignarlas antes.
                 </span>
-                <button className="btn btn-save" disabled={!dirty || saving} onClick={save}>
+                {dirty && !saving && <span className="me-field-hint me-aviso-estado">Cambios sin guardar</span>}
+                <button className="btn btn-primary" disabled={!dirty || saving} onClick={save}>
                     {saving ? <div className="spinner" /> : <><FiSave /> Guardar cambios</>}
                 </button>
             </div>
@@ -912,47 +943,40 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
                 {roles.map((r) => {
                     const count = countByRole(r);
                     return (
-                        <div key={r._id} className="card me-role">
+                        <div key={r._id} className="me-role">
                             <div className="me-role-head">
-                                <span className={`me-role-icon ${r.protegido ? 'locked' : ''}`}>
-                                    {r.protegido ? <FiLock size={14} /> : <FiShield size={14} />}
+                                <span className="me-role-icon" aria-hidden="true">
+                                    {r.protegido ? <FiLock size={18} /> : <FiShield size={18} />}
                                 </span>
-                                <div className="me-role-fields">
-                                    <input className="form-input me-role-name" placeholder="Nombre del rol"
-                                        value={r.nombre} disabled={r.locked}
-                                        onChange={(e) => update(r._id, { nombre: e.target.value })} />
-                                    <input className="form-input" placeholder="Descripción (opcional)"
-                                        value={r.descripcion} disabled={r.protegido}
-                                        title={r.protegido ? 'La descripción de un rol mínimo no se puede editar.' : undefined}
-                                        onChange={(e) => update(r._id, { descripcion: e.target.value })} />
-                                </div>
-                                <div className="me-role-meta">
-                                    <span className="me-count" title="Personas con este rol"><FiUsers size={12} /> {count}</span>
-                                    {!r.protegido && (
-                                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
-                                            onClick={() => requestDelete(r)} title="Eliminar rol"><FiTrash2 /></button>
-                                    )}
-                                </div>
+                                <input className="form-input me-role-name" placeholder="Nombre del rol"
+                                    aria-label="Nombre del rol"
+                                    value={r.nombre} disabled={r.locked}
+                                    onChange={(e) => update(r._id, { nombre: e.target.value })} />
+                                <input className="form-input me-role-desc" placeholder="Descripción (opcional)"
+                                    aria-label="Descripción del rol"
+                                    value={r.descripcion} disabled={r.protegido}
+                                    title={r.protegido ? 'La descripción de un rol mínimo no se puede editar.' : undefined}
+                                    onChange={(e) => update(r._id, { descripcion: e.target.value })} />
+                                <span className="me-count" title="Personas con este rol"><FiUsers size={12} /> {count}</span>
+                                {!r.protegido && (
+                                    <button type="button" className="me-icon-btn danger"
+                                        onClick={() => requestDelete(r)} aria-label={`Eliminar rol ${r.nombre}`} title="Eliminar rol">
+                                        <FiTrash2 size={15} />
+                                    </button>
+                                )}
                             </div>
 
                             {r.locked ? (
                                 <div className="me-perms-total">
-                                    <FiLock size={14} aria-hidden="true" />
-                                    <div>
-                                        <strong>Acceso total</strong>
-                                        <p>
-                                            El administrador entra a todos los módulos de la plataforma.
-                                            Sus permisos no se editan.
-                                        </p>
-                                    </div>
+                                    <FiCheck size={14} aria-hidden="true" />
+                                    <span>
+                                        <strong>Acceso total</strong> a todos los módulos de la plataforma. Sus permisos no se editan.
+                                    </span>
                                 </div>
                             ) : (
                                 <>
                                     <div className="me-perms-head">
-                                        <span>Permisos</span>
-                                        <span className="me-perms-tally">
-                                            {activos(r)} de {ALL_PERMISSION_KEYS.length}
-                                        </span>
+                                        Permisos <span className="me-perms-tally">{activos(r)} de {ALL_PERMISSION_KEYS.length}</span>
                                     </div>
                                     <div className="me-perms-groups">
                                         {PERMISSION_GROUPS.map((g) => {
@@ -960,24 +984,29 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
                                             const marcados = keys.filter((k) => r.permisos.includes(k)).length;
                                             const todos = marcados === keys.length;
                                             return (
-                                                <div key={g.grupo} className={`me-mod${marcados ? '' : ' vacio'}`}>
+                                                <div key={g.grupo} className="me-mod">
                                                     <div className="me-mod-head">
                                                         <span className="me-mod-name">{g.grupo}</span>
+                                                        <span className="me-mod-tally">{marcados}/{keys.length}</span>
                                                         <button type="button" className="me-mod-all"
                                                             onClick={() => setGroupPerms(r._id, keys, !todos)}>
                                                             {todos ? 'Quitar todo' : 'Marcar todo'}
                                                         </button>
-                                                        <span className="me-mod-tally">{marcados}/{keys.length}</span>
                                                     </div>
                                                     <div className="me-mod-chips">
-                                                        {g.permisos.map((perm) => (
-                                                            <label key={perm.key} className="me-chip" title={perm.nota}>
-                                                                <input type="checkbox"
-                                                                    checked={r.permisos.includes(perm.key)}
-                                                                    onChange={() => togglePerm(r._id, perm.key)} />
-                                                                <span>{perm.label}</span>
-                                                            </label>
-                                                        ))}
+                                                        {g.permisos.map((perm) => {
+                                                            const on = r.permisos.includes(perm.key);
+                                                            return (
+                                                                <label key={perm.key} className="me-chip" title={perm.nota}>
+                                                                    <input type="checkbox" checked={on}
+                                                                        onChange={() => togglePerm(r._id, perm.key)} />
+                                                                    <span>
+                                                                        {on && <FiCheck size={11} aria-hidden="true" />}
+                                                                        {perm.label}
+                                                                    </span>
+                                                                </label>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             );
@@ -990,7 +1019,7 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
                 })}
             </div>
 
-            <button className="btn btn-secondary" style={{ marginTop: 12 }} onClick={addRole}><FiPlus /> Añadir rol</button>
+            <button type="button" className="me-add" onClick={addRole}><FiPlus size={14} /> Añadir rol</button>
 
             <ReassignModal
                 open={!!reassign}
@@ -1011,9 +1040,10 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
 }
 
 // ── Cargos (solo lectura + toggle lista/grilla) ───────────────────────────────
-function CargosTab({ tenantId, personas }: {
+function CargosTab({ tenantId, personas, personasListas }: {
     tenantId: string;
     personas: PersonaResponse[];
+    personasListas: boolean;
     canEditKits: boolean;
 }) {
     const [cargos, setCargos] = useState<TenantCargo[]>([]);
@@ -1039,45 +1069,53 @@ function CargosTab({ tenantId, personas }: {
         return c.label.toLowerCase().includes(s) || c.codigo.toLowerCase().includes(s);
     });
 
-    if (loading) return <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
+    // Sin las personas los conteos por cargo saldrían en cero: se espera a ambas.
+    const cargando = loading || !personasListas;
 
-    const tagLabel = (c: TenantCargo) => c.legacy ? 'heredado' : c.seed ? 'predefinido' : 'personalizado';
-    const tagColor = (c: TenantCargo) => c.legacy ? 'var(--text-muted)' : c.seed ? '#006edc' : '#10b981';
+    const tipo = (c: TenantCargo) => c.legacy
+        ? { label: 'Heredado', cls: 'heredado' }
+        : c.seed ? { label: 'Predefinido', cls: 'predefinido' } : { label: 'Personalizado', cls: 'personalizado' };
+    const personasLabel = (n: number) => `${n} persona${n === 1 ? '' : 's'}`;
+    const kitLabel = (c: TenantCargo) => {
+        const n = c.kit?.length || 0;
+        return `${n} elemento${n === 1 ? '' : 's'} de kit`;
+    };
 
-    const listView = (
+    const sinResultados = <div className="me-vacio">No hay cargos que coincidan.</div>;
+
+    const listView = filtered.length === 0 ? sinResultados : (
         <div className="me-cargos-list">
-            {filtered.length === 0 && <div className="text-sm text-muted" style={{ padding: '12px 0' }}>No hay cargos que coincidan.</div>}
             {filtered.map((c) => {
-                const count = countByCargo(c.codigo);
+                const t = tipo(c);
                 return (
                     <Link key={c.codigo} to={`/cargos-onboarding?cargo=${c.codigo}`} className="me-cargo-row">
-                        <div className="me-cargo-row-name">{c.label}</div>
-                        <div className="me-cargo-row-code">{c.codigo}</div>
-                        <div className="me-cargo-row-meta">
-                            <span className="me-cargo-row-tag" style={{ color: tagColor(c) }}>{tagLabel(c)}</span>
-                            <span className="me-cargo-row-tag">{c.kit?.length || 0} ítems kit</span>
-                            <span className="me-cargo-row-count"><FiUsers size={11} /> {count}</span>
-                        </div>
-                        <FiArrowRight size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        <span className="me-cargo-row-name">{c.label}</span>
+                        <span className="me-cargo-row-code">{c.codigo}</span>
+                        <span className={`me-tipo ${t.cls}`}>{t.label}</span>
+                        <span className="me-cargo-row-meta me-cargo-row-kit">{kitLabel(c)}</span>
+                        <span className="me-cargo-row-meta">{personasLabel(countByCargo(c.codigo))}</span>
+                        <FiChevronRight size={15} className="me-cargo-row-chevron" aria-hidden="true" />
                     </Link>
                 );
             })}
         </div>
     );
 
-    const gridView = (
+    const gridView = filtered.length === 0 ? sinResultados : (
         <div className="me-cargos-grid2">
-            {filtered.length === 0 && <div className="text-sm text-muted" style={{ padding: '12px 0' }}>No hay cargos que coincidan.</div>}
             {filtered.map((c) => {
-                const count = countByCargo(c.codigo);
+                const t = tipo(c);
                 return (
                     <Link key={c.codigo} to={`/cargos-onboarding?cargo=${c.codigo}`} className="me-cargo-card">
-                        <div className="me-cargo-card-name">{c.label}</div>
-                        <div className="me-cargo-card-code">{c.codigo}</div>
-                        <div className="me-cargo-card-footer">
-                            <span style={{ fontSize: '0.72rem', color: tagColor(c), fontWeight: 600 }}>{tagLabel(c)}</span>
-                            <span className="me-cargo-row-count"><FiUsers size={11} /> {count}</span>
-                        </div>
+                        <span className="me-cargo-card-top">
+                            <span className="me-cargo-card-name">{c.label}</span>
+                            <span className={`me-tipo ${t.cls}`}>{t.label}</span>
+                        </span>
+                        <span className="me-cargo-row-code">{c.codigo}</span>
+                        <span className="me-cargo-card-footer">
+                            <span>{kitLabel(c)}</span>
+                            <span>{personasLabel(countByCargo(c.codigo))}</span>
+                        </span>
                     </Link>
                 );
             })}
@@ -1085,7 +1123,7 @@ function CargosTab({ tenantId, personas }: {
     );
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <div className="me-stack">
             {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
 
             <CollectionView
@@ -1094,14 +1132,10 @@ function CargosTab({ tenantId, personas }: {
                 searchPlaceholder="Buscar cargo…"
                 mode={mode}
                 onModeChange={setMode}
-                count={filtered.length}
-                list={listView}
-                grid={gridView}
-                actions={
-                    <Link to="/cargos-onboarding" className="btn btn-primary btn-sm">
-                        Onboarding por cargo <FiArrowRight size={13} />
-                    </Link>
-                }
+                count={cargando ? undefined : filtered.length}
+                countNoun="cargo"
+                list={cargando ? <CargosListSkeleton /> : listView}
+                grid={cargando ? <CargosGridSkeleton /> : gridView}
             />
         </div>
     );
@@ -1127,9 +1161,10 @@ const emptyEppDraft: EppDraft = {
     instructivo: null,
 };
 
-function EppTab({ tenantId, toast }: {
+function EppTab({ tenantId, toast, nuevo }: {
     tenantId: string;
     toast: ReturnType<typeof useToast>['toast'];
+    nuevo: number;
 }) {
     const [items, setItems] = useState<EppElemento[]>([]);
     const [loading, setLoading] = useState(true);
@@ -1188,6 +1223,9 @@ function EppTab({ tenantId, toast }: {
         setModalOpen(true);
     };
 
+    // `nuevo` cambia cuando se pulsa "Nuevo elemento" en el encabezado de la página.
+    useEffect(() => { if (nuevo > 0) abrirNuevo(); }, [nuevo]);
+
     const abrirEdicion = (e: EppElemento) => {
         setEditing(e);
         setDraft({
@@ -1245,16 +1283,14 @@ function EppTab({ tenantId, toast }: {
         }
     };
 
-    if (loading) {
-        return <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
-    }
+    if (loading) return <EppSkeleton />;
 
     return (
         <div className="epp-tab">
             {err && !modalOpen && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
 
             {incompletos > 0 && (
-                <div className="epp-alerta">
+                <div className="epp-alerta" role="status">
                     <FiAlertTriangle size={16} aria-hidden="true" />
                     <div>
                         <strong>{incompletos} elemento{incompletos === 1 ? '' : 's'} sin respaldo completo</strong>
@@ -1267,19 +1303,17 @@ function EppTab({ tenantId, toast }: {
             )}
 
             <div className="epp-toolbar">
-                <div className="epp-search">
-                    <FiTag size={15} aria-hidden="true" />
+                <label className="epp-search">
+                    <FiSearch size={15} aria-hidden="true" />
                     <input
                         type="search"
                         placeholder="Buscar elemento…"
+                        aria-label="Buscar elemento"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                     />
-                </div>
+                </label>
                 <span className="epp-count">{items.length} elemento{items.length === 1 ? '' : 's'}</span>
-                <button className="btn btn-primary btn-sm" onClick={abrirNuevo}>
-                    <FiPlus size={14} /> Nuevo elemento
-                </button>
             </div>
 
             {items.length === 0 ? (
@@ -1301,7 +1335,7 @@ function EppTab({ tenantId, toast }: {
                     {filtrados.map((e, i) => (
                         <li key={e.eppId} className="epp-tile" style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}>
                             <div className="epp-tile-top">
-                                <span className="epp-tile-icon"><LuHardHat size={16} aria-hidden="true" /></span>
+                                <span className="epp-tile-icon"><LuHardHat size={18} aria-hidden="true" /></span>
                                 <div className="epp-tile-menu">
                                     <button type="button" aria-label={`Editar ${e.nombre}`} title="Editar"
                                         onClick={() => abrirEdicion(e)}>
@@ -1321,14 +1355,14 @@ function EppTab({ tenantId, toast }: {
 
                             <div className="epp-tile-docs">
                                 <EppDocChip
-                                    label="Certificado de calidad o registro ISP"
+                                    label="Certificado"
                                     title={e.certificado && e.certificadoTipo ? CERTIFICADO_TIPO_LABEL[e.certificadoTipo] : 'Certificado o registro ISP'}
                                     adjunto={e.certificado}
                                     onView={verDocumento}
                                     onMissingClick={() => abrirEdicion(e)}
                                 />
                                 <EppDocChip
-                                    label="Instructivo de uso y mantención"
+                                    label="Instructivo"
                                     title="Instructivo de uso y mantención"
                                     adjunto={e.instructivo}
                                     onView={verDocumento}
@@ -1469,16 +1503,18 @@ function EppDocChip({ label, title, adjunto, onView, onMissingClick }: {
     if (!adjunto) {
         return (
             <button type="button" className="epp-tile-doc missing" onClick={onMissingClick}
-                title={`${title}: sin cargar — clic para agregarlo`}>
-                <FiPlus size={13} aria-hidden="true" />
+                title={`${title}: sin cargar — clic para agregarlo`}
+                aria-label={`${title}: falta. Agregarlo`}>
+                <FiPlus size={11} aria-hidden="true" />
                 <span>{label}</span>
             </button>
         );
     }
     return (
         <button type="button" className="epp-tile-doc" onClick={() => onView(adjunto)}
-            title={`Ver ${title.toLowerCase()}: ${adjunto.nombre}`}>
-            <FiEye size={13} aria-hidden="true" />
+            title={`Ver ${title.toLowerCase()}: ${adjunto.nombre}`}
+            aria-label={`Ver ${title.toLowerCase()}`}>
+            <FiCheck size={11} aria-hidden="true" />
             <span>{label}</span>
         </button>
     );
@@ -1544,7 +1580,7 @@ function EppUploader({ titulo, ayuda, tenantId, adjunto, onChange, onError, onVi
                         onClick={() => inputRef.current?.click()}>
                         {subiendo ? 'Subiendo…' : <><FiUpload size={13} /> Reemplazar</>}
                     </button>
-                    <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger-500)' }}
+                    <button type="button" className="btn btn-ghost btn-sm me-texto-alerta"
                         aria-label={`Quitar ${titulo}`} onClick={() => onChange(null)}>
                         <FiX size={13} />
                     </button>
@@ -1612,81 +1648,384 @@ function ReassignModal({ open, title, noun, affected, options, busy, onCancel, o
     );
 }
 
+// ── Esqueletos ───────────────────────────────────────────────────────────────
+// Cada pestaña dibuja su retícula con las MISMAS clases que el contenido ya
+// cargado (me-section, me-datos, me-role, epp-tile…): así los bloques caen donde
+// después cae el texto, en vez de un spinner centrado que salta al cargar.
+// `aria-busy` va una vez por contenedor; los bloques son decorativos.
+
+const Sk = ({ w, h = 12, r, className = '', style }: {
+    w?: number | string; h?: number; r?: number; className?: string; style?: React.CSSProperties;
+}) => (
+    <div className={`ui-skel ${className}`} style={{ width: w, height: h, borderRadius: r, flexShrink: 0, ...style }} />
+);
+
+/** Un renglón de texto: el bloque mide la letra, la caja mide el renglón
+ *  (line-height), que es lo que ocupa el texto real. */
+const Txt = ({ w, h, lh, style }: { w: number | string; h: number; lh: number; style?: React.CSSProperties }) => (
+    <div style={{ display: 'flex', alignItems: 'center', height: lh, width: typeof w === 'number' ? w : undefined, flex: typeof w === 'number' ? '0 0 auto' : undefined, ...style }}>
+        <Sk w={w} h={h} />
+    </div>
+);
+
+function SeccionHeadSkel({ titulo, hint }: { titulo: number; hint: number }) {
+    return (
+        <div className="me-section-head" style={{ alignItems: 'center' }}>
+            <Txt w={titulo} h={14} lh={22} />
+            <Txt w={hint} h={10} lh={17} />
+        </div>
+    );
+}
+
+const LabelSkel = ({ w }: { w: number }) => <Txt w={w} h={10} lh={17} style={{ marginBottom: 6 }} />;
+
+function CampoSkel({ className, label = 90 }: { className?: string; label?: number }) {
+    return (
+        <div className={`form-group ${className ?? ''}`}>
+            <LabelSkel w={label} />
+            <Sk w="100%" h={38} r={8} />
+        </div>
+    );
+}
+
+function IdentidadSkeleton() {
+    return (
+        <div className="me-identity" aria-busy="true" aria-live="polite" aria-label="Cargando la identidad de la empresa">
+            <div className="me-stack">
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={150} hint={340} />
+                    <div className="me-datos">
+                        <CampoSkel className="me-datos-nombre" label={84} />
+                        <CampoSkel label={32} />
+                        <div className="form-group me-datos-full">
+                            <LabelSkel w={130} />
+                            <Sk w="100%" h={38} r={8} />
+                            <Txt w="62%" h={10} lh={18} style={{ marginTop: 6 }} />
+                        </div>
+                    </div>
+                </section>
+
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={40} hint={260} />
+                    <div className="me-logo">
+                        <Sk w={96} h={96} r={14} />
+                        <div className="me-logo-info">
+                            <Txt w={250} h={13} lh={21} />
+                            <Txt w={170} h={10} lh={18} />
+                            <div className="me-logo-actions"><Sk w={104} h={32} r={8} /></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={110} hint={330} />
+                    <div className="me-color-row">
+                        <Sk w={40} h={40} r={10} />
+                        <Sk w={110} h={38} r={8} />
+                        <span className="me-color-sep" aria-hidden="true" />
+                        <div className="me-suggested-row">
+                            {Array.from({ length: SUGGESTED_COLORS.length }, (_, i) => <Sk key={i} w={26} h={26} r={8} />)}
+                        </div>
+                    </div>
+                </section>
+
+                {/* Organizaciones sindicales llegan con la empresa; se reserva el
+                    alto de su forma más común: vacío + formulario para agregar. */}
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={170} hint={430} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                        <Sk w="100%" h={150} r={12} />
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
+                            <div style={{ flex: '2 1 200px' }}><LabelSkel w={60} /><Sk w="100%" h={38} r={8} /></div>
+                            <div style={{ flex: '2 1 180px' }}><LabelSkel w={64} /><Sk w="100%" h={38} r={8} /></div>
+                            <Sk w={104} h={40} r={8} />
+                        </div>
+                    </div>
+                </section>
+
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={330} hint={380} />
+                    <SgsstSkeleton />
+                </section>
+
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={160} hint={420} />
+                    <EstructuraPreventivaSkeleton />
+                </section>
+
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={340} hint={300} />
+                    <CompletitudFufSkeleton />
+                </section>
+            </div>
+
+            <aside className="me-preview">
+                <Sk w={84} h={10} />
+                <div className="me-mock"><Sk w="100%" h={204} r={0} /></div>
+                <Sk w="100%" h={40} r={10} />
+            </aside>
+        </div>
+    );
+}
+
+const CHIP_ANCHOS = [46, 66, 84, 72, 54, 104, 76, 92, 58, 80];
+
+function RolesSkeleton() {
+    return (
+        <div className="me-stack" aria-busy="true" aria-live="polite" aria-label="Cargando los roles">
+            <div className="me-aviso">
+                <Sk w={17} h={17} className="ui-skel--circulo" />
+                <div className="me-aviso-texto" style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    <Sk w="92%" h={11} />
+                    <Sk w="58%" h={11} />
+                </div>
+                <Sk w={150} h={40} r={8} />
+            </div>
+            <div className="me-roles">
+                {[0, 1, 2].map((i) => (
+                    <div key={i} className="me-role">
+                        <div className="me-role-head">
+                            <Sk w={38} h={38} r={10} />
+                            <Sk className="me-role-name" h={38} r={8} />
+                            <Sk className="me-role-desc" h={38} r={8} />
+                            <Sk w={46} h={28} r={999} />
+                            {i > 0 && <Sk w={30} h={30} r={6} />}
+                        </div>
+                        {i === 0 ? (
+                            <Sk w="100%" h={41} r={6} />
+                        ) : (
+                            <>
+                                <Txt w={110} h={10} lh={18} style={{ marginBottom: -4 }} />
+                                {/* Los mismos grupos y la misma cantidad de chips que llegan. */}
+                                <div className="me-perms-groups">
+                                    {PERMISSION_GROUPS.map((g, gi) => (
+                                        <div key={g.grupo} className="me-mod">
+                                            <div className="me-mod-head">
+                                                <Txt w={[88, 60, 76, 96, 70][gi % 5]} h={10} lh={18} />
+                                                <Txt w={22} h={9} lh={18} style={{ marginRight: 'auto' }} />
+                                                <Txt w={64} h={10} lh={18} />
+                                            </div>
+                                            <div className="me-mod-chips">
+                                                {g.permisos.map((_, k) => (
+                                                    <Sk key={k} w={CHIP_ANCHOS[(gi + k) % CHIP_ANCHOS.length]} h={26} r={999} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function CargosListSkeleton({ filas = 6 }: { filas?: number }) {
+    return (
+        <div className="me-cargos-list" aria-busy="true" aria-live="polite" aria-label="Cargando los cargos">
+            {Array.from({ length: filas }, (_, i) => (
+                <div key={i} className="me-cargo-row">
+                    <span className="me-cargo-row-name"><Txt w={[140, 110, 170, 96, 150, 124][i % 6]} h={13} lh={22} /></span>
+                    <span className="me-cargo-row-code"><Sk w={52} h={10} /></span>
+                    <Sk w={[80, 72, 94][i % 3]} h={21} r={999} />
+                    <span className="me-cargo-row-meta me-cargo-row-kit"><Sk w={110} h={10} /></span>
+                    <span className="me-cargo-row-meta"><Sk w={70} h={10} /></span>
+                    <Sk w={15} h={15} r={4} />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function CargosGridSkeleton({ tarjetas = 8 }: { tarjetas?: number }) {
+    return (
+        <div className="me-cargos-grid2" aria-busy="true" aria-live="polite" aria-label="Cargando los cargos">
+            {Array.from({ length: tarjetas }, (_, i) => (
+                <div key={i} className="me-cargo-card">
+                    <span className="me-cargo-card-top">
+                        <Txt w={[120, 96, 140, 110][i % 4]} h={13} lh={22} />
+                        <Sk w={[80, 72, 94][i % 3]} h={21} r={999} />
+                    </span>
+                    <Txt w={52} h={10} lh={19} />
+                    <span className="me-cargo-card-footer">
+                        <Txt w={100} h={10} lh={19} />
+                        <Txt w={64} h={10} lh={19} />
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function EppSkeleton({ tarjetas = 8 }: { tarjetas?: number }) {
+    return (
+        <div className="epp-tab" aria-busy="true" aria-live="polite" aria-label="Cargando el catálogo de EPP">
+            <div className="epp-toolbar">
+                <Sk w={300} h={38} r={8} />
+                <Sk w={78} h={11} />
+            </div>
+            <ul className="epp-grid">
+                {Array.from({ length: tarjetas }, (_, i) => (
+                    <li key={i} className="epp-tile epp-tile--skel">
+                        <div className="epp-tile-top">
+                            <Sk w={38} h={38} r={10} />
+                            <div className="epp-tile-menu"><Sk w={26} h={26} r={6} /><Sk w={26} h={26} r={6} /></div>
+                        </div>
+                        <div className="epp-tile-body">
+                            <Txt w={['72%', '58%', '80%', '64%'][i % 4]} h={13} lh={17.5} />
+                            <Txt w={['50%', '66%', '44%', '58%'][i % 4]} h={10} lh={16} />
+                        </div>
+                        <div className="epp-tile-docs">
+                            <Sk w={80} h={23} r={7} />
+                            <Sk w={76} h={23} r={7} />
+                        </div>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
+function FichaSaludSkeleton() {
+    return (
+        <div className="me-stack" aria-busy="true" aria-live="polite" aria-label="Cargando la ficha de salud">
+            <section className="me-section">
+                <SeccionHeadSkel titulo={150} hint={430} />
+                <div className="me-fs-estado">
+                    <Sk w={108} h={26} r={999} />
+                    <div className="me-fs-estado-texto">
+                        <Txt w="96%" h={11} lh={18.75} />
+                        <Txt w="60%" h={11} lh={18.75} />
+                    </div>
+                    <Sk w={120} h={42} r={8} style={{ marginLeft: 'auto' }} />
+                </div>
+            </section>
+            <section className="me-section">
+                <SeccionHeadSkel titulo={70} hint={360} />
+                <ol className="me-fs-historial">
+                    {[0, 1, 2].map((i) => (
+                        <li key={i} className="me-fs-evento">
+                            <Sk w={15} h={15} r={4} />
+                            <Txt w={[230, 250, 210][i]} h={12} lh={21} />
+                            <Txt w={170} h={10} lh={19} style={{ marginLeft: 'auto' }} />
+                        </li>
+                    ))}
+                </ol>
+            </section>
+        </div>
+    );
+}
+
 const styles = `
-.mi-empresa-page .form-label { display:block; margin-bottom: 6px; }
+/* Traducción del canvas "Mi empresa" (MiEmpresa*.dc.html): secciones sin tarjeta,
+   con título + pista sobre una regla; el único recuadro es el de cada elemento. */
+.me-stack { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+
+.me-section-head {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;
+    padding-bottom: 9px; margin-bottom: 14px; border-bottom: 1px solid var(--surface-border);
+}
+.me-section-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.me-section-hint { margin: 0; flex: 1 1 320px; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); }
+.me-field-hint { display: block; font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin-top: 6px; }
+.me-texto-alerta { color: var(--danger-alerta) !important; }
+
+.me-pill {
+    display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+    padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+    background: var(--surface-hover); color: var(--text-secondary);
+}
+.me-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.me-pill.ok { background: color-mix(in srgb, var(--success-apagado) 16%, transparent); color: var(--success-apagado); }
+
+.me-icon-btn {
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 30px; height: 30px; padding: 0; border: none; border-radius: var(--radius-sm);
+    background: none; color: var(--text-muted); cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.me-icon-btn:hover { background: var(--surface-hover); color: var(--text-primary); }
+.me-icon-btn.danger:hover { color: var(--danger-alerta); }
+
+/* Acción de agregar: trazo discontinuo, como "Agregar" en Personas. */
+.me-add {
+    display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
+    padding: 9px 16px; border: 1px dashed var(--gray-500); border-radius: var(--radius-md);
+    background: none; color: var(--text-primary); font-family: inherit; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+.me-add:hover { border-color: var(--accent); color: var(--accent-text); }
+
+/* Paneles legales compartidos (DS44): dentro de Mi empresa, sin relleno, como
+   el resto de los recuadros del canvas. */
+.me-section .ds44-doc-row { background: none; }
+
+.me-vacio { font-size: var(--text-sm); color: var(--text-secondary); padding: var(--space-3) 0; }
 
 /* ── Identidad ─────────────────────────────────────────────────────────────── */
-.me-identity { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-4); align-items: start; }
+.me-identity { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; }
 
-.me-identity-form, .me-panel {
-    background: var(--surface-card); border: 1px solid var(--surface-border);
-    border-radius: var(--radius-lg); overflow: hidden;
-}
-.me-section { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: var(--space-6); padding: var(--space-5) var(--space-6); border-bottom: 1px solid var(--surface-border); }
-.me-section:last-child { border-bottom: none; }
-.me-section-title { font-size: var(--text-sm); font-weight: 600; margin: 0 0 4px; color: var(--text-primary); }
-.me-section-hint { font-size: var(--text-xs); line-height: 1.5; color: var(--text-muted); margin: 0; }
-.me-section-body > .form-group:last-child { margin-bottom: 0; }
-
-.me-panel > .alert-banner, .me-panel > [role="alert"] { margin: var(--space-4) var(--space-6) 0; }
-.me-fs-estado { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
-.me-fs-estado-texto { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
-.me-fs-estado-texto .me-field-hint { margin: 0; max-width: 60ch; }
-.me-fs-historial { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.me-fs-evento { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 10px 0; border-bottom: 1px solid var(--surface-border); font-size: var(--text-sm); }
-.me-fs-evento:first-child { padding-top: 0; }
-.me-fs-evento:last-child { border-bottom: none; padding-bottom: 0; }
-.me-fs-accion { font-weight: 600; color: var(--text-primary); }
-.me-fs-quien { color: var(--text-secondary); }
-.me-fs-cuando { margin-left: auto; color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
-.me-fs-modal-texto { margin: 0; line-height: 1.55; color: var(--text-secondary); max-width: 60ch; }
+.me-datos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.me-datos .form-group { margin-bottom: 0; }
+.me-datos-nombre { grid-column: span 2; }
+.me-datos-full { grid-column: 1 / -1; }
 
 .me-field-locked { position: relative; }
 .me-field-locked .form-input { padding-right: 34px; }
 .me-field-locked svg { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
-.me-field-hint { display: block; font-size: var(--text-xs); color: var(--text-muted); margin-top: 6px; }
 
 /* Logo */
+.me-logo { display: flex; align-items: center; gap: 18px; }
 .me-dropzone {
-    width: 100%; min-height: 116px; padding: var(--space-4);
+    width: 96px; height: 96px; flex-shrink: 0; padding: 10px;
     display: flex; align-items: center; justify-content: center;
-    border: 1px dashed var(--surface-border); border-radius: var(--radius-md);
-    background: var(--surface-elevated); cursor: pointer;
+    border: 1.5px dashed var(--gray-500); border-radius: 14px;
+    background: none; color: var(--text-muted); cursor: pointer;
     transition: border-color var(--transition-fast), background var(--transition-fast);
 }
-.me-dropzone:hover, .me-dropzone.dragging { border-color: var(--primary-500); background: var(--cchc-blue-tint, var(--surface-hover)); }
-.me-dropzone.has-logo { border-style: solid; background: var(--surface-card); }
-.me-dropzone img { max-width: 100%; max-height: 84px; object-fit: contain; }
-.me-dropzone-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text-muted); text-align: center; }
-.me-dropzone-title { font-size: var(--text-sm); font-weight: 500; color: var(--text-secondary); }
-.me-dropzone-sub { font-size: var(--text-xs); }
-.me-logo-actions { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+.me-dropzone:hover, .me-dropzone.dragging { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text); }
+.me-dropzone.has-logo { border: 1px solid var(--surface-border); background: var(--surface-elevated); }
+.me-dropzone img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.me-logo-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.me-logo-titulo { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.me-logo-info .me-field-hint { margin-top: 0; }
+.me-logo-actions { display: flex; align-items: center; gap: var(--space-2); margin-top: 8px; }
 
 /* Color */
-.me-color-row { display: flex; align-items: center; gap: var(--space-3); }
-.me-swatch { width: 42px; height: 42px; flex-shrink: 0; border-radius: var(--radius-md); border: 1px solid var(--surface-border); cursor: pointer; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.06); }
+.me-color-row { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 20px; }
+.me-swatch { width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-md); border: 1px solid var(--surface-border); cursor: pointer; }
 .me-color-native { width: 0; height: 0; opacity: 0; position: absolute; pointer-events: none; }
-.me-hex { max-width: 130px; font-family: var(--font-mono); text-transform: lowercase; }
-
-.me-suggested { margin-top: var(--space-4); }
-.me-suggested-row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 6px; }
+.me-hex { width: 110px; font-family: var(--font-mono); text-transform: uppercase; }
+.me-color-sep { width: 1px; height: 28px; background: var(--surface-border); }
+.me-suggested-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .me-suggested-dot {
-    width: 28px; height: 28px; padding: 0; border-radius: 50%; cursor: pointer;
-    border: 1px solid rgb(0 0 0 / 0.12); color: #fff;
+    width: 26px; height: 26px; padding: 0; border-radius: 8px; cursor: pointer;
+    border: 1.5px solid transparent; color: #fff;
     display: flex; align-items: center; justify-content: center;
-    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+    transition: transform var(--transition-fast);
 }
-.me-suggested-dot:hover { transform: scale(1.12); }
-.me-suggested-dot.active { box-shadow: 0 0 0 2px var(--surface-card), 0 0 0 4px var(--text-primary); }
+.me-suggested-dot:hover { transform: scale(1.1); }
+.me-suggested-dot.active { border-color: var(--accent); }
 
-/* Vista previa de la identidad */
-.me-preview {
-    background: var(--surface-card); border: 1px solid var(--surface-border);
-    border-radius: var(--radius-lg); padding: var(--space-4);
-    display: flex; flex-direction: column; gap: var(--space-3);
+.me-save-bar {
+    position: sticky; bottom: 0; z-index: 5;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-top: calc(-1 * var(--space-2)); padding: 14px 0 16px;
+    background: var(--surface-bg); border-top: 1px solid var(--surface-border);
 }
-.me-preview-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
-.me-mock { border: 1px solid var(--surface-border); border-radius: var(--radius-md); overflow: hidden; }
+.me-save-bar.dirty .me-field-hint { color: var(--text-primary); font-weight: 500; }
+.me-save-bar .me-field-hint { flex: 1; margin: 0; }
+
+/* Vista previa: se queda a la vista bajo el header fijo mientras se recorre
+   el formulario, que es bastante más largo que ella. */
+.me-preview {
+    position: sticky; top: calc(var(--header-height) + var(--space-4));
+    display: flex; flex-direction: column; gap: 12px;
+}
+.me-preview-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+.me-mock { border: 1px solid var(--surface-border); border-radius: 14px; overflow: hidden; }
 .me-mock-topbar {
     height: 20px; display: flex; align-items: center; padding: 0 10px;
     font-size: 7.5px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase;
@@ -1698,260 +2037,283 @@ const styles = `
 .me-mock-wordmark i { font-style: normal; color: var(--text-muted); margin: 0 1px; }
 .me-mock-divider { width: 1px; height: 14px; background: var(--surface-border); }
 .me-mock-crumb { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.me-mock-body { padding: 12px; background: var(--surface-bg); display: flex; flex-direction: column; gap: 12px; }
+.me-mock-body { padding: 14px 12px; background: var(--surface-elevated); display: flex; flex-direction: column; gap: 12px; }
 .me-mock-nav { display: flex; gap: 6px; }
 .me-mock-nav-item { font-size: 10.5px; color: var(--text-muted); padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid transparent; }
 .me-mock-nav-item.active { color: var(--text-primary); font-weight: 600; border-left-width: 2px; border-left-style: solid; }
-.me-mock-lines { display: flex; flex-direction: column; gap: 6px; }
-.me-mock-lines span { height: 6px; border-radius: 3px; background: var(--surface-hover); }
-.me-mock-lines span:nth-child(2) { width: 78%; }
-.me-mock-lines span:nth-child(3) { width: 52%; }
+.me-mock-lines { display: flex; flex-direction: column; gap: 8px; }
+.me-mock-lines span { height: 8px; border-radius: 4px; background: var(--surface-hover); }
+.me-mock-lines span:nth-child(2) { width: 70%; }
+.me-mock-lines span:nth-child(3) { width: 45%; }
 .me-mock-actions { display: flex; align-items: center; gap: 10px; }
-.me-mock-btn { font-size: 11px; font-weight: 600; color: #fff; padding: 6px 12px; border-radius: var(--radius-sm); }
-.me-mock-link { font-size: 11px; font-weight: 500; }
+.me-mock-btn { font-size: 11.5px; font-weight: 600; color: #fff; padding: 6px 14px; border-radius: 7px; }
+.me-mock-link { font-size: 11.5px; font-weight: 500; }
 
-.me-contrast { display: flex; align-items: flex-start; gap: var(--space-2); padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-elevated); }
-.me-contrast strong { display: block; font-size: var(--text-xs); font-weight: 600; }
-.me-contrast p { margin: 2px 0 0; font-size: var(--text-xs); line-height: 1.45; color: var(--text-muted); }
-.me-contrast-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
-.me-contrast.ok strong { color: var(--success-600); }
-.me-contrast.ok .me-contrast-dot { background: var(--success-500); }
-.me-contrast.warn strong { color: var(--warning-600); }
-.me-contrast.warn .me-contrast-dot { background: var(--warning-500); }
-
-.me-save-bar { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-end; }
-.me-save-bar .alert-banner { width: 100%; }
-.me-save-actions { display: flex; align-items: center; gap: var(--space-3); }
-.me-save-actions .me-field-hint { margin-top: 0; }
+.me-contrast {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md);
+    border: 1px solid var(--surface-border);
+}
+.me-contrast > svg { flex-shrink: 0; }
+.me-contrast strong { font-size: 12.5px; font-weight: 600; }
+.me-contrast.ok { background: color-mix(in srgb, var(--success-apagado) 8%, transparent); color: var(--success-apagado); }
+.me-contrast.warn { background: color-mix(in srgb, var(--danger-alerta) 8%, transparent); color: var(--danger-alerta); }
 
 @media (max-width: 1080px) {
   .me-identity { grid-template-columns: minmax(0, 1fr); }
+  /* En una columna la vista previa queda al final: fijarla taparía el formulario. */
+  .me-preview { position: static; }
 }
 @media (max-width: 720px) {
-  .me-section { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); padding: var(--space-4); }
+  .me-datos { grid-template-columns: minmax(0, 1fr); }
+  .me-datos-nombre { grid-column: auto; }
+  .me-color-sep { display: none; }
 }
 
-.me-banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 16px; }
-
-.me-roles { display: flex; flex-direction: column; gap: 14px; }
-.me-role { padding: 16px; }
-.me-role-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
-.me-role-icon { width: 32px; height: 32px; border-radius: var(--radius-md); background: var(--cchc-blue-tint); color: var(--accent-text); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.me-role-icon.locked { background: var(--surface-hover); color: var(--text-muted); }
-.me-role-fields { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.me-role-name { font-weight: 600; }
-.me-role-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.me-count { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-muted); background: var(--surface-hover); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
-
-/* ── Permisos: un módulo por celda, cada permiso es un chip conmutable ──────
-   El chip sustituye a la lista de casillas: ocupa ~3 veces menos alto, deja
-   todo el alcance del rol visible de un vistazo y el único color en juego es
-   el de la marca (activo) frente al trazo neutro (inactivo). */
-.me-perms-head {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
-    margin: 4px 0 10px; padding-top: 12px; border-top: 1px solid var(--surface-border);
-    font-size: var(--text-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted);
+/* ── Ficha de salud ────────────────────────────────────────────────────────── */
+.me-fs-estado {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 18px 20px; border: 1px solid var(--surface-border); border-radius: 14px;
 }
-.me-perms-tally { font-weight: 600; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.me-fs-estado-texto { flex: 1 1 280px; margin: 0; max-width: 60ch; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.me-fs-estado > .btn { margin-left: auto; }
+.me-btn-alerta {
+    background: none; color: var(--danger-alerta);
+    border: 1px solid color-mix(in srgb, var(--danger-alerta) 40%, transparent);
+}
+.me-btn-alerta:hover:not(:disabled) { background: color-mix(in srgb, var(--danger-alerta) 10%, transparent); }
+.me-fs-historial { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.me-fs-evento {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px;
+    padding: 12px 4px; border-bottom: 1px solid var(--surface-hover); font-size: 13px;
+}
+.me-fs-icono { flex-shrink: 0; color: var(--danger-alerta); }
+.me-fs-icono.ok { color: var(--success-apagado); }
+.me-fs-quien { color: var(--text-secondary); }
+.me-fs-quien strong { font-weight: 600; color: var(--text-primary); }
+.me-fs-cuando { margin-left: auto; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.me-fs-modal-texto { margin: 0; line-height: 1.55; color: var(--text-secondary); max-width: 60ch; }
+
+/* ── Roles y permisos ──────────────────────────────────────────────────────── */
+.me-aviso {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 12px 14px;
+    padding: 14px 16px; border: 1px solid var(--surface-border); border-radius: var(--radius-md);
+}
+.me-aviso-icono { flex-shrink: 0; color: var(--accent-text); }
+.me-aviso-texto { flex: 1 1 360px; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.me-aviso-estado { margin: 0; }
+
+.me-roles { display: flex; flex-direction: column; gap: 12px; }
+.me-role {
+    display: flex; flex-direction: column; gap: 14px;
+    padding: 16px 18px; border: 1px solid var(--surface-border); border-radius: 14px;
+}
+.me-role-head { display: flex; align-items: center; gap: 12px; }
+.me-role-icon {
+    width: 38px; height: 38px; flex-shrink: 0; border-radius: var(--radius-md);
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-hover); color: var(--text-secondary);
+}
+.me-role-name { flex: 1 1 0; max-width: 260px; min-width: 140px; font-weight: 600; }
+.me-role-desc { flex: 2 1 0; min-width: 160px; }
+.me-count {
+    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    padding: 4px 10px; border: 1px solid var(--surface-border); border-radius: 999px;
+    font-size: 11.5px; color: var(--text-secondary); white-space: nowrap;
+}
 
 /* Rol Administrador: no hay nada que decidir, así que no se dibujan controles. */
 .me-perms-total {
-    display: flex; align-items: flex-start; gap: 10px;
-    margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md);
-    background: var(--surface-elevated); border: 1px solid var(--surface-border); color: var(--text-muted);
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+    border: 1px dashed color-mix(in srgb, var(--accent) 30%, transparent);
+    font-size: 12px; color: var(--accent-text);
 }
-.me-perms-total strong { display: block; font-size: var(--text-sm); color: var(--text-primary); }
-.me-perms-total p { margin: 2px 0 0; font-size: var(--text-xs); line-height: 1.55; }
+.me-perms-total strong { font-weight: 600; }
 
-/* Columnas en vez de grilla: los módulos tienen 1 y 8 permisos, y una grilla
-   estira cada celda a la altura de la más alta — cajas medio vacías. El
-   empaquetado por columnas las deja del alto de su contenido. */
-.me-perms-groups { columns: 248px; column-gap: 10px; }
-.me-mod {
-    display: flex; flex-direction: column; gap: 8px;
-    padding: 10px 12px 12px; margin-bottom: 10px; border-radius: var(--radius-md);
-    background: var(--surface-elevated); border: 1px solid var(--surface-border);
-    break-inside: avoid;
-}
-/* Un módulo sin permisos marcados se lee, pero no compite por la atención. */
-.me-mod.vacio { background: transparent; }
-.me-mod.vacio .me-mod-name { font-weight: 500; color: var(--text-muted); }
-.me-mod-head { display: flex; align-items: baseline; gap: 8px; }
-.me-mod-name { flex: 1; min-width: 0; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
-.me-mod-tally { font-size: 11px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.me-perms-head { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: -4px; }
+.me-perms-tally { margin-left: 6px; font-weight: 600; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+
+/* Columnas y no grilla: los módulos tienen entre 1 y 8 permisos, y el
+   empaquetado por columnas deja cada uno del alto de su contenido. */
+.me-perms-groups { columns: 300px; column-gap: 28px; }
+.me-mod { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; break-inside: avoid; }
+.me-mod-head { display: flex; align-items: center; gap: 10px; }
+.me-mod-name { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); }
+.me-mod-tally { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-right: auto; }
 .me-mod-all {
     border: none; background: none; padding: 0; cursor: pointer; font-family: inherit;
     font-size: 11px; font-weight: 600; color: var(--accent-text);
-    opacity: 0; transition: opacity var(--transition-fast);
 }
-.me-mod:hover .me-mod-all, .me-mod:focus-within .me-mod-all { opacity: 1; }
-.me-mod-all:focus-visible { opacity: 1; outline: 2px solid var(--primary-400); outline-offset: 2px; border-radius: 3px; }
+.me-mod-all:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
-.me-mod-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+/* Chip conmutable: activo = relleno con check; inactivo = trazo discontinuo. */
+.me-mod-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .me-chip { display: inline-flex; cursor: pointer; }
 .me-chip input { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
 .me-chip span {
-    display: inline-block; padding: 4px 9px; border-radius: var(--radius-full);
-    border: 1px solid var(--surface-border); background: var(--surface-card);
-    font-size: 11.5px; line-height: 1.35; color: var(--text-muted);
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px; border-radius: 999px; border: 1px dashed var(--gray-500);
+    font-size: 12px; line-height: 1.35; font-weight: 500; color: var(--text-secondary);
     transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
-.me-chip:hover span { border-color: var(--primary-400); color: var(--text-primary); }
+.me-chip:hover span { border-color: var(--accent); color: var(--text-primary); }
 .me-chip input:checked + span {
-    background: var(--accent-tint); border-color: transparent; color: var(--accent-text); font-weight: 600;
+    border: 1px solid transparent; background: var(--accent-tint); color: var(--accent-text); font-weight: 600;
 }
-.me-chip input:focus-visible + span { outline: 2px solid var(--primary-400); outline-offset: 2px; }
+.me-chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.me-cargos-list { display: flex; flex-direction: column; }
+@media (max-width: 720px) {
+  .me-role-head { flex-wrap: wrap; }
+  .me-role-name, .me-role-desc { flex: 1 1 100%; max-width: none; }
+}
+
+/* ── Cargos ────────────────────────────────────────────────────────────────── */
+.me-tipo { padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.me-tipo.predefinido { color: var(--success-apagado); background: color-mix(in srgb, var(--success-apagado) 16%, transparent); }
+.me-tipo.heredado { color: var(--accent-text); background: var(--accent-tint); }
+.me-tipo.personalizado { color: #c4b5fd; background: rgba(167, 139, 250, 0.16); }
+:root.theme-light .me-tipo.personalizado { color: #6d28d9; }
+
+.me-cargos-list { display: flex; flex-direction: column; border: 1px solid var(--surface-border); border-radius: 14px; overflow: hidden; }
 .me-cargo-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 9px 12px; border-radius: var(--radius-md);
-    text-decoration: none; color: inherit;
+    display: flex; align-items: center; gap: 14px; padding: 13px 16px;
+    border-bottom: 1px solid var(--surface-border); text-decoration: none; color: inherit;
     transition: background var(--transition-fast);
-    border-bottom: 1px solid var(--surface-border);
 }
 .me-cargo-row:last-child { border-bottom: none; }
 .me-cargo-row:hover { background: var(--surface-hover); }
-.me-cargo-row-name { font-weight: 600; font-size: var(--text-sm); color: var(--text-primary); flex: 1; min-width: 120px; }
-.me-cargo-row-code { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); min-width: 80px; }
-.me-cargo-row-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.me-cargo-row-tag { font-size: 11px; font-weight: 500; }
-.me-cargo-row-count { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); background: var(--surface-hover); padding: 2px 7px; border-radius: 999px; }
-.me-cargos-grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.me-cargo-row-name { flex: 2 1 0; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-cargo-row-code { flex: 1 1 0; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.me-cargo-row-meta { flex: 1 1 0; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.me-cargo-row-chevron { flex-shrink: 0; color: var(--text-muted); }
+
+.me-cargos-grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
 .me-cargo-card {
-    display: flex; flex-direction: column; gap: 6px;
-    padding: 14px 16px; border-radius: var(--radius-md);
-    border: 1px solid var(--surface-border); background: var(--surface);
-    text-decoration: none; color: inherit;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    display: flex; flex-direction: column; gap: 6px; padding: 16px;
+    border: 1px solid var(--surface-border); border-radius: 14px;
+    text-decoration: none; color: inherit; transition: border-color var(--transition-fast);
 }
-.me-cargo-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,110,220,0.08); }
-.me-cargo-card-name { font-weight: 600; font-size: var(--text-sm); color: var(--text-primary); }
-.me-cargo-card-code { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-.me-cargo-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-.me-tag { font-size: var(--text-xs); color: var(--text-muted); background: var(--surface-hover); padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+.me-cargo-card:hover { border-color: var(--accent); }
+.me-cargo-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.me-cargo-card-name { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.me-cargo-card-footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+
+@media (max-width: 720px) {
+  .me-cargo-row-code, .me-cargo-row-kit { display: none; }
+}
 
 /* ── Catálogo de EPP ─────────────────────────────────────────────────────── */
-.epp-tab { display: flex; flex-direction: column; gap: var(--space-4); }
+.epp-tab { display: flex; flex-direction: column; gap: var(--space-5); }
 
-/* Aviso de incumplimiento DS44: ámbar, no rojo — se puede operar igual */
+/* Aviso de incumplimiento DS44: el único tono de alerta de la interfaz. */
 .epp-alerta {
-    display: flex; align-items: flex-start; gap: var(--space-3);
-    padding: 12px 14px; border-radius: var(--radius-md);
-    background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.28);
-    color: var(--warning-600, var(--warning-500));
+    display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--danger-alerta) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger-alerta) 30%, transparent);
+    color: var(--danger-alerta);
 }
-.epp-alerta strong { display: block; font-size: var(--text-sm); }
-.epp-alerta p { margin: 3px 0 0; font-size: var(--text-xs); line-height: 1.55; color: var(--text-secondary); }
+.epp-alerta > svg { flex-shrink: 0; margin-top: 1px; }
+.epp-alerta strong { display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.epp-alerta p { margin: 3px 0 0; font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
 
-.epp-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.epp-search { position: relative; display: flex; align-items: center; flex: 1 1 220px; max-width: 340px; }
-.epp-search > svg { position: absolute; left: 12px; color: var(--text-muted); pointer-events: none; }
+.epp-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.epp-search {
+    display: flex; align-items: center; gap: 9px; flex: 0 1 300px; height: 38px; padding: 0 12px;
+    border: 1px solid var(--surface-border); border-radius: 8px; color: var(--text-muted);
+}
+.epp-search:focus-within { border-color: var(--accent); }
 .epp-search input {
-    width: 100%; padding: 9px 12px 9px 36px;
-    border: 1px solid var(--surface-border); border-radius: var(--radius-md);
-    background: var(--surface-card); color: var(--text-primary); font-size: 0.88rem;
+    flex: 1; min-width: 0; border: none; outline: none; background: none;
+    color: var(--text-primary); font-family: inherit; font-size: 13.5px;
 }
-.epp-search input:focus { outline: none; border-color: var(--primary-400); box-shadow: 0 0 0 3px var(--accent-tint); }
-.epp-count { font-size: var(--text-xs); color: var(--text-muted); margin-right: auto; }
+.epp-count { font-size: 13px; color: var(--text-secondary); }
 
-/* Cuadrícula de elementos: cada EPP es una tarjeta compacta y autocontenida.
-   Sin franjas ni fondos de color — solo el ícono y los estados hover/foco
-   usan el color de marca; lo demás es tipografía y trazo neutro. */
-/* Misma cuadrícula, tamaño de tarjeta y hover que /personas (pdir-grid/pdir-card),
-   para que ambas pantallas se sientan parte de la misma interfaz. */
 .epp-grid {
-    list-style: none; margin: 0; padding: var(--space-2) 0 0;
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;
 }
 .epp-tile {
-    display: flex; flex-direction: column; gap: 12px;
-    padding: 16px; background: var(--surface-card); border: 1px solid var(--surface-border);
-    border-radius: 12px;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s;
+    display: flex; flex-direction: column; gap: 12px; padding: 16px;
+    border: 1px solid var(--surface-border); border-radius: 14px;
+    transition: border-color var(--transition-fast);
     animation: eppTileIn 0.3s ease both;
 }
+.epp-tile--skel, .epp-tile--skel:hover { animation: none; border-color: var(--surface-border); }
 @keyframes eppTileIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-.epp-tile:hover, .epp-tile:focus-within {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18);
-    border-color: var(--primary-400);
-}
-@media (max-width: 900px) { .epp-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 580px) { .epp-grid { grid-template-columns: repeat(2, 1fr); } }
+.epp-tile:hover, .epp-tile:focus-within { border-color: var(--accent); }
+@media (max-width: 900px) { .epp-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 580px) { .epp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-.epp-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
+.epp-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .epp-tile-icon {
-    width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+    width: 38px; height: 38px; border-radius: var(--radius-md); flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
-    background: var(--accent-tint); color: var(--primary-600);
+    background: var(--surface-hover); color: var(--text-secondary);
 }
-.epp-tile-menu { display: flex; gap: 1px; opacity: .5; transition: opacity var(--transition-fast); }
-.epp-tile:hover .epp-tile-menu, .epp-tile:focus-within .epp-tile-menu { opacity: 1; }
+.epp-tile-menu { display: flex; gap: 2px; }
 .epp-tile-menu button {
-    width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
     border: none; background: none; color: var(--text-muted); border-radius: 6px; cursor: pointer;
 }
 .epp-tile-menu button:hover { background: var(--surface-hover); color: var(--text-primary); }
-.epp-tile-menu button.danger:hover { color: var(--danger-500); }
+.epp-tile-menu button.danger:hover { color: var(--danger-alerta); }
 
 .epp-tile-body { display: flex; flex-direction: column; gap: 3px; }
 .epp-tile-name {
-    margin: 0; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); line-height: 1.3;
+    margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text-primary); line-height: 1.3;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .epp-tile-desc {
-    margin: 0; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.4;
+    margin: 0; font-size: 11.5px; color: var(--text-secondary); line-height: 1.4;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
-/* Accesos a los respaldos: fila ícono + etiqueta completa, sin nombre de archivo en pantalla */
-.epp-tile-docs { display: flex; flex-direction: column; gap: 6px; margin-top: auto; }
+/* Respaldos: cargado = relleno con check (abre la vista previa);
+   faltante = trazo discontinuo (lleva a editar para cargarlo). */
+.epp-tile-docs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
 .epp-tile-doc {
-    display: flex; align-items: center; gap: 8px; text-align: left;
-    padding: 8px 9px; border-radius: var(--radius-md);
-    border: 1px solid var(--surface-border); background: var(--surface-elevated);
-    color: var(--text-secondary); font-size: 11.5px; font-weight: 500; line-height: 1.3; font-family: inherit;
-    cursor: pointer; transition: all var(--transition-fast);
+    display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 7px;
+    border: 1px solid transparent; font-family: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer;
+    background: color-mix(in srgb, var(--success-apagado) 16%, transparent); color: var(--success-apagado);
+    transition: filter var(--transition-fast), border-color var(--transition-fast);
 }
-.epp-tile-doc svg { flex-shrink: 0; }
-.epp-tile-doc:hover { border-color: var(--primary-400); color: var(--primary-600); background: var(--accent-tint); }
-.epp-tile-doc:focus-visible { outline: 2px solid var(--primary-500, var(--primary-600)); outline-offset: 1px; }
-.epp-tile-doc.missing { color: var(--text-muted); border-style: dashed; }
-.epp-tile-doc.missing:hover { border-color: var(--text-muted); color: var(--text-secondary); background: var(--surface-elevated); }
+.epp-tile-doc:hover { filter: brightness(1.15); }
+.epp-tile-doc:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.epp-tile-doc.missing {
+    background: none; font-weight: 500; color: var(--text-secondary);
+    border: 1px dashed color-mix(in srgb, var(--danger-alerta) 45%, transparent);
+}
+.epp-tile-doc.missing:hover { filter: none; border-color: var(--danger-alerta); color: var(--danger-alerta); }
 
-.epp-empty { text-align: center; padding: var(--space-10) var(--space-6); }
+.epp-empty { text-align: center; padding: var(--space-10) var(--space-6); border: 1.5px dashed var(--gray-500); border-radius: 14px; }
 .epp-empty-icon {
-    width: 44px; height: 44px; border-radius: var(--radius-lg);
-    background: var(--surface-hover); color: var(--text-muted);
+    width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--surface-border); color: var(--text-muted);
     display: inline-flex; align-items: center; justify-content: center; margin-bottom: var(--space-3);
 }
-.epp-empty h3 { font-size: var(--text-base); font-weight: 600; margin: 0 0 4px; }
-.epp-empty p { font-size: var(--text-sm); color: var(--text-muted); margin: 0 auto var(--space-5); max-width: 420px; line-height: 1.55; }
-.epp-sin-resultados { font-size: var(--text-sm); color: var(--text-muted); padding: var(--space-4) 0; margin: 0; }
+.epp-empty h3 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+.epp-empty p { font-size: 12.5px; color: var(--text-secondary); margin: 0 auto var(--space-5); max-width: 420px; line-height: 1.55; }
+.epp-sin-resultados { font-size: var(--text-sm); color: var(--text-secondary); padding: var(--space-4) 0; margin: 0; }
 
-/* Formulario */
+/* Formulario (modal) */
 .epp-form { display: flex; flex-direction: column; }
 .epp-form-docs { display: flex; flex-direction: column; gap: var(--space-3); }
-.epp-form-title { font-size: var(--text-sm); font-weight: 600; margin: 0; }
-.epp-form-hint { font-size: var(--text-xs); color: var(--text-muted); margin: -6px 0 0; line-height: 1.55; }
+.epp-form-title { font-size: 14px; font-weight: 600; margin: 0; }
+.epp-form-hint { font-size: 12px; color: var(--text-secondary); margin: -6px 0 0; line-height: 1.55; }
 .epp-slot {
     display: flex; flex-direction: column; gap: var(--space-2);
-    padding: var(--space-4); border-radius: var(--radius-md);
-    background: var(--surface-elevated); border: 1px solid var(--surface-border);
-    border-left: 3px solid var(--warning-500);
+    padding: 12px 14px; border-radius: var(--radius-md); border: 1px dashed var(--gray-500);
 }
-.epp-slot.cargado { border-left-color: var(--success-500); }
+.epp-slot.cargado { border-style: solid; border-color: var(--surface-border); }
 .epp-slot-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.epp-slot-title { display: inline-flex; align-items: center; gap: 7px; font-size: var(--text-sm); font-weight: 500; }
-.epp-slot-ok { color: var(--success-500); }
-.epp-slot-falta { color: var(--warning-500); }
-.epp-slot-flag { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--warning-600, var(--warning-500)); }
-.epp-slot-ayuda { font-size: var(--text-xs); color: var(--text-muted); margin: -4px 0 0; }
+.epp-slot-title { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; }
+.epp-slot-ok { color: var(--success-apagado); }
+.epp-slot-falta { color: var(--danger-alerta); }
+.epp-slot-flag { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--danger-alerta); }
+.epp-slot-ayuda { font-size: 12px; color: var(--text-secondary); margin: -4px 0 0; }
 .epp-slot-file { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .epp-slot-name {
     display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 1;
-    font-size: var(--text-xs); color: var(--text-secondary);
+    font-size: 12.5px; color: var(--text-primary);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .epp-tipo { display: flex; flex-direction: column; gap: 4px; padding-top: var(--space-2); border-top: 1px solid var(--surface-border); }
@@ -1963,9 +2325,4 @@ const styles = `
 .me-affected-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--surface-border); }
 .me-affected-row:last-child { border-bottom: none; }
 .me-affected-name { font-size: var(--text-sm); font-weight: 500; }
-
-@media (max-width: 640px) {
-  .me-role-head { flex-wrap: wrap; }
-  .me-cargo { flex-wrap: wrap; }
-}
 `;

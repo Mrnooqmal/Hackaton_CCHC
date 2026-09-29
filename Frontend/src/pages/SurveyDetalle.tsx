@@ -56,7 +56,7 @@ export default function SurveyDetalle() {
     if (loading) {
         return (
             <div className="page-content">
-                <PageHeader banner title="Encuesta" breadcrumb={[{ label: 'Encuestas', to: '/surveys' }]} />
+                <PageHeader banner title="Encuesta" />
                 <SurveyDetalleSkeleton />
             </div>
         );
@@ -65,7 +65,7 @@ export default function SurveyDetalle() {
     if (!survey) {
         return (
             <div className="page-content">
-                <PageHeader banner title="Encuesta" breadcrumb={[{ label: 'Encuestas', to: '/surveys' }]} />
+                <PageHeader banner title="Encuesta" />
                 <div className="alert alert-danger">
                     <FiAlertCircle size={20} />
                     <div>{error}</div>
@@ -88,7 +88,6 @@ export default function SurveyDetalle() {
             <PageHeader
                 banner
                 title={survey.titulo}
-                breadcrumb={[{ label: 'Encuestas', to: '/surveys' }]}
                 description={survey.descripcion || undefined}
                 actions={mio ? (
                     <Link to={`/surveys/${survey.surveyId}/responder`} className="btn btn-primary">

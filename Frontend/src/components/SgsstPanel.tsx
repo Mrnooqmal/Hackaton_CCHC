@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FiAlertTriangle, FiArrowRight, FiCheck, FiUploadCloud } from 'react-icons/fi';
-import { Badge } from './ui';
+import { Badge, SgsstSkeleton } from './ui';
 import { estructuraApi } from '../api/estructura.api';
 import { subirComoDocumento } from '../utils/subirDocumento';
 import {
@@ -72,7 +72,7 @@ export default function SgsstPanel({ tenantId, onIrA }: SgsstPanelProps) {
     }, [tenantId, cargar]);
 
     if (cargando) {
-        return <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Leyendo el sistema de gestión…</div>;
+        return <SgsstSkeleton />;
     }
     if (error && !componentes) {
         return (
@@ -122,7 +122,10 @@ export default function SgsstPanel({ tenantId, onIrA }: SgsstPanelProps) {
                 {componentes.map((c) => {
                     const cumplido = c.estado === ESTADO_REQUISITO.CUMPLIDO;
                     return (
-                        <div key={c.clave} className="ds44-doc-row" style={{ alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                        <div key={c.clave} className="ds44-doc-row sgsst-row">
+                            {/* Letra y texto van juntos como primer hijo: `.ds44-doc-row`
+                                estira el primero, y si era la letra se comía el ancho. */}
+                            <div className="sgsst-row-main">
                             {/* La letra del literal es la referencia normativa, no un
                                 adorno: es como el fiscalizador nombra el componente. */}
                             <span
@@ -131,8 +134,8 @@ export default function SgsstPanel({ tenantId, onIrA }: SgsstPanelProps) {
                                     flexShrink: 0, width: 26, height: 26, borderRadius: 'var(--radius-sm)',
                                     display: 'grid', placeItems: 'center', marginTop: 1,
                                     fontFamily: 'var(--font-display)', fontSize: '0.85rem', fontWeight: 600,
-                                    background: cumplido ? 'rgba(16,185,129,0.12)' : 'var(--surface-hover)',
-                                    color: cumplido ? '#10b981' : 'var(--text-secondary)',
+                                    background: cumplido ? 'color-mix(in srgb, var(--success-apagado) 16%, transparent)' : 'var(--surface-hover)',
+                                    color: cumplido ? 'var(--success-apagado)' : 'var(--text-secondary)',
                                 }}
                             >
                                 {cumplido ? <FiCheck size={14} /> : c.clave}
@@ -147,6 +150,7 @@ export default function SgsstPanel({ tenantId, onIrA }: SgsstPanelProps) {
                                     {c.detalle}
                                     {!c.propio && ' Se acredita en su propio módulo.'}
                                 </div>
+                            </div>
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>

@@ -154,16 +154,17 @@ export default function OrganizacionesSindicales({
             {/* La declaración se ofrece solo cuando no hay ninguna registrada: no
                 tiene sentido declarar que no existen mientras hay una en la lista. */}
             {lista.length === 0 && (
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)', cursor: 'pointer' }}>
+                <label className="checkbox-row" style={{ alignItems: 'flex-start', padding: 'var(--space-2) var(--space-3)', cursor: 'pointer' }}>
                     <input
                         type="checkbox"
+                        className="checkbox-input custom-checkbox"
                         checked={declarado}
                         disabled={guardando}
-                        style={{ marginTop: 3 }}
+                        style={{ marginTop: 2 }}
                         onChange={(e) => alternarDeclaracion(e.target.checked)}
                     />
                     <span>
-                        <span className="form-label" style={{ margin: 0 }}>
+                        <span style={{ display: 'block', fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>
                             En la empresa no hay organizaciones sindicales
                         </span>
                         <span className="form-hint" style={{ marginTop: 2 }}>

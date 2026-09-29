@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FiAlertTriangle, FiChevronDown, FiChevronRight, FiPrinter } from 'react-icons/fi';
-import { Badge } from './ui';
+import { Badge, CompletitudFufSkeleton } from './ui';
 import { estructuraApi } from '../api/estructura.api';
 import {
     ESTADO_VARIANTE, colorProgreso,
@@ -60,7 +60,7 @@ export default function CompletitudFufPanel({ tenantId, ambito, obraId = null }:
         return s;
     });
 
-    if (cargando) return <div className="text-muted" style={{ fontSize: '0.85rem' }}>Calculando completitud…</div>;
+    if (cargando) return <CompletitudFufSkeleton />;
     if (error) {
         return (
             <div className="ds44-alert ds44-alert-danger" style={{ fontSize: '0.85rem' }}>
