@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FiPlus, FiCopy, FiTrash2, FiEdit2, FiSave, FiLock, FiAlertTriangle, FiUpload, FiFile, FiEye, FiRefreshCw } from 'react-icons/fi';
+import { FiPlus, FiCopy, FiTrash2, FiEdit2, FiLock, FiAlertTriangle, FiUpload, FiEye, FiRefreshCw, FiCheck } from 'react-icons/fi';
 import { AlertBanner, Modal, Select, SegmentedControl, PageHeader, Drawer } from '../components/ui';
 import { uploadsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -30,7 +30,7 @@ const NATURALEZA_OPTIONS = [
 ];
 
 const ACCION_LABEL: Record<string, string> = Object.fromEntries(ACCION_OPTIONS.map((o) => [o.value, o.label]));
-const ALCANCE_SHORT: Record<string, string> = { tenant: 'empresa', obra: 'obra', persona: 'persona', ninguno: '—' };
+const ALCANCE_SHORT: Record<string, string> = { tenant: 'empresa', obra: 'obra', persona: 'persona', ninguno: 'sin documento' };
 
 const codeFromLabel = (label: string) =>
     label.trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 32) || 'CARGO';
@@ -40,10 +40,10 @@ const codeFromLabel = (label: string) =>
 const EMPRESA_KEYS = new Set(['RI_76', 'POLITICA_SST']);
 
 // Grupos del kit ESPECÍFICO del cargo. Excluye EMPRESA_KEYS.
-const GRUPOS_CARGO: { naturaleza: Ds44KitItem['naturaleza']; titulo: string; sub: string; destacado?: boolean }[] = [
-    { naturaleza: 'derivado_miper', titulo: 'IRL del cargo', sub: 'Información de Riesgos Laborales — específica del cargo. Se define una vez por empresa y se capacita a cada trabajador al ingresar.', destacado: true },
-    { naturaleza: 'procedimiento_corporativo', titulo: 'Procedimientos del cargo', sub: 'Capacitaciones y procedimientos operativos específicos de este cargo.' },
-    { naturaleza: 'evidencia_individual', titulo: 'Evidencia individual', sub: 'Se adjunta al vincular al trabajador a una obra (EPP, exámenes ocupacionales, encuestas).' },
+const GRUPOS_CARGO: { naturaleza: Ds44KitItem['naturaleza']; titulo: string; sub: string }[] = [
+    { naturaleza: 'derivado_miper', titulo: 'IRL del cargo', sub: 'Información de Riesgos Laborales del cargo. Se define una vez por empresa y se capacita a cada trabajador al ingresar.' },
+    { naturaleza: 'procedimiento_corporativo', titulo: 'Procedimientos del cargo', sub: 'Capacitaciones y procedimientos operativos propios de este cargo.' },
+    { naturaleza: 'evidencia_individual', titulo: 'Evidencia individual', sub: 'Se adjunta al vincular al trabajador a una obra: EPP, exámenes ocupacionales, encuestas.' },
 ];
 
 // Normaliza datos llegados de DB: corrige IRL con alcance 'obra' (seed anterior)
@@ -252,50 +252,47 @@ export default function CargosOnboarding() {
         setItemDrawer(null);
     };
 
-    if (loading) return (
-        <div className="page-content" style={{ display: 'flex', justifyContent: 'center', paddingTop: 'var(--space-10)' }}>
-            <div className="spinner" />
-        </div>
-    );
+    const kitCargo = current ? current.kit.filter((it) => !EMPRESA_KEYS.has(it.key)).length : 0;
 
     return (
         <div className="page-content">
             <PageHeader
                 banner
-                title="Onboarding y documentos de empresa"
-                description="Administra los documentos base de la empresa (Reglamento Interno, Política SST) y define el kit de onboarding de cada cargo. Estos documentos aplican a todas las obras: súbelos o renuévalos aquí una sola vez."
+                title="Onboarding por cargo"
+                breadcrumb={[{ label: 'Mi empresa', to: '/mi-empresa' }]}
+                description="Documentos base de la empresa y kit de onboarding de cada cargo. Aplican a todas las obras: se suben o renuevan aquí una sola vez."
                 actions={
-                    <button className="btn btn-primary" disabled={!dirty || saving} onClick={handleSave}>
-                        {saving ? 'Guardando…' : <><FiSave /> Guardar cambios</>}
-                    </button>
+                    <>
+                        {dirty && !saving && <span className="co-dirty">Cambios sin guardar</span>}
+                        <button className="btn btn-primary" disabled={loading || !dirty || saving} onClick={handleSave}>
+                            {saving ? 'Guardando…' : 'Guardar cambios'}
+                        </button>
+                    </>
                 }
             />
 
+            {loading ? <OnboardingCargoSkeleton /> : (
+            <div className="co-page">
             {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}
             {saved && <AlertBanner variant="success" message={`Catálogo de cargos guardado.${syncMsg ? ' ' + syncMsg : ''}`} onDismiss={() => { setSaved(false); setSyncMsg(''); }} />}
 
-            {/* ── Sección 1: Documentos de empresa ── */}
-            <div className="card co-empresa-section">
-                <div className="co-empresa-head">
-                    <div>
-                        <div className="co-empresa-title">Documentos de empresa</div>
-                        <div className="co-empresa-sub">
-                            Aplican a <strong>todos los cargos</strong>. Sube el documento una vez y se distribuye a cualquier trabajador nuevo, sin importar la obra.
-                        </div>
-                    </div>
+            <section className="co-section" aria-labelledby="co-empresa-titulo">
+                <div className="co-section-head">
+                    <h2 id="co-empresa-titulo" className="co-section-title">Documentos de empresa</h2>
+                    <p className="co-section-hint">Aplican a todos los cargos: se envían a cada trabajador nuevo, sin importar la obra.</p>
                 </div>
                 {empresaItems.length === 0 ? (
-                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', padding: 'var(--space-2) 0' }}>
-                        Sin documentos de empresa configurados — agrega un cargo para ver sus documentos base.
-                    </div>
+                    <p className="co-vacio">
+                        Sin documentos de empresa configurados. Agrega un cargo para ver sus documentos base.
+                    </p>
                 ) : (
-                    <div className="co-empresa-items">
+                    <div className="co-lista">
                         {empresaItems.map(({ key, it }) => (
-                            <div key={key} className="co-empresa-item">
-                                <div className="co-empresa-item-info">
-                                    {it.codigoEbco && <span className="co-ebco-tag">{it.codigoEbco}</span>}
-                                    <span className="co-empresa-item-title">{it.titulo}</span>
-                                    <span className="co-empresa-item-accion">{ACCION_LABEL[it.accion]}</span>
+                            <div key={key} className="co-empresa-row">
+                                <div className="co-item-linea co-empresa-info">
+                                    {it.codigoEbco && <span className="co-tag">{it.codigoEbco}</span>}
+                                    <span className="co-item-titulo">{it.titulo}</span>
+                                    <span className="co-meta">· {ACCION_LABEL[it.accion]}</span>
                                 </div>
                                 <PlantillaControl
                                     item={it}
@@ -308,178 +305,146 @@ export default function CargosOnboarding() {
                         ))}
                     </div>
                 )}
-            </div>
+            </section>
 
-            {/* ── Sección 2: Por cargo ── */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
-                {/* Lista de cargos */}
-                <div className="card" style={{ padding: 'var(--space-3)' }}>
-                    <div style={{
-                        fontSize: 'var(--text-xs)', fontWeight: 700, letterSpacing: '0.06em',
-                        textTransform: 'uppercase', color: 'var(--text-secondary)',
-                        padding: 'var(--space-1) var(--space-2) var(--space-2)',
-                    }}>
-                        Cargos · {cargos.length}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {cargos.map((c) => (
+            <div className="co-layout">
+                <nav className="co-cargos" aria-label="Cargos">
+                    <span className="co-cargos-label">Cargos · {cargos.length}</span>
+                    {cargos.map((c) => {
+                        const activo = selected === c.codigo;
+                        return (
                             <button
                                 key={c.codigo}
+                                type="button"
+                                aria-pressed={activo}
+                                className={`co-cargo${activo ? ' activo' : ''}`}
                                 onClick={() => setSelected(c.codigo)}
-                                style={{
-                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                    gap: 8, padding: 'var(--space-2) var(--space-3)',
-                                    borderRadius: 'var(--radius-sm)',
-                                    border: selected === c.codigo ? '1px solid var(--accent)' : '1px solid transparent',
-                                    background: selected === c.codigo ? 'var(--accent-tint)' : 'none',
-                                    color: 'var(--text-primary)', cursor: 'pointer', textAlign: 'left',
-                                    transition: 'background 0.15s, border-color 0.15s',
-                                }}
                             >
-                                <span style={{ fontWeight: selected === c.codigo ? 600 : 400, fontSize: 'var(--text-sm)' }}>{c.label}</span>
-                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>
-                                    {c.kit.filter((it) => !EMPRESA_KEYS.has(it.key)).length}
-                                </span>
+                                <span className="co-cargo-nombre">{c.label}</span>
+                                <span className="co-cargo-n">{c.kit.filter((it) => !EMPRESA_KEYS.has(it.key)).length}</span>
                             </button>
-                        ))}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
-                        <button className="btn btn-secondary" style={{ width: '100%' }} onClick={() => setNewCargoOpen(true)}>
-                            <FiPlus /> Nuevo cargo
+                        );
+                    })}
+                    <div className="co-cargos-acciones">
+                        <button type="button" className="co-add co-add--ancho" onClick={() => setNewCargoOpen(true)}>
+                            <FiPlus size={14} /> Nuevo cargo
                         </button>
                         <button
-                            className="btn btn-ghost btn-sm"
-                            style={{ width: '100%', color: 'var(--text-muted)', fontSize: 'var(--text-xs)' }}
+                            type="button"
+                            className="co-reset"
                             onClick={() => setResetConfirmOpen(true)}
                             title="Restaura todos los cargos al catálogo predefinido EBCO"
                         >
                             <FiRefreshCw size={12} /> Restablecer catálogo
                         </button>
                     </div>
-                </div>
+                </nav>
 
-                {/* Kit específico del cargo */}
                 {!current ? (
-                    <div className="card empty-state" style={{ padding: 'var(--space-10)' }}>
-                        <p className="empty-state-description">Selecciona o crea un cargo para editar su kit.</p>
-                    </div>
+                    <div className="co-sin-cargo">Selecciona o crea un cargo para editar su kit.</div>
                 ) : (
-                    <div className="card" style={{ padding: 'var(--space-4)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
+                    <div className="co-kit">
+                        <div className="co-kit-head">
                             <input
-                                className="form-input"
-                                style={{ fontWeight: 600, fontSize: 'var(--text-base)', maxWidth: 340, flex: 1 }}
+                                className="form-input co-cargo-input"
                                 value={current.label}
                                 onChange={(e) => renameCargo(current.codigo, e.target.value)}
                                 aria-label="Nombre del cargo"
                             />
-                            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{current.codigo}</span>
-                            <div style={{ flex: 1 }} />
-                            <button className="btn btn-ghost btn-sm" onClick={() => duplicateCargo(current)} title="Duplicar cargo"><FiCopy /></button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => setCargoToDelete(current)} style={{ color: 'var(--danger-500)' }} title="Eliminar cargo"><FiTrash2 /></button>
+                            <span className="co-codigo">{current.codigo}</span>
+                            <span className="co-spacer" />
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => duplicateCargo(current)}>
+                                <FiCopy size={14} /> Duplicar
+                            </button>
+                            <button type="button" className="btn btn-secondary btn-sm co-texto-alerta" onClick={() => setCargoToDelete(current)}>
+                                <FiTrash2 size={14} /> Eliminar
+                            </button>
                         </div>
 
-                        <div style={{
-                            fontSize: 'var(--text-xs)', fontWeight: 700, letterSpacing: '0.06em',
-                            textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 'var(--space-3)',
-                        }}>
-                            Kit específico · {current.kit.filter((it) => !EMPRESA_KEYS.has(it.key)).length} ítems
-                        </div>
-
-                        {current.kit.filter((it) => !EMPRESA_KEYS.has(it.key)).length === 0 ? (
-                            <div style={{ padding: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--text-muted)', textAlign: 'center', border: '1px dashed var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
-                                Sin ítems todavía — empieza agregando el <b>IRL del cargo</b> con «Agregar ítem».
+                        {kitCargo === 0 ? (
+                            <div className="co-kit-vacio">
+                                Sin ítems todavía: empieza agregando el <b>IRL del cargo</b> con «Agregar ítem».
                             </div>
-                        ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                                {GRUPOS_CARGO.map((grupo) => {
-                                    const items = current.kit
-                                        .map((it, idx) => ({ it, idx }))
-                                        .filter(({ it }) => it.naturaleza === grupo.naturaleza && !EMPRESA_KEYS.has(it.key));
-                                    if (items.length === 0) return null;
-                                    return (
-                                        <div key={grupo.naturaleza} className={`co-group${grupo.destacado ? ' co-group--cargo' : ''}`}>
-                                            <div className="co-group-head">
-                                                <div className="co-group-title">
-                                                    {grupo.titulo}
-                                                    <span className="co-group-count">{items.length}</span>
-                                                </div>
-                                                <div className="co-group-sub">{grupo.sub}</div>
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                                {items.map(({ it, idx }) => (
-                                                    <div key={idx} style={{
-                                                        display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
-                                                        padding: 'var(--space-3)',
-                                                        border: '1px solid var(--surface-border)',
-                                                        borderRadius: 'var(--radius-md)',
-                                                        background: 'var(--surface)',
-                                                    }}>
-                                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                                                                {it.codigoEbco && (
-                                                                    <span style={{
-                                                                        fontSize: 'var(--text-xs)', background: 'var(--surface-hover)',
-                                                                        padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace',
-                                                                    }}>{it.codigoEbco}</span>
-                                                                )}
-                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.titulo}</span>
-                                                                {it.bloqueante && <FiLock size={13} style={{ color: 'var(--danger-500)', flexShrink: 0 }} title="Bloqueante para ingresar a la obra" />}
-                                                            </div>
-                                                            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
-                                                                {ACCION_LABEL[it.accion]}
-                                                                {it.notaMinima ? ` · ${it.notaMinima}%` : ''}
-                                                                {' · '}{ALCANCE_SHORT[it.alcancePlantilla]}
-                                                                {it.accion === 'ENTREGA_EPP' && it.matrizEpp ? ` · ${it.matrizEpp.length} EPP` : ''}
-                                                            </div>
-                                                            <PlantillaControl
-                                                                item={it}
-                                                                uploading={uploadingItem === idx}
-                                                                onUpload={(file) => uploadPlantilla(idx, file)}
-                                                                onPreview={() => it.plantilla && previewPlantilla(it.plantilla.fileKey)}
-                                                                onRemove={() => setItemPlantilla(idx, undefined)}
-                                                            />
-                                                        </div>
-                                                        <div style={{ display: 'flex', gap: 'var(--space-1)', flexShrink: 0 }}>
-                                                            <button className="btn btn-ghost btn-sm" onClick={() => setItemDrawer({ idx, draft: { ...it } })} title="Editar ítem"><FiEdit2 /></button>
-                                                            <button className="btn btn-ghost btn-sm" onClick={() => setItemToDelete({ idx, label: it.titulo })} style={{ color: 'var(--danger-500)' }} title="Eliminar ítem"><FiTrash2 /></button>
-                                                        </div>
+                        ) : GRUPOS_CARGO.map((grupo) => {
+                            const items = current.kit
+                                .map((it, idx) => ({ it, idx }))
+                                .filter(({ it }) => it.naturaleza === grupo.naturaleza && !EMPRESA_KEYS.has(it.key));
+                            if (items.length === 0) return null;
+                            return (
+                                <section key={grupo.naturaleza} className="co-section" aria-label={grupo.titulo}>
+                                    <div className="co-section-head">
+                                        <h3 className="co-section-title">{grupo.titulo}</h3>
+                                        <span className="co-count">{items.length}</span>
+                                        <p className="co-section-hint">{grupo.sub}</p>
+                                    </div>
+                                    <div className="co-lista">
+                                        {items.map(({ it, idx }) => (
+                                            <div key={idx} className="co-item">
+                                                <div className="co-item-main">
+                                                    <div className="co-item-linea">
+                                                        {it.codigoEbco && <span className="co-tag">{it.codigoEbco}</span>}
+                                                        <span className="co-item-titulo">{it.titulo}</span>
+                                                        {it.bloqueante && (
+                                                            <span className="co-bloq" title="Bloqueante para ingresar a la obra">
+                                                                <FiLock size={11} aria-hidden="true" /> Bloqueante
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                ))}
+                                                    <span className="co-meta">
+                                                        {ACCION_LABEL[it.accion]}
+                                                        {it.notaMinima ? ` · ${it.notaMinima}%` : ''}
+                                                        {' · '}{ALCANCE_SHORT[it.alcancePlantilla]}
+                                                        {it.accion === 'ENTREGA_EPP' && it.matrizEpp ? ` · ${it.matrizEpp.length} EPP` : ''}
+                                                    </span>
+                                                    <div className="co-item-doc">
+                                                        <PlantillaControl
+                                                            item={it}
+                                                            uploading={uploadingItem === idx}
+                                                            onUpload={(file) => uploadPlantilla(idx, file)}
+                                                            onPreview={() => it.plantilla && previewPlantilla(it.plantilla.fileKey)}
+                                                            onRemove={() => setItemPlantilla(idx, undefined)}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="co-item-acciones">
+                                                    <button type="button" className="co-icon-btn" onClick={() => setItemDrawer({ idx, draft: { ...it } })}
+                                                        aria-label={`Editar ${it.titulo}`} title="Editar ítem"><FiEdit2 size={15} /></button>
+                                                    <button type="button" className="co-icon-btn danger" onClick={() => setItemToDelete({ idx, label: it.titulo })}
+                                                        aria-label={`Eliminar ${it.titulo}`} title="Eliminar ítem"><FiTrash2 size={15} /></button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
+                                        ))}
+                                    </div>
+                                </section>
+                            );
+                        })}
 
-                        <button
-                            className="btn btn-secondary"
-                            style={{ marginTop: 'var(--space-3)' }}
-                            onClick={() => setItemDrawer({ idx: null, draft: emptyItem() })}
-                        >
-                            <FiPlus /> Agregar ítem
+                        <button type="button" className="co-add" onClick={() => setItemDrawer({ idx: null, draft: emptyItem() })}>
+                            <FiPlus size={14} /> Agregar ítem
                         </button>
                     </div>
                 )}
             </div>
+            </div>
+            )}
 
             {/* Modal: nuevo cargo */}
             <Modal
                 isOpen={newCargoOpen}
                 onClose={() => setNewCargoOpen(false)}
                 title="Nuevo cargo"
-                subtitle="El código se deriva del nombre. Luego cargas su IRL y documentos."
+                subtitle="El código se deriva del nombre. Después cargas su IRL y sus documentos."
                 footer={
                     <>
                         <button className="btn btn-secondary" onClick={() => setNewCargoOpen(false)}>Cancelar</button>
-                        <button className="btn btn-primary" disabled={!newCargoLabel.trim()} onClick={addCargo}><FiPlus /> Crear</button>
+                        <button className="btn btn-primary" disabled={!newCargoLabel.trim()} onClick={addCargo}><FiPlus /> Crear cargo</button>
                     </>
                 }
             >
                 <div className="form-group">
-                    <label className="form-label">Nombre del cargo</label>
+                    <label className="form-label" htmlFor="co-nuevo-cargo">Nombre del cargo *</label>
                     <input
+                        id="co-nuevo-cargo"
                         className="form-input" autoFocus
                         value={newCargoLabel}
                         onChange={(e) => setNewCargoLabel(e.target.value)}
@@ -487,8 +452,8 @@ export default function CargosOnboarding() {
                         onKeyDown={(e) => e.key === 'Enter' && addCargo()}
                     />
                     {newCargoLabel.trim() && (
-                        <div className="text-xs text-muted" style={{ marginTop: 6 }}>
-                            Código: <b>{codeFromLabel(newCargoLabel)}</b>
+                        <div className="co-hint">
+                            Código: <span className="co-codigo co-codigo--claro">{codeFromLabel(newCargoLabel)}</span>
                         </div>
                     )}
                 </div>
@@ -509,8 +474,8 @@ export default function CargosOnboarding() {
                     </>
                 }
             >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--surface-hover)', padding: '10px 12px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)' }}>
-                    <FiAlertTriangle style={{ color: 'var(--warning-500)', flexShrink: 0, marginTop: 1 }} />
+                <div className="co-aviso">
+                    <FiAlertTriangle aria-hidden="true" />
                     <span>
                         Se eliminarán los cargos personalizados y los documentos subidos quedarán sin referencia.
                         Deberás <strong>guardar cambios</strong> después para persistir en la base de datos.
@@ -533,8 +498,8 @@ export default function CargosOnboarding() {
                     </>
                 }
             >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--surface-hover)', padding: '10px 12px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)' }}>
-                    <FiAlertTriangle style={{ color: 'var(--warning-500)', flexShrink: 0, marginTop: 1 }} />
+                <div className="co-aviso">
+                    <FiAlertTriangle aria-hidden="true" />
                     <span>
                         Se eliminará el cargo y todo su kit de documentos del catálogo. Deberás <strong>guardar cambios</strong> después para persistir en la base de datos.
                     </span>
@@ -556,21 +521,21 @@ export default function CargosOnboarding() {
                     </>
                 }
             >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--surface-hover)', padding: '10px 12px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)' }}>
-                    <FiAlertTriangle style={{ color: 'var(--warning-500)', flexShrink: 0, marginTop: 1 }} />
+                <div className="co-aviso">
+                    <FiAlertTriangle aria-hidden="true" />
                     <span>
                         Se eliminará este ítem del kit del cargo. Deberás <strong>guardar cambios</strong> después para persistir en la base de datos.
                     </span>
                 </div>
             </Modal>
 
-            {/* Drawer: editar ítem del kit */}
+            {/* Panel lateral: agregar o editar un ítem del kit */}
             <Drawer
                 isOpen={!!itemDrawer}
                 onClose={() => setItemDrawer(null)}
                 title={itemDrawer?.idx === null ? 'Agregar ítem' : 'Editar ítem'}
-                subtitle="Define la acción, alcance y documento del ítem DS44."
-                width={520}
+                subtitle="Acción, alcance y condiciones del ítem DS44."
+                width={560}
                 footer={
                     <>
                         <button className="btn btn-secondary" onClick={() => setItemDrawer(null)}>Cancelar</button>
@@ -579,7 +544,7 @@ export default function CargosOnboarding() {
                             disabled={!itemDrawer?.draft.titulo.trim() && !itemDrawer?.draft.codigoEbco}
                             onClick={saveItem}
                         >
-                            <FiSave /> Guardar ítem
+                            Guardar ítem
                         </button>
                     </>
                 }
@@ -592,91 +557,98 @@ export default function CargosOnboarding() {
                 )}
             </Drawer>
 
-            <style>{`
-                .spinner {
-                    width: 28px; height: 28px;
-                    border: 3px solid var(--surface-border);
-                    border-top-color: var(--primary-500);
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
-                    display: inline-block;
-                }
-                @keyframes spin { to { transform: rotate(360deg); } }
+            <style>{styles}</style>
+        </div>
+    );
+}
 
-                /* ── Sección Documentos de empresa ── */
-                .co-empresa-section {
-                    padding: var(--space-4);
-                    margin-bottom: var(--space-4);
-                    border-left: 3px solid var(--cchc-navy, #002952);
-                }
-                .co-empresa-head {
-                    margin-bottom: var(--space-3);
-                }
-                .co-empresa-title {
-                    font-size: var(--text-base); font-weight: 700;
-                    color: var(--text-primary);
-                    margin-bottom: 3px;
-                }
-                .co-empresa-sub {
-                    font-size: var(--text-sm); color: var(--text-secondary);
-                    line-height: 1.5;
-                }
-                .co-empresa-items {
-                    display: flex; flex-direction: column; gap: var(--space-2);
-                }
-                .co-empresa-item {
-                    display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
-                    padding: var(--space-3) var(--space-3);
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-md);
-                    background: var(--surface);
-                }
-                .co-empresa-item-info {
-                    display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; flex-wrap: wrap;
-                }
-                .co-ebco-tag {
-                    font-size: var(--text-xs); background: var(--surface-hover);
-                    padding: 1px 6px; border-radius: 4px; font-family: monospace;
-                    white-space: nowrap; flex-shrink: 0;
-                }
-                .co-empresa-item-title {
-                    font-weight: 500; font-size: var(--text-sm);
-                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-                }
-                .co-empresa-item-accion {
-                    font-size: var(--text-xs); color: var(--text-muted);
-                    white-space: nowrap;
-                }
-
-                /* ── Grupos del kit por-cargo ── */
-                .co-group {
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-md);
-                    background: var(--surface-elevated);
-                    padding: var(--space-3);
-                }
-                .co-group--cargo {
-                    border-color: var(--accent);
-                    box-shadow: 0 0 0 1px var(--accent) inset;
-                }
-                .co-group-head { margin-bottom: var(--space-3); }
-                .co-group-title {
-                    display: flex; align-items: center; gap: var(--space-2);
-                    font-size: var(--text-sm); font-weight: 700;
-                    color: var(--text-primary);
-                }
-                .co-group--cargo .co-group-title { color: var(--accent-text); }
-                .co-group-count {
-                    font-size: 11px; font-weight: 700;
-                    background: var(--surface-hover); color: var(--text-secondary);
-                    padding: 1px 7px; border-radius: 999px;
-                }
-                .co-group--cargo .co-group-count { background: var(--accent); color: #fff; }
-                .co-group-sub {
-                    font-size: var(--text-xs); color: var(--text-secondary);
-                    margin-top: 3px; line-height: 1.45;
-                }
-            `}</style>
+// ── Esqueleto ────────────────────────────────────────────────────────────────
+// Mismas clases que la página cargada (co-section, co-empresa-row, co-cargos,
+// co-item…), así cada bloque cae donde después cae el contenido.
+const Sk = ({ w, h = 12, r, style }: { w?: number | string; h?: number; r?: number; style?: React.CSSProperties }) => (
+    <div className="ui-skel" style={{ width: w, height: h, borderRadius: r, flexShrink: 0, ...style }} />
+);
+/** El bloque mide la letra; la caja, el renglón (line-height) que ocupa el texto real. */
+const Txt = ({ w, h, lh, style }: { w: number | string; h: number; lh: number; style?: React.CSSProperties }) => (
+    <div style={{ display: 'flex', alignItems: 'center', height: lh, width: typeof w === 'number' ? w : undefined, flex: typeof w === 'number' ? '0 0 auto' : undefined, ...style }}>
+        <Sk w={w} h={h} />
+    </div>
+);
+function SeccionHeadSkel({ titulo, hint, conteo }: { titulo: number; hint: number; conteo?: boolean }) {
+    return (
+        <div className="co-section-head" style={{ alignItems: 'center' }}>
+            <Txt w={titulo} h={14} lh={22} />
+            {conteo && <Sk w={26} h={22} r={999} />}
+            <Txt w={hint} h={10} lh={17} />
+        </div>
+    );
+}
+function ItemSkel({ i, tag = true }: { i: number; tag?: boolean }) {
+    return (
+        <div className="co-item">
+            <div className="co-item-main">
+                <div className="co-item-linea">
+                    {tag && <Sk w={58} h={18} r={5} />}
+                    <Txt w={[210, 170, 240, 190][i % 4]} h={13} lh={22.4} />
+                </div>
+                <Txt w={[200, 150, 180, 220][i % 4]} h={10} lh={19.2} />
+                <div className="co-item-doc"><Sk w={[150, 250, 150, 200][i % 4]} h={32} r={8} /></div>
+            </div>
+            <div className="co-item-acciones"><Sk w={30} h={30} r={6} /><Sk w={30} h={30} r={6} /></div>
+        </div>
+    );
+}
+function OnboardingCargoSkeleton() {
+    return (
+        <div className="co-page" aria-busy="true" aria-live="polite" aria-label="Cargando el onboarding por cargo">
+            <section className="co-section">
+                <SeccionHeadSkel titulo={170} hint={400} />
+                <div className="co-lista">
+                    {[0, 1].map((i) => (
+                        <div key={i} className="co-empresa-row">
+                            <div className="co-item-linea co-empresa-info">
+                                <Sk w={52} h={18} r={5} />
+                                <Txt w={[320, 290][i]} h={13} lh={22} />
+                            </div>
+                            <Sk w={[260, 150][i]} h={31} r={7} />
+                        </div>
+                    ))}
+                </div>
+            </section>
+            <div className="co-layout">
+                <div className="co-cargos">
+                    <Txt w={80} h={10} lh={18} style={{ padding: '4px 12px 8px', boxSizing: 'content-box' }} />
+                    {/* El catálogo predefinido trae 14 cargos. El rótulo de un botón usa
+                        line-height normal, no el 1.6 del texto: de ahí el renglón de 15. */}
+                    {Array.from({ length: 14 }, (_, i) => (
+                        <div key={i} className="co-cargo">
+                            <Txt w={[96, 110, 84, 70, 64, 90, 104, 76, 56, 88, 72, 100, 60, 44][i]} h={11} lh={15} />
+                            <Sk w={10} h={10} />
+                        </div>
+                    ))}
+                    <div className="co-cargos-acciones">
+                        <Sk w="100%" h={40} r={8} />
+                        <Sk w={140} h={28} style={{ alignSelf: 'center' }} />
+                    </div>
+                </div>
+                <div className="co-kit">
+                    <div className="co-kit-head">
+                        <Sk w={340} h={40} r={8} />
+                        <Sk w={64} h={10} />
+                        <span className="co-spacer" />
+                        <Sk w={96} h={32} r={8} />
+                        <Sk w={96} h={32} r={8} />
+                    </div>
+                    <section className="co-section">
+                        <SeccionHeadSkel titulo={100} hint={420} conteo />
+                        <div className="co-lista"><ItemSkel i={0} /></div>
+                    </section>
+                    <section className="co-section">
+                        <SeccionHeadSkel titulo={170} hint={380} conteo />
+                        <div className="co-lista">{[1, 2, 3].map((i) => <ItemSkel key={i} i={i} />)}</div>
+                    </section>
+                </div>
+            </div>
         </div>
     );
 }
@@ -688,49 +660,56 @@ function ItemEditor({ draft, onChange }: { draft: Ds44KitItem; onChange: (d: Ds4
     const isEpp = draft.accion === 'ENTREGA_EPP';
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', padding: 'var(--space-2) 0' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 'var(--space-3)' }}>
+        <div className="co-editor">
+            <div className="co-editor-fila co-editor-fila--codigo">
                 <div className="form-group">
-                    <label className="form-label">Título</label>
-                    <input className="form-input" value={draft.titulo} onChange={(e) => set({ titulo: e.target.value })} placeholder="Ej: Trabajos en Altura" />
+                    <label className="form-label" htmlFor="co-item-titulo">Título *</label>
+                    <input id="co-item-titulo" className="form-input" value={draft.titulo} onChange={(e) => set({ titulo: e.target.value })} placeholder="Ej: Trabajos en altura" />
                 </div>
                 <div className="form-group">
-                    <label className="form-label">Código EBCO</label>
-                    <input className="form-input" value={draft.codigoEbco || ''} onChange={(e) => set({ codigoEbco: e.target.value })} placeholder="PR-PO-08" />
+                    <label className="form-label" htmlFor="co-item-codigo">Código EBCO</label>
+                    <input id="co-item-codigo" className="form-input co-mono" value={draft.codigoEbco || ''} onChange={(e) => set({ codigoEbco: e.target.value })} placeholder="PR-PO-08" />
                 </div>
             </div>
 
             <div className="form-group">
                 <label className="form-label">Acción de onboarding</label>
-                <Select value={draft.accion} onChange={(v) => set({ accion: v as Ds44AccionTipo })} options={ACCION_OPTIONS} ariaLabel="Acción" />
+                <Select value={draft.accion} onChange={(v) => set({ accion: v as Ds44AccionTipo })} options={ACCION_OPTIONS} ariaLabel="Acción de onboarding" />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+            <div className="co-editor-fila">
                 <div className="form-group">
                     <label className="form-label">Naturaleza</label>
                     <Select value={draft.naturaleza} onChange={(v) => set({ naturaleza: v as any })} options={NATURALEZA_OPTIONS} ariaLabel="Naturaleza" />
                 </div>
                 <div className="form-group">
                     <label className="form-label">Alcance del documento</label>
-                    <Select value={draft.alcancePlantilla} onChange={(v) => set({ alcancePlantilla: v as any })} options={ALCANCE_OPTIONS} ariaLabel="Alcance" />
+                    <Select value={draft.alcancePlantilla} onChange={(v) => set({ alcancePlantilla: v as any })} options={ALCANCE_OPTIONS} ariaLabel="Alcance del documento" />
                 </div>
             </div>
 
             {isCap && (
                 <div className="form-group">
-                    <label className="form-label">Nota mínima (evaluación)</label>
+                    <label className="form-label">Nota mínima de la evaluación</label>
                     <SegmentedControl
                         value={String(draft.notaMinima || 70)}
                         onChange={(v) => set({ notaMinima: Number(v) as 70 | 90 })}
-                        options={[{ value: '70', label: '70% (general)' }, { value: '90', label: '90% (altura/SPDC)' }]}
+                        options={[{ value: '70', label: '70% · general' }, { value: '90', label: '90% · altura y SPDC' }]}
                     />
                 </div>
             )}
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', fontSize: 'var(--text-sm)' }}>
-                <input type="checkbox" checked={!!draft.bloqueante} onChange={(e) => set({ bloqueante: e.target.checked })} />
-                <FiAlertTriangle size={14} style={{ color: 'var(--warning-500)' }} />
-                Bloqueante para ingresar a la obra (no bloquea el registro)
+            <label className="checkbox-row co-check">
+                <input
+                    type="checkbox"
+                    className="checkbox-input custom-checkbox"
+                    checked={!!draft.bloqueante}
+                    onChange={(e) => set({ bloqueante: e.target.checked })}
+                />
+                <span>
+                    <span className="co-check-titulo">Bloqueante para ingresar a la obra</span>
+                    <span className="co-hint">No impide registrar al trabajador; sí que entre a la obra hasta completarlo.</span>
+                </span>
             </label>
 
             {isEpp && <EppMatrixEditor matriz={draft.matrizEpp || []} onChange={(matrizEpp) => set({ matrizEpp })} />}
@@ -748,37 +727,47 @@ function EppMatrixEditor({ matriz, onChange }: {
         if (nuevo.trim()) { onChange([...matriz, { descripcion: nuevo.trim() }]); setNuevo(''); }
     };
     return (
-        <div className="card" style={{ padding: 'var(--space-3)' }}>
-            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-2)' }}>Matriz EPP · {matriz.length}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+        <section className="co-matriz" aria-label="Matriz de EPP">
+            <div className="co-section-head">
+                <h3 className="co-section-title">Matriz de EPP</h3>
+                <span className="co-count">{matriz.length}</span>
+                <p className="co-section-hint">Un EPP crítico debe entregarse antes de entrar a la obra.</p>
+            </div>
+            <div className="co-matriz-filas">
                 {matriz.map((e, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <div key={i} className="co-matriz-fila">
                         <input
                             className="form-input"
+                            aria-label="Elemento de protección"
                             value={e.descripcion}
                             onChange={(ev) => onChange(matriz.map((x, j) => j === i ? { ...x, descripcion: ev.target.value } : x))}
-                            style={{ flex: 1 }}
                         />
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', whiteSpace: 'nowrap' }}>
-                            <input type="checkbox" checked={!!e.critico} onChange={(ev) => onChange(matriz.map((x, j) => j === i ? { ...x, critico: ev.target.checked } : x))} />
-                            crítico
+                        <label className="co-critico">
+                            <input
+                                type="checkbox"
+                                className="checkbox-input custom-checkbox"
+                                checked={!!e.critico}
+                                onChange={(ev) => onChange(matriz.map((x, j) => j === i ? { ...x, critico: ev.target.checked } : x))}
+                            />
+                            Crítico
                         </label>
-                        <button className="btn btn-ghost btn-sm" onClick={() => onChange(matriz.filter((_, j) => j !== i))} style={{ color: 'var(--danger-500)' }}><FiTrash2 size={14} /></button>
+                        <button type="button" className="co-icon-btn danger" aria-label={`Quitar ${e.descripcion || 'EPP'}`}
+                            onClick={() => onChange(matriz.filter((_, j) => j !== i))}><FiTrash2 size={15} /></button>
                     </div>
                 ))}
             </div>
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <div className="co-matriz-nuevo">
                 <input
                     className="form-input"
                     value={nuevo}
                     onChange={(e) => setNuevo(e.target.value)}
                     placeholder="Agregar EPP… (ej: Arnés de cuerpo completo)"
+                    aria-label="Nuevo elemento de protección"
                     onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), add())}
-                    style={{ flex: 1 }}
                 />
-                <button className="btn btn-secondary" onClick={add}><FiPlus /></button>
+                <button type="button" className="co-icon-btn co-icon-btn--borde" aria-label="Agregar EPP" onClick={add}><FiPlus size={15} /></button>
             </div>
-        </div>
+        </section>
     );
 }
 
@@ -789,38 +778,200 @@ function PlantillaControl({ item, uploading, onUpload, onPreview, onRemove }: {
     const inputRef = useRef<HTMLInputElement | null>(null);
 
     if (item.alcancePlantilla === 'obra') {
-        return <div style={{ marginTop: 4, fontSize: 'var(--text-xs)', color: 'var(--info-500)' }}>Documento por obra — se configura en cada obra, no aquí.</div>;
+        return <span className="co-doc-nota">Documento por obra: se configura en cada obra, no aquí.</span>;
     }
     if (item.alcancePlantilla === 'persona' || item.alcancePlantilla === 'ninguno') {
-        return <div style={{ marginTop: 4, fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Sin documento · evidencia individual</div>;
+        return <span className="co-doc-nota apagada">Sin documento · evidencia individual</span>;
     }
     return (
-        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div className="co-doc">
             <input
                 ref={inputRef} type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = ''; }}
             />
             {item.plantilla ? (
                 <>
-                    <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--text-xs)',
-                        background: 'rgba(47,170,91,0.12)', color: 'var(--success-500)',
-                        padding: '2px 8px', borderRadius: 6, maxWidth: 220, overflow: 'hidden',
-                    }}>
-                        <FiFile size={12} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.plantilla.nombre}</span>
+                    <span className="co-doc-chip" title={item.plantilla.nombre}>
+                        <FiCheck size={12} aria-hidden="true" />
+                        <span>{item.plantilla.nombre}</span>
                     </span>
-                    <button className="btn btn-ghost btn-sm" onClick={onPreview} title="Ver documento"><FiEye size={13} /></button>
-                    <button className="btn btn-ghost btn-sm" disabled={uploading} onClick={() => inputRef.current?.click()} title="Reemplazar documento">
-                        {uploading ? '…' : <FiUpload size={13} />}
+                    <button type="button" className="co-icon-btn" onClick={onPreview} aria-label="Ver documento" title="Ver documento"><FiEye size={15} /></button>
+                    <button type="button" className="co-icon-btn" disabled={uploading} onClick={() => inputRef.current?.click()}
+                        aria-label="Reemplazar documento" title="Reemplazar documento">
+                        {uploading ? '…' : <FiUpload size={15} />}
                     </button>
-                    <button className="btn btn-ghost btn-sm" onClick={onRemove} style={{ color: 'var(--danger-500)' }} title="Quitar"><FiTrash2 size={13} /></button>
+                    <button type="button" className="co-icon-btn danger" onClick={onRemove} aria-label="Quitar documento" title="Quitar documento"><FiTrash2 size={15} /></button>
                 </>
             ) : (
-                <button className="btn btn-secondary btn-sm" disabled={uploading} onClick={() => inputRef.current?.click()}>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={uploading} onClick={() => inputRef.current?.click()}>
                     {uploading ? 'Subiendo…' : <><FiUpload size={13} /> Subir documento</>}
                 </button>
             )}
         </div>
     );
 }
+
+// Traducción del canvas "Onboarding por cargo" (OnboardingCargo*.dc.html): secciones
+// con título + regla, recuadros solo por elemento, y color reservado para la acción
+// principal, el cargo elegido y dos estados (documento cargado, bloqueante).
+const styles = `
+.co-page { display: flex; flex-direction: column; gap: var(--space-6); }
+.co-dirty { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+
+.co-section-head {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;
+    padding-bottom: 9px; margin-bottom: 14px; border-bottom: 1px solid var(--surface-border);
+}
+.co-section-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.co-section-hint { margin: 0; flex: 1 1 320px; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); }
+.co-count {
+    padding: 1px 8px; border: 1px solid var(--surface-border); border-radius: 999px;
+    font-size: 11.5px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums;
+}
+.co-hint { display: block; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.co-vacio { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); }
+.co-texto-alerta { color: var(--danger-alerta) !important; }
+.co-spacer { flex: 1; }
+.co-mono, .co-codigo { font-family: var(--font-mono); }
+.co-codigo { font-size: 12px; color: var(--text-muted); }
+.co-codigo--claro { color: var(--text-primary); }
+
+.co-lista { display: flex; flex-direction: column; gap: 8px; }
+.co-tag {
+    padding: 1px 7px; border-radius: 5px; background: var(--surface-hover);
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap;
+}
+.co-item-linea { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.co-item-titulo { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.co-meta { font-size: 12px; color: var(--text-secondary); }
+
+/* Documentos de empresa */
+.co-empresa-row {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 12px 16px;
+    padding: 12px 16px; border: 1px solid var(--surface-border); border-radius: 12px;
+}
+.co-empresa-info { flex: 1 1 320px; }
+.co-empresa-info .co-item-titulo { font-size: 13.5px; }
+
+/* Cargos + kit */
+.co-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 28px; align-items: start; }
+.co-cargos {
+    display: flex; flex-direction: column; gap: 4px; padding: 10px;
+    border: 1px solid var(--surface-border); border-radius: 14px;
+}
+.co-cargos-label {
+    padding: 4px 12px 8px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--text-secondary);
+}
+.co-cargo {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 9px 12px; border: none; border-radius: 8px; background: none;
+    font-family: inherit; font-size: 13px; color: var(--text-primary); text-align: left; cursor: pointer;
+    transition: background var(--transition-fast);
+}
+.co-cargo:hover { background: var(--surface-elevated); }
+.co-cargo.activo { background: var(--surface-hover); font-weight: 600; }
+.co-cargo-nombre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-cargo-n { flex-shrink: 0; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.co-cargo.activo .co-cargo-n { color: var(--text-secondary); }
+.co-cargos-acciones {
+    display: flex; flex-direction: column; gap: 6px;
+    margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--surface-border);
+}
+.co-reset {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px;
+    border: none; background: none; font-family: inherit; font-size: 12px; color: var(--text-muted); cursor: pointer;
+}
+.co-reset:hover { color: var(--text-primary); }
+
+/* Acción de agregar: trazo discontinuo, igual que en Mi empresa. */
+.co-add {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; align-self: flex-start;
+    padding: 9px 16px; border: 1px dashed var(--gray-500); border-radius: var(--radius-md);
+    background: none; color: var(--text-primary); font-family: inherit; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+.co-add:hover { border-color: var(--accent); color: var(--accent-text); }
+.co-add--ancho { align-self: stretch; border-radius: 8px; }
+
+.co-kit { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.co-kit-head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.co-cargo-input { flex: 1 1 200px; max-width: 340px; height: 40px; font-size: 15px; font-weight: 600; }
+.co-kit-vacio {
+    padding: var(--space-5); border: 1px dashed var(--gray-500); border-radius: 12px;
+    font-size: var(--text-sm); color: var(--text-secondary); text-align: center;
+}
+.co-sin-cargo {
+    padding: var(--space-10); border: 1px dashed var(--gray-500); border-radius: 14px;
+    font-size: var(--text-sm); color: var(--text-secondary); text-align: center;
+}
+
+.co-item {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 14px 16px; border: 1px solid var(--surface-border); border-radius: 12px;
+}
+.co-item-main { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.co-item-doc { margin-top: 8px; }
+.co-item-acciones { display: flex; gap: 2px; flex-shrink: 0; }
+.co-bloq {
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px;
+    border: 1px solid var(--surface-border); border-radius: 999px;
+    font-size: 11px; font-weight: 500; color: var(--text-primary); white-space: nowrap;
+}
+.co-bloq svg { color: var(--danger-alerta); }
+
+.co-icon-btn {
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 30px; height: 30px; padding: 0; border: none; border-radius: 6px;
+    background: none; color: var(--text-muted); cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.co-icon-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+.co-icon-btn.danger:hover:not(:disabled) { color: var(--danger-alerta); }
+.co-icon-btn--borde { width: 38px; height: 38px; border: 1px solid var(--surface-border); color: var(--text-primary); }
+
+/* Documento del ítem */
+.co-doc { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.co-doc-chip {
+    display: inline-flex; align-items: center; gap: 7px; max-width: 280px; margin-right: 2px;
+    padding: 5px 10px; border: 1px solid var(--surface-border); border-radius: 7px;
+    font-size: 12px; color: var(--text-primary);
+}
+.co-doc-chip svg { flex-shrink: 0; color: var(--success-apagado); }
+.co-doc-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-doc-nota { font-size: 12px; color: var(--text-secondary); }
+.co-doc-nota.apagada { color: var(--text-muted); }
+
+/* Modales de confirmación */
+.co-aviso {
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+    border-radius: var(--radius-md); background: var(--surface-hover); font-size: var(--text-sm); line-height: 1.5;
+}
+.co-aviso svg { flex-shrink: 0; margin-top: 3px; color: var(--danger-alerta); }
+
+/* Panel lateral del ítem */
+.co-editor { display: flex; flex-direction: column; gap: 18px; padding: var(--space-2) 0; }
+.co-editor .form-group { margin-bottom: 0; }
+.co-editor-fila { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.co-editor-fila--codigo { grid-template-columns: minmax(0, 1fr) 150px; }
+.co-check { align-items: flex-start; padding: 10px 12px; cursor: pointer; }
+.co-check .custom-checkbox { margin-top: 1px; }
+.co-check-titulo { display: block; font-size: 13.5px; font-weight: 500; color: var(--text-primary); }
+.co-check .co-hint { margin-top: 2px; }
+
+.co-matriz { display: flex; flex-direction: column; }
+.co-matriz .co-section-head { margin-bottom: 10px; }
+.co-matriz-filas { display: flex; flex-direction: column; gap: 8px; }
+.co-matriz-fila { display: flex; align-items: center; gap: 10px; }
+.co-matriz-fila .form-input { flex: 1; min-width: 0; }
+.co-critico { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-primary); white-space: nowrap; cursor: pointer; }
+.co-matriz-nuevo { display: flex; gap: 8px; margin-top: 10px; }
+.co-matriz-nuevo .form-input { flex: 1; min-width: 0; border-style: dashed; }
+
+@media (max-width: 900px) {
+  .co-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .co-editor-fila, .co-editor-fila--codigo { grid-template-columns: minmax(0, 1fr); }
+}
+`;
