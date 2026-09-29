@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import PinInput from '../components/PinInput';
+import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import {
     FiCheck,
@@ -10,7 +10,6 @@ import {
     FiUser,
     FiAlertCircle,
     FiAlertTriangle,
-    FiX,
     FiDownload,
     FiEdit3,
     FiShield,
@@ -155,8 +154,6 @@ export default function MySignatures() {
     const [selectedRequest, setSelectedRequest] = useState<PendingItem | null>(null);
     const [showSignModal, setShowSignModal] = useState(false);
     const [signing, setSigning] = useState(false);
-    const [pin, setPin] = useState('');
-    const [declared, setDeclared] = useState(false);
     const [error, setError] = useState('');
 
     // Historial: buscador + filtro por tipo + paginación. Crece con el
@@ -180,8 +177,6 @@ export default function MySignatures() {
         const item = pendingRequests.find(r => r.requestId === target);
         if (item) {
             setSelectedRequest(item);
-            setPin('');
-            setDeclared(false);
             setError('');
             setShowSignModal(true);
             setActiveTab('pendientes');
@@ -226,7 +221,7 @@ export default function MySignatures() {
         }
     };
 
-    const handleSign = async () => {
+    const handleSign = async (pin: string) => {
         if (!selectedRequest || !user?.personaId || pin.length !== 4) return;
         setSigning(true);
         setError('');
@@ -248,8 +243,6 @@ export default function MySignatures() {
                 await loadData();
                 setShowSignModal(false);
                 setSelectedRequest(null);
-                setPin('');
-                setDeclared(false);
             } else {
                 setError(response.error || 'Error al firmar');
             }
@@ -263,8 +256,6 @@ export default function MySignatures() {
 
     const openSignModal = (request: PendingItem) => {
         setSelectedRequest(request);
-        setPin('');
-        setDeclared(false);
         setError('');
         setShowSignModal(true);
     };
@@ -320,18 +311,6 @@ export default function MySignatures() {
     }, [signatureHistory, historySearch, historyTipo]);
 
     const historialVisible = historialFiltrado.slice(0, historyVisible);
-
-    // ── Ficha reutilizable (documento a firmar / firma ya hecha) ──
-    const Ficha = ({ items }: { items: { label: string; valor: React.ReactNode; full?: boolean }[] }) => (
-        <dl className="msig-ficha">
-            {items.map((it) => (
-                <div key={it.label} className={it.full ? 'msig-ficha-item msig-ficha-item--full' : 'msig-ficha-item'}>
-                    <dt>{it.label}</dt>
-                    <dd>{it.valor}</dd>
-                </div>
-            ))}
-        </dl>
-    );
 
     const DocChips = ({ documentos }: { documentos: DocumentoAdjunto[] }) => (
         documentos.length === 0 ? null : (
@@ -667,80 +646,36 @@ export default function MySignatures() {
                 firmando (documento, ficha, otras firmas) para que la
                 decisión de firmar no dependa de haber leído algo en otra
                 pantalla. */}
-            <Modal
+            <FirmaModal
                 isOpen={showSignModal && !!selectedRequest}
                 onClose={() => setShowSignModal(false)}
-                title="Firmar documento"
-                subtitle={selectedRequest?.titulo}
-                icon={<FiEdit3 size={22} />}
-                size="lg"
-                preventClose={signing}
-                footer={
-                    <>
-                        <button className="btn btn-secondary" onClick={() => setShowSignModal(false)} disabled={signing}>
-                            <FiX size={16} /> Cancelar
-                        </button>
-                        <button
-                            className="btn btn-primary"
-                            onClick={handleSign}
-                            disabled={signing || pin.length !== 4 || !declared}
-                        >
-                            {signing
-                                ? <><div className="spinner" style={{ width: '16px', height: '16px' }} /> Firmando...</>
-                                : <><FiCheck size={18} /> Confirmar firma</>
-                            }
-                        </button>
-                    </>
-                }
+                onConfirm={handleSign}
+                firmando={signing}
+                error={error}
+                titulo="Firmar documento"
+                subtitulo={selectedRequest?.titulo}
             >
                 {selectedRequest && (
-                    <div className="msig-modal-grid">
-                        <div className="msig-modal-col">
-                            <Ficha items={[
-                                { label: 'Tipo', valor: REQUEST_TYPES[selectedRequest.tipo]?.label || selectedRequest.__tipoLabel || 'Documento' },
-                                { label: 'Solicitado por', valor: selectedRequest.solicitanteNombre },
-                                { label: 'Fecha límite', valor: selectedRequest.fechaLimite ? formatLocalDateTime(selectedRequest.fechaLimite).date : 'Sin fecha límite' },
-                                ...(selectedRequest.ubicacion ? [{ label: 'Ubicación', valor: selectedRequest.ubicacion }] : []),
-                                ...(selectedRequest.documentos.length > 0 ? [{ label: 'Documentos', valor: <DocPreviewCards documentos={selectedRequest.documentos} />, full: true }] : []),
-                            ]} />
-                            {selectedRequest.trabajadores.length > 1 && (() => {
-                                const firmantes = selectedRequest.trabajadores.filter((t) => t.firmado);
-                                return (
-                                    <div className="msig-otras-firmas">
-                                        <span>Otras firmas de este documento</span>
-                                        <span>{firmantes.length} de {selectedRequest.trabajadores.length} completadas</span>
-                                    </div>
-                                );
-                            })()}
-                        </div>
-
-                        <div className="msig-modal-col">
-                            <div className="msig-notice">
-                                <FiAlertCircle size={16} />
-                                <span>Tu firma queda registrada con fecha, hora e identidad verificada. Esta acción <strong>no se puede deshacer</strong>.</span>
-                            </div>
-
-                            <PinInput
-                                onComplete={(completedPin) => setPin(completedPin)}
-                                disabled={signing}
-                                mode="verify"
-                                title="Ingresa tu PIN de firma"
-                                subtitle=" "
-                                error={error}
-                            />
-                            <label className="msig-declare-check">
-                                <input
-                                    type="checkbox"
-                                    checked={declared}
-                                    onChange={e => setDeclared(e.target.checked)}
-                                    disabled={signing}
-                                />
-                                <span>Declaro haber leído conscientemente la solicitud de firma</span>
-                            </label>
-                        </div>
-                    </div>
+                    <>
+                        <FichaFirma items={[
+                            { label: 'Tipo', valor: REQUEST_TYPES[selectedRequest.tipo]?.label || selectedRequest.__tipoLabel || 'Documento' },
+                            { label: 'Solicitado por', valor: selectedRequest.solicitanteNombre },
+                            { label: 'Fecha límite', valor: selectedRequest.fechaLimite ? formatLocalDateTime(selectedRequest.fechaLimite).date : 'Sin fecha límite' },
+                            ...(selectedRequest.ubicacion ? [{ label: 'Ubicación', valor: selectedRequest.ubicacion }] : []),
+                            ...(selectedRequest.documentos.length > 0 ? [{ label: 'Documentos', valor: <DocPreviewCards documentos={selectedRequest.documentos} />, full: true }] : []),
+                        ]} />
+                        {selectedRequest.trabajadores.length > 1 && (() => {
+                            const firmantes = selectedRequest.trabajadores.filter((t) => t.firmado);
+                            return (
+                                <div className="msig-otras-firmas">
+                                    <span>Otras firmas de este documento</span>
+                                    <span>{firmantes.length} de {selectedRequest.trabajadores.length} completadas</span>
+                                </div>
+                            );
+                        })()}
+                    </>
                 )}
-            </Modal>
+            </FirmaModal>
 
             {/* Detalle en el historial: misma estructura de modal que el de
                 firmar, para que revisar una firma ya hecha se sienta la
@@ -771,7 +706,7 @@ export default function MySignatures() {
                     return (
                         <div className="msig-modal-grid">
                             <div className="msig-modal-col">
-                                <Ficha items={[
+                                <FichaFirma items={[
                                     { label: 'Tipo', valor: REQUEST_TYPES[firma.requestTipo]?.label || firma.requestTipo || 'Documento' },
                                     { label: 'Solicitado por', valor: firma.solicitanteNombre || '—' },
                                     ...(documentos?.length ? [{ label: 'Documentos', valor: <DocPreviewCards documentos={documentos} />, full: true }] : []),
@@ -1140,36 +1075,6 @@ export default function MySignatures() {
                     color: var(--text-muted);
                 }
 
-                /* ── Modales de detalle (firmar / historial) ── */
-                .msig-modal-grid {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: var(--space-6);
-                }
-                @media (max-width: 640px) {
-                    .msig-modal-grid { grid-template-columns: 1fr; }
-                }
-                .msig-modal-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-                .msig-ficha {
-                    margin: 0;
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: var(--space-3) var(--space-4);
-                    padding: var(--space-4);
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-md);
-                }
-                .msig-ficha-item { min-width: 0; }
-                .msig-ficha-item--full { grid-column: 1 / -1; }
-                .msig-ficha-item dt {
-                    font-size: 10.5px;
-                    font-weight: 600;
-                    text-transform: uppercase;
-                    letter-spacing: 0.04em;
-                    color: var(--text-muted);
-                    margin-bottom: 3px;
-                }
-                .msig-ficha-item dd { margin: 0; font-size: var(--text-sm); color: var(--text-primary); word-break: break-word; }
                 .msig-otras-firmas {
                     display: flex;
                     flex-direction: column;
@@ -1178,19 +1083,6 @@ export default function MySignatures() {
                     color: var(--text-muted);
                 }
                 .msig-otras-firmas span:last-child { color: var(--text-secondary); }
-                .msig-notice {
-                    display: flex;
-                    align-items: flex-start;
-                    gap: var(--space-2);
-                    padding: var(--space-3);
-                    border-radius: var(--radius-md);
-                    font-size: var(--text-xs);
-                    line-height: 1.5;
-                    background: rgba(234, 179, 8, 0.1);
-                    border: 1px solid rgba(234, 179, 8, 0.3);
-                    color: var(--warning-500);
-                }
-                .msig-notice svg { flex-shrink: 0; margin-top: 1px; }
                 .msig-hist-detail-status {
                     display: inline-flex;
                     align-items: center;
@@ -1221,35 +1113,6 @@ export default function MySignatures() {
                 }
                 .msig-token { font-family: var(--font-mono); font-size: var(--text-sm); letter-spacing: 0.02em; color: var(--text-secondary); word-break: break-all; }
                 .msig-verif-sub { font-size: 10.5px; color: var(--text-muted); }
-
-                .msig-declare-check {
-                    display: flex;
-                    align-items: flex-start;
-                    gap: var(--space-3);
-                    padding: var(--space-3) var(--space-4);
-                    background: var(--surface-elevated);
-                    border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-lg);
-                    cursor: pointer;
-                    transition: border-color 0.15s;
-                    font-size: var(--text-sm);
-                    color: var(--text-secondary);
-                    line-height: 1.4;
-                    user-select: none;
-                }
-                .msig-declare-check:has(input:checked) {
-                    border-color: var(--primary-400);
-                    background: var(--accent-tint);
-                    color: var(--text-primary);
-                }
-                .msig-declare-check input[type="checkbox"] {
-                    flex-shrink: 0;
-                    width: 16px;
-                    height: 16px;
-                    margin-top: 1px;
-                    accent-color: var(--primary-500);
-                    cursor: pointer;
-                }
 
                 /* ── Mobile ── */
                 @media (max-width: 640px) {

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { FiAlertCircle, FiLock, FiWifiOff } from 'react-icons/fi';
+import { FiAlertCircle, FiClipboard, FiLock, FiWifiOff } from 'react-icons/fi';
 import { surveysApi, type SurveyQuestion } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
-import SignatureModal from '../components/SignatureModal';
+import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import { FormPage, PageHeader } from '../components/ui';
 import { SurveyResponderSkeleton } from '../components/surveys/SurveysSkeleton';
 import {
@@ -144,6 +144,7 @@ export default function SurveyResponder() {
     };
 
     const migas = [{ label: 'Encuestas', to: '/surveys' }];
+    const respondidas = encuesta ? armarRespuestas(encuesta.preguntas, valores) : [];
 
     if (loading) {
         return (
@@ -224,17 +225,41 @@ export default function SurveyResponder() {
                 </ol>
             </FormPage>
 
-            <SignatureModal
+            {/* El mismo modal de "Mis firmas": qué se firma a la izquierda; PIN y
+                declaración a la derecha. */}
+            <FirmaModal
                 isOpen={mostrarFirma}
                 onClose={() => setMostrarFirma(false)}
                 onConfirm={firmar}
-                type="survey"
-                title="Firmar encuesta"
-                itemName={encuesta.titulo}
-                description="Al firmar, confirmas que respondiste esta encuesta de manera veraz."
-                loading={firmando}
+                firmando={firmando}
                 error={errorFirma}
-            />
+                titulo="Firmar encuesta"
+                subtitulo={encuesta.titulo}
+                icono={<FiClipboard size={22} />}
+                declaracion="Declaro que mis respuestas son veraces y que las respondí yo"
+                aviso={!isOnline
+                    ? <>Sin conexión: la respuesta queda guardada en este equipo y se envía sola cuando vuelva la señal. Una vez enviada, <strong>no se puede deshacer</strong>.</>
+                    : undefined}
+            >
+                <FichaFirma items={[
+                    { label: 'Tipo', valor: encuesta.esFichaSalud ? 'Ficha de salud' : 'Encuesta' },
+                    { label: 'Respondidas', valor: `${respondidas.length} de ${encuesta.preguntas.length}` },
+                    {
+                        label: 'Tus respuestas',
+                        full: true,
+                        valor: (
+                            <ol className="survey-firma-resumen">
+                                {encuesta.preguntas.map((p) => (
+                                    <li key={p.questionId}>
+                                        <span>{p.titulo}</span>
+                                        <strong>{textoRespuesta(valores[p.questionId])}</strong>
+                                    </li>
+                                ))}
+                            </ol>
+                        ),
+                    },
+                ]} />
+            </FirmaModal>
         </>
     );
 }
@@ -275,4 +300,10 @@ function CampoRespuesta({ pregunta, valor, onChange }: {
             aria-label={pregunta.titulo}
         />
     );
+}
+
+/** Cómo se lee una respuesta en el resumen que se firma. */
+function textoRespuesta(valor: string | number | undefined): string {
+    if (valor === undefined || valor === null || String(valor).trim() === '') return 'Sin responder';
+    return String(valor).trim();
 }

@@ -4632,3 +4632,87 @@ select.form-input option {
     width: 100%;
   }
 }
+/* ── Modal de firma compartido (components/firmas/FirmaModal.tsx) ──
+   Vivían en el <style> de MySignatures.tsx; salieron al extraer el modal
+   para usarlo también al firmar una encuesta. Los usa además el modal de
+   detalle del historial de firmas. */
+/* ── Modales de detalle (firmar / historial) ── */
+.msig-modal-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+}
+@media (max-width: 640px) {
+    .msig-modal-grid { grid-template-columns: 1fr; }
+}
+.msig-modal-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.msig-ficha {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3) var(--space-4);
+    padding: var(--space-4);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-md);
+}
+.msig-ficha-item { min-width: 0; }
+.msig-ficha-item--full { grid-column: 1 / -1; }
+.msig-ficha-item dt {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+}
+.msig-ficha-item dd { margin: 0; font-size: var(--text-sm); color: var(--text-primary); word-break: break-word; }
+
+.msig-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    color: var(--warning-500);
+}
+.msig-notice svg { flex-shrink: 0; margin-top: 1px; }
+
+.msig-declare-check {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: border-color 0.15s;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.4;
+    user-select: none;
+}
+.msig-declare-check:has(input:checked) {
+    border-color: var(--primary-400);
+    background: var(--accent-tint);
+    color: var(--text-primary);
+}
+.msig-declare-check input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    accent-color: var(--primary-500);
+    cursor: pointer;
+}
+
+/* Resumen de lo que se firma en una encuesta (columna izquierda del modal de firma). */
+.survey-firma-resumen { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-1) 0 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+.survey-firma-resumen li { display: flex; flex-direction: column; gap: 2px; padding-bottom: var(--space-2); border-bottom: 1px solid var(--surface-hover); }
+.survey-firma-resumen li:last-child { border-bottom: none; padding-bottom: 0; }
+.survey-firma-resumen span { font-size: var(--text-xs); color: var(--text-secondary); }
+.survey-firma-resumen strong { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); white-space: pre-wrap; }
