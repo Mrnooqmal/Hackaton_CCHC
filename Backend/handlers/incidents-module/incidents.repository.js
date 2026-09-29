@@ -6,6 +6,8 @@ const { HUELLA_SHA256, urlDeSubida } = require('../../lib/clients/s3');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
 const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
+const { hmacRut } = require('../../lib/cifradoCampo');
+const { validateRut } = require('../../lib/utils/validation');
 
 class IncidentsRepository {
     constructor() {
@@ -197,6 +199,11 @@ class IncidentsRepository {
             // lo muestra; el RUT, el género y el cargo se guardan aparte (ver
             // `lib/traza-sensible.js`) para que ningún índice los contenga.
             trabajadorNombre: data.trabajador?.nombre || '',
+            // Con qué persona se vincula el incidente, sin guardar su RUT: el mismo
+            // HMAC que busca a la persona en su ficha (`rutHmac`, D-10). Sin esto, la
+            // retención y la supresión a solicitud (lib/gobernanza) no podían
+            // encontrar los incidentes de alguien sin descifrarlos todos.
+            afectadoRutHmac: validateRut(data.trabajador?.rut || '').valid ? await hmacRut(data.trabajador.rut) : null,
             fecha: data.fecha || now.split('T')[0],
             hora: data.hora || now.split('T')[1].split('.')[0],
             descripcion: data.descripcion,
@@ -217,10 +224,12 @@ class IncidentsRepository {
             ubicacion: data.ubicacion || null,
 
             // Cabecera del informe — quién genera el reporte (lo muestra el frontend)
-            realizadoPor: data.realizadoPor || {
-                personaId: null,
-                nombre: '',
-                cargo: ''
+            // Solo quién es, nunca su RUT: el navegador lo mandaba y quedaba en
+            // claro en la tabla, por fuera del cifrado de campo (D-10).
+            realizadoPor: {
+                personaId: data.realizadoPor?.personaId || null,
+                nombre: data.realizadoPor?.nombre || '',
+                cargo: data.realizadoPor?.cargo || '',
             },
 
             // Medidas correctivas (Art. 71) — read-model de la Fase ACT en ObraDetalle.

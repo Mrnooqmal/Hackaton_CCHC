@@ -64,7 +64,6 @@ export interface Incident {
     realizadoPor?: {
         personaId: string | null;
         nombre: string;
-        rut?: string;
         cargo: string;
     };
     fecha: string;

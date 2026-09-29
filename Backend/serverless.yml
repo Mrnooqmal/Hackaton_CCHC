@@ -82,6 +82,7 @@ provider:
     INBOX_TABLE: ${self:service}-inbox-${self:provider.stage}
     SUGGESTIONS_TABLE: ${self:service}-sugerencias-${self:provider.stage}
     AUSENCIAS_TABLE: ${self:service}-ausencias-${self:provider.stage}
+    GOBERNANZA_TABLE: ${self:service}-gobernanza-${self:provider.stage}
     EPP_TABLE: ${self:service}-epp-${self:provider.stage}
     ESTRUCTURA_TABLE: ${self:service}-estructura-preventiva-${self:provider.stage}
     # --- Storage ---
@@ -218,6 +219,7 @@ provider:
             - !GetAtt AusenciasTable.Arn
             - !Sub ${AusenciasTable.Arn}/index/*
             - !GetAtt EppTable.Arn
+            - !GetAtt GobernanzaTable.Arn
             - !GetAtt EstructuraPreventivaTable.Arn
 
         - Effect: Allow
@@ -640,6 +642,19 @@ functions:
     timeout: 120
     events:
       - schedule: cron(10 13 * * ? *)
+
+  # Retención de datos personales (D-2, Ley 21.719): calcula por empresa qué
+  # venció y qué se conserva, guarda el plan y extiende los bloqueos de S3 de la
+  # evidencia que debe seguir guardada. No suprime nada. Rol propio y mínimo
+  # (RolGobernanza): el rol compartido de las demás funciones no puede tocar
+  # bloqueos, y este no puede escribir fuera de la tabla de gobernanza.
+  retencionDiaria:
+    handler: handlers/gobernanza/retencion.retencionDiaria
+    role: RolGobernanza
+    timeout: 600
+    memorySize: 1024
+    events:
+      - schedule: cron(30 7 * * ? *)
 
   # Documents (Documentos)
   listDocuments:
@@ -1737,6 +1752,75 @@ resources:
         # error propio —un borrado o una escritura masiva equivocada—, que es
         # bastante más probable que un atacante. Sin esto no hay ninguna vía
         # de recuperación: la tabla se restaura o no existe.
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
+    RolGobernanza:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal: { Service: lambda.amazonaws.com }
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        Policies:
+          - PolicyName: gobernanza-retencion
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                # Leer todas las tablas (el inventario las recorre todas).
+                - Effect: Allow
+                  Action: [dynamodb:Query, dynamodb:GetItem, dynamodb:BatchGetItem, dynamodb:Scan]
+                  Resource:
+                    - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:service}-*-${self:provider.stage}'
+                    - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:service}-*-${self:provider.stage}/index/*'
+                # Escribir SOLO en la de gobernanza.
+                - Effect: Allow
+                  Action: [dynamodb:PutItem, dynamodb:UpdateItem]
+                  Resource: !GetAtt GobernanzaTable.Arn
+                # Tablas y buckets cifrados con la clave propia.
+                - Effect: Allow
+                  Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
+                  Resource: !GetAtt ClaveDatos.Arn
+                # Bloqueos de la evidencia: listar, leer y EXTENDER. Sin bypass ni
+                # borrado: acortar o suprimir es de la etapa con aprobación.
+                - Effect: Allow
+                  Action: s3:ListBucket
+                  Resource: !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}'
+                - Effect: Allow
+                  Action: [s3:GetObjectRetention, s3:PutObjectRetention]
+                  Resource: !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}/*'
+
+    # Gobernanza del dato personal (Ley 21.719): planes de retención, lotes de
+    # supresión pendientes de aprobación, solicitudes de titulares y bloqueos.
+    # PK = tenantId, SK con prefijo por tipo (PLAN#, LOTE#, SOLICITUD#…). Nada
+    # de esto se borra al suprimir: es la prueba de que la supresión se hizo, y
+    # por eso no guarda datos personales, solo identificadores.
+    GobernanzaTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.GOBERNANZA_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        # Los planes diarios vencen al año; solicitudes y lotes no llevan ttl.
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+        SSESpecification: ${self:custom.cifradoTablas}
+        AttributeDefinitions:
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenantId
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
         PointInTimeRecoverySpecification:
           PointInTimeRecoveryEnabled: true
 

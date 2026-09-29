@@ -224,7 +224,6 @@ export default function IncidentReportar() {
                 realizadoPor: {
                     personaId: user?.personaId || null,
                     nombre: nombreCompleto || '',
-                    rut: user?.rut || '',
                     cargo: '',
                 },
                 tenantId: (user as any)?.tenantId,

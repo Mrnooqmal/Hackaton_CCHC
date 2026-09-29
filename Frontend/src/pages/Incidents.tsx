@@ -1175,11 +1175,6 @@ export default function Incidents() {
                                             <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
                                                 {(selectedIncident as any).realizadoPor?.nombre || selectedIncident.reportadoPor}
                                             </div>
-                                            {(selectedIncident as any).realizadoPor?.rut && (
-                                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
-                                                    {(selectedIncident as any).realizadoPor.rut}
-                                                </div>
-                                            )}
                                         </div>
                                     )}
                                 </div>

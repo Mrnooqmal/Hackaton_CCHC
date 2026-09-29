@@ -137,9 +137,9 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 
 | # | Punto | Estado | Evidencia o brecha |
 |---|---|---|---|
-| 7.1 | **Política de retención de datos personales** | **Decidida, implementación pendiente** | Plazo y diseño definidos en la decisión D-2. El dato que faltaba para poder calcularla —la fecha de término del vínculo laboral— ya se registra: `Persona.fechaTerminoVinculo`. Falta el bloqueo de objetos en S3 y el proceso que aplica el plazo. |
-| 7.2 | **Mecanismo de supresión a solicitud del titular** | **Pendiente** | No existe. Exigible con la Ley 21.719. Su alcance está acotado por D-2: la obligación de conservación le gana a la supresión mientras el plazo no venza. |
-| 7.3 | **Registro de tratamientos** | **Pendiente** | No hay inventario documentado de qué datos personales se tratan, con qué finalidad y por cuánto tiempo. |
+| 7.1 | **Política de retención de datos personales** | **Implementada: cálculo y bloqueos. Pendiente: ejecutar la supresión** | Proceso diario (`retencionDiaria`) que calcula por empresa qué venció y qué se conserva, guarda el plan y extiende el Object Lock de la evidencia que debe seguir. Suprimir exige un lote aprobado por dos personas: siguiente etapa. Ver D-15. |
+| 7.2 | **Mecanismo de supresión a solicitud del titular** | **Diseñado, pendiente** | Solicitudes con canal de origen, bloqueo temporal en 2 días hábiles, plazos configurables y alerta de vencimiento. Ver D-15. |
+| 7.3 | **Registro de tratamientos** | **Implementado** | Generado desde el inventario de datos (`lib/gobernanza/inventario.js`), que también recorre el proceso de retención: no pueden divergir. Una prueba falla si una tabla nueva no está clasificada. Ver D-15. |
 | 7.4 | **Procedimiento de notificación de brechas** | **Pendiente** | No hay protocolo definido. |
 | 7.5 | Minimización en las respuestas de la API | **Parcial** | El hash del PIN nunca sale, pero no hay una revisión sistemática de qué campos personales viajan en cada respuesta. |
 
@@ -1044,6 +1044,93 @@ del script (puede traer datos de la página) y sin user-agent. Cada violación d
 la métrica `CspViolaciones` por directiva. Pasa a activa (renombrar la cabecera a
 `Content-Security-Policy`) cuando pasen unos días sin violaciones legítimas.
 
+### D-15. Gobernanza del dato personal: retención aplicada y derechos del titular
+**Estado: decidido el 28 de septiembre de 2026. Implementado: inventario, registro de tratamientos y proceso de retención (sin ejecutar supresiones). Pendiente: solicitudes del titular, bloqueo temporal y ejecución de lotes.**
+
+**Roles.** Cada constructora es la **responsable** del tratamiento de los datos
+de sus trabajadores; la plataforma es **encargada**. Por eso el canal por el que
+un titular ejerce sus derechos lo define cada constructora, y el sistema le da la
+herramienta para registrar la solicitud y su canal de origen.
+
+**Decisiones.**
+
+1. **Plazo**: 5 años desde el término del vínculo (D-2).
+2. **Registros grupales** (actas, actividades, documentos con varios firmantes):
+   se conservan completos hasta que vence el plazo del último involucrado.
+3. **Al vencer**: los incidentes se anonimizan (se conserva el hecho para los
+   indicadores de accidentabilidad); el resto se suprime, incluida la traza
+   sensible aparte (`<id>#traza`) de firmas e incidentes.
+4. **Ejecución** con aprobación de dos personas distintas: el proceso propone un
+   lote, una persona lo aprueba y otra lo ejecuta. Suprimir no tiene vuelta
+   atrás.
+5. **Retención legal**: una marca en la persona o en la empresa (fiscalización o
+   juicio abierto) suspende todo vencimiento mientras esté puesta.
+6. **Ante la duda, se conserva**: un registro que menciona a alguien que no se
+   puede identificar, o un archivo que ningún registro menciona, se conserva y se
+   informa para revisión.
+
+**Derechos del titular (Ley 21.719), a implementar.**
+
+- **Solicitud**: se registra quién la pide, qué derecho ejerce (acceso,
+  rectificación, supresión, oposición, portabilidad), cuándo y por qué canal (el
+  que defina la constructora).
+- **Bloqueo temporal**: al pedir rectificación, supresión u oposición, los datos
+  de la persona quedan bloqueados para tratamiento dentro de **2 días hábiles**,
+  sin borrarlos, hasta que se resuelva.
+- **Plazo de respuesta**: 30 días corridos, prorrogable una vez por otros 30 si
+  la prórroga se comunica antes de que venza el primero. Pendiente de
+  confirmación legal, por eso es **configurable, no fijo en el código**. Con
+  alerta cuando el plazo esté por vencer.
+- **Supresión a solicitud**: lo de conveniencia se suprime al resolver; la
+  evidencia queda con tratamiento limitado y supresión programada al vencer su
+  plazo. La respuesta al titular dice qué se suprimió, qué se conserva, hasta
+  cuándo y con qué fundamento.
+- **Copias de respaldo**: la recuperación a un punto en el tiempo conserva hasta
+  35 días; la respuesta lo informa.
+
+**Lo implementado.**
+
+- **Inventario** (`Backend/lib/gobernanza/inventario.js`): cada tabla con datos
+  de personas, qué guarda, para qué, su clase (evidencia, conveniencia,
+  operacional), cómo se vincula a la persona, qué archivos referencia y qué pasa
+  al vencer. Una prueba exige que toda tabla de `serverless.yml` esté
+  clasificada y que sus claves sean las reales.
+- **Registro de tratamientos**: se genera desde el inventario
+  (`node Backend/scripts/registro-tratamientos.js`); ver abajo.
+- **Cálculo de retención** (`Backend/lib/gobernanza/retencion.js`), funciones
+  puras con las seis reglas de arriba, probadas caso por caso y con sabotajes.
+- **Proceso diario** (`retencionDiaria`, 04:30 hora de Chile): calcula el plan
+  por empresa, lo guarda en la tabla de gobernanza **sin datos personales**
+  (solo identificadores y claves, porque el plan es la prueba de lo que se hizo
+  y sobrevive a la supresión) y **extiende** el Object Lock de la evidencia cuyo
+  bloqueo vence en menos de 180 días y debe seguir guardada. No suprime nada.
+  Corre con un **rol propio y mínimo** (`RolGobernanza`): lee todas las tablas,
+  escribe solo en la de gobernanza y en S3 solo puede listar, leer y extender
+  bloqueos, sin bypass ni borrado. El rol compartido de las demás funciones no
+  puede tocar bloqueos.
+
+**Registro de tratamientos** (generado desde el inventario):
+
+| Categoría | Datos | Finalidad | Clase | Plazo | Al vencer |
+|---|---|---|---|---|---|
+| Ficha de la persona | RUT (cifrado), nombre, fecha de nacimiento, correo, teléfono, foto, cargo, asignaciones a obras, nivel escolar, cursos, contacto de emergencia, vigilancia de salud y restricción laboral (cifradas), credenciales (hash), historial del PIN, enrolamiento. Suprimibles a solicitud sin esperar el plazo: fotoPerfil, telefono, contactoEmergencia, preferencias, notificacionesSms, nivelEscolar. | Identificar a la persona trabajadora, asignarla a obras, acreditar su onboarding DS 44 y permitirle firmar. | evidencia | 5 años desde el término del vínculo | Se suprime |
+| Documentos, asignaciones y firmas | Documentos de onboarding, procedimientos, entregas de EPP; a quién se asignaron, quién firmó (nombre, RUT e IP cifrados), difusiones, versiones anteriores con sus firmas. | Acreditar la entrega, difusión y firma de la documentación exigida por el DS 44. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
+| Registro de firmas | Quién firmó qué, cuándo, con qué método (PIN o vale), desde qué IP (cifrada), y los documentos firmados. | Prueba de la firma electrónica simple ante la autoridad. | evidencia | 5 años desde el término del vínculo | Se suprime |
+| Solicitudes de firma | Solicitante y trabajadores convocados (nombre, cargo, RUT cifrado), estado de cada firma. | Convocar y seguir las firmas de un documento o actividad. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
+| Actividades preventivas y asistencia | Relator, responsables y asistentes (nombre, cargo, RUT cifrado, firma, atrasos), planificación y evaluación. | Acreditar capacitaciones, charlas y actividades del programa preventivo. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
+| Incidentes, accidentes y hallazgos | Persona afectada (cifrada), quién reporta e investiga, descripción, gravedad, días perdidos, medidas y evidencia. | Registro de AT/EP e incidentes peligrosos (Arts. 71 a 73) e indicadores de accidentabilidad. | evidencia | 5 años desde el término del vínculo | Se anonimiza (se conserva el hecho para los indicadores) |
+| Encuestas y ficha de salud | Destinatarios (nombre, cargo, RUT cifrado) y sus respuestas cifradas, incluida la ficha básica de salud. | Encuestas del programa preventivo y la ficha básica de salud que habilita cada empresa. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
+| Ausencias | Permisos, licencias médicas, faltas y vacaciones, con fechas y observación. | Justificar la inasistencia a actividades exigidas. | evidencia | 5 años desde el término del vínculo | Se suprime |
+| Estructura preventiva (comités, delegados) | Integrantes de cada órgano (nombre, estamento, cargo, acreditación) y sus reuniones. | Acreditar la constitución y funcionamiento del Comité Paritario y demás órganos. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
+| Bandeja de mensajes | Avisos y mensajes enviados y recibidos por la persona. | Comunicación dentro de la plataforma. | conveniencia | Hasta que la persona pida suprimirlo, o con la ficha | Se suprime |
+| Sugerencias | Nombre de quien sugiere y el texto de la sugerencia. | Mejorar la plataforma. | conveniencia | Hasta que la persona pida suprimirlo, o con la ficha | Se suprime |
+| Sesiones | Hash del token de sesión, persona, empresa y vencimiento. | Mantener la sesión iniciada. | operacional | Mientras sirve (horas o días) | Vence solo (uso o fecha de expiración) |
+| Vales de firma sin conexión | Hash del vale, persona, equipo de emisión y de uso. | Firmar sin conexión sin guardar el PIN en el equipo. | operacional | Mientras sirve (horas o días) | Vence solo (uso o fecha de expiración) |
+| Licencias de alta de empresa | Correo del futuro administrador y datos prellenados de la empresa. | Dar de alta una empresa con un enlace de un solo uso. | operacional | Mientras sirve (horas o días) | Vence solo (uso o fecha de expiración) |
+| Empresa | Datos de la empresa; su representante legal (nombre y RUT) y el administrador. | Configurar la empresa en la plataforma. | evidencia | 5 años desde el término del vínculo | No vence por personas (es de la empresa) |
+| Obras | Datos de la obra; sin datos personales salvo referencias a responsables. | Gestionar las obras y su cumplimiento. | evidencia | 5 años desde el término del vínculo | No vence por personas (es de la empresa) |
+| Catálogo de EPP | Catálogo de elementos de protección; sin datos personales (las entregas son documentos). | Definir los EPP que entrega la empresa. | evidencia | 5 años desde el término del vínculo | No vence por personas (es de la empresa) |
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo
@@ -1265,6 +1352,24 @@ Se trató como categoría, barriendo frontend y backend:
   un hallazgo que trae `<script>` y `<img onerror>`, y exige que el HTML tenga
   exactamente las mismas etiquetas que con texto normal. Se verificó rompiendo
   cada protección.
+
+### H-14. RUT en claro fuera del cifrado de campo, e incidentes sin vínculo con la persona afectada
+**Severidad: media — RESUELTO el 28 de septiembre de 2026 (en el árbol; migración de datos pendiente del deploy)**
+
+Al armar el inventario aparecieron dos cosas:
+
+- **RUT en claro.** `incidents.realizadoPor.rut` lo mandaba el navegador y el
+  backend lo guardaba tal cual, por fuera del cifrado de campo (D-10), y la
+  pantalla de detalle lo mostraba. Además quedaba un RUT en claro en
+  `tenants.reglas.representanteLegal.rut` de una ficha anterior a la corrección
+  del representante. En dev había 2 y 1; en prod, ninguno (todavía sin datos).
+  El backend ya no lo guarda, el frontend ya no lo manda ni lo muestra, y
+  `Backend/scripts/migrar-gobernanza-2026-09.js` quita los que quedaron.
+- **Incidentes sin vínculo.** Un incidente no guardaba el `personaId` de la
+  persona afectada, solo su nombre, y el RUT cifrado en la traza. La retención y
+  la supresión no tenían cómo encontrar los incidentes de alguien sin descifrar
+  todos. Ahora se guarda `afectadoRutHmac`, el mismo HMAC con que se busca a la
+  persona en su ficha, y la migración lo calcula para los existentes.
 
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**
