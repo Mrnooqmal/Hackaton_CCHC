@@ -129,6 +129,10 @@ class Persona {
         // cambiado, restablecido—, con quién, cuándo y si fue asistido. Nunca el
         // PIN ni su hash.
         this.pinHistorial = data.pinHistorial || [];
+        // Solicitudes del titular (Ley 21.719) que mantienen su tratamiento
+        // bloqueado. Conjunto de ids: la persona está bloqueada mientras haya al
+        // menos una. Lo escribe solo lib/gobernanza (nunca `crear` ni `actualizar`).
+        this.solicitudesBloqueo = data.solicitudesBloqueo ? [...data.solicitudesBloqueo] : [];
         this.passwordTemporal = data.passwordTemporal || false;
 
         // Enrolamiento
@@ -423,6 +427,7 @@ class Persona {
                 ? { por: this.pinRestablecido.por, nombre: this.pinRestablecido.nombre, en: this.pinRestablecido.en }
                 : null,
             enrolado: this.estaEnrolado(),
+            tratamientoBloqueado: this.solicitudesBloqueo.length > 0,
             estado: this.estado,
             passwordTemporal: this.passwordTemporal,
             onboardingDS44: this.onboardingDS44,

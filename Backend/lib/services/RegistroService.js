@@ -311,7 +311,8 @@ class RegistroService {
      * como el Expediente descargable, para que NUNCA diverjan.
      */
     async construirSnapshotConsolidado({ tenantId, obraId, periodo = {}, masaLaboral, generadoEn }) {
-        const personasObra = await this.personaService.listByTenant(tenantId, { obraId }) || [];
+        // Informe para la autoridad: obligación legal, incluye a quien tiene el tratamiento bloqueado.
+        const personasObra = await this.personaService.listByTenant(tenantId, { obraId, incluirBloqueadas: true }) || [];
         const personasActivas = personasObra.filter(per => per.estado === 'activo');
         let masa = masaLaboral;
         if (masa === undefined || masa === null) masa = personasActivas.length;
@@ -720,7 +721,7 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
         if (!tenantId) throw new Error('tenantId es requerido');
         if (!obraId) throw new Error('obraId es requerido');
 
-        const personasObra = await this.personaService.listByTenant(tenantId, { obraId });
+        const personasObra = await this.personaService.listByTenant(tenantId, { obraId, incluirBloqueadas: true });
         const activos = (personasObra || []).filter(p => p.estado === 'activo');
         const masaLaboral = activos.length;
 

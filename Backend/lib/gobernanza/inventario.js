@@ -259,7 +259,7 @@ const FUENTES = [
 
 // Sin clase de retención todavía (se agrega con la supresión a solicitud): la
 // propia tabla de gobernanza guarda solicitudes, bloqueos y lotes.
-const TABLAS_DE_GOBERNANZA = ['GOBERNANZA_TABLE'];
+const TABLAS_DE_GOBERNANZA = ['GOBERNANZA_TABLE', 'GOBERNANZA_HISTORIAL_TABLE'];
 
 // La clave primaria de un ítem, para poder suprimirlo o actualizarlo.
 for (const f of FUENTES) f.clave = (it) => Object.fromEntries(f.claves.map((k) => [k, it[k]]));

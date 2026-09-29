@@ -55,6 +55,7 @@ export const PERMISSIONS = {
     EMPRESA_EPP: 'empresa.epp',
     EMPRESA_IDENTIDAD: 'empresa.identidad',
     EMPRESA_FICHA_SALUD: 'empresa.ficha_salud',
+    EMPRESA_DERECHOS_TITULARES: 'empresa.derechos_titulares',
 } as const;
 
 export type PermissionKey = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -142,6 +143,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
             { key: PERMISSIONS.EMPRESA_EPP, label: 'Gestionar catálogo de EPP' },
             { key: PERMISSIONS.EMPRESA_IDENTIDAD, label: 'Configurar identidad' },
             { key: PERMISSIONS.EMPRESA_FICHA_SALUD, label: 'Habilitar la Ficha Básica de Salud', nota: 'Decide si se recolectan datos de salud de todo el plantel. Queda registrado quién y cuándo.' },
+            { key: PERMISSIONS.EMPRESA_DERECHOS_TITULARES, label: 'Derechos de los titulares', nota: 'Registrar y responder solicitudes de acceso, rectificación, supresión y oposición (Ley 21.719).' },
         ],
     },
 ];

@@ -93,8 +93,16 @@ function crearDobleTablas(docClient, esquemas, { proyecciones = false } = {}) {
             }
         }
     };
-    // El cliente real omite `undefined` (removeUndefinedValues).
-    const sinIndefinidos = (item) => JSON.parse(JSON.stringify(item));
+    // El cliente real omite `undefined` (removeUndefinedValues). Los Set se
+    // conservan (una copia vía JSON los convertiría en `{}`).
+    const sinIndefinidos = (v) => {
+        if (v instanceof Set) return new Set(v);
+        if (Array.isArray(v)) return v.map(sinIndefinidos);
+        if (v && typeof v === 'object') {
+            return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined).map(([k, x]) => [k, sinIndefinidos(x)]));
+        }
+        return v;
+    };
 
     const consultar = (tabla, input) => {
         const { indices, clave } = esquemaDe(tabla);
@@ -156,6 +164,41 @@ function crearDobleTablas(docClient, esquemas, { proyecciones = false } = {}) {
             case 'DeleteCommand':
                 tablas[t].delete(idDe(t, i.Key));
                 return {};
+            case 'TransactWriteCommand': {
+                // Todo o nada: se evalúan TODAS las condiciones antes de escribir.
+                const razones = i.TransactItems.map((op) => {
+                    const [tipo, x] = Object.entries(op)[0];
+                    const tb = x.TableName;
+                    const clave = tipo === 'Put' ? x.Item : x.Key;
+                    const previo = tablas[tb].get(idDe(tb, clave)) || null;
+                    return cumple(previo, x.ConditionExpression, x.ExpressionAttributeValues, x.ExpressionAttributeNames) ? 'None' : 'ConditionalCheckFailed';
+                });
+                if (razones.some((r) => r !== 'None')) {
+                    throw Object.assign(new Error('Transaction cancelled'), { name: 'TransactionCanceledException', CancellationReasons: razones.map((Code) => ({ Code })) });
+                }
+                for (const op of i.TransactItems) {
+                    const [tipo, x] = Object.entries(op)[0];
+                    const tb = x.TableName;
+                    if (tipo === 'Put') {
+                        const item = sinIndefinidos(x.Item);
+                        validarItem(tb, item);
+                        tablas[tb].set(idDe(tb, item), item);
+                        escrituras.push({ nombre: 'Put', tabla: tb, item });
+                    } else if (tipo === 'Update') {
+                        const previo = tablas[tb].get(idDe(tb, x.Key)) || null;
+                        const nuevo = sinIndefinidos(aplicar(previo || { ...x.Key }, x.UpdateExpression, x.ExpressionAttributeValues, x.ExpressionAttributeNames));
+                        validarItem(tb, nuevo);
+                        tablas[tb].set(idDe(tb, nuevo), nuevo);
+                        escrituras.push({ nombre: 'Update', tabla: tb, item: nuevo, expresion: x.UpdateExpression });
+                    } else if (tipo === 'Delete') {
+                        tablas[tb].delete(idDe(tb, x.Key));
+                        escrituras.push({ nombre: 'Delete', tabla: tb });
+                    } else {
+                        throw new Error(`doble-dynamo-tablas: ${tipo} en transacción no simulado`);
+                    }
+                }
+                return {};
+            }
             case 'QueryCommand':
                 return { Items: consultar(t, i) };
             case 'ScanCommand': {
