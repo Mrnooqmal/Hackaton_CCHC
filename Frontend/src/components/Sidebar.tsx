@@ -20,7 +20,7 @@ import {
     FiRepeat,
     FiMoreHorizontal
 } from 'react-icons/fi';
-import { surveysApi, workersApi } from '../api/client';
+import { surveysApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
@@ -128,59 +128,19 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     const [showObraConfirm, setShowObraConfirm] = useState(false);
     const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
-    const [workerId, setWorkerId] = useState<string | null>(null);
     const sessionMenuRef = useRef<HTMLDivElement | null>(null);
     const sessionTriggerRef = useRef<HTMLButtonElement | null>(null);
-    const canRespondSurveys = user?.rol === 'trabajador' || user?.rol === 'prevencionista';
     const pendingBadgeLabel = pendingSurveyCount > 99 ? '99+' : String(pendingSurveyCount);
 
     // Las notificaciones viven en el Header (campana con badge), no en el sidebar.
 
+    // Encuestas por responder. Cualquiera con sesión puede tenerlas: antes solo
+    // se contaban para `trabajador` y `prevencionista`, y se buscaba a la persona
+    // en `recipients`, que el listado ya no trae. `miAsignacion` lo resuelve el
+    // backend para quien pregunta.
+    const personaId = user?.personaId;
     useEffect(() => {
-        if (!canRespondSurveys) {
-            setWorkerId(null);
-            return;
-        }
-
-        if (user?.personaId) {
-            setWorkerId(user.personaId);
-            return;
-        }
-
-        const rut = user?.rut;
-        if (!rut) {
-            setWorkerId(null);
-            return;
-        }
-
-        let cancelled = false;
-
-        const resolveWorkerId = async () => {
-            try {
-                const response = await workersApi.getByRut(rut);
-                if (!cancelled) {
-                    if (response.success && response.data) {
-                        setWorkerId(response.data.workerId);
-                    } else {
-                        setWorkerId(null);
-                    }
-                }
-            } catch (error) {
-                if (!cancelled) {
-                    setWorkerId(null);
-                }
-            }
-        };
-
-        resolveWorkerId();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [canRespondSurveys, user?.personaId, user?.rut]);
-
-    useEffect(() => {
-        if (!canRespondSurveys || !workerId) {
+        if (!personaId) {
             setPendingSurveyCount(0);
             return;
         }
@@ -190,31 +150,18 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
         const loadPendingSurveys = async () => {
             try {
                 const response = await surveysApi.list();
-                if (!cancelled) {
-                    if (response.success && response.data?.surveys) {
-                        const pending = response.data.surveys.reduce((total, survey) => {
-                            const recipient = survey.recipients?.find((r) => r.workerId === workerId);
-                            if (recipient && recipient.estado !== 'respondida') {
-                                return total + 1;
-                            }
-                            return total;
-                        }, 0);
-                        setPendingSurveyCount(pending);
-                    } else {
-                        setPendingSurveyCount(0);
-                    }
-                }
-            } catch (error) {
-                if (!cancelled) {
-                    setPendingSurveyCount(0);
-                }
+                if (cancelled) return;
+                const surveys = response.success ? response.data?.surveys || [] : [];
+                setPendingSurveyCount(surveys.filter((s) => s.miAsignacion?.estado === 'pendiente').length);
+            } catch {
+                if (!cancelled) setPendingSurveyCount(0);
             }
         };
 
         loadPendingSurveys();
-        const intervalId = window.setInterval(loadPendingSurveys, 15000); // Refresh every 15 seconds
-
-        // Listen for survey response events to refresh immediately
+        // Cada minuto: el listado lee también la tabla (preguntas y asignación),
+        // y responder ya refresca al instante con el evento de abajo.
+        const intervalId = window.setInterval(loadPendingSurveys, 60000);
         const handleSurveyResponded = () => {
             loadPendingSurveys();
         };
@@ -225,7 +172,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             window.clearInterval(intervalId);
             window.removeEventListener('surveyResponded', handleSurveyResponded);
         };
-    }, [workerId, canRespondSurveys]);
+    }, [personaId]);
 
 
     // Solo quien entró a administrar la empresa ve el menú de empresa: alguien
@@ -346,7 +293,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                 {visibleItems.map((item: NavItem) => {
                                     const Icon = item.icon;
                                     const isActive = location.pathname === item.path;
-                                    const showSurveyBadge = item.path === '/surveys' && canRespondSurveys && pendingSurveyCount > 0;
+                                    const showSurveyBadge = item.path === '/surveys' && pendingSurveyCount > 0;
                                     const showStaticBadge = !showSurveyBadge && typeof item.badge === 'number' && item.badge > 0;
 
                                     return (

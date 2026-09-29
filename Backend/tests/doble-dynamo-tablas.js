@@ -10,7 +10,11 @@
 // Condiciones y actualizaciones se evalúan con `expresiones-dynamo.js`. Las
 // consultas soportan `a = :v` y `begins_with(a, :v)` unidos por AND, sobre la
 // tabla o sobre un índice (que es disperso: el ítem sin la clave no aparece).
-// No simula proyecciones: eso lo cubre `indices-proyeccion.test.js`.
+//
+// Proyecciones: solo con `{ proyecciones: true }`. Sin la opción, consultar un
+// índice devuelve el ítem completo, y así pasó inadvertido que el listado de
+// encuestas leía `recipients` y `preguntas` de `tenantId-index`, que no los
+// proyecta. Es opcional para no cambiar lo que ven las pruebas que ya lo usan.
 
 const fs = require('fs');
 const path = require('path');
@@ -28,10 +32,23 @@ function leerEsquemas() {
         const [principal, resto = ''] = r.split(/GlobalSecondaryIndexes:/);
         const claves = (txt) => [...txt.matchAll(/AttributeName: (\w+)\s+KeyType: (HASH|RANGE)/g)].map((m) => m[1]);
         const indices = {};
+        const proyecciones = {};
         for (const m of resto.matchAll(/IndexName: ([\w-]+)\s+KeySchema:((?:\s+- AttributeName: \w+\s+KeyType: \w+)+)/g)) {
             indices[m[1]] = claves(m[2]);
+            // El bloque del índice llega hasta el siguiente `- IndexName` o hasta
+            // la siguiente propiedad de la tabla (sangría de 8).
+            const bloque = resto.slice(m.index).split(/\n\s+- IndexName: |\n        \w+:/)[0];
+            const tipo = /ProjectionType: (\w+)/.exec(bloque)?.[1] || 'ALL';
+            const incluidos = tipo === 'INCLUDE'
+                ? [...(/NonKeyAttributes:((?:\s+(?:#[^\n]*|- \w+))+)/.exec(bloque)?.[1] || '').matchAll(/- (\w+)/g)].map((x) => x[1])
+                : [];
+            proyecciones[m[1]] = { tipo, incluidos };
         }
-        esquemas[env] = { clave: claves(principal.split(/\n        \w+:/).find((b) => b.includes('KeyType')) || principal), indices };
+        esquemas[env] = {
+            clave: claves(principal.split(/\n        \w+:/).find((b) => b.includes('KeyType')) || principal),
+            indices,
+            proyecciones,
+        };
     }
     return esquemas;
 }
@@ -50,7 +67,7 @@ function prepararEntorno() {
     return esquemas;
 }
 
-function crearDobleTablas(docClient, esquemas) {
+function crearDobleTablas(docClient, esquemas, { proyecciones = false } = {}) {
     const tablas = Object.fromEntries(Object.keys(esquemas).map((t) => [t, new Map()]));
     const escrituras = [];
     const original = docClient.send;
@@ -104,7 +121,17 @@ function crearDobleTablas(docClient, esquemas) {
             .filter((it) => ks.every((k) => typeof it[k] === 'string'))
             .filter((it) => partes.every((f) => f(it)))
             .filter((it) => !input.FilterExpression || cumple(it, input.FilterExpression, valores, nombres))
-            .map((it) => structuredClone(it));
+            .map((it) => proyectar(tabla, input.IndexName, structuredClone(it)));
+    };
+
+    /** Lo que DynamoDB devuelve de un índice: sus claves, las de la tabla y lo incluido. */
+    const proyectar = (tabla, indice, item) => {
+        if (!proyecciones || !indice) return item;
+        const { clave, indices, proyecciones: p } = esquemaDe(tabla);
+        const { tipo, incluidos } = p[indice] || { tipo: 'ALL', incluidos: [] };
+        if (tipo === 'ALL') return item;
+        const permitidos = new Set([...clave, ...indices[indice], ...(tipo === 'INCLUDE' ? incluidos : [])]);
+        return Object.fromEntries(Object.entries(item).filter(([k]) => permitidos.has(k)));
     };
 
     docClient.send = async function simulado(cmd) {

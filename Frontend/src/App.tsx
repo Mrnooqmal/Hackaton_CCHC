@@ -13,6 +13,8 @@ import ActivityNueva from './pages/ActivityNueva';
 import ActivityPlanificar from './pages/ActivityPlanificar';
 import Surveys from './pages/Surveys';
 import SurveyNueva from './pages/SurveyNueva';
+import SurveyDetalle from './pages/SurveyDetalle';
+import SurveyResponder from './pages/SurveyResponder';
 import Incidents from './pages/Incidents';
 import IncidentReportar from './pages/IncidentReportar';
 import Inbox from './pages/Inbox';
@@ -181,6 +183,11 @@ function AppContent() {
       {/* Antes era un modal de la lista; ahora es pantalla completa, como
           Actividades → Nueva actividad. */}
       <Route path="/surveys/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.ENCUESTAS_CREAR}><SurveyNueva /></ProtectedRoute>} />
+      {/* Detalle y respuesta también eran modales. Sin requiredPermission: a
+          cualquiera se le puede asignar una encuesta, y qué ve de ella lo
+          decide el backend (GET /surveys/{id}). */}
+      <Route path="/surveys/:surveyId" element={<ProtectedRoute><SurveyDetalle /></ProtectedRoute>} />
+      <Route path="/surveys/:surveyId/responder" element={<ProtectedRoute><SurveyResponder /></ProtectedRoute>} />
       <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
       {/* Antes era un modal de la lista; ahora es pantalla completa, como
           Actividades → Nueva actividad. Sin requiredPermission: cualquiera

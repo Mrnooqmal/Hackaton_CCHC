@@ -2007,6 +2007,96 @@ textarea.form-input {
   gap: var(--space-4);
 }
 
+/* ── Encuestas: listado, detalle y responder (diseño "Interfaz Encuestas - Obra") ── */
+
+/* Con tres piezas (rótulo, tipo, "Obligatoria") el space-between dejaba la del
+   medio flotando al centro: van juntas a la derecha. */
+.survey-question-header { justify-content: flex-start; gap: var(--space-2); }
+.survey-question-header > .badge:first-of-type,
+.survey-question-header > button { margin-left: auto; }
+.survey-question-title { margin: 0 0 var(--space-1); font-size: var(--text-base); font-weight: 600; color: var(--text-primary); }
+
+.survey-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
+.survey-stats--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.survey-created, .survey-detail-section { display: flex; flex-direction: column; gap: var(--space-3); }
+.survey-created-header { display: flex; align-items: baseline; gap: var(--space-3); padding-bottom: var(--space-2); border-bottom: 1px solid var(--surface-border); }
+.survey-created-header span { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+.survey-created-header small { font-size: var(--text-xs); color: var(--text-secondary); }
+
+.survey-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.survey-card { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5); }
+.survey-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.survey-card-head > .badge { flex-shrink: 0; }
+.survey-card-title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
+.survey-card-title h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.survey-card-desc { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.survey-card-meta { font-size: 11.5px; color: var(--text-muted); }
+.survey-card-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); padding: var(--space-3) 0; border-top: 1px solid var(--surface-hover); border-bottom: 1px solid var(--surface-hover); }
+.survey-card-metrics > span { display: flex; flex-direction: column; gap: 2px; }
+.survey-card-metrics strong { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.survey-card-metrics small { font-size: 10px; color: var(--text-secondary); }
+.survey-card-progress { margin-top: calc(-1 * var(--space-1)); }
+.survey-card-cta { width: 100%; justify-content: center; text-decoration: none; }
+
+/* La ficha de salud se distingue a primera vista: sus respuestas son datos de salud. */
+.badge-salud { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; }
+:root.theme-light .badge-salud { background: rgba(109, 40, 217, 0.10); color: #6d28d9; }
+
+/* Asignadas: la fila entera es el enlace (responder o ver). */
+.survey-assigned { display: flex; flex-direction: column; gap: var(--space-4); }
+a.survey-row { color: inherit; text-decoration: none; }
+.survey-row .survey-row-title, .survey-row .survey-row-meta { display: block; }
+.survey-row-chevron { flex-shrink: 0; color: var(--text-muted); }
+
+/* Detalle */
+.survey-detail { display: flex; flex-direction: column; gap: var(--space-5); }
+.survey-detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); font-size: var(--text-xs); color: var(--text-secondary); }
+.survey-detail-mine { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--surface-border); border-radius: var(--radius-md); background: var(--surface-elevated); font-size: var(--text-sm); color: var(--text-primary); }
+.survey-detail-mine svg { flex-shrink: 0; color: var(--accent); }
+.survey-detail-mine.is-done svg { color: var(--success-apagado); }
+.survey-detail-note { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--text-xs); color: var(--text-secondary); }
+.survey-question-list { list-style: none; margin: 0; padding: 0; }
+.option-pill.is-mine { border-color: var(--accent); background: var(--accent-tint); color: var(--text-primary); }
+.survey-answer-mine { margin: var(--space-3) 0 0; font-size: var(--text-sm); color: var(--text-secondary); }
+.survey-answer-mine strong { color: var(--text-primary); }
+
+/* Resultados agregados por pregunta (solo quien gestiona). */
+.survey-result { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--surface-hover); }
+.survey-result-row { display: grid; grid-template-columns: minmax(0, 160px) 1fr auto; align-items: center; gap: var(--space-3); font-size: var(--text-xs); }
+.survey-result-label { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.survey-result-bar { display: block; height: 6px; border-radius: 999px; background: var(--surface-hover); overflow: hidden; }
+.survey-result-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.survey-result-value { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.survey-result-summary, .survey-result-empty { margin: var(--space-4) 0 0; padding-top: var(--space-3); border-top: 1px solid var(--surface-hover); font-size: var(--text-sm); color: var(--text-secondary); }
+.survey-result-summary strong { color: var(--text-primary); }
+.survey-result-open { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-4) 0 0; padding: var(--space-3) 0 0; border-top: 1px solid var(--surface-hover); list-style: none; max-height: 240px; overflow-y: auto; }
+.survey-result-open li { padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--surface-elevated); font-size: var(--text-sm); color: var(--text-primary); }
+
+/* Responder */
+.survey-respond-list { display: flex; flex-direction: column; gap: var(--space-4); list-style: none; margin: 0; padding: 0; }
+.survey-respond-card { scroll-margin-top: calc(var(--header-height, 94px) + var(--space-4)); }
+.survey-respond-card.is-missing { border-color: var(--danger-500); }
+.survey-respond-missing { margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--danger-500); }
+.survey-respond-note { display: inline-flex; align-items: center; gap: var(--space-1); margin-right: auto; font-size: 12px; color: var(--text-muted); }
+.survey-respond-note.is-error { color: var(--danger-500); }
+
+/* Opción nueva, escrita en la misma fila que las demás. */
+.option-pill-add { width: 150px; border-style: dashed; background: transparent; color: var(--text-primary); font-family: inherit; }
+.option-pill-add::placeholder { color: var(--accent-text); }
+.option-pill-add:focus { outline: none; border-color: var(--accent); }
+
+@media (max-width: 900px) {
+  .survey-stats, .survey-stats--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .survey-card-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .survey-stats, .survey-stats--4 { grid-template-columns: minmax(0, 1fr); }
+  .survey-result-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .survey-result-bar { grid-column: 1 / -1; grid-row: 2; }
+  a.survey-row { flex-wrap: nowrap; }
+}
+
 /* Select */
 .form-select,
 select.form-input {
@@ -4542,3 +4632,87 @@ select.form-input option {
     width: 100%;
   }
 }
+/* ── Modal de firma compartido (components/firmas/FirmaModal.tsx) ──
+   Vivían en el <style> de MySignatures.tsx; salieron al extraer el modal
+   para usarlo también al firmar una encuesta. Los usa además el modal de
+   detalle del historial de firmas. */
+/* ── Modales de detalle (firmar / historial) ── */
+.msig-modal-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+}
+@media (max-width: 640px) {
+    .msig-modal-grid { grid-template-columns: 1fr; }
+}
+.msig-modal-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.msig-ficha {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3) var(--space-4);
+    padding: var(--space-4);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-md);
+}
+.msig-ficha-item { min-width: 0; }
+.msig-ficha-item--full { grid-column: 1 / -1; }
+.msig-ficha-item dt {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+}
+.msig-ficha-item dd { margin: 0; font-size: var(--text-sm); color: var(--text-primary); word-break: break-word; }
+
+.msig-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    color: var(--warning-500);
+}
+.msig-notice svg { flex-shrink: 0; margin-top: 1px; }
+
+.msig-declare-check {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: border-color 0.15s;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.4;
+    user-select: none;
+}
+.msig-declare-check:has(input:checked) {
+    border-color: var(--primary-400);
+    background: var(--accent-tint);
+    color: var(--text-primary);
+}
+.msig-declare-check input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    accent-color: var(--primary-500);
+    cursor: pointer;
+}
+
+/* Resumen de lo que se firma en una encuesta (columna izquierda del modal de firma). */
+.survey-firma-resumen { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-1) 0 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+.survey-firma-resumen li { display: flex; flex-direction: column; gap: 2px; padding-bottom: var(--space-2); border-bottom: 1px solid var(--surface-hover); }
+.survey-firma-resumen li:last-child { border-bottom: none; padding-bottom: 0; }
+.survey-firma-resumen span { font-size: var(--text-xs); color: var(--text-secondary); }
+.survey-firma-resumen strong { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); white-space: pre-wrap; }

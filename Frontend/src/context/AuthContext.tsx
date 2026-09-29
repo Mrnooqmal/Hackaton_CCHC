@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { purgarAlmacenOfflineAntiguo } from '../services/purgaOffline';
+import { borrarPreguntasEnCache } from '../utils/encuestas';
 import { EVENTO_SESION_CAIDA, authApi, type User, type SessionInfo, type LoginSuccess } from '../api/client';
 
 export interface TenantOpcion { tenantId: string; tenantNombre: string; rol: string }
@@ -53,6 +54,8 @@ const limpiarDatosLocales = () => {
     // quienes los desbloquearon: no sobreviven al cierre de sesión en un equipo
     // compartido.
     localStorage.removeItem('offlineVales');
+    // Preguntas de las encuestas asignadas, guardadas para responder sin red.
+    borrarPreguntasEnCache();
     purgarAlmacenOfflineAntiguo();
 };
 

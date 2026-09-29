@@ -185,9 +185,8 @@ export default function Dashboard() {
 
             // ── Encuestas asignadas y sin responder ───────────────────────────
             const encuestas = valor(encuestasRes)?.data?.surveys || [];
-            const misEncuestas = encuestas.filter((s) =>
-                s.recipients?.some((r) => r.workerId === personaId && r.estado !== 'respondida'),
-            );
+            // `miAsignacion` la calcula el backend: el listado no trae `recipients`.
+            const misEncuestas = encuestas.filter((s) => s.miAsignacion?.estado === 'pendiente');
             misEncuestas.forEach((s) => {
                 lista.push({
                     id: `enc:${s.surveyId}`,
@@ -197,7 +196,7 @@ export default function Dashboard() {
                     bloqueante: false,
                     marca: null,
                     icono: <FiClipboard size={17} />,
-                    to: '/surveys',
+                    to: `/surveys/${s.surveyId}/responder`,
                 });
             });
 

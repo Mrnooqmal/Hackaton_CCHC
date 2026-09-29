@@ -130,13 +130,15 @@ export function computeOnboardingSummary(input: OnboardingInput): OnboardingSumm
             if (pid) kitDoneByLink.set(`${pid}:${act.kitItemKey}`, true);
         });
     });
+    // `avanceKit` (asignados y respondidos por persona) lo arma el backend: el
+    // listado no trae `recipients`, que llevan el RUT y las respuestas.
     encuestas.forEach((survey: any) => {
-        if (!survey.kitItemKey) return;
-        (survey.recipients || []).forEach((r: any) => {
-            const pid = r.personaId || r.workerId;
-            if (!pid) return;
+        if (!survey.kitItemKey || !survey.avanceKit) return;
+        (survey.avanceKit.asignados || []).forEach((pid: string) => {
             kitAssignedByLink.set(`${pid}:${survey.kitItemKey}`, true);
-            if (r.estado === 'respondida') kitDoneByLink.set(`${pid}:${survey.kitItemKey}`, true);
+        });
+        (survey.avanceKit.respondidos || []).forEach((pid: string) => {
+            kitDoneByLink.set(`${pid}:${survey.kitItemKey}`, true);
         });
     });
 

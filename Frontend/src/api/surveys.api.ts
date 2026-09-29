@@ -29,10 +29,11 @@ export interface SurveyAnswer {
 }
 
 export interface SurveyRecipient {
+    personaId?: string;
     workerId: string;
     nombre: string;
     apellido?: string;
-    rut: string;
+    rut?: string;
     cargo: string;
     estado: 'pendiente' | 'respondida';
     respondedAt?: string | null;
@@ -60,11 +61,27 @@ export interface Survey {
         // audiencia ya está resuelta en `recipients`.
         totalRuts?: number;
     };
-    preguntas: SurveyQuestion[];
-    recipients: SurveyRecipient[];
+    kitItemKey?: string | null;
+    // Solo en el detalle (`GET /surveys/{id}`). El listado no los trae: se sirve
+    // de un índice que a propósito no proyecta ni las preguntas ni a los
+    // destinatarios (ahí viven el RUT y las respuestas). En el detalle, quien no
+    // gestiona la encuesta recibe solo su propia fila en `recipients`.
+    preguntas?: SurveyQuestion[];
+    recipients?: SurveyRecipient[];
     stats?: SurveyStats;
     createdAt?: string;
     updatedAt?: string;
+    /** La Ficha Básica de Salud: sus respuestas son datos de salud. */
+    esFichaSalud?: boolean;
+}
+
+/** Lo que el listado dice de cada encuesta, para quien la mira. */
+export interface SurveyListItem extends Survey {
+    totalPreguntas: number;
+    /** La asignación de quien consulta, o null si no es destinatario. */
+    miAsignacion: { estado: 'pendiente' | 'respondida'; respondedAt: string | null } | null;
+    /** Solo en encuestas del kit y con permiso para ver fichas de personas. */
+    avanceKit?: { asignados: string[]; respondidos: string[] };
 }
 
 export interface CreateSurveyPayload {
@@ -91,7 +108,7 @@ export const surveysApi = {
         if (params?.empresaId) queryParams.append('empresaId', params.empresaId);
         if (params?.obraId) queryParams.append('obraId', params.obraId);
         const query = queryParams.toString();
-        return apiRequest<{ total: number; surveys: Survey[] }>(`/surveys${query ? `?${query}` : ''}`);
+        return apiRequest<{ total: number; surveys: SurveyListItem[] }>(`/surveys${query ? `?${query}` : ''}`);
     },
 
     get: (surveyId: string) =>

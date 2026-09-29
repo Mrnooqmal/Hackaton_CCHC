@@ -4,13 +4,11 @@ import { FiPlus, FiX, FiTrash2 } from 'react-icons/fi';
 import {
     surveysApi,
     workersApi,
-    inboxApi,
     type SurveyAudienceType,
     type SurveyQuestionType,
     type Worker,
     type CreateSurveyQuestion,
 } from '../api/client';
-import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { FormPage, FieldSection, PageHeader, Select } from '../components/ui';
 import WorkerPicker from '../components/actividades/WorkerPicker';
@@ -59,14 +57,13 @@ const audienceOptions: AudienceOption[] = [
     {
         value: 'personalizado',
         label: 'Lista personalizada',
-        description: 'Selecciona manualmente quiénes deben responder.',
+        description: 'Elige personas específicas por RUT.',
     },
 ];
 
 export default function SurveyNueva() {
     const navigate = useNavigate();
     const location = useLocation();
-    const { user } = useAuth();
     const { toast } = useToast();
 
     const [workers, setWorkers] = useState<Worker[]>([]);
@@ -228,47 +225,14 @@ export default function SurveyNueva() {
             cargoDestino: form.audienceType === 'cargo' ? form.cargoDestino : undefined,
             ruts: form.audienceType === 'personalizado' ? selectedRuts : undefined,
             kitItemKey: form.kitItemKey || undefined,
-            createdBy: user?.personaId || user?.userId,
-            creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined,
         };
 
         try {
             const response = await surveysApi.create(payload);
             if (response.success && response.data) {
-                try {
-                    const recipientsRes = await inboxApi.getRecipients(user?.personaId || user?.userId || '', user?.tenantId || user?.empresaId || '');
-                    if (recipientsRes.success && recipientsRes.data) {
-                        const allRecipients = recipientsRes.data.recipients;
-                        let assignedRuts: string[] = [];
-
-                        if (form.audienceType === 'todos') {
-                            assignedRuts = workers.filter((w) => w.habilitado).map((w) => w.rut);
-                        } else if (form.audienceType === 'cargo' && form.cargoDestino) {
-                            assignedRuts = workers.filter((w) => w.habilitado && w.cargo === form.cargoDestino).map((w) => w.rut);
-                        } else if (form.audienceType === 'personalizado') {
-                            assignedRuts = selectedRuts;
-                        }
-
-                        const recipientUserIds = allRecipients.filter((r) => assignedRuts.includes(r.rut)).map((r) => r.userId);
-
-                        if (recipientUserIds.length > 0) {
-                            await inboxApi.send({
-                                senderId: user?.personaId || user?.userId || 'system',
-                                senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'PrevencionApp',
-                                senderRol: 'system',
-                                recipientIds: recipientUserIds,
-                                type: 'task',
-                                priority: 'normal',
-                                subject: `Nueva encuesta asignada: ${response.data.titulo}`,
-                                content: `Se te ha asignado la encuesta "${response.data.titulo}". Por favor responde a la brevedad.`,
-                                linkedEntity: { type: 'survey', id: response.data.surveyId },
-                            });
-                        }
-                    }
-                } catch (notifErr) {
-                    console.error('Error mandando notificación desde frontend', notifErr);
-                }
-
+                // El aviso a la bandeja de cada destinatario lo manda el backend
+                // al crear (`survey.assigned`). Acá se mandaba un segundo, elegido
+                // cruzando RUT del lado del cliente: duplicado en el mejor caso.
                 toast.success('Encuesta creada correctamente');
                 window.dispatchEvent(new CustomEvent('surveyResponded'));
                 navigate('/surveys');
@@ -289,6 +253,7 @@ export default function SurveyNueva() {
                 <PageHeader
                     banner
                     title="Nueva encuesta"
+                    breadcrumb={[{ label: 'Encuestas', to: '/surveys' }]}
                     description="Queda visible para sus destinatarios apenas se crea."
                 />
             </div>
@@ -331,10 +296,10 @@ export default function SurveyNueva() {
                         <label className="form-label">Descripción</label>
                         <textarea
                             className="form-input"
-                            rows={3}
+                            rows={2}
                             value={form.descripcion}
                             onChange={(e) => setForm((prev) => ({ ...prev, descripcion: e.target.value }))}
-                            placeholder="Comparte el objetivo, duración estimada o beneficios."
+                            placeholder="Para qué sirve esta encuesta (opcional)…"
                         />
                     </div>
                 </FieldSection>
@@ -419,7 +384,7 @@ export default function SurveyNueva() {
                                             className="form-input"
                                             value={question.titulo}
                                             onChange={(e) => updateQuestion(question.id, { titulo: e.target.value })}
-                                            placeholder="Texto de la pregunta"
+                                            placeholder="Ej: ¿Qué tan expuesto te sientes a riesgos en tu frente de trabajo?"
                                         />
                                     </div>
 
@@ -471,41 +436,39 @@ export default function SurveyNueva() {
                                             checked={question.required}
                                             onChange={(e) => updateQuestion(question.id, { required: e.target.checked })}
                                         />
-                                        Pregunta obligatoria
+                                        Obligatoria
                                     </label>
 
                                     {question.tipo === 'multiple' && (
                                         <div style={{ gridColumn: '1 / -1' }}>
-                                            <label className="form-label">Opciones de respuesta</label>
-                                            <div className="option-input-row" style={{ marginTop: 'var(--space-1)' }}>
+                                            <label className="form-label">Opciones</label>
+                                            <div className="option-pill-group">
+                                                {question.opciones.map((option) => (
+                                                    <span key={option} className="option-pill">
+                                                        {option}
+                                                        <button
+                                                            type="button"
+                                                            aria-label={`Quitar ${option}`}
+                                                            onClick={() => removeOptionFromQuestion(question.id, option)}
+                                                        >
+                                                            <FiX />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                                {/* La opción nueva se escribe en la misma fila: Enter o
+                                                    salir del campo la agrega. */}
                                                 <input
-                                                    className="form-input"
+                                                    className="option-pill option-pill-add"
                                                     value={question.newOption}
                                                     onChange={(e) => updateNewOptionValue(question.id, e.target.value)}
-                                                    placeholder="Ej: Siempre"
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') { e.preventDefault(); addOptionToQuestion(question.id); }
+                                                    }}
+                                                    onBlur={() => addOptionToQuestion(question.id)}
+                                                    placeholder="+ Agregar opción"
+                                                    aria-label="Agregar opción"
                                                 />
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-secondary"
-                                                    onClick={() => addOptionToQuestion(question.id)}
-                                                    disabled={!question.newOption.trim()}
-                                                >
-                                                    <FiPlus />
-                                                    Agregar opción
-                                                </button>
                                             </div>
-                                            {question.opciones.length > 0 && (
-                                                <div className="option-pill-group">
-                                                    {question.opciones.map((option) => (
-                                                        <span key={option} className="option-pill">
-                                                            {option}
-                                                            <button type="button" onClick={() => removeOptionFromQuestion(question.id, option)}>
-                                                                <FiX />
-                                                            </button>
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
                                         </div>
                                     )}
 
