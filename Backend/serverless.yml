@@ -64,6 +64,9 @@ provider:
   runtime: nodejs24.x
   region: us-east-1
   stage: ${opt:stage, 'dev'}
+  # Sin AWS::Lambda::Version por función: nada usa versiones ni alias, y eran 77
+  # recursos que empujaban la plantilla sobre el tope de 500 de CloudFormation.
+  versionFunctions: false
   environment:
     # --- Multi-Tenant Core Tables ---
     TENANTS_TABLE: ${self:service}-tenants-${self:provider.stage}

@@ -1714,7 +1714,7 @@ function Campo({ label, value, vacio = '—' }: { label: string; value: React.Re
 // ── Esqueleto ────────────────────────────────────────────────────────────────
 // Repite la credencial (retrato, nombre, estado, tira, pestañas) y la pestaña
 // abierta con las mismas clases que el contenido cargado.
-const Sk = ({ w, h = 12, r, style }: { w?: number | string; h?: number; r?: number; style?: React.CSSProperties }) => (
+const Sk = ({ w, h = 12, r, style }: { w?: number | string; h?: number | string; r?: number; style?: React.CSSProperties }) => (
     <div className="ui-skel" style={{ width: w, height: h, borderRadius: r, flexShrink: 0, ...style }} />
 );
 const Txt = ({ w, h, lh, style }: { w: number | string; h: number; lh: number; style?: React.CSSProperties }) => (
