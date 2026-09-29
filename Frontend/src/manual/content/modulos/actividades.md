@@ -231,7 +231,7 @@ responsables cuando:
 - Una charla superó su **hora de término** y aún no ha sido cerrada.
 - Llega el **mediodía** y todavía hay convocados sin firmar (los ausentes no cuentan).
 
-> Estos avisos llegan a la bandeja interna (no por SMS) y sirven de recordatorio para cerrar
+> Estos avisos llegan a la bandeja interna y sirven de recordatorio para cerrar
 > el día con todo firmado.
 
 ## Reporte post-charla

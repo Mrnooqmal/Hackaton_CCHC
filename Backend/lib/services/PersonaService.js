@@ -476,7 +476,7 @@ class PersonaService {
      */
     async actualizar(tenantId, personaId, updates) {
         const allowedFields = ['nombre', 'apellido', 'apellidoPaterno', 'apellidoMaterno', 'email', 'telefono',
-            'fechaNacimiento', 'fotoPerfil', 'notificacionesSms',
+            'fechaNacimiento', 'fotoPerfil',
             'rol', 'cargo', 'estado', 'preferencias', 'obraIds', 'asignaciones', 'historialAsignaciones', 'evidencias',
             'onboardingDS44', 'contactoEmergencia', 'nivelEscolar', 'cursos'];
 

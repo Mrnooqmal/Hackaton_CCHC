@@ -369,7 +369,7 @@ test('cada quien puede editar su propio perfil sin permisos de gestión', async 
 
     const res = await personas.personasHandler(cuerpo(
         eventoPersonas(sesionDe(EMPRESA_A, { rol: 'colaborador', permisos: '' }), 'PUT', '/personas/p-a'),
-        { telefono: '+56 9 1111 1111', notificacionesSms: true },
+        { telefono: '+56 9 1111 1111', fotoPerfil: null },
     ));
 
     assert.equal(res.statusCode, 200);

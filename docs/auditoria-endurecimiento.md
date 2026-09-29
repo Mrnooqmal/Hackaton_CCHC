@@ -163,7 +163,7 @@ Con los buckets sin versionado (verificado por ti en AWS), el borrado del segund
 | `s3:PutObject/GetObject/DeleteObject` | 129-140 | Los dos buckets, con `/*` | Acotado al bucket |
 | `sqs:*` (cuatro acciones) | 143-148 | Solo `DocumentStampQueue` | No |
 | `sns:Publish` | 151-153 | Solo el topic de incidentes | No |
-| `sns:Publish`, `sns:SetSMSAttributes` | 158-161 | `Resource: "*"` | **Sí**, con comentario que lo justifica |
+| ~~`sns:Publish`, `sns:SetSMSAttributes`~~ | ~~158-161~~ | ~~`Resource: "*"`~~ | Eliminado el 2026-09-29 junto con el SMS |
 
 **A-1 está violado en su forma más simple:** la función que transcribe audio con Gemini tiene los mismos permisos sobre la tabla de personas que el handler de personas. `kms:Decrypt` (C-3) no existe todavía, pero si se añade a este rol lo tendrán las 70 funciones, que es exactamente lo que C-3 quiere evitar.
 
@@ -222,7 +222,7 @@ El patrón `console.error('mensaje:', err)` aparece en todos los handlers. Solo 
 | Registros de acceso de API Gateway | No (`accessLogSettings` ausente) | No activos, o activos por fuera del repositorio |
 | Trazas X-Ray | No (`tracing` ausente) | No activas |
 | Eventos de SES | No declarados | Por verificar en la consola |
-| Eventos de SNS / entrega de SMS | No declarados | Por verificar en la consola |
+| Eventos de SNS | No declarados | Por verificar en la consola |
 | Bitácora de auditoría de acceso (A-3) | **No existe** | — |
 
 Los tres últimos **no los puedo determinar desde el repositorio**. Requieren inspección en AWS, igual que el inventario de grupos de CloudWatch de L-1, que incluye los de `hackatonbackendv2-dev` y `hackatonbackendv2-testeo-dev`.

@@ -1191,7 +1191,7 @@ module.exports.personasHandler = async (event) => {
      * le podía cambiar el rol a `admin`, el estado a desvinculado o la ficha de
      * vigilancia de salud. Se resuelve por campo y no por ruta porque la misma
      * ruta atiende dos cosas distintas: cada quien editando su perfil (foto,
-     * teléfono, avisos) y la gestión de la ficha de un tercero.
+     * teléfono, correo) y la gestión de la ficha de un tercero.
      *
      * Devuelve el mensaje del rechazo, o null si todo lo enviado está permitido.
      */
@@ -1200,7 +1200,7 @@ module.exports.personasHandler = async (event) => {
         // porque es un dato de contacto: el ingreso es por RUT, así que cambiarlo
         // no cambia con qué se entra, solo adónde llegan avisos y recuperaciones.
         const CAMPOS_PROPIOS = new Set([
-            'fotoPerfil', 'telefono', 'email', 'notificacionesSms', 'preferencias', 'contactoEmergencia',
+            'fotoPerfil', 'telefono', 'email', 'preferencias', 'contactoEmergencia',
         ]);
         // Campos con dueño distinto de PERSONAS_CREAR (el resto exige ese permiso).
         const PERMISOS_POR_CAMPO = {

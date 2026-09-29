@@ -55,7 +55,7 @@ const FUENTES = [
         clase: CLASE.EVIDENCIA,
         alVencer: AL_VENCER.SUPRIMIR,
         // Suprimibles a solicitud sin esperar el plazo: no acreditan cumplimiento.
-        camposConveniencia: ['fotoPerfil', 'telefono', 'contactoEmergencia', 'preferencias', 'notificacionesSms', 'nivelEscolar'],
+        camposConveniencia: ['fotoPerfil', 'telefono', 'contactoEmergencia', 'preferencias', 'nivelEscolar'],
         personasDe: (it) => uno(it.personaId),
         archivosDe: (it) => ids(it.evidencias, 'fileKey'),
     },

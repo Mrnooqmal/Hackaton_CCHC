@@ -5,7 +5,7 @@ import { personasApi } from '../api/client';
 import PinInput from '../components/PinInput';
 import { OnboardingShell } from '../components/ui';
 import type { StepperStep } from '../components/ui';
-import { FiCheckCircle, FiShield, FiLock, FiArrowRight, FiKey, FiUser, FiPhone, FiMessageSquare, FiCamera, FiSkipForward } from 'react-icons/fi';
+import { FiCheckCircle, FiShield, FiLock, FiArrowRight, FiKey, FiUser, FiPhone, FiCamera, FiSkipForward } from 'react-icons/fi';
 
 type EnrollmentStep = 'welcome' | 'current-pin' | 'create-pin' | 'confirm-pin' | 'processing' | 'profile' | 'success';
 
@@ -64,7 +64,6 @@ export default function EnrollMe() {
     const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
     const [telefono, setTelefono] = useState('');
     const [telFocused, setTelFocused] = useState(false);
-    const [notificacionesSms, setNotificacionesSms] = useState(false);
     const [profileSaving, setProfileSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -153,11 +152,10 @@ export default function EnrollMe() {
                     ? `+56 ${telefono}`
                     : '';
                 if (telefonoFull) updates.telefono = telefonoFull;
-                updates.notificacionesSms = notificacionesSms;
 
                 if (Object.keys(updates).length > 0) {
                     await personasApi.update(targetTenant, targetId, updates);
-                    updateUser({ fotoPerfil: fotoPerfil || undefined, telefono: telefonoFull || undefined, notificacionesSms });
+                    updateUser({ fotoPerfil: fotoPerfil || undefined, telefono: telefonoFull || undefined });
                 }
             }
         } catch {
@@ -500,35 +498,6 @@ export default function EnrollMe() {
                                     </div>
                                 );
                             })()}
-
-                            {/* SMS checkbox */}
-                            <label style={{
-                                display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)',
-                                padding: 'var(--space-3) var(--space-4)',
-                                background: 'var(--surface-elevated)',
-                                border: `1px solid ${notificacionesSms ? 'var(--accent)' : 'var(--surface-border)'}`,
-                                borderRadius: 'var(--radius-md)',
-                                cursor: 'pointer',
-                                transition: 'border-color 0.2s',
-                            }}>
-                                <input
-                                    type="checkbox"
-                                    checked={notificacionesSms}
-                                    onChange={(e) => setNotificacionesSms(e.target.checked)}
-                                    style={{ marginTop: '2px', accentColor: 'var(--accent)', width: '16px', height: '16px', flexShrink: 0 }}
-                                />
-                                <div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-                                        <FiMessageSquare size={13} style={{ color: 'var(--accent)' }} />
-                                        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                            Deseo recibir notificaciones mediante SMS
-                                        </span>
-                                    </div>
-                                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                                        Recibirás alertas importantes sobre documentos y actividades en tu número de teléfono.
-                                    </span>
-                                </div>
-                            </label>
 
                             {/* Botones */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>

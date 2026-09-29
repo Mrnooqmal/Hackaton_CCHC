@@ -75,8 +75,8 @@ const administradoresDe = async (tenantId, cache) => {
 const avisar = async ({ tenantId, destinatarios, subject, content, obraId }) => {
     if (!destinatarios || destinatarios.length === 0) return false;
     try {
-        // Misma forma que usa EventBus: senderRol 'system' evita el SMS y deja el
-        // aviso solo en el inbox, que es lo que corresponde a un recordatorio.
+        // Misma forma que usa EventBus: senderRol 'system' marca el aviso como del
+        // sistema, no de una persona, que es lo que corresponde a un recordatorio.
         await inboxRepo.sendMessage({
             senderId: 'system', senderName: 'Build & Serve', senderRol: 'system',
             recipientIds: destinatarios,

@@ -17,7 +17,6 @@ export interface User {
     email?: string;
     telefono?: string;
     fotoPerfil?: string;
-    notificacionesSms?: boolean;
     // 'suspendido' se mantiene mientras la UI lo ofrezca; el backend trabaja con
     // 'pendiente' | 'activo' | 'inactivo'. Confirmar efecto normativo (duda experto #9).
     estado: 'pendiente' | 'activo' | 'inactivo' | 'suspendido';
@@ -52,7 +51,6 @@ export interface PersonaResponse {
     email: string;
     telefono?: string;
     fotoPerfil?: string;
-    notificacionesSms?: boolean;
     fechaNacimiento?: string;
     rol: string;
     // Resueltos por el backend desde la def. de roles del tenant (GET /personas).

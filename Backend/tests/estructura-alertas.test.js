@@ -223,7 +223,7 @@ test('los avisos van al perfil administrador, no a toda la dotación', async () 
     await revisarEstructuraPreventiva(new Date('2026-09-09T12:00:00.000Z'));
     assert.ok(avisos.length > 0);
     assert.deepEqual(avisos[0].recipientIds, ['admin-1']);
-    assert.equal(avisos[0].senderRol, 'system', 'senderRol system evita el SMS');
+    assert.equal(avisos[0].senderRol, 'system', 'el aviso es del sistema, no de una persona');
 });
 
 test('diasEntre cuenta en días completos y admite negativos', () => {

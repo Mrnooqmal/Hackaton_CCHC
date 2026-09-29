@@ -171,7 +171,7 @@ Actualizado: 2026-09-09
   alcance (33, 42-45), que se muestran en vez de omitirse.
 
 **Recordatorios** — `handlers/scheduler/estructura-alertas.js`, Lambda diaria
-`cron(0 13 * * ? *)`. Escriben en el Inbox con `senderRol: 'system'` (sin SMS).
+`cron(0 13 * * ? *)`. Escriben en el Inbox con `senderRol: 'system'`.
 Idempotentes por clave con período en `alertas` del propio órgano o reunión.
 
 Bug encontrado por los tests: el hito de "0 días" del término de mandato tenía borde

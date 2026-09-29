@@ -70,7 +70,6 @@ class Persona {
         this.email = data.email || '';
         this.telefono = data.telefono || '';
         this.fotoPerfil = data.fotoPerfil || null;
-        this.notificacionesSms = data.notificacionesSms || false;
 
         // Rol y contexto laboral
         this.rol = data.rol || 'trabajador';
@@ -336,7 +335,6 @@ class Persona {
             email: this.email || undefined,
             telefono: this.telefono,
             fotoPerfil: this.fotoPerfil,
-            notificacionesSms: this.notificacionesSms,
             rol: this.rol,
             permisos: this.permisos,
             cargo: this.cargo,
@@ -406,7 +404,6 @@ class Persona {
             email: this.email,
             telefono: this.telefono,
             fotoPerfil: this.fotoPerfil,
-            notificacionesSms: this.notificacionesSms,
             rol: this.rol,
             permisos: this.permisos,
             cargo: this.cargo,

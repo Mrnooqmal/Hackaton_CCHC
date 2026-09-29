@@ -92,10 +92,6 @@ provider:
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     # --- External ---
     SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
-    # SMS (AWS SNS). SMS_ENABLED=false apaga el envío sin tocar código (útil en
-    # sandbox de SNS, que solo permite enviar a números verificados).
-    SMS_ENABLED: ${env:SMS_ENABLED, 'true'}
-    SMS_SENDER_ID: ${env:SMS_SENDER_ID, 'BuildServe'}
     # URL del frontend para construir enlaces (ej. recuperación de contraseña).
     # No es secreto (URL pública), así que el default apunta a la demo en CloudFront
     # para que funcione aunque no se cargue el .env. Overridable por env var.
@@ -288,14 +284,6 @@ provider:
             - sns:Publish
           Resource:
             - !Ref IncidentNotificationTopic
-        # SMS directo a número (sin topic): SNS exige Resource "*" porque no hay
-        # ARN de topic. SetSMSAttributes permite fijar atributos de cuenta si se
-        # requiere (ej. tipo de mensaje por defecto / sender ID).
-        - Effect: Allow
-          Action:
-            - sns:Publish
-            - sns:SetSMSAttributes
-          Resource: "*"
 
 package:
   individually: false
@@ -638,7 +626,7 @@ functions:
 
   # Scheduler de alertas de asistencia (§6): avisa al inbox de los responsables
   # cuando una charla superó su hora de término sin cerrarse, y a mediodía si
-  # aún hay convocados sin firmar. Solo inbox (sin SMS). Idempotente por día.
+  # aún hay convocados sin firmar. Idempotente por día.
   checkActivityAlerts:
     handler: handlers/scheduler/handler.checkActivityAlerts
     events:

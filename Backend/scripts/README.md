@@ -122,3 +122,16 @@ Nombres de tabla: se leen de las variables de entorno
 (`DOCUMENTS_TABLE`, `SIGNATURE_REQUESTS_TABLE`, `ACTIVITIES_TABLE`,
 `INCIDENTS_TABLE`); si no estan, se construyen como
 `${SERVICE_NAME:-BuildAndServe}-<tabla>-${STAGE:-dev}`.
+
+## quitar-notificaciones-sms.js
+
+Migración puntual (2026-09-29): el aviso por SMS se abandonó y el código ya no lee
+ni escribe `notificacionesSms`. Este script quita ese atributo de las fichas de
+persona que lo tienen, para que la preferencia no quede guardada sin finalidad.
+Solo lee las claves de las fichas afectadas, nunca datos personales. Por omisión
+solo cuenta; con `--aplicar` borra. Es idempotente.
+
+```
+AWS_PROFILE=<perfil> node scripts/quitar-notificaciones-sms.js --stage prod            # cuenta
+AWS_PROFILE=<perfil> node scripts/quitar-notificaciones-sms.js --stage prod --aplicar  # borra
+```
