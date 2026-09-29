@@ -124,10 +124,8 @@
 .rd-dato > span:first-child { color: var(--text-secondary); }
 .rd-dato > span:last-child { color: var(--text-primary); }
 .rd-dato--alerta > span:last-child { color: var(--ob-ven); font-weight: 500; }
-.rd-dato--salud > span:last-child { color: var(--ob-par); }
 .rd-fila-simple { display: flex; justify-content: space-between; gap: 12px; font-size: 0.8125rem; }
 .rd-fila-simple > span:last-child { color: var(--text-secondary); text-align: right; }
-.rd-fila-simple--falta > span:last-child { color: var(--ob-par); font-weight: 500; }
 
 .rd-firmantes { display: flex; flex-direction: column; border: 1px solid var(--surface-border); border-radius: 10px; overflow: hidden; }
 .rd-firmante { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
