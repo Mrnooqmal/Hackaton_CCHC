@@ -243,3 +243,25 @@ test('al responder, se recibe lo propio y no las respuestas de los demás', asyn
         FirmaService.crear = crearOriginal;
     }
 });
+
+test('un rechazo de la firma responde 400, no 401: el cliente lee 401 como sesión vencida', async () => {
+    const encuesta = await crearEncuesta({ audienceType: 'todos' });
+    const { FirmaService } = require('../lib/services/FirmaService');
+    const crearOriginal = FirmaService.crear;
+    const intentar = () => encuestas.updateResponseStatus(ev(trabajador, {
+        pathParameters: { id: encuesta.surveyId, workerId: trabajador.personaId },
+        body: { estado: 'respondida', pin: '0000', responses: [] },
+    }));
+    try {
+        FirmaService.crear = async () => { throw new Error('Validación de PIN fallida'); };
+        assert.equal((await intentar()).statusCode, 400);
+
+        FirmaService.crear = async () => { throw Object.assign(new Error('bloqueado'), { codigo: 'TRATAMIENTO_BLOQUEADO' }); };
+        assert.equal((await intentar()).statusCode, 400);
+
+        FirmaService.crear = async () => { throw Object.assign(new Error('espera'), { codigo: 'PIN_BLOQUEADO' }); };
+        assert.equal((await intentar()).statusCode, 423);
+    } finally {
+        FirmaService.crear = crearOriginal;
+    }
+});
