@@ -2,18 +2,18 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi, type PersonaResponse } from '../api/client';
-import {
-    FiCheckCircle, FiLock, FiMail, FiPhone, FiCalendar,
-    FiSave, FiEdit2, FiX, FiKey, FiMessageSquare
-} from 'react-icons/fi';
+import { FiLock, FiKey, FiEdit2 } from 'react-icons/fi';
 import ConfirmModal from '../components/ConfirmModal';
 import { IdentityPanel } from '../components/ui';
 import { getCargoLabel } from '../utils/ds44';
+import '../css/ficha.css';
 
 const ROLE_LABELS: Record<string, string> = {
     admin: 'Administrador', jefe_obra: 'Jefe de Obra',
     supervisor: 'Supervisor', prevencionista: 'Prevencionista', trabajador: 'Trabajador',
 };
+
+const CORREO_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function resizeImageToBase64(file: File, maxSize = 320): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -38,14 +38,14 @@ function resizeImageToBase64(file: File, maxSize = 320): Promise<string> {
 }
 
 function formatDate(iso?: string | null) {
-    if (!iso) return '—';
-    const d = new Date(iso);
+    if (!iso) return null;
+    const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso);
     if (isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' });
+    return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function parseTelDigits(raw?: string) {
-    return (raw || '').replace(/^\+56\s*/, '').trim();
+function parseTelDigits(raw?: string | null) {
+    return formatTelDisplay((raw || '').replace(/^\+56\s*/, '').trim());
 }
 
 function formatTelDisplay(raw: string) {
@@ -55,54 +55,69 @@ function formatTelDisplay(raw: string) {
     return d;
 }
 
+// Un campo de solo lectura: rótulo y valor, o un guion si está vacío.
+function Campo({ label, value, vacio = '—' }: { label: string; value: React.ReactNode; vacio?: string }) {
+    return (
+        <div className="pd-campo">
+            <span className="pd-label">{label}</span>
+            <span className="pd-valor">{value || <span className="pd-vacio">{vacio}</span>}</span>
+        </div>
+    );
+}
+
+/** Un valor que llega con la ficha: mientras tanto, un bloque del alto del renglón. */
+const Pendiente = ({ w }: { w: number }) => (
+    <span className="set-pendiente" aria-hidden="true"><span className="ui-skel" style={{ width: w, height: 12 }} /></span>
+);
+
 export default function Settings() {
     const { user, updateUser } = useAuth();
     const navigate = useNavigate();
 
+    // Nombre, RUT, rol, correo y teléfono vienen con la sesión y se pintan de
+    // inmediato; cargo y fecha de nacimiento llegan con la ficha y, mientras,
+    // solo esos valores muestran su esqueleto.
     const [persona, setPersona] = useState<PersonaResponse | null>(null);
+    const [cargando, setCargando] = useState(true);
     const [photoSaving, setPhotoSaving] = useState(false);
     const [photoSuccess, setPhotoSuccess] = useState(false);
 
-    const [telEditing, setTelEditing] = useState(false);
-    const [telValue, setTelValue] = useState(() => parseTelDigits(user?.telefono));
-    const [telFocused, setTelFocused] = useState(false);
-    const [telSaving, setTelSaving] = useState(false);
-
-    const [notificacionesSms, setNotificacionesSms] = useState(() => user?.notificacionesSms ?? false);
-    const [smsSaving, setSmsSaving] = useState(false);
+    const [editando, setEditando] = useState(false);
+    const [form, setForm] = useState({ email: '', telefono: '' });
+    const [base, setBase] = useState({ email: '', telefono: '' });
+    const [guardando, setGuardando] = useState(false);
+    const [errorCampo, setErrorCampo] = useState<{ email?: string; telefono?: string }>({});
+    const [errorGuardar, setErrorGuardar] = useState('');
 
     const [showPinConfirm, setShowPinConfirm] = useState(false);
 
     useEffect(() => {
         const tenantId = user?.tenantId || (user as any)?.empresaId;
         const rut = user?.rut;
-        if (tenantId && rut) {
-            personasApi.getByRut(tenantId, rut).then(res => {
-                if (res.success && res.data) {
-                    setPersona(res.data);
-                    if (!user?.telefono && res.data.telefono) {
-                        setTelValue(parseTelDigits(res.data.telefono));
-                    }
-                }
-            });
-        }
+        if (!tenantId || !rut) { setCargando(false); return; }
+        personasApi.getByRut(tenantId, rut)
+            .then((res) => { if (res.success && res.data) setPersona(res.data); })
+            .finally(() => setCargando(false));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const initials = [user?.nombre, user?.apellido].filter(Boolean).map(s => s![0].toUpperCase()).join('');
+    const initials = [user?.nombre, user?.apellido].filter(Boolean).map((s) => s![0].toUpperCase()).join('');
     const roleLabel = ROLE_LABELS[user?.rol ?? ''] ?? (user?.rol || '—');
     const cargoCodigo = persona?.cargo || (user as any)?.cargo || '';
-    const cargo = getCargoLabel(cargoCodigo) || cargoCodigo || '—';
+    const cargo = getCargoLabel(cargoCodigo) || cargoCodigo || 'Sin cargo';
     const fechaNac = formatDate(persona?.fechaNacimiento || (user as any)?.fechaNacimiento);
-    const telefonoDisplay = user?.telefono || persona?.telefono || '—';
+    const correo = user?.email || persona?.email || '';
+    const telefono = user?.telefono || persona?.telefono || '';
+
+    const personaId = (user as any)?.personaId || user?.userId;
+    const tenantId = user?.tenantId;
 
     const handlePhotoChange = async (file: File) => {
         setPhotoSaving(true);
         setPhotoSuccess(false);
         try {
             const base64 = await resizeImageToBase64(file, 320);
-            const id = (user as any)?.personaId || user?.userId;
-            const tid = user?.tenantId;
-            if (id && tid) await personasApi.update(tid, id, { fotoPerfil: base64 });
+            if (personaId && tenantId) await personasApi.update(tenantId, personaId, { fotoPerfil: base64 });
             updateUser({ fotoPerfil: base64 });
             setPhotoSuccess(true);
             setTimeout(() => setPhotoSuccess(false), 2500);
@@ -114,44 +129,56 @@ export default function Settings() {
     const handleRemovePhoto = async () => {
         setPhotoSaving(true);
         try {
-            const id = (user as any)?.personaId || user?.userId;
-            const tid = user?.tenantId;
-            if (id && tid) await personasApi.update(tid, id, { fotoPerfil: null } as any);
+            if (personaId && tenantId) await personasApi.update(tenantId, personaId, { fotoPerfil: null } as any);
             updateUser({ fotoPerfil: undefined });
         } catch { /* silent */ } finally { setPhotoSaving(false); }
     };
 
-    const cancelTel = () => {
-        setTelValue(parseTelDigits(user?.telefono || persona?.telefono));
-        setTelEditing(false);
+    const empezar = () => {
+        const f = { email: correo, telefono: parseTelDigits(telefono) };
+        setForm(f);
+        setBase(f);
+        setErrorCampo({});
+        setErrorGuardar('');
+        setEditando(true);
     };
 
-    const saveTelefono = async () => {
-        setTelSaving(true);
-        const digits = telValue.replace(/\D/g, '');
-        const full = digits.length >= 1 ? `+56 ${telValue}` : '';
+    const cancelar = () => {
+        setEditando(false);
+        setErrorCampo({});
+        setErrorGuardar('');
+    };
+
+    const cambios = (['email', 'telefono'] as const).filter((k) => form[k].trim() !== base[k].trim());
+
+    const guardar = async () => {
+        const email = form.email.trim();
+        const digitos = form.telefono.replace(/\D/g, '');
+        const errores: { email?: string; telefono?: string } = {};
+        if (email && !CORREO_RE.test(email)) errores.email = 'Revisa el correo: falta la @ o el dominio.';
+        if (digitos && digitos.length !== 9) errores.telefono = 'El número tiene 9 dígitos, por ejemplo 9 1234 5678.';
+        setErrorCampo(errores);
+        if (Object.keys(errores).length > 0) return;
+        if (!personaId || !tenantId) return;
+
+        const payload: { email?: string; telefono?: string } = {};
+        if (cambios.includes('email')) payload.email = email;
+        if (cambios.includes('telefono')) payload.telefono = digitos ? `+56 ${form.telefono.trim()}` : '';
+
+        setGuardando(true);
+        setErrorGuardar('');
         try {
-            const id = (user as any)?.personaId || user?.userId;
-            const tid = user?.tenantId;
-            if (id && tid) await personasApi.update(tid, id, { telefono: full });
-            updateUser({ telefono: full });
-            setTelEditing(false);
-        } catch { /* silent */ } finally { setTelSaving(false); }
+            const res = await personasApi.update(tenantId, personaId, payload);
+            if (!res.success) { setErrorGuardar(res.error || 'No se pudieron guardar tus datos.'); return; }
+            updateUser(payload);
+            setPersona((p) => (p ? { ...p, ...payload } : p));
+            setEditando(false);
+        } catch {
+            setErrorGuardar('Error de conexión al guardar.');
+        } finally {
+            setGuardando(false);
+        }
     };
-
-    const toggleSms = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newVal = e.target.checked;
-        setNotificacionesSms(newVal);
-        setSmsSaving(true);
-        try {
-            const id = (user as any)?.personaId || user?.userId;
-            const tid = user?.tenantId;
-            if (id && tid) await personasApi.update(tid, id, { notificacionesSms: newVal });
-            updateUser({ notificacionesSms: newVal });
-        } catch { setNotificacionesSms(!newVal); } finally { setSmsSaving(false); }
-    };
-
-    const telComplete = telValue.replace(/\D/g, '').length === 9;
 
     return (
         <>
@@ -163,7 +190,7 @@ export default function Settings() {
                     fallback={initials || '?'}
                     meta={[
                         { label: 'RUT', value: user?.rut || '—', mono: true },
-                        { label: 'Cargo', value: cargo },
+                        { label: 'Cargo', value: cargando && !cargoCodigo ? <Pendiente w={96} /> : cargo },
                         { label: 'Rol', value: roleLabel },
                     ]}
                     photo={{
@@ -192,82 +219,87 @@ export default function Settings() {
                     }
                 />
 
-                {/* ── Datos de identidad ── */}
-                <section className="idp-section">
-                    <div className="idp-section-head">
-                        <div>
-                            <h2 className="idp-section-title">Tus datos</h2>
-                            <div className="idp-section-sub">El teléfono lo actualizas tú; el resto lo mantiene tu empresa.</div>
-                        </div>
-                    </div>
-
-                    <div className="idp-fields">
-                            {[
-                                { icon: <FiCalendar size={12} />, label: 'Fecha de nacimiento', value: fechaNac },
-                                { icon: <FiMail size={12} />,     label: 'Correo electrónico',  value: user?.email || persona?.email || '—' },
-                            ].map(({ icon, label, value }) => (
-                                <div key={label} className="idp-field">
-                                    <span className="idp-field-label">{icon} {label}</span>
-                                    <div className="idp-field-value">{value}</div>
-                                </div>
-                            ))}
-
-                            {/* Teléfono — el único dato de identidad que editas tú */}
-                            <div className={`idp-field${telEditing ? ' idp-field--wide' : ''}`}>
-                                <span className="idp-field-label"><FiPhone size={12} /> Teléfono</span>
-                                {telEditing ? (
-                                    <div className="sett-tel-edit-row">
-                                        <div className={`sett-tel-input${telFocused ? ' is-focused' : ''}`}>
-                                            <span className="sett-tel-prefix">
-                                                <span aria-hidden="true">🇨🇱</span>
-                                                <span>+56</span>
-                                            </span>
-                                            <input
-                                                type="text" inputMode="numeric" placeholder="9 1234 5678"
-                                                aria-label="Número de teléfono"
-                                                value={telValue} autoFocus
-                                                onFocus={() => setTelFocused(true)}
-                                                onBlur={() => setTelFocused(false)}
-                                                onChange={e => setTelValue(formatTelDisplay(e.target.value))}
-                                                className="sett-tel-field"
-                                            />
-                                            {telComplete && <FiCheckCircle size={14} className="sett-tel-ok" />}
-                                        </div>
-                                        <button className="btn btn-primary btn-sm" onClick={saveTelefono} disabled={telSaving}>
-                                            {telSaving ? <span className="idp-spinner sett-spinner-sm" /> : <><FiSave size={13} /> Guardar</>}
-                                        </button>
-                                        <button className="btn btn-ghost btn-sm" onClick={cancelTel} disabled={telSaving} aria-label="Cancelar">
-                                            <FiX size={14} />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="idp-field-row">
-                                        <span className="idp-field-value">{telefonoDisplay}</span>
-                                        <button className="btn btn-ghost btn-sm idp-field-action" onClick={() => setTelEditing(true)}>
+                <div
+                    className={`pd-tab${editando ? ' pd-tab--editando' : ''}`}
+                    onKeyDown={(e) => { if (e.key === 'Escape' && editando && !guardando) cancelar(); }}
+                >
+                    <section className={`pd-seccion${editando ? ' pd-seccion--editando' : ''}`} aria-label="Tus datos">
+                        <div className="pd-head">
+                            <h2 className="pd-titulo">Tus datos</h2>
+                            <span className="pd-hint">
+                                {editando
+                                    ? 'Editando · los cambios se aplican al guardar'
+                                    : 'El correo y el teléfono los actualizas tú; el resto lo mantiene tu empresa.'}
+                            </span>
+                            <span className="pd-head-accion">
+                                {editando
+                                    ? <span className="pd-modo"><span className="pd-modo-punto" aria-hidden="true" /> Modo edición</span>
+                                    : (
+                                        <button type="button" className="btn btn-secondary btn-sm" onClick={empezar}>
                                             <FiEdit2 size={13} /> Editar
                                         </button>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Notificaciones por SMS */}
-                            <div className="idp-field">
-                                <span className="idp-field-label"><FiMessageSquare size={12} /> Notificaciones por SMS</span>
-                                <label className={`sett-sms${smsSaving ? ' is-busy' : ''}`}>
-                                    <span className="idp-field-value">
-                                        Avisos cuando algo necesita tu firma
-                                    </span>
-                                    <input
-                                        type="checkbox"
-                                        className="sett-sms-box"
-                                        checked={notificacionesSms}
-                                        disabled={smsSaving}
-                                        onChange={toggleSms}
-                                    />
-                                </label>
-                            </div>
+                                    )}
+                            </span>
                         </div>
-                </section>
+
+                        {editando ? (
+                            <div className="pd-rejilla">
+                                <label className="pd-input" style={{ animationDelay: '0ms' }}>
+                                    <span className="pd-label">Correo electrónico</span>
+                                    <input
+                                        className="form-input" type="email" autoFocus autoComplete="email"
+                                        value={form.email}
+                                        aria-invalid={!!errorCampo.email}
+                                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                                    />
+                                    {errorCampo.email
+                                        ? <span className="pd-ayuda set-error">{errorCampo.email}</span>
+                                        : <span className="pd-ayuda">Aquí te llegan los avisos y la recuperación de contraseña.</span>}
+                                </label>
+                                <label className="pd-input" style={{ animationDelay: '35ms' }}>
+                                    <span className="pd-label">Teléfono</span>
+                                    <span className={`set-tel${errorCampo.telefono ? ' is-invalid' : ''}`}>
+                                        <span className="set-tel-prefijo" aria-hidden="true">+56</span>
+                                        <input
+                                            type="text" inputMode="numeric" placeholder="9 1234 5678"
+                                            aria-label="Número de teléfono" autoComplete="tel-national"
+                                            value={form.telefono}
+                                            aria-invalid={!!errorCampo.telefono}
+                                            onChange={(e) => setForm({ ...form, telefono: formatTelDisplay(e.target.value) })}
+                                        />
+                                    </span>
+                                    {errorCampo.telefono && <span className="pd-ayuda set-error">{errorCampo.telefono}</span>}
+                                </label>
+                                <div className="pd-solo-lectura">
+                                    <Campo label="Fecha de nacimiento" value={fechaNac ? `${fechaNac} · la mantiene tu empresa` : null} />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="pd-rejilla">
+                                <Campo label="Correo electrónico" value={correo} vacio="Sin correo" />
+                                <Campo label="Teléfono" value={telefono} vacio="Sin teléfono" />
+                                <Campo label="Fecha de nacimiento" value={cargando && !fechaNac ? <Pendiente w={110} /> : fechaNac} />
+                            </div>
+                        )}
+                    </section>
+
+                    {editando && (
+                        <div className="pd-barra" role="region" aria-label="Edición en curso">
+                            <span className="pd-modo-punto" aria-hidden="true" />
+                            <span className="pd-barra-texto">Editando tus datos</span>
+                            <span className="pd-barra-cambios">
+                                · {errorGuardar
+                                    ? <span className="set-error">{errorGuardar}</span>
+                                    : cambios.length === 0 ? 'sin cambios' : `${cambios.length} ${cambios.length === 1 ? 'campo modificado' : 'campos modificados'}`}
+                            </span>
+                            <span className="pd-espacio" />
+                            <button className="btn btn-secondary" onClick={cancelar} disabled={guardando}>Cancelar</button>
+                            <button className="btn btn-primary" onClick={guardar} disabled={guardando || cambios.length === 0}>
+                                {guardando ? 'Guardando…' : 'Guardar cambios'}
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
             <ConfirmModal
@@ -281,64 +313,26 @@ export default function Settings() {
             />
 
             <style>{`
-                /* Lo específico de esta pantalla. La credencial, la rejilla de
-                   campos y las secciones son compartidas: viven en components.css
-                   junto a IdentityPanel, para que la ficha de persona y la
-                   cuenta propia no se separen con el tiempo. */
-                /* ── Teléfono ── */
-                .sett-tel-edit-row {
-                    display: flex; align-items: center; gap: var(--space-2);
-                    margin-top: 2px;
-                }
-                .sett-tel-input {
-                    display: flex; align-items: center; height: 36px; flex: 1; min-width: 0;
-                    border: 1.5px solid var(--surface-border);
-                    border-radius: var(--radius-md);
-                    background: var(--surface-elevated);
-                    overflow: hidden;
+                /* Lo propio de esta pantalla; el resto es la ficha compartida (css/ficha.css). */
+                .set-pendiente { display: inline-flex; align-items: center; height: 22px; vertical-align: middle; }
+                .set-error { color: var(--danger-alerta); }
+                .set-tel {
+                    display: flex; align-items: center; height: 38px; overflow: hidden;
+                    border: 1px solid var(--surface-border); border-radius: 8px; background: var(--surface-elevated);
                     transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
                 }
-                .sett-tel-input.is-focused {
-                    border-color: var(--accent);
-                    box-shadow: 0 0 0 3px var(--accent-tint);
+                .set-tel:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+                .set-tel.is-invalid { border-color: var(--danger-alerta); }
+                .set-tel-prefijo {
+                    display: flex; align-items: center; align-self: stretch; padding: 0 12px;
+                    border-right: 1px solid var(--surface-border);
+                    font-size: 13px; font-weight: 600; color: var(--text-secondary); user-select: none;
                 }
-                .sett-tel-prefix {
-                    display: flex; align-items: center; gap: 5px;
-                    align-self: stretch; padding: 0 9px;
-                    border-right: 1.5px solid var(--surface-border);
-                    background: var(--surface-card);
-                    font-size: 12px; font-weight: 600; color: var(--text-muted);
-                    flex-shrink: 0; user-select: none;
+                .set-tel input {
+                    flex: 1; min-width: 0; height: 100%; padding: 0 12px; border: none; outline: none; background: none;
+                    font-family: inherit; font-size: 13.5px; color: var(--text-primary);
                 }
-                .sett-tel-field {
-                    flex: 1; min-width: 0;
-                    border: none; outline: none; background: transparent;
-                    padding: 0 8px;
-                    font-size: 14px; color: var(--text-primary);
-                    caret-color: var(--accent);
-                }
-                .sett-tel-ok { color: var(--success-500); flex-shrink: 0; margin-right: 8px; }
-                .sett-spinner-sm { width: 13px; height: 13px; }
-
-                /* ── Aviso por SMS ── */
-                /* Fila, no caja: la etiqueta ya está arriba y la caja era el
-                   elemento más pesado de la página una vez quitadas las tarjetas.
-                   Toda la fila es el objetivo de clic. */
-                .sett-sms {
-                    display: flex; align-items: center; justify-content: space-between;
-                    gap: var(--space-4);
-                    cursor: pointer;
-                }
-                .sett-sms.is-busy { opacity: 0.6; cursor: default; }
-                .sett-sms-box {
-                    width: 17px; height: 17px; flex-shrink: 0;
-                    accent-color: var(--accent);
-                    cursor: inherit;
-                }
-
-                @media (max-width: 600px) {
-                    .sett-tel-edit-row { flex-wrap: wrap; }
-                }
+                .pd-input .form-input[aria-invalid='true'] { border-color: var(--danger-alerta); }
             `}</style>
         </>
     );

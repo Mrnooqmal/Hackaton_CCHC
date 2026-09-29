@@ -1122,6 +1122,8 @@ const validarFilaBulk = (fila, ctx, supRutsLote, seenRut) => {
 };
 
 // Broadcast retroactivo de plantillas (lo invoca el guardado de cargos del tenant).
+
+const CORREO_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 module.exports.syncPlantillasToWorkers = syncPlantillasToWorkers;
 module.exports.ensureCompanyDocsForPersona = ensureCompanyDocsForPersona;
 
@@ -1194,9 +1196,11 @@ module.exports.personasHandler = async (event) => {
      * Devuelve el mensaje del rechazo, o null si todo lo enviado está permitido.
      */
     const campoNoPermitido = (body, objetivo) => {
-        // Lo que cualquiera puede cambiar de SU PROPIA ficha.
+        // Lo que cualquiera puede cambiar de SU PROPIA ficha. El correo entra
+        // porque es un dato de contacto: el ingreso es por RUT, así que cambiarlo
+        // no cambia con qué se entra, solo adónde llegan avisos y recuperaciones.
         const CAMPOS_PROPIOS = new Set([
-            'fotoPerfil', 'telefono', 'notificacionesSms', 'preferencias', 'contactoEmergencia',
+            'fotoPerfil', 'telefono', 'email', 'notificacionesSms', 'preferencias', 'contactoEmergencia',
         ]);
         // Campos con dueño distinto de PERSONAS_CREAR (el resto exige ese permiso).
         const PERMISOS_POR_CAMPO = {
@@ -1847,6 +1851,11 @@ module.exports.personasHandler = async (event) => {
 
             const negado = campoNoPermitido(body, previousPersona);
             if (negado) return error(negado, 403);
+
+            // Vacío borra el correo; con algo escrito, tiene que parecer un correo.
+            if (typeof body.email === 'string' && body.email.trim() && !CORREO_RE.test(body.email.trim())) {
+                return error('El correo no tiene un formato válido', 400);
+            }
 
             const previousObraIds = new Set(previousPersona.obraIds || []);
             const persona = await personaService.actualizar(tenantId, personaId, body);

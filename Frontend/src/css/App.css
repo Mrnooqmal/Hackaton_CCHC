@@ -344,15 +344,33 @@
   padding: var(--space-3);
 }
 
-/* Identidad: solo informa quién está dentro. Antes era además un botón hacia
-   configuración; ahora ese destino es una opción del menú y la ficha deja de
-   hacer dos trabajos a la vez. */
+/* Identidad: quién está dentro, y el acceso directo a su configuración
+   (también está en el menú de tres puntos, junto a las acciones de sesión). */
 .sidebar-user {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding: var(--space-2) 0;
 }
+
+.sidebar-user-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  margin: calc(-1 * var(--space-1)) 0 calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sidebar-user-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .sidebar-user-avatar {
   width: 34px;

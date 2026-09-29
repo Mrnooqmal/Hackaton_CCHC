@@ -67,14 +67,12 @@ export default function WorkerEvidencias({ personaId, tenantId, initial, canEdit
   };
 
   return (
-    <div className="lg:col-span-2">
-      <div className="card" style={{ padding: 'var(--space-4)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
-          <h3 className="font-bold flex items-center gap-2 m-0">
-            Evidencias con vigencia <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(reutilizables entre obras)</span>
-          </h3>
+    <section className="wev" aria-labelledby="wev-titulo">
+        <div className="wev-head">
+          <h3 id="wev-titulo">Evidencias con vigencia</h3>
+          <span>Reutilizables entre obras</span>
           {canEdit && !adding && (
-            <button className="btn btn-secondary btn-sm" type="button" onClick={() => setAdding(true)}><FiPlus /> Registrar</button>
+            <button className="btn btn-secondary btn-sm wev-registrar" type="button" onClick={() => setAdding(true)}><FiPlus /> Registrar</button>
           )}
         </div>
 
@@ -85,50 +83,82 @@ export default function WorkerEvidencias({ personaId, tenantId, initial, canEdit
         )}
 
         {adding && (
-          <div style={{ display: 'grid', gap: 8, padding: 12, border: '1px solid var(--surface-border)', borderRadius: 8, marginBottom: 'var(--space-3)' }}>
-            <input list="evidencia-tipos" className="input" placeholder="Tipo (ej. EXAMEN_ALTURA)" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} />
-            <datalist id="evidencia-tipos">{TIPOS_COMUNES.map((t) => <option key={t} value={t} />)}</datalist>
-            <input className="input" placeholder="Nombre/descripción (opcional)" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
-            <label className="text-muted" style={{ fontSize: '0.8rem' }}>Vence el (opcional)
-              <input type="date" className="input" value={form.venceEn} onChange={(e) => setForm({ ...form, venceEn: e.target.value })} />
+          <div className="wev-form">
+            <label className="wev-campo">
+              <span className="form-label">Tipo *</span>
+              <input list="evidencia-tipos" className="form-input" placeholder="Ej: EXAMEN_ALTURA" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} />
             </label>
-            <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer', justifyContent: 'flex-start' }}>
+            <datalist id="evidencia-tipos">{TIPOS_COMUNES.map((t) => <option key={t} value={t} />)}</datalist>
+            <label className="wev-campo">
+              <span className="form-label">Nombre o descripción</span>
+              <input className="form-input" placeholder="Opcional" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+            </label>
+            <label className="wev-campo">
+              <span className="form-label">Vence el</span>
+              <input type="date" className="form-input" value={form.venceEn} onChange={(e) => setForm({ ...form, venceEn: e.target.value })} />
+            </label>
+            <label className="btn btn-secondary btn-sm wev-archivo">
               <FiUploadCloud /> {file ? file.name : 'Adjuntar archivo (opcional)'}
               <input type="file" hidden onChange={(e) => setFile(e.target.files?.[0] || null)} />
             </label>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="wev-acciones">
+              <button className="btn btn-secondary btn-sm" type="button" disabled={saving} onClick={() => { setAdding(false); setError(''); }}>Cancelar</button>
               <button className="btn btn-primary btn-sm" type="button" disabled={saving} onClick={guardar}>{saving ? 'Guardando…' : 'Guardar'}</button>
-              <button className="btn btn-ghost btn-sm" type="button" disabled={saving} onClick={() => { setAdding(false); setError(''); }}>Cancelar</button>
             </div>
           </div>
         )}
 
         {evidencias.length === 0 ? (
-          <div className="text-muted" style={{ fontSize: '0.85rem' }}>Sin evidencias registradas.</div>
+          <p className="wev-vacio">Sin evidencias registradas.</p>
         ) : (
-          <div style={{ display: 'grid', gap: 6 }}>
+          <div className="wev-lista">
             {evidencias.map((e, i) => {
               const ok = vigente(e);
               return (
-                <div key={`${e.tipo}-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 12px', border: '1px solid var(--surface-border)', borderRadius: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                    {ok ? <LuCircleCheck size={16} style={{ color: '#10b981', flexShrink: 0 }} /> : <LuClock size={16} style={{ color: '#ef4444', flexShrink: 0 }} />}
+                <div key={`${e.tipo}-${i}`} className="wev-fila">
+                  <div className="wev-fila-main">
+                    {ok ? <LuCircleCheck size={16} className="wev-ok" aria-label="Vigente" /> : <LuClock size={16} className="wev-vencida" aria-label="Vencida" />}
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: '0.87rem' }}>{e.nombre || e.tipo}</div>
-                      <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                      <div className="wev-nombre">{e.nombre || e.tipo}</div>
+                      <div className="wev-meta">
                         {e.tipo}{e.venceEn ? ` · ${ok ? 'vigente hasta' : 'vencida el'} ${e.venceEn}` : ' · sin vencimiento'}
                       </div>
                     </div>
                   </div>
                   {e.fileKey && (
-                    <button className="btn btn-ghost btn-sm" type="button" onClick={() => preview(e.fileKey!)} title="Ver"><FiEye /></button>
+                    <button className="btn btn-ghost btn-sm" type="button" onClick={() => preview(e.fileKey!)} title="Ver archivo" aria-label={`Ver archivo de ${e.nombre || e.tipo}`}><FiEye /></button>
                   )}
                 </div>
               );
             })}
           </div>
         )}
-      </div>
-    </div>
+        <style>{`
+          .wev-head {
+            display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 42px;
+            padding-bottom: 9px; margin-bottom: 14px; border-bottom: 1px solid var(--surface-border);
+          }
+          .wev-head h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+          .wev-head > span { font-size: 11.5px; color: var(--text-secondary); }
+          .wev-registrar { margin-left: auto; }
+          .wev-form {
+            display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; margin-bottom: 14px;
+            padding: 16px; border: 1px solid var(--surface-border); border-radius: 12px;
+          }
+          .wev-campo { display: flex; flex-direction: column; min-width: 0; }
+          .wev-archivo { justify-self: start; grid-column: 1 / -1; cursor: pointer; }
+          .wev-acciones { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+          .wev-vacio { margin: 0; font-size: 13px; color: var(--text-muted); }
+          .wev-lista { display: flex; flex-direction: column; border: 1px solid var(--surface-border); border-radius: 12px; overflow: hidden; }
+          .wev-fila { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--surface-border); }
+          .wev-fila:last-child { border-bottom: none; }
+          .wev-fila-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+          .wev-ok { flex-shrink: 0; color: var(--success-apagado); }
+          .wev-vencida { flex-shrink: 0; color: var(--danger-alerta); }
+          .wev-nombre { font-size: 13.5px; font-weight: 500; color: var(--text-primary); }
+          .wev-meta { font-size: 12px; color: var(--text-secondary); }
+          @media (max-width: 720px) { .wev-form { grid-template-columns: minmax(0, 1fr); } }
+        `}</style>
+    </section>
   );
 }

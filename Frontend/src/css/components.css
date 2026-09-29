@@ -779,15 +779,37 @@
     --banner-bleed: calc(var(--space-6) + var(--space-6));
     position: relative;
     margin: calc(-1 * var(--space-6)) calc(-1 * var(--banner-bleed)) var(--space-6);
-    padding: var(--space-6) var(--banner-bleed) calc(var(--space-6) + 3px);
+    padding: var(--space-6) var(--banner-bleed);
     background: var(--surface-card);
+    border-bottom: 1px solid var(--surface-border);
 }
-.idp::after {
-    content: '';
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    height: 3px;
-    background: var(--cchc-accent-line);
+/* Con pestañas, la regla inferior la dibuja la barra y el subrayado de la
+   pestaña activa cae sobre ella, como en .ui-page-header--con-tabs. */
+.idp--con-tabs { padding-bottom: 0; }
+.idp-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    margin-top: var(--space-5);
+}
+.idp-bar .idp-actions { margin-top: 0; padding-bottom: 4px; }
+.idp-tabs { display: flex; gap: 4px; margin-bottom: -1px; overflow-x: auto; scrollbar-width: none; }
+.idp-tabs::-webkit-scrollbar { display: none; }
+.idp-tab {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 48px; padding: 0 var(--space-4);
+    background: none; border: none; border-bottom: 2px solid transparent;
+    font-family: inherit; font-size: var(--text-sm); color: var(--text-secondary);
+    white-space: nowrap; cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.idp-tab:hover { color: var(--text-primary); }
+.idp-tab[aria-selected='true'] { border-bottom-color: var(--accent); color: var(--accent-text); font-weight: 500; }
+.idp-tab-badge {
+    padding: 1px 7px; border-radius: 999px; background: var(--surface-hover);
+    color: var(--text-secondary); font-size: 0.72rem; font-weight: 700; font-variant-numeric: tabular-nums;
 }
 
 
@@ -852,6 +874,23 @@
     pointer-events: none;
 }
 .idp-portrait-overlay.is-visible { opacity: 1; }
+/* Marca de cámara: dice que la foto se cambia tocando el retrato, también en
+   pantallas táctiles, donde no hay hover que muestre el velo. */
+.idp-portrait-badge {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(0, 20, 41, 0.72);
+    color: #fff;
+    pointer-events: none;
+}
 
 /* ── Identidad ─────────────────────────────────────────────────────── */
 .idp-body {

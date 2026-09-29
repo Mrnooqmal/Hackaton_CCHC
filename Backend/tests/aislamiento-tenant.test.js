@@ -375,6 +375,41 @@ test('cada quien puede editar su propio perfil sin permisos de gestión', async 
     assert.equal(res.statusCode, 200);
 });
 
+test('cada quien puede cambiar su propio correo', async () => {
+    store.personaItems = [personaItem(EMPRESA_A, 'p-a')];
+
+    const res = await personas.personasHandler(cuerpo(
+        eventoPersonas(sesionDe(EMPRESA_A, { rol: 'colaborador', permisos: '' }), 'PUT', '/personas/p-a'),
+        { email: 'nuevo@correo.cl' },
+    ));
+
+    assert.equal(res.statusCode, 200);
+});
+
+test('un correo con formato inválido no se guarda', async () => {
+    store.personaItems = [personaItem(EMPRESA_A, 'p-a')];
+
+    const res = await personas.personasHandler(cuerpo(
+        eventoPersonas(sesionDe(EMPRESA_A, { rol: 'colaborador', permisos: '' }), 'PUT', '/personas/p-a'),
+        { email: 'no-es-un-correo' },
+    ));
+
+    assert.equal(res.statusCode, 400);
+    assert.equal(store.escrituras.length, 0);
+});
+
+test('nadie cambia el correo de un tercero sin permiso de gestión', async () => {
+    store.personaItems = [personaItem(EMPRESA_A, 'p-otro')];
+
+    const res = await personas.personasHandler(cuerpo(
+        eventoPersonas(sesionDe(EMPRESA_A, { rol: 'colaborador', permisos: '' }), 'PUT', '/personas/p-otro'),
+        { email: 'robado@correo.cl' },
+    ));
+
+    assert.equal(res.statusCode, 403);
+    assert.equal(store.escrituras.length, 0);
+});
+
 test('nadie edita el nombre de un tercero sin permiso de gestión', async () => {
     store.personaItems = [personaItem(EMPRESA_A, 'p-otro')];
 
