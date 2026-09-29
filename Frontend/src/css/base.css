@@ -39,26 +39,6 @@
   margin-top: var(--space-1);
 }
 
-/* Stat cards */
-
-.stat-card {
-  position: relative;
-  overflow: hidden;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 100px;
-  height: 100px;
-  background: var(--gradient-primary);
-  opacity: 0.1;
-  border-radius: 50%;
-  transform: translate(30%, -30%);
-}
-
 .stat-value {
   font-size: var(--text-4xl);
   font-weight: 700;
@@ -74,6 +54,8 @@
 
 /* Buttons */
 
+/* Prevent line breaks in buttons and badges */
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -87,6 +69,7 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .btn:disabled {
@@ -235,17 +218,6 @@
   margin-bottom: 6px;
 }
 
-/* Texto de apoyo bajo un campo. Va en --text-secondary y no en --text-muted:
-   es texto de cuerpo, y --text-muted queda bajo el mínimo de contraste. */
-
-.form-hint {
-  display: block;
-  font-size: var(--text-xs);
-  line-height: 1.45;
-  color: var(--text-secondary);
-  margin-top: 6px;
-}
-
 /* Campo del sistema: 38px de alto, superficie transparente y cuerpo de 13.5px.
    Antes eran 46px con fondo --surface-elevated: dos materiales distintos (el
    campo relleno y la tarjeta que lo contiene) apilados sin que el corte entre
@@ -300,12 +272,6 @@ textarea.form-input {
 .form-error {
   font-size: var(--text-sm);
   color: var(--danger-500);
-  margin-top: var(--space-1);
-}
-
-.form-hint {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
   margin-top: var(--space-1);
 }
 
@@ -487,18 +453,6 @@ select.form-input option {
 
 .table tbody tr:last-child td {
   border-bottom: none;
-}
-
-/* Badges */
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  border-radius: var(--radius-full);
 }
 
 .badge-success {

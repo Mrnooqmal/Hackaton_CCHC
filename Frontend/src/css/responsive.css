@@ -46,6 +46,7 @@
 
   /* Page Content */
   .page-content {
+    margin-top: 0;
     padding: 0 var(--space-4);
   }
 
@@ -67,16 +68,6 @@
 
   .card-title {
     font-size: var(--text-base);
-  }
-
-  /* Table Responsiveness */
-  .table-container {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .table {
-    min-width: 600px;
   }
 
   /* Buttons */
