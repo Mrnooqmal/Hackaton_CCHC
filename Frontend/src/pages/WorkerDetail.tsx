@@ -570,8 +570,10 @@ export default function WorkerDetail() {
                 });
             }
             if (surveysRes.success && surveysRes.data) {
-                (surveysRes.data.surveys || []).forEach((s: any) => {
-                    if (s.kitItemKey && (s.recipients || []).some((r: any) => (r.personaId || r.workerId) === myId && r.estado === 'respondida')) {
+                // `avanceKit` trae quién respondió cada encuesta del kit; el
+                // listado ya no incluye `recipients`.
+                (surveysRes.data.surveys || []).forEach((s) => {
+                    if (s.kitItemKey && myId && s.avanceKit?.respondidos.includes(myId)) {
                         kitDoneByLink.add(s.kitItemKey);
                     }
                 });

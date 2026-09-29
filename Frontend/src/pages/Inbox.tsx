@@ -627,7 +627,8 @@ export default function Inbox() {
         if (!linkedEntity || !linkedEntity.type) return null;
         // Normalizar: el backend puede enviar 'signature-request' o 'signature_request'
         switch (linkedEntity.type.replace(/_/g, '-')) {
-            case 'survey': return '/surveys';
+            // El detalle muestra "Responder ahora" si la tiene pendiente.
+            case 'survey': return linkedEntity.id ? `/surveys/${linkedEntity.id}` : '/surveys';
             case 'activity': return '/activities';
             // Deep-link al documento específico: abre su detalle (visualización + firmar).
             case 'document': return `/documents?doc=${encodeURIComponent(linkedEntity.id)}`;

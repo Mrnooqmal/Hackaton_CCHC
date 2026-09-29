@@ -179,6 +179,10 @@ provider:
             - dynamodb:Query
             - dynamodb:Scan
             - dynamodb:GetItem
+            # Lectura por lotes con el mismo alcance que GetItem. La usa el
+            # listado de encuestas para leer de la tabla lo que `tenantId-index`
+            # no proyecta; sin esta línea el doble de pruebas pasa y AWS niega.
+            - dynamodb:BatchGetItem
             - dynamodb:PutItem
             - dynamodb:UpdateItem
             - dynamodb:DeleteItem

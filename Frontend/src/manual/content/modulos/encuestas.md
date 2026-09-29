@@ -5,69 +5,107 @@ registro de sus respuestas. Sirve para muchas cosas: encuestas de clima de segur
 verificación de comprensión tras una capacitación, levantamiento de condiciones inseguras o
 cualquier consulta que quieras documentar.
 
-Hay dos miradas del módulo, según tu rol:
+Hay dos miradas del módulo:
 
-- Como **trabajador**, ves **las encuestas que te asignaron** y las respondes.
-- Como **gestor**, **creas encuestas**, eliges a quién van dirigidas y revisas los resultados.
+- **Mis encuestas asignadas** — las que te asignaron a ti, para responderlas. La ve
+  **cualquier persona**, sin importar su rol: a un administrador o a un jefe de obra también
+  se le puede asignar una encuesta.
+- **Encuestas creadas** — la vista de gestión: creas encuestas, eliges a quién van dirigidas
+  y revisas los resultados. La ven los roles con permiso para crear encuestas.
 
-## Responder una encuesta (trabajador)
+## Responder una encuesta
 
-1. En el menú lateral, entra a **Encuestas**.
-2. En la sección **"Mis encuestas"** verás las que tienes asignadas. Si no hay ninguna,
-   aparecerá *"No tienes encuestas asignadas por ahora"*.
-3. Abre la encuesta, responde cada pregunta (en las preguntas abiertas, usa el campo
-   *"Comparte tu respuesta"*) y envíala.
+1. Cuando te asignan una encuesta, te llega un aviso a tu
+   [Bandeja de Entrada](/modulos/bandeja-entrada). El aviso te lleva directo a la encuesta.
+2. También la encuentras en **Encuestas → Mis encuestas asignadas**, en el grupo
+   **Pendientes**. Cada fila dice cuántas preguntas tiene y hace cuánto te la asignaron.
+3. Tócala para abrir la pantalla de respuesta. Responde cada pregunta; las marcadas como
+   **Obligatoria** no se pueden dejar en blanco.
+4. Toca **Firmar y enviar** e ingresa tu **PIN**. La respuesta queda firmada a tu nombre.
 
-![Sección Mis encuestas con el seguimiento personal del trabajador](/img/encuestas/mis-encuestas.png)
+Las que ya respondiste pasan al grupo **Respondidas**. Si abres una, ves tus respuestas y
+puedes **actualizar tu respuesta** (se vuelve a firmar).
 
-> Las encuestas que te asignan también aparecen como pendiente en tu
-> [Dashboard](/modulos/dashboard) y tu [Bandeja de Entrada](/modulos/bandeja-entrada).
+![Mis encuestas asignadas, con los grupos Pendientes y Respondidas](/img/encuestas/mis-encuestas.png)
+
+> Las encuestas pendientes también aparecen en tu [Dashboard](/modulos/dashboard) y como
+> un número junto a **Encuestas** en el menú lateral.
+
+::: tip Sin conexión
+Si en terreno no tienes señal, puedes responder igual una encuesta que ya hayas abierto
+antes con conexión. La respuesta queda guardada en el equipo y se envía sola cuando vuelve
+la señal; mientras tanto verás el aviso **"por sincronizar"** arriba de la lista.
+:::
 
 ## Crear una encuesta (gestor)
 
-1. Entra a **Encuestas** y haz clic en **Nueva Encuesta**.
-2. El asistente te guía por pasos:
-   - **Paso 1 · Información general** — escribe el **Título** *(obligatorio)* y una
-     **Descripción** *(opcional)* con el objetivo o la duración estimada.
-   - **Paso 2 · Audiencia destino** — elige el **Cargo destino** *(obligatorio)*: a qué
-     cargos o trabajadores se enviará la encuesta.
-   - Agrega las **preguntas** que quieras hacer.
-3. Crea la encuesta. Cada destinatario la recibirá como pendiente de responder.
+1. Entra a **Encuestas** y haz clic en **Nueva encuesta**.
+2. Completa las tres secciones:
+   - **Información general** — el **Título** *(obligatorio)* y una **Descripción**
+     *(opcional)* que diga para qué sirve.
+   - **Audiencia destino** — a quién le llega:
+     - **Toda la organización**: todas las personas de la empresa.
+     - **Por cargo**: todas las personas con el cargo que elijas.
+     - **Lista personalizada**: eliges a las personas una por una.
+   - **Preguntas** — al menos una. Para cada pregunta eliges el **tipo de respuesta**:
+     **Selección múltiple** (con sus opciones; escribe una nueva en *"+ Agregar opción"*),
+     **Escala 1–N** (defines el valor máximo) o **Pregunta abierta** (respuesta libre).
+     Marca **Obligatoria** si no se puede dejar en blanco.
+3. Toca **Crear encuesta**. Cada destinatario recibe el aviso en su bandeja.
 
-![Asistente de Nueva Encuesta con los pasos de información y audiencia](/img/encuestas/nueva-encuesta.png)
+![Nueva encuesta con información general, audiencia y preguntas](/img/encuestas/nueva-encuesta.png)
 
 ## Revisar resultados
 
-En la vista de gestión verás un resumen con indicadores:
+En **Encuestas creadas** verás un resumen con indicadores:
 
-- **Encuestas creadas** — cuántas has lanzado.
+- **Encuestas creadas** — cuántas hay y cuántas siguen activas.
 - **Trabajadores alcanzados** — a cuántas personas llegaron.
 - **Tasa de respuesta** — qué porcentaje ya respondió.
 
-Cada encuesta de la lista muestra cuántas **Preguntas** tiene, cuántos **Destinatarios** y
-cuántas respuestas **Respondidas** lleva. Puedes usar el filtro **"Mostrar"** para ver solo
-las tuyas o todas, y el buscador **"Buscar encuestas…"** para encontrar una específica.
+Cada tarjeta muestra cuántas **Preguntas** tiene la encuesta, cuántos **Destinatarios**,
+cuántas **Respondidas** y el porcentaje de respuesta. Con **"Todas / Creadas por mí"** filtras
+las tuyas, y con el buscador encuentras una específica.
+
+Toca **Ver detalles** para abrir la encuesta: ahí están sus preguntas, los resultados de cada
+una (cuántos eligieron cada opción, el promedio de las escalas y las respuestas abiertas) y
+la lista de destinatarios con quién respondió y cuándo.
+
+## La Ficha Básica de Salud
+
+Si tu empresa la habilitó (en **Mi Empresa**), la **Ficha Básica de Salud** aparece como una
+encuesta más, marcada con la etiqueta **Ficha de salud**. Se asigna sola a las personas de la
+empresa.
+
+Sus respuestas son **datos de salud**, así que tienen un resguardo extra: en el detalle,
+quien gestiona encuestas ve **quién respondió**, pero **qué respondió** solo lo ve quien tiene
+el permiso de **vigilancia de la salud**. Cada persona siempre puede ver lo que ella misma
+declaró.
 
 ## Preguntas frecuentes
 
 **¿Quién puede crear encuestas?**
-Los roles de gestión (Administrador, Prevencionista, Jefe de Obra). Un trabajador solo
-responde las que le asignan. Consulta [Roles de Usuario](/roles/).
+Los roles de gestión (Administrador, Prevencionista, Jefe de Obra). Consulta
+[Roles de Usuario](/roles/).
+
+**Me asignaron una encuesta y no la veo.**
+Revisa la pestaña **Mis encuestas asignadas** (si gestionas encuestas, la vista parte en
+**Encuestas creadas**). También puedes abrirla desde el aviso de tu bandeja.
 
 **Asigné la encuesta pero nadie responde.**
-Los destinatarios la verán en su sección "Mis encuestas", en su Dashboard y en su Bandeja de
+Los destinatarios la ven en **Mis encuestas asignadas**, en su Dashboard y en su Bandeja de
 Entrada. Si la **tasa de respuesta** está baja, puedes recordarles por la
 [Bandeja de Entrada](/modulos/bandeja-entrada).
 
-**¿Puedo dirigir una encuesta solo a ciertos cargos?**
-Sí. En el **Paso 2 · Audiencia destino** eliges el cargo destino, de modo que la encuesta
-llega solo a las personas que cumplen ese cargo.
+**¿Quién ve las respuestas?**
+Quien gestiona encuestas ve los resultados de cada una. Un trabajador solo ve sus propias
+respuestas, nunca las de sus compañeros.
 
 **¿Las respuestas son anónimas?**
-Las respuestas quedan asociadas para poder dar seguimiento al cumplimiento (saber quién
-respondió). Si necesitas una consulta anónima, indícalo en la descripción y maneja las
-preguntas en consecuencia.
+No: quedan firmadas por cada persona para poder dar seguimiento (saber quién respondió).
+Si necesitas una consulta anónima, indícalo en la descripción y plantea las preguntas en
+consecuencia.
 
 **¿Una encuesta puede cerrar un ítem de capacitación?**
 Sí. Cuando una encuesta está vinculada a un ítem de onboarding de un trabajador, responderla
-puede dar por cumplido ese ítem. Lo verás reflejado en la ficha de la obra.
+da por cumplido ese ítem. Lo verás reflejado en la ficha de la obra y en la del trabajador.
