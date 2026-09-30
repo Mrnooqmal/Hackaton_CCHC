@@ -38,6 +38,18 @@ for v in API_PROD API_DEV; do
     [ -n "${!v}" ] && [ "${!v}" != "None" ] || { echo "Falta HttpApiUrl ($v)." >&2; exit 1; }
 done
 
+# Dominio de producción (D-21): el certificado EMITIDO de ACM que cubre la raíz
+# y www. Si todavía no está emitido, la distribución sigue solo en cloudfront.net.
+DOMINIO_PROD=buildandserve.cl
+CERT=""
+for arn in $(aws acm list-certificates --certificate-statuses ISSUED --query "CertificateSummaryList[?DomainName=='$DOMINIO_PROD'].CertificateArn" --output text); do
+    if aws acm describe-certificate --certificate-arn "$arn" --query 'Certificate.SubjectAlternativeNames' --output text | tr '\t' '\n' | grep -qx "www.$DOMINIO_PROD"; then
+        CERT="$arn"; break
+    fi
+done
+if [ -n "$CERT" ]; then echo "== dominio: $DOMINIO_PROD y www con $CERT"
+else echo "== AVISO: no hay certificado emitido para $DOMINIO_PROD y www; la distribución de producción queda sin dominio propio." >&2; fi
+
 TMP="$(mktemp -d)"
 trap 'git -C "$RAIZ" worktree remove --force "$TMP/wt" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
 git -C "$RAIZ" worktree add --detach --quiet "$TMP/wt" "$SHA"
@@ -76,7 +88,7 @@ done
 aws cloudformation deploy \
     --stack-name "$STACK_FRONTEND" \
     --template-file "$TMP/wt/infra/frontend.yml" \
-    --parameter-overrides "CspSoloReporte=$CSP" "ReportingEndpoints=csp=\"$API_PROD/csp/reporte\"" \
+    --parameter-overrides "CertificadoProd=$CERT" "CspSoloReporte=$CSP" "ReportingEndpoints=csp=\"$API_PROD/csp/reporte\"" \
         "CspSoloReporteDev=$CSP_DEV" "ReportingEndpointsDev=csp=\"$API_DEV/csp/reporte\"" \
     --no-fail-on-empty-changeset
 

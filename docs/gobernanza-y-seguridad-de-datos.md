@@ -118,7 +118,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 
 | # | Punto | Estado | Evidencia o brecha |
 |---|---|---|---|
-| 6.1 | Cifrado en tránsito | **Implementado, con una brecha aceptada** | API: solo TLS 1.2 y 1.3, sin puerto 80. Frontend: CloudFront redirige HTTP a HTTPS y envía HSTS (un año). Buckets: todos rechazan accesos sin TLS. Brecha: CloudFront acepta TLS 1.0 porque usa el certificado por defecto de `cloudfront.net`; se resuelve con el dominio propio. Ver D-14. |
+| 6.1 | Cifrado en tránsito | **Implementado; la brecha se cierra con el dominio propio** | API: solo TLS 1.2 y 1.3, sin puerto 80. Frontend: CloudFront redirige HTTP a HTTPS y envía HSTS (un año). Buckets: todos rechazan accesos sin TLS. En `buildandserve.cl` el mínimo es TLS 1.2 (certificado propio de ACM, D-21). La URL de `cloudfront.net` acepta TLS 1.0 mientras dure la transición. |
 | 6.10 | Los buckets se gobiernan desde el stack | **Implementado** | Estaban **fuera** de CloudFormation, creados a mano: ningún despliegue podía comprobar ni corregir su configuración, y de ahí venían los dos hallazgos anteriores. Se incorporaron por `IMPORT` de CloudFormation —sin recrearlos ni tocar los 135 objetos de producción— con `DeletionPolicy: Retain`, que es la forma correcta de protegerlos de un `serverless remove`. |
 | 6.11 | **Bloqueo de objetos (Object Lock)** | **Pendiente, requiere migración** | No se puede activar sobre un bucket existente. Ver D-5. |
 | 6.2 | Cifrado en reposo declarado | **Implementado, salvo logs** | Buckets de evidencia y trabajo con la CMK de su ambiente (D-4); el del frontend, con `AES256`. Tablas DynamoDB: pasan a la CMK (`SSESpecification`) con el commit del 28 de septiembre de 2026; antes, las 17 usaban la llave propiedad de AWS. Grupos de logs: sin clave propia, postergado. Ver D-14. |
@@ -1318,6 +1318,49 @@ puede escribir en el bucket e invalidar la distribución.
 - Pendiente: que publicar a mano no sea posible. Un rol de despliegue que sea
   el único con escritura en los buckets del frontend y permiso de invalidar
   (propuesto, sin implementar).
+
+### D-21. Producción en buildandserve.cl, y correo con rebotes y quejas
+**Estado: implementado el 29 de septiembre de 2026 (en el árbol; se despliega
+tras el push y la validación del certificado).**
+
+**Dominio.** La distribución de producción sirve `buildandserve.cl` con un
+certificado de ACM (us-east-1) para la raíz y `www`, validado por DNS en
+Cloudflare. Los registros van **sin proxy de Cloudflare** (nube gris): el TLS lo
+termina CloudFront con su certificado, y un proxy delante rompería las
+cabeceras y la CSP que ya controla CloudFront. `www` redirige a la raíz (301,
+con ruta y consulta) con una CloudFront Function: una sola URL canónica para los
+enlaces de los correos y el CORS. Con certificado propio, el TLS mínimo sube a
+**1.2** (`TLSv1.2_2021`), lo que cierra la brecha de D-14. La URL de
+CloudFront sigue sirviendo y aceptada por el backend durante la transición.
+
+**Correo.** Todo envío pasa por `lib/correo.js` (una prueba falla si otro
+archivo usa SES):
+
+- remitente `no-responder@buildandserve.cl` (dominio verificado con DKIM, MAIL
+  FROM `mail.buildandserve.cl` y DMARC); respuestas a `contacto@buildandserve.cl`,
+  que reenvía Cloudflare;
+- conjunto de configuración por ambiente: rebotes, quejas y rechazos van a un
+  tópico de SNS al que solo publica SES de esta cuenta y desde ese conjunto;
+- `handlers/correo/eventos.js` marca la dirección ante un **rebote permanente**,
+  una **queja** o un **rechazo**; un rebote transitorio no marca (casilla llena:
+  dejarla fuera privaría a alguien de su restablecimiento de contraseña);
+- antes de cada envío se consulta la marca; a una dirección marcada no se le
+  escribe (`DIRECCION_SUPRIMIDA`). Además está activa la lista de supresión de
+  la cuenta de SES (rebotes y quejas).
+
+Decisiones técnicas:
+
+- La marca se guarda por **HMAC** de la dirección (minúsculas, con prefijo de
+  dominio distinto del del RUT), nunca la dirección: la tabla responde "¿está
+  suprimida esta?" y no sirve para listar correos. Tampoco van a los logs
+  (solo motivo y dominio).
+- La marca **vence a los dos años** (TTL): las casillas se reciclan, y si
+  vuelve a rebotar se marca de nuevo. Cada evento renueva el plazo.
+- Solo la función de eventos escribe en la tabla (rol propio); el rol
+  compartido solo la lee.
+- El tópico no lleva cifrado propio: SES no puede publicar en un tópico
+  cifrado con la llave administrada de SNS, y SNS no guarda el mensaje.
+
 
 ## 4. Hallazgos priorizados
 

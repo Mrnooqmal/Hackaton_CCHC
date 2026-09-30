@@ -191,6 +191,16 @@ test('sabotaje: los correos de SES escapan nombres, empresas y mensajes', async 
     const original = SESClient.prototype.send;
     const enviados = [];
     SESClient.prototype.send = async (cmd) => { enviados.push(cmd.input.Message.Body.Html.Data); return {}; };
+    // Antes de enviar se consulta la lista de suprimidas (lib/correo.js): vacía.
+    const { docClient } = require('../lib/clients/dynamodb');
+    const enviarDynamo = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.input?.TableName === process.env.CORREOS_SUPRIMIDOS_TABLE) return {};
+        return enviarDynamo.call(docClient, cmd);
+    };
+    const hmacAntes = process.env.CAMPO_HMAC_KEY;
+    process.env.CORREOS_SUPRIMIDOS_TABLE = process.env.CORREOS_SUPRIMIDOS_TABLE || 'CORREOS_SUPRIMIDOS_TABLE';
+    process.env.CAMPO_HMAC_KEY = hmacAntes || 'clave-de-prueba-hmac';
     try {
         const n = require('../handlers/notifications/handler');
         const correos = async (t) => {
@@ -230,5 +240,7 @@ test('sabotaje: los correos de SES escapan nombres, empresas y mensajes', async 
         assert.ok(!atacado.includes('<script>window.__pwned'));
     } finally {
         SESClient.prototype.send = original;
+        docClient.send = enviarDynamo;
+        if (hmacAntes === undefined) delete process.env.CAMPO_HMAC_KEY; else process.env.CAMPO_HMAC_KEY = hmacAntes;
     }
 });

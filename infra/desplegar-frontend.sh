@@ -91,4 +91,10 @@ while IFS= read -r f; do
 done < <(cd dist && find . -type f | sed 's|^\./||')
 echo "archivos: $total, distintos: $distintos"
 [ "$distintos" -eq 0 ] || exit 1
+# Producción: además, lo que sirve el dominio propio (si ya resuelve).
+if [ "$AMBIENTE" = prod ] && curl -fsS -o /dev/null --max-time 10 https://buildandserve.cl/ 2>/dev/null; then
+    curl -fsS https://buildandserve.cl/index.html | cmp -s - dist/index.html \
+        || { echo "https://buildandserve.cl no sirve el index.html recién publicado." >&2; exit 1; }
+    echo "== https://buildandserve.cl sirve el mismo build"
+fi
 echo "Publicado $SHA ($AMBIENTE) en https://$DOMINIO"

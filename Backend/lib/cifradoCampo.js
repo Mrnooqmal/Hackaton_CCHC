@@ -126,6 +126,18 @@ const hmacRut = async (rut) => {
     return `v${version}:${digest}`;
 };
 
+/**
+ * HMAC de un correo, para la lista de direcciones suprimidas (rebotes y
+ * quejas, `lib/correo.js`): permite saber si una dirección está suprimida sin
+ * guardarla en claro. Minúsculas y sin espacios; con prefijo de dominio para
+ * que nunca coincida con el HMAC de un RUT.
+ */
+const hmacCorreo = async (correo) => {
+    const { valor, version } = await obtenerLlaveHmac();
+    const digest = crypto.createHmac('sha256', valor).update(`correo:${String(correo || '').trim().toLowerCase()}`).digest('hex');
+    return `v${version}:${digest}`;
+};
+
 // ─── El cifrado de sobre ─────────────────────────────────────────────────────
 
 const cifrarConLlave = (texto, llave) => {
@@ -266,6 +278,7 @@ const descifrarConLlaveDatosSiempre = (sobre, llavePlaintext) => JSON.parse(desc
 module.exports = {
     normalizarRut,
     hmacRut,
+    hmacCorreo,
     cifrarSobre,
     descifrarSobre,
     generarLlaveReutilizable,

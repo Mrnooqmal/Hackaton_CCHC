@@ -28,18 +28,19 @@ custom:
   destinatarioAlertas: ${env:ALERTAS_EMAIL, 'atorres@thecodecookers.cl'}
 
   # Cada backend acepta el frontend de su ambiente (D-20). El de dev sale de la
-  # salida del stack del frontend, así que ese stack se despliega primero. La URL
-  # de producción sigue aceptada en dev solo mientras QA termina de pasarse a su
-  # distribución: se quita cuando producción vuelve a servir su propio build.
+  # salida del stack del frontend, así que ese stack se despliega primero. Dev ya
+  # no acepta la URL de producción: QA prueba en su distribución.
+  # Producción sale en su dominio (D-21). La URL de CloudFront sigue aceptada
+  # durante la transición: quien tenga un enlace viejo o la app abierta.
   frontendUrl:
-    prod: https://d30jksx91fodea.cloudfront.net
+    prod: https://buildandserve.cl
     dev: https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
   corsOrigins:
     prod:
+      - https://buildandserve.cl
       - https://d30jksx91fodea.cloudfront.net
     dev:
       - https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
-      - https://d30jksx91fodea.cloudfront.net
       - http://localhost:5173
       - http://localhost:3000
 
@@ -107,7 +108,13 @@ provider:
     TRABAJO_BUCKET: ${self:custom.trabajoBucketName}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     # --- External ---
-    SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
+    # Correo (lib/correo.js, D-21): remitente del dominio verificado, respuestas
+    # a la casilla de contacto (reenvío de Cloudflare), y todo envío con el
+    # conjunto de configuración que publica rebotes y quejas.
+    SES_SENDER_EMAIL: no-responder@buildandserve.cl
+    SES_REPLY_TO: contacto@buildandserve.cl
+    SES_CONFIGURATION_SET: ${self:service}-${self:provider.stage}
+    CORREOS_SUPRIMIDOS_TABLE: ${self:service}-correos-suprimidos-${self:provider.stage}
     # URL del frontend para construir enlaces (ej. recuperación de contraseña).
     # No es secreto (URL pública), así que el default apunta a la demo en CloudFront
     # para que funcione aunque no se cargue el .env. Overridable por env var.
@@ -243,6 +250,11 @@ provider:
             - ses:SendEmail
             - ses:SendRawEmail
           Resource: "*"
+        # Antes de cada envío: ¿la dirección rebotó o se quejó? Solo leer; marcar
+        # lo hace únicamente la función de eventos de correo, con su rol.
+        - Effect: Allow
+          Action: [dynamodb:GetItem]
+          Resource: !GetAtt CorreosSuprimidosTable.Arn
         # Gobernanza (Ley 21.719): solicitudes y planes se crean y se actualizan,
         # pero NO se borran. El historial, además, tampoco se actualiza: solo se
         # le agregan eventos. Es la evidencia de que la empresa cumplió, y la
@@ -1155,6 +1167,17 @@ functions:
           authorizer:
             name: sesionUsuario
 
+  # Rebotes y quejas de SES (D-21): marca la dirección para no volver a
+  # escribirle. Rol propio: es la única que escribe en la tabla de suprimidas.
+  correoEventos:
+    handler: handlers/correo/eventos.handler
+    role: RolCorreoEventos
+    timeout: 30
+    events:
+      - sns:
+          arn: !Ref CorreoEventosTopic
+          topicName: ${self:service}-correo-eventos-${self:provider.stage}
+
   # Lotes de supresión (D-15, D-17): proponer, aprobar y ejecutar, dos personas.
   # Rol propio: RolSupresion es el ÚNICO que puede borrar datos personales y
   # versiones de S3 con bypass de la retención, y solo esta función lo usa.
@@ -1876,6 +1899,100 @@ resources:
                 - Effect: Allow
                   Action: [s3:GetObjectRetention, s3:PutObjectRetention]
                   Resource: !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}/*'
+
+    # ─── Correo: rebotes y quejas (D-21) ─────────────────────────────────────
+    CorreosSuprimidosTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.CORREOS_SUPRIMIDOS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
+        AttributeDefinitions:
+          - AttributeName: correoHmac
+            AttributeType: S
+        KeySchema:
+          - AttributeName: correoHmac
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: expira
+          Enabled: true
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
+    ConjuntoCorreo:
+      Type: AWS::SES::ConfigurationSet
+      Properties:
+        Name: ${self:provider.environment.SES_CONFIGURATION_SET}
+        ReputationOptions:
+          ReputationMetricsEnabled: true
+        SendingOptions:
+          SendingEnabled: true
+
+    # Sin cifrado propio: SES no puede publicar en un tópico cifrado con la
+    # llave administrada de SNS, y el mensaje no se guarda (se entrega y se va).
+    CorreoEventosTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-correo-eventos-${self:provider.stage}
+
+    PoliticaCorreoEventosTopic:
+      Type: AWS::SNS::TopicPolicy
+      Properties:
+        Topics: [!Ref CorreoEventosTopic]
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            # Solo SES de esta cuenta, y solo desde el conjunto de este ambiente.
+            - Effect: Allow
+              Principal: { Service: ses.amazonaws.com }
+              Action: sns:Publish
+              Resource: !Ref CorreoEventosTopic
+              Condition:
+                StringEquals:
+                  AWS:SourceAccount: !Ref AWS::AccountId
+                ArnLike:
+                  AWS:SourceArn: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${self:provider.environment.SES_CONFIGURATION_SET}'
+
+    DestinoEventosCorreo:
+      Type: AWS::SES::ConfigurationSetEventDestination
+      DependsOn: PoliticaCorreoEventosTopic
+      Properties:
+        ConfigurationSetName: !Ref ConjuntoCorreo
+        EventDestination:
+          Name: rebotes-y-quejas
+          Enabled: true
+          MatchingEventTypes: [bounce, complaint, reject]
+          SnsDestination:
+            TopicARN: !Ref CorreoEventosTopic
+
+    RolCorreoEventos:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal: { Service: lambda.amazonaws.com }
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        Policies:
+          - PolicyName: correo-eventos
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: [dynamodb:UpdateItem]
+                  Resource: !GetAtt CorreosSuprimidosTable.Arn
+                # La llave de HMAC (el correo se guarda por HMAC).
+                - Effect: Allow
+                  Action: [ssm:GetParameter]
+                  Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${self:service}/${self:provider.stage}/campo-hmac-key'
+                - Effect: Allow
+                  Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
+                  Resource: !GetAtt ClaveDatos.Arn
 
     RolSupresion:
       Type: AWS::IAM::Role

@@ -241,6 +241,18 @@ const FUENTES = [
         archivosDe: () => [],
     },
     {
+        tabla: 'CORREOS_SUPRIMIDOS_TABLE',
+        contieneSalud: false,
+        claves: ['correoHmac'],
+        nombre: 'Direcciones de correo suprimidas',
+        datos: 'HMAC de la dirección (nunca la dirección), motivo (rebote, queja, rechazo), fechas.',
+        finalidad: 'No volver a escribir a una dirección que rebotó o se quejó.',
+        clase: CLASE.OPERACIONAL,
+        alVencer: AL_VENCER.TTL,
+        personasDe: () => [],
+        archivosDe: () => [],
+    },
+    {
         tabla: 'TENANTS_TABLE',
         contieneSalud: false,
         claves: ['PK', 'SK'],

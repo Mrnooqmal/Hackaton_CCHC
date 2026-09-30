@@ -1,8 +1,6 @@
-const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
+const { enviarCorreo } = require('../../lib/correo');
 const { success, error } = require('../../lib/utils/response');
 const { escaparHtml } = require('../../lib/escaparHtml');
-
-const sesClient = new SESClient({ region: 'us-east-1' });
 
 /** `j***@ejemplo.cl`: el dominio sirve para diagnosticar entregas; la dirección
  *  completa es un dato personal y no va a los logs. */
@@ -11,8 +9,8 @@ const enmascararCorreo = (email) => {
     return dominio ? `${local.slice(0, 1)}***@${dominio}` : '(sin correo)';
 };
 
-// Email verificado en SES (DEBES VERIFICAR ESTE EMAIL EN AWS SES CONSOLE)
-const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'thecodecookers@gmail.com';
+/** A una dirección que rebotó o se quejó no se le escribe (lib/correo.js). */
+const SUPRIMIDA = { sent: false, error: 'La dirección está suprimida por un rebote o una queja anterior', code: 'DIRECCION_SUPRIMIDA' };
 
 /**
  * Envía un email de bienvenida con credenciales temporales
@@ -27,7 +25,7 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
         return { sent: false, reason: 'no_email' };
     }
 
-    const loginUrl = `${process.env.FRONTEND_URL || 'https://d30jksx91fodea.cloudfront.net'}/login`;
+    const loginUrl = `${process.env.FRONTEND_URL || 'https://buildandserve.cl'}/login`;
 
     const htmlBody = `
 <!DOCTYPE html>
@@ -151,7 +149,7 @@ const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
       </div>
       <div class="footer">
         Build &amp; Serve &mdash; Plataforma de Gestión de Obras<br>
-        Este es un mensaje automático. Por favor no respondas a este correo.
+        Este es un mensaje automático. Si necesitas ayuda, responde a este correo o escribe a contacto@buildandserve.cl.
       </div>
     </div>
   </div>
@@ -177,35 +175,13 @@ Primeros pasos:
 
 ---
 Build & Serve — Plataforma de Gestión de Obras
-Este es un mensaje automático. Por favor no respondas a este correo.
+Este es un mensaje automático. Si necesitas ayuda, responde a este correo o escribe a contacto@buildandserve.cl.
     `.trim();
 
     try {
-        const command = new SendEmailCommand({
-            Source: SENDER_EMAIL,
-            Destination: {
-                ToAddresses: [email]
-            },
-            Message: {
-                Subject: {
-                    Data: 'Bienvenido a Build & Serve — Tus credenciales de acceso',
-                    Charset: 'UTF-8'
-                },
-                Body: {
-                    Html: {
-                        Data: htmlBody,
-                        Charset: 'UTF-8'
-                    },
-                    Text: {
-                        Data: textBody,
-                        Charset: 'UTF-8'
-                    }
-                }
-            }
-        });
-
         console.log(`Enviando correo a ${enmascararCorreo(email)}`);
-        await sesClient.send(command);
+        const r = await enviarCorreo({ para: email, asunto: 'Bienvenido a Build & Serve — Tus credenciales de acceso', html: htmlBody, texto: textBody });
+        if (!r.enviado) return SUPRIMIDA;
         console.log(`Correo enviado a ${enmascararCorreo(email)}`);
         return { sent: true, email };
     } catch (err) {
@@ -299,7 +275,7 @@ const sendPasswordResetEmail = async (email, nombre, resetUrl, minutosVigencia =
       </div>
       <div class="footer">
         Build &amp; Serve &mdash; Plataforma de Gestión de Obras<br>
-        Este es un mensaje automático. Por favor no respondas a este correo.
+        Este es un mensaje automático. Si necesitas ayuda, responde a este correo o escribe a contacto@buildandserve.cl.
       </div>
     </div>
   </div>
@@ -319,27 +295,13 @@ seguirá siendo válida.
 
 ---
 Build & Serve — Plataforma de Gestión de Obras
-Este es un mensaje automático. Por favor no respondas a este correo.
+Este es un mensaje automático. Si necesitas ayuda, responde a este correo o escribe a contacto@buildandserve.cl.
     `.trim();
 
     try {
-        const command = new SendEmailCommand({
-            Source: SENDER_EMAIL,
-            Destination: { ToAddresses: [email] },
-            Message: {
-                Subject: {
-                    Data: 'Build & Serve — Restablece tu contraseña',
-                    Charset: 'UTF-8'
-                },
-                Body: {
-                    Html: { Data: htmlBody, Charset: 'UTF-8' },
-                    Text: { Data: textBody, Charset: 'UTF-8' }
-                }
-            }
-        });
-
         console.log(`Enviando correo de recuperación a ${enmascararCorreo(email)}`);
-        await sesClient.send(command);
+        const r = await enviarCorreo({ para: email, asunto: 'Build & Serve — Restablece tu contraseña', html: htmlBody, texto: textBody });
+        if (!r.enviado) return SUPRIMIDA;
         console.log(`Correo de recuperación enviado a ${enmascararCorreo(email)}`);
         return { sent: true, email };
     } catch (err) {
@@ -412,21 +374,12 @@ tenga puede completar el alta.
 
 ---
 Build & Serve — Plataforma de Gestión de Obras
-Este es un mensaje automático. Por favor no respondas a este correo.
+Este es un mensaje automático. Si necesitas ayuda, responde a este correo o escribe a contacto@buildandserve.cl.
 `.trim();
 
     try {
-        await sesClient.send(new SendEmailCommand({
-            Source: SENDER_EMAIL,
-            Destination: { ToAddresses: [email] },
-            Message: {
-                Subject: { Data: 'Build & Serve — Activa la cuenta de tu empresa', Charset: 'UTF-8' },
-                Body: {
-                    Html: { Data: htmlBody, Charset: 'UTF-8' },
-                    Text: { Data: textBody, Charset: 'UTF-8' },
-                },
-            },
-        }));
+        const r = await enviarCorreo({ para: email, asunto: 'Build & Serve — Activa la cuenta de tu empresa', html: htmlBody, texto: textBody });
+        if (!r.enviado) return SUPRIMIDA;
         return { sent: true, email };
     } catch (err) {
         console.error('Error enviando la licencia de alta:', err);
@@ -494,21 +447,12 @@ Si no pediste esto, avisa a tu empresa o al prevencionista de tu obra.
 
 ---
 Build & Serve — Plataforma de Gestión de Obras
-Este es un mensaje automático. Por favor no respondas a este correo.
+Este es un mensaje automático. Si necesitas ayuda, responde a este correo o escribe a contacto@buildandserve.cl.
 `.trim();
 
     try {
-        await sesClient.send(new SendEmailCommand({
-            Source: SENDER_EMAIL,
-            Destination: { ToAddresses: [email] },
-            Message: {
-                Subject: { Data: 'Build & Serve — Tu PIN de firma fue restablecido', Charset: 'UTF-8' },
-                Body: {
-                    Html: { Data: htmlBody, Charset: 'UTF-8' },
-                    Text: { Data: textBody, Charset: 'UTF-8' },
-                },
-            },
-        }));
+        const r = await enviarCorreo({ para: email, asunto: 'Build & Serve — Tu PIN de firma fue restablecido', html: htmlBody, texto: textBody });
+        if (!r.enviado) return SUPRIMIDA;
         return { sent: true };
     } catch (err) {
         console.error('Error enviando el aviso de PIN restablecido a', enmascararCorreo(email), '-', err.name);
