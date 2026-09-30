@@ -199,9 +199,12 @@ function evento(tenantId, solicitudId, tipo, datos, actor, { ahora = new Date(),
     if (!Object.values(EVENTOS).includes(tipo)) throw error(`Evento desconocido: ${tipo}`, 'EVENTO_INVALIDO');
     return {
         tenantId,
-        // Instante + tipo + contador: dos operaciones en el mismo milisegundo
-        // (registrar y responder, o dos avisos) no chocan.
-        sk: `HIST#${solicitudId}#${ahora.toISOString()}#${tipo}#${String(n).padStart(3, '0')}`,
+        // Instante + contador + tipo: dos operaciones en el mismo milisegundo
+        // (registrar y bloquear, responder y desbloquear) no chocan, y se leen en
+        // el orden en que ocurrieron. El contador va ANTES del tipo: DynamoDB
+        // ordena por esta clave, y con el tipo primero el bloqueo salía antes que
+        // la solicitud que lo causó.
+        sk: `HIST#${solicitudId}#${ahora.toISOString()}#${String(n).padStart(3, '0')}#${tipo}`,
         solicitudId,
         tipo,
         en: ahora.toISOString(),

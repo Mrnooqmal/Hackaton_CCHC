@@ -53,12 +53,23 @@ export interface Capacitacion {
     firmaToken: string | null;
     firmadaEn: string | null;
 }
-export interface BulkResultados {
-    creados: Array<{ fila: number; personaId: string; rut: string; passwordTemporal?: string }>;
-    errores: Array<{ fila: number; rut?: string; error: string }>;
-    duplicados: Array<{ fila: number; rut?: string; motivo: string }>;
-    totalProcesados: number;
+/** Estado de una carga masiva en cola (D-24): el progreso vive en el servidor. */
+export type EstadoCarga = 'en_proceso' | 'completada' | 'completada_con_errores' | 'encolado_incompleto';
+export interface CargaEstado {
+    cargaId: string;
+    estado: EstadoCarga;
+    creadaEn: string;
+    terminadaEn: string | null;
+    iniciadaPor?: { personaId: string; nombre: string | null };
+    total: number;
+    procesadas: number;
+    creadas: number;
+    fallidas: number;
+    filasFallidas: Array<{ fila: number; rut: string | null; motivo: string; tipoFallo: 'duplicado' | 'error'; reintentable: boolean }>;
+    correosFallidos: Array<{ fila: number; rut: string | null; correo: 'fallido' | 'suprimido' }>;
+    avisos: Array<{ fila: number; rut: string | null; aviso: string }>;
 }
+export type CargaResumen = Pick<CargaEstado, 'cargaId' | 'estado' | 'creadaEn' | 'total' | 'procesadas' | 'creadas' | 'fallidas' | 'iniciadaPor'>;
 
 // ========================================
 // PERSONAS API (Multi-tenant)
@@ -228,12 +239,6 @@ export const personasApi = {
             body: JSON.stringify(data),
         }),
 
-    bulkUpload: (tenantId: string, data: { fileBase64: string; fileName: string; sendWelcomeEmail?: boolean; obraId?: string }) =>
-        apiRequest<{ mensaje: string; resultados: any }>(`/personas/carga-masiva?tenantId=${tenantId}`, {
-            method: 'POST',
-            body: JSON.stringify(data),
-        }),
-
     // Wizard paso 1: valida el Excel SIN crear nada. Devuelve filas con estado + catálogos.
     bulkValidate: (tenantId: string, data: { fileBase64: string; fileName: string }) =>
         apiRequest<{ filas: BulkPreviewRow[]; catalogos: BulkCatalogos; resumen: BulkResumen }>(`/personas/carga-masiva/validar?tenantId=${tenantId}`, {
@@ -241,12 +246,17 @@ export const personasApi = {
             body: JSON.stringify(data),
         }),
 
-    // Wizard paso 2: crea las filas aprobadas (JSON, no el Excel).
+    // Wizard paso 2: crea la CARGA y la encola (D-24). Las personas se crean en
+    // segundo plano; el avance se consulta con cargaEstado.
     bulkConfirm: (tenantId: string, data: { filas: BulkRowInput[]; sendWelcomeEmail?: boolean }) =>
-        apiRequest<{ mensaje: string; resultados: BulkResultados }>(`/personas/carga-masiva/confirmar?tenantId=${tenantId}`, {
+        apiRequest<{ cargaId: string; encoladoIncompleto: boolean }>(`/personas/carga-masiva/confirmar?tenantId=${tenantId}`, {
             method: 'POST',
             body: JSON.stringify(data),
         }),
+    cargaEstado: (cargaId: string) => apiRequest<CargaEstado>(`/personas/cargas/${cargaId}`),
+    cargasRecientes: () => apiRequest<{ cargas: CargaResumen[] }>('/personas/cargas'),
+    reintentarCarga: (cargaId: string) =>
+        apiRequest<{ reencoladas: number }>(`/personas/cargas/${cargaId}/reintentar`, { method: 'POST' }),
 
     parseExcel: (data: { fileBase64: string; fileName: string }) =>
         apiRequest<{

@@ -117,9 +117,16 @@ function crearDobleTablas(docClient, esquemas, { proyecciones = false } = {}) {
             if (m) return (it) => typeof it[nombres[m[1]] || m[1]] === 'string' && it[nombres[m[1]] || m[1]].startsWith(valores[m[2]]);
             throw new Error(`doble-dynamo-tablas: condición de clave no soportada: ${p}`);
         });
-        return [...tablas[tabla].values()]
+        // Como DynamoDB: ordenado por la clave de rango (ScanIndexForward), y
+        // `Limit` se aplica ANTES del filtro.
+        const rango = ks[1];
+        const orden = input.ScanIndexForward === false ? -1 : 1;
+        let res = [...tablas[tabla].values()]
             .filter((it) => ks.every((k) => typeof it[k] === 'string'))
-            .filter((it) => partes.every((f) => f(it)))
+            .filter((it) => partes.every((f) => f(it)));
+        if (rango) res = res.sort((a, b) => (a[rango] < b[rango] ? -orden : a[rango] > b[rango] ? orden : 0));
+        if (input.Limit) res = res.slice(0, input.Limit);
+        return res
             .filter((it) => !input.FilterExpression || cumple(it, input.FilterExpression, valores, nombres))
             .map((it) => proyectar(tabla, input.IndexName, structuredClone(it)));
     };
@@ -205,6 +212,21 @@ function crearDobleTablas(docClient, esquemas, { proyecciones = false } = {}) {
                 const v = i.ExpressionAttributeValues || {};
                 const items = [...tablas[t].values()].filter((it) => !i.FilterExpression || cumple(it, i.FilterExpression, v, i.ExpressionAttributeNames));
                 return { Items: items.map((it) => structuredClone(it)) };
+            }
+            case 'BatchWriteCommand': {
+                for (const [tabla, pedidos] of Object.entries(i.RequestItems)) {
+                    for (const pedido of pedidos) {
+                        if (pedido.PutRequest) {
+                            const item = sinIndefinidos(pedido.PutRequest.Item);
+                            validarItem(tabla, item);
+                            tablas[tabla].set(idDe(tabla, item), item);
+                            escrituras.push({ nombre: 'BatchPut', tabla, item });
+                        } else if (pedido.DeleteRequest) {
+                            tablas[tabla].delete(idDe(tabla, pedido.DeleteRequest.Key));
+                        }
+                    }
+                }
+                return { UnprocessedItems: {} };
             }
             case 'BatchGetCommand': {
                 const Responses = {};

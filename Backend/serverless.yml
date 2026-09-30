@@ -115,6 +115,10 @@ provider:
     SES_REPLY_TO: contacto@buildandserve.cl
     SES_CONFIGURATION_SET: ${self:service}-${self:provider.stage}
     CORREOS_SUPRIMIDOS_TABLE: ${self:service}-correos-suprimidos-${self:provider.stage}
+    # Colas de trabajo (lib/cola.js): carga masiva (D-24) y avisos del EventBus (D-25).
+    CARGAS_TABLE: ${self:service}-cargas-${self:provider.stage}
+    CARGAS_QUEUE_URL: !Ref CargasQueue
+    EVENTOS_QUEUE_URL: !Ref EventosQueue
     # URL del frontend para construir enlaces (ej. recuperación de contraseña).
     # No es secreto (URL pública), así que el default apunta a la demo en CloudFront
     # para que funcione aunque no se cargue el .env. Overridable por env var.
@@ -250,6 +254,18 @@ provider:
             - ses:SendEmail
             - ses:SendRawEmail
           Resource: "*"
+        # Encolar avisos del EventBus y filas de la carga masiva (D-24, D-25).
+        # Consumirlas (Receive/Delete) lo hace el mapeo de eventos del trabajador.
+        - Effect: Allow
+          Action: [sqs:SendMessage]
+          Resource:
+            - !GetAtt CargasQueue.Arn
+            - !GetAtt EventosQueue.Arn
+        - Effect: Allow
+          Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query, dynamodb:BatchWriteItem]
+          Resource:
+            - !GetAtt CargasTable.Arn
+            - !Sub ${CargasTable.Arn}/index/*
         # Antes de cada envío: ¿la dirección rebotó o se quejó? Solo leer; marcar
         # lo hace únicamente la función de eventos de correo, con su rol.
         - Effect: Allow
@@ -1167,6 +1183,24 @@ functions:
           authorizer:
             name: sesionUsuario
 
+  # Trabajador de las colas (D-24, D-25): avisos del EventBus y filas de la
+  # carga masiva. Reporta por mensaje: SQS reintenta solo lo que falló.
+  trabajadorCola:
+    handler: handlers/cola/trabajador.handler
+    timeout: 60
+    memorySize: 1024
+    events:
+      - sqs:
+          arn: !GetAtt EventosQueue.Arn
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+          maximumConcurrency: 5
+      - sqs:
+          arn: !GetAtt CargasQueue.Arn
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+          maximumConcurrency: 5
+
   # Rebotes y quejas de SES (D-21): marca la dirección para no volver a
   # escribirle. Rol propio: es la única que escribe en la tabla de suprimidas.
   correoEventos:
@@ -1899,6 +1933,104 @@ resources:
                 - Effect: Allow
                   Action: [s3:GetObjectRetention, s3:PutObjectRetention]
                   Resource: !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}/*'
+
+    # ─── Colas de trabajo (D-24, D-25) ───────────────────────────────────────
+    # Visibilidad = 6 veces el timeout del trabajador (60 s), como recomienda
+    # AWS. Lo que falla 6 veces va a la cola de mensajes fallidos, que tiene
+    # alarma; las filas de una carga quedan antes `fallidas` con su motivo
+    # (lib/cargas.js, al cuarto intento).
+    EventosQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-eventos-${self:provider.stage}
+        VisibilityTimeout: 360
+        MessageRetentionPeriod: 1209600
+        SqsManagedSseEnabled: true
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt ColaFallidos.Arn
+          maxReceiveCount: 6
+
+    CargasQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-cargas-${self:provider.stage}
+        VisibilityTimeout: 360
+        MessageRetentionPeriod: 1209600
+        SqsManagedSseEnabled: true
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt ColaFallidos.Arn
+          maxReceiveCount: 6
+
+    ColaFallidos:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-cola-fallidos-${self:provider.stage}
+        MessageRetentionPeriod: 1209600
+        SqsManagedSseEnabled: true
+
+    ColaFallidosAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-cola-fallidos-${self:provider.stage}
+        AlarmDescription: >-
+          Un aviso del EventBus o un paso de una carga masiva falló seis veces y
+          quedó en la cola de mensajes fallidos. Un aviso ahí es una notificación
+          que no llegó: revisar el mensaje, corregir la causa y devolverlo a su
+          cola (redrive).
+        Namespace: AWS/SQS
+        MetricName: ApproximateNumberOfMessagesVisible
+        Dimensions:
+          - Name: QueueName
+            Value: !GetAtt ColaFallidos.QueueName
+        Statistic: Maximum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - !Ref AlertasOperacionTopic
+
+    # Una carga (ítem CARGA) y sus filas (FILA#000001…). Las filas guardan los
+    # datos del Excel hasta crearse; todo vence a los 30 días (D-24).
+    CargasTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.CARGAS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
+        AttributeDefinitions:
+          - AttributeName: cargaId
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: creadaEn
+            AttributeType: S
+        KeySchema:
+          - AttributeName: cargaId
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        # Disperso: solo el ítem CARGA lleva tenantId y creadaEn, así que el
+        # índice nunca contiene filas con datos del Excel.
+        GlobalSecondaryIndexes:
+          - IndexName: tenantId-creadaEn-index
+            KeySchema:
+              - AttributeName: tenantId
+                KeyType: HASH
+              - AttributeName: creadaEn
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        TimeToLiveSpecification:
+          AttributeName: expira
+          Enabled: true
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
 
     # ─── Correo: rebotes y quejas (D-21) ─────────────────────────────────────
     CorreosSuprimidosTable:

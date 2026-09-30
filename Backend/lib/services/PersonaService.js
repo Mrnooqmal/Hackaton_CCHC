@@ -50,6 +50,18 @@ const {
 
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
 
+/**
+ * Contraseña inicial de una persona con acceso web (D-13): los cuatro primeros
+ * dígitos de su RUT. Una sola definición: la usan el alta y la carga masiva,
+ * que la necesita para el correo de bienvenida de una fila creada en un intento
+ * anterior. Devuelve null si el RUT no da cuatro dígitos.
+ */
+function passwordInicialDeRut(rutFormateado) {
+    const rutDigits = String(rutFormateado || '').replace(/[^0-9]/g, '').slice(0, -1); // quita DV
+    const first4 = rutDigits.slice(0, 4);
+    return first4.length === 4 ? first4 : null;
+}
+
 class PersonaService {
     constructor() {
         this.dynamo = docClient;
@@ -208,9 +220,7 @@ class PersonaService {
             personaData.passwordHash = await hashPassword(data.password, resolvedPersonaId);
             personaData.passwordTemporal = false;
         } else if (tieneAccesoWeb) {
-            const rutDigits = rutValidation.formatted.replace(/[^0-9]/g, '').slice(0, -1); // quita DV
-            const first4 = rutDigits.slice(0, 4);
-            passwordTemporal = first4.length === 4 ? first4 : generateTempPassword(10);
+            passwordTemporal = passwordInicialDeRut(rutValidation.formatted) || generateTempPassword(10);
             personaData.passwordHash = await hashPassword(passwordTemporal, resolvedPersonaId);
             personaData.passwordTemporal = true;
         }
@@ -223,7 +233,14 @@ class PersonaService {
     /**
      * Crear una nueva persona dentro de un tenant
      */
-    async crear(tenantId, data) {
+    /**
+     * @param {object} [opciones]
+     * @param {string} [opciones.personaId] - id dado por quien llama. Lo usa la
+     *        carga masiva (D-24) para que crear sea idempotente: el id sale de
+     *        `(cargaId, RUT)` y la escritura es condicional, así que un reintento
+     *        de la cola nunca crea a la misma persona dos veces.
+     */
+    async crear(tenantId, data, { personaId } = {}) {
         const validation = validateRequired(data, ['rut', 'nombre', 'rol']);
         if (!validation.valid) {
             throw new Error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
@@ -236,12 +253,13 @@ class PersonaService {
         const existente = await this.getByRut(tenantId, rutValidation.formatted);
         if (existente) throw new Error('Ya existe una persona con este RUT en este tenant');
 
-        const { personaData, passwordTemporal } = await this._datosBaseAlta(tenantId, data);
+        const { personaData, passwordTemporal } = await this._datosBaseAlta(tenantId, data, { personaId });
         const persona = new Persona(personaData);
 
         await this.dynamo.send(new PutCommand({
             TableName: this.table,
-            Item: persona.toDynamoItem()
+            Item: persona.toDynamoItem(),
+            ...(personaId ? { ConditionExpression: 'attribute_not_exists(SK)' } : {}),
         }));
 
         return { persona, passwordTemporal };
@@ -1030,4 +1048,4 @@ class PersonaService {
     }
 }
 
-module.exports = { PersonaService };
+module.exports = { PersonaService, passwordInicialDeRut };

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
@@ -14,7 +15,7 @@ class InboxRepository {
     }
 
     async sendMessage(body) {
-        const { senderId, senderName, senderRol, recipientIds, type, priority, subject, content, linkedEntity } = body;
+        const { senderId, senderName, senderRol, recipientIds, type, priority, subject, content, linkedEntity, idempotencia } = body;
 
         // Validación
         if (!senderId || !recipientIds || !Array.isArray(recipientIds) || recipientIds.length === 0) {
@@ -25,7 +26,13 @@ class InboxRepository {
         }
 
         const now = new Date().toISOString();
-        const baseMessageId = uuidv4();
+        // Con `idempotencia` (p. ej. `<eventoId>:<suscriptor>`, D-25) el id del
+        // mensaje es determinista y la escritura condicional: un reintento de la
+        // cola no le deja el mismo aviso dos veces a nadie, y completa a los
+        // destinatarios que faltaron la vez anterior.
+        const baseMessageId = idempotencia
+            ? `ev${crypto.createHash('sha256').update(String(idempotencia)).digest('hex').slice(0, 32)}`
+            : uuidv4();
 
         const messages = [];
 
@@ -36,10 +43,16 @@ class InboxRepository {
                 senderId, senderName, senderRol, type, priority, subject, content, linkedEntity,
             });
 
-            await this.dynamo.send(new PutCommand({
-                TableName: this.inboxTable,
-                Item: message
-            }));
+            try {
+                await this.dynamo.send(new PutCommand({
+                    TableName: this.inboxTable,
+                    Item: message,
+                    ...(idempotencia ? { ConditionExpression: 'attribute_not_exists(messageId)' } : {}),
+                }));
+            } catch (err) {
+                // Ya estaba: lo dejó un intento anterior del mismo evento.
+                if (!(idempotencia && err.name === 'ConditionalCheckFailedException')) throw err;
+            }
 
             messages.push(message);
         }

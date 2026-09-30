@@ -7,9 +7,9 @@
 const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, QueryCommand, UpdateCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
-const { PersonaService } = require('../../lib/services/PersonaService');
+const { PersonaService, passwordInicialDeRut } = require('../../lib/services/PersonaService');
 const { ObraService } = require('../../lib/services/ObraService');
 const { EppService } = require('../../lib/services/EppService');
 const { TenantService } = require('../../lib/services/TenantService');
@@ -18,6 +18,7 @@ const { normalizeRol, validateRut } = require('../../lib/utils/validation');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
+const cargas = require('../../lib/cargas');
 const { normalizeCargoCodigo, resolveCargoKitFromCatalog, resolveKitUnion, esEvidenciaReutilizable } = require('../../lib/ds44');
 const { InboxRepository } = require('../inbox-module/inbox.repository');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
@@ -990,15 +991,13 @@ const createTemplateBuffer = async ({ roles, cargos, obras } = {}) => {
 
 const bulkRutKey = (r) => String(r || '').replace(/[.\-]/g, '').toLowerCase();
 
-// Procesa `items` en lotes de `size` con concurrencia acotada (Promise.all por
-// lote). Sube el throughput sin saturar DynamoDB. JS es single-thread, así que
-// los push/set a estructuras compartidas dentro de `fn` son seguros.
-const BULK_CONCURRENCIA = 10;
-const runInBatches = async (items, fn, size = BULK_CONCURRENCIA) => {
-    for (let i = 0; i < items.length; i += size) {
-        await Promise.all(items.slice(i, i + size).map(fn));
-    }
-};
+// Lo único de una fila que se guarda en la carga (D-24): los campos de la
+// plantilla. Cualquier otra propiedad del cuerpo se ignora.
+const CAMPOS_FILA_CARGA = [
+    'rut', 'nombre', 'apellidoPaterno', 'apellidoMaterno', 'fechaNacimiento', 'email', 'telefono',
+    'rol', 'cargo', 'obra', 'supervisor', 'nivelEscolar',
+    'contactoEmergenciaNombre', 'contactoEmergenciaTelefono', 'contactoEmergenciaRelacion', 'cursos',
+];
 
 // Lee el workbook y devuelve filas planas normalizadas (sin validar todavía).
 const parseBulkWorkbook = (buffer) => {
@@ -1125,6 +1124,48 @@ const validarFilaBulk = (fila, ctx, supRutsLote, seenRut) => {
 // Broadcast retroactivo de plantillas (lo invoca el guardado de cargos del tenant).
 
 const CORREO_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * Lo que la carga masiva en cola (lib/cargas.js, D-24) necesita de este
+ * módulo: las mismas operaciones que la carga hacía dentro de la petición.
+ */
+const dependenciasCarga = () => ({
+    tenantsTable: process.env.TENANTS_TABLE,
+    // Lectura consistente por clave: saber si un intento anterior ya creó la ficha.
+    fichaPorId: async (tenantId, id) => {
+        const r = await docClient.send(new GetCommand({
+            TableName: process.env.PERSONAS_TABLE,
+            Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${id}` }, ConsistentRead: true,
+        }));
+        return r.Item ? personaService.fichaDesdeClave(r.Item) : null;
+    },
+    crearFicha: (tenantId, f, { personaId: id, obraIds }) => personaService.crear(tenantId, {
+        rut: f.rut, nombre: f.nombre, apellidoPaterno: f.apellidoPaterno, apellidoMaterno: f.apellidoMaterno,
+        fechaNacimiento: f.fechaNacimiento, email: f.email, telefono: f.telefono,
+        rol: f.rol, cargo: f.cargo ? normalizeCargoCodigo(f.cargo) : '',
+        obraIds, nivelEscolar: f.nivelEscolar,
+        contactoEmergencia: { nombre: f.contactoEmergenciaNombre, telefono: f.contactoEmergenciaTelefono, relacion: f.contactoEmergenciaRelacion },
+        cursos: String(f.cursos || '').split(';').map((c) => c.trim()).filter(Boolean).map((nombre) => ({ nombre })),
+        tieneAccesoWeb: true,
+    }, { personaId: id }),
+    // Idempotentes: revisan lo que la persona ya tiene antes de crear.
+    despuesDeCrear: async ({ tenantId, persona }) => {
+        if (normalizeRol(persona.rol) === 'admin') return;
+        await ensureCompanyDocsForPersona({ tenantId, persona, solicitante: null });
+        for (const oId of persona.obraIds || []) {
+            await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null });
+        }
+    },
+    enviarBienvenida: (persona, password) => sendWelcomeEmail(persona.email, persona.nombre, persona.rut, password || passwordInicialDeRut(persona.rut)),
+    supervisoresExistentes: async (tenantId) => (await buildBulkContext(tenantId)).supervisoresPorRut,
+    // Preserva los cargos ya asignados en la obra; solo fija el supervisor.
+    asignarSupervisor: async ({ tenantId, personaId: id, obraId, supervisorId }) => {
+        const persona = await dependenciasCarga().fichaPorId(tenantId, id);
+        const asig = persona?.asignaciones?.find((a) => a.obraId === obraId);
+        await personaService.setAsignacionObra(tenantId, id, obraId, asig?.cargos || [], supervisorId);
+    },
+});
+
+module.exports.dependenciasCarga = dependenciasCarga;
 module.exports.syncPlantillasToWorkers = syncPlantillasToWorkers;
 module.exports.ensureCompanyDocsForPersona = ensureCompanyDocsForPersona;
 
@@ -1414,7 +1455,9 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             return success({ filas, catalogos, resumen });
         }
 
-        // POST /personas/carga-masiva/confirmar — Wizard paso 2: crea (2 pasadas) las filas aprobadas (JSON).
+        // POST /personas/carga-masiva/confirmar — Wizard paso 2: crea una CARGA y la
+        // encola (D-24). Responde 202 con su id: el progreso vive en el servidor
+        // (GET /personas/cargas/{id}), no en la pestaña.
         if (method === 'POST' && personaId === 'carga-masiva' && action === 'confirmar') {
             if (!sesion) return sesionRes.respuesta;
             if (!puede(PERMISSIONS.PERSONAS_CREAR)) {
@@ -1422,302 +1465,58 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             }
             const body = JSON.parse(event.body || '{}');
             const filasInput = Array.isArray(body.filas) ? body.filas : [];
-            const sendEmails = Boolean(body.sendWelcomeEmail);
             if (!filasInput.length) return error('No hay filas para cargar');
+            if (filasInput.length > cargas.MAX_FILAS) return error(`Una carga admite hasta ${cargas.MAX_FILAS} filas; divide la planilla.`);
 
+            // Se valida de nuevo acá: lo que llega del navegador no se cree. Y se
+            // guarda solo lo que la plantilla define, nada más del cuerpo.
             const ctx = await buildBulkContext(tenantId);
             const supRutsLote = new Set();
             filasInput.forEach((f) => { if (filaEsSupervisor(f, ctx)) supRutsLote.add(bulkRutKey(f.rut)); });
-
-            const resultados = { creados: [], errores: [], duplicados: [], totalProcesados: filasInput.length };
             const seenRut = new Set();
-            const rutKeyToPersonaId = new Map();      // recién creados (para supervisor en pasada 2)
-            const pendientesSupervisor = [];          // { personaId, obraIds, supervisorRutKey }
-
-            // FASE 0 — validación + dedup SÍNCRONA (determinística, antes de crear en paralelo)
-            const aCrear = [];
-            for (const f of filasInput) {
-                const v = validarFilaBulk(f, ctx, supRutsLote, seenRut);
-                if (bulkRutKey(f.rut)) seenRut.add(bulkRutKey(f.rut));
-                if (v.errores.length) {
-                    if (v.esDuplicado) resultados.duplicados.push({ fila: f.filaExcel, rut: f.rut, motivo: v.errores.join('; ') });
-                    else resultados.errores.push({ fila: f.filaExcel, rut: f.rut, error: v.errores.join('; ') });
-                } else {
-                    aCrear.push({ f, v });
-                }
-            }
-
-            // PASADA 1 — crear personas en lotes concurrentes
-            await runInBatches(aCrear, async ({ f, v }) => {
-                try {
-                    const { persona, passwordTemporal } = await personaService.crear(tenantId, {
-                        rut: f.rut, nombre: f.nombre, apellidoPaterno: f.apellidoPaterno, apellidoMaterno: f.apellidoMaterno,
-                        fechaNacimiento: f.fechaNacimiento, email: f.email, telefono: f.telefono,
-                        rol: f.rol, cargo: f.cargo ? normalizeCargoCodigo(f.cargo) : '',
-                        obraIds: v.obraIds, nivelEscolar: f.nivelEscolar,
-                        contactoEmergencia: { nombre: f.contactoEmergenciaNombre, telefono: f.contactoEmergenciaTelefono, relacion: f.contactoEmergenciaRelacion },
-                        cursos: String(f.cursos || '').split(';').map((c) => c.trim()).filter(Boolean).map((nombre) => ({ nombre })),
-                        tieneAccesoWeb: true,
-                    });
-                    rutKeyToPersonaId.set(bulkRutKey(f.rut), persona.personaId);
-
-                    if (sendEmails && persona.email && passwordTemporal) {
-                        try { await sendWelcomeEmail(persona.email, persona.nombre, persona.rut, passwordTemporal); }
-                        catch (emailErr) { console.error('Error welcome email (carga masiva):', emailErr.message); }
-                    }
-                    if (normalizeRol(persona.rol) !== 'admin') {
-                        await ensureCompanyDocsForPersona({ tenantId, persona, solicitante: null }).catch((e) => console.error(`Docs empresa fila ${f.filaExcel}:`, e.message));
-                    }
-                    if (normalizeRol(persona.rol) !== 'admin' && Array.isArray(persona.obraIds)) {
-                        for (const oId of persona.obraIds) {
-                            await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null }).catch((e) => console.error(`Onboarding fila ${f.filaExcel} obra ${oId}:`, e.message));
-                        }
-                    }
-                    if (v.supervisorRutKey && v.obraIds.length) {
-                        pendientesSupervisor.push({ personaId: persona.personaId, obraIds: v.obraIds, supervisorRutKey: v.supervisorRutKey });
-                    }
-                    resultados.creados.push({ fila: f.filaExcel, personaId: persona.personaId, rut: persona.rut, passwordTemporal: passwordTemporal || undefined });
-                } catch (err) {
-                    const m = err?.message || 'Error al crear persona';
-                    if (m.includes('Ya existe una persona')) resultados.duplicados.push({ fila: f.filaExcel, rut: f.rut, motivo: 'Ya existe en el tenant' });
-                    else resultados.errores.push({ fila: f.filaExcel, rut: f.rut, error: m });
-                }
+            const filas = filasInput.map((f, i) => {
+                const fila = { filaExcel: Number(f.filaExcel) || i + 2 };
+                for (const c of CAMPOS_FILA_CARGA) fila[c] = f[c] == null ? '' : String(f[c]).slice(0, 500);
+                const v = validarFilaBulk(fila, ctx, supRutsLote, seenRut);
+                if (bulkRutKey(fila.rut)) seenRut.add(bulkRutKey(fila.rut));
+                return {
+                    fila, valida: !v.errores.length,
+                    motivo: v.errores.join('; ') || undefined, tipoFallo: v.esDuplicado ? 'duplicado' : 'error',
+                    rutKey: bulkRutKey(fila.rut), obraIds: v.obraIds, supervisorRutKey: v.supervisorRutKey,
+                };
             });
-
-            // PASADA 2 — asignar supervisor en lotes (resuelve por RUT: existentes o recién creados)
-            await runInBatches(pendientesSupervisor, async (p) => {
-                const supId = ctx.supervisoresPorRut.get(p.supervisorRutKey) || rutKeyToPersonaId.get(p.supervisorRutKey) || null;
-                if (!supId) return; // no encontrado → queda sin cuadrilla
-                for (const oId of p.obraIds) {
-                    try {
-                        // Preserva los cargos ya asignados en la obra; solo fija el supervisor.
-                        const persona = await personaService.getById(p.personaId).catch(() => null);
-                        const asig = persona?.asignaciones?.find((a) => a.obraId === oId);
-                        await personaService.setAsignacionObra(tenantId, p.personaId, oId, asig?.cargos || [], supId);
-                    } catch (e) { console.error('Asignación de supervisor falló:', e.message); }
-                }
+            const quien = await personaService.getById(sesion.personaId).catch(() => null);
+            const r = await cargas.crearCarga({
+                tenantId, filas, enviarCorreo: Boolean(body.sendWelcomeEmail),
+                iniciadaPor: { personaId: sesion.personaId, nombre: quien ? [quien.nombre, quien.apellido].filter(Boolean).join(' ') : null },
             });
-
-            if (resultados.creados.length > 0) {
-                await tenantService.ajustarCantidadTrabajadores(tenantId, resultados.creados.length).catch((countErr) => console.error('No se pudo actualizar cantidad de trabajadores:', countErr.message));
-            }
-            return success({ mensaje: `Carga masiva completada. ${resultados.creados.length} personas creadas.`, resultados });
+            return success({ cargaId: r.cargaId, encoladoIncompleto: r.encoladoIncompleto }, 202);
         }
 
-        // POST /personas/carga-masiva — Procesar Excel (flujo directo, sin wizard)
-        if (method === 'POST' && personaId === 'carga-masiva' && !action) {
+        // GET /personas/cargas — las cargas recientes de la empresa.
+        // GET /personas/cargas/{id} — en qué va una carga y qué filas fallaron.
+        // POST /personas/cargas/{id}/reintentar — re-encola las fallidas por algo transitorio.
+        if (personaId === 'cargas') {
             if (!sesion) return sesionRes.respuesta;
-            if (!puede(PERMISSIONS.PERSONAS_CREAR)) {
-                return error('No tienes permiso para cargar personas', 403);
+            if (!puede(PERMISSIONS.PERSONAS_CREAR)) return error('No tienes permiso para cargar personas', 403);
+            const cargaId = action;
+            if (method === 'GET' && !cargaId) return success({ cargas: await cargas.listarDeEmpresa(tenantId) });
+            if (method === 'GET' && cargaId && !segments[2]) {
+                const estado = await cargas.estadoDe(cargaId, tenantId);
+                return estado ? success(estado) : error('Carga no encontrada', 404);
             }
-            const body = JSON.parse(event.body || '{}');
-            const fileBase64 = body.fileBase64 || body.archivoBase64 || '';
-            const fileName = body.fileName || 'personas.xlsx';
-            const sendEmails = Boolean(body.sendWelcomeEmail);
-
-            if (!fileBase64) return error('No se proporciono ningun archivo');
-            if (!fileName.toLowerCase().endsWith('.xlsx')) return error('El archivo debe ser un Excel (.xlsx)');
-
-            const base64 = fileBase64.includes('base64,')
-                ? fileBase64.split('base64,')[1]
-                : fileBase64;
-
-            const buffer = Buffer.from(base64, 'base64');
-            let workbook;
-            try {
-                workbook = XLSX.read(buffer, { type: 'buffer' });
-            } catch (xlsxErr) {
-                console.error('Error parsing Excel workbook:', xlsxErr.message);
-                return error('No se pudo leer el archivo Excel. Verifica que sea un archivo .xlsx válido y que no esté protegido con contraseña.');
+            if (method === 'POST' && cargaId && segments[2] === 'reintentar') {
+                const r = await cargas.reintentar(cargaId, tenantId);
+                return r ? success(r) : error('Carga no encontrada', 404);
             }
-            if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-                return error('El archivo Excel no contiene hojas de trabajo.');
-            }
-            const sheetName = workbook.SheetNames.includes('Personas')
-                ? 'Personas'
-                : workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
+            return error('Ruta no encontrada', 404);
+        }
 
-            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-            if (!rows.length) return error('La plantilla no tiene filas');
-
-            const rawHeaders = rows[0].map(normalizeHeader);
-            const headerMap = {};
-
-            rawHeaders.forEach((header, index) => {
-                const canonical = headerAliases[header];
-                if (canonical) headerMap[canonical] = index;
-            });
-
-            const requiredHeaders = ['rut', 'nombre', 'rol'];
-            const missingHeaders = requiredHeaders.filter(h => headerMap[h] === undefined);
-            if (missingHeaders.length > 0) {
-                return error(`Faltan columnas obligatorias: ${missingHeaders.join(', ')}`);
-            }
-
-            // Obra por defecto del lote (carga hecha desde una obra) + mapas código/UUID->obraId
-            const obraIdBatch = body.obraId || null;
-            const obrasTenant = await obraService.listByTenant(tenantId).catch(() => []);
-            const obraPorCodigo = {};
-            const obraPorUUID = {};
-            const obraPorLabel = {}; // "Nombre (CODIGO)" (o solo "Nombre") -> obraId, para el desplegable
-            (obrasTenant || []).forEach((o) => {
-                if (o.codigo) obraPorCodigo[String(o.codigo).trim().toLowerCase()] = o.obraId;
-                if (o.obraId) obraPorUUID[String(o.obraId).trim().toLowerCase()] = o.obraId;
-                const label = obraDisplayLabel(o);
-                if (label) obraPorLabel[label.toLowerCase()] = o.obraId;
-            });
-
-            const resultados = { creados: [], errores: [], duplicados: [], totalProcesados: 0 };
-            const seenRut = new Set();
-
-            for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
-                const row = rows[rowIndex];
-                const rowNumber = rowIndex + 1;
-
-                const rowHasValue = row.some(cell => String(cell || '').trim() !== '');
-                if (!rowHasValue) continue;
-
-                resultados.totalProcesados += 1;
-
-                const getCell = (key) => {
-                    const idx = headerMap[key];
-                    if (idx === undefined) return '';
-                    const value = row[idx];
-                    return value === undefined || value === null ? '' : String(value).trim();
-                };
-
-                const rut = getCell('rut');
-                const nombre = getCell('nombre');
-                const { apellidoPaterno, apellidoMaterno } = resolveApellidos(
-                    getCell('apellidoPaterno'), getCell('apellidoMaterno'), getCell('apellido')
-                );
-                const fechaNacimiento = getCell('fechaNacimiento');
-                const email = getCell('email');
-                const telefono = getCell('telefono');
-                // Rol: nombre del rol del tenant (ej. "Colaborador") — sin lowercase
-                // porque el case importa para resolver el preset de permisos.
-                const rol = getCell('rol');
-                // Cargo (opcional) → código del catálogo. Vacío queda vacío (sin
-                // onboarding de terreno); con texto, normaliza a código (alias EBCO).
-                const cargoRaw = getCell('cargo');
-                const cargo = cargoRaw ? normalizeCargoCodigo(cargoRaw) : '';
-                // Obra: acepta código (ej. OBRA-001) o UUID en la columna obra/obraId.
-                // Se pueden indicar MÚLTIPLES obras separadas por coma. Si la celda
-                // queda vacía, se usa la obra del lote (si la carga se hizo desde una
-                // obra) o la persona se crea sin obra (se vincula después).
-                const obraCellRaw = getCell('obra').trim();
-                let obraIds = [];
-                if (obraCellRaw) {
-                    const seenObra = new Set();
-                    for (const token of obraCellRaw.split(',')) {
-                        const v = token.trim().toLowerCase();
-                        if (!v) continue;
-                        const resolved = obraPorCodigo[v] || obraPorUUID[v] || obraPorLabel[v] || null;
-                        if (resolved && !seenObra.has(resolved)) {
-                            seenObra.add(resolved);
-                            obraIds.push(resolved);
-                        }
-                    }
-                } else if (obraIdBatch) {
-                    obraIds = [obraIdBatch];
-                }
-                const nivelEscolar = getCell('nivelEscolar');
-                const contactoEmergencia = {
-                    nombre: getCell('contactoEmergenciaNombre'),
-                    telefono: getCell('contactoEmergenciaTelefono'),
-                    relacion: getCell('contactoEmergenciaRelacion')
-                };
-                const cursos = getCell('cursos')
-                    .split(';')
-                    .map((c) => c.trim())
-                    .filter(Boolean)
-                    .map((nombre) => ({ nombre }));
-
-                if (!rut || !nombre || !rol) {
-                    resultados.errores.push({ fila: rowNumber, error: 'Faltan rut, nombre o rol' });
-                    continue;
-                }
-
-                const rutKey = rut.replace(/[.\-]/g, '').toLowerCase();
-                if (seenRut.has(rutKey)) {
-                    resultados.duplicados.push({ fila: rowNumber, rut, motivo: 'Duplicado en archivo' });
-                    continue;
-                }
-                seenRut.add(rutKey);
-
-                try {
-                    const { persona, passwordTemporal } = await personaService.crear(tenantId, {
-                        rut,
-                        nombre,
-                        apellidoPaterno,
-                        apellidoMaterno,
-                        fechaNacimiento,
-                        email,
-                        telefono,
-                        rol,
-                        cargo,
-                        obraIds,
-                        nivelEscolar,
-                        contactoEmergencia,
-                        cursos,
-                        // El acceso web es siempre habilitado; no se expone en la plantilla.
-                        tieneAccesoWeb: true
-                    });
-
-                    if (sendEmails && persona.email && passwordTemporal) {
-                        try {
-                            await sendWelcomeEmail(persona.email, persona.nombre, persona.rut, passwordTemporal);
-                        } catch (emailErr) {
-                            console.error('Error sending welcome email:', emailErr);
-                        }
-                    }
-
-                    // Documentos de empresa (RI/Política) a nivel tenant: a TODA persona
-                    // no-admin, tenga o no obra.
-                    if (normalizeRol(persona.rol) !== 'admin') {
-                        await ensureCompanyDocsForPersona({ tenantId, persona, solicitante: null }).catch((e) =>
-                            console.error(`Docs empresa fila ${rowNumber}:`, e.message));
-                    }
-                    // Kit técnico del cargo por obra (solo terreno).
-                    if (normalizeRol(persona.rol) !== 'admin' && Array.isArray(persona.obraIds)) {
-                        for (const oId of persona.obraIds) {
-                            try {
-                                await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null });
-                            } catch (onboardingErr) {
-                                console.error(`Onboarding fallido (fila ${rowNumber}, obra ${oId}):`, onboardingErr.message);
-                            }
-                        }
-                    }
-
-                    console.log(`Carga masiva: persona creada fila ${rowNumber} personaId=${persona.personaId}`);
-                    resultados.creados.push({
-                        fila: rowNumber,
-                        personaId: persona.personaId,
-                        rut: persona.rut,
-                        passwordTemporal: passwordTemporal || undefined
-                    });
-                } catch (err) {
-                    const message = err?.message || 'Error al crear persona';
-                    if (message.includes('Ya existe una persona')) {
-                        resultados.duplicados.push({ fila: rowNumber, rut, motivo: 'Ya existe en el tenant' });
-                    } else {
-                        resultados.errores.push({ fila: rowNumber, error: message });
-                    }
-                }
-            }
-
-            // Cada persona creada por carga masiva aumenta el conteo del tenant.
-            if (resultados.creados.length > 0) {
-                await tenantService.ajustarCantidadTrabajadores(tenantId, resultados.creados.length).catch((countErr) => {
-                    console.error('No se pudo actualizar la cantidad de trabajadores del tenant (carga masiva):', countErr.message);
-                });
-            }
-
-            return success({
-                mensaje: `Carga masiva completada. ${resultados.creados.length} personas creadas.`,
-                resultados
-            });
+        // POST /personas/carga-masiva (flujo directo, sin asistente): retirado el
+        // 30 de septiembre de 2026 (D-24). Nadie lo llamaba, no validaba antes de
+        // crear y corría entero en la petición.
+        if (method === 'POST' && personaId === 'carga-masiva' && !action) {
+            return error('La carga masiva se hace con el asistente: valida la planilla y confírmala.', 410);
         }
 
         // POST /personas — Crear persona

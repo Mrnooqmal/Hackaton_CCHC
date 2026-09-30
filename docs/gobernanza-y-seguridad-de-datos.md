@@ -425,12 +425,10 @@ medible (`lib/degradacion.js`) — un incidente que no se puede abrir es peor qu
 uno incompleto. Quien lee para LISTAR nunca une las dos partes; ahí está la
 ganancia: ningún listado paga ese costo y ningún índice contiene el dato.
 
-**Pendiente asociado:** documentos y solicitudes de firma también llevan RUT en
-el elemento listado (`asignaciones[]`, `solicitanteRut`, `trabajadores[]`) y
-siguen en `ProjectionType: ALL` sin resolver — están en la lista de las cinco
-tablas que tampoco caben en `INCLUDE` por volumen de atributos, no por mapas
-anidados. Se retoma junto con el cifrado de campo del RUT, porque en ese
-momento de todas formas se toca cómo se guarda y se busca el RUT.
+**Pendiente asociado (cerrado por D-23):** documentos y solicitudes de firma
+también llevan RUT en el elemento listado (`asignaciones[]`, `solicitanteRut`,
+`trabajadores[]`) y sus índices siguen en `ProjectionType: ALL`. Con el cifrado
+de campo del RUT, el índice solo copia texto cifrado; D-23 decide dejarlos así.
 
 **Ubicación:** `Backend/lib/traza-sensible.js`, `Backend/handlers/incidents-module/incidents.repository.js`, `Backend/handlers/signatures/handler.js`, `Backend/lib/services/FirmaService.js`
 
@@ -1389,6 +1387,102 @@ activarla, el script publica con las credenciales propias y lo avisa.
 Límite conocido: un administrador puede cambiar la política del bucket; queda en
 CloudTrail, pero no se impide. La siguiente etapa, GitHub Actions por OIDC como
 único que asume el rol, cierra también la publicación a mano desde un equipo.
+
+### D-23. Índices de Documents, SignatureRequests y Signatures: se quedan en ALL
+**Estado: decidido el 30 de septiembre de 2026 (decisión técnica). Tema cerrado.**
+
+Los cinco índices de esas tres tablas (`tenantId-index` en las tres, más
+`requestId-index` y `personaId-index` en Signatures) proyectan `ALL`. A
+diferencia de las personas (D-6), no se reproyectan:
+
+- **Lo sensible ya viaja cifrado.** El RUT y la IP de quien firma, de quien
+  tiene asignado un documento y de los trabajadores convocados se guardan con
+  cifrado de campo (D-10, `lib/arregloSensible.js`); la traza sensible vive
+  aparte (D-8). El índice copia ese texto cifrado, que sin la llave de datos no
+  dice nada. El nombre queda en claro, igual que en cada pantalla que lo lista. En las personas, en cambio, el índice copiaba
+  hashes de credenciales y salud en claro dentro del ítem.
+- **Un índice no es una copia gobernada aparte.** DynamoDB propaga al índice
+  cada actualización y cada borrado de la tabla: la retención, la supresión por
+  lotes (D-17) y el bloqueo actúan sobre la tabla y el índice los sigue. No
+  quedan copias huérfanas, como sí quedarían en un respaldo o una exportación.
+- **No amplía quién puede leer.** Mismo cifrado (la CMK de datos) y todo rol con
+  acceso al índice tiene acceso a la tabla. `KEYS_ONLY` no le quitaría la
+  lectura a nadie.
+- **Lo que costaría:** cada listado pasaría a leer el índice y después la tabla
+  por lotes (el doble de lecturas y más latencia en las pantallas más usadas),
+  más una ventana sin índice al recrearlo y cambios en cada ruta de listado, sin
+  reducir la exposición.
+
+**Cuándo se revisa:** si un rol llega a leer un índice de estas tablas sin
+poder leer la tabla, o si se agrega a estos ítems un dato sensible en claro.
+Lo primero lo vigila `tests/indices-documentos.test.js`, que falla si pasa; lo
+segundo, el inventario (`lib/gobernanza/inventario.js`), que describe qué datos
+lleva cada tabla y se revisa con cada tabla o campo nuevo.
+
+### D-24. Carga masiva de personas en cola
+**Estado: implementado el 30 de septiembre de 2026 (en el árbol). Diseño
+aprobado antes; aquí se registra lo que se construyó.**
+
+Confirmar la carga ya no crea personas en la petición: crea una **carga** y la
+encola, un mensaje por fila (`lib/cargas.js`, `handlers/cola/trabajador.js`).
+Validar sigue siendo sincrónico y no escribe nada. La pantalla consulta el
+avance en `GET /personas/cargas/{id}` y se puede cerrar sin perder nada.
+
+- **Idempotencia por carga y RUT.** El `personaId` sale de ese par y la ficha
+  se escribe con condición. Antes de crear se busca la ficha por su clave con
+  lectura consistente. Un reintento de SQS no crea a nadie dos veces.
+- **Cada fila se cuenta una vez.** El paso a `creada` o `fallida`, los
+  contadores de la carga y el conteo de trabajadores de la empresa van en una
+  transacción condicionada a que la fila siga `procesando`. Una fila la
+  procesa un trabajador a la vez, con un arriendo que vence.
+- **Sin todo-o-nada.** Cada fila es su unidad. Las que fallan quedan con su
+  número de fila y su motivo. Las inválidas y las duplicadas no se
+  reintentan, porque se corrigen en la planilla. Las que fallaron por algo
+  transitorio se reintentan con un botón que re-encola solo esas.
+- **Fase 2 (supervisores) al terminar**, detectada con el contador y lectura
+  consistente; su cierre está condicionado a que no queden filas pendientes.
+- **Lo que revienta repetidamente** queda como fila fallida al cuarto intento
+  (antes de la cola de mensajes fallidos, que está al sexto y tiene alarma).
+  Si la persona ya existe y lo que falla es su onboarding, la fila cuenta como
+  creada con un aviso, porque la persona sí está en el sistema.
+- **Límite de 1.000 filas por carga.**
+- **Datos personales.** La fila guarda solo los campos de la plantilla. Al
+  crearse, se le quitan los datos y el RUT en claro (quedan en la ficha).
+  Todo vence a los 30 días (TTL). Tabla clasificada en el inventario.
+- **Se retiró `POST /personas/carga-masiva`** (flujo directo sin asistente):
+  nadie lo llamaba, no validaba antes de crear y corría entero en la petición.
+
+Hallazgo al hacerlo: el doble de DynamoDB de las pruebas no ordenaba las
+consultas por la clave de rango. Al corregirlo apareció que el historial de
+gobernanza mostraba el bloqueo antes que la solicitud que lo causó (dos eventos
+del mismo instante se ordenaban por su tipo). La clave del historial pasa a
+llevar el contador antes que el tipo. No había eventos guardados en dev ni en
+prod, así que no hubo que migrar nada.
+
+### D-25. Avisos del EventBus durables sobre la misma cola
+**Estado: implementado el 30 de septiembre de 2026 (en el árbol).**
+
+La razón es **durabilidad**, no velocidad: notificar a la línea de mando y a
+los representantes es parte de acreditar que se informó (Art. 7 inc. 9, Art. 57
+inc. 2), y un aviso que fallaba se perdía en silencio.
+
+- `emit` encola el evento con un `eventoId` y la petición responde. Si no se
+  puede encolar, se despacha en la petición como antes y queda un marcador
+  medible (`evento.encolar`).
+- El trabajador despacha en modo estricto: un suscriptor que falla hace fallar
+  el mensaje y SQS lo reintenta. Los suscriptores dejaron de tragarse sus
+  errores.
+- **Sin duplicados en el reintento.** Cada aviso de la bandeja tiene un id
+  derivado de `(eventoId, suscriptor)` y se escribe con condición: el
+  reintento completa a quien faltó y no repite a quien ya lo tenía. La
+  constancia de difusión queda una sola vez por evento.
+- **Sin "avisado a nadie".** Si no se puede leer la línea de mando o los
+  representantes, el evento falla y se reintenta (una prueba cubre cada caso). Antes se resolvía como "sin
+  destinatarios" y la difusión quedaba registrada como hecha. El nombre de la
+  obra sí puede faltar: es cosmético.
+- Al sexto intento el mensaje va a la cola de mensajes fallidos, que tiene
+  alarma. Un aviso ahí es una notificación que no llegó.
+- En pruebas y en local (sin cola) todo sigue corriendo en la petición.
 
 ## 4. Hallazgos priorizados
 

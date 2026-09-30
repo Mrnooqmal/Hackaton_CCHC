@@ -1,13 +1,20 @@
-import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiBaseUrl, personasApi } from '../api/client';
-import type { BulkPreviewRow, BulkCatalogos, BulkRowInput, BulkResultados } from '../api/personas.api';
+import type { BulkPreviewRow, BulkCatalogos, BulkRowInput, CargaEstado, CargaResumen } from '../api/personas.api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader } from '../components/ui';
 import {
     FiDownload, FiUpload, FiCheckCircle, FiAlertTriangle, FiInfo, FiX,
-    FiCheck, FiFilter, FiFileText,
+    FiCheck, FiFilter, FiFileText, FiRefreshCw, FiClock,
 } from 'react-icons/fi';
+
+const ESTADO_CARGA_LABEL: Record<CargaEstado['estado'], string> = {
+    en_proceso: 'En proceso',
+    completada: 'Completada',
+    completada_con_errores: 'Completada con filas fallidas',
+    encolado_incompleto: 'Detenida: reanúdala',
+};
 
 // Validación local del RUT (mod 11) — para re-validar al vuelo mientras se edita.
 const rutValido = (rut: string): boolean => {
@@ -129,7 +136,9 @@ export default function PersonasCargaMasiva() {
     const navigate = useNavigate();
     const tenantId = user?.tenantId || user?.empresaId || localStorage.getItem('tenant_id') || '';
 
-    const [step, setStep] = useState<'form' | 'review' | 'result'>('form');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const cargaIdUrl = searchParams.get('carga');
+    const [step, setStep] = useState<'form' | 'review' | 'result'>(cargaIdUrl ? 'result' : 'form');
     const [uploadFile, setUploadFile] = useState<File | null>(null);
     const [sendWelcomeEmail, setSendWelcomeEmail] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -137,7 +146,11 @@ export default function PersonasCargaMasiva() {
     const [downloadError, setDownloadError] = useState('');
     const [rows, setRows] = useState<EditableRow[]>([]);
     const [catalogos, setCatalogos] = useState<BulkCatalogos | null>(null);
-    const [resultado, setResultado] = useState<BulkResultados | null>(null);
+    // La carga corre en el servidor (D-24): la pantalla solo consulta su avance,
+    // y el id va en la URL para poder cerrar y volver.
+    const [carga, setCarga] = useState<CargaEstado | null>(null);
+    const [recientes, setRecientes] = useState<CargaResumen[]>([]);
+    const [reintentando, setReintentando] = useState(false);
     // Con planillas largas lo que importa son las filas que no pasan: el filtro
     // deja ver solo esas sin perder el recuento total, que manda arriba.
     const [soloProblemas, setSoloProblemas] = useState(false);
@@ -225,7 +238,8 @@ export default function PersonasCargaMasiva() {
             }));
             const res = await personasApi.bulkConfirm(tenantId, { filas, sendWelcomeEmail });
             if (res.success && res.data) {
-                setResultado(res.data.resultados);
+                setCarga(null);
+                setSearchParams({ carga: res.data.cargaId });
                 setStep('result');
             } else {
                 setError(res.error || 'Error al cargar las personas.');
@@ -236,8 +250,38 @@ export default function PersonasCargaMasiva() {
 
     const reset = () => {
         setStep('form'); setUploadFile(null); setRows([]); setCatalogos(null);
-        setResultado(null); setError(''); setSoloProblemas(false);
+        setCarga(null); setSearchParams({}); setError(''); setSoloProblemas(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const cargarEstado = useCallback(async (id: string) => {
+        const r = await personasApi.cargaEstado(id).catch(() => null);
+        if (r?.success && r.data) setCarga(r.data);
+        else if (r && !r.success) setError(r.error || 'No se pudo leer la carga.');
+    }, []);
+
+    // Mientras está en proceso, se consulta cada 2 segundos.
+    useEffect(() => {
+        if (!cargaIdUrl) return undefined;
+        setStep('result');
+        cargarEstado(cargaIdUrl);
+        const t = setInterval(() => {
+            setCarga((c) => { if (!c || c.estado === 'en_proceso') cargarEstado(cargaIdUrl); return c; });
+        }, 2000);
+        return () => clearInterval(t);
+    }, [cargaIdUrl, cargarEstado]);
+
+    useEffect(() => {
+        if (step !== 'form') return;
+        personasApi.cargasRecientes().then((r) => { if (r.success && r.data) setRecientes(r.data.cargas); }).catch(() => null);
+    }, [step]);
+
+    const reintentarFallidas = async () => {
+        if (!carga) return;
+        setReintentando(true); setError('');
+        const r = await personasApi.reintentarCarga(carga.cargaId).catch(() => null);
+        setReintentando(false);
+        if (r?.success) cargarEstado(carga.cargaId); else setError(r?.error || 'No se pudo reintentar.');
     };
 
     const incluidasOk = rows.filter((r) => r.incluir && r.estado !== 'error').length;
@@ -254,7 +298,7 @@ export default function PersonasCargaMasiva() {
                     description={
                         (step === 'form' && 'Nada se crea hasta que revises el archivo. La validación es el paso 2.') ||
                         (step === 'review' && 'Corrige aquí mismo. Solo se crean las filas marcadas y sin error.') ||
-                        (step === 'result' && 'Resultado de la carga.') ||
+                        (step === 'result' && 'Las personas se crean en segundo plano. Puedes cerrar esta pantalla y volver: el avance queda guardado.') ||
                         undefined
                     }
                 />
@@ -473,42 +517,105 @@ export default function PersonasCargaMasiva() {
                         </div>
                     )}
 
-                    {/* ── Paso 3: resultado ── */}
-                    {step === 'result' && resultado && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', paddingBottom: 'var(--space-8)' }}>
-                            <div className="grid-collapse-mobile" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-4)' }}>
-                                <div className="cm-stat cm-stat-ok"><FiCheckCircle size={26} /><div className="cm-stat-n">{resultado.creados.length}</div><div className="cm-stat-l">Creados</div></div>
-                                <div className="cm-stat cm-stat-adv"><FiInfo size={26} /><div className="cm-stat-n">{resultado.duplicados.length}</div><div className="cm-stat-l">Duplicados</div></div>
-                                <div className={`cm-stat ${resultado.errores.length ? 'cm-stat-err' : 'cm-stat-ok'}`}>{resultado.errores.length ? <FiAlertTriangle size={26} /> : <FiCheckCircle size={26} />}<div className="cm-stat-n">{resultado.errores.length}</div><div className="cm-stat-l">Errores</div></div>
-                            </div>
-                            {resultado.creados.length > 0 && (
-                                // Quien no tiene correo no recibe nada: la contraseña se la dice en persona quien la registra.
-                                <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.55, color: 'var(--text-secondary)', maxWidth: '72ch' }}>
-                                    Cada persona entra con su RUT y, como contraseña inicial, los cuatro primeros dígitos de su RUT;
-                                    se le pide cambiarla al entrar. Quien no tiene correo no recibe aviso: díselo en persona.
-                                </p>
-                            )}
-                            {(resultado.errores.length > 0 || resultado.duplicados.length > 0) && (
-                                <div style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                                    <table className="cm-table">
-                                        <thead><tr><th style={{ width: 60 }}>Fila</th><th>RUT</th><th>Detalle</th></tr></thead>
-                                        <tbody>
-                                            {resultado.errores.map((e, i) => <tr key={`e${i}`}><td style={{ fontFamily: 'monospace', color: 'var(--danger-600)' }}>{e.fila}</td><td style={{ fontFamily: 'monospace' }}>{e.rut || '—'}</td><td>{e.error}</td></tr>)}
-                                            {resultado.duplicados.map((d, i) => <tr key={`d${i}`}><td style={{ fontFamily: 'monospace', color: 'var(--warning-600)' }}>{d.fila}</td><td style={{ fontFamily: 'monospace' }}>{d.rut || '—'}</td><td>{d.motivo}</td></tr>)}
-                                        </tbody>
-                                    </table>
+                    {/* ── Paso 3: avance y resultado (D-24) ── */}
+                    {step === 'result' && !carga && (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}><div className="spinner" /></div>
+                    )}
+                    {step === 'result' && carga && (() => {
+                        const pct = carga.total ? Math.round((carga.procesadas / carga.total) * 100) : 100;
+                        const reintentables = carga.filasFallidas.filter((f) => f.reintentable).length;
+                        const pendientes = carga.total - carga.procesadas;
+                        return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', paddingBottom: 'var(--space-8)' }}>
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+                                        <strong style={{ fontSize: '0.95rem' }}>{ESTADO_CARGA_LABEL[carga.estado]}</strong>
+                                        <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{carga.procesadas} de {carga.total} filas</span>
+                                    </div>
+                                    <div className="cm-progreso" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Avance de la carga">
+                                        <div className="cm-progreso-barra" style={{ width: `${pct}%` }} />
+                                    </div>
                                 </div>
-                            )}
-                            <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                                <button className="btn btn-secondary" onClick={reset}>Cargar otra planilla</button>
-                                <button className="btn btn-primary" onClick={() => navigate('/personas')}>Ver personas</button>
+                                <div className="grid-collapse-mobile" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-4)' }}>
+                                    <div className="cm-stat cm-stat-ok"><FiCheckCircle size={26} /><div className="cm-stat-n">{carga.creadas}</div><div className="cm-stat-l">Creadas</div></div>
+                                    <div className="cm-stat cm-stat-adv"><FiClock size={26} /><div className="cm-stat-n">{pendientes}</div><div className="cm-stat-l">Pendientes</div></div>
+                                    <div className={`cm-stat ${carga.fallidas ? 'cm-stat-err' : 'cm-stat-ok'}`}>{carga.fallidas ? <FiAlertTriangle size={26} /> : <FiCheckCircle size={26} />}<div className="cm-stat-n">{carga.fallidas}</div><div className="cm-stat-l">Fallidas</div></div>
+                                </div>
+                                {carga.creadas > 0 && (
+                                    // Quien no tiene correo no recibe nada: la contraseña se la dice en persona quien la registra.
+                                    <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.55, color: 'var(--text-secondary)', maxWidth: '72ch' }}>
+                                        Cada persona entra con su RUT y, como contraseña inicial, los cuatro primeros dígitos de su RUT;
+                                        se le pide cambiarla al entrar. Quien no tiene correo no recibe aviso: díselo en persona.
+                                    </p>
+                                )}
+                                {carga.filasFallidas.length > 0 && (
+                                    <div style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                                        <table className="cm-table">
+                                            <thead><tr><th style={{ width: 60 }}>Fila</th><th>RUT</th><th>Motivo</th></tr></thead>
+                                            <tbody>
+                                                {carga.filasFallidas.map((f) => (
+                                                    <tr key={`f${f.fila}-${f.rut}`}>
+                                                        <td style={{ fontFamily: 'monospace', color: f.tipoFallo === 'duplicado' ? 'var(--warning-600)' : 'var(--danger-600)' }}>{f.fila}</td>
+                                                        <td style={{ fontFamily: 'monospace' }}>{f.rut || '—'}</td>
+                                                        <td>{f.motivo}{f.reintentable ? ' (se puede reintentar)' : ''}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                {(carga.avisos.length > 0 || carga.correosFallidos.length > 0) && (
+                                    <div style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        {carga.avisos.map((a) => <span key={`a${a.fila}`}>Fila {a.fila}: {a.aviso}</span>)}
+                                        {carga.correosFallidos.map((c) => <span key={`c${c.fila}`}>Fila {c.fila}: {c.correo === 'suprimido' ? 'su correo rebotó antes; no se le escribió' : 'no se pudo enviar el correo de bienvenida'}.</span>)}
+                                    </div>
+                                )}
+                                {carga.fallidas > reintentables && (
+                                    <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text-secondary)', maxWidth: '72ch' }}>
+                                        Las filas con datos inválidos o duplicadas no se reintentan: corrígelas en la planilla y cárgalas de nuevo.
+                                    </p>
+                                )}
+                                <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                                    {(reintentables > 0 || carga.estado === 'encolado_incompleto') && (
+                                        <button className="btn btn-primary" onClick={reintentarFallidas} disabled={reintentando}>
+                                            <FiRefreshCw size={15} /> {carga.estado === 'encolado_incompleto' ? 'Reanudar la carga' : `Reintentar ${reintentables} fallida${reintentables !== 1 ? 's' : ''}`}
+                                        </button>
+                                    )}
+                                    <button className="btn btn-secondary" onClick={reset}>Cargar otra planilla</button>
+                                    <button className="btn btn-secondary" onClick={() => navigate('/personas')}>Ver personas</button>
+                                </div>
                             </div>
-                        </div>
+                        );
+                    })()}
+
+                    {step === 'form' && recientes.length > 0 && (
+                        <section aria-label="Cargas recientes" style={{ marginTop: 'var(--space-8)' }}>
+                            <div className="cm-rotulo"><span className="cm-rotulo-title">Cargas recientes</span></div>
+                            <ul className="cm-recientes">
+                                {recientes.map((c) => (
+                                    <li key={c.cargaId}>
+                                        <button type="button" onClick={() => setSearchParams({ carga: c.cargaId })}>
+                                            <span>{new Date(c.creadaEn).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}{c.iniciadaPor?.nombre ? ` · ${c.iniciadaPor.nombre}` : ''}</span>
+                                            <span>{ESTADO_CARGA_LABEL[c.estado]} · {c.creadas} de {c.total} creadas{c.fallidas ? ` · ${c.fallidas} fallidas` : ''}</span>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
                     )}
                 </div>
             </div>
 
             <style>{`
+                /* ── Avance de la carga ───────────────────────── */
+                .cm-progreso { height: 8px; border-radius: 999px; background: var(--surface-border); overflow: hidden; }
+                .cm-progreso-barra { height: 100%; background: var(--primary-600, var(--success-600)); transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1); }
+                @media (prefers-reduced-motion: reduce) { .cm-progreso-barra { transition: none; } }
+                .cm-recientes { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+                .cm-recientes button { width: 100%; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 12px; background: none; border: 1px solid var(--surface-border); border-radius: var(--radius-md); font: inherit; font-size: 0.86rem; color: var(--text-primary); text-align: left; cursor: pointer; }
+                .cm-recientes button:hover { background: var(--surface-hover, rgba(0,0,0,0.03)); }
+                .cm-recientes button span:last-child { color: var(--text-secondary); }
+
                 /* ── Pasos ────────────────────────────────────── */
                 .cm-pasos { margin: 0; padding: 0; list-style: none; display: flex; align-items: center; flex-wrap: wrap; }
                 .cm-paso-wrap { display: flex; align-items: center; gap: 10px; }

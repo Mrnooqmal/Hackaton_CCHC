@@ -81,6 +81,8 @@ function cumple(item, condicion, valores = {}, nombres = {}) {
             const a = operando(); tomar(','); const b = operando(); tomar(')');
             if (a === ausente || b === ausente) return false;
             if (f === 'begins_with') return typeof a === 'string' && typeof b === 'string' && a.startsWith(b);
+            // Como DynamoDB: en listas y en conjuntos (SS, NS) busca el elemento.
+            if (a instanceof Set) return a.has(b);
             return Array.isArray(a) ? a.some((x) => iguales(x, b)) : (typeof a === 'string' && a.includes(b));
         }
         const izq = operando();

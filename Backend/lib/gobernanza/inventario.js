@@ -241,6 +241,18 @@ const FUENTES = [
         archivosDe: () => [],
     },
     {
+        tabla: 'CARGAS_TABLE',
+        contieneSalud: false,
+        claves: ['cargaId', 'sk'],
+        nombre: 'Cargas masivas de personas',
+        datos: 'Quién inició la carga y sus contadores; por fila, los datos de la planilla (RUT, nombre, contacto, obra, supervisor) hasta que la persona se crea, y el motivo si falló.',
+        finalidad: 'Crear en segundo plano las personas de una planilla y mostrar su avance y sus filas fallidas.',
+        clase: CLASE.OPERACIONAL,
+        alVencer: AL_VENCER.TTL,
+        personasDe: (it) => uno(it.personaId),
+        archivosDe: () => [],
+    },
+    {
         tabla: 'CORREOS_SUPRIMIDOS_TABLE',
         contieneSalud: false,
         claves: ['correoHmac'],
