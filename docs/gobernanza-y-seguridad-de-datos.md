@@ -140,7 +140,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 7.1 | **Política de retención de datos personales** | **Implementada: cálculo y bloqueos. Pendiente: ejecutar la supresión** | Proceso diario (`retencionDiaria`) que calcula por empresa qué venció y qué se conserva, guarda el plan y extiende el Object Lock de la evidencia que debe seguir. Suprimir exige un lote aprobado por dos personas: siguiente etapa. Ver D-15. |
 | 7.2 | **Mecanismo de supresión a solicitud del titular** | **Parcial** | Implementado (API): solicitudes con canal de origen y fecha de recepción inmutable, bloqueo temporal real, prórroga solo a tiempo, respuesta con fundamento, avisos de plazo e historial que solo crece. Pendiente: pantalla y ejecución de la supresión en lotes aprobados por dos personas. Ver D-15. |
 | 7.3 | **Registro de tratamientos** | **Implementado** | Generado desde el inventario de datos (`lib/gobernanza/inventario.js`), que también recorre el proceso de retención: no pueden divergir. Una prueba falla si una tabla nueva no está clasificada. Ver D-15. |
-| 7.4 | **Procedimiento de notificación de brechas** | **Pendiente** | No hay protocolo definido. |
+| 7.4 | **Procedimiento de notificación de brechas** | **Parcial** | Hay con qué responder qué se expuso, de quién y de qué empresas (`scripts/informe-brecha.js`, D-19), apoyado en la auditoría de salud (D-18). Falta el protocolo: quién decide, plazos y canal de notificación a la Agencia y a los titulares (decisión de producto y legal). |
 | 7.5 | Minimización en las respuestas de la API | **Parcial** | El hash del PIN nunca sale, pero no hay una revisión sistemática de qué campos personales viajan en cada respuesta. |
 
 ---
@@ -1250,6 +1250,37 @@ clave (la clave puede llevar el nombre de la persona).
   en las pruebas, no en una fiscalización.
 - `AuditoriaAccesosTable`: solo agregar y leer para todos los roles, `Retain`
   siempre, con índice por actor y fecha (lo usa el informe de brecha, D-19).
+
+### D-19. Informe de brecha
+**Estado: implementado el 29 de septiembre de 2026 (en el árbol).**
+
+Ante un incidente, `scripts/informe-brecha.js` responde qué datos, de qué
+personas y de qué empresas quedaron expuestos. La lógica es pura
+(`lib/gobernanza/brecha.js`) y se apoya en el mismo inventario que la retención
+y el registro de tratamientos: una tabla nueva sin clasificar ya hace fallar las
+pruebas, así que tampoco puede faltar en el informe. Solo lee.
+
+Tres alcances, combinables:
+
+- **Cuenta comprometida** (`--actor`, `--desde`, `--hasta`): la salud a la que
+  accedió en la ventana sale **confirmada** de la auditoría (D-18); lo demás que
+  podía leer en su empresa se informa como **cota superior**, y el informe lo
+  dice, porque las lecturas que no son de salud no se auditan.
+- **Tabla expuesta** (`--tabla`, opcionalmente `--empresa`): todo lo que tiene,
+  por empresa y persona, con la marca de salud del inventario (`contieneSalud`).
+- **Archivos expuestos** (`--prefijo`): los archivos y de quién son, según los
+  registros que los mencionan. Esas tablas se cargan como contexto y **no** se
+  cuentan como expuestas; un archivo sin registro que lo mencione aparece como
+  tal, no se omite.
+
+Decisiones técnicas:
+
+- Lo corre la plataforma, como encargada: una brecha puede cruzar empresas, y
+  el informe separa lo de cada una para que cada responsable reciba lo suyo.
+- El informe trae **solo identificadores** (empresa, persona, documento) y
+  categorías; nunca nombres, RUT (ni su HMAC), correos ni teléfonos. Quien lo
+  lee, con acceso, resuelve nombres si la notificación lo exige. Así el informe
+  se puede circular sin volverse una segunda brecha.
 
 ### D-20. QA prueba en dev: una distribución del frontend por ambiente
 **Estado: implementado el 29 de septiembre de 2026 (en el árbol; se despliega
