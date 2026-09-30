@@ -73,3 +73,49 @@ export const gobernanzaApi = {
     responder: (solicitudId: string, datos: { resultado: Resultado; fundamento: string; medio?: string }) =>
         apiRequest<Solicitud>(`/gobernanza/solicitudes/${solicitudId}/respuesta`, { method: 'POST', body: JSON.stringify(datos) }),
 };
+
+// ── Lotes de supresión (dos personas: una aprueba, otra ejecuta) ─────────────
+
+export type EstadoLote = 'propuesto' | 'aprobado' | 'desactualizado' | 'ejecutando' | 'ejecutado' | 'ejecutado_con_errores';
+
+export interface OperacionLote {
+    tabla: string;
+    clave: Record<string, string>;
+    accion: 'suprimir' | 'anonimizar' | 'quitar_campos';
+    campos?: string[];
+    traza?: Record<string, string>;
+    /** Qué es, en palabras (lo agrega el detalle). */
+    que?: string;
+}
+
+export interface Lote {
+    loteId: string;
+    ambito: { origen: 'retencion' | 'solicitud'; solicitudId?: string };
+    huella: string;
+    estado: EstadoLote;
+    propuestoPor: Actor; propuestoEl: string;
+    aprobadoPor?: Actor; aprobadoEl?: string;
+    ejecutadoPor?: Actor; ejecutadoEl?: string;
+    resultado?: { operaciones: number; versiones: number; errores: unknown[] };
+}
+
+export interface LoteDetalle extends Lote {
+    contenido: { operaciones: OperacionLote[]; archivos: { key: string; versiones: string[] }[]; personas: string[] };
+    /** ¿Coincide con lo que hay ahora? null si ya no aplica (ejecutado, desactualizado). */
+    vigente: boolean | null;
+}
+
+export type LoteResumen = Lote & { operaciones: number; archivos: number; personas: number };
+
+export const lotesApi = {
+    listar: () => apiRequest<{ lotes: LoteResumen[] }>('/gobernanza/lotes'),
+    detalle: (loteId: string) => apiRequest<LoteDetalle>(`/gobernanza/lotes/${loteId}`),
+    proponerRetencion: () => apiRequest<LoteDetalle>('/gobernanza/lotes', { method: 'POST', body: JSON.stringify({ origen: 'retencion' }) }),
+    proponerSolicitud: (solicitudId: string) =>
+        apiRequest<LoteDetalle>('/gobernanza/lotes', { method: 'POST', body: JSON.stringify({ origen: 'solicitud', solicitudId }) }),
+    /** Se envía la huella de lo que se vio: se aprueba exactamente eso. */
+    aprobar: (loteId: string, huella: string) =>
+        apiRequest<Lote>(`/gobernanza/lotes/${loteId}/aprobar`, { method: 'POST', body: JSON.stringify({ huella }) }),
+    ejecutar: (loteId: string, huella: string) =>
+        apiRequest<Lote>(`/gobernanza/lotes/${loteId}/ejecutar`, { method: 'POST', body: JSON.stringify({ huella }) }),
+};

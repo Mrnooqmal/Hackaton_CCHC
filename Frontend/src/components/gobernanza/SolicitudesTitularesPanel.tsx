@@ -5,7 +5,7 @@ import type { BadgeVariant } from '../ui/Badge';
 import { personasApi } from '../../api/personas.api';
 import type { PersonaResponse } from '../../api/types';
 import {
-    gobernanzaApi, DERECHO_LABEL, RESULTADO_LABEL, DERECHOS_QUE_BLOQUEAN,
+    gobernanzaApi, lotesApi, DERECHO_LABEL, RESULTADO_LABEL, DERECHOS_QUE_BLOQUEAN,
     type Solicitud, type EventoHistorial, type Derecho, type Resultado,
 } from '../../api/gobernanza.api';
 
@@ -63,7 +63,7 @@ function Plazo({ s }: { s: Solicitud }) {
     return <Badge variant={variante}>{texto}</Badge>;
 }
 
-export default function SolicitudesTitularesPanel() {
+export default function SolicitudesTitularesPanel({ puedeSuprimir = false }: { puedeSuprimir?: boolean }) {
     const [solicitudes, setSolicitudes] = useState<Solicitud[]>([]);
     const [personas, setPersonas] = useState<PersonaResponse[]>([]);
     const [filtro, setFiltro] = useState<'abierta' | 'resuelta' | 'todas'>('abierta');
@@ -173,6 +173,7 @@ export default function SolicitudesTitularesPanel() {
                 <DetalleSolicitud
                     solicitudId={abierta}
                     titular={nombreDe}
+                    puedeSuprimir={puedeSuprimir}
                     onCerrar={() => setAbierta(null)}
                     onCambio={cargar}
                 />
@@ -283,9 +284,10 @@ function RegistrarSolicitud({ personas, onCerrar, onRegistrada }: {
 
 // ── Detalle, prórroga y respuesta ─────────────────────────────────────────────
 
-function DetalleSolicitud({ solicitudId, titular, onCerrar, onCambio }: {
+function DetalleSolicitud({ solicitudId, titular, puedeSuprimir, onCerrar, onCambio }: {
     solicitudId: string;
     titular: (id: string) => string;
+    puedeSuprimir: boolean;
     onCerrar: () => void;
     onCambio: () => void;
 }) {
@@ -301,6 +303,14 @@ function DetalleSolicitud({ solicitudId, titular, onCerrar, onCambio }: {
     useEffect(() => { cargar(); }, [cargar]);
 
     const listo = () => { setAccion(null); cargar(); onCambio(); };
+    const [propuesto, setPropuesto] = useState('');
+    const proponerLote = async () => {
+        setError('');
+        const r = await lotesApi.proponerSolicitud(solicitudId).catch(() => null);
+        if (r?.success) setPropuesto('Lote de supresión propuesto. Apruébalo y ejecútalo en Supresiones (dos personas).');
+        else setError(r?.error || 'No se pudo proponer el lote.');
+    };
+    const suprimible = s && s.derecho === 'supresion' && s.estado === 'resuelta' && s.respuesta?.resultado !== 'rechazada';
     const puedeProrrogar = s && s.estado === 'abierta' && !s.prorroga && new Date() <= new Date(s.venceEl);
 
     return (
@@ -339,6 +349,12 @@ function DetalleSolicitud({ solicitudId, titular, onCerrar, onCambio }: {
                             <button className="btn btn-primary btn-sm" onClick={() => setAccion('respuesta')}>Responder</button>
                         </div>
                     )}
+                    {suprimible && puedeSuprimir && !propuesto && (
+                        <div className="st-acciones">
+                            <button className="btn btn-secondary btn-sm" onClick={proponerLote}>Proponer lote de supresión</button>
+                        </div>
+                    )}
+                    {propuesto && <AlertBanner variant="success" message={propuesto} onDismiss={() => setPropuesto('')} />}
                     {accion === 'prorroga' && <FormProrroga s={s} onCancelar={() => setAccion(null)} onListo={listo} />}
                     {accion === 'respuesta' && <FormRespuesta s={s} onCancelar={() => setAccion(null)} onListo={listo} />}
 

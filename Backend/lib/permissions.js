@@ -68,6 +68,10 @@ const PERMISSIONS = {
     // sobre sus datos: por defecto solo el administrador; se puede delegar (por
     // ejemplo, a Recursos Humanos).
     EMPRESA_DERECHOS_TITULARES: 'empresa.derechos_titulares',
+    // Aprobar y ejecutar lotes de supresión de datos personales (lib/gobernanza/lotes.js).
+    // Aparte del anterior: registrar solicitudes no es lo mismo que borrar sin
+    // vuelta atrás. Aprobar y ejecutar un mismo lote exige dos personas distintas.
+    EMPRESA_SUPRESION_DATOS: 'empresa.supresion_datos',
 };
 
 const ALL_PERMISSION_KEYS = Object.values(PERMISSIONS);

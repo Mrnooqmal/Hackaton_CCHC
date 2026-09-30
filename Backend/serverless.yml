@@ -1151,6 +1151,36 @@ functions:
           authorizer:
             name: sesionUsuario
 
+  # Lotes de supresión (D-15, D-17): proponer, aprobar y ejecutar, dos personas.
+  # Rol propio: RolSupresion es el ÚNICO que puede borrar datos personales y
+  # versiones de S3 con bypass de la retención, y solo esta función lo usa.
+  gobernanzaLotes:
+    handler: handlers/gobernanza/lotes.handler
+    role: RolSupresion
+    timeout: 300
+    memorySize: 1024
+    events:
+      - httpApi:
+          path: /gobernanza/lotes
+          method: GET
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /gobernanza/lotes
+          method: POST
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /gobernanza/lotes/{proxy+}
+          method: GET
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /gobernanza/lotes/{proxy+}
+          method: POST
+          authorizer:
+            name: sesionUsuario
+
   # Aviso diario de plazos de las solicitudes de los titulares (09:00 de Chile).
   alertasDerechos:
     handler: handlers/gobernanza/derechos.alertasDiarias
@@ -1842,6 +1872,68 @@ resources:
                 - Effect: Allow
                   Action: [s3:GetObjectRetention, s3:PutObjectRetention]
                   Resource: !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}/*'
+
+    RolSupresion:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal: { Service: lambda.amazonaws.com }
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        Policies:
+          - PolicyName: gobernanza-supresion
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                # Leer todas las tablas: recalcular el contenido de un lote.
+                - Effect: Allow
+                  Action: [dynamodb:Query, dynamodb:GetItem, dynamodb:BatchGetItem, dynamodb:Scan]
+                  Resource:
+                    - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:service}-*-${self:provider.stage}'
+                    - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:service}-*-${self:provider.stage}/index/*'
+                # Borrar y anonimizar SOLO en las tablas del inventario con datos
+                # de personas; nunca empresas, obras, sesiones ni la gobernanza.
+                - Effect: Allow
+                  Action: [dynamodb:DeleteItem, dynamodb:UpdateItem]
+                  Resource:
+                    - !GetAtt PersonasTable.Arn
+                    - !GetAtt DocumentsTable.Arn
+                    - !GetAtt SignaturesTable.Arn
+                    - !GetAtt SignatureRequestsTable.Arn
+                    - !GetAtt ActivitiesTable.Arn
+                    - !GetAtt IncidentsTable.Arn
+                    - !GetAtt SurveysTable.Arn
+                    - !GetAtt AusenciasTable.Arn
+                    - !GetAtt EstructuraPreventivaTable.Arn
+                    - !GetAtt InboxTable.Arn
+                    - !GetAtt SuggestionsTable.Arn
+                # Los lotes: crear y cambiar de estado (no borrar).
+                - Effect: Allow
+                  Action: [dynamodb:PutItem, dynamodb:UpdateItem]
+                  Resource: !GetAtt GobernanzaTable.Arn
+                # El historial: solo agregar.
+                - Effect: Allow
+                  Action: [dynamodb:PutItem]
+                  Resource: !GetAtt GobernanzaHistorialTable.Arn
+                - Effect: Allow
+                  Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
+                  Resource: !GetAtt ClaveDatos.Arn
+                # Borrar versiones de archivos, pasando por encima del bloqueo en
+                # modo gobernanza. Es el único rol que puede.
+                - Effect: Allow
+                  Action: [s3:ListBucketVersions]
+                  Resource:
+                    - !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}'
+                    - !Sub 'arn:aws:s3:::${self:custom.trabajoBucketName}'
+                - Effect: Allow
+                  Action: [s3:DeleteObject, s3:DeleteObjectVersion, s3:BypassGovernanceRetention]
+                  Resource:
+                    - !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}/*'
+                    - !Sub 'arn:aws:s3:::${self:custom.trabajoBucketName}/*'
 
     # Gobernanza del dato personal (Ley 21.719): planes de retención, lotes de
     # supresión pendientes de aprobación, solicitudes de titulares y bloqueos.

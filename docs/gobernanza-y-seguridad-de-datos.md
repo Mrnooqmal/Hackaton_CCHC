@@ -1192,6 +1192,41 @@ cuenta antes de desplegar: avisa sobre 450 y se niega sobre 490. Cuando haga
 falta más, la salida es agrupar rutas por módulo (una función con un router,
 como ya hacen personas, obras e inbox) antes que partir el stack.
 
+### D-17. Lotes de supresión: se aprueba y se ejecuta exactamente un contenido, con dos personas
+**Estado: implementado el 29 de septiembre de 2026 (en el árbol).**
+
+Es la única forma de borrar datos personales en el sistema.
+
+- **Qué se aprueba**: el contenido exacto del lote —cada operación sobre una
+  tabla (qué ítem, suprimir, anonimizar o quitar qué campos, y su traza
+  sensible) y cada versión de cada archivo, con su `versionId`— y su huella
+  canónica (`lib/huella.js`). Quien aprueba envía la huella de lo que vio.
+- **Se ejecuta exactamente lo aprobado**: al aprobar y otra vez al ejecutar, el
+  contenido se recalcula desde los datos actuales; si la huella cambió, el lote
+  queda **desactualizado** y hay que proponerlo y aprobarlo de nuevo. Además se
+  verifica que el contenido **guardado** siga teniendo su huella: otros roles
+  pueden actualizar la tabla de gobernanza, y un contenido alterado con la
+  huella original no se aprueba ni se ejecuta.
+- **Dos personas**: quien aprueba no puede ejecutar (en las reglas y en la
+  condición de la escritura). Proponer no cuenta: el lote de plazos vencidos lo
+  propone quien lo pide, sobre el plan del sistema.
+- **Permiso propio** (`empresa.supresion_datos`, solo el administrador por
+  defecto), aparte del de derechos de los titulares: registrar solicitudes no es
+  lo mismo que borrar sin vuelta atrás. *Decisión técnica.*
+- **Rol propio** (`RolSupresion`): el único del sistema que puede borrar ítems de
+  las tablas con datos de personas y versiones de S3 con bypass de la
+  retención, y solo lo usa la función de lotes. Una prueba falla si el bypass o
+  el borrado de versiones aparece en otro rol.
+- **Qué suprime una solicitud acogida**: solo lo de conveniencia (campos de la
+  ficha con contenido real —no los valores por defecto—, bandeja y
+  sugerencias). La evidencia espera su plazo (D-2).
+- **Tamaño**: hasta 400 operaciones por lote (un ítem de DynamoDB tiene 400 KB).
+  Uno mayor se rechaza pidiendo dividirlo; los volúmenes actuales están muy por
+  debajo.
+- **Límite conocido**: si la función se corta a mitad de una ejecución, el lote
+  queda en `ejecutando`. Las operaciones son idempotentes (borrar lo que ya no
+  está no falla), pero hoy la reanudación es manual.
+
 ### D-20. QA prueba en dev: una distribución del frontend por ambiente
 **Estado: implementado el 29 de septiembre de 2026 (en el árbol; se despliega
 tras el push).**
