@@ -45,6 +45,16 @@
   }
 }
 
+/* Pantalla de carga mientras se revalida la sesión al recargar */
+.app-boot {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-base);
+}
+
 .auth-mode {
   justify-content: center;
   align-items: center;
@@ -151,32 +161,6 @@
   opacity: 1;
 }
 
-/* Mobile Close Button */
-.sidebar-mobile-close {
-  display: none;
-  position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-hover);
-  border: none;
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: 20px;
-  cursor: pointer;
-  z-index: 101;
-  transition: all var(--transition-fast);
-}
-
-.sidebar-mobile-close:hover {
-  background: var(--surface-elevated);
-  transform: rotate(90deg);
-}
-
-
 .sidebar-header {
   padding: var(--space-5) var(--space-4) var(--space-4);
   border-bottom: 1px solid var(--surface-border);
@@ -225,6 +209,7 @@
   flex: 1;
   padding: var(--space-4) 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   /* Scroll discreto: aparece solo al pasar el cursor */
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -620,6 +605,34 @@
   color: var(--accent);
 }
 
+.header-hamburger-icon {
+  position: relative;
+  width: 18px;
+  height: 14px;
+}
+
+.header-hamburger-icon > span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transition: transform var(--sidebar-transition), opacity var(--sidebar-transition), top var(--sidebar-transition);
+}
+
+.header-hamburger-icon > span:nth-child(1) { top: 0; }
+.header-hamburger-icon > span:nth-child(2) { top: 6px; }
+.header-hamburger-icon > span:nth-child(3) { top: 12px; }
+
+.header-hamburger.is-open .header-hamburger-icon > span:nth-child(1) { top: 6px; transform: rotate(45deg); }
+.header-hamburger.is-open .header-hamburger-icon > span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+.header-hamburger.is-open .header-hamburger-icon > span:nth-child(3) { top: 6px; transform: rotate(-45deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .header-hamburger-icon > span { transition: none; }
+}
+
 /* ── Marca (logo, ahora en el header tipo consola) ── */
 .header-brand {
   display: inline-flex;
@@ -808,9 +821,12 @@
   }
 
   /* En tablet/móvil el sidebar pasa a ser un panel deslizable bajo el header */
+  /* Bajo el header completo (franja + barra) y hasta el borde visible: con
+     bottom: 0 en vez de 100vh, la barra del navegador móvil no tapa el pie. */
   .sidebar {
-    top: var(--mobile-header-height);
-    height: calc(100vh - var(--mobile-header-height));
+    top: calc(var(--topbar-height) + var(--mobile-header-height));
+    bottom: 0;
+    height: auto;
     transform: translateX(-100%);
     box-shadow: none;
   }
@@ -822,10 +838,6 @@
 
   .sidebar-overlay {
     display: block;
-  }
-
-  .sidebar-mobile-close {
-    display: flex;
   }
 }
 
@@ -2448,11 +2460,6 @@ select.form-input option {
   /* Show Overlay When Menu Open */
   .sidebar-overlay {
     display: block;
-  }
-
-  /* Show Close Button on Mobile */
-  .sidebar-mobile-close {
-    display: flex;
   }
 
   /* Adjust Main Content */

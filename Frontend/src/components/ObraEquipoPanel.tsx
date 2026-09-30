@@ -1217,31 +1217,38 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         supervisor?: any;
         workers: any[];
         isSinCuadrilla?: boolean;
+        /** Gestión: se ve como una cuadrilla, pero no recibe trabajadores arrastrados. */
+        isGestion?: boolean;
     }) => {
-        const { id, title, count, supervisor, workers: crewWorkers, isSinCuadrilla = false } = opts;
+        const { id, title, count, supervisor, workers: crewWorkers, isSinCuadrilla = false, isGestion = false } = opts;
         const isDragOver = dragOverContainerId === id;
+        const isDragWarn = isGestion && isDragOver && !!dragPersonaId;
         // Durante el arrastre hay UN destino: los demás se atenúan en vez de
         // ofrecerse todos como candidatos.
         const isDimmed = !!dragPersonaId && !isDragOver;
         const dropProps = makeContainerDropProps(id);
         const visibles = crewWorkers.filter(matchesSearch);
         // La persona arrastrada solo «entra» si viene de otra cuadrilla o del pool.
-        const entra = isDragOver && !!dragWorker && !crewWorkers.some((w) => w.personaId === dragPersonaId);
+        const entra = !isGestion && isDragOver && !!dragWorker && !crewWorkers.some((w) => w.personaId === dragPersonaId);
 
         if (count === 0 && !supervisor && !isSinCuadrilla) return null;
-        if (isSinCuadrilla && visibles.length === 0) return null;
+        if ((isSinCuadrilla || isGestion) && visibles.length === 0) return null;
 
         return (
             <section
                 key={id}
-                aria-label={isSinCuadrilla ? 'Sin cuadrilla' : `Cuadrilla de ${title}`}
-                className={`eq2-crew${mode === 'list' ? ' eq2-crew--boxed' : ''}${isDragOver ? ' eq2-crew--dragover' : ''}${isDimmed ? ' eq2-crew--dim' : ''}`}
+                aria-label={isGestion ? 'Equipo de gestión' : isSinCuadrilla ? 'Sin cuadrilla' : `Cuadrilla de ${title}`}
+                className={`eq2-crew${mode === 'list' ? ' eq2-crew--boxed' : ''}${isDragWarn ? ' eq2-crew--warn' : isDragOver ? ' eq2-crew--dragover' : ''}${isDimmed ? ' eq2-crew--dim' : ''}`}
                 {...dropProps}
             >
                 <div className="eq2-crew-head">
                     <span className="eq2-crew-title">{title}</span>
                     <span className="eq2-crew-count">{entra ? `${count} → ${count + 1}` : count}</span>
-                    {isDragOver ? (
+                    {isDragWarn ? (
+                        <span className="eq2-crew-hint eq2-crew-hint--warn">
+                            Este equipo no acepta trabajadores de cuadrilla.
+                        </span>
+                    ) : isDragOver ? (
                         <span className="eq2-crew-hint eq2-crew-hint--drop">
                             {isSinCuadrilla ? 'Soltar para dejarlo sin supervisor' : 'Soltar para sumar a esta cuadrilla'}
                         </span>
@@ -1294,54 +1301,13 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         {visibles.map((w) =>
                             renderRow(w, {
                                 isDraggable: rolTipoDe(w) === 'trabajador',
-                                showSupervisor: true,
+                                showSupervisor: !isGestion,
                             })
                         )}
                         {!supervisor && visibles.length === 0 && (
                             <div className="eq2-crew-empty-list">Sin personas en este equipo.</div>
                         )}
                     </div>
-                )}
-            </section>
-        );
-    };
-
-    /**
-     * Equipo de gestión: una fila de píldoras, no una rejilla de tarjetas.
-     *
-     * Son tres o cuatro personas, no se arrastran y no tienen kit DS 44 que
-     * mostrar: la rejilla les daba el mismo peso visual que a una cuadrilla de
-     * quince. Sigue siendo zona de soltar, pero solo para explicar que no
-     * acepta trabajadores de cuadrilla.
-     */
-    const renderGestion = () => {
-        const visibles = gestion.filter(matchesSearch);
-        if (visibles.length === 0) return null;
-        const isDragWarn = dragOverContainerId === GESTION_CONTAINER && !!dragPersonaId;
-        return (
-            <section
-                aria-label="Equipo de gestión"
-                className={`eq2-mgmt${isDragWarn ? ' eq2-mgmt--warn' : ''}`}
-                {...makeContainerDropProps(GESTION_CONTAINER)}
-            >
-                <span className="eq2-mgmt-label">Gestión</span>
-                {visibles.map((w) => (
-                    <button
-                        type="button"
-                        key={w.personaId}
-                        className="eq2-mgmt-chip"
-                        onClick={(e) => {
-                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                            setCardAction(cardAction?.worker.personaId === w.personaId ? null : { worker: w, rect });
-                        }}
-                    >
-                        <PersonaAvatar w={w} className="eq2-mgmt-chip-avatar" />
-                        <span className="eq2-mgmt-chip-name">{w.nombre} {w.apellido || ''}</span>
-                        <span className="eq2-mgmt-chip-role">{w.rolNombre || w.rol}</span>
-                    </button>
-                ))}
-                {isDragWarn && (
-                    <span className="eq2-mgmt-hint">Este equipo no acepta trabajadores de cuadrilla.</span>
                 )}
             </section>
         );
@@ -1409,7 +1375,15 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                     </div>
                 ) : (
                     <div className="eq2-groups">
-                        {renderGestion()}
+                        {/* Gestión: mismo rótulo y tarjetas que una cuadrilla, pero
+                            nadie se arrastra dentro ni fuera de él. */}
+                        {renderContainer({
+                            id: GESTION_CONTAINER,
+                            title: 'Gestión',
+                            count: gestion.length,
+                            workers: gestion,
+                            isGestion: true,
+                        })}
 
                         {/* Sin cuadrilla va primero: es lo que hay que resolver. */}
                         {renderContainer({
@@ -2001,36 +1975,6 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 .eq2-mode-btn:hover { color: var(--text-primary); }
                 .eq2-mode-btn--active { background: var(--surface-hover); color: var(--text-primary); }
 
-                /* ── Gestión ──────────────────────────────────
-                   Son tres o cuatro personas y no se arrastran: una fila de
-                   píldoras dice quiénes son sin gastar una rejilla entera. */
-                .eq2-mgmt { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-                .eq2-mgmt-label {
-                    font-size: 11px; font-weight: 700; text-transform: uppercase;
-                    letter-spacing: 0.08em; color: var(--text-secondary); flex-shrink: 0;
-                }
-                .eq2-mgmt-chip {
-                    display: inline-flex; align-items: center; gap: var(--space-2);
-                    padding: 4px 12px 4px 4px; background: none;
-                    border: 1px solid var(--surface-border); border-radius: 999px;
-                    color: inherit; font-family: inherit; cursor: pointer;
-                    transition: border-color 0.12s, background 0.12s;
-                }
-                .eq2-mgmt-chip:hover { border-color: var(--accent); background: var(--accent-tint); }
-                .eq2-mgmt-chip-avatar {
-                    width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
-                    display: flex; align-items: center; justify-content: center;
-                    font-size: 10px; font-weight: 700; text-transform: uppercase;
-                    background: var(--accent-tint); color: var(--accent-text);
-                    border: 1.5px solid color-mix(in srgb, var(--accent) 28%, transparent);
-                }
-                .eq2-mgmt-chip-name { font-size: 12.5px; font-weight: 500; }
-                .eq2-mgmt-chip-role { font-size: 11.5px; color: var(--text-secondary); }
-                .eq2-mgmt-hint { font-size: 11.5px; font-weight: 500; color: var(--danger-alerta); }
-                .eq2-mgmt--warn .eq2-mgmt-chip {
-                    border-color: color-mix(in srgb, var(--danger-alerta) 45%, transparent);
-                }
-
                 /* ── Cuadrillas ─────────────────────────────── */
                 .eq2-groups { display: flex; flex-direction: column; gap: var(--space-6); }
                 .eq2-crew { transition: opacity 0.15s, border-color 0.15s; }
@@ -2049,8 +1993,11 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                     font-variant-numeric: tabular-nums; white-space: nowrap;
                 }
                 .eq2-crew--dragover .eq2-crew-count { border-color: var(--accent); color: var(--accent-text); }
+                .eq2-crew--warn .eq2-crew-head { border-bottom-color: var(--danger-alerta); }
+                .eq2-crew--boxed.eq2-crew--warn { border-color: var(--danger-alerta); }
                 .eq2-crew-hint { font-size: 11.5px; color: var(--text-secondary); }
                 .eq2-crew-hint--drop { color: var(--accent-text); font-weight: 500; }
+                .eq2-crew-hint--warn { color: var(--danger-alerta); font-weight: 500; }
                 .eq2-crew-spacer { flex: 1; min-width: 0; }
                 .eq2-crew-prev { display: flex; align-items: center; gap: var(--space-2); min-width: 220px; }
                 .eq2-crew-empty-grid, .eq2-crew-empty-list {

@@ -81,9 +81,10 @@ export function DirectorioSkeleton({ vista = 'grid', filas = 12 }: { vista?: Vis
     );
 }
 
-/** Equipo de la obra: barra, gestión y dos cuadrillas con su rótulo. */
+/** Equipo de la obra: barra, gestión y dos cuadrillas, todos con su rótulo. */
 export function EquipoObraSkeleton({ vista = 'grid' }: { vista?: Vista }) {
-    const cuadrillas = [4, 4];
+    // Gestión se dibuja igual que una cuadrilla: va primero, con menos gente.
+    const cuadrillas = [3, 4, 4];
     return (
         <div aria-busy="true" aria-live="polite" aria-label="Cargando el equipo de la obra" className="sk-page">
             <div className="sk-toolbar">
@@ -93,17 +94,9 @@ export function EquipoObraSkeleton({ vista = 'grid' }: { vista?: Vista }) {
                 <div className="ui-skel" style={{ width: 76, height: 36, borderRadius: 9 }} />
             </div>
 
-            {/* Gestión: una fila de píldoras, no una rejilla. */}
-            <div className="sk-chips">
-                <div className="ui-skel ui-skel--linea" style={{ width: 58, height: 10 }} />
-                {[150, 132, 120].map((w, i) => (
-                    <div key={i} className="ui-skel ui-skel--pildora" style={{ width: w, height: 32 }} />
-                ))}
-            </div>
-
             {cuadrillas.map((n, c) => (
                 <section key={c} className={vista === 'list' ? 'sk-caja' : undefined}>
-                    <RotuloSkel ancho={c === 0 ? 96 : 124} dentroDeCaja={vista === 'list'} />
+                    <RotuloSkel ancho={[72, 96, 124][c]} dentroDeCaja={vista === 'list'} />
                     {vista === 'grid' ? (
                         <div className="sk-grid">
                             {Array.from({ length: n }, (_, i) => <TarjetaSkel key={i} i={i + c} conBarra />)}

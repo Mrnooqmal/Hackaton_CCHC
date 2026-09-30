@@ -62,8 +62,21 @@ const ObraContext = createContext<ObraContextType | undefined>(undefined);
 export const ObraProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading: authLoading, hasPermission } = useAuth();
   const [obras, setObras] = useState<Obra[]>([]);
-  const [selectedObraId, setSelectedObraIdState] = useState<string | null>(null);
-  const [scope, setScope] = useState<ObraScope>(null);
+  // Al recargar con la sesión viva se parte del último ámbito guardado, para
+  // que la app entre directo a la interfaz en vez de pasar por la selección de
+  // obra. Los refs quedan en null a propósito: así resolverScope vuelve a
+  // validar lo guardado (paso 2) contra las obras reales cuando lleguen.
+  const [selectedObraId, setSelectedObraIdState] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(STORAGE_SCOPE) === 'obra' ? localStorage.getItem(STORAGE_OBRA) : null;
+  });
+  const [scope, setScope] = useState<ObraScope>(() => {
+    if (typeof window === 'undefined') return null;
+    const guardado = localStorage.getItem(STORAGE_SCOPE);
+    if (guardado === 'empresa') return 'empresa';
+    if (guardado === 'obra' && localStorage.getItem(STORAGE_OBRA)) return 'obra';
+    return null;
+  });
   const [isLoadingObras, setIsLoadingObras] = useState(false);
 
   // Quien puede ver Mi Empresa puede quedarse en la vista global: para esa

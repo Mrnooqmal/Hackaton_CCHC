@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FiMenu, FiChevronRight, FiBell, FiHome, FiSun, FiMoon, FiHelpCircle } from 'react-icons/fi';
+import { FiChevronRight, FiBell, FiHome, FiSun, FiMoon, FiHelpCircle } from 'react-icons/fi';
 import { useLayout } from '../context/LayoutContext';
 import { useObraContext } from '../context/ObraContext';
 import { useAuth } from '../context/AuthContext';
@@ -120,7 +120,7 @@ function buildCrumbs(pathname: string, obraActiva = false): Crumb[] {
 
 export default function Header() {
     const { user } = useAuth();
-    const { toggleMobileMenu, toggleSidebarCollapsed } = useLayout();
+    const { isMobileMenuOpen, toggleMobileMenu, toggleSidebarCollapsed } = useLayout();
     const { selectedObra, modoEmpresa, puedeGestionarEmpresa, isLoadingObras } = useObraContext();
     const { theme, toggleTheme } = useTheme();
     const { logo } = useBrand();
@@ -177,11 +177,16 @@ export default function Header() {
                 <div className="header-mainbar-left">
                     <button
                         type="button"
-                        className="header-hamburger"
+                        className={`header-hamburger ${isMobileMenuOpen ? 'is-open' : ''}`}
                         onClick={handleToggleSidebar}
-                        aria-label="Mostrar u ocultar el menú lateral"
+                        aria-label={isMobileMenuOpen ? 'Cerrar el menú lateral' : 'Mostrar u ocultar el menú lateral'}
+                        aria-expanded={isMobileMenuOpen}
                     >
-                        <FiMenu />
+                        {/* Tres líneas que giran hasta formar una X con el menú móvil abierto:
+                            el mismo botón que lo abre es el que lo cierra */}
+                        <span className="header-hamburger-icon" aria-hidden="true">
+                            <span /><span /><span />
+                        </span>
                     </button>
 
                     {logo ? (

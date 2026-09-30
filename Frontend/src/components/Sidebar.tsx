@@ -11,7 +11,6 @@ import {
     FiBriefcase,
     FiAlertTriangle,
     FiCheckSquare,
-    FiX,
     FiLogOut,
     FiList,
     FiClipboard,
@@ -267,17 +266,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             />
 
             <aside className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
-                {/* Mobile close button */}
-                {onClose && (
-                    <button
-                        className="sidebar-mobile-close"
-                        onClick={onClose}
-                        aria-label="Cerrar menú"
-                    >
-                        <FiX />
-                    </button>
-                )}
-
                 <nav className="sidebar-nav">
                     {navSections.map((section: NavSection) => {
                         // Permissions are already filtered by role, but keep this for double-checking
