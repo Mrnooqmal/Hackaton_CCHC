@@ -25,6 +25,7 @@ import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
 import CompletitudFufPanel from '../components/CompletitudFufPanel';
 import SgsstPanel from '../components/SgsstPanel';
 import OrganizacionesSindicales from '../components/OrganizacionesSindicales';
+import SolicitudesTitularesPanel from '../components/gobernanza/SolicitudesTitularesPanel';
 import { AMBITO } from '../utils/estructuraPreventiva';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -108,7 +109,7 @@ function compressLogo(dataUrl: string): Promise<string> {
 
 interface RoleDraft { _id: string; id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; tipo?: string | null; protegido?: boolean; }
 
-type TabKey = 'identidad' | 'roles' | 'cargos' | 'epp' | 'salud';
+type TabKey = 'identidad' | 'roles' | 'cargos' | 'epp' | 'salud' | 'datos';
 
 export default function MiEmpresa() {
     const { user, hasPermission, updateUser } = useAuth();
@@ -122,6 +123,7 @@ export default function MiEmpresa() {
         cargos: hasPermission(PERMISSIONS.EMPRESA_CARGOS),
         epp: hasPermission(PERMISSIONS.EMPRESA_EPP),
         salud: hasPermission(PERMISSIONS.EMPRESA_FICHA_SALUD),
+        datos: hasPermission(PERMISSIONS.EMPRESA_DERECHOS_TITULARES),
     };
     const tabs: { key: TabKey; label: string; icon: any }[] = [
         ...(can.identidad ? [{ key: 'identidad' as const, label: 'Identidad', icon: FiBriefcase }] : []),
@@ -129,6 +131,7 @@ export default function MiEmpresa() {
         ...(can.cargos ? [{ key: 'cargos' as const, label: 'Cargos', icon: FiTag }] : []),
         ...(can.epp ? [{ key: 'epp' as const, label: 'EPP', icon: LuHardHat }] : []),
         ...(can.salud ? [{ key: 'salud' as const, label: 'Ficha de salud', icon: FiHeart }] : []),
+        ...(can.datos ? [{ key: 'datos' as const, label: 'Datos personales', icon: FiLock }] : []),
     ];
     const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'identidad');
     // La acción principal de EPP vive en el encabezado; el modal, en la pestaña.
@@ -229,6 +232,7 @@ export default function MiEmpresa() {
             {!loading && tab === 'salud' && can.salud && tenant && (
                 <FichaSaludTab tenant={tenant} onSaved={(t) => setTenant(t)} toast={toast} />
             )}
+            {tab === 'datos' && can.datos && <SolicitudesTitularesPanel />}
 
             <style>{styles}</style>
         </div>

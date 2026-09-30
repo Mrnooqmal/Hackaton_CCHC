@@ -1786,8 +1786,13 @@ module.exports.personasHandler = async (event) => {
         // GET /personas — Listar personas del tenant
         if (method === 'GET' && !personaId) {
             if (!sesion) return sesionRes.respuesta;
-            const { rol, estado, obraId } = event.queryStringParameters || {};
-            const personas = await personaService.listByTenant(tenantId, { rol, estado, obraId });
+            const { rol, estado, obraId, incluirBloqueadas } = event.queryStringParameters || {};
+            // Quien gestiona los derechos de los titulares
+            // necesita ver también a las personas con el tratamiento bloqueado
+            // (para registrar o responder lo que les concierne). Para el resto siguen fuera: es tratamiento nuevo.
+            const verBloqueadas = incluirBloqueadas === '1'
+                && puede(PERMISSIONS.EMPRESA_DERECHOS_TITULARES);
+            const personas = await personaService.listByTenant(tenantId, { rol, estado, obraId, incluirBloqueadas: verBloqueadas });
             // Resuelve nombre/tipo del rol desde la def. del tenant para que el
             // frontend muestre el rol y arme las cuadrillas (quién es supervisor).
             const tenantDef = await tenantSafe(tenantId);

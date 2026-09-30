@@ -87,8 +87,10 @@ export const personasApi = {
             body: JSON.stringify(data),
         }),
 
-    list: (tenantId: string, filters?: { rol?: string; estado?: string; obraId?: string }) => {
+    list: (tenantId: string, filters?: { rol?: string; estado?: string; obraId?: string; incluirBloqueadas?: boolean }) => {
         const params = new URLSearchParams({ tenantId });
+        // Solo lo respeta el backend para quien gestiona derechos de los titulares.
+        if (filters?.incluirBloqueadas) params.append('incluirBloqueadas', '1');
         if (filters?.rol) params.append('rol', filters.rol);
         if (filters?.estado) params.append('estado', filters.estado);
         if (filters?.obraId) params.append('obraId', filters.obraId);

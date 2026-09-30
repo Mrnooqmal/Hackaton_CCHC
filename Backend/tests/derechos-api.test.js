@@ -258,3 +258,15 @@ test('si otra persona responde entre la lectura y la escritura, la segunda respu
     assert.equal(res.statusCode, 409);
     assert.equal(historial().length, antes, 'sin evento de una respuesta que no ocurrió');
 });
+
+test('el listado de personas muestra a las bloqueadas solo a quien gestiona derechos, y solo si lo pide', async () => {
+    const personas = require('../handlers/personas-module/handler');
+    await pedir('POST', '/gobernanza/solicitudes', SOLICITUD());
+    const listar = async (permisos, incluir) => JSON.parse((await personas.personasHandler({
+        requestContext: { http: { method: 'GET' }, authorizer: { lambda: { sessionId: 's', personaId: admin.personaId, tenantId: T, rol: 'prevencionista', permisos } } },
+        rawPath: '/personas', queryStringParameters: incluir ? { incluirBloqueadas: '1' } : {},
+    })).body).data.personas.map((p) => p.personaId);
+    assert.ok(!(await listar('personas.ver', true)).includes(titular.personaId), 'sin el permiso, el parámetro no sirve');
+    assert.ok(!(await listar('personas.ver,empresa.derechos_titulares', false)).includes(titular.personaId), 'con el permiso pero sin pedirlo, tampoco');
+    assert.ok((await listar('personas.ver,empresa.derechos_titulares', true)).includes(titular.personaId), 'con el permiso y pidiéndolo, sí');
+});

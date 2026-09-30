@@ -43,6 +43,8 @@ export interface PersonaDesvinculacion {
 }
 
 export interface PersonaResponse {
+    /** Tratamiento bloqueado por una solicitud del titular pendiente (Ley 21.719). */
+    tratamientoBloqueado?: boolean;
     personaId: string;
     tenantId: string;
     rut: string;
