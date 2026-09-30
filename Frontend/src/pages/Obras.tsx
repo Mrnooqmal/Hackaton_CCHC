@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { documentsApi, uploadsApi } from '../api/client';
+import { documentsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,7 @@ import { Select } from '../components/ui';
 import { PageHeader, CollectionView, DataTable, Badge, ObrasSkeleton } from '../components/ui';
 import type { CollectionMode, DataTableColumn } from '../components/ui';
 import { PERMISSIONS } from '../permissions';
+import { useObraImagenes } from '../hooks/useObraImagenes';
 
 interface Obra {
   obraId?: string;
@@ -52,8 +53,7 @@ export const Obras: React.FC = () => {
 
   const [ds44Alerts, setDs44Alerts] = useState<Record<string, number>>({});
   const loading = isLoadingObras && obras.length === 0;
-  const [obraImageUrls, setObraImageUrls] = useState<Record<string, string>>({});
-  const imageCacheKey = 'obraImageCache';
+  const obraImageUrls = useObraImagenes(obras);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterEstado, setFilterEstado] = useState('');
@@ -92,51 +92,9 @@ export const Obras: React.FC = () => {
     } catch {}
   };
 
-  const fetchObraImages = async (obrasList: Obra[]) => {
-    const imageKeys = obrasList
-      .map((o) => ({ obraId: o.obraId, imagenKey: o.imagenKey }))
-      .filter((e) => e.obraId && e.imagenKey) as { obraId: string; imagenKey: string }[];
-    if (imageKeys.length === 0) { setObraImageUrls({}); return; }
-
-    const now = Date.now();
-    const cachedRaw = localStorage.getItem(imageCacheKey);
-    const cached: Record<string, { url: string; expiresAt: number }> = cachedRaw ? JSON.parse(cachedRaw) : {};
-    const needsFetch = new Set<string>();
-    const nextImages: Record<string, string> = {};
-
-    imageKeys.forEach(({ obraId, imagenKey }) => {
-      const entry = cached[imagenKey];
-      if (entry && entry.expiresAt > now) nextImages[obraId] = entry.url;
-      else needsFetch.add(imagenKey);
-    });
-
-    if (Object.keys(nextImages).length > 0) setObraImageUrls(prev => ({ ...prev, ...nextImages }));
-
-    if (needsFetch.size > 0) {
-      try {
-        const res = await uploadsApi.getBatchDownloadUrls(Array.from(needsFetch));
-        if (res?.success && res.data?.urls) {
-          const expiresInMs = (res.data.expiresIn || 0) * 1000;
-          const updatedImages: Record<string, string> = {};
-          res.data.urls.forEach((item: any) => {
-            if (item.downloadUrl && item.fileKey) {
-              cached[item.fileKey] = { url: item.downloadUrl, expiresAt: now + expiresInMs };
-              imageKeys.forEach(({ obraId, imagenKey }) => {
-                if (imagenKey === item.fileKey) updatedImages[obraId] = item.downloadUrl;
-              });
-            }
-          });
-          localStorage.setItem(imageCacheKey, JSON.stringify(cached));
-          setObraImageUrls(prev => ({ ...prev, ...updatedImages }));
-        }
-      } catch {}
-    }
-  };
-
   useEffect(() => {
     if (obras.length > 0) {
       fetchDs44Alerts(obras);
-      fetchObraImages(obras);
     }
   }, [contextObras]);
 
