@@ -31,6 +31,16 @@ const TIPOS_SALUD = new Set([
 const esDocumentoDeSalud = (doc) => TIPOS_SALUD.has(doc?.tipo);
 
 /**
+ * Documentos que no son de salud pero TRAEN datos de salud de varias personas:
+ * el Registro AT/EP (protocolos y aptitud de quienes están en vigilancia) y el
+ * informe de investigación de un accidente (lesiones). No tienen el resguardo de
+ * TIPOS_SALUD —eso es una decisión de producto pendiente (H-15)—, pero su
+ * lectura y descarga sí quedan en la auditoría (lib/gobernanza/auditoriaSalud.js).
+ */
+const TIPOS_CON_SALUD = new Set(['REGISTRO_AT_EP', 'INVESTIGACION_ACCIDENTE']);
+const traeSalud = (doc) => TIPOS_SALUD.has(doc?.tipo) || TIPOS_CON_SALUD.has(doc?.tipo);
+
+/**
  * ¿Puede esta persona ver este documento de salud?
  *
  * Quien tenga el permiso, y siempre la persona a la que el documento se refiere:
@@ -51,4 +61,4 @@ function puedeVerSalud(doc, persona, tenantSafe) {
 const filtrarSalud = (documentos, persona, tenantSafe) =>
     (documentos || []).filter((d) => !esDocumentoDeSalud(d) || puedeVerSalud(d, persona, tenantSafe));
 
-module.exports = { TIPOS_SALUD, esDocumentoDeSalud, puedeVerSalud, filtrarSalud };
+module.exports = { TIPOS_SALUD, TIPOS_CON_SALUD, traeSalud, esDocumentoDeSalud, puedeVerSalud, filtrarSalud };

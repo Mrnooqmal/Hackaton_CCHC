@@ -43,7 +43,7 @@ function statements() {
     return res;
 }
 
-const tocaHistorial = (st) => st.recursos.some((r) => /GobernanzaHistorialTable|gobernanza-historial/.test(r)
+const tocaHistorial = (st) => st.recursos.some((r) => /GobernanzaHistorialTable|gobernanza-historial|AuditoriaAccesosTable|auditoria-accesos/.test(r)
     || /table\/\$\{self:service\}-\*/.test(r));
 const escribe = (a) => !/^dynamodb:(Query|GetItem|BatchGetItem|Scan|DescribeTable)$/.test(a);
 
@@ -94,4 +94,9 @@ test('borrar versiones de S3 con bypass de la retención solo lo puede RolSupres
 test('RolSupresion lo usa una sola función: la de lotes', () => {
     const usos = YML.split('\n').filter((l) => /^\s+role: RolSupresion\s*$/.test(l));
     assert.equal(usos.length, 1);
+});
+
+test('la auditoría de accesos a salud se conserva siempre', () => {
+    const bloque = YML.slice(YML.indexOf('    AuditoriaAccesosTable:'), YML.indexOf('    AuditoriaAccesosTable:') + 400);
+    assert.match(bloque, /DeletionPolicy: Retain/);
 });

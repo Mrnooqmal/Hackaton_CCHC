@@ -1227,6 +1227,30 @@ Es la única forma de borrar datos personales en el sistema.
   queda en `ejecutando`. Las operaciones son idempotentes (borrar lo que ya no
   está no falla), pero hoy la reanudación es manual.
 
+### D-18. Auditoría de acceso a datos de salud
+**Estado: implementado el 29 de septiembre de 2026 (en el árbol).**
+
+Queda registro de quién consultó o descargó datos de salud de **otra** persona:
+ficha de vigilancia y restricción laboral, documentos de salud (y sus archivos),
+respuestas de la ficha básica de salud, y los documentos que traen salud de
+varias personas (Registro AT/EP, investigación de accidente). Se guarda quién,
+cuándo, desde qué IP y navegador, por qué ruta, de qué titulares y qué
+documentos; **nunca el contenido**, y de los archivos solo la huella de su
+clave (la clave puede llevar el nombre de la persona).
+
+- Un evento por petición (`AsyncLocalStorage`): un listado de 80 fichas es un
+  registro, no 80.
+- **Sin registro no hay acceso** (*decisión técnica*): si el registro no se
+  puede escribir, la respuesta con salud no sale y se devuelve 503, medido con
+  `registrarFallo`. Para datos de salud, poder demostrar quién accedió pesa más
+  que la disponibilidad.
+- **No se registra el acceso a los propios datos**: es el derecho de acceso del
+  titular, y `/auth/me` en cada carga de página lo inundaría.
+- Un punto que entrega salud fuera de un handler auditado lanza un error: se ve
+  en las pruebas, no en una fiscalización.
+- `AuditoriaAccesosTable`: solo agregar y leer para todos los roles, `Retain`
+  siempre, con índice por actor y fecha (lo usa el informe de brecha, D-19).
+
 ### D-20. QA prueba en dev: una distribución del frontend por ambiente
 **Estado: implementado el 29 de septiembre de 2026 (en el árbol; se despliega
 tras el push).**
@@ -1503,6 +1527,19 @@ Al armar el inventario aparecieron dos cosas:
   la supresión no tenían cómo encontrar los incidentes de alguien sin descifrar
   todos. Ahora se guarda `afectadoRutHmac`, el mismo HMAC con que se busca a la
   persona en su ficha, y la migración lo calcula para los existentes.
+
+### H-15. El Registro AT/EP y la investigación de accidentes traen salud sin el resguardo de los documentos de salud
+**Severidad: media — ABIERTO (decisión de producto pendiente)**
+
+El Registro AT/EP guardado como evidencia lista, por persona en vigilancia, sus
+protocolos y su aptitud laboral; el informe de investigación describe las
+lesiones del accidente. Ninguno de los dos tipos está entre los documentos de
+salud (`lib/documentos-salud.js`), así que los ve y descarga cualquiera con
+acceso a los documentos de la empresa, sin el permiso de vigilancia que exigen
+los exámenes. Desde el 29 de septiembre de 2026 su lectura y descarga quedan en
+la auditoría (D-18), pero quién debe poder verlos es una decisión de producto:
+restringirlos al permiso de vigilancia, o sacar del registro el detalle por
+persona y dejar solo los conteos.
 
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**

@@ -12,7 +12,16 @@ const { TenantService } = require('../../lib/services/TenantService');
 const { PdfStampingService } = require('../../lib/services/PdfStampingService');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
-const { TIPOS_SALUD, filtrarSalud } = require('../../lib/documentos-salud');
+const { TIPOS_SALUD, filtrarSalud, traeSalud } = require('../../lib/documentos-salud');
+const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
+
+/** Deja en la auditoría los documentos de salud que se entregan (lib/gobernanza/auditoriaSalud.js). */
+const anotarDocumentosSalud = (docs, tipo = TIPOS_ACCESO_SALUD.DOCUMENTO) => {
+    for (const d of docs) {
+        if (!d || !traeSalud(d)) continue;
+        anotarAccesoSalud({ tipo, titulares: (d.asignaciones || []).map((a) => a.personaId).filter(Boolean), documentos: [d.documentId] });
+    }
+};
 const { DESTINATARIO, MEDIO } = require('../../lib/distribucion');
 const almacenamiento = require('../../lib/almacenamiento');
 const { camposDeArchivo, verificarArchivo } = require('../../lib/huellaArchivo');
@@ -327,7 +336,7 @@ module.exports.create = async (event) => {
 /**
  * GET /documents - Listar documentos
  */
-module.exports.list = async (event) => {
+module.exports.list = conAuditoriaSalud(async (event) => {
     try {
         const ses = conSesion(event);
         if (!ses.ok) return ses.respuesta;
@@ -414,6 +423,7 @@ module.exports.list = async (event) => {
             const tenantSafe = tenant ? tenant.toSafeFormat() : null;
             documents = filtrarSalud(documents, persona, tenantSafe);
         }
+        anotarDocumentosSalud(documents);
 
         return success({
             documents: await descifrarDocumentosDeTenant(documents, tenantId),
@@ -423,12 +433,12 @@ module.exports.list = async (event) => {
         console.error('Error listing documents:', err);
         return error(err.message, 500);
     }
-};
+});
 
 /**
  * GET /documents/{id} - Obtener documento por ID
  */
-module.exports.get = async (event) => {
+module.exports.get = conAuditoriaSalud(async (event) => {
     try {
         const ses = conSesion(event);
         if (!ses.ok) return ses.respuesta;
@@ -446,13 +456,14 @@ module.exports.get = async (event) => {
         if (!doc || !puedeVerDocumento(doc, sesion)) {
             return error('Documento no encontrado', 404);
         }
+        anotarDocumentosSalud([doc]);
 
         return success(await descifrarDocumentoDeTenant(doc, sesion.tenantId));
     } catch (err) {
         console.error('Error getting document:', err);
         return error(err.message, 500);
     }
-};
+});
 
 /**
  * DELETE /documents/{id} - Eliminar un documento.
@@ -1420,7 +1431,7 @@ module.exports.signBulk = async (event) => {
  * 6 MB y acá hay documentos de 5 MB— sino que se devuelve una URL prefirmada,
  * igual que antes.
  */
-module.exports.downloadFirmado = async (event) => {
+module.exports.downloadFirmado = conAuditoriaSalud(async (event) => {
     try {
         const ses = conSesion(event);
         if (!ses.ok) return ses.respuesta;
@@ -1433,6 +1444,7 @@ module.exports.downloadFirmado = async (event) => {
         if (!documentData || !puedeVerDocumento(documentData, sesion)) {
             return error('Documento no encontrado', 404);
         }
+        anotarDocumentosSalud([documentData], TIPOS_ACCESO_SALUD.DESCARGA);
 
         // El archivo puede haber quedado guardado en s3Key o en archivoUrl
         // según el flujo de creación (ver documents.create / documents.list).
@@ -1496,7 +1508,7 @@ module.exports.downloadFirmado = async (event) => {
         console.error('Error downloading signed document:', err);
         return error('No se pudo preparar el documento firmado', 500);
     }
-};
+});
 
 /**
  * POST /documents/{id}/difusion — registra un envío DECLARADO del documento a un

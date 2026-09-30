@@ -99,6 +99,7 @@ provider:
     AUSENCIAS_TABLE: ${self:service}-ausencias-${self:provider.stage}
     GOBERNANZA_TABLE: ${self:service}-gobernanza-${self:provider.stage}
     GOBERNANZA_HISTORIAL_TABLE: ${self:service}-gobernanza-historial-${self:provider.stage}
+    AUDITORIA_ACCESOS_TABLE: ${self:service}-auditoria-accesos-${self:provider.stage}
     EPP_TABLE: ${self:service}-epp-${self:provider.stage}
     ESTRUCTURA_TABLE: ${self:service}-estructura-preventiva-${self:provider.stage}
     # --- Storage ---
@@ -255,6 +256,9 @@ provider:
           Action: [dynamodb:Query, dynamodb:PutItem]
           Resource:
             - !GetAtt GobernanzaHistorialTable.Arn
+            # Auditoría de acceso a datos de salud (D-18): solo agregar y leer.
+            - !GetAtt AuditoriaAccesosTable.Arn
+            - !Sub ${AuditoriaAccesosTable.Arn}/index/*
         # Evidencia: se escribe y se lee, pero NO se borra. El permiso de borrado
         # no está por omisión y no por olvido: el bloqueo de objetos lo impediría
         # igual, y así el intento falla donde se entiende por qué.
@@ -1988,6 +1992,45 @@ resources:
             KeyType: HASH
           - AttributeName: sk
             KeyType: RANGE
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
+    # Auditoría de acceso a datos de salud (D-18): quién vio o descargó datos de
+    # salud de otra persona, cuándo y desde dónde; nunca el contenido. Como el
+    # historial de gobernanza, solo se le agregan ítems (ningún rol puede
+    # actualizar ni borrar) y se conserva siempre. El índice por actor responde
+    # "a qué accedió esta cuenta" (informe de brecha, D-19).
+    AuditoriaAccesosTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        TableName: ${self:provider.environment.AUDITORIA_ACCESOS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
+        AttributeDefinitions:
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+          - AttributeName: actorId
+            AttributeType: S
+          - AttributeName: en
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenantId
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: actorId-en-index
+            KeySchema:
+              - AttributeName: actorId
+                KeyType: HASH
+              - AttributeName: en
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
         PointInTimeRecoverySpecification:
           PointInTimeRecoveryEnabled: true
 

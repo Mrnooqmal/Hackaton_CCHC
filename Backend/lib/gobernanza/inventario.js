@@ -18,6 +18,10 @@
  *                 y le gana a una solicitud de supresión mientras no venza.
  *   CONVENIENCIA  se recogió para comodidad de uso, no para acreditar nada:
  *                 se suprime a solicitud del titular, sin esperar el plazo.
+ *   `contieneSalud`: la tabla puede traer datos de salud (vigilancia, exámenes,
+ *   la ficha de salud, licencias médicas, lesiones de un accidente). Lo usa el
+ *   informe de brecha para decir si hubo salud expuesta.
+ *
  *   OPERACIONAL   existe para que el sistema funcione (sesiones, vales,
  *                 licencias de alta): vence solo, por TTL o por uso.
  *
@@ -48,6 +52,7 @@ const uno = (v) => (v ? [v] : []);
 const FUENTES = [
     {
         tabla: 'PERSONAS_TABLE',
+        contieneSalud: true,
         claves: ['PK', 'SK'],
         nombre: 'Ficha de la persona',
         datos: 'RUT (cifrado), nombre, fecha de nacimiento, correo, teléfono, foto, cargo, asignaciones a obras, nivel escolar, cursos, contacto de emergencia, vigilancia de salud y restricción laboral (cifradas), credenciales (hash), historial del PIN, enrolamiento.',
@@ -61,6 +66,7 @@ const FUENTES = [
     },
     {
         tabla: 'DOCUMENTS_TABLE',
+        contieneSalud: true,
         claves: ['documentId'],
         nombre: 'Documentos, asignaciones y firmas',
         datos: 'Documentos de onboarding, procedimientos, entregas de EPP; a quién se asignaron, quién firmó (nombre, RUT e IP cifrados), difusiones, versiones anteriores con sus firmas.',
@@ -78,6 +84,7 @@ const FUENTES = [
     },
     {
         tabla: 'SIGNATURES_TABLE',
+        contieneSalud: false,
         claves: ['signatureId'],
         // RUT, IP y agente de usuario viven aparte, en `<id>#traza` (lib/traza-sensible.js):
         // sin tenantId, fuera de todo índice. Suprimir la firma es suprimir también eso.
@@ -92,6 +99,7 @@ const FUENTES = [
     },
     {
         tabla: 'SIGNATURE_REQUESTS_TABLE',
+        contieneSalud: false,
         claves: ['requestId'],
         nombre: 'Solicitudes de firma',
         datos: 'Solicitante y trabajadores convocados (nombre, cargo, RUT cifrado), estado de cada firma.',
@@ -103,6 +111,7 @@ const FUENTES = [
     },
     {
         tabla: 'ACTIVITIES_TABLE',
+        contieneSalud: false,
         claves: ['activityId'],
         nombre: 'Actividades preventivas y asistencia',
         datos: 'Relator, responsables y asistentes (nombre, cargo, RUT cifrado, firma, atrasos), planificación y evaluación.',
@@ -115,6 +124,7 @@ const FUENTES = [
     },
     {
         tabla: 'INCIDENTS_TABLE',
+        contieneSalud: true,
         claves: ['incidentId'],
         // RUT, género y cargo de la persona afectada, en `<id>#traza`: anonimizar
         // el incidente es borrar esa traza entera.
@@ -136,6 +146,7 @@ const FUENTES = [
     },
     {
         tabla: 'SURVEYS_TABLE',
+        contieneSalud: true,
         claves: ['surveyId'],
         nombre: 'Encuestas y ficha de salud',
         datos: 'Destinatarios (nombre, cargo, RUT cifrado) y sus respuestas cifradas, incluida la ficha básica de salud.',
@@ -147,6 +158,7 @@ const FUENTES = [
     },
     {
         tabla: 'AUSENCIAS_TABLE',
+        contieneSalud: true,
         claves: ['tenantId', 'sk'],
         nombre: 'Ausencias',
         datos: 'Permisos, licencias médicas, faltas y vacaciones, con fechas y observación.',
@@ -158,6 +170,7 @@ const FUENTES = [
     },
     {
         tabla: 'ESTRUCTURA_TABLE',
+        contieneSalud: false,
         claves: ['tenantId', 'sk'],
         nombre: 'Estructura preventiva (comités, delegados)',
         datos: 'Integrantes de cada órgano (nombre, estamento, cargo, acreditación) y sus reuniones.',
@@ -169,6 +182,7 @@ const FUENTES = [
     },
     {
         tabla: 'INBOX_TABLE',
+        contieneSalud: false,
         claves: ['recipientId', 'messageId'],
         nombre: 'Bandeja de mensajes',
         datos: 'Avisos y mensajes enviados y recibidos por la persona.',
@@ -180,6 +194,7 @@ const FUENTES = [
     },
     {
         tabla: 'SUGGESTIONS_TABLE',
+        contieneSalud: false,
         claves: ['suggestionId'],
         nombre: 'Sugerencias',
         datos: 'Nombre de quien sugiere y el texto de la sugerencia.',
@@ -191,6 +206,7 @@ const FUENTES = [
     },
     {
         tabla: 'SESSIONS_TABLE',
+        contieneSalud: false,
         claves: ['sessionId'],
         nombre: 'Sesiones',
         datos: 'Hash del token de sesión, persona, empresa y vencimiento.',
@@ -202,6 +218,7 @@ const FUENTES = [
     },
     {
         tabla: 'VALES_TABLE',
+        contieneSalud: false,
         claves: ['valeHash'],
         nombre: 'Vales de firma sin conexión',
         datos: 'Hash del vale, persona, equipo de emisión y de uso.',
@@ -213,6 +230,7 @@ const FUENTES = [
     },
     {
         tabla: 'LICENCIAS_TABLE',
+        contieneSalud: false,
         claves: ['licenciaHash'],
         nombre: 'Licencias de alta de empresa',
         datos: 'Correo del futuro administrador y datos prellenados de la empresa.',
@@ -224,6 +242,7 @@ const FUENTES = [
     },
     {
         tabla: 'TENANTS_TABLE',
+        contieneSalud: false,
         claves: ['PK', 'SK'],
         nombre: 'Empresa',
         datos: 'Datos de la empresa; su representante legal (nombre y RUT) y el administrador.',
@@ -235,6 +254,7 @@ const FUENTES = [
     },
     {
         tabla: 'OBRAS_TABLE',
+        contieneSalud: false,
         claves: ['PK', 'SK'],
         nombre: 'Obras',
         datos: 'Datos de la obra; sin datos personales salvo referencias a responsables.',
@@ -246,6 +266,7 @@ const FUENTES = [
     },
     {
         tabla: 'EPP_TABLE',
+        contieneSalud: false,
         claves: ['tenantId', 'eppId'],
         nombre: 'Catálogo de EPP',
         datos: 'Catálogo de elementos de protección; sin datos personales (las entregas son documentos).',
@@ -259,7 +280,7 @@ const FUENTES = [
 
 // Sin clase de retención todavía (se agrega con la supresión a solicitud): la
 // propia tabla de gobernanza guarda solicitudes, bloqueos y lotes.
-const TABLAS_DE_GOBERNANZA = ['GOBERNANZA_TABLE', 'GOBERNANZA_HISTORIAL_TABLE'];
+const TABLAS_DE_GOBERNANZA = ['GOBERNANZA_TABLE', 'GOBERNANZA_HISTORIAL_TABLE', 'AUDITORIA_ACCESOS_TABLE'];
 
 // La clave primaria de un ítem, para poder suprimirlo o actualizarlo.
 for (const f of FUENTES) f.clave = (it) => Object.fromEntries(f.claves.map((k) => [k, it[k]]));

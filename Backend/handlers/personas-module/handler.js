@@ -24,6 +24,7 @@ const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/ses
 const { conNeutro } = require('../../lib/degradacion');
 const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
 const { camposDeArchivo } = require('../../lib/huellaArchivo');
+const { conAuditoriaSalud, anotarAccesoSalud, tieneDatosDeSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 
 /** Estado HTTP de cada rechazo de `PersonaService.setPin` y `restablecerPin`.
  *  PIN_BLOQUEADO (límite de intentos, D-9) es 423 en todas las rutas que
@@ -1127,7 +1128,7 @@ const CORREO_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 module.exports.syncPlantillasToWorkers = syncPlantillasToWorkers;
 module.exports.ensureCompanyDocsForPersona = ensureCompanyDocsForPersona;
 
-module.exports.personasHandler = async (event) => {
+module.exports.personasHandler = conAuditoriaSalud(async (event) => {
     const method = event.requestContext?.http?.method || event.httpMethod;
     const path = event.rawPath || event.path || '';
 
@@ -1180,9 +1181,15 @@ module.exports.personasHandler = async (event) => {
 
     // Ficha de una persona tal como puede verla quien pide: los datos de salud solo
     // para quien tiene el permiso o para ella misma.
-    const fichaVisible = (persona) => persona.toSafeFormat({
-        incluirSalud: verSalud() || persona.personaId === sesion?.personaId,
-    });
+    const fichaVisible = (persona) => {
+        const incluirSalud = verSalud() || persona.personaId === sesion?.personaId;
+        // Datos de salud reales (no el "sin vigilancia" por defecto) que se
+        // entregan a un tercero: quedan en la auditoría (lib/gobernanza/auditoriaSalud.js).
+        if (incluirSalud && tieneDatosDeSalud(persona)) {
+            anotarAccesoSalud({ tipo: TIPOS_ACCESO_SALUD.FICHA, titulares: [persona.personaId] });
+        }
+        return persona.toSafeFormat({ incluirSalud });
+    };
 
     /**
      * Qué puede cambiar quien pide, campo por campo (PUT /personas/{id}).
@@ -2301,4 +2308,4 @@ module.exports.personasHandler = async (event) => {
         console.error('Error in personas handler:', err);
         return error(err.message, 500);
     }
-};
+});
