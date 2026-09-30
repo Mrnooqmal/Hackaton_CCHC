@@ -14,6 +14,8 @@ export interface User {
     rol: PersonaRol;
     permisos?: string[];
     branding?: { logoUrl?: string | null; colorPrimario?: string | null } | null;
+    /** Nombre de la empresa de la sesión (para pantallas previas a elegir obra). */
+    empresaNombre?: string | null;
     email?: string;
     telefono?: string;
     fotoPerfil?: string;

@@ -2,12 +2,33 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
-import PinInput from '../components/PinInput';
-import { OnboardingShell } from '../components/ui';
-import type { StepperStep } from '../components/ui';
-import { FiCheckCircle, FiShield, FiLock, FiArrowRight, FiKey, FiUser, FiPhone, FiCamera, FiSkipForward } from 'react-icons/fi';
+import PinCasillas from '../components/PinCasillas';
+import {
+    FiAlertCircle, FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiEdit2, FiEye, FiEyeOff,
+    FiKey, FiLogOut, FiPhone, FiShield, FiX,
+} from 'react-icons/fi';
+import '../css/AuthCard.css';
+import { monograma } from '../utils/identidadEmpresa';
 
-type EnrollmentStep = 'welcome' | 'current-pin' | 'create-pin' | 'confirm-pin' | 'processing' | 'profile' | 'success';
+/**
+ * Enrolamiento: la persona crea su firma digital (PIN de 4 dígitos) y,
+ * opcionalmente, completa su perfil. Es obligatorio en el primer ingreso, así
+ * que va en la tarjeta del login, a pantalla completa.
+ *
+ * También sirve para cambiar el PIN desde Configuración (`state.changePin`):
+ * entonces pide el PIN actual —si lo hay—, el nuevo y su confirmación, y omite
+ * la bienvenida y el perfil.
+ */
+
+type EnrollmentStep = 'welcome' | 'current-pin' | 'create-pin' | 'confirm-pin' | 'profile' | 'success';
+
+const ROL_LABEL: Record<string, string> = {
+    admin: 'Administrador',
+    jefe_obra: 'Jefe de Obra',
+    supervisor: 'Supervisor',
+    prevencionista: 'Prevencionista',
+    trabajador: 'Trabajador',
+};
 
 function resizeImageToBase64(file: File, maxSize = 256): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -31,8 +52,28 @@ function resizeImageToBase64(file: File, maxSize = 256): Promise<string> {
     });
 }
 
+/** La tarjeta del login. Fuera del componente para no remontarla en cada tecla. */
+function Tarjeta({ children }: { children: React.ReactNode }) {
+    return (
+        <div className="lp-root">
+            <div className="lp-bg" aria-hidden="true" />
+            <main className="lp-card">
+                <div className="lp-head">
+                    <div className="lp-logo" aria-label="Build and Serve">
+                        <span className="lp-logo-build">Build</span>
+                        <span className="lp-logo-amp">&amp;</span>
+                        <span className="lp-logo-serve">Serve</span>
+                    </div>
+                    <div className="lp-divider" aria-hidden="true" />
+                </div>
+                {children}
+            </main>
+        </div>
+    );
+}
+
 export default function EnrollMe() {
-    const { user, updateUser } = useAuth();
+    const { user, updateUser, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -46,10 +87,12 @@ export default function EnrollMe() {
 
     const [currentStep, setCurrentStep] = useState<EnrollmentStep>(isChangePin ? pasoInicialCambio : 'welcome');
     const [pin, setPin] = useState('');
+    const [pinConfirmacion, setPinConfirmacion] = useState('');
     const [pinActual, setPinActual] = useState('');
+    const [verPin, setVerPin] = useState(false);
     const [error, setError] = useState('');
-    const [pinCreateKey, setPinCreateKey] = useState(0);
-    const [pinConfirmKey, setPinConfirmKey] = useState(0);
+    const [noCoincide, setNoCoincide] = useState(false);
+    const [procesando, setProcesando] = useState(false);
     const [enrollmentData, setEnrollmentData] = useState<any>(null);
 
     // Si el usuario ya está enrolado (ej. recargó en el paso de perfil), saltar directo ahí.
@@ -63,9 +106,15 @@ export default function EnrollMe() {
     // Profile step state
     const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
     const [telefono, setTelefono] = useState('');
-    const [telFocused, setTelFocused] = useState(false);
     const [profileSaving, setProfileSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const irA = (paso: EnrollmentStep) => {
+        setError('');
+        setNoCoincide(false);
+        setVerPin(false);
+        setCurrentStep(paso);
+    };
 
     const handleTelefonoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const digits = e.target.value.replace(/\D/g, '').slice(0, 9);
@@ -75,21 +124,24 @@ export default function EnrollMe() {
         setTelefono(fmt);
     };
 
-    const handlePinCreate = (newPin: string) => {
-        setPin(newPin);
-        setError('');
-        setTimeout(() => setCurrentStep('confirm-pin'), 800);
-    };
+    // Tras un PIN que no coincide, las casillas muestran el error un momento y
+    // se vacían solas para reintentar. Mientras tanto se ignora lo que se escriba.
+    const reintentando = useRef(false);
 
-    const handlePinConfirm = async (confirmedPin: string) => {
+    const confirmarPin = async (confirmedPin: string) => {
         if (confirmedPin !== pin) {
-            setError('El PIN no coincide. Inténtalo nuevamente.');
-            setPinConfirmKey(k => k + 1);
+            setNoCoincide(true);
+            reintentando.current = true;
+            setTimeout(() => {
+                reintentando.current = false;
+                setPinConfirmacion('');
+            }, 750);
             return;
         }
 
         setError('');
-        setCurrentStep('processing');
+        setNoCoincide(false);
+        setProcesando(true);
 
         try {
             const targetId = (user as any)?.personaId || user?.userId;
@@ -106,7 +158,7 @@ export default function EnrollMe() {
             if (isChangePin) {
                 setPin('');
                 updateUser({ pinConfigurado: true, pinRestablecido: null } as any);
-                setCurrentStep('success');
+                irA('success');
                 setTimeout(() => navigate('/configuracion', { replace: true }), 3000);
                 return;
             }
@@ -116,15 +168,21 @@ export default function EnrollMe() {
 
             updateUser({ habilitado: true });
             setEnrollmentData(enrollResponse.data);
-            setCurrentStep('profile');
+            irA('profile');
         } catch (err) {
             console.error('Error en enrolamiento:', err);
-            setError(err instanceof Error ? err.message : 'Error desconocido');
+            const mensaje = err instanceof Error ? err.message : 'Error desconocido';
             // En cambio de PIN se vuelve a empezar: el PIN actual ya se usó (y pudo
             // ser el incorrecto), así que se pide de nuevo si corresponde.
             setPinActual('');
-            setCurrentStep(isChangePin ? pasoInicialCambio : 'confirm-pin');
-            if (isChangePin) setPinCreateKey(k => k + 1);
+            setPinConfirmacion('');
+            if (isChangePin) {
+                setPin('');
+                irA(pasoInicialCambio);
+            }
+            setError(mensaje);
+        } finally {
+            setProcesando(false);
         }
     };
 
@@ -162,451 +220,292 @@ export default function EnrollMe() {
             // non-blocking — profile update failure shouldn't block enrollment
         } finally {
             setProfileSaving(false);
-            setCurrentStep('success');
-            setTimeout(() => navigate('/', { replace: true }), 3000);
+            irA('success');
         }
     };
 
-    const steps: StepperStep[] = isChangePin
+    // ── Datos para la credencial ──────────────────────────────────────────────
+    const nombreCompleto = [user?.nombre, user?.apellidoPaterno || user?.apellido].filter(Boolean).join(' ');
+    const empresa = user?.empresaNombre || '';
+    const rolLabel = ROL_LABEL[user?.rol as string] ?? (user?.rol || '');
+    const logoEmpresa = user?.branding?.logoUrl || null;
+
+    // ── Pasos ─────────────────────────────────────────────────────────────────
+    const pasos: { id: EnrollmentStep; label: string }[] = isChangePin
         ? [
+            ...(tienePin ? [{ id: 'current-pin' as const, label: 'PIN actual' }] : []),
             { id: 'create-pin', label: 'Nuevo PIN' },
             { id: 'confirm-pin', label: 'Confirmar' },
-            { id: 'success', label: 'Completado' },
         ]
         : [
             { id: 'welcome', label: 'Bienvenida' },
-            { id: 'create-pin', label: 'Crear PIN' },
+            { id: 'create-pin', label: 'Tu PIN' },
             { id: 'confirm-pin', label: 'Confirmar' },
             { id: 'profile', label: 'Perfil' },
-            { id: 'success', label: 'Completado' },
         ];
-    const currentIndex = steps.findIndex(s =>
-        s.id === currentStep
-        || (currentStep === 'processing' && s.id === (isChangePin ? 'confirm-pin' : 'profile'))
+    const indice = pasos.findIndex((p) => p.id === currentStep);
+
+    const Stepper = (
+        <ol className="onb-steps" style={{ gridTemplateColumns: `repeat(${pasos.length}, minmax(0, 1fr))` }}
+            aria-label={isChangePin ? 'Pasos para cambiar el PIN' : 'Pasos del enrolamiento'}>
+            {pasos.map((p, i) => {
+                const estado = i < indice ? 'hecho' : i === indice ? 'actual' : 'pendiente';
+                return (
+                    <li key={p.id} className={`onb-step onb-step--${estado}`} aria-current={estado === 'actual' ? 'step' : undefined}>
+                        <span className="onb-step-bar" />
+                        <span className="onb-step-label">
+                            {estado === 'hecho'
+                                ? <FiCheck size={12} strokeWidth={3} aria-label="completado" />
+                                : <span className="onb-step-num">{i + 1}.</span>}
+                            {p.label}
+                        </span>
+                    </li>
+                );
+            })}
+        </ol>
     );
 
-    return (
-        <OnboardingShell
-            user={user as any}
-            steps={steps}
-            currentIndex={currentIndex < 0 ? 0 : currentIndex}
-            sideHint={isChangePin
-                ? 'Actualiza tu PIN de firma digital (4 dígitos). El nuevo PIN debe ser distinto al actual.'
-                : 'Crea tu firma digital (PIN de 4 dígitos) y completa tu perfil para terminar de habilitar tu cuenta.'}
-        >
-                {/* Card principal */}
-                <div className="card" style={{ padding: 'var(--space-8)' }}>
+    const Pie = ({ izquierda }: { izquierda: React.ReactNode }) => (
+        <div className="lp-foot">
+            {izquierda}
+            <span className="lp-foot-meta">Paso {indice + 1} de {pasos.length}</span>
+        </div>
+    );
 
-                    {/* STEP: Bienvenida */}
-                    {currentStep === 'welcome' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', animation: 'fadeInScale 0.35s ease-out' }}>
-                            <div style={{
-                                width: '64px', height: '64px',
-                                borderRadius: 'var(--radius-lg)',
-                                background: 'var(--accent-tint)',
-                                border: '1px solid var(--surface-border)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: 'var(--accent)',
-                                margin: '0 auto',
-                            }}>
-                                <FiShield size={30} />
-                            </div>
+    const Volver = ({ onClick, texto = 'Volver' }: { onClick: () => void; texto?: string }) => (
+        <button type="button" className="lp-foot-link" onClick={onClick} disabled={procesando}>
+            <FiArrowLeft size={14} /> {texto}
+        </button>
+    );
 
-                            <div style={{ textAlign: 'center' }}>
-                                <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
-                                    Firma Digital
-                                </h2>
-                                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                    Para habilitar tu cuenta y utilizar todas las funcionalidades,
-                                    necesitas crear un PIN de seguridad de 4 dígitos.
-                                </p>
-                            </div>
+    const MostrarPin = (
+        <button type="button" className="enr-mostrar" onClick={() => setVerPin((v) => !v)} aria-pressed={verPin}>
+            {verPin ? <FiEyeOff size={14} /> : <FiEye size={14} />} {verPin ? 'Ocultar PIN' : 'Mostrar PIN'}
+        </button>
+    );
 
-                            <div style={{
-                                background: 'var(--surface-elevated)',
-                                border: '1px solid var(--surface-border)',
-                                borderRadius: 'var(--radius-lg)',
-                                overflow: 'hidden',
-                            }}>
-                                {[
-                                    { icon: <FiKey size={16} />, title: 'PIN de 4 dígitos', text: 'Tu firma digital para autorizar documentos y actividades en la plataforma.' },
-                                    { icon: <FiLock size={16} />, title: 'Seguridad', text: 'Tu PIN está encriptado y sólo tú lo conocerás.' },
-                                ].map((item, i) => (
-                                    <div key={i} style={{
-                                        display: 'flex', gap: 'var(--space-3)', padding: 'var(--space-4)',
-                                        borderBottom: i === 0 ? '1px solid var(--surface-border)' : 'none',
-                                        alignItems: 'flex-start',
-                                    }}>
-                                        <div style={{
-                                            width: '32px', height: '32px', flexShrink: 0,
-                                            borderRadius: 'var(--radius-md)',
-                                            background: 'var(--accent-tint)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            color: 'var(--accent)',
-                                        }}>
-                                            {item.icon}
-                                        </div>
-                                        <div>
-                                            <p style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
-                                                {item.title}
-                                            </p>
-                                            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                                                {item.text}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+    const ErrorServidor = error ? <p className="lp-error enr-error-servidor" role="alert">{error}</p> : null;
 
-                            <button
-                                className="btn btn-primary"
-                                style={{ width: '100%', justifyContent: 'center', gap: 'var(--space-2)' }}
-                                onClick={() => setCurrentStep('create-pin')}
-                            >
-                                Comenzar enrolamiento
-                                <FiArrowRight size={16} />
-                            </button>
-                        </div>
-                    )}
-
-                    {/* STEP: PIN actual (solo al cambiar uno existente) */}
-                    {currentStep === 'current-pin' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeInScale 0.35s ease-out' }}>
-                            <PinInput
-                                key={`actual-${pinCreateKey}`}
-                                mode="verify"
-                                onComplete={(actual) => { setPinActual(actual); setError(''); setCurrentStep('create-pin'); }}
-                                title="Ingresa tu PIN actual"
-                                subtitle="Para cambiarlo, primero confirma que eres tú."
-                                error={error}
-                            />
-                            <button
-                                className="btn btn-ghost btn-sm"
-                                style={{ alignSelf: 'center' }}
-                                onClick={() => navigate('/configuracion')}
-                            >
-                                Cancelar
-                            </button>
-                        </div>
-                    )}
-
-                    {/* STEP: Crear PIN */}
-                    {currentStep === 'create-pin' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeInScale 0.35s ease-out' }}>
-                            <PinInput
-                                key={pinCreateKey}
-                                mode="create"
-                                onComplete={handlePinCreate}
-                                title={isChangePin ? 'Crea tu nuevo PIN' : 'Crea tu PIN de Seguridad'}
-                                subtitle={isChangePin ? 'Elige un PIN distinto al actual. Recuérdalo bien.' : 'Este PIN será tu firma digital. Recuérdalo bien.'}
-                                error={error}
-                            />
-                            <button
-                                className="btn btn-ghost btn-sm"
-                                style={{ alignSelf: 'center' }}
-                                onClick={() => isChangePin ? navigate('/configuracion') : setCurrentStep('welcome')}
-                            >
-                                {isChangePin ? 'Cancelar' : 'Volver'}
-                            </button>
-                        </div>
-                    )}
-
-                    {/* STEP: Confirmar PIN */}
-                    {currentStep === 'confirm-pin' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeInScale 0.35s ease-out' }}>
-                            <PinInput
-                                key={pinConfirmKey}
-                                mode="confirm"
-                                onComplete={handlePinConfirm}
-                                title="Confirma tu PIN"
-                                subtitle="Ingresa nuevamente tu PIN de 4 dígitos"
-                                error={error}
-                            />
-                            <button
-                                className="btn btn-ghost btn-sm"
-                                style={{ alignSelf: 'center' }}
-                                onClick={() => { setCurrentStep('create-pin'); setError(''); }}
-                            >
-                                Cambiar PIN
-                            </button>
-                        </div>
-                    )}
-
-                    {/* STEP: Procesando */}
-                    {currentStep === 'processing' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-8) 0', animation: 'fadeInScale 0.35s ease-out' }}>
-                            <div style={{
-                                width: '56px', height: '56px',
-                                border: '3px solid var(--surface-border)',
-                                borderTopColor: 'var(--accent)',
-                                borderRadius: '50%',
-                                animation: 'spin 0.8s linear infinite',
-                            }} />
-                            <div style={{ textAlign: 'center' }}>
-                                <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-1)' }}>
-                                    {isChangePin ? 'Actualizando tu PIN…' : 'Creando tu firma digital…'}
-                                </h3>
-                                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
-                                    Estamos configurando tu cuenta de forma segura
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* STEP: Completar perfil (opcional) */}
-                    {currentStep === 'profile' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', animation: 'fadeInScale 0.35s ease-out' }}>
-                            {/* Header */}
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{
-                                    width: '56px', height: '56px',
-                                    borderRadius: '50%',
-                                    background: 'var(--accent-tint)',
-                                    border: '1px solid var(--surface-border)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    color: 'var(--accent)',
-                                    margin: '0 auto var(--space-4)',
-                                }}>
-                                    <FiUser size={26} />
-                                </div>
-                                <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-1)' }}>
-                                    Termina de completar tu perfil
-                                </h2>
-                                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                                    Este paso es <strong>opcional</strong>. Puedes completarlo ahora o más tarde desde tu perfil.
-                                </p>
-                            </div>
-
-                            {/* Foto de perfil */}
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)' }}>
-                                <div
-                                    onClick={() => fileInputRef.current?.click()}
-                                    style={{
-                                        width: '96px', height: '96px',
-                                        borderRadius: '50%',
-                                        border: `2px dashed ${fotoPerfil ? 'var(--accent)' : 'var(--surface-border)'}`,
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        cursor: 'pointer',
-                                        overflow: 'hidden',
-                                        background: fotoPerfil ? 'transparent' : 'var(--surface-elevated)',
-                                        transition: 'border-color 0.2s',
-                                        position: 'relative',
-                                    }}
-                                >
-                                    {fotoPerfil ? (
-                                        <img src={fotoPerfil} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                    ) : (
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: 'var(--text-muted)' }}>
-                                            <FiCamera size={22} />
-                                            <span style={{ fontSize: '10px' }}>Subir foto</span>
-                                        </div>
-                                    )}
-                                </div>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept="image/*"
-                                    style={{ display: 'none' }}
-                                    onChange={handleImageChange}
-                                />
-                                {fotoPerfil && (
-                                    <button
-                                        className="btn btn-ghost btn-sm"
-                                        style={{ fontSize: '12px', padding: '2px 10px' }}
-                                        onClick={() => { setFotoPerfil(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
-                                    >
-                                        Quitar foto
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Teléfono — Chilean format, single input */}
-                            {(() => {
-                                const complete = telefono.replace(/\D/g, '').length === 9;
-                                const borderColor = complete
-                                    ? 'var(--success-500)'
-                                    : telFocused ? 'var(--accent)' : 'var(--surface-border)';
-                                return (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>
-                                            <FiPhone size={13} /> Número de teléfono
-                                        </span>
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            border: `1.5px solid ${borderColor}`,
-                                            borderRadius: 'var(--radius-md)',
-                                            background: 'var(--surface-card)',
-                                            overflow: 'hidden',
-                                            transition: 'border-color 0.2s, box-shadow 0.2s',
-                                            boxShadow: telFocused
-                                                ? `0 0 0 3px ${complete ? 'rgba(34,197,94,0.15)' : 'rgba(0,110,220,0.12)'}`
-                                                : 'none',
-                                            height: '42px',
-                                        }}>
-                                            {/* Prefix badge */}
-                                            <div style={{
-                                                display: 'flex', alignItems: 'center', gap: '6px',
-                                                padding: '0 12px',
-                                                height: '100%',
-                                                borderRight: '1.5px solid var(--surface-border)',
-                                                background: 'var(--surface-elevated)',
-                                                flexShrink: 0,
-                                                userSelect: 'none',
-                                            }}>
-                                                <span style={{ fontSize: '13px', lineHeight: 1 }}>🇨🇱</span>
-                                                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>+56</span>
-                                            </div>
-
-                                            {/* Single input */}
-                                            <input
-                                                type="text"
-                                                inputMode="numeric"
-                                                placeholder="9 1234 5678"
-                                                value={telefono}
-                                                onFocus={() => setTelFocused(true)}
-                                                onBlur={() => setTelFocused(false)}
-                                                onChange={handleTelefonoChange}
-                                                style={{
-                                                    flex: 1,
-                                                    border: 'none',
-                                                    outline: 'none',
-                                                    background: 'transparent',
-                                                    fontSize: '15px',
-                                                    color: 'var(--text-primary)',
-                                                    padding: '0 10px',
-                                                    caretColor: 'var(--accent)',
-                                                }}
-                                            />
-
-                                            {/* Checkmark when complete */}
-                                            <div style={{
-                                                paddingRight: '12px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                opacity: complete ? 1 : 0,
-                                                transform: complete ? 'scale(1)' : 'scale(0.5)',
-                                                transition: 'opacity 0.25s, transform 0.25s',
-                                            }}>
-                                                <FiCheckCircle size={16} style={{ color: 'var(--success-500)' }} />
-                                            </div>
-                                        </div>
-
-                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                            Formato: +56 9 1234 5678
-                                        </span>
-                                    </div>
-                                );
-                            })()}
-
-                            {/* Botones */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                <button
-                                    className="btn btn-primary"
-                                    style={{ width: '100%', justifyContent: 'center' }}
-                                    disabled={profileSaving}
-                                    onClick={() => saveProfileAndContinue(false)}
-                                >
-                                    {profileSaving ? 'Guardando…' : 'Guardar y continuar'}
-                                </button>
-                                <button
-                                    className="btn btn-ghost"
-                                    style={{ width: '100%', justifyContent: 'center', gap: 'var(--space-2)', color: 'var(--text-muted)' }}
-                                    disabled={profileSaving}
-                                    onClick={() => saveProfileAndContinue(true)}
-                                >
-                                    <FiSkipForward size={14} />
-                                    Omitir por ahora
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* STEP: Éxito */}
-                    {currentStep === 'success' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-5)', animation: 'fadeInScale 0.35s ease-out' }}>
-                            <div style={{
-                                width: '72px', height: '72px',
-                                borderRadius: '50%',
-                                background: 'rgba(34, 197, 94, 0.12)',
-                                border: '2px solid var(--success-500)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: 'var(--success-500)',
-                                animation: 'successPulse 0.6s ease-out',
-                            }}>
-                                <FiCheckCircle size={36} />
-                            </div>
-
-                            <div style={{ textAlign: 'center' }}>
-                                <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 'var(--space-2)' }}>
-                                    {isChangePin ? '¡PIN actualizado!' : '¡Enrolamiento completado!'}
-                                </h2>
-                                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                                    {isChangePin ? 'Tu PIN ha sido actualizado exitosamente.' : 'Tu firma digital ha sido creada exitosamente.'}
-                                </p>
-                            </div>
-
-                            {enrollmentData && (
-                                <div style={{
-                                    width: '100%',
-                                    background: 'var(--surface-elevated)',
-                                    border: '1px solid var(--surface-border)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    overflow: 'hidden',
-                                }}>
-                                    <div style={{
-                                        display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-                                        padding: 'var(--space-3) var(--space-4)',
-                                        borderBottom: '1px solid var(--surface-border)',
-                                        background: 'var(--surface-card)',
-                                    }}>
-                                        <FiShield size={14} style={{ color: 'var(--accent)' }} />
-                                        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
-                                            Datos de la firma
-                                        </span>
-                                    </div>
-                                    {[
-                                        { label: 'Token', value: enrollmentData.firma.token },
-                                        { label: 'Fecha', value: enrollmentData.firma.fecha },
-                                        { label: 'Hora', value: enrollmentData.firma.horario },
-                                    ].map((field, i, arr) => (
-                                        <div key={i} style={{
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            padding: 'var(--space-3) var(--space-4)',
-                                            borderBottom: i < arr.length - 1 ? '1px solid var(--surface-border)' : 'none',
-                                        }}>
-                                            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', fontWeight: 500 }}>{field.label}</span>
-                                            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{field.value}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontStyle: 'italic', animation: 'pulse 2s ease-in-out infinite' }}>
-                                {isChangePin ? 'Redirigiendo a configuración…' : 'Redirigiendo al panel principal…'}
-                            </p>
-                        </div>
+    // ── Éxito ─────────────────────────────────────────────────────────────────
+    if (currentStep === 'success') {
+        const firma = enrollmentData?.firma;
+        return (
+            <Tarjeta>
+                <div className="lp-body onb-resultado">
+                    <span className="onb-resultado-icono onb-resultado-icono--ok"><FiEdit2 size={26} /></span>
+                    <h1 className="lp-title">{isChangePin ? 'PIN actualizado' : 'Tu firma está lista'}</h1>
+                    <p className="lp-hint">
+                        {isChangePin
+                            ? 'Desde ahora firmas con tu nuevo PIN. Te llevamos a Configuración…'
+                            : 'Desde ahora puedes firmar charlas, entregas de EPP y documentos con tu PIN.'}
+                    </p>
+                    {firma && (
+                        <dl className="onb-caja enr-firma">
+                            <div><dt>Firmante</dt><dd>{nombreCompleto}{user?.rut ? ` · ${user.rut}` : ''}</dd></div>
+                            {firma.fecha && <div><dt>Fecha</dt><dd>{firma.fecha}</dd></div>}
+                            {firma.horario && <div><dt>Hora</dt><dd>{firma.horario}</dd></div>}
+                            {firma.token && <div><dt>Código</dt><dd className="enr-firma-codigo">{firma.token}</dd></div>}
+                        </dl>
                     )}
                 </div>
+                <button type="button" className="lp-submit onb-link-btn enr-final"
+                    onClick={() => navigate(isChangePin ? '/configuracion' : '/', { replace: true })}>
+                    <span>{isChangePin ? 'Volver a Configuración' : 'Ir al inicio'}</span>
+                    <FiArrowRight size={15} />
+                </button>
+            </Tarjeta>
+        );
+    }
 
-            <style>{`
-                @keyframes fadeInUp {
-                    from { opacity: 0; transform: translateY(16px); }
-                    to   { opacity: 1; transform: translateY(0); }
-                }
-                @keyframes fadeInScale {
-                    from { opacity: 0; transform: scale(0.97); }
-                    to   { opacity: 1; transform: scale(1); }
-                }
-                @keyframes successPulse {
-                    0%   { transform: scale(0.5); opacity: 0; }
-                    60%  { transform: scale(1.08); }
-                    100% { transform: scale(1); opacity: 1; }
-                }
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
-                }
-            `}</style>
-        </OnboardingShell>
+    return (
+        <Tarjeta>
+            <div className="lp-body">
+                {Stepper}
+
+                {/* ── Bienvenida: la credencial que se va a crear ── */}
+                {currentStep === 'welcome' && (
+                    <>
+                        <h1 className="lp-title">Crea tu firma digital</h1>
+                        <p className="lp-hint">
+                            Hola{user?.nombre ? `, ${user.nombre}` : ''}. Con tu firma apruebas charlas, entregas de EPP y documentos en la obra.
+                        </p>
+
+                        <div className="enr-credencial" role="img"
+                            aria-label={`Tu credencial de firma digital${empresa ? ` en ${empresa}` : ''}`}>
+                            <div className="enr-credencial-top">
+                                <span className="enr-credencial-empresa">
+                                    {logoEmpresa ? (
+                                        <img src={logoEmpresa} alt="" className="enr-credencial-logo" />
+                                    ) : empresa ? (
+                                        <span className="enr-credencial-mono">{monograma(empresa)}</span>
+                                    ) : null}
+                                    {empresa && <span className="enr-credencial-empresa-nombre">{empresa}</span>}
+                                </span>
+                                <span className="enr-credencial-sello"><FiEdit2 size={11} /> Firma digital</span>
+                            </div>
+                            <div className="enr-credencial-persona">
+                                <span className="enr-credencial-nombre">{nombreCompleto}</span>
+                                <span className="enr-credencial-meta">
+                                    {[user?.rut ? `RUT ${user.rut}` : null, rolLabel || null].filter(Boolean).join(' · ')}
+                                </span>
+                            </div>
+                            <div className="enr-credencial-pin">
+                                <span className="enr-credencial-pin-label">PIN de firma</span>
+                                <span className="enr-credencial-slots" aria-hidden="true">
+                                    <span /><span /><span /><span />
+                                </span>
+                            </div>
+                        </div>
+
+                        <ul className="enr-datos">
+                            <li><FiKey size={17} /><strong>4 dígitos</strong><span>que solo tú eliges</span></li>
+                            <li><FiShield size={17} /><strong>Cifrada</strong><span>nadie más puede verla</span></li>
+                            <li><FiClock size={17} /><strong>1 minuto</strong><span>y queda lista</span></li>
+                        </ul>
+
+                        <button type="button" className="lp-submit enr-accion" onClick={() => irA('create-pin')}>
+                            <span>Comenzar</span><FiArrowRight size={15} />
+                        </button>
+                    </>
+                )}
+
+                {/* ── PIN actual (solo al cambiar uno existente) ── */}
+                {currentStep === 'current-pin' && (
+                    <form noValidate onSubmit={(e) => { e.preventDefault(); if (pinActual.length === 4) irA('create-pin'); }}>
+                        <h1 className="lp-title">Ingresa tu PIN actual</h1>
+                        <p className="lp-hint">Para cambiarlo, primero confirma que eres tú.</p>
+                        <PinCasillas id="enr-pin-actual" value={pinActual} onChange={setPinActual}
+                            visible={verPin} autoFocus ariaLabel="PIN actual" />
+                        {MostrarPin}
+                        {ErrorServidor}
+                        <button type="submit" className="lp-submit enr-accion" disabled={pinActual.length < 4}>
+                            <span>Continuar</span><FiArrowRight size={15} />
+                        </button>
+                    </form>
+                )}
+
+                {/* ── Elegir PIN ── */}
+                {currentStep === 'create-pin' && (
+                    <form noValidate onSubmit={(e) => { e.preventDefault(); if (pin.length === 4) { setPinConfirmacion(''); irA('confirm-pin'); } }}>
+                        <h1 className="lp-title">{isChangePin ? 'Elige tu nuevo PIN' : 'Elige tu PIN'}</h1>
+                        <p className="lp-hint">
+                            {isChangePin ? '4 dígitos, distintos al PIN actual.' : '4 dígitos que recuerdes. Lo usarás cada vez que firmes.'}
+                        </p>
+                        <PinCasillas id="enr-pin" value={pin} onChange={setPin} visible={verPin} autoFocus
+                            ariaLabel="Nuevo PIN de 4 dígitos" />
+                        {MostrarPin}
+                        <p className="enr-consejo"><FiShield size={14} /> Evita 1234, 0000 o tu año de nacimiento.</p>
+                        {ErrorServidor}
+                        <button type="submit" className="lp-submit enr-accion" disabled={pin.length < 4}>
+                            <span>Continuar</span><FiArrowRight size={15} />
+                        </button>
+                    </form>
+                )}
+
+                {/* ── Repetir PIN: se revisa al escribir el cuarto dígito ── */}
+                {currentStep === 'confirm-pin' && (
+                    <>
+                        <h1 className="lp-title">Repite tu PIN</h1>
+                        <p className="lp-hint">Para asegurarnos de que lo recuerdas.</p>
+                        <PinCasillas id="enr-pin-confirmar" value={pinConfirmacion} autoFocus
+                            onChange={(v) => { if (!reintentando.current) setPinConfirmacion(v); }}
+                            onComplete={(v) => { if (!reintentando.current) confirmarPin(v); }}
+                            visible={verPin} error={noCoincide && pinConfirmacion.length === 4} disabled={procesando}
+                            ariaLabel="Repite tu PIN" />
+                        {noCoincide ? (
+                            <>
+                                {/* El aviso queda mientras se reintenta; las casillas ya se vaciaron solas */}
+                                <p className="enr-no-coincide" role="alert">
+                                    <FiAlertCircle size={15} /> No coincide. Inténtalo de nuevo.
+                                </p>
+                                <button type="button" className="enr-link enr-otro-pin"
+                                    onClick={() => { setPin(''); setPinConfirmacion(''); irA('create-pin'); }}>
+                                    Elegir otro PIN
+                                </button>
+                            </>
+                        ) : procesando ? (
+                            <p className="enr-procesando" role="status">
+                                <span className="onb-spinner" /> {isChangePin ? 'Actualizando tu PIN…' : 'Creando tu firma digital…'}
+                            </p>
+                        ) : (
+                            <>
+                                {MostrarPin}
+                                {ErrorServidor}
+                            </>
+                        )}
+                    </>
+                )}
+
+                {/* ── Perfil (opcional) ── */}
+                {currentStep === 'profile' && (
+                    <form noValidate onSubmit={(e) => { e.preventDefault(); saveProfileAndContinue(false); }}>
+                        <h1 className="lp-title">Completa tu perfil</h1>
+                        <p className="lp-hint">Así te reconocen en las cuadrillas y te pueden contactar en obra. Puedes hacerlo después.</p>
+
+                        <div className="enr-foto">
+                            <button type="button" className={`enr-foto-circulo${fotoPerfil ? ' enr-foto-circulo--lista' : ''}`}
+                                onClick={() => fileInputRef.current?.click()}
+                                aria-label={fotoPerfil ? 'Cambiar foto de perfil' : 'Subir foto de perfil'}>
+                                {fotoPerfil ? <img src={fotoPerfil} alt="" /> : <FiCamera size={24} />}
+                            </button>
+                            <span className="enr-foto-info">
+                                <button type="button" className="enr-link enr-foto-accion" onClick={() => fileInputRef.current?.click()}>
+                                    {fotoPerfil ? 'Cambiar foto' : 'Subir una foto'}
+                                </button>
+                                {fotoPerfil ? (
+                                    <button type="button" className="enr-foto-quitar" onClick={() => setFotoPerfil(null)}>
+                                        <FiX size={13} /> Quitar
+                                    </button>
+                                ) : (
+                                    <span className="enr-foto-sub">Una foto de tu cara, con buena luz. JPG o PNG.</span>
+                                )}
+                            </span>
+                            <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageChange} />
+                        </div>
+
+                        <div className="lp-field enr-telefono">
+                            <label className="lp-label" htmlFor="enr-telefono">Teléfono móvil</label>
+                            <div className="enr-telefono-campo">
+                                <span className="enr-telefono-prefijo"><FiPhone size={14} /> +56</span>
+                                <input id="enr-telefono" type="tel" inputMode="tel" autoComplete="tel-national"
+                                    placeholder="9 1234 5678" value={telefono} onChange={handleTelefonoChange} />
+                            </div>
+                        </div>
+
+                        <button type="submit" className="lp-submit enr-accion" disabled={profileSaving}>
+                            {profileSaving ? <div className="lp-spinner" /> : <><span>Guardar y terminar</span><FiCheck size={15} /></>}
+                        </button>
+                        <button type="button" className="enr-omitir" disabled={profileSaving}
+                            onClick={() => saveProfileAndContinue(true)}>
+                            Omitir por ahora
+                        </button>
+                    </form>
+                )}
+            </div>
+
+            {currentStep === 'welcome' && (
+                <Pie izquierda={
+                    <button type="button" className="lp-foot-link enr-salir" onClick={() => logout()}>
+                        <FiLogOut size={14} /> Cerrar sesión
+                    </button>
+                } />
+            )}
+            {currentStep === 'current-pin' && (
+                <Pie izquierda={<Volver texto="Cancelar" onClick={() => navigate('/configuracion')} />} />
+            )}
+            {currentStep === 'create-pin' && (
+                <Pie izquierda={<Volver
+                    texto={isChangePin && !tienePin ? 'Cancelar' : 'Volver'}
+                    onClick={() => isChangePin
+                        ? (tienePin ? irA('current-pin') : navigate('/configuracion'))
+                        : irA('welcome')} />} />
+            )}
+            {currentStep === 'confirm-pin' && (
+                <Pie izquierda={<Volver onClick={() => { setPinConfirmacion(''); irA('create-pin'); }} />} />
+            )}
+            {currentStep === 'profile' && (
+                <Pie izquierda={<span className="enr-firma-creada"><FiCheck size={14} strokeWidth={2.5} /> Firma digital creada</span>} />
+            )}
+        </Tarjeta>
     );
 }

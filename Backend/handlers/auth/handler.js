@@ -39,9 +39,12 @@ const tenantService = new TenantService();
 const buildUserPayload = async (persona) => {
     let permisos = [];
     let branding = null;
+    let empresaNombre = null;
     try {
         const tenant = await tenantService.getById(persona.tenantId);
         const tenantData = tenant ? tenant.toSafeFormat() : null;
+        // Para nombrar la empresa en pantallas previas a elegir obra (enrolamiento).
+        empresaNombre = tenantData?.nombre || null;
         permisos = resolvePersonaPermisos(persona, tenantData);
         if (tenantData?.preferencias) {
             const prefs = tenantData.preferencias;
@@ -68,7 +71,7 @@ const buildUserPayload = async (persona) => {
     }
     // Es la ficha de quien inicia sesión: sobre sus propios datos de salud no hay
     // nada que ocultarle (ver Persona.toSafeFormat).
-    return { ...persona.toSafeFormat({ incluirSalud: true }), permisos, branding };
+    return { ...persona.toSafeFormat({ incluirSalud: true }), permisos, branding, empresaNombre };
 };
 
 const generateSessionToken = () => {
