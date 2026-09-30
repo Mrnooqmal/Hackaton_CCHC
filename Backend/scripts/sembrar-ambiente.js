@@ -61,13 +61,14 @@ if (!process.env.AWS_PROFILE && !process.env.AWS_ACCESS_KEY_ID) {
 // Las tablas se nombran igual que en serverless.yml. Se definen ANTES de cargar
 // los servicios, porque los leen al importarse.
 const SERVICIO = 'BuildAndServe';
+// Tablas, parámetros y correo: los de la Lambda del ambiente (scripts/entorno.js).
+require('./entorno').cargarEntornoDe(stage);
 process.env.AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 process.env.TENANTS_TABLE = `${SERVICIO}-tenants-${stage}`;
 process.env.PERSONAS_TABLE = `${SERVICIO}-personas-${stage}`;
 process.env.DOCUMENTS_TABLE = `${SERVICIO}-documents-${stage}`;
 process.env.EVIDENCIA_BUCKET = `buildandserve-evidencia-${stage}`;
 process.env.TRABAJO_BUCKET = `buildandserve-trabajo-${stage}`;
-process.env.SES_SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'thecodecookers@gmail.com';
 
 const { TenantService } = require('../lib/services/TenantService');
 const { PersonaService } = require('../lib/services/PersonaService');

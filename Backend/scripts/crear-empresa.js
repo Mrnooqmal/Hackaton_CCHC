@@ -83,11 +83,12 @@ if (!process.env.AWS_PROFILE && !process.env.AWS_ACCESS_KEY_ID) {
 // Se definen ANTES de cargar los servicios, porque los leen al importarse.
 
 const SERVICIO = 'BuildAndServe';
+// Tablas, parámetros y correo: los de la Lambda del ambiente (scripts/entorno.js).
+require('./entorno').cargarEntornoDe(stage);
 process.env.AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 process.env.TENANTS_TABLE = `${SERVICIO}-tenants-${stage}`;
 process.env.PERSONAS_TABLE = `${SERVICIO}-personas-${stage}`;
 process.env.DOCUMENTS_TABLE = `${SERVICIO}-documents-${stage}`;
-process.env.SES_SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'thecodecookers@gmail.com';
 // La contraseña del administrador se hashea acá, en el equipo del operador, y
 // debe quedar igual que si la hubiera hecho la Lambda: misma pimienta y misma
 // versión. Sin esto el alta produce un hash sin pimienta, que funciona —el hash
