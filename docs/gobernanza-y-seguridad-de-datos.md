@@ -1283,8 +1283,10 @@ Decisiones técnicas:
   se puede circular sin volverse una segunda brecha.
 
 ### D-20. QA prueba en dev: una distribución del frontend por ambiente
-**Estado: implementado el 29 de septiembre de 2026 (en el árbol; se despliega
-tras el push).**
+**Estado: desplegado el 29 de septiembre de 2026. QA prueba en
+`https://d3pve67iu4s0dd.cloudfront.net`; producción volvió a servir su propio
+build el 30 de septiembre a las 02:34 UTC, y desde entonces la CSP no registró
+violaciones.**
 
 **Qué pasó.** El 29 de septiembre de 2026, a las 17:45 UTC, se publicó en la URL
 de producción (`d30jksx91fodea.cloudfront.net`) un build del frontend que
@@ -1320,8 +1322,11 @@ puede escribir en el bucket e invalidar la distribución.
   (propuesto, sin implementar).
 
 ### D-21. Producción en buildandserve.cl, y correo con rebotes y quejas
-**Estado: implementado el 29 de septiembre de 2026 (en el árbol; se despliega
-tras el push y la validación del certificado).**
+**Estado: en producción desde el 30 de septiembre de 2026 (backend y frontend
+de `64adc40`). Verificado: prueba de punta a punta en `https://buildandserve.cl`
+con una empresa desechable borrada después; rebotes y quejas de punta a punta
+con el simulador de SES; recorrido en Chrome de las pantallas principales con
+sesión, sin violaciones de CSP. Pendiente: la salida de SES del sandbox.**
 
 **Dominio.** La distribución de producción sirve `buildandserve.cl` con un
 certificado de ACM (us-east-1) para la raíz y `www`, validado por DNS en
