@@ -1361,6 +1361,29 @@ Decisiones técnicas:
 - El tópico no lleva cifrado propio: SES no puede publicar en un tópico
   cifrado con la llave administrada de SNS, y SNS no guarda el mensaje.
 
+### D-22. Rol de publicación del frontend
+**Estado: primera etapa aprobada e implementada el 29 de septiembre de 2026 (en
+el árbol). La negación se activa cuando los publicadores registren MFA.**
+
+Publicar el frontend (escribir en sus buckets e invalidar sus distribuciones)
+queda en manos de un rol, `BuildAndServe-publicador-frontend`:
+
+- lo asumen solo las personas designadas (hoy Adrean y Benjamin), **con MFA**;
+- `infra/desplegar-frontend.sh` lo asume **después** de sus verificaciones
+  (commit pusheado, build limpio, API del ambiente), con el commit en el nombre
+  de la sesión: CloudTrail dice qué se publicó y quién;
+- con `ExigirRolPublicador=true`, la política de cada bucket niega escribir o
+  borrar a cualquier otro principal, y una política administrada niega a las
+  personas invalidar las distribuciones (CloudFront no tiene políticas de
+  recurso).
+
+Por qué en dos pasos: al implementarlo, ningún usuario tenía MFA. Activar la
+negación ese día habría dejado a nadie en condiciones de publicar. Hasta
+activarla, el script publica con las credenciales propias y lo avisa.
+
+Límite conocido: un administrador puede cambiar la política del bucket; queda en
+CloudTrail, pero no se impide. La siguiente etapa, GitHub Actions por OIDC como
+único que asume el rol, cierra también la publicación a mano desde un equipo.
 
 ## 4. Hallazgos priorizados
 

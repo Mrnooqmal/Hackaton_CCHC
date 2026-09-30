@@ -76,6 +76,29 @@ if grep -rqE 'localhost:[0-9]+' dist; then
     echo "El build contiene una URL de localhost." >&2; exit 1
 fi
 
+# Publicar lo hace el rol de publicación (D-22), asumido recién ahora, después
+# de todas las verificaciones: con MFA, y con el commit en el nombre de la
+# sesión para que CloudTrail diga qué se publicó. El código MFA se pide por
+# terminal o viene en MFA_CODIGO.
+ROL="$(salida "$STACK_FRONTEND" RolPublicador)"
+EXIGE="$(salida "$STACK_FRONTEND" ExigeRolPublicador)"
+MFA="$(aws iam list-mfa-devices --query 'MFADevices[0].SerialNumber' --output text 2>/dev/null || true)"
+if [ -n "$MFA" ] && [ "$MFA" != "None" ] && [ -n "$ROL" ] && [ "$ROL" != "None" ]; then
+    CODIGO="${MFA_CODIGO:-}"
+    [ -n "$CODIGO" ] || read -rp "Código MFA de $MFA: " CODIGO </dev/tty
+    read -r AK SK ST < <(aws sts assume-role --role-arn "$ROL" --role-session-name "publicar-$AMBIENTE-${SHA:0:12}" \
+        --serial-number "$MFA" --token-code "$CODIGO" --duration-seconds 3600 \
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)
+    [ -n "${ST:-}" ] || { echo "No se pudo asumir $ROL." >&2; exit 1; }
+    export AWS_ACCESS_KEY_ID="$AK" AWS_SECRET_ACCESS_KEY="$SK" AWS_SESSION_TOKEN="$ST"
+    unset AWS_PROFILE
+    echo "== publicando como $(aws sts get-caller-identity --query Arn --output text)"
+elif [ "$EXIGE" = "true" ]; then
+    echo "Solo el rol de publicación puede publicar, y tu usuario no tiene MFA: registra un dispositivo MFA." >&2; exit 1
+else
+    echo "== AVISO: publicando con tus credenciales (sin MFA; el rol de publicación aún no se exige)." >&2
+fi
+
 echo "== subida a s3://$BUCKET e invalidación de $DISTRIBUCION"
 aws s3 sync dist "s3://$BUCKET" --delete --only-show-errors
 ID="$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUCION" --paths '/*' --query Invalidation.Id --output text)"

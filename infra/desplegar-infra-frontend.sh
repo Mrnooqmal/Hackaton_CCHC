@@ -90,6 +90,7 @@ aws cloudformation deploy \
     --template-file "$TMP/wt/infra/frontend.yml" \
     --parameter-overrides "CertificadoProd=$CERT" "CspSoloReporte=$CSP" "ReportingEndpoints=csp=\"$API_PROD/csp/reporte\"" \
         "CspSoloReporteDev=$CSP_DEV" "ReportingEndpointsDev=csp=\"$API_DEV/csp/reporte\"" \
+    --capabilities CAPABILITY_NAMED_IAM \
     --no-fail-on-empty-changeset
 
 for par in DominioDistribucion DominioDistribucionDev; do
