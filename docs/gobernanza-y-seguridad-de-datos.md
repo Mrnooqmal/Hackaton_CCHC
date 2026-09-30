@@ -1173,6 +1173,25 @@ herramienta para registrar la solicitud y su canal de origen.
 | Obras | Datos de la obra; sin datos personales salvo referencias a responsables. | Gestionar las obras y su cumplimiento. | evidencia | 5 años desde el término del vínculo | No vence por personas (es de la empresa) |
 | Catálogo de EPP | Catálogo de elementos de protección; sin datos personales (las entregas son documentos). | Definir los EPP que entrega la empresa. | evidencia | 5 años desde el término del vínculo | No vence por personas (es de la empresa) |
 
+### D-16. Límite de 500 recursos del stack del backend
+**Estado: decidido el 29 de septiembre de 2026 (decisión técnica).**
+
+Al agregar los derechos del titular, la plantilla del backend llegó a 512
+recursos y CloudFormation la rechazó (máximo 500 por stack); el ambiente no
+cambió, porque la plantilla se rechaza completa antes de aplicar nada. 77 de
+esos recursos eran `AWS::Lambda::Version`, una por función, que Serverless crea
+en cada deploy y que nada usa: no hay alias, ni concurrencia aprovisionada, ni
+ARN calificados referenciados, y `serverless rollback` vuelve a un artefacto de
+S3. Se desactivó el versionado (`versionFunctions: false`): 435 recursos. Las
+versiones tenían `DeletionPolicy: Retain`, así que sacarlas del stack no borró
+ninguna.
+
+**Margen:** 65 recursos. Cada función HTTP nueva cuesta de 4 a 6 (función, log
+group, permiso, integración, rutas). `infra/desplegar-backend.sh` empaqueta y
+cuenta antes de desplegar: avisa sobre 450 y se niega sobre 490. Cuando haga
+falta más, la salida es agrupar rutas por módulo (una función con un router,
+como ya hacen personas, obras e inbox) antes que partir el stack.
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo

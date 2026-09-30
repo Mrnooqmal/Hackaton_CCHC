@@ -62,11 +62,15 @@ provider:
   # CI se fijan en `.nvmrc` y en `engines` de cada package.json: las tres deben
   # moverse juntas.
   runtime: nodejs24.x
+  # Sin versiones de Lambda. Serverless crea un AWS::Lambda::Version por función
+  # en cada deploy (77 recursos), y el stack llegó a 512 contra el máximo de 500
+  # de CloudFormation. Nada las usa: no hay alias ni concurrencia aprovisionada,
+  # nadie referencia un ARN calificado, y `serverless rollback` vuelve a un
+  # artefacto de S3, no a una versión. Tenían DeletionPolicy: Retain, así que
+  # sacarlas del stack no borra ninguna. Ver D-16.
+  versionFunctions: false
   region: us-east-1
   stage: ${opt:stage, 'dev'}
-  # Sin AWS::Lambda::Version por función: nada usa versiones ni alias, y eran 77
-  # recursos que empujaban la plantilla sobre el tope de 500 de CloudFormation.
-  versionFunctions: false
   environment:
     # --- Multi-Tenant Core Tables ---
     TENANTS_TABLE: ${self:service}-tenants-${self:provider.stage}
