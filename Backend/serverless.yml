@@ -2652,6 +2652,8 @@ resources:
             AttributeType: S
           - AttributeName: tokenHash
             AttributeType: S
+          - AttributeName: personaId
+            AttributeType: S
         KeySchema:
           - AttributeName: sessionId
             KeyType: HASH
@@ -2671,6 +2673,15 @@ resources:
                 - tenantId
                 - expiresAt
                 - activa
+          # Todas las sesiones de una persona, para revocarlas cuando cambia su
+          # contraseña (D-26). Solo claves, como los índices de personas (D-6):
+          # sirve para encontrar la sesión, no para tener otra copia de ella.
+          - IndexName: personaId-index
+            KeySchema:
+              - AttributeName: personaId
+                KeyType: HASH
+            Projection:
+              ProjectionType: KEYS_ONLY
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true
